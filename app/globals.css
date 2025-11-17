@@ -129,3 +129,24 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Hide scrollbar for horizontal scrolling */
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  /* Smooth snap scrolling */
+  .snap-x {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .snap-center {
+    scroll-snap-align: center;
+  }
+}
