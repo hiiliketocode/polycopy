@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import Header from '@/app/components/Header';
 
 interface TraderData {
   wallet: string;
@@ -343,10 +345,13 @@ export default function TraderProfilePage({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-secondary pb-20 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-primary mx-auto mb-4"></div>
-          <p className="text-tertiary text-lg">Loading trader data...</p>
+      <div className="min-h-screen bg-slate-50 pb-20">
+        <Header />
+        <div className="flex items-center justify-center pt-20">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-brand-yellow mx-auto mb-4"></div>
+            <p className="text-slate-600 text-lg">Loading trader data...</p>
+          </div>
         </div>
       </div>
     );
@@ -354,20 +359,25 @@ export default function TraderProfilePage({
 
   if (error || !traderData) {
     return (
-      <div className="min-h-screen bg-secondary pb-20">
-        <div className="bg-primary p-8 text-center">
-          <h1 className="text-4xl font-bold text-tertiary">Trader Not Found</h1>
-        </div>
-        <div className="flex flex-col items-center justify-center pt-20 px-4">
-          <p className="text-tertiary text-lg mb-6">
-            {error || 'Unable to load trader data'}
-          </p>
-          <button
-            onClick={() => router.push('/')}
-            className="bg-primary text-tertiary px-6 py-3 rounded-xl font-semibold hover:bg-yellow-400 transition-all duration-200"
+      <div className="min-h-screen bg-slate-50 pb-20">
+        <Header />
+        <div className="max-w-4xl mx-auto px-4 py-8">
+          <Link
+            href="/discover"
+            className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 mb-6 transition-colors"
           >
-            ← Back to Discover
-          </button>
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to Discover
+          </Link>
+          <div className="flex flex-col items-center justify-center py-20 px-4">
+            <div className="text-6xl mb-6">😞</div>
+            <h2 className="text-2xl font-bold text-slate-900 mb-4">Trader Not Found</h2>
+            <p className="text-slate-600 text-lg mb-6">
+              {error || 'Unable to load trader data'}
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -375,160 +385,77 @@ export default function TraderProfilePage({
 
   const avatarColor = getAvatarColor(wallet);
   const initials = wallet.slice(2, 4).toUpperCase();
+  const roi = calculateROI(traderData.pnl, traderData.volume);
 
   return (
-    <div className="min-h-screen bg-secondary pb-20">
-      {/* Header */}
-      <div className="bg-primary p-6 md:p-8">
-        <div className="max-w-4xl mx-auto">
-          <button
-            onClick={() => router.back()}
-            className="text-tertiary hover:text-gray-700 mb-4 flex items-center gap-2 text-sm font-medium transition-colors"
+    <div className="min-h-screen bg-slate-50 pb-20">
+      <Header />
+
+      {/* Back Button */}
+      <div className="bg-white border-b border-slate-200">
+        <div className="max-w-4xl mx-auto px-4 py-3">
+          <Link
+            href="/discover"
+            className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 transition-colors"
           >
-            ← Back
-          </button>
-          <h1 className="text-3xl md:text-4xl font-bold text-tertiary">
-            Trader Profile
-          </h1>
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </Link>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-4 md:px-8 py-8">
-        {/* Trader Info Card */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 md:p-8 mb-6">
-          {/* Avatar and Basic Info */}
-          <div className="flex flex-col md:flex-row items-start md:items-center gap-6 mb-6 pb-6 border-b border-gray-100">
-            {/* Avatar */}
-            <div
-              className="w-20 h-20 md:w-24 md:h-24 rounded-full flex items-center justify-center text-white font-bold text-2xl md:text-3xl flex-shrink-0"
-              style={{ backgroundColor: avatarColor }}
-            >
-              {initials}
-            </div>
-
-            {/* Name and Wallet */}
-            <div className="flex-1 min-w-0">
-              <h2 className="text-2xl md:text-3xl font-bold text-tertiary mb-2">
-                {traderData.displayName}
-              </h2>
-
-              {/* Abbreviated Wallet */}
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-lg text-gray-600 font-mono">
-                  {abbreviateWallet(wallet)}
-                </span>
-                <button
-                  onClick={handleCopy}
-                  className="text-gray-400 hover:text-tertiary transition-colors flex-shrink-0"
-                  title="Copy full wallet address"
-                >
-                  {copied ? '✓' : '📋'}
-                </button>
-              </div>
-
-              {/* Follower Count */}
-              <div className="text-sm text-gray-600 font-medium">
-                👥 {traderData.followerCount.toLocaleString()} {traderData.followerCount === 1 ? 'follower' : 'followers'} on Polycopy
-              </div>
-            </div>
-
-            {/* Follow Button (Desktop) */}
-            <div className="hidden md:block">
-              <button
-                onClick={handleFollowToggle}
-                disabled={followLoading || checkingFollow}
-                className={`py-3 px-6 rounded-xl font-semibold transition-all duration-200 min-w-[140px]
-                  ${
-                    following
-                      ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      : 'bg-primary text-tertiary hover:bg-yellow-400'
-                  }
-                  ${followLoading || checkingFollow ? 'opacity-50 cursor-not-allowed' : ''}
-                `}
+      {/* Profile Header Section */}
+      <div className="bg-white border-b border-slate-200">
+        <div className="max-w-4xl mx-auto px-4 py-6">
+          {/* Avatar + Name + Follow Button */}
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-6">
+            <div className="flex items-center gap-4">
+              {/* Avatar */}
+              <div
+                className="h-16 w-16 rounded-full flex items-center justify-center text-white font-bold text-2xl flex-shrink-0 ring-2 ring-white shadow-sm"
+                style={{ backgroundColor: avatarColor }}
               >
-                {checkingFollow || followLoading ? (
-                  <span className="flex items-center justify-center">
-                    <svg
-                      className="animate-spin h-5 w-5 mr-2"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
+                {initials}
+              </div>
+              
+              {/* Name and Wallet */}
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900 mb-1">
+                  {traderData.displayName}
+                </h1>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm text-slate-500 font-mono">
+                    {abbreviateWallet(wallet)}
                   </span>
-                ) : following ? (
-                  '✓ Following'
-                ) : (
-                  '+ Follow'
-                )}
-              </button>
+                  <button
+                    onClick={handleCopy}
+                    className="text-slate-400 hover:text-slate-900 transition-colors"
+                    title="Copy wallet address"
+                  >
+                    {copied ? '✓' : '📋'}
+                  </button>
+                </div>
+                <p className="text-sm text-slate-500">
+                  {traderData.followerCount.toLocaleString()} {traderData.followerCount === 1 ? 'follower' : 'followers'} on Polycopy
+                </p>
+              </div>
             </div>
-          </div>
 
-          {/* Stats Grid */}
-          <div className="grid grid-cols-3 gap-4 md:gap-8 mb-6">
-            <div className="text-center p-4 bg-gray-50 rounded-xl">
-              <div
-                className={`text-2xl md:text-3xl font-bold mb-1 ${
-                  traderData.pnl >= 0 ? 'text-green-600' : 'text-red-600'
-                }`}
-              >
-                {formatPnL(traderData.pnl)}
-              </div>
-              <div className="text-sm text-gray-500 font-medium">Total P&L</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 rounded-xl">
-              <div
-                className={`text-2xl md:text-3xl font-bold mb-1 ${
-                  traderData.pnl >= 0 ? 'text-green-600' : 'text-red-600'
-                }`}
-              >
-                {traderData.roiFormatted || calculateROI(traderData.pnl, traderData.volume)}%
-              </div>
-              <div className="text-sm text-gray-500 font-medium">ROI</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 rounded-xl">
-              <div className="text-2xl md:text-3xl font-bold text-tertiary mb-1">
-                {formatVolume(traderData.volume)}
-              </div>
-              <div className="text-sm text-gray-500 font-medium">
-                Volume
-              </div>
-            </div>
-          </div>
-
-          {/* Follow Button (Mobile) */}
-          <div className="md:hidden">
+            {/* Follow Button */}
             <button
               onClick={handleFollowToggle}
               disabled={followLoading || checkingFollow}
-              className={`w-full py-3 px-4 rounded-xl font-semibold transition-all duration-200
-                ${
-                  following
-                    ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    : 'bg-primary text-tertiary hover:bg-yellow-400'
-                }
-                ${followLoading || checkingFollow ? 'opacity-50 cursor-not-allowed' : ''}
-              `}
+              className={`rounded-lg px-6 py-3 text-sm font-bold transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed border-b-4 active:border-b-0 active:translate-y-1 ${
+                following
+                  ? 'bg-slate-200 text-slate-700 hover:bg-slate-300 border-slate-400'
+                  : 'bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 border-[#D97706]'
+              }`}
             >
               {checkingFollow || followLoading ? (
-                <span className="flex items-center justify-center">
-                  <svg
-                    className="animate-spin h-5 w-5 mr-3 text-gray-500"
-                    viewBox="0 0 24 24"
-                  >
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
                     <circle
                       className="opacity-25"
                       cx="12"
@@ -536,14 +463,15 @@ export default function TraderProfilePage({
                       r="10"
                       stroke="currentColor"
                       strokeWidth="4"
-                    ></circle>
+                      fill="none"
+                    />
                     <path
                       className="opacity-75"
                       fill="currentColor"
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
+                    />
                   </svg>
-                  Loading...
+                  {following ? 'Unfollowing...' : 'Following...'}
                 </span>
               ) : following ? (
                 '✓ Following'
@@ -552,26 +480,54 @@ export default function TraderProfilePage({
               )}
             </button>
           </div>
-        </div>
 
-        {/* Recent Trades Section */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 md:p-8">
-          <h3 className="text-xl md:text-2xl font-bold text-tertiary mb-4">
+          {/* Stats Grid - 3 columns like Polymarket */}
+          <div className="grid grid-cols-3 gap-6">
+            <div>
+              <div className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-2">Total P&L</div>
+              <div className={`text-2xl font-bold ${
+                traderData.pnl >= 0 ? 'text-emerald-600' : 'text-red-500'
+              }`}>
+                {formatPnL(traderData.pnl)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-2">ROI</div>
+              <div className={`text-2xl font-bold ${
+                parseFloat(roi) >= 0 ? 'text-emerald-600' : 'text-red-500'
+              }`}>
+                {traderData.roiFormatted || roi}%
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-2">Volume</div>
+              <div className="text-2xl font-bold text-slate-900">
+                {formatVolume(traderData.volume)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Trades Section */}
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <h3 className="text-xl font-bold text-slate-900 mb-6">
             Recent Trades
           </h3>
           
           {loadingTrades ? (
             <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-primary mx-auto mb-4"></div>
-              <p className="text-gray-500">Loading trades...</p>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-brand-yellow mx-auto mb-4"></div>
+              <p className="text-slate-500">Loading trades...</p>
             </div>
           ) : trades.length === 0 ? (
             <div className="text-center py-12">
               <div className="text-6xl mb-4">📊</div>
-              <p className="text-gray-500 text-lg">
+              <p className="text-slate-600 text-lg font-medium mb-2">
                 No recent trades found
               </p>
-              <p className="text-gray-400 text-sm mt-2">
+              <p className="text-slate-500 text-sm">
                 This trader hasn't made any trades recently
               </p>
             </div>
@@ -579,44 +535,44 @@ export default function TraderProfilePage({
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Time</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Market</th>
-                    <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Side</th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Size</th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Price</th>
+                  <tr className="border-b border-slate-200 bg-slate-50">
+                    <th className="text-left py-3 px-4 text-xs font-bold text-slate-600 uppercase tracking-wider">Time</th>
+                    <th className="text-left py-3 px-4 text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
+                    <th className="text-center py-3 px-4 text-xs font-bold text-slate-600 uppercase tracking-wider">Side</th>
+                    <th className="text-right py-3 px-4 text-xs font-bold text-slate-600 uppercase tracking-wider">Size</th>
+                    <th className="text-right py-3 px-4 text-xs font-bold text-slate-600 uppercase tracking-wider">Price</th>
                   </tr>
                 </thead>
                 <tbody>
                   {trades.map((trade, index) => (
                     <tr 
                       key={`${trade.timestamp}-${index}`}
-                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                      className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                     >
                       <td className="py-4 px-4">
-                        <span className="text-sm text-gray-500">{trade.timeAgo}</span>
+                        <span className="text-sm text-slate-500">{trade.timeAgo}</span>
                       </td>
                       <td className="py-4 px-4">
-                        <span className="text-sm text-gray-900 font-medium line-clamp-1">
+                        <span className="text-sm text-slate-900 font-medium line-clamp-1">
                           {trade.market}
                         </span>
                       </td>
                       <td className="py-4 px-4 text-center">
-                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
-                          ['yes', 'up'].includes(trade.outcome.toLowerCase())
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'
+                        <span className={`inline-flex items-center px-3 py-1 rounded text-xs font-bold ${
+                          ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-red-100 text-red-800'
                         }`}>
                           {trade.outcome.toUpperCase()}
                         </span>
                       </td>
                       <td className="py-4 px-4 text-right">
-                        <span className="text-sm font-semibold text-gray-900">
+                        <span className="text-sm font-semibold text-slate-900">
                           ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </span>
                       </td>
                       <td className="py-4 px-4 text-right">
-                        <span className="text-sm text-gray-600">
+                        <span className="text-sm text-slate-600">
                           ${trade.price.toFixed(2)}
                         </span>
                       </td>

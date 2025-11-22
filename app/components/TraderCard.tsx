@@ -15,6 +15,7 @@ interface TraderCardProps {
   skipFollowCheck?: boolean; // Skip the DB check if we already know
   onFollowChange?: (isFollowing: boolean) => void; // Callback with new follow status
   compact?: boolean; // Compact mode for Featured Traders
+  user?: any; // User object to check if logged in
 }
 
 export default function TraderCard({
@@ -27,6 +28,7 @@ export default function TraderCard({
   skipFollowCheck = false,
   onFollowChange,
   compact = false,
+  user = null,
 }: TraderCardProps) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
@@ -94,6 +96,21 @@ export default function TraderCard({
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
+  // Truncate display name intelligently
+  const truncateName = (name: string, maxLength: number = 20): string => {
+    // If it's a wallet address (starts with 0x and is long)
+    if (name.startsWith('0x') && name.length > 20) {
+      return `${name.slice(0, 6)}...${name.slice(-4)}`;
+    }
+    
+    // If it's a regular name that's too long
+    if (name.length > maxLength) {
+      return `${name.slice(0, maxLength)}...`;
+    }
+    
+    return name;
+  };
+
   // Format P&L with sign and currency
   const formatPnL = (value: number) => {
     const sign = value >= 0 ? '+' : '';
@@ -139,17 +156,17 @@ export default function TraderCard({
     e.preventDefault(); // Prevent link navigation
     e.stopPropagation();
     setError('');
+    
+    // If not logged in, redirect to login
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    
     setLoading(true);
 
     try {
-      // Check if user is logged in
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
-        // Redirect to login if not logged in
-        router.push('/login');
-        return;
-      }
+      // User is logged in, proceed with follow/unfollow
 
       if (following) {
         // Unfollow: DELETE from follows table
@@ -237,8 +254,11 @@ export default function TraderCard({
 
             {/* Name and Wallet */}
             <div className="flex-1 min-w-0">
-              <h3 className="text-base md:text-xl font-bold text-slate-900 mb-1 truncate group-hover:text-slate-700 transition-colors">
-                {displayName}
+              <h3 
+                className="text-base md:text-xl font-bold text-slate-900 mb-1 truncate group-hover:text-slate-700 transition-colors"
+                title={displayName}
+              >
+                {truncateName(displayName)}
               </h3>
               <div className="flex items-center gap-2">
                 <span className="text-xs md:text-sm text-slate-500 font-mono">
@@ -323,6 +343,8 @@ export default function TraderCard({
                 </svg>
                 {following ? 'Unfollowing...' : 'Following...'}
               </span>
+            ) : !user ? (
+              'Sign in to Follow'
             ) : following ? (
               '✓ Following'
             ) : (
@@ -344,8 +366,11 @@ export default function TraderCard({
                 {initials}
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition-colors">
-                  {displayName}
+                <h3 
+                  className="font-bold text-slate-900 group-hover:text-slate-700 transition-colors"
+                  title={displayName}
+                >
+                  {truncateName(displayName, 25)}
                 </h3>
                 <span className="text-xs font-medium text-slate-500">
                   {followerCount.toLocaleString()} {followerCount === 1 ? 'copier' : 'copiers'}
@@ -385,6 +410,8 @@ export default function TraderCard({
                   </svg>
                   {following ? 'Unfollowing' : 'Following'}
                 </span>
+              ) : !user ? (
+                'Sign in'
               ) : following ? (
                 '✓ Following'
               ) : (

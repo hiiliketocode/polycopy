@@ -32,14 +32,17 @@ export default function Header() {
   };
 
   const navItems = [
-    { href: '/', label: 'Feed' },
+    { href: '/feed', label: 'Feed' },
     { href: '/discover', label: 'Discover' },
     { href: '/profile', label: 'Profile' },
   ];
 
   const isActive = (href: string) => {
-    if (href === '/') {
-      return pathname === '/';
+    if (href === '/feed') {
+      return pathname === '/' || pathname === '/feed';
+    }
+    if (href === '/discover') {
+      return pathname === '/discover';
     }
     return pathname.startsWith(href);
   };
@@ -67,7 +70,7 @@ export default function Header() {
                   href={item.href}
                   className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                     active
-                      ? 'text-slate-900 bg-yellow-50'
+                      ? 'bg-slate-900 text-white'
                       : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >

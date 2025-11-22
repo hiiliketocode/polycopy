@@ -32,7 +32,7 @@ export default function DiscoverPage() {
   const [followedWallets, setFollowedWallets] = useState<Set<string>>(new Set());
   const [loadingFollows, setLoadingFollows] = useState(true);
 
-  // Check auth status on mount
+  // Check auth status on mount (but don't require login)
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
@@ -329,6 +329,7 @@ export default function DiscoverPage() {
                       isFollowing={followedWallets.has(trader.wallet.toLowerCase())}
                       skipFollowCheck={true}
                       onFollowChange={(isFollowing) => handleFollowChange(trader.wallet, isFollowing)}
+                      user={user}
                     />
                   </div>
                 </div>
@@ -411,6 +412,7 @@ export default function DiscoverPage() {
                     isFollowing={followedWallets.has(trader.wallet.toLowerCase())}
                     skipFollowCheck={true}
                     onFollowChange={(isFollowing) => handleFollowChange(trader.wallet, isFollowing)}
+                    user={user}
                   />
                 </div>
               ))}
