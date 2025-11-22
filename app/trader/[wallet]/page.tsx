@@ -24,6 +24,8 @@ interface Trade {
   size: number;
   price: number;
   timeAgo: string;
+  marketSlug?: string;
+  conditionId?: string;
 }
 
 export default function TraderProfilePage({
@@ -149,7 +151,7 @@ export default function TraderProfilePage({
     };
 
     fetchUsername();
-  }, [wallet, traderData]);
+  }, [wallet]); // FIXED: Removed traderData from dependencies to prevent infinite loop
 
   // Check if user is following this trader
   useEffect(() => {
@@ -200,15 +202,19 @@ export default function TraderProfilePage({
         console.log('✅ Fetched', tradesData.length, 'trades from Polymarket');
 
         // Format trades for display
-        const formattedTrades: Trade[] = tradesData.map((trade: any) => ({
-          timestamp: trade.timestamp,
-          market: trade.title || trade.market?.title || trade.marketTitle || 'Unknown Market',
-          side: trade.side || 'BUY',
-          outcome: trade.outcome || trade.option || '',
-          size: parseFloat(trade.size || 0),
-          price: parseFloat(trade.price || 0),
-          timeAgo: getRelativeTime(trade.timestamp),
-        }));
+        const formattedTrades: Trade[] = tradesData.map((trade: any) => {
+          return {
+            timestamp: trade.timestamp,
+            market: trade.title || trade.market?.title || trade.marketTitle || 'Unknown Market',
+            side: trade.side || 'BUY',
+            outcome: trade.outcome || trade.option || '',
+            size: parseFloat(trade.size || 0),
+            price: parseFloat(trade.price || 0),
+            timeAgo: getRelativeTime(trade.timestamp),
+            marketSlug: trade.slug || trade.market?.slug || trade.marketSlug || '',
+            conditionId: trade.conditionId || trade.condition_id || trade.asset_id || '',
+          };
+        });
 
         setTrades(formattedTrades);
         console.log('✅ Formatted', formattedTrades.length, 'trades for display');
@@ -536,48 +542,85 @@ export default function TraderProfilePage({
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="text-left py-3 px-4 text-xs font-bold text-slate-600 uppercase tracking-wider">Time</th>
-                    <th className="text-left py-3 px-4 text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
-                    <th className="text-center py-3 px-4 text-xs font-bold text-slate-600 uppercase tracking-wider">Side</th>
-                    <th className="text-right py-3 px-4 text-xs font-bold text-slate-600 uppercase tracking-wider">Size</th>
-                    <th className="text-right py-3 px-4 text-xs font-bold text-slate-600 uppercase tracking-wider">Price</th>
+                    <th className="text-left py-3 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider">Time</th>
+                    <th className="text-left py-3 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
+                    <th className="text-center py-3 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider">Side</th>
+                    <th className="text-right py-3 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider hidden sm:table-cell">Size</th>
+                    <th className="text-right py-3 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider hidden sm:table-cell">Price</th>
+                    <th className="text-right py-3 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {trades.map((trade, index) => (
-                    <tr 
-                      key={`${trade.timestamp}-${index}`}
-                      className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
-                    >
-                      <td className="py-4 px-4">
-                        <span className="text-sm text-slate-500">{trade.timeAgo}</span>
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className="text-sm text-slate-900 font-medium line-clamp-1">
-                          {trade.market}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 text-center">
-                        <span className={`inline-flex items-center px-3 py-1 rounded text-xs font-bold ${
-                          ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {trade.outcome.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        <span className="text-sm font-semibold text-slate-900">
-                          ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        <span className="text-sm text-slate-600">
-                          ${trade.price.toFixed(2)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {trades.map((trade, index) => {
+                    // Generate Polymarket link with multiple fallback strategies
+                    let polymarketUrl = 'https://polymarket.com';
+                    
+                    if (trade.marketSlug) {
+                      // Try event URL with slug
+                      polymarketUrl = `https://polymarket.com/event/${trade.marketSlug}?utm_source=polycopy&utm_medium=copy_trade&utm_campaign=trader_profile`;
+                    } else if (trade.conditionId) {
+                      // Try condition ID
+                      polymarketUrl = `https://polymarket.com/market/${trade.conditionId}?utm_source=polycopy&utm_medium=copy_trade&utm_campaign=trader_profile`;
+                    } else if (trade.market) {
+                      // Fallback: Use search with market title
+                      polymarketUrl = `https://polymarket.com/search?q=${encodeURIComponent(trade.market)}`;
+                    }
+
+                    return (
+                      <tr 
+                        key={`${trade.timestamp}-${index}`}
+                        className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                      >
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className="text-sm text-slate-500">{trade.timeAgo}</span>
+                        </td>
+                        
+                        {/* Market column - allow wrapping on mobile */}
+                        <td className="py-3 px-3">
+                          <div className="text-sm text-slate-900 font-medium line-clamp-2 sm:line-clamp-1">
+                            {trade.market}
+                          </div>
+                        </td>
+                        
+                        <td className="py-3 px-3 text-center">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
+                            ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {trade.outcome.toUpperCase()}
+                          </span>
+                        </td>
+                        
+                        <td className="py-3 px-3 text-right hidden sm:table-cell">
+                          <span className="text-sm font-semibold text-slate-900">
+                            ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </span>
+                        </td>
+                        
+                        <td className="py-3 px-3 text-right hidden sm:table-cell">
+                          <span className="text-sm text-slate-600">
+                            ${trade.price.toFixed(2)}
+                          </span>
+                        </td>
+                        
+                        {/* Copy Trade button column */}
+                        <td className="py-3 px-3 text-right">
+                          <a
+                            href={polymarketUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-lg bg-[#FDB022] px-3 py-1.5 text-xs font-bold text-slate-900 hover:bg-[#F59E0B] transition-colors"
+                          >
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                            </svg>
+                            <span className="hidden sm:inline">Copy</span>
+                          </a>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
