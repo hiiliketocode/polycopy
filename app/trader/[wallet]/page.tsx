@@ -494,7 +494,7 @@ export default function TraderProfilePage({
             <div>
               <div className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-2">ROI</div>
               <div className={`text-2xl font-bold ${
-                parseFloat(roi) >= 0 ? 'text-emerald-600' : 'text-red-500'
+                parseFloat(String(roi)) >= 0 ? 'text-emerald-600' : 'text-red-500'
               }`}>
                 {traderData.roiFormatted || roi}%
               </div>
