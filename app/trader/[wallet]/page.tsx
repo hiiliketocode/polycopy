@@ -539,15 +539,15 @@ export default function TraderProfilePage({
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="text-left py-3 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider">Time</th>
-                    <th className="text-left py-3 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
-                    <th className="text-center py-3 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider">Side</th>
-                    <th className="text-right py-3 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider hidden sm:table-cell">Size</th>
-                    <th className="text-right py-3 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider hidden sm:table-cell">Price</th>
-                    <th className="text-right py-3 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider">Action</th>
+              <table className="w-full min-w-[640px]">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-24">Time</th>
+                    <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-80">Market</th>
+                    <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-20">Side</th>
+                    <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-20">Size</th>
+                    <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-20">Price</th>
+                    <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-24">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -575,14 +575,14 @@ export default function TraderProfilePage({
                           <span className="text-sm text-slate-500">{trade.timeAgo}</span>
                         </td>
                         
-                        {/* Market column - allow wrapping on mobile */}
+                        {/* Market column - full text visible with horizontal scroll */}
                         <td className="py-3 px-3">
-                          <div className="text-sm text-slate-900 font-medium line-clamp-2 sm:line-clamp-1">
+                          <div className="text-sm text-slate-900 font-medium">
                             {trade.market}
                           </div>
                         </td>
                         
-                        <td className="py-3 px-3 text-center">
+                        <td className="py-3 px-3 text-left">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
                             ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
                               ? 'bg-emerald-100 text-emerald-800'
@@ -592,13 +592,13 @@ export default function TraderProfilePage({
                           </span>
                         </td>
                         
-                        <td className="py-3 px-3 text-right hidden sm:table-cell">
+                        <td className="py-3 px-3 text-right">
                           <span className="text-sm font-semibold text-slate-900">
                             ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </span>
                         </td>
                         
-                        <td className="py-3 px-3 text-right hidden sm:table-cell">
+                        <td className="py-3 px-3 text-right">
                           <span className="text-sm text-slate-600">
                             ${trade.price.toFixed(2)}
                           </span>
