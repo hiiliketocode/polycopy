@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export default function Header() {
   const router = useRouter();
@@ -52,12 +53,28 @@ export default function Header() {
       <div className="flex h-14 items-center justify-between px-4 max-w-7xl mx-auto">
         {/* Left: Logo + Desktop Nav */}
         <div className="flex items-center gap-6">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded bg-slate-900 text-brand-yellow flex items-center justify-center font-bold text-xl">
-              P
-            </div>
-            <span className="text-lg font-bold tracking-tight text-slate-900">Polycopy</span>
+          {/* Desktop Logo - Full logo with text */}
+          <Link href="/" className="hidden md:flex items-center">
+            <Image 
+              src="/logos/polycopy-logo-primary.svg"
+              alt="Polycopy"
+              width={500}
+              height={150}
+              priority
+              className="h-8 w-auto"
+            />
+          </Link>
+
+          {/* Mobile Logo - Icon only */}
+          <Link href="/" className="md:hidden flex items-center">
+            <Image 
+              src="/logos/polycopy-logo-icon.svg"
+              alt="Polycopy"
+              width={100}
+              height={100}
+              priority
+              className="h-8 w-8"
+            />
           </Link>
           
           {/* Desktop Navigation - hidden on mobile */}
@@ -70,8 +87,8 @@ export default function Header() {
                   href={item.href}
                   className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                     active
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+                      ? 'bg-[#0F0F0F] text-white'
+                      : 'text-[#0F0F0F] hover:bg-slate-50'
                   }`}
                 >
                   {item.label}
@@ -102,7 +119,7 @@ export default function Header() {
               {/* Avatar */}
               <Link href="/profile">
                 <div className="h-8 w-8 rounded-full bg-[#FDB022] ring-2 ring-white shadow-sm cursor-pointer hover:opacity-90 transition-opacity flex items-center justify-center">
-                  <span className="text-sm font-bold text-slate-900">
+                  <span className="text-sm font-bold text-[#0F0F0F]">
                     {user.email?.charAt(0).toUpperCase() || 'U'}
                   </span>
                 </div>
@@ -111,7 +128,7 @@ export default function Header() {
           ) : (
             <button
               onClick={() => router.push('/login')}
-              className="text-sm font-medium text-slate-900 hover:text-slate-600 transition-colors"
+              className="text-sm font-medium text-[#0F0F0F] hover:text-slate-600 transition-colors"
             >
               Sign in →
             </button>

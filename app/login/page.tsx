@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import Image from 'next/image';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -45,18 +46,25 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-secondary flex items-center justify-center px-4 py-8">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
         {/* Logo/Header */}
-        <div className="bg-primary rounded-2xl p-8 text-center mb-8 shadow-lg">
-          <h1 className="text-4xl font-bold text-tertiary mb-2">Polycopy</h1>
-          <p className="text-tertiary text-sm">Follow the best Polymarket traders</p>
+        <div className="flex flex-col items-center mb-8">
+          <Image 
+            src="/logos/polycopy-logo-primary.svg"
+            alt="Polycopy"
+            width={500}
+            height={150}
+            priority
+            className="h-12 w-auto mb-3"
+          />
+          <p className="text-slate-600 text-center">Copy the best Polymarket traders</p>
         </div>
 
         {/* Login Form Card */}
-        <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100">
-          <h2 className="text-2xl font-bold text-tertiary mb-2">Welcome back</h2>
-          <p className="text-gray-600 mb-6">Sign in to your account</p>
+        <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
+          <h2 className="text-2xl font-bold text-[#0F0F0F] mb-2">Welcome back</h2>
+          <p className="text-slate-600 mb-6">Sign in to your account</p>
 
           {/* Success Message */}
           {success && (
@@ -96,7 +104,7 @@ export default function LoginPage() {
           {/* Form */}
           <form onSubmit={handleSubmit}>
             <div className="mb-6">
-              <label htmlFor="email" className="block text-sm font-medium text-tertiary mb-2">
+              <label htmlFor="email" className="block text-sm font-medium text-[#0F0F0F] mb-2">
                 Email address
               </label>
               <input
@@ -107,14 +115,14 @@ export default function LoginPage() {
                 placeholder="your@email.com"
                 required
                 disabled={loading || success}
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed text-tertiary"
+                className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022] transition-all duration-200 disabled:bg-slate-100 disabled:cursor-not-allowed text-[#0F0F0F]"
               />
             </div>
 
             <button
               type="submit"
               disabled={loading || success}
-              className="w-full bg-primary text-tertiary font-semibold py-3 px-4 rounded-xl hover:bg-yellow-400 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+              className="w-full bg-[#FDB022] text-[#0F0F0F] font-bold py-3 px-4 rounded-xl hover:bg-[#F59E0B] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md border-b-4 border-[#D97706] active:border-b-0 active:translate-y-1"
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -145,7 +153,7 @@ export default function LoginPage() {
           </form>
 
           {/* Footer Text */}
-          <p className="text-center text-sm text-gray-500 mt-6">
+          <p className="text-center text-sm text-slate-500 mt-6">
             By signing in, you agree to our Terms of Service and Privacy Policy
           </p>
         </div>
