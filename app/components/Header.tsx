@@ -53,8 +53,8 @@ export default function Header() {
       <div className="flex h-14 items-center justify-between px-4 max-w-7xl mx-auto">
         {/* Left: Logo + Desktop Nav */}
         <div className="flex items-center gap-6">
-          {/* Desktop Logo - Full logo with text */}
-          <Link href="/" className="hidden md:flex items-center">
+          {/* Logo - Full logo for all screen sizes */}
+          <Link href="/" className="flex items-center">
             <Image 
               src="/logos/polycopy-logo-primary.svg"
               alt="Polycopy"
@@ -62,18 +62,6 @@ export default function Header() {
               height={150}
               priority
               className="h-8 w-auto"
-            />
-          </Link>
-
-          {/* Mobile Logo - Icon only */}
-          <Link href="/" className="md:hidden flex items-center">
-            <Image 
-              src="/logos/polycopy-logo-icon.svg"
-              alt="Polycopy"
-              width={100}
-              height={100}
-              priority
-              className="h-8 w-8"
             />
           </Link>
           
