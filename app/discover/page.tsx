@@ -538,7 +538,16 @@ export default function DiscoverPage() {
                             {featuredTrader.wallet.slice(2, 4).toUpperCase()}
                           </div>
                           <div>
-                            <div className="font-bold text-slate-900">{featuredTraderStats.displayName}</div>
+                            <div className="font-bold text-slate-900">
+                              {(() => {
+                                const name = featuredTraderStats.displayName || featuredTrader.wallet;
+                                // If it's a wallet address (starts with 0x and is long), truncate it
+                                if (name?.startsWith('0x') && name.length > 15) {
+                                  return `${name.slice(0, 6)}...${name.slice(-4)}`;
+                                }
+                                return name;
+                              })()}
+                            </div>
                             <div className="text-sm text-slate-500 font-mono">
                               {featuredTrader.wallet.slice(0, 6)}...{featuredTrader.wallet.slice(-4)}
                             </div>
