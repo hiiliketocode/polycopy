@@ -487,28 +487,57 @@ export default function TraderProfilePage({
             </button>
           </div>
 
-          {/* Stats Grid - 3 columns like Polymarket */}
-          <div className="grid grid-cols-3 gap-6">
-            <div>
-              <div className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-2">Total P&L</div>
-              <div className={`text-2xl font-bold ${
+          {/* Stats Grid - Desktop: 3 separate cards, Mobile: Combined card */}
+          <div className="hidden md:grid grid-cols-3 gap-6">
+            {/* Desktop Stat Cards - Reduced padding to p-5 */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+              <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">TOTAL P&L</div>
+              <div className={`text-3xl font-bold ${
                 traderData.pnl >= 0 ? 'text-emerald-600' : 'text-red-500'
               }`}>
                 {formatPnL(traderData.pnl)}
               </div>
             </div>
-            <div>
-              <div className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-2">ROI</div>
-              <div className={`text-2xl font-bold ${
+            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+              <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">ROI</div>
+              <div className={`text-3xl font-bold ${
                 parseFloat(String(roi)) >= 0 ? 'text-emerald-600' : 'text-red-500'
               }`}>
                 {traderData.roiFormatted || roi}%
               </div>
             </div>
-            <div>
-              <div className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-2">Volume</div>
-              <div className="text-2xl font-bold text-slate-900">
+            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+              <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">VOLUME</div>
+              <div className="text-3xl font-bold text-slate-900">
                 {formatVolume(traderData.volume)}
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile: Combined stat card - 3 columns in one card */}
+          <div className="md:hidden bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <div className="text-xs text-slate-500 uppercase mb-1">P&L</div>
+                <div className={`text-lg font-bold ${
+                  traderData.pnl >= 0 ? 'text-emerald-600' : 'text-red-500'
+                }`}>
+                  {formatPnL(traderData.pnl)}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 uppercase mb-1">ROI</div>
+                <div className={`text-lg font-bold ${
+                  parseFloat(String(roi)) >= 0 ? 'text-emerald-600' : 'text-red-500'
+                }`}>
+                  {traderData.roiFormatted || roi}%
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 uppercase mb-1">Volume</div>
+                <div className="text-lg font-bold text-slate-900">
+                  {formatVolume(traderData.volume)}
+                </div>
               </div>
             </div>
           </div>
@@ -517,117 +546,189 @@ export default function TraderProfilePage({
 
       {/* Recent Trades Section */}
       <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-          <h3 className="text-xl font-bold text-slate-900 mb-6">
-            Recent Trades
-          </h3>
-          
-          {loadingTrades ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-brand-yellow mx-auto mb-4"></div>
-              <p className="text-slate-500">Loading trades...</p>
-            </div>
-          ) : trades.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">📊</div>
-              <p className="text-slate-600 text-lg font-medium mb-2">
-                No recent trades found
-              </p>
-              <p className="text-slate-500 text-sm">
-                This trader hasn't made any trades recently
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px]">
-                <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-24">Time</th>
-                    <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-80">Market</th>
-                    <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-20">Side</th>
-                    <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-20">Size</th>
-                    <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-20">Price</th>
-                    <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-24">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trades.map((trade, index) => {
-                    // Generate Polymarket link with multiple fallback strategies
-                    let polymarketUrl = 'https://polymarket.com';
-                    
-                    if (trade.marketSlug) {
-                      // Try event URL with slug
-                      polymarketUrl = `https://polymarket.com/event/${trade.marketSlug}?utm_source=polycopy&utm_medium=copy_trade&utm_campaign=trader_profile`;
-                    } else if (trade.conditionId) {
-                      // Try condition ID
-                      polymarketUrl = `https://polymarket.com/market/${trade.conditionId}?utm_source=polycopy&utm_medium=copy_trade&utm_campaign=trader_profile`;
-                    } else if (trade.market) {
-                      // Fallback: Use search with market title
-                      polymarketUrl = `https://polymarket.com/search?q=${encodeURIComponent(trade.market)}`;
-                    }
+        <h3 className="text-xl font-bold text-slate-900 mb-6">
+          Recent Trades
+        </h3>
+        
+        {loadingTrades ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-brand-yellow mx-auto mb-4"></div>
+            <p className="text-slate-500">Loading trades...</p>
+          </div>
+        ) : trades.length === 0 ? (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
+            <div className="text-6xl mb-4">📊</div>
+            <p className="text-slate-600 text-lg font-medium mb-2">
+              No recent trades found
+            </p>
+            <p className="text-slate-500 text-sm">
+              This trader hasn't made any trades recently
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Desktop: Table View */}
+            <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-slate-50 border-b-2 border-slate-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Time</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Side</th>
+                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Size</th>
+                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Price</th>
+                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {trades.map((trade, index) => {
+                      // Generate Polymarket link with multiple fallback strategies
+                      let polymarketUrl = 'https://polymarket.com';
+                      
+                      if (trade.marketSlug) {
+                        // Try event URL with slug
+                        polymarketUrl = `https://polymarket.com/event/${trade.marketSlug}?utm_source=polycopy&utm_medium=copy_trade&utm_campaign=trader_profile`;
+                      } else if (trade.conditionId) {
+                        // Try condition ID
+                        polymarketUrl = `https://polymarket.com/market/${trade.conditionId}?utm_source=polycopy&utm_medium=copy_trade&utm_campaign=trader_profile`;
+                      } else if (trade.market) {
+                        // Fallback: Use search with market title
+                        polymarketUrl = `https://polymarket.com/search?q=${encodeURIComponent(trade.market)}`;
+                      }
 
-                    return (
-                      <tr 
-                        key={`${trade.timestamp}-${index}`}
-                        className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
-                      >
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <span className="text-sm text-slate-500">{trade.timeAgo}</span>
-                        </td>
-                        
-                        {/* Market column - full text visible with horizontal scroll */}
-                        <td className="py-3 px-3">
-                          <div className="text-sm text-slate-900 font-medium">
-                            {trade.market}
-                          </div>
-                        </td>
-                        
-                        <td className="py-3 px-3 text-left">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
-                            ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {trade.outcome.toUpperCase()}
-                          </span>
-                        </td>
-                        
-                        <td className="py-3 px-3 text-right">
-                          <span className="text-sm font-semibold text-slate-900">
-                            ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </span>
-                        </td>
-                        
-                        <td className="py-3 px-3 text-right">
-                          <span className="text-sm text-slate-600">
-                            ${trade.price.toFixed(2)}
-                          </span>
-                        </td>
-                        
-                        {/* Copy Trade button column */}
-                        <td className="py-3 px-3 text-right">
-                          <a
-                            href={polymarketUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 rounded-lg bg-[#FDB022] px-3 py-1.5 text-xs font-bold text-slate-900 hover:bg-[#F59E0B] transition-colors"
-                          >
-                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
-                            </svg>
-                            <span className="hidden sm:inline">Copy</span>
-                          </a>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                      return (
+                        <tr 
+                          key={`${trade.timestamp}-${index}`}
+                          className="hover:bg-slate-50 transition-colors"
+                        >
+                          <td className="py-4 px-4 whitespace-nowrap">
+                            <span className="text-sm text-slate-500">{trade.timeAgo}</span>
+                          </td>
+                          
+                          <td className="py-4 px-4">
+                            <div className="text-sm text-slate-900 font-medium">
+                              {trade.market}
+                            </div>
+                          </td>
+                          
+                          <td className="py-4 px-4">
+                            <span className={`badge ${
+                              ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
+                                ? 'badge-yes'
+                                : 'badge-no'
+                            }`}>
+                              {trade.outcome.toUpperCase()}
+                            </span>
+                          </td>
+                          
+                          <td className="py-4 px-4 text-right">
+                            <span className="text-sm font-semibold text-slate-900">
+                              ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            </span>
+                          </td>
+                          
+                          <td className="py-4 px-4 text-right">
+                            <span className="text-sm font-semibold text-slate-900">
+                              ${trade.price.toFixed(2)}
+                            </span>
+                          </td>
+                          
+                          <td className="py-4 px-4 text-right">
+                            <a
+                              href={polymarketUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                            >
+                              <span>Copy</span>
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </a>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          )}
-        </div>
+
+            {/* Mobile: Card-Based View */}
+            <div className="md:hidden space-y-4">
+              {trades.map((trade, index) => {
+                // Generate Polymarket link
+                let polymarketUrl = 'https://polymarket.com';
+                
+                if (trade.marketSlug) {
+                  polymarketUrl = `https://polymarket.com/event/${trade.marketSlug}?utm_source=polycopy&utm_medium=copy_trade&utm_campaign=trader_profile`;
+                } else if (trade.conditionId) {
+                  polymarketUrl = `https://polymarket.com/market/${trade.conditionId}?utm_source=polycopy&utm_medium=copy_trade&utm_campaign=trader_profile`;
+                } else if (trade.market) {
+                  polymarketUrl = `https://polymarket.com/search?q=${encodeURIComponent(trade.market)}`;
+                }
+
+                return (
+                  <div key={`${trade.timestamp}-${index}`} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                    {/* Header: Time + Side Badge */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-sm text-slate-500">{trade.timeAgo}</div>
+                      <span className={`badge ${
+                        ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
+                          ? 'badge-yes'
+                          : 'badge-no'
+                      }`}>
+                        {trade.outcome.toUpperCase()}
+                      </span>
+                    </div>
+                    
+                    {/* Market Name */}
+                    <div className="font-semibold text-base text-slate-900 mb-3 leading-tight">
+                      {trade.market}
+                    </div>
+                    
+                    {/* Trade Details Grid */}
+                    <div className="bg-slate-50 rounded-xl p-4 mb-3">
+                      <div className="grid grid-cols-3 gap-4 text-center">
+                        <div>
+                          <div className="text-xs text-slate-500 mb-1">Size</div>
+                          <div className="font-semibold text-slate-900">
+                            ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-500 mb-1">Price</div>
+                          <div className="font-semibold text-slate-900">${trade.price.toFixed(2)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-500 mb-1">Total</div>
+                          <div className="font-semibold text-slate-900">
+                            ${(trade.size * trade.price).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Copy Button */}
+                    <a
+                      href={polymarketUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-primary w-full flex items-center justify-center gap-2"
+                    >
+                      <span>Copy Trade</span>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
-

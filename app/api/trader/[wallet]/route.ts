@@ -27,26 +27,26 @@ export async function GET(
     try {
       console.log('🔍 Looking up username for wallet:', wallet);
       
-      // Use leaderboard API to find username (same as Feed page)
+      // Use the v1 leaderboard API which has better data
       const leaderboardResponse = await fetch(
-        'https://data-api.polymarket.com/leaderboards/pnl?start_date=2000-01-01',
+        'https://data-api.polymarket.com/v1/leaderboard?timePeriod=month&orderBy=PNL&limit=500',
         { cache: 'no-store' }
       );
       
       if (leaderboardResponse.ok) {
         const leaderboardData = await leaderboardResponse.json();
-        console.log('✅ Leaderboard data fetched');
+        console.log('✅ Leaderboard data fetched:', leaderboardData?.length || 0, 'traders');
         
-        // Find this trader in the leaderboard
+        // Find this trader in the leaderboard by proxyWallet
         const trader = leaderboardData?.find(
-          (t: any) => t.user?.toLowerCase() === wallet.toLowerCase()
+          (t: any) => t.proxyWallet?.toLowerCase() === wallet.toLowerCase()
         );
         
         if (trader && trader.userName) {
           displayName = trader.userName;
-          console.log('✅ Found username:', displayName);
+          console.log('✅ Found username:', displayName, 'for wallet:', wallet.slice(0, 10) + '...');
         } else {
-          console.log('⚠️ Wallet not found in leaderboard, using abbreviated wallet');
+          console.log('⚠️ Wallet not found in leaderboard top 500, using abbreviated wallet');
         }
       } else {
         console.log('⚠️ Leaderboard request failed:', leaderboardResponse.status);
@@ -95,6 +95,7 @@ export async function GET(
         wallet,
         displayName,
         pnl: 0,
+        roi: 0,
         volume: 0,
         followerCount,
       })
@@ -111,10 +112,14 @@ export async function GET(
       totalVolume += size
     })
 
+    // Calculate ROI
+    const roi = totalVolume > 0 ? ((totalPnl / totalVolume) * 100) : 0
+
     return NextResponse.json({
       wallet,
       displayName,
       pnl: Math.round(totalPnl), // Round to whole number
+      roi: parseFloat(roi.toFixed(1)), // ROI as percentage with 1 decimal
       volume: Math.round(totalVolume), // Round to whole number
       followerCount,
     })

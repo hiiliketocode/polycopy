@@ -355,22 +355,24 @@ export default function TraderCard({
       ) : (
         // Full mode - Polymarket-style layout for Discover page
         <>
-          {/* Top Row: Avatar + Name + Follow Button */}
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex items-center gap-3">
-              {/* Avatar with ring */}
+          {/* Top Row: Avatar + Name + Follow Button - Fixed for long usernames */}
+          <div className="flex items-center justify-between mb-3 gap-2">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              {/* Avatar - don't let it shrink */}
               <div
                 className="h-12 w-12 rounded-full ring-2 ring-white shadow-sm flex items-center justify-center text-white font-bold text-lg flex-shrink-0"
                 style={{ backgroundColor: avatarColor }}
               >
                 {initials}
               </div>
-              <div>
+              
+              {/* Name - allow truncation */}
+              <div className="min-w-0 flex-1">
                 <h3 
-                  className="font-bold text-slate-900 group-hover:text-slate-700 transition-colors"
+                  className="font-bold text-slate-900 group-hover:text-slate-700 transition-colors truncate"
                   title={displayName}
                 >
-                  {truncateName(displayName, 25)}
+                  {displayName}
                 </h3>
                 <span className="text-xs font-medium text-slate-500">
                   {followerCount.toLocaleString()} {followerCount === 1 ? 'copier' : 'copiers'}
@@ -378,11 +380,11 @@ export default function TraderCard({
               </div>
             </div>
             
-            {/* Follow Button - Polymarket style */}
+            {/* Follow Button - never wrap or shrink */}
             <button
               onClick={handleFollowToggle}
               disabled={loading || checkingFollow}
-              className={`rounded-full px-4 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`flex-shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                 following
                   ? 'border border-slate-300 text-slate-700 hover:bg-slate-50'
                   : 'border border-[#FDB022] text-slate-900 hover:bg-yellow-50'
