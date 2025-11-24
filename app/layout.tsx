@@ -10,8 +10,31 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Polycopy - Follow Polymarket Traders",
-  description: "Track and follow the best Polymarket traders",
+  title: 'Polycopy - Copy Trades from Top Polymarket Traders',
+  description: 'Discover and copy trades from the best prediction market traders on Polymarket. Follow top performers and replicate their strategies.',
+  metadataBase: new URL('https://polycopy.app'),
+  openGraph: {
+    title: 'Polycopy - Copy Trades from Top Polymarket Traders',
+    description: 'Discover and copy trades from the best prediction market traders on Polymarket. Follow top performers and replicate their strategies.',
+    url: 'https://polycopy.app',
+    siteName: 'Polycopy',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'Polycopy - Copy Trading Platform',
+      },
+    ],
+    locale: 'en_US',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Polycopy - Copy Trades from Top Polymarket Traders',
+    description: 'Discover and copy trades from the best prediction market traders on Polymarket.',
+    images: ['/og-image.png'],
+  },
 };
 
 export default function RootLayout({
