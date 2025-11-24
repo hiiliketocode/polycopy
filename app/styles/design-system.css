@@ -1,0 +1,473 @@
+/* 
+ * Polycopy Design System
+ * Foundational styles from Figma specs
+ */
+
+/* ===========================
+   COLOR VARIABLES
+   =========================== */
+
+:root {
+  /* Brand Colors */
+  --yellow-primary: #FDB022;
+  --yellow-dark: #E69E1A;
+  --yellow-light: #FECB5E;
+  
+  /* Semantic Colors */
+  --success: #10B981;  /* Buy/Yes */
+  --error: #EF4444;    /* Sell/No */
+  --info: #3B82F6;
+  --warning: #F59E0B;
+  
+  /* Neutral Palette */
+  --neutral-50: #FAFAFA;
+  --neutral-200: #E5E5E5;
+  --neutral-400: #A3A3A3;
+  --neutral-600: #525252;
+  --neutral-900: #000000;
+  
+  /* Spacing Scale (8px grid system) */
+  --spacing-1: 0.5rem;   /* 8px */
+  --spacing-2: 1rem;     /* 16px */
+  --spacing-3: 1.5rem;   /* 24px */
+  --spacing-4: 2rem;     /* 32px */
+  --spacing-5: 2.5rem;   /* 40px */
+  --spacing-6: 3rem;     /* 48px */
+  
+  /* Border Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+  --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* ===========================
+   TYPOGRAPHY
+   =========================== */
+
+.text-h1 {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.text-h2 {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.text-h3 {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.text-body {
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.text-small {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.text-micro {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.text-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ===========================
+   BUTTONS
+   =========================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 15px;
+  padding: 12px 24px;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  text-decoration: none;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Primary Button (Yellow) */
+.btn-primary {
+  background: var(--yellow-primary);
+  color: var(--neutral-900);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--yellow-dark);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Secondary Button (Black) */
+.btn-secondary {
+  background: var(--neutral-900);
+  color: #fff;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--neutral-600);
+  transform: translateY(-1px);
+}
+
+/* Outline Button */
+.btn-outline {
+  background: transparent;
+  border: 2px solid var(--neutral-200);
+  color: var(--neutral-900);
+}
+
+.btn-outline:hover:not(:disabled) {
+  border-color: var(--neutral-400);
+  background: var(--neutral-50);
+}
+
+/* Success Button (Buy/Yes) */
+.btn-success {
+  background: var(--success);
+  color: #fff;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #059669;
+  transform: translateY(-1px);
+}
+
+/* Error Button (Sell/No) */
+.btn-error {
+  background: var(--error);
+  color: #fff;
+}
+
+.btn-error:hover:not(:disabled) {
+  background: #DC2626;
+  transform: translateY(-1px);
+}
+
+/* Button Sizes */
+.btn-sm {
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+.btn-lg {
+  padding: 16px 32px;
+  font-size: 16px;
+}
+
+/* ===========================
+   BADGES
+   =========================== */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.badge-yes,
+.badge-buy {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.badge-no,
+.badge-sell {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+}
+
+.badge-info {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--info);
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--warning);
+}
+
+.badge-neutral {
+  background: var(--neutral-50);
+  color: var(--neutral-600);
+}
+
+/* ===========================
+   CARDS
+   =========================== */
+
+.card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-3);
+  transition: all 0.2s ease;
+}
+
+.card-hover:hover {
+  border-color: var(--yellow-primary);
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
+}
+
+.stat-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-3);
+  transition: all 0.2s ease;
+}
+
+.stat-card:hover {
+  border-color: var(--yellow-primary);
+  box-shadow: var(--shadow-hover);
+}
+
+.trader-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-3);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.trader-card:hover {
+  border-color: var(--yellow-primary);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+/* ===========================
+   STATS & METRICS
+   =========================== */
+
+.stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--neutral-400);
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--neutral-900);
+}
+
+.stat-value-positive {
+  color: var(--success);
+}
+
+.stat-value-negative {
+  color: var(--error);
+}
+
+/* ===========================
+   FORMS
+   =========================== */
+
+.input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid var(--neutral-200);
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  transition: all 0.15s ease;
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--yellow-primary);
+  box-shadow: 0 0 0 3px rgba(253, 176, 34, 0.1);
+}
+
+.input:disabled {
+  background: var(--neutral-50);
+  cursor: not-allowed;
+}
+
+.input-error {
+  border-color: var(--error);
+}
+
+.input-error:focus {
+  border-color: var(--error);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+/* ===========================
+   UTILITY CLASSES
+   =========================== */
+
+/* Text Colors */
+.text-success { color: var(--success); }
+.text-error { color: var(--error); }
+.text-info { color: var(--info); }
+.text-warning { color: var(--warning); }
+.text-neutral { color: var(--neutral-600); }
+.text-muted { color: var(--neutral-400); }
+
+/* Background Colors */
+.bg-primary { background: var(--yellow-primary); }
+.bg-success { background: var(--success); }
+.bg-error { background: var(--error); }
+.bg-neutral { background: var(--neutral-50); }
+
+/* Spacing Utilities */
+.p-1 { padding: var(--spacing-1); }
+.p-2 { padding: var(--spacing-2); }
+.p-3 { padding: var(--spacing-3); }
+.p-4 { padding: var(--spacing-4); }
+
+.m-1 { margin: var(--spacing-1); }
+.m-2 { margin: var(--spacing-2); }
+.m-3 { margin: var(--spacing-3); }
+.m-4 { margin: var(--spacing-4); }
+
+/* Border Utilities */
+.border-primary { border-color: var(--yellow-primary); }
+.border-neutral { border-color: var(--neutral-200); }
+
+/* Shadow Utilities */
+.shadow-sm { box-shadow: var(--shadow-sm); }
+.shadow-md { box-shadow: var(--shadow-md); }
+.shadow-lg { box-shadow: var(--shadow-lg); }
+
+/* Hover Effects */
+.hover-lift:hover {
+  transform: translateY(-2px);
+  transition: transform 0.2s ease;
+}
+
+.hover-grow:hover {
+  transform: scale(1.02);
+  transition: transform 0.2s ease;
+}
+
+/* ===========================
+   ANIMATIONS
+   =========================== */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ===========================
+   RESPONSIVE BREAKPOINTS
+   =========================== */
+
+/* Mobile First Approach */
+/* Default styles for mobile (< 768px) */
+
+/* Tablet (768px and up) */
+@media (min-width: 768px) {
+  .text-h1 {
+    font-size: 40px;
+  }
+  
+  .text-h2 {
+    font-size: 28px;
+  }
+  
+  .text-h3 {
+    font-size: 22px;
+  }
+}
+
+/* Desktop (1024px and up) */
+@media (min-width: 1024px) {
+  .text-h1 {
+    font-size: 48px;
+  }
+  
+  .text-h2 {
+    font-size: 32px;
+  }
+}
+

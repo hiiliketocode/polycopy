@@ -288,166 +288,255 @@ export default function ProfilePage() {
       <Header />
 
       {/* Main Content */}
-      <div className="max-w-2xl mx-auto px-4 md:px-8 py-8">
-        <h1 className="text-3xl font-bold text-slate-900 mb-6">Your Profile</h1>
+      <div className="max-w-4xl mx-auto px-4 md:px-8 py-6 md:py-8">
+        {/* Desktop Title */}
+        <h1 className="hidden md:block text-h1 mb-6">Your Profile</h1>
         
-        {/* User Info Card */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 md:p-8 mb-6">
-          {/* Profile Header Section */}
-          <div className="mb-6 pb-6 border-b border-slate-100">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center text-brand-yellow font-bold text-2xl">
+        {/* Mobile Header Section */}
+        <div className="md:hidden mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              {/* Large Avatar - Mobile */}
+              <div className="w-20 h-20 bg-[#FDB022] rounded-full flex items-center justify-center text-[#0F0F0F] font-bold text-3xl shadow-sm">
                 {displayName[0].toUpperCase()}
               </div>
               <div>
                 <p className="text-xl font-bold text-slate-900">{displayName}</p>
-                <p className="text-sm text-slate-500">Polycopy Member</p>
+                {walletAddress && (
+                  <p className="text-sm text-slate-500 font-mono">{abbreviateWallet(walletAddress)}</p>
+                )}
+                <p className="text-xs text-slate-500 mt-1">0 followers</p>
               </div>
             </div>
+            {/* Settings Gear - Mobile */}
+            <button 
+              className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+              onClick={() => {/* Add settings handler */}}
+            >
+              <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          </div>
+        </div>
 
-            {/* Wallet Connection Under Profile */}
-            {walletAddress ? (
-              <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-emerald-600 font-bold">✓</span>
-                    <span className="text-sm font-semibold text-emerald-700">
-                      {polymarketUsername ? `@${polymarketUsername}` : 'Polymarket Connected'}
-                    </span>
-                  </div>
-                  <button
-                    onClick={handleDisconnectWallet}
-                    disabled={savingConnection}
-                    className="text-xs text-emerald-600 hover:text-emerald-800 underline"
-                  >
-                    Disconnect
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-emerald-700">
-                  <span className="font-mono">{abbreviateWallet(walletAddress)}</span>
-                  <button
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(walletAddress);
-                      } catch (err) {
-                        console.error('Failed to copy:', err);
-                      }
-                    }}
-                    className="hover:text-emerald-900"
-                    title="Copy full address"
-                  >
-                    📋
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={handleConnectWallet}
-                className="w-full bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 py-3 px-4 rounded-xl font-bold shadow-sm transition-all duration-200 border-b-4 border-[#D97706] active:border-b-0 active:translate-y-1 flex items-center justify-center gap-2"
-              >
-                <span>🔗</span>
-                <span>Connect Polymarket Account</span>
-              </button>
-            )}
+        {/* Desktop Profile Card */}
+        <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
+          <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-100">
+            <div className="w-16 h-16 bg-[#FDB022] rounded-full flex items-center justify-center text-[#0F0F0F] font-bold text-2xl shadow-sm">
+              {displayName[0].toUpperCase()}
+            </div>
+            <div className="flex-1">
+              <p className="text-xl font-bold text-slate-900">{displayName}</p>
+              <p className="text-sm text-slate-500">Polycopy Member</p>
+            </div>
           </div>
 
-          {/* Stats Section */}
-          <div className="mb-6 pb-6 border-b border-slate-100">
-            <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">YOUR STATS</h2>
-            {loadingStats ? (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-slate-100 animate-pulse p-4 rounded-xl h-20"></div>
-                <div className="bg-slate-100 animate-pulse p-4 rounded-xl h-20"></div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                <Link
-                  href="/following"
-                  className="bg-[#FDB022] hover:bg-[#F59E0B] p-4 rounded-xl text-center shadow-sm transition-all duration-200 border-b-4 border-[#D97706] active:border-b-0 active:translate-y-1 group"
+          {/* Desktop Wallet Connection */}
+          {walletAddress ? (
+            <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-sm font-semibold text-emerald-700">
+                    {polymarketUsername ? `@${polymarketUsername}` : 'Polymarket Connected'}
+                  </span>
+                </div>
+                <button
+                  onClick={handleDisconnectWallet}
+                  disabled={savingConnection}
+                  className="text-xs text-emerald-600 hover:text-emerald-800 underline font-medium"
                 >
-                  <div className="text-2xl font-bold text-slate-900 mb-1 group-hover:scale-110 transition-transform">
-                    {followingCount}
-                  </div>
-                  <div className="text-[10px] font-bold text-slate-900 uppercase tracking-wider">FOLLOWING</div>
-                </Link>
-                <div className="bg-slate-50 p-4 rounded-xl text-center border border-slate-200 shadow-sm">
-                  <div className="text-2xl font-bold text-slate-400 mb-1">0</div>
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">FOLLOWERS</div>
-                </div>
+                  Disconnect
+                </button>
               </div>
-            )}
-          </div>
+              <div className="flex items-center gap-2 text-xs text-emerald-700">
+                <span className="font-mono">{abbreviateWallet(walletAddress)}</span>
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(walletAddress);
+                    } catch (err) {
+                      console.error('Failed to copy:', err);
+                    }
+                  }}
+                  className="hover:text-emerald-900"
+                  title="Copy full address"
+                >
+                  📋
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={handleConnectWallet}
+              className="btn btn-primary w-full"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span className="ml-2">Connect Polymarket Account</span>
+            </button>
+          )}
+        </div>
 
-          {/* Trading Performance Section */}
-          {walletAddress && (
-            <div className="mb-6 pb-6 border-b border-slate-100">
-              <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-4">YOUR PERFORMANCE</h2>
+        {/* Mobile Wallet Connection Card */}
+        <div className="md:hidden mb-6">
+          {walletAddress ? (
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <div className="font-semibold text-slate-900">Polymarket Connected</div>
+                  <div className="text-sm text-slate-500 font-mono">{abbreviateWallet(walletAddress)}</div>
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(walletAddress);
+                    } catch (err) {
+                      console.error('Failed to copy:', err);
+                    }
+                  }}
+                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={handleConnectWallet}
+              className="btn btn-primary w-full"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span className="ml-2">Connect Polymarket Account</span>
+            </button>
+          )}
+        </div>
+
+        {/* Your Stats Section */}
+        <div className="mb-6">
+          <h2 className="text-label text-slate-400 mb-4">YOUR STATS</h2>
+          {loadingStats ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-100 animate-pulse p-6 rounded-2xl h-32"></div>
+              <div className="bg-slate-100 animate-pulse p-6 rounded-2xl h-32"></div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              {/* Following Card */}
+              <Link
+                href="/discover"
+                className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:shadow-md hover:border-[#FDB022] transition-all"
+              >
+                <div className="stat-label mb-2">FOLLOWING</div>
+                <div className="stat-value mb-2">{followingCount}</div>
+                <div className="text-small text-slate-500">Traders you're copying</div>
+              </Link>
               
-              {/* Coming Soon Placeholder */}
-              <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-6 border border-slate-200 shadow-sm">
-                <div className="text-center mb-4">
-                  <div className="text-3xl mb-2">📊</div>
-                  <h3 className="text-lg font-bold text-slate-700 mb-1">Coming Soon</h3>
-                  <p className="text-sm text-slate-500">Your trading stats will appear here soon</p>
-                </div>
-                
-                <div className="grid grid-cols-4 gap-3 mb-4">
-                  <div className="text-center opacity-50">
-                    <div className="text-xl font-bold text-slate-400">--</div>
-                    <div className="text-[10px] text-slate-500 mt-1 font-bold uppercase tracking-wider">P&L</div>
-                  </div>
-                  <div className="text-center opacity-50">
-                    <div className="text-xl font-bold text-slate-400">--</div>
-                    <div className="text-[10px] text-slate-500 mt-1 font-bold uppercase tracking-wider">ROI</div>
-                  </div>
-                  <div className="text-center opacity-50">
-                    <div className="text-xl font-bold text-slate-400">--</div>
-                    <div className="text-[10px] text-slate-500 mt-1 font-bold uppercase tracking-wider">VOLUME</div>
-                  </div>
-                  <div className="text-center opacity-50">
-                    <div className="text-xl font-bold text-slate-400">--</div>
-                    <div className="text-[10px] text-slate-500 mt-1 font-bold uppercase tracking-wider">PREDICTIONS</div>
-                  </div>
-                </div>
-                
-                <div className="text-center pt-3 border-t border-slate-300">
-                  <p className="text-xs text-slate-400">
-                    💡 We're working on bringing you detailed trading stats
-                  </p>
-                </div>
+              {/* Followers Card */}
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                <div className="stat-label mb-2">FOLLOWERS</div>
+                <div className="text-3xl font-bold text-slate-400 mb-2">0</div>
+                <div className="text-small text-slate-500">People copying you</div>
               </div>
             </div>
           )}
+        </div>
 
-          {/* Quick Links */}
+        {/* Your Performance Section */}
+        {walletAddress && (
           <div className="mb-6">
-            <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">QUICK LINKS</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <Link
-                href="/"
-                className="bg-slate-50 hover:bg-slate-100 border border-slate-200 shadow-sm p-4 rounded-xl text-center transition-all duration-200"
-              >
-                <div className="text-xl mb-1">📋</div>
-                <div className="text-sm font-medium text-slate-900">Your Feed</div>
-              </Link>
-              <Link
-                href="/discover"
-                className="bg-slate-50 hover:bg-slate-100 border border-slate-200 shadow-sm p-4 rounded-xl text-center transition-all duration-200"
-              >
-                <div className="text-xl mb-1">🔍</div>
-                <div className="text-sm font-medium text-slate-900">Discover Traders</div>
-              </Link>
+            <h2 className="text-label text-slate-400 mb-4">YOUR PERFORMANCE</h2>
+            
+            {/* Coming Soon Card */}
+            <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-6 md:p-8 border border-slate-200 shadow-sm">
+              <div className="text-center mb-6">
+                <div className="text-4xl mb-3">📊</div>
+                <h3 className="text-h3 text-slate-700 mb-2">Coming Soon</h3>
+                <p className="text-body text-slate-500">Your trading stats will appear here soon</p>
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="text-center opacity-50">
+                  <div className="text-2xl font-bold text-slate-400">--</div>
+                  <div className="stat-label text-slate-500 mt-2">P&L</div>
+                </div>
+                <div className="text-center opacity-50">
+                  <div className="text-2xl font-bold text-slate-400">--</div>
+                  <div className="stat-label text-slate-500 mt-2">ROI</div>
+                </div>
+                <div className="text-center opacity-50">
+                  <div className="text-2xl font-bold text-slate-400">--</div>
+                  <div className="stat-label text-slate-500 mt-2">VOLUME</div>
+                </div>
+                <div className="text-center opacity-50">
+                  <div className="text-2xl font-bold text-slate-400">--</div>
+                  <div className="stat-label text-slate-500 mt-2">PREDICTIONS</div>
+                </div>
+              </div>
+              
+              <div className="text-center pt-4 border-t border-slate-300">
+                <p className="text-small text-slate-400">
+                  💡 We're working on bringing you detailed trading stats
+                </p>
+              </div>
             </div>
           </div>
+        )}
 
-          {/* Logout Button */}
-          <button
-            onClick={handleLogout}
-            className="w-full bg-red-50 hover:bg-red-100 text-red-600 py-3 px-6 rounded-xl font-bold transition-all duration-200 ring-1 ring-red-200"
-          >
-            Sign Out
-          </button>
+        {/* Settings Section */}
+        <div className="mb-6">
+          <h2 className="text-label text-slate-400 mb-4">SETTINGS</h2>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            {/* Contact Us / Help & Support */}
+            <a
+              href="https://twitter.com/polycopyapp"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors cursor-pointer group"
+            >
+              <div className="flex items-center gap-3">
+                {/* Twitter/X icon */}
+                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center group-hover:bg-[#FDB022]/10 transition-colors">
+                  <svg className="w-5 h-5 text-slate-600 group-hover:text-[#FDB022] transition-colors" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                  </svg>
+                </div>
+                
+                <div>
+                  <p className="font-semibold text-slate-900">Help & Support</p>
+                  <p className="text-small text-slate-500">Get help on X @polycopyapp</p>
+                </div>
+              </div>
+              
+              {/* External link icon */}
+              <svg className="w-5 h-5 text-slate-400 group-hover:text-slate-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          </div>
         </div>
+
+        {/* Logout Button */}
+        <button
+          onClick={handleLogout}
+          className="w-full bg-red-50 hover:bg-red-100 text-red-600 py-4 px-6 rounded-2xl font-bold transition-all duration-200 border border-red-200 shadow-sm"
+        >
+          Sign Out
+        </button>
       </div>
 
       {/* Connection Modal */}
