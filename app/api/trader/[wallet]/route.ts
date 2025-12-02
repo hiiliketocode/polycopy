@@ -7,6 +7,16 @@ interface Position {
   [key: string]: any;
 }
 
+interface LeaderboardTrader {
+  proxyWallet: string;
+  userName?: string;
+  pnl?: number;
+  vol?: number; // Field is "vol" not "volume"
+  rank?: string;
+  profileImage?: string;
+  [key: string]: any;
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ wallet: string }> }
@@ -21,54 +31,101 @@ export async function GET(
   }
 
   try {
-    // Fetch username from leaderboard (SAME AS FEED PAGE)
+    // Initialize with defaults
     let displayName = abbreviateWallet(wallet)
+    let pnl = 0
+    let volume = 0
+    let roi = 0
+    let foundInLeaderboard = false
     
+    // STEP 1: Try to get data from leaderboard (PRIMARY SOURCE - matches Polymarket's official stats)
     try {
-      console.log('🔍 Looking up username for wallet:', wallet);
+      console.log('🔍 Looking up trader in leaderboard:', wallet);
       
-      // Use the v1 leaderboard API which has better data
       const leaderboardResponse = await fetch(
         'https://data-api.polymarket.com/v1/leaderboard?timePeriod=month&orderBy=PNL&limit=500',
         { cache: 'no-store' }
       );
       
       if (leaderboardResponse.ok) {
-        const leaderboardData = await leaderboardResponse.json();
+        const leaderboardData: LeaderboardTrader[] = await leaderboardResponse.json();
         console.log('✅ Leaderboard data fetched:', leaderboardData?.length || 0, 'traders');
         
         // Find this trader in the leaderboard by proxyWallet
         const trader = leaderboardData?.find(
-          (t: any) => t.proxyWallet?.toLowerCase() === wallet.toLowerCase()
+          (t) => t.proxyWallet?.toLowerCase() === wallet.toLowerCase()
         );
         
-        if (trader && trader.userName) {
-          displayName = trader.userName;
-          console.log('✅ Found username:', displayName, 'for wallet:', wallet.slice(0, 10) + '...');
+        if (trader) {
+          foundInLeaderboard = true;
+          
+          // Use leaderboard data directly - this is Polymarket's official monthly stats
+          // API returns: { rank, proxyWallet, userName, vol, pnl, profileImage, ... }
+          if (trader.userName) {
+            displayName = trader.userName;
+          }
+          pnl = trader.pnl || 0;
+          volume = trader.vol || 0; // Field is "vol" not "volume"
+          roi = volume > 0 ? ((pnl / volume) * 100) : 0;
+          
+          console.log('✅ Found in leaderboard:', {
+            displayName,
+            pnl: Math.round(pnl),
+            volume: Math.round(volume),
+            roi: roi.toFixed(1) + '%'
+          });
         } else {
-          console.log('⚠️ Wallet not found in leaderboard top 500, using abbreviated wallet');
+          console.log('⚠️ Wallet not in top 500 leaderboard, will fall back to positions');
         }
       } else {
         console.log('⚠️ Leaderboard request failed:', leaderboardResponse.status);
       }
     } catch (err) {
-      console.log('⚠️ Could not fetch username from leaderboard:', err);
-      // Continue with abbreviated wallet if leaderboard fetch fails
+      console.log('⚠️ Could not fetch leaderboard:', err);
     }
 
-    // Fetch positions from Polymarket API
-    const response = await fetch(
-      `https://data-api.polymarket.com/positions?user=${wallet}`,
-      { cache: 'no-store' } // Disable caching for real-time data
-    )
+    // STEP 2: Fall back to positions endpoint ONLY if not found in leaderboard
+    if (!foundInLeaderboard) {
+      console.log('📊 Fetching positions as fallback for:', wallet);
+      
+      try {
+        const response = await fetch(
+          `https://data-api.polymarket.com/positions?user=${wallet}`,
+          { cache: 'no-store' }
+        );
 
-    if (!response.ok) {
-      throw new Error(`Polymarket API returned ${response.status}`)
+        if (response.ok) {
+          const positions: Position[] = await response.json();
+          
+          if (positions && positions.length > 0) {
+            let totalPnl = 0;
+            let totalVolume = 0;
+
+            positions.forEach((position) => {
+              const positionPnl = parseFloat(String(position.cashPnl || 0));
+              const size = parseFloat(String(position.size || 0));
+              totalPnl += positionPnl;
+              totalVolume += size;
+            });
+
+            pnl = totalPnl;
+            volume = totalVolume;
+            roi = totalVolume > 0 ? ((totalPnl / totalVolume) * 100) : 0;
+            
+            console.log('📊 Positions fallback data:', {
+              pnl: Math.round(pnl),
+              volume: Math.round(volume),
+              roi: roi.toFixed(1) + '%',
+              positionCount: positions.length
+            });
+          }
+        }
+      } catch (err) {
+        console.log('⚠️ Could not fetch positions:', err);
+      }
     }
 
-    const positions: Position[] = await response.json()
-
-    // Count followers from Supabase
+    // STEP 3: Count followers from Supabase
     let followerCount = 0
     try {
       const supabase = createClient(
@@ -86,42 +143,17 @@ export async function GET(
       }
     } catch (err) {
       console.error('Error counting followers:', err)
-      // Don't fail the request if follower count fails
     }
 
-    // If no positions, return zeros
-    if (!positions || positions.length === 0) {
-      return NextResponse.json({
-        wallet,
-        displayName,
-        pnl: 0,
-        roi: 0,
-        volume: 0,
-        followerCount,
-      })
-    }
-
-    // Calculate statistics
-    let totalPnl = 0
-    let totalVolume = 0
-
-    positions.forEach((position) => {
-      const pnl = parseFloat(String(position.cashPnl || 0))
-      const size = parseFloat(String(position.size || 0))
-      totalPnl += pnl
-      totalVolume += size
-    })
-
-    // Calculate ROI
-    const roi = totalVolume > 0 ? ((totalPnl / totalVolume) * 100) : 0
-
+    // Return the data
     return NextResponse.json({
       wallet,
       displayName,
-      pnl: Math.round(totalPnl), // Round to whole number
-      roi: parseFloat(roi.toFixed(1)), // ROI as percentage with 1 decimal
-      volume: Math.round(totalVolume), // Round to whole number
+      pnl: Math.round(pnl),
+      roi: parseFloat(roi.toFixed(1)),
+      volume: Math.round(volume),
       followerCount,
+      source: foundInLeaderboard ? 'leaderboard' : 'positions', // Debug: shows which data source was used
     })
 
   } catch (error) {
