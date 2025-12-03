@@ -174,11 +174,42 @@ export async function GET(
             if (market.closed || market.resolved) {
               marketResolved = true
               
-              // Get the winning outcome
+              // Get the winning outcome - try multiple methods
               if (market.winningOutcome) {
                 resolvedOutcome = market.winningOutcome
               } else if (market.resolutionSource) {
                 resolvedOutcome = market.resolutionSource
+              } else {
+                // Determine winner from outcome prices
+                // When a market resolves, winning outcome goes to $1.00, losers to $0
+                try {
+                  let outcomes = market.outcomes
+                  let prices = market.outcomePrices
+                  
+                  // Parse if they're strings
+                  if (typeof outcomes === 'string') {
+                    outcomes = JSON.parse(outcomes)
+                  }
+                  if (typeof prices === 'string') {
+                    prices = JSON.parse(prices)
+                  }
+                  
+                  if (outcomes && prices && Array.isArray(outcomes) && Array.isArray(prices)) {
+                    // Find the outcome with price closest to 1.00 (the winner)
+                    const priceNumbers = prices.map((p: any) => parseFloat(String(p)))
+                    const maxPrice = Math.max(...priceNumbers)
+                    
+                    // Only consider it resolved with a winner if one outcome is very close to $1
+                    if (maxPrice >= 0.95) {
+                      const winningIndex = priceNumbers.indexOf(maxPrice)
+                      if (winningIndex >= 0 && winningIndex < outcomes.length) {
+                        resolvedOutcome = outcomes[winningIndex]
+                      }
+                    }
+                  }
+                } catch (parseErr) {
+                  console.error('Error parsing outcomes for resolution:', parseErr)
+                }
               }
             }
             
