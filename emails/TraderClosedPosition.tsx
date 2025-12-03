@@ -10,6 +10,8 @@ import {
   Section,
   Text,
   Hr,
+  Row,
+  Column,
 } from '@react-email/components'
 
 interface TraderClosedPositionEmailProps {
@@ -27,7 +29,6 @@ interface TraderClosedPositionEmailProps {
 }
 
 export default function TraderClosedPositionEmail({
-  userName,
   traderUsername,
   marketTitle,
   outcome,
@@ -40,7 +41,6 @@ export default function TraderClosedPositionEmail({
   unsubscribeUrl,
 }: TraderClosedPositionEmailProps) {
   const formatPrice = (price: number) => {
-    // Display as cents (e.g., 58¢)
     const cents = Math.round(price * 100)
     return `${cents}¢`
   }
@@ -48,13 +48,13 @@ export default function TraderClosedPositionEmail({
   return (
     <Html>
       <Head />
-      <Preview>🔔 {traderUsername} closed their position on "{marketTitle}"</Preview>
+      <Preview>{traderUsername} closed their position on "{marketTitle}"</Preview>
       <Body style={main}>
         <Container style={container}>
           {/* Logo */}
           <Section style={logoSection}>
             <Img
-              src="https://polycopy.app/polycopy-logo-primary.png"
+              src="https://polycopy.app/logo.png"
               width="120"
               height="auto"
               alt="Polycopy"
@@ -62,15 +62,12 @@ export default function TraderClosedPositionEmail({
             />
           </Section>
 
-          {/* Header Banner */}
+          {/* Header Banner - Always Yellow */}
           <Section style={headerBanner}>
-            <Text style={headerEmoji}>🔔</Text>
             <Heading style={h1}>Trader Closed Position</Heading>
           </Section>
           
           <Section style={contentSection}>
-            <Text style={greeting}>Hi {userName},</Text>
-            
             <Text style={text}>
               The trader you copied has <strong>closed their position</strong>. 
               You may want to review and decide if you want to hold or exit.
@@ -92,44 +89,46 @@ export default function TraderClosedPositionEmail({
               </Section>
             </Section>
             
-            {/* Price & ROI Grid */}
-            <Section style={statsGrid}>
-              <Section style={statBox}>
-                <Text style={statLabel}>Your Entry</Text>
-                <Text style={statValue}>{formatPrice(userEntryPrice)}</Text>
-              </Section>
-              
-              <Section style={statBox}>
-                <Text style={statLabel}>Trader Exit</Text>
-                <Text style={statValue}>{formatPrice(traderExitPrice)}</Text>
-              </Section>
-              
-              <Section style={statBox}>
-                <Text style={statLabel}>Your ROI</Text>
-                <Text style={{
-                  ...statValueLarge,
-                  color: userROI >= 0 ? '#10b981' : '#ef4444',
-                }}>
-                  {userROI >= 0 ? '+' : ''}{userROI.toFixed(1)}%
-                </Text>
-              </Section>
-              
-              <Section style={statBox}>
-                <Text style={statLabel}>Trader ROI</Text>
-                <Text style={{
-                  ...statValue,
-                  color: traderROI >= 0 ? '#10b981' : '#ef4444',
-                }}>
-                  {traderROI >= 0 ? '+' : ''}{traderROI.toFixed(1)}%
-                </Text>
-              </Section>
-            </Section>
-            
-            {/* Action Notice */}
-            <Section style={noticeBox}>
-              <Text style={noticeText}>
-                💡 The market is still active. You can continue to hold your position or close it on Polymarket.
-              </Text>
+            {/* Stats Grid - 2x2 with proper spacing */}
+            <Section style={statsContainer}>
+              <Row style={statsRow}>
+                <Column style={statColumn}>
+                  <Section style={statBox}>
+                    <Text style={statLabel}>Your Entry</Text>
+                    <Text style={statValue}>{formatPrice(userEntryPrice)}</Text>
+                  </Section>
+                </Column>
+                <Column style={statColumn}>
+                  <Section style={statBox}>
+                    <Text style={statLabel}>Trader Exit</Text>
+                    <Text style={statValue}>{formatPrice(traderExitPrice)}</Text>
+                  </Section>
+                </Column>
+              </Row>
+              <Row style={statsRow}>
+                <Column style={statColumn}>
+                  <Section style={statBoxHighlight}>
+                    <Text style={statLabel}>Your ROI</Text>
+                    <Text style={{
+                      ...statValueLarge,
+                      color: userROI >= 0 ? '#10b981' : '#ef4444',
+                    }}>
+                      {userROI >= 0 ? '+' : ''}{userROI.toFixed(1)}%
+                    </Text>
+                  </Section>
+                </Column>
+                <Column style={statColumn}>
+                  <Section style={statBox}>
+                    <Text style={statLabel}>Trader ROI</Text>
+                    <Text style={{
+                      ...statValue,
+                      color: traderROI >= 0 ? '#10b981' : '#ef4444',
+                    }}>
+                      {traderROI >= 0 ? '+' : ''}{traderROI.toFixed(1)}%
+                    </Text>
+                  </Section>
+                </Column>
+              </Row>
             </Section>
             
             {/* Buttons */}
@@ -139,7 +138,7 @@ export default function TraderClosedPositionEmail({
               </Link>
             </Section>
             
-            <Section style={buttonContainer}>
+            <Section style={buttonContainerSecondary}>
               <Link href={polymarketUrl} style={secondaryButton}>
                 View on Polymarket →
               </Link>
@@ -151,7 +150,7 @@ export default function TraderClosedPositionEmail({
           
           <Section style={footerSection}>
             <Text style={footerText}>
-              You received this email because you have notifications enabled for copied trades.
+              You received this email because you have notifications enabled for copied trades on Polycopy.
             </Text>
             <Link href={unsubscribeUrl} style={unsubscribeLink}>
               Unsubscribe from notifications
@@ -167,7 +166,7 @@ export default function TraderClosedPositionEmail({
 const main = {
   backgroundColor: '#f3f4f6',
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-  padding: '40px 0',
+  padding: '40px 20px',
 }
 
 const container = {
@@ -194,11 +193,6 @@ const headerBanner = {
   textAlign: 'center' as const,
 }
 
-const headerEmoji = {
-  fontSize: '32px',
-  margin: '0 0 8px',
-}
-
 const h1 = {
   color: '#000000',
   fontSize: '22px',
@@ -209,13 +203,6 @@ const h1 = {
 
 const contentSection = {
   padding: '32px',
-}
-
-const greeting = {
-  color: '#111827',
-  fontSize: '16px',
-  fontWeight: '600' as const,
-  margin: '0 0 16px',
 }
 
 const text = {
@@ -252,7 +239,7 @@ const marketCard = {
   borderRadius: '12px',
   border: '1px solid #e5e7eb',
   padding: '20px',
-  marginBottom: '16px',
+  marginBottom: '20px',
 }
 
 const sectionLabel = {
@@ -287,61 +274,67 @@ const positionBadge = {
   margin: '0',
 }
 
-const statsGrid = {
-  display: 'flex',
-  flexWrap: 'wrap' as const,
-  gap: '12px',
-  marginBottom: '20px',
+const statsContainer = {
+  marginBottom: '24px',
+}
+
+const statsRow = {
+  marginBottom: '12px',
+}
+
+const statColumn = {
+  width: '50%',
+  paddingLeft: '6px',
+  paddingRight: '6px',
 }
 
 const statBox = {
   backgroundColor: '#f9fafb',
-  borderRadius: '10px',
+  borderRadius: '12px',
   border: '1px solid #e5e7eb',
-  padding: '14px 16px',
-  width: 'calc(50% - 6px)',
-  boxSizing: 'border-box' as const,
+  padding: '16px 20px',
+  textAlign: 'center' as const,
+}
+
+const statBoxHighlight = {
+  backgroundColor: '#fffbeb',
+  borderRadius: '12px',
+  border: '2px solid #FDB022',
+  padding: '16px 20px',
+  textAlign: 'center' as const,
 }
 
 const statLabel = {
   color: '#6b7280',
   fontSize: '12px',
   fontWeight: '500' as const,
-  margin: '0 0 6px',
+  margin: '0 0 8px',
+  textAlign: 'center' as const,
 }
 
 const statValue = {
   color: '#111827',
-  fontSize: '18px',
+  fontSize: '20px',
   fontWeight: '700' as const,
   margin: '0',
+  textAlign: 'center' as const,
 }
 
 const statValueLarge = {
   color: '#111827',
-  fontSize: '20px',
+  fontSize: '22px',
   fontWeight: '700' as const,
   margin: '0',
-}
-
-const noticeBox = {
-  backgroundColor: '#fffbeb',
-  borderRadius: '10px',
-  border: '1px solid #fde68a',
-  padding: '16px',
-  marginBottom: '24px',
-}
-
-const noticeText = {
-  color: '#92400e',
-  fontSize: '14px',
-  lineHeight: '20px',
-  margin: '0',
+  textAlign: 'center' as const,
 }
 
 const buttonContainer = {
   textAlign: 'center' as const,
   marginBottom: '12px',
+}
+
+const buttonContainerSecondary = {
+  textAlign: 'center' as const,
 }
 
 const primaryButton = {
@@ -352,7 +345,7 @@ const primaryButton = {
   fontWeight: '700' as const,
   textDecoration: 'none',
   textAlign: 'center' as const,
-  display: 'inline-block',
+  display: 'block',
   padding: '14px 32px',
   width: '100%',
   boxSizing: 'border-box' as const,

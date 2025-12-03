@@ -145,7 +145,7 @@ export async function GET(request: NextRequest) {
             await resend.emails.send({
               from: 'Polycopy <notifications@polycopy.app>',
               to: profile.email,
-              subject: `🔔 ${trade.trader_username} closed their position`,
+              subject: `${trade.trader_username} closed their position`,
               react: TraderClosedPositionEmail({
                 userName: profile.email.split('@')[0],
                 traderUsername: trade.trader_username,
@@ -195,7 +195,7 @@ export async function GET(request: NextRequest) {
             await resend.emails.send({
               from: 'Polycopy <notifications@polycopy.app>',
               to: profile.email,
-              subject: `✅ Market Resolved: "${trade.market_title}"`,
+              subject: `Market Resolved: "${trade.market_title}"`,
               react: MarketResolvedEmail({
                 userName: profile.email.split('@')[0],
                 marketTitle: trade.market_title,
