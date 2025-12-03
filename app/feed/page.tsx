@@ -15,6 +15,7 @@ interface FeedTrade {
     displayName: string;
   };
   market: {
+    id?: string;
     title: string;
     slug: string;
     eventSlug?: string;
@@ -32,12 +33,21 @@ interface TradeCardProps {
   traderName: string;
   traderAddress: string;
   market: string;
+  marketId?: string;
   side: string;
   type: 'buy' | 'sell';
   price: number;
   size: number;
   timestamp: number;
+  isCopied: boolean;
   onCopyTrade: () => void;
+  onMarkAsCopied: () => void;
+}
+
+interface CopiedTrade {
+  id: string;
+  market_id: string;
+  trader_wallet: string;
 }
 
 // Helper: Format relative time
@@ -66,12 +76,15 @@ function TradeCard({
   traderName,
   traderAddress,
   market,
+  marketId,
   side,
   type,
   price,
   size,
   timestamp,
+  isCopied,
   onCopyTrade,
+  onMarkAsCopied,
 }: TradeCardProps) {
   const timeAgo = getRelativeTime(timestamp);
   const isYes = ['yes', 'up', 'over'].includes(side.toLowerCase());
@@ -79,8 +92,8 @@ function TradeCard({
   const total = price * size;
 
   return (
-    <div className="bg-white rounded-xl border border-neutral-200 shadow-sm hover:shadow-md transition-all">
-      <div className="p-4">
+    <div className="bg-white rounded-xl border border-neutral-200 shadow-sm hover:shadow-md transition-all w-full max-w-full overflow-hidden">
+      <div className="p-4 w-full">
         {/* Header: Trader info + Timestamp */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2.5">
@@ -113,8 +126,8 @@ function TradeCard({
         </div>
 
         {/* Market question */}
-        <div className="mb-3">
-          <p className="text-neutral-900 leading-snug mb-2">{market}</p>
+        <div className="mb-3 w-full">
+          <p className="text-neutral-900 leading-snug mb-2 break-words">{market}</p>
           <div className="flex items-center gap-2">
             <span className={`badge ${isYes ? 'badge-yes' : 'badge-no'}`}>
               {side.toUpperCase()}
@@ -157,13 +170,212 @@ function TradeCard({
           </div>
         </div>
         
-        {/* Copy Trade button */}
-        <button
-          onClick={onCopyTrade}
-          className="w-full bg-[#FDB022] hover:bg-[#E69E1A] text-neutral-900 font-semibold py-2.5 rounded-lg transition-colors"
+        {/* Buttons */}
+        <div className="flex gap-2">
+          {/* Copy Trade button - opens Polymarket */}
+          <button
+            onClick={onCopyTrade}
+            className="flex-1 bg-[#FDB022] hover:bg-[#E69E1A] text-neutral-900 font-semibold py-2.5 rounded-lg transition-colors"
+          >
+            Copy Trade
+          </button>
+          
+          {/* Mark as Copied button */}
+          <button
+            onClick={onMarkAsCopied}
+            disabled={isCopied}
+            className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              isCopied
+                ? 'bg-[#10B981] text-white font-bold cursor-not-allowed shadow-[0_0_12px_rgba(16,185,129,0.4)]'
+                : 'bg-[#FDB022] hover:bg-[#E69E1A] text-black font-semibold'
+            }`}
+          >
+            {isCopied ? (
+              <>
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                </svg>
+                <span className="text-base">Copied</span>
+              </>
+            ) : (
+              <span>Mark as Copied</span>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Confirmation Modal Component
+interface ConfirmModalProps {
+  isOpen: boolean;
+  trade: FeedTrade | null;
+  onClose: () => void;
+  onConfirm: (entryPrice: number, amountInvested?: number) => void;
+  isSubmitting: boolean;
+}
+
+function ConfirmModal({ isOpen, trade, onClose, onConfirm, isSubmitting }: ConfirmModalProps) {
+  const [entryPrice, setEntryPrice] = useState<string>('');
+  const [amountInvested, setAmountInvested] = useState<string>('');
+
+  // Pre-fill entry price when trade changes (in dollars)
+  useEffect(() => {
+    if (trade) {
+      // Convert to dollars with 2 decimal places
+      setEntryPrice(trade.trade.price.toFixed(2));
+    }
+  }, [trade]);
+
+  if (!isOpen || !trade) return null;
+
+  const handleConfirm = () => {
+    // Entry price is already in dollars
+    const price = entryPrice ? parseFloat(entryPrice) : trade.trade.price;
+    const amount = amountInvested ? parseFloat(amountInvested) : undefined;
+    onConfirm(price, amount);
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  return (
+    <div 
+      className="fixed inset-0 z-50 bg-black/60 overflow-hidden"
+      onClick={handleBackdropClick}
+    >
+      <div className="h-full w-full overflow-y-auto flex items-center justify-center p-4">
+        <div 
+          className="w-full max-w-md bg-white rounded-2xl shadow-xl mx-auto"
+          onClick={(e) => e.stopPropagation()}
         >
-          Copy Trade
-        </button>
+          <div className="p-6 max-h-[85vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-neutral-900">Mark Trade as Copied</h3>
+              <button 
+                onClick={onClose}
+                className="text-neutral-400 hover:text-neutral-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Trade Details */}
+            <div className="bg-neutral-50 rounded-xl p-3 sm:p-4 mb-4">
+              <p className="text-sm text-neutral-600 mb-1">Market</p>
+              <p className="font-medium text-neutral-900 mb-3 text-sm sm:text-base break-words">{trade.market.title}</p>
+              
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm text-neutral-600 mb-1">Trader</p>
+                  <p className="font-medium text-neutral-900 text-sm sm:text-base truncate">{trade.trader.displayName}</p>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-neutral-600 mb-1">Position</p>
+                  <p className="font-medium text-neutral-900 text-sm sm:text-base">
+                    <span className={trade.trade.outcome.toUpperCase() === 'YES' ? 'text-[#10B981]' : 'text-[#EF4444]'}>
+                      {trade.trade.outcome.toUpperCase()}
+                    </span>
+                    {' '}at {Math.round(trade.trade.price * 100)}¢
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Entry Price Input */}
+            <div className="mb-4 w-full">
+              <label className="block w-full text-sm font-medium text-neutral-700 mb-2">
+                Your entry price <span className="text-red-500">*</span>
+              </label>
+              <div className="relative w-full">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
+                <input
+                  type="number"
+                  value={entryPrice}
+                  onChange={(e) => setEntryPrice(e.target.value)}
+                  placeholder="0.58"
+                  min="0.01"
+                  max="0.99"
+                  step="0.01"
+                  className="w-full pl-8 pr-4 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
+                />
+              </div>
+              <p className="text-xs text-neutral-500 mt-1">
+                The price you bought/sold at (trader's price: ${trade.trade.price.toFixed(2)})
+              </p>
+            </div>
+
+            {/* Amount Input */}
+            <div className="mb-6 w-full">
+              <label className="block w-full text-sm font-medium text-neutral-700 mb-2">
+                Amount invested (optional)
+              </label>
+              <div className="relative w-full">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
+                <input
+                  type="number"
+                  value={amountInvested}
+                  onChange={(e) => setAmountInvested(e.target.value)}
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                  className="w-full pl-8 pr-4 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
+                />
+              </div>
+              <p className="text-xs text-neutral-500 mt-1">
+                Track how much you invested to calculate your ROI later
+              </p>
+            </div>
+
+            {/* Buttons */}
+            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 w-full">
+              <button
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="w-full sm:flex-1 py-2.5 px-4 border border-neutral-300 rounded-lg font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={isSubmitting}
+                className="w-full sm:flex-1 py-2.5 px-4 bg-[#FDB022] hover:bg-[#E69E1A] rounded-lg font-semibold text-neutral-900 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-neutral-900/30 border-t-neutral-900 rounded-full animate-spin"></div>
+                    Saving...
+                  </>
+                ) : (
+                  'Confirm'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Success Toast Component
+function SuccessToast({ message, isVisible }: { message: string; isVisible: boolean }) {
+  if (!isVisible) return null;
+  
+  return (
+    <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
+      <div className="bg-neutral-900 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2">
+        <svg className="w-5 h-5 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+        </svg>
+        <span>{message}</span>
       </div>
     </div>
   );
@@ -185,6 +397,19 @@ export default function FeedPage() {
   // Stats
   const [todayVolume, setTodayVolume] = useState(0);
   const [todaysTradeCount, setTodaysTradeCount] = useState(0);
+
+  // Copied trades state
+  const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
+  const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(false);
+
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedTrade, setSelectedTrade] = useState<FeedTrade | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Toast state
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
   // Auth check
   useEffect(() => {
@@ -212,6 +437,31 @@ export default function FeedPage() {
 
     return () => subscription.unsubscribe();
   }, [router]);
+
+  // Fetch copied trades when user is available
+  useEffect(() => {
+    if (!user) return;
+    
+    const fetchCopiedTrades = async () => {
+      setLoadingCopiedTrades(true);
+      try {
+        const response = await fetch(`/api/copied-trades?userId=${user.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          const copiedIds = new Set<string>(
+            data.trades?.map((t: CopiedTrade) => `${t.market_id}-${t.trader_wallet}`) || []
+          );
+          setCopiedTradeIds(copiedIds);
+        }
+      } catch (err) {
+        console.error('Error fetching copied trades:', err);
+      } finally {
+        setLoadingCopiedTrades(false);
+      }
+    };
+
+    fetchCopiedTrades();
+  }, [user]);
 
   // Fetch feed data
   useEffect(() => {
@@ -305,6 +555,7 @@ export default function FeedPage() {
               displayName: displayName,
             },
             market: {
+              id: trade.market_slug || trade.asset_id || trade.conditionId || trade.id || '',
               title: trade.market || trade.title || 'Unknown Market',
               slug: trade.market_slug || trade.slug || '',
               eventSlug: trade.eventSlug || trade.event_slug || '',
@@ -354,7 +605,7 @@ export default function FeedPage() {
     return true;
   });
 
-  // Copy trade handler
+  // Copy trade handler - opens Polymarket
   const handleCopyTrade = (trade: FeedTrade) => {
     let url = 'https://polymarket.com';
     
@@ -369,10 +620,93 @@ export default function FeedPage() {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
+  // Mark as copied handler - opens modal
+  const handleMarkAsCopied = (trade: FeedTrade) => {
+    setSelectedTrade(trade);
+    setModalOpen(true);
+  };
+
+  // Confirm mark as copied
+  const handleConfirmCopy = async (entryPrice: number, amountInvested?: number) => {
+    if (!selectedTrade || !user) return;
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch('/api/copied-trades', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          traderWallet: selectedTrade.trader.wallet,
+          traderUsername: selectedTrade.trader.displayName,
+          marketId: selectedTrade.market.id || selectedTrade.market.slug || selectedTrade.market.title,
+          marketTitle: selectedTrade.market.title,
+          outcome: selectedTrade.trade.outcome.toUpperCase(),
+          priceWhenCopied: entryPrice,
+          amountInvested: amountInvested,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save copied trade');
+      }
+
+      const responseData = await response.json();
+      const createdTrade = responseData.trade; // Extract trade from nested response
+
+      if (!createdTrade?.id) {
+        console.error('❌ No trade ID in response');
+        throw new Error('Trade created but no ID returned');
+      }
+
+      // Immediately fetch current price and ROI for the new trade
+      try {
+        const statusUrl = `/api/copied-trades/${createdTrade.id}/status?userId=${user.id}`;
+        const statusResponse = await fetch(statusUrl);
+        
+        if (!statusResponse.ok) {
+          console.error('❌ Initial status fetch failed:', statusResponse.status);
+        }
+      } catch (statusErr: any) {
+        // Non-critical - price will be fetched on next refresh
+        console.error('❌ Status fetch error:', statusErr.message);
+      }
+
+      // Update local state
+      const tradeKey = `${selectedTrade.market.id || selectedTrade.market.slug || selectedTrade.market.title}-${selectedTrade.trader.wallet}`;
+      setCopiedTradeIds(prev => new Set([...prev, tradeKey]));
+
+      // Close modal
+      setModalOpen(false);
+      setSelectedTrade(null);
+
+      // Show success toast
+      setToastMessage('Trade marked as copied!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+
+    } catch (err: any) {
+      console.error('Error saving copied trade:', err);
+      alert(err.message || 'Failed to save copied trade');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Check if a trade is copied
+  const isTradecopied = (trade: FeedTrade): boolean => {
+    const tradeKey = `${trade.market.id || trade.market.slug || trade.market.title}-${trade.trader.wallet}`;
+    return copiedTradeIds.has(tradeKey);
+  };
+
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 pb-20">
+      <div className="min-h-screen bg-slate-50 pb-24 w-full max-w-full overflow-x-hidden">
         <Header />
         <div className="flex items-center justify-center pt-20">
           <div className="text-center">
@@ -385,11 +719,11 @@ export default function FeedPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="min-h-screen bg-slate-50 pb-24 w-full max-w-full overflow-x-hidden">
       <Header />
 
       {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-4 md:px-8 py-4 md:py-6">
+      <div className="w-full max-w-4xl mx-auto px-4 md:px-8 py-4 md:py-6">
         {/* Page Title - Condensed */}
         <div className="mb-4">
           <h1 className="text-2xl font-semibold text-neutral-900">
@@ -526,17 +860,35 @@ export default function FeedPage() {
                 traderName={trade.trader.displayName}
                 traderAddress={trade.trader.wallet}
                 market={trade.market.title}
+                marketId={trade.market.id}
                 side={trade.trade.outcome}
                 type={trade.trade.side === 'BUY' ? 'buy' : 'sell'}
                 price={trade.trade.price}
                 size={trade.trade.size}
                 timestamp={trade.trade.timestamp}
+                isCopied={isTradecopied(trade)}
                 onCopyTrade={() => handleCopyTrade(trade)}
+                onMarkAsCopied={() => handleMarkAsCopied(trade)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={modalOpen}
+        trade={selectedTrade}
+        onClose={() => {
+          setModalOpen(false);
+          setSelectedTrade(null);
+        }}
+        onConfirm={handleConfirmCopy}
+        isSubmitting={isSubmitting}
+      />
+
+      {/* Success Toast */}
+      <SuccessToast message={toastMessage} isVisible={showToast} />
     </div>
   );
 }

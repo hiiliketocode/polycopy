@@ -368,15 +368,15 @@ export default function TraderProfilePage({
       <div className="min-h-screen bg-slate-50 pb-20">
         <Header />
         <div className="max-w-4xl mx-auto px-4 py-8">
-          <Link
-            href="/discover"
+          <button
+            onClick={() => router.back()}
             className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 mb-6 transition-colors"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
             </svg>
-            Back to Discover
-          </Link>
+            Back
+          </button>
           <div className="flex flex-col items-center justify-center py-20 px-4">
             <div className="text-6xl mb-6">😞</div>
             <h2 className="text-2xl font-bold text-slate-900 mb-4">Trader Not Found</h2>
@@ -400,15 +400,15 @@ export default function TraderProfilePage({
       {/* Back Button */}
       <div className="bg-white border-b border-slate-200">
         <div className="max-w-4xl mx-auto px-4 py-3">
-          <Link
-            href="/discover"
+          <button
+            onClick={() => router.back()}
             className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 transition-colors"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
             </svg>
             Back
-          </Link>
+          </button>
         </div>
       </div>
 

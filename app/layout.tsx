@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import "./styles/design-system.css";
@@ -8,6 +8,13 @@ const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
 });
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: 'cover', // Required for safe-area-inset to work on iPhones
+};
 
 export const metadata: Metadata = {
   title: 'Polycopy - Copy Trades from Top Polymarket Traders',
@@ -47,9 +54,9 @@ export default function RootLayout({
       <body
         className={`${inter.variable} font-sans antialiased bg-slate-50`}
       >
-        <div className="pb-20 md:pb-0">
+        <main className="relative min-h-screen w-full max-w-full overflow-x-hidden">
           {children}
-        </div>
+        </main>
         <BottomNav />
       </body>
     </html>
