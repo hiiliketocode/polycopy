@@ -59,6 +59,15 @@ export async function GET(
         if (trader) {
           foundInLeaderboard = true;
           
+          // DEBUG: Log raw trader object to verify field names
+          console.log('🔍 Raw leaderboard trader object:', JSON.stringify({
+            proxyWallet: trader.proxyWallet,
+            userName: trader.userName,
+            pnl: trader.pnl,
+            vol: trader.vol,
+            rank: trader.rank
+          }));
+          
           // Use leaderboard data directly - this is Polymarket's official monthly stats
           // API returns: { rank, proxyWallet, userName, vol, pnl, profileImage, ... }
           if (trader.userName) {

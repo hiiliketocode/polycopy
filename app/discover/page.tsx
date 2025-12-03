@@ -664,7 +664,7 @@ export default function DiscoverPage() {
               </button>
             </div>
             <p className="text-xs text-neutral-500 mt-2 text-center">
-              Enter a full wallet address (e.g., 0x1234...5678)
+              Enter a full wallet address (e.g., 0x1234...5678). Tip: You can copy wallet addresses from the top of Polymarket trader profiles.
             </p>
           </div>
         </div>
