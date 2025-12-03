@@ -50,10 +50,16 @@ export default function LoginPage() {
         {/* Logo/Header */}
         <div className="flex flex-col items-center mb-8">
           <img 
-            src="/logos/polycopy-logo-primary.svg"
+            src="/logos/polycopy-logo-primary.png"
             alt="Polycopy"
+            width={202}
+            height={48}
             className="h-12 w-auto mb-3"
-            style={{ imageRendering: 'crisp-edges' }}
+            style={{ 
+              imageRendering: '-webkit-optimize-contrast',
+              WebkitBackfaceVisibility: 'hidden',
+              backfaceVisibility: 'hidden'
+            }}
           />
           <p className="text-slate-600 text-center">Copy the best Polymarket traders</p>
         </div>

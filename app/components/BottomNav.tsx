@@ -18,20 +18,18 @@ export default function BottomNav() {
 
   return (
     <nav 
-      className="md:hidden fixed bottom-0 left-0 right-0 w-full z-[9999] isolate"
+      className="md:hidden fixed bottom-0 left-0 right-0 w-full z-[9999] bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]"
       style={{ 
-        backgroundColor: 'white',
-        transform: 'translateZ(0)', // Force GPU layer
-        willChange: 'transform'
+        transform: 'translate3d(0, 0, 0)',
+        backfaceVisibility: 'hidden',
+        WebkitBackfaceVisibility: 'hidden',
+        perspective: 1000,
+        WebkitPerspective: 1000
       }}
     >
-      {/* Solid background layer */}
-      <div className="absolute inset-0 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]" />
-      
-      {/* Content layer */}
-      <div className="relative flex items-center justify-around h-16 px-4 pb-safe">
+      <div className="flex items-center justify-around h-16 px-4 pb-safe">
         {/* Feed */}
-        <Link href="/feed" className="relative flex flex-col items-center justify-center flex-1 gap-1 py-2">
+        <Link href="/feed" className="flex flex-col items-center justify-center flex-1 gap-1 py-2">
           <svg 
             className={`h-6 w-6 ${isActive('/feed') ? 'text-[#0F0F0F]' : 'text-slate-400'}`}
             fill="none" 
@@ -46,7 +44,7 @@ export default function BottomNav() {
         </Link>
 
         {/* Discover */}
-        <Link href="/discover" className="relative flex flex-col items-center justify-center flex-1 gap-1 py-2">
+        <Link href="/discover" className="flex flex-col items-center justify-center flex-1 gap-1 py-2">
           <svg 
             className={`h-6 w-6 ${isActive('/discover') ? 'text-[#0F0F0F]' : 'text-slate-400'}`}
             fill="none" 
@@ -61,7 +59,7 @@ export default function BottomNav() {
         </Link>
 
         {/* Profile */}
-        <Link href="/profile" className="relative flex flex-col items-center justify-center flex-1 gap-1 py-2">
+        <Link href="/profile" className="flex flex-col items-center justify-center flex-1 gap-1 py-2">
           <svg 
             className={`h-6 w-6 ${isActive('/profile') ? 'text-[#0F0F0F]' : 'text-slate-400'}`}
             fill="none" 
