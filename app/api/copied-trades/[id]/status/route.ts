@@ -93,6 +93,9 @@ export async function GET(
     let currentPrice: number | null = null
     let roi: number | null = null
     let priceSource: string = 'none'
+    let traderAvgPrice: number | null = null
+    let marketResolved: boolean = trade.market_resolved || false
+    let resolvedOutcome: string | null = null
 
     // STEP 1: Fetch trader's current positions from Polymarket
     try {
@@ -126,6 +129,11 @@ export async function GET(
         if (matchingPosition) {
           traderStillHasPosition = true
           
+          // Capture trader's average price for ROI calculation
+          if (matchingPosition.avgPrice !== undefined && matchingPosition.avgPrice !== null) {
+            traderAvgPrice = parseFloat(String(matchingPosition.avgPrice))
+          }
+          
           // Get current price from position
           if (matchingPosition.curPrice !== undefined && matchingPosition.curPrice !== null) {
             currentPrice = parseFloat(String(matchingPosition.curPrice))
@@ -151,17 +159,31 @@ export async function GET(
       console.error('❌ Error fetching positions:', err.message)
     }
 
-    // STEP 2: If no price from position, try Gamma API
-    if (currentPrice === null) {
-      try {
-        if (trade.market_id && trade.market_id.startsWith('0x')) {
-          const gammaUrl = `https://gamma-api.polymarket.com/markets?condition_id=${trade.market_id}`
-          const marketResponse = await fetch(gammaUrl, { cache: 'no-store' })
-          
-          if (marketResponse.ok) {
-            const markets = await marketResponse.json()
-            if (markets && markets.length > 0) {
-              const market = markets[0]
+    // STEP 2: Try Gamma API for price and market resolution status
+    try {
+      if (trade.market_id && trade.market_id.startsWith('0x')) {
+        const gammaUrl = `https://gamma-api.polymarket.com/markets?condition_id=${trade.market_id}`
+        const marketResponse = await fetch(gammaUrl, { cache: 'no-store' })
+        
+        if (marketResponse.ok) {
+          const markets = await marketResponse.json()
+          if (markets && markets.length > 0) {
+            const market = markets[0]
+            
+            // Check if market is resolved
+            if (market.closed || market.resolved) {
+              marketResolved = true
+              
+              // Get the winning outcome
+              if (market.winningOutcome) {
+                resolvedOutcome = market.winningOutcome
+              } else if (market.resolutionSource) {
+                resolvedOutcome = market.resolutionSource
+              }
+            }
+            
+            // Get price if we don't have one yet
+            if (currentPrice === null) {
               let prices = market.outcomePrices
               let outcomes = market.outcomes
               
@@ -198,9 +220,9 @@ export async function GET(
             }
           }
         }
-      } catch (err: any) {
-        console.error('❌ Gamma API error:', err.message)
       }
+    } catch (err: any) {
+      console.error('❌ Gamma API error:', err.message)
     }
 
     // STEP 3: Fallbacks if still no price
@@ -235,12 +257,18 @@ export async function GET(
     }
 
     // STEP 5: Update the database
-    const updateData = {
+    const updateData: Record<string, any> = {
       trader_still_has_position: traderStillHasPosition,
       trader_closed_at: traderClosedAt,
       current_price: currentPrice,
       roi: roi,
       last_checked_at: new Date().toISOString(),
+      market_resolved: marketResolved,
+    }
+    
+    // Only set resolved_outcome if we have one
+    if (resolvedOutcome) {
+      updateData.resolved_outcome = resolvedOutcome
     }
     
     const { data: updatedTrade, error: updateError } = await supabase
@@ -268,7 +296,17 @@ export async function GET(
         traderStillHasPosition,
         currentPrice,
         roi,
+        traderAvgPrice,
+        marketResolved,
+        resolvedOutcome,
       },
+      // Also expose at top level for easier access by cron
+      traderStillHasPosition,
+      currentPrice,
+      roi,
+      traderAvgPrice,
+      marketResolved,
+      resolvedOutcome,
     })
 
   } catch (error: any) {

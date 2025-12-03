@@ -77,6 +77,10 @@ export default function ProfilePage() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  
+  // Notification preferences state
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [loadingNotificationPrefs, setLoadingNotificationPrefs] = useState(false);
 
   // Check auth status on mount
   useEffect(() => {
@@ -185,6 +189,25 @@ export default function ProfilePage() {
     fetchCopiedTrades();
   }, [user]);
 
+  // Fetch notification preferences when user is available
+  useEffect(() => {
+    if (!user) return;
+    
+    const fetchNotificationPrefs = async () => {
+      try {
+        const response = await fetch(`/api/notification-preferences?userId=${user.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          setNotificationsEnabled(data.email_notifications_enabled ?? true);
+        }
+      } catch (err) {
+        console.error('Error fetching notification preferences:', err);
+      }
+    };
+
+    fetchNotificationPrefs();
+  }, [user]);
+
   // Update display name based on wallet connection
   useEffect(() => {
     const updateDisplayName = async () => {
@@ -251,6 +274,49 @@ export default function ProfilePage() {
     setWalletInput('');
     setConnectionError('');
     setShowWalletModal(true);
+  };
+
+  // Toggle email notifications
+  const handleToggleNotifications = async () => {
+    if (!user || loadingNotificationPrefs) return;
+    
+    const newValue = !notificationsEnabled;
+    setNotificationsEnabled(newValue);
+    setLoadingNotificationPrefs(true);
+    
+    try {
+      const response = await fetch('/api/notification-preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          email_notifications_enabled: newValue
+        })
+      });
+      
+      if (response.ok) {
+        setToastMessage(newValue ? 'Email notifications enabled' : 'Email notifications disabled');
+        setToastType('success');
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+      } else {
+        // Revert on error
+        setNotificationsEnabled(!newValue);
+        setToastMessage('Failed to update notification preferences');
+        setToastType('error');
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+      }
+    } catch (err) {
+      console.error('Error updating notification preferences:', err);
+      setNotificationsEnabled(!newValue);
+      setToastMessage('Failed to update notification preferences');
+      setToastType('error');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } finally {
+      setLoadingNotificationPrefs(false);
+    }
   };
 
   const handleConnect = async () => {
@@ -1007,8 +1073,40 @@ export default function ProfilePage() {
         {/* Settings Section */}
         <div className="mb-6">
           <h2 className="text-label text-slate-400 mb-4">SETTINGS</h2>
+          
+          {/* Email Notifications */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-4">
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-3">
+                {/* Bell icon */}
+                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                </div>
+                
+                <div>
+                  <p className="font-semibold text-slate-900">Email Notifications</p>
+                  <p className="text-small text-slate-500">Get notified when traders close positions or markets resolve</p>
+                </div>
+              </div>
+              
+              {/* Toggle Switch */}
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notificationsEnabled}
+                  onChange={handleToggleNotifications}
+                  disabled={loadingNotificationPrefs}
+                  className="sr-only peer"
+                />
+                <div className={`w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-yellow-300/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#FDB022] ${loadingNotificationPrefs ? 'opacity-50' : ''}`}></div>
+              </label>
+            </div>
+          </div>
+          
+          {/* Help & Support */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            {/* Contact Us / Help & Support */}
             <a
               href="https://twitter.com/polycopyapp"
               target="_blank"
