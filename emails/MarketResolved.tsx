@@ -51,7 +51,7 @@ export default function MarketResolvedEmail({
           {/* Logo */}
           <Section style={logoSection}>
             <Img
-              src="https://polycopy.app/logo.png"
+              src="https://polycopy.app/logo/polycopy-logo-primary.png"
               width="120"
               height="auto"
               alt="Polycopy"
