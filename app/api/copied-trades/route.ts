@@ -2,6 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 // Create service role client that bypasses RLS
 function createServiceClient() {
@@ -96,6 +97,15 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       console.error('❌ Missing userId in request body')
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
+    }
+    
+    // Rate limit: 50 trade copies per hour per user
+    if (!checkRateLimit(`copy-trade:${userId}`, 50, 3600000)) {
+      console.log('⚠️ Rate limit exceeded for user:', userId)
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please try again later.' }, 
+        { status: 429 }
+      )
     }
     
     console.log('👤 User ID:', userId)

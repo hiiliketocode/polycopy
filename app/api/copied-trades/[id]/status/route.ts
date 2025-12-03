@@ -2,6 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 // Type for Polymarket position
 interface PolymarketPosition {
@@ -54,6 +55,14 @@ export async function GET(
     if (!userId) {
       console.error('❌ Missing userId in status request')
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
+    }
+
+    // Rate limit: 200 status checks per hour per user
+    if (!checkRateLimit(`status-check:${userId}`, 200, 3600000)) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please try again later.' }, 
+        { status: 429 }
+      )
     }
 
     // Use service role client to bypass RLS
