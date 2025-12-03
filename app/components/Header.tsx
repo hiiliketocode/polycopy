@@ -55,10 +55,16 @@ export default function Header() {
           {/* Logo - Full logo for all screen sizes */}
           <Link href="/" className="flex items-center">
             <img 
-              src="/logos/polycopy-logo-primary.svg"
+              src="/logos/polycopy-logo-primary.png"
               alt="Polycopy"
+              width={135}
+              height={32}
               className="h-8 w-auto"
-              style={{ imageRendering: 'crisp-edges' }}
+              style={{ 
+                imageRendering: '-webkit-optimize-contrast',
+                WebkitBackfaceVisibility: 'hidden',
+                backfaceVisibility: 'hidden'
+              }}
             />
           </Link>
           

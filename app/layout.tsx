@@ -52,11 +52,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} font-sans antialiased bg-slate-50`}
+        className={`${inter.variable} font-sans antialiased bg-slate-50 relative`}
+        style={{ minHeight: '100vh', overflowX: 'hidden' }}
       >
-        <main className="relative min-h-screen w-full max-w-full overflow-x-hidden">
-          {children}
-        </main>
+        {children}
         <BottomNav />
       </body>
     </html>
