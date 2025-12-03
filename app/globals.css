@@ -172,3 +172,20 @@ body {
     padding-bottom: max(0px, env(safe-area-inset-bottom));
   }
 }
+
+/* Prevent iOS viewport resize from affecting fixed elements */
+@supports (-webkit-touch-callout: none) {
+  .fixed {
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+  }
+  
+  /* Prevent iOS Safari rubber-banding from moving fixed elements */
+  html {
+    height: -webkit-fill-available;
+  }
+  
+  body {
+    min-height: -webkit-fill-available;
+  }
+}
