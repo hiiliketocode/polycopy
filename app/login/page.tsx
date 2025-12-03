@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import Image from 'next/image';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -50,13 +49,11 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo/Header */}
         <div className="flex flex-col items-center mb-8">
-          <Image 
+          <img 
             src="/logos/polycopy-logo-primary.svg"
             alt="Polycopy"
-            width={500}
-            height={150}
-            priority
             className="h-12 w-auto mb-3"
+            style={{ imageRendering: 'crisp-edges' }}
           />
           <p className="text-slate-600 text-center">Copy the best Polymarket traders</p>
         </div>

@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
 
 export default function Header() {
   const router = useRouter();
@@ -55,13 +54,11 @@ export default function Header() {
         <div className="flex items-center gap-6">
           {/* Logo - Full logo for all screen sizes */}
           <Link href="/" className="flex items-center">
-            <Image 
+            <img 
               src="/logos/polycopy-logo-primary.svg"
               alt="Polycopy"
-              width={500}
-              height={150}
-              priority
               className="h-8 w-auto"
+              style={{ imageRendering: 'crisp-edges' }}
             />
           </Link>
           

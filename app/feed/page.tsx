@@ -248,12 +248,12 @@ function ConfirmModal({ isOpen, trade, onClose, onConfirm, isSubmitting }: Confi
       className="fixed inset-0 z-50 bg-black/60 overflow-hidden"
       onClick={handleBackdropClick}
     >
-      <div className="h-full w-full overflow-y-auto flex items-center justify-center p-4">
+      <div className="h-full w-full overflow-y-auto flex items-center justify-center p-4 pb-24 sm:pb-4">
         <div 
           className="w-full max-w-md bg-white rounded-2xl shadow-xl mx-auto"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="p-6 max-h-[85vh] overflow-y-auto">
+          <div className="p-6 max-h-[70vh] sm:max-h-[85vh] overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-neutral-900">Mark Trade as Copied</h3>
