@@ -54,7 +54,7 @@ export default function TraderClosedPositionEmail({
           {/* Logo */}
           <Section style={logoSection}>
             <Img
-              src="https://polycopy.app/logo/polycopy-logo-primary.png"
+              src="https://polycopy.app/logos/polycopy-logo-primary.png"
               width="120"
               height="auto"
               alt="Polycopy"
