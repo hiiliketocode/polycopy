@@ -85,6 +85,7 @@ interface DashboardData {
   }>
   recentActivity: Array<{
     trader_username: string
+    trader_wallet: string
     market_title: string
     outcome: string
     created_at: string
@@ -319,7 +320,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   try {
     const { data, error } = await supabase
       .from('copied_trades')
-      .select('trader_username, market_title, outcome, created_at')
+      .select('trader_username, trader_wallet, market_title, outcome, created_at')
       .order('created_at', { ascending: false })
       .limit(20)
 
