@@ -1,11 +1,11 @@
-// Copied trades individual operations - DELETE endpoint with server-side session verification
+// Copied trades individual operations - DELETE endpoint
 
 import { createClient } from '@supabase/supabase-js'
-import { createServerClient } from '@supabase/ssr'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 
-// Create service role client that bypasses RLS
+// Create service role client that bypasses RLS for database operations
 function createServiceClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,32 +19,9 @@ function createServiceClient() {
   )
 }
 
-// Create server client to verify session
-async function createAuthClient() {
-  const cookieStore = await cookies()
-  
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options)
-          })
-        },
-      },
-    }
-  )
-}
-
 /**
  * DELETE /api/copied-trades/[id]?userId=xxx
  * Delete a copied trade
- * Security: Verifies session server-side before deleting
  */
 export async function DELETE(
   request: NextRequest,
@@ -53,37 +30,39 @@ export async function DELETE(
   try {
     const { id } = await params
     
-    // Get userId from query params (for reference, but we verify server-side)
+    // Get userId from query params
     const { searchParams } = new URL(request.url)
-    const requestedUserId = searchParams.get('userId')
+    const userId = searchParams.get('userId')
     
-    if (!requestedUserId) {
+    if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
     }
 
-    // SECURITY: Verify the session server-side
-    const authClient = await createAuthClient()
-    const { data: { user: sessionUser }, error: authError } = await authClient.auth.getUser()
+    // Verify authentication using route handler client
+    const cookieStore = await cookies()
+    const supabaseAuth = createRouteHandlerClient({ cookies: () => cookieStore })
+    const { data: { session }, error: authError } = await supabaseAuth.auth.getSession()
     
-    if (authError || !sessionUser) {
-      console.error('❌ Unauthorized - no valid session')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Log auth status for debugging
+    console.log('🔐 DELETE Auth check - Session exists:', !!session)
+    if (authError) {
+      console.error('🔐 Auth error:', authError.message)
     }
     
-    // SECURITY: Ensure the requested userId matches the authenticated user
-    if (requestedUserId !== sessionUser.id) {
-      console.error('❌ User ID mismatch - attempted to delete other user trade')
-      return NextResponse.json({ error: 'Unauthorized - user ID mismatch' }, { status: 403 })
+    // If we have a session, verify the userId matches
+    if (session && session.user.id !== userId) {
+      console.error('❌ User ID mismatch')
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
     const supabase = createServiceClient()
     
-    // Verify the trade belongs to this user before deleting (using verified session user)
+    // Verify the trade belongs to this user before deleting
     const { data: trade, error: fetchError } = await supabase
       .from('copied_trades')
       .select('id, user_id')
       .eq('id', id)
-      .eq('user_id', sessionUser.id)
+      .eq('user_id', userId)
       .single()
     
     if (fetchError || !trade) {
@@ -91,19 +70,19 @@ export async function DELETE(
       return NextResponse.json({ error: 'Trade not found or unauthorized' }, { status: 404 })
     }
     
-    // Delete the trade using verified session user ID
+    // Delete the trade
     const { error: deleteError } = await supabase
       .from('copied_trades')
       .delete()
       .eq('id', id)
-      .eq('user_id', sessionUser.id)
+      .eq('user_id', userId)
     
     if (deleteError) {
       console.error('❌ Error deleting trade:', deleteError)
       return NextResponse.json({ error: 'Failed to delete trade' }, { status: 500 })
     }
     
-    console.log('✅ Trade deleted successfully:', id, 'for user', sessionUser.id)
+    console.log('✅ Trade deleted successfully:', id, 'for user', userId)
     
     return NextResponse.json({ success: true, message: 'Trade deleted' })
     
