@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Copy, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import Header from '@/app/components/Header';
 
@@ -615,16 +616,22 @@ export default function TraderProfilePage({
                 <h1 className="text-3xl font-bold text-slate-900">
                   {displayName}
                 </h1>
-                <p className="text-sm text-slate-500 font-mono mt-1">
-                  {abbreviateWallet(wallet)}
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-sm text-slate-500 font-mono">
+                    {abbreviateWallet(wallet)}
+                  </span>
                   <button
                     onClick={handleCopy}
-                    className="ml-2 text-slate-400 hover:text-slate-900 transition-colors"
+                    className="p-1 hover:bg-slate-100 rounded transition-colors"
                     title="Copy wallet address"
                   >
-                    {copied ? '✓' : '📋'}
+                    {copied ? (
+                      <Check className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-4 h-4 text-slate-400 hover:text-slate-600" />
+                    )}
                   </button>
-                </p>
+                </div>
                 <p className="text-sm text-slate-500 mt-1">
                   {traderData.followerCount.toLocaleString()} {traderData.followerCount === 1 ? 'follower' : 'followers'} on Polycopy
                 </p>
