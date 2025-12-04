@@ -477,8 +477,9 @@ export default function TraderProfilePage({
         positionsData?.forEach((position: any) => {
           // Try multiple identifier fields
           const conditionId = position.conditionId || position.condition_id || position.asset || position.marketId || '';
-          if (conditionId) openIds.add(conditionId);
-          if (position.asset) openIds.add(position.asset);
+          // IMPORTANT: Normalize to lowercase for case-insensitive matching
+          if (conditionId) openIds.add(conditionId.toLowerCase());
+          if (position.asset) openIds.add(position.asset.toLowerCase());
           
           // Store full position data for URL construction
           positionsList.push({
@@ -591,7 +592,8 @@ export default function TraderProfilePage({
           
           if (openMarketIds.size > 0) {
             // Check if this trade's market is in the open positions
-            const isOpen = openMarketIds.has(tradeConditionId);
+            // IMPORTANT: Normalize to lowercase for case-insensitive matching
+            const isOpen = openMarketIds.has(tradeConditionId.toLowerCase());
             status = isOpen ? 'Open' : 'Closed';
           } else {
             // If positions API returned empty (no open positions), all trades are Closed
@@ -753,9 +755,11 @@ export default function TraderProfilePage({
   // Find position for a trade (to get correct eventSlug)
   const findPositionForTrade = (trade: Trade): Position | undefined => {
     if (!trade.conditionId) return undefined;
+    // IMPORTANT: Case-insensitive matching for hex conditionIds
+    const tradeConditionLower = trade.conditionId.toLowerCase();
     return positions.find(p => 
-      p.conditionId === trade.conditionId || 
-      p.asset === trade.conditionId
+      p.conditionId?.toLowerCase() === tradeConditionLower || 
+      p.asset?.toLowerCase() === tradeConditionLower
     );
   };
 
