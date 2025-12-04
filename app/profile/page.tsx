@@ -72,6 +72,7 @@ export default function ProfilePage() {
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved'>('all');
+  const [hasAutoRefreshed, setHasAutoRefreshed] = useState(false); // Track if we've done initial auto-refresh
   
   // Toast state
   const [showToast, setShowToast] = useState(false);
@@ -214,6 +215,48 @@ export default function ProfilePage() {
 
     fetchNotificationPrefs();
   }, [user]);
+
+  // Auto-refresh trade status once when trades are first loaded (to get current prices)
+  useEffect(() => {
+    // Only auto-refresh if:
+    // 1. We haven't already auto-refreshed
+    // 2. Trades have finished loading
+    // 3. We have trades to refresh
+    // 4. User is logged in
+    // 5. We're not currently refreshing
+    if (!hasAutoRefreshed && !loadingCopiedTrades && copiedTrades.length > 0 && user && !refreshingStatus) {
+      console.log('🔄 Auto-refreshing trade status for', copiedTrades.length, 'trades...');
+      setHasAutoRefreshed(true); // Mark as done to prevent re-triggering
+      
+      // Auto-refresh status for all trades
+      const autoRefreshStatus = async () => {
+        setRefreshingStatus(true);
+        const updatedTrades: CopiedTrade[] = [];
+        
+        for (const trade of copiedTrades) {
+          try {
+            const url = `/api/copied-trades/${trade.id}/status?userId=${user.id}`;
+            const response = await fetch(url, { credentials: 'include' });
+            const data = await response.json();
+            
+            if (response.ok && data.trade) {
+              updatedTrades.push(data.trade);
+            } else {
+              updatedTrades.push(trade); // Keep original trade data on error
+            }
+          } catch {
+            updatedTrades.push(trade); // Keep original trade data on error
+          }
+        }
+        
+        setCopiedTrades(updatedTrades);
+        setRefreshingStatus(false);
+        console.log('✅ Auto-refresh complete');
+      };
+      
+      autoRefreshStatus();
+    }
+  }, [hasAutoRefreshed, loadingCopiedTrades, copiedTrades.length, user, refreshingStatus]);
 
   // Update display name based on wallet connection
   useEffect(() => {
