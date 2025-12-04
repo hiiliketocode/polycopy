@@ -298,42 +298,42 @@ export default function ProfilePage() {
 
   // Auto-refresh trade status once when trades are first loaded (to get current prices)
   useEffect(() => {
-    // Only auto-refresh if:
-    // 1. We haven't already auto-refreshed
-    // 2. Trades have finished loading
-    // 3. We have trades to refresh
-    // 4. User is logged in
-    // 5. We're not currently refreshing
-    if (!hasAutoRefreshed && !loadingCopiedTrades && copiedTrades.length > 0 && user && !refreshingStatus) {
-      console.log('🔄 Auto-refreshing prices for', copiedTrades.length, 'trades...');
-      setHasAutoRefreshed(true); // Mark as done to prevent re-triggering
-      
-      // Auto-refresh prices via our proxy API (avoids CORS)
-      const autoRefreshPrices = async () => {
-        setRefreshingStatus(true);
-        const updatedTrades: CopiedTrade[] = [];
-        let successCount = 0;
-        
-        for (const trade of copiedTrades) {
-          const { currentPrice, roi } = await fetchCurrentPriceFromPolymarket(trade);
-          if (currentPrice !== null) {
-            successCount++;
-          }
-          updatedTrades.push({
-            ...trade,
-            current_price: currentPrice ?? trade.current_price,
-            roi: roi ?? trade.roi,
-          });
-        }
-        
-        setCopiedTrades(updatedTrades);
-        setRefreshingStatus(false);
-        console.log(`✅ Auto-refresh complete: ${successCount}/${copiedTrades.length} prices found`);
-      };
-      
-      autoRefreshPrices();
+    // Only auto-refresh once: when trades finish loading and we have some
+    if (hasAutoRefreshed || loadingCopiedTrades || copiedTrades.length === 0 || !user) {
+      return;
     }
-  }, [hasAutoRefreshed, loadingCopiedTrades, copiedTrades.length, user, refreshingStatus]);
+    
+    console.log('🔄 Auto-refreshing prices for', copiedTrades.length, 'trades...');
+    setHasAutoRefreshed(true); // Mark as done FIRST to prevent re-triggering
+    
+    // Auto-refresh prices via our proxy API (avoids CORS)
+    const autoRefreshPrices = async () => {
+      setRefreshingStatus(true);
+      const updatedTrades: CopiedTrade[] = [];
+      let successCount = 0;
+      
+      // Use the trades from this render cycle
+      const tradesToRefresh = [...copiedTrades];
+      
+      for (const trade of tradesToRefresh) {
+        const { currentPrice, roi } = await fetchCurrentPriceFromPolymarket(trade);
+        if (currentPrice !== null) {
+          successCount++;
+        }
+        updatedTrades.push({
+          ...trade,
+          current_price: currentPrice ?? trade.current_price,
+          roi: roi ?? trade.roi,
+        });
+      }
+      
+      setCopiedTrades(updatedTrades);
+      setRefreshingStatus(false);
+      console.log(`✅ Auto-refresh complete: ${successCount}/${tradesToRefresh.length} prices found`);
+    };
+    
+    autoRefreshPrices();
+  }, [hasAutoRefreshed, loadingCopiedTrades, copiedTrades, user]);
 
   // Update display name based on wallet connection
   useEffect(() => {
