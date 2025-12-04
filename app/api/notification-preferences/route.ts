@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { checkRateLimit } from '@/lib/rate-limit'
 
 // Create service role client that bypasses RLS
@@ -18,7 +19,7 @@ function createServiceClient() {
 
 /**
  * GET /api/notification-preferences?userId=xxx
- * Fetch notification preferences for a user
+ * Fetch notification preferences for the authenticated user
  */
 export async function GET(request: NextRequest) {
   try {
@@ -27,6 +28,26 @@ export async function GET(request: NextRequest) {
     
     if (!userId) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
+    }
+
+    // Verify authentication using server client
+    const supabaseAuth = await createAuthClient()
+    const { data: { session }, error: authError } = await supabaseAuth.auth.getSession()
+    
+    if (authError) {
+      console.error('🔐 Auth error:', authError.message)
+    }
+    
+    // SECURITY: Require valid session
+    if (!session) {
+      console.error('❌ No valid session - unauthorized')
+      return NextResponse.json({ error: 'Unauthorized - please log in' }, { status: 401 })
+    }
+    
+    // SECURITY: Verify the userId matches the authenticated user
+    if (session.user.id !== userId) {
+      console.error('❌ User ID mismatch - session:', session.user.id, 'requested:', userId)
+      return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
     }
 
     const supabase = createServiceClient()
@@ -60,7 +81,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * PUT /api/notification-preferences
- * Update notification preferences for a user
+ * Update notification preferences for the authenticated user
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -69,6 +90,26 @@ export async function PUT(request: NextRequest) {
     
     if (!userId) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
+    }
+
+    // Verify authentication using server client
+    const supabaseAuth = await createAuthClient()
+    const { data: { session }, error: authError } = await supabaseAuth.auth.getSession()
+    
+    if (authError) {
+      console.error('🔐 Auth error:', authError.message)
+    }
+    
+    // SECURITY: Require valid session
+    if (!session) {
+      console.error('❌ No valid session - unauthorized')
+      return NextResponse.json({ error: 'Unauthorized - please log in' }, { status: 401 })
+    }
+    
+    // SECURITY: Verify the userId matches the authenticated user
+    if (session.user.id !== userId) {
+      console.error('❌ User ID mismatch - session:', session.user.id, 'requested:', userId)
+      return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
     }
 
     // Rate limit: 20 preference changes per hour
@@ -106,4 +147,3 @@ export async function PUT(request: NextRequest) {
     )
   }
 }
-
