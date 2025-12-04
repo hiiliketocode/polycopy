@@ -586,33 +586,23 @@ export default function TraderProfilePage({
           const tradeConditionId = trade.conditionId || trade.condition_id || trade.asset_id || trade.asset || trade.marketId || '';
           
           // Determine market status by checking if this market is in openMarketIds
-          // If the trader has an active position in this market, it's Open
-          // If the trader has no active position (sold their shares), it's "Trader Closed"
-          let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Trader Closed'; // Default to Trader Closed
+          // Determine trade status:
+          // - If positions API returned data AND this trade is in it -> "Open"
+          // - If positions API returned data AND this trade is NOT in it -> "Trader Closed"
+          // - If positions API returned empty -> Default to "Open" (unreliable API)
+          // - If trade is marked bonded -> "Bonded"
+          let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open'; // Default to Open (positions API is often unreliable)
           
-          if (openMarketIds.size > 0) {
-            // Check if this trade's market is in the open positions
-            // IMPORTANT: Normalize to lowercase for case-insensitive matching
+          if (trade.status === 'bonded' || trade.marketStatus === 'bonded') {
+            status = 'Bonded';
+          } else if (openMarketIds.size > 0) {
+            // Only mark as "Trader Closed" if we have position data AND this trade is NOT in it
             const normalizedConditionId = tradeConditionId.toLowerCase();
-            const isOpen = openMarketIds.has(normalizedConditionId);
-            status = isOpen ? 'Open' : 'Trader Closed';
-            
-            // DEBUG: Log the status assignment for first few trades
-            if (index < 10) {
-              console.log('🏭 PROCESSING TRADE:', (trade.title || 'Unknown').substring(0, 40));
-              console.log('   Raw conditionId:', tradeConditionId);
-              console.log('   Normalized:', normalizedConditionId);
-              console.log('   openMarketIds size:', openMarketIds.size);
-              console.log('   Found in openMarketIds?:', isOpen);
-              console.log('   Assigned status:', status);
-            }
-          } else {
-            // If positions API returned empty (no open positions), all trades are Closed
-            // Unless explicitly marked as bonded
-            if (trade.status === 'bonded' || trade.marketStatus === 'bonded') {
-              status = 'Bonded';
-            }
+            const isInPositions = openMarketIds.has(normalizedConditionId);
+            status = isInPositions ? 'Open' : 'Trader Closed';
           }
+          // If openMarketIds is empty, keep default "Open" status
+          // (positions API may have failed or returned empty due to proxy wallet issues)
           
           return {
             timestamp: trade.timestamp,
