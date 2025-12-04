@@ -6,6 +6,171 @@ import Link from 'next/link';
 import { Copy, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import Header from '@/app/components/Header';
+import type { User } from '@supabase/supabase-js';
+
+// Copy Trade Modal Component
+function CopyTradeModal({ 
+  isOpen, 
+  trade, 
+  traderWallet,
+  traderName,
+  onClose, 
+  onConfirm, 
+  isSubmitting 
+}: { 
+  isOpen: boolean; 
+  trade: Trade | null;
+  traderWallet: string;
+  traderName: string;
+  onClose: () => void; 
+  onConfirm: (entryPrice: number, amountInvested?: number) => void;
+  isSubmitting: boolean;
+}) {
+  const [entryPrice, setEntryPrice] = useState('');
+  const [amountInvested, setAmountInvested] = useState('');
+
+  useEffect(() => {
+    if (trade) {
+      setEntryPrice(trade.price.toFixed(2));
+      setAmountInvested('');
+    }
+  }, [trade]);
+
+  if (!isOpen || !trade) return null;
+
+  const handleConfirm = () => {
+    const price = entryPrice ? parseFloat(entryPrice) : trade.price;
+    const amount = amountInvested ? parseFloat(amountInvested) : undefined;
+    onConfirm(price, amount);
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  return (
+    <div 
+      className="fixed inset-0 z-50 bg-black/60 overflow-hidden"
+      onClick={handleBackdropClick}
+    >
+      <div className="h-full w-full overflow-y-auto flex items-start justify-center pt-8 pb-24 px-4 sm:items-center sm:pt-4 sm:pb-4">
+        <div 
+          className="w-full max-w-md bg-white rounded-2xl shadow-xl mx-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="p-6 max-h-[calc(100vh-8rem)] sm:max-h-[85vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-neutral-900">Mark Trade as Copied</h3>
+              <button 
+                onClick={onClose}
+                className="text-neutral-400 hover:text-neutral-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Trade Details */}
+            <div className="bg-neutral-50 rounded-xl p-3 sm:p-4 mb-4">
+              <p className="text-sm text-neutral-600 mb-1">Market</p>
+              <p className="font-medium text-neutral-900 mb-3 text-sm sm:text-base break-words">{trade.market}</p>
+              
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm text-neutral-600 mb-1">Trader</p>
+                  <p className="font-medium text-neutral-900 text-sm sm:text-base truncate">{traderName}</p>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-neutral-600 mb-1">Position</p>
+                  <p className="font-medium text-neutral-900 text-sm sm:text-base">
+                    <span className={trade.outcome.toUpperCase() === 'YES' ? 'text-[#10B981]' : 'text-[#EF4444]'}>
+                      {trade.outcome.toUpperCase()}
+                    </span>
+                    {' '}at {Math.round(trade.price * 100)}¢
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Entry Price Input */}
+            <div className="mb-4 w-full">
+              <label className="block w-full text-sm font-medium text-neutral-700 mb-2">
+                Your entry price <span className="text-red-500">*</span>
+              </label>
+              <div className="relative w-full">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
+                <input
+                  type="number"
+                  value={entryPrice}
+                  onChange={(e) => setEntryPrice(e.target.value)}
+                  placeholder="0.58"
+                  min="0.01"
+                  max="0.99"
+                  step="0.01"
+                  className="w-full pl-8 pr-4 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
+                />
+              </div>
+              <p className="text-xs text-neutral-500 mt-1">
+                The price you bought/sold at (trader's price: ${trade.price.toFixed(2)})
+              </p>
+            </div>
+
+            {/* Amount Input */}
+            <div className="mb-6 w-full">
+              <label className="block w-full text-sm font-medium text-neutral-700 mb-2">
+                Amount invested (optional)
+              </label>
+              <div className="relative w-full">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
+                <input
+                  type="number"
+                  value={amountInvested}
+                  onChange={(e) => setAmountInvested(e.target.value)}
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                  className="w-full pl-8 pr-4 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
+                />
+              </div>
+              <p className="text-xs text-neutral-500 mt-1">
+                Track how much you invested to calculate your ROI later
+              </p>
+            </div>
+
+            {/* Buttons */}
+            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 w-full">
+              <button
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="w-full sm:flex-1 py-2.5 px-4 border border-neutral-300 rounded-lg font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={isSubmitting}
+                className="w-full sm:flex-1 py-2.5 px-4 bg-[#FDB022] hover:bg-[#E69E1A] rounded-lg font-semibold text-neutral-900 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-neutral-900/30 border-t-neutral-900 rounded-full animate-spin"></div>
+                    Saving...
+                  </>
+                ) : (
+                  'Confirm'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface TraderData {
   wallet: string;
@@ -59,6 +224,21 @@ export default function TraderProfilePage({
   const [loadingTrades, setLoadingTrades] = useState(false);
   const [openMarketIds, setOpenMarketIds] = useState<Set<string>>(new Set());
   const router = useRouter();
+  
+  // User state
+  const [user, setUser] = useState<User | null>(null);
+  
+  // Modal state for Mark as Copied
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Toast state
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  
+  // Copied trades tracking
+  const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
 
   // Unwrap params Promise
   useEffect(() => {
@@ -73,6 +253,36 @@ export default function TraderProfilePage({
       setWallet(p.wallet);
     });
   }, [params]);
+
+  // Fetch current user
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+      
+      // If user is logged in, fetch their copied trades
+      if (user) {
+        const { data: copiedTrades } = await supabase
+          .from('copied_trades')
+          .select('market_id, trader_wallet')
+          .eq('user_id', user.id);
+        
+        if (copiedTrades) {
+          const ids = new Set(copiedTrades.map(t => `${t.market_id}-${t.trader_wallet}`));
+          setCopiedTradeIds(ids);
+        }
+      }
+    };
+    
+    fetchUser();
+    
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    
+    return () => subscription.unsubscribe();
+  }, []);
 
   // Fetch trader data (hybrid approach: check sessionStorage first for instant load)
   useEffect(() => {
@@ -450,6 +660,77 @@ export default function TraderProfilePage({
     }
   };
 
+  // Handle Mark as Copied click
+  const handleMarkAsCopied = (trade: Trade) => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    setSelectedTrade(trade);
+    setModalOpen(true);
+  };
+
+  // Handle confirm copy from modal
+  const handleConfirmCopy = async (entryPrice: number, amountInvested?: number) => {
+    if (!selectedTrade || !user) return;
+
+    setIsSubmitting(true);
+
+    try {
+      // Generate market ID from trade data
+      const marketId = selectedTrade.conditionId || selectedTrade.marketSlug || selectedTrade.market;
+      
+      // Insert directly into Supabase (like follow/unfollow does)
+      const { data: createdTrade, error: insertError } = await supabase
+        .from('copied_trades')
+        .insert({
+          user_id: user.id,
+          trader_wallet: wallet,
+          trader_username: traderData?.displayName || wallet.slice(0, 8),
+          market_id: marketId,
+          market_title: selectedTrade.market,
+          outcome: selectedTrade.outcome.toUpperCase(),
+          price_when_copied: entryPrice,
+          amount_invested: amountInvested || null,
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('❌ Insert error:', insertError);
+        throw new Error(insertError.message || 'Failed to save copied trade');
+      }
+
+      console.log('✅ Trade copied successfully:', createdTrade?.id);
+
+      // Update local state
+      const tradeKey = `${marketId}-${wallet}`;
+      setCopiedTradeIds(prev => new Set([...prev, tradeKey]));
+
+      // Close modal
+      setModalOpen(false);
+      setSelectedTrade(null);
+
+      // Show success toast
+      setToastMessage('Trade marked as copied!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+
+    } catch (err: any) {
+      console.error('Error saving copied trade:', err);
+      alert(err.message || 'Failed to save copied trade');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Check if a trade is already copied
+  const isTradeCopied = (trade: Trade): boolean => {
+    const marketId = trade.conditionId || trade.marketSlug || trade.market;
+    const tradeKey = `${marketId}-${wallet}`;
+    return copiedTradeIds.has(tradeKey);
+  };
+
   /**
    * Generate a consistent avatar color from wallet address
    * 
@@ -788,15 +1069,17 @@ export default function TraderProfilePage({
                       <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Outcome</th>
                       <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Size</th>
                       <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Avg Price</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {trades.map((trade, index) => {
-                      // Generate Polymarket search link - most reliable approach
+                      // Generate Polymarket search link
                       const polymarketUrl = trade.market 
                         ? `https://polymarket.com/search?q=${encodeURIComponent(trade.market)}`
                         : 'https://polymarket.com';
+                      
+                      const isAlreadyCopied = isTradeCopied(trade);
 
                       return (
                         <tr 
@@ -835,24 +1118,43 @@ export default function TraderProfilePage({
                             </span>
                           </td>
                           
-                          <td className="py-4 px-4 text-center">
-                            {trade.status === 'Open' ? (
+                          <td className="py-4 px-4">
+                            <div className="flex items-center justify-center gap-2">
+                              {/* Copy Trade - opens Polymarket */}
                               <a
                                 href={polymarketUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 px-3 py-1 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-xs font-bold rounded-full cursor-pointer transition-colors"
                               >
-                                View Market
+                                Copy
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                 </svg>
                               </a>
-                            ) : (
-                              <span className="inline-flex items-center px-3 py-1 bg-slate-500 text-white text-xs font-semibold rounded-full">
-                                Closed
-                              </span>
-                            )}
+                              
+                              {/* Mark as Copied */}
+                              <button
+                                onClick={() => handleMarkAsCopied(trade)}
+                                disabled={isAlreadyCopied}
+                                className={`inline-flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-full transition-colors ${
+                                  isAlreadyCopied
+                                    ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer'
+                                }`}
+                              >
+                                {isAlreadyCopied ? (
+                                  <>
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Copied
+                                  </>
+                                ) : (
+                                  'Mark Copied'
+                                )}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -865,10 +1167,12 @@ export default function TraderProfilePage({
             {/* Mobile: Card-Based View */}
             <div className="md:hidden space-y-4">
               {trades.map((trade, index) => {
-                // Generate Polymarket search link - most reliable approach
+                // Generate Polymarket search link
                 const polymarketUrl = trade.market 
                   ? `https://polymarket.com/search?q=${encodeURIComponent(trade.market)}`
                   : 'https://polymarket.com';
+                
+                const isAlreadyCopied = isTradeCopied(trade);
 
                 return (
                   <div key={`${trade.timestamp}-${index}`} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
@@ -911,24 +1215,43 @@ export default function TraderProfilePage({
                       </div>
                     </div>
                     
-                    {/* Status/Action Button */}
-                    {trade.status === 'Open' ? (
+                    {/* Action Buttons */}
+                    <div className="flex gap-2">
+                      {/* Copy Trade - opens Polymarket */}
                       <a
                         href={polymarketUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-sm font-bold rounded-full cursor-pointer transition-colors"
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-sm font-bold rounded-full cursor-pointer transition-colors"
                       >
-                        <span>View Market</span>
+                        <span>Copy Trade</span>
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>
                       </a>
-                    ) : (
-                      <div className="w-full flex items-center justify-center px-4 py-2.5 bg-slate-500 text-white text-sm font-semibold rounded-full">
-                        Closed
-                      </div>
-                    )}
+                      
+                      {/* Mark as Copied */}
+                      <button
+                        onClick={() => handleMarkAsCopied(trade)}
+                        disabled={isAlreadyCopied}
+                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-full transition-colors ${
+                          isAlreadyCopied
+                            ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer'
+                        }`}
+                      >
+                        {isAlreadyCopied ? (
+                          <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span>Copied</span>
+                          </>
+                        ) : (
+                          <span>Mark Copied</span>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -936,6 +1259,32 @@ export default function TraderProfilePage({
           </>
         )}
       </div>
+      
+      {/* Copy Trade Modal */}
+      <CopyTradeModal
+        isOpen={modalOpen}
+        trade={selectedTrade}
+        traderWallet={wallet}
+        traderName={traderData?.displayName || wallet.slice(0, 8)}
+        onClose={() => {
+          setModalOpen(false);
+          setSelectedTrade(null);
+        }}
+        onConfirm={handleConfirmCopy}
+        isSubmitting={isSubmitting}
+      />
+      
+      {/* Success Toast */}
+      {showToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-neutral-900 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2">
+            <svg className="w-5 h-5 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+            </svg>
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
