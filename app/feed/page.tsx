@@ -565,7 +565,8 @@ export default function FeedPage() {
               displayName: displayName,
             },
             market: {
-              id: trade.market_slug || trade.asset_id || trade.conditionId || trade.id || '',
+              // IMPORTANT: Prioritize conditionId for Gamma API price lookups
+              id: trade.conditionId || trade.market_slug || trade.asset_id || trade.id || '',
               title: trade.market || trade.title || 'Unknown Market',
               slug: trade.market_slug || trade.slug || '',
               eventSlug: trade.eventSlug || trade.event_slug || '',

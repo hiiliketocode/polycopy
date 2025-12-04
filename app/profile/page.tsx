@@ -219,58 +219,105 @@ export default function ProfilePage() {
   // Helper function to fetch current price from Polymarket (client-side, no auth needed)
   const fetchCurrentPriceFromPolymarket = async (trade: CopiedTrade): Promise<{ currentPrice: number | null; roi: number | null }> => {
     try {
-      // Use Gamma API to get market prices (public API, no auth required)
+      let markets: any[] | null = null;
+      
+      // Try 1: Use condition_id if it starts with 0x
       if (trade.market_id && trade.market_id.startsWith('0x')) {
         const gammaUrl = `https://gamma-api.polymarket.com/markets?condition_id=${trade.market_id}`;
         const response = await fetch(gammaUrl, { cache: 'no-store' });
         
         if (response.ok) {
-          const markets = await response.json();
-          if (markets && markets.length > 0) {
-            const market = markets[0];
-            let prices = market.outcomePrices;
-            let outcomes = market.outcomes;
-            
-            // Parse if string
-            if (typeof prices === 'string') {
-              try { prices = JSON.parse(prices); } catch { prices = null; }
-            }
-            if (typeof outcomes === 'string') {
-              try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
-            }
-            
-            if (prices && Array.isArray(prices) && prices.length >= 2) {
-              const outcomeUpper = trade.outcome?.toUpperCase();
-              let currentPrice: number | null = null;
-              
-              // Standard YES/NO markets
-              if (outcomeUpper === 'YES') {
-                currentPrice = parseFloat(prices[0]);
-              } else if (outcomeUpper === 'NO') {
-                currentPrice = parseFloat(prices[1]);
-              } else if (outcomes && Array.isArray(outcomes)) {
-                // Custom outcomes - find by name (case-insensitive)
-                const outcomeIndex = outcomes.findIndex(
-                  (o: string) => o?.toUpperCase() === outcomeUpper
-                );
-                if (outcomeIndex >= 0 && outcomeIndex < prices.length) {
-                  currentPrice = parseFloat(prices[outcomeIndex]);
-                }
+          const data = await response.json();
+          if (data && data.length > 0) {
+            markets = data;
+          }
+        }
+      }
+      
+      // Try 2: Search by slug if condition_id didn't work
+      if (!markets && trade.market_id && !trade.market_id.startsWith('0x')) {
+        const gammaUrl = `https://gamma-api.polymarket.com/markets?slug=${encodeURIComponent(trade.market_id)}`;
+        const response = await fetch(gammaUrl, { cache: 'no-store' });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.length > 0) {
+            markets = data;
+          }
+        }
+      }
+      
+      // Try 3: If market_id looks like a slug that didn't work, try as a partial slug match
+      // (Sometimes slugs get modified or there are slight differences)
+      if (!markets && trade.market_id && !trade.market_id.startsWith('0x')) {
+        // Try fetching all recent markets and match by title
+        try {
+          const gammaUrl = `https://gamma-api.polymarket.com/markets?closed=false&limit=50`;
+          const response = await fetch(gammaUrl, { cache: 'no-store' });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data && data.length > 0) {
+              // Find by title match (case-insensitive)
+              const titleLower = trade.market_title?.toLowerCase() || '';
+              const match = data.find((m: any) => 
+                m.question?.toLowerCase() === titleLower ||
+                m.question?.toLowerCase().includes(titleLower.substring(0, 30))
+              );
+              if (match) {
+                markets = [match];
               }
-              
-              // Calculate ROI
-              let roi: number | null = null;
-              if (currentPrice !== null && trade.price_when_copied) {
-                const entryPrice = trade.price_when_copied;
-                if (entryPrice > 0) {
-                  roi = ((currentPrice - entryPrice) / entryPrice) * 100;
-                  roi = parseFloat(roi.toFixed(2));
-                }
-              }
-              
-              return { currentPrice, roi };
             }
           }
+        } catch {
+          // Ignore text search failures
+        }
+      }
+      
+      // Parse the market data and extract price
+      if (markets && markets.length > 0) {
+        const market = markets[0];
+        let prices = market.outcomePrices;
+        let outcomes = market.outcomes;
+        
+        // Parse if string
+        if (typeof prices === 'string') {
+          try { prices = JSON.parse(prices); } catch { prices = null; }
+        }
+        if (typeof outcomes === 'string') {
+          try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
+        }
+        
+        if (prices && Array.isArray(prices) && prices.length >= 2) {
+          const outcomeUpper = trade.outcome?.toUpperCase();
+          let currentPrice: number | null = null;
+          
+          // Standard YES/NO markets
+          if (outcomeUpper === 'YES') {
+            currentPrice = parseFloat(prices[0]);
+          } else if (outcomeUpper === 'NO') {
+            currentPrice = parseFloat(prices[1]);
+          } else if (outcomes && Array.isArray(outcomes)) {
+            // Custom outcomes - find by name (case-insensitive)
+            const outcomeIndex = outcomes.findIndex(
+              (o: string) => o?.toUpperCase() === outcomeUpper
+            );
+            if (outcomeIndex >= 0 && outcomeIndex < prices.length) {
+              currentPrice = parseFloat(prices[outcomeIndex]);
+            }
+          }
+          
+          // Calculate ROI
+          let roi: number | null = null;
+          if (currentPrice !== null && trade.price_when_copied) {
+            const entryPrice = trade.price_when_copied;
+            if (entryPrice > 0) {
+              roi = ((currentPrice - entryPrice) / entryPrice) * 100;
+              roi = parseFloat(roi.toFixed(2));
+            }
+          }
+          
+          return { currentPrice, roi };
         }
       }
     } catch (err) {
@@ -290,15 +337,24 @@ export default function ProfilePage() {
     // 5. We're not currently refreshing
     if (!hasAutoRefreshed && !loadingCopiedTrades && copiedTrades.length > 0 && user && !refreshingStatus) {
       console.log('🔄 Auto-refreshing trade prices from Polymarket for', copiedTrades.length, 'trades...');
+      // Debug: Log what market_ids we're working with
+      copiedTrades.forEach((t, i) => {
+        console.log(`  Trade ${i + 1}: market_id="${t.market_id}" (${t.market_id?.startsWith('0x') ? 'conditionId' : 'slug/title'})`);
+      });
       setHasAutoRefreshed(true); // Mark as done to prevent re-triggering
       
       // Auto-refresh prices directly from Polymarket (bypasses auth issues)
       const autoRefreshPrices = async () => {
         setRefreshingStatus(true);
         const updatedTrades: CopiedTrade[] = [];
+        let successCount = 0;
         
         for (const trade of copiedTrades) {
           const { currentPrice, roi } = await fetchCurrentPriceFromPolymarket(trade);
+          if (currentPrice !== null) {
+            successCount++;
+            console.log(`  ✓ Found price for "${trade.market_title?.substring(0, 30)}...": ${currentPrice}`);
+          }
           updatedTrades.push({
             ...trade,
             current_price: currentPrice ?? trade.current_price,
@@ -308,7 +364,7 @@ export default function ProfilePage() {
         
         setCopiedTrades(updatedTrades);
         setRefreshingStatus(false);
-        console.log('✅ Auto-refresh complete');
+        console.log(`✅ Auto-refresh complete: ${successCount}/${copiedTrades.length} prices found`);
       };
       
       autoRefreshPrices();
