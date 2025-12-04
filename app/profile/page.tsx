@@ -444,17 +444,6 @@ export default function ProfilePage() {
   // Delete trade state
   const [deletingTradeId, setDeletingTradeId] = useState<string | null>(null);
   
-  // Check if trade looks invalid (for showing delete button)
-  const isInvalidTrade = (trade: CopiedTrade) => {
-    // Show delete for: dev mode, or trades with invalid/test market IDs
-    const isDev = process.env.NODE_ENV === 'development';
-    const hasInvalidMarket = !trade.market_id || 
-      trade.market_id === 'undefined' || 
-      trade.market_id === 'null' ||
-      trade.market_title?.toLowerCase().includes('test');
-    return isDev || hasInvalidMarket;
-  };
-  
   // Delete trade handler
   const handleDeleteTrade = async (tradeId: string) => {
     if (!user) return;
@@ -937,18 +926,16 @@ export default function ProfilePage() {
                                     >
                                       View on Polymarket ↗
                                     </a>
-                                    {isInvalidTrade(trade) && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteTrade(trade.id);
-                                        }}
-                                        disabled={deletingTradeId === trade.id}
-                                        className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
-                                      >
-                                        {deletingTradeId === trade.id ? 'Deleting...' : 'Delete Trade'}
-                                      </button>
-                                    )}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteTrade(trade.id);
+                                      }}
+                                      disabled={deletingTradeId === trade.id}
+                                      className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
+                                    >
+                                      {deletingTradeId === trade.id ? 'Deleting...' : 'Delete Trade'}
+                                    </button>
                                   </div>
                                 </div>
                               </td>
@@ -1046,18 +1033,16 @@ export default function ProfilePage() {
                               >
                                 View on Polymarket ↗
                               </a>
-                              {isInvalidTrade(trade) && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteTrade(trade.id);
-                                  }}
-                                  disabled={deletingTradeId === trade.id}
-                                  className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
-                                >
-                                  {deletingTradeId === trade.id ? 'Deleting...' : 'Delete Trade'}
-                                </button>
-                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteTrade(trade.id);
+                                }}
+                                disabled={deletingTradeId === trade.id}
+                                className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
+                              >
+                                {deletingTradeId === trade.id ? 'Deleting...' : 'Delete Trade'}
+                              </button>
                             </div>
                           </div>
                         </div>
