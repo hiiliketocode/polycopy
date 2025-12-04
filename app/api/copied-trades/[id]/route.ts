@@ -1,9 +1,8 @@
-// Copied trades individual operations - DELETE endpoint
+// Copied trades individual operations - DELETE endpoint with server-side session verification
 
 import { createClient } from '@supabase/supabase-js'
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 
 // Create service role client that bypasses RLS for database operations
 function createServiceClient() {
@@ -38,9 +37,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
     }
 
-    // Verify authentication using route handler client
-    const cookieStore = await cookies()
-    const supabaseAuth = createRouteHandlerClient({ cookies: () => cookieStore })
+    // Verify authentication using server client
+    const supabaseAuth = await createAuthClient()
     const { data: { session }, error: authError } = await supabaseAuth.auth.getSession()
     
     // Log auth status for debugging
@@ -49,10 +47,16 @@ export async function DELETE(
       console.error('🔐 Auth error:', authError.message)
     }
     
-    // If we have a session, verify the userId matches
-    if (session && session.user.id !== userId) {
-      console.error('❌ User ID mismatch')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    // SECURITY: Require valid session
+    if (!session) {
+      console.error('❌ No valid session - unauthorized')
+      return NextResponse.json({ error: 'Unauthorized - please log in' }, { status: 401 })
+    }
+    
+    // SECURITY: Verify the userId matches the authenticated user
+    if (session.user.id !== userId) {
+      console.error('❌ User ID mismatch - session:', session.user.id, 'requested:', userId)
+      return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
     }
 
     const supabase = createServiceClient()
@@ -91,4 +95,3 @@ export async function DELETE(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
-
