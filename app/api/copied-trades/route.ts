@@ -1,9 +1,8 @@
-// Copied trades API - uses createRouteHandlerClient for proper auth in API routes
+// Copied trades API - with server-side session verification
 
 import { createClient } from '@supabase/supabase-js'
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { checkRateLimit } from '@/lib/rate-limit'
 
 // Create service role client that bypasses RLS for database operations
@@ -37,9 +36,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
     }
     
-    // Verify authentication using route handler client
-    const cookieStore = await cookies()
-    const supabaseAuth = createRouteHandlerClient({ cookies: () => cookieStore })
+    // Verify authentication using server client
+    const supabaseAuth = await createAuthClient()
     const { data: { session }, error: authError } = await supabaseAuth.auth.getSession()
     
     // Log auth status for debugging
@@ -48,10 +46,16 @@ export async function GET(request: NextRequest) {
       console.error('🔐 Auth error:', authError.message)
     }
     
-    // If we have a session, verify the userId matches
-    if (session && session.user.id !== userId) {
-      console.error('❌ User ID mismatch')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    // SECURITY: Require valid session
+    if (!session) {
+      console.error('❌ No valid session - unauthorized')
+      return NextResponse.json({ error: 'Unauthorized - please log in' }, { status: 401 })
+    }
+    
+    // SECURITY: Verify the userId matches the authenticated user
+    if (session.user.id !== userId) {
+      console.error('❌ User ID mismatch - session:', session.user.id, 'requested:', userId)
+      return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
     }
     
     // Use service role client for database operations
@@ -111,9 +115,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
     }
     
-    // Verify authentication using route handler client
-    const cookieStore = await cookies()
-    const supabaseAuth = createRouteHandlerClient({ cookies: () => cookieStore })
+    // Verify authentication using server client
+    const supabaseAuth = await createAuthClient()
     const { data: { session }, error: authError } = await supabaseAuth.auth.getSession()
     
     // Log auth status for debugging
@@ -124,10 +127,16 @@ export async function POST(request: NextRequest) {
       console.error('🔐 Auth error:', authError.message)
     }
     
-    // If we have a session, verify the userId matches
-    if (session && session.user.id !== userId) {
+    // SECURITY: Require valid session
+    if (!session) {
+      console.error('❌ No valid session - unauthorized')
+      return NextResponse.json({ error: 'Unauthorized - please log in' }, { status: 401 })
+    }
+    
+    // SECURITY: Verify the userId matches the authenticated user
+    if (session.user.id !== userId) {
       console.error('❌ User ID mismatch - session user:', session.user.id, 'requested:', userId)
-      return NextResponse.json({ error: 'Unauthorized - user ID mismatch' }, { status: 403 })
+      return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
     }
     
     // Rate limit: 50 trade copies per hour per user
