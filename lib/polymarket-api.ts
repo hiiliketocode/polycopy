@@ -1,5 +1,6 @@
 // lib/polymarket-api.ts
 // Helper functions for fetching data from Polymarket APIs
+// Uses the same API as the discover page for consistency
 
 const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
 const cache = new Map<string, { data: any; timestamp: number }>();
@@ -16,267 +17,182 @@ function setCache(key: string, data: any) {
   cache.set(key, { data, timestamp: Date.now() });
 }
 
-// Types for Polymarket API responses
-export interface PolymarketTrader {
-  address: string;
-  username?: string;
-  totalProfitLoss?: number;
-  volume?: number;
-  roi?: number;
-  marketsTraded?: number;
-  profit?: number;
-  profitPercent?: number;
-}
-
-export interface PolymarketTrade {
-  id: string;
-  user?: string;
-  market?: string;
-  outcome?: string;
-  size?: number;
-  price?: number;
-  timestamp?: number;
-  asset_ticker?: string;
-  maker_address?: string;
-  taker_address?: string;
-  side?: string;
-}
-
-export interface PolymarketMarket {
-  id: string;
-  question?: string;
-  title?: string;
-  volume24hr?: string;
-  volume?: string;
-  tags?: string[];
-  outcomes?: string[];
-  active?: boolean;
-  closed?: boolean;
-  condition_id?: string;
-  slug?: string;
-}
-
-// Fetch top traders from Polymarket leaderboard
-export async function getTopTraders(limit: number = 30): Promise<PolymarketTrader[]> {
-  const cacheKey = `leaderboard_${limit}`;
-  const cached = getCached(cacheKey);
-  if (cached) return cached;
-
-  try {
-    const response = await fetch(
-      `https://data-api.polymarket.com/leaderboard?limit=${limit}`,
-      { 
-        next: { revalidate: 600 },
-        headers: {
-          'Accept': 'application/json',
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      console.error(`Leaderboard API returned ${response.status}`);
-      throw new Error('Leaderboard API failed');
-    }
-    
-    const data = await response.json();
-    setCache(cacheKey, data);
-    return data;
-  } catch (error) {
-    console.error('Error fetching leaderboard:', error);
-    return [];
-  }
-}
-
-// Fetch recent trades across platform
-export async function getRecentTrades(limit: number = 50): Promise<PolymarketTrade[]> {
-  const cacheKey = `trades_${limit}`;
-  const cached = getCached(cacheKey);
-  if (cached) return cached;
-
-  try {
-    const response = await fetch(
-      `https://data-api.polymarket.com/trades?limit=${limit}`,
-      { 
-        next: { revalidate: 600 },
-        headers: {
-          'Accept': 'application/json',
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      console.error(`Trades API returned ${response.status}`);
-      throw new Error('Trades API failed');
-    }
-    
-    const data = await response.json();
-    setCache(cacheKey, data);
-    return data;
-  } catch (error) {
-    console.error('Error fetching trades:', error);
-    return [];
-  }
-}
-
-// Fetch markets sorted by volume
-export async function getMarketsByVolume(limit: number = 50): Promise<PolymarketMarket[]> {
-  const cacheKey = `markets_volume_${limit}`;
-  const cached = getCached(cacheKey);
-  if (cached) return cached;
-
-  try {
-    const response = await fetch(
-      `https://gamma-api.polymarket.com/markets?limit=${limit}&order=volume24hr&ascending=false&active=true`,
-      { 
-        next: { revalidate: 600 },
-        headers: {
-          'Accept': 'application/json',
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      console.error(`Markets API returned ${response.status}`);
-      throw new Error('Markets API failed');
-    }
-    
-    const data = await response.json();
-    setCache(cacheKey, data);
-    return data;
-  } catch (error) {
-    console.error('Error fetching markets:', error);
-    return [];
-  }
-}
-
-// Fetch all active markets for category analysis
-export async function getAllMarkets(limit: number = 200): Promise<PolymarketMarket[]> {
-  const cacheKey = `markets_all_${limit}`;
-  const cached = getCached(cacheKey);
-  if (cached) return cached;
-
-  try {
-    const response = await fetch(
-      `https://gamma-api.polymarket.com/markets?limit=${limit}&active=true`,
-      { 
-        next: { revalidate: 600 },
-        headers: {
-          'Accept': 'application/json',
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      console.error(`All Markets API returned ${response.status}`);
-      throw new Error('Markets API failed');
-    }
-    
-    const data = await response.json();
-    setCache(cacheKey, data);
-    return data;
-  } catch (error) {
-    console.error('Error fetching all markets:', error);
-    return [];
-  }
-}
-
-// Helper: Categorize a market by its title/tags
-export function categorizeMarket(title: string, tags?: string[]): string {
-  const titleLower = (title || '').toLowerCase();
-  
-  // Check tags first if available
-  if (tags && tags.length > 0) {
-    const tagLower = tags[0].toLowerCase();
-    if (tagLower.includes('crypto')) return 'Crypto';
-    if (tagLower.includes('politics') || tagLower.includes('election')) return 'Politics';
-    if (tagLower.includes('sport')) return 'Sports';
-    if (tagLower.includes('pop culture') || tagLower.includes('entertainment')) return 'Pop Culture';
-    if (tagLower.includes('business')) return 'Business';
-    if (tagLower.includes('science')) return 'Science';
-    if (tagLower.includes('ai') || tagLower.includes('tech')) return 'AI & Tech';
-    if (tagLower.includes('finance')) return 'Finance';
-  }
-  
-  // Fallback to title matching
-  if (titleLower.includes('bitcoin') || titleLower.includes('btc') || 
-      titleLower.includes('crypto') || titleLower.includes('ethereum') || 
-      titleLower.includes('eth') || titleLower.includes('solana')) return 'Crypto';
-      
-  if (titleLower.includes('election') || titleLower.includes('president') || 
-      titleLower.includes('vote') || titleLower.includes('congress') || 
-      titleLower.includes('senate') || titleLower.includes('trump') ||
-      titleLower.includes('biden') || titleLower.includes('republican') ||
-      titleLower.includes('democrat')) return 'Politics';
-      
-  if (titleLower.includes('sport') || titleLower.includes(' vs ') || 
-      titleLower.includes('nba') || titleLower.includes('nfl') || 
-      titleLower.includes('soccer') || titleLower.includes('championship') ||
-      titleLower.includes('super bowl') || titleLower.includes('game')) return 'Sports';
-      
-  if (titleLower.includes('stock') || titleLower.includes('msft') || 
-      titleLower.includes('tsla') || titleLower.includes('aapl') ||
-      titleLower.includes('s&p') || titleLower.includes('spy') ||
-      titleLower.includes('nasdaq') || titleLower.includes('dow')) return 'Finance';
-      
-  if (titleLower.includes('ai') || titleLower.includes('openai') || 
-      titleLower.includes('tech') || titleLower.includes('google') ||
-      titleLower.includes('microsoft') || titleLower.includes('apple') ||
-      titleLower.includes('gpt') || titleLower.includes('chatgpt')) return 'AI & Tech';
-      
-  if (titleLower.includes('temperature') || titleLower.includes('weather') ||
-      titleLower.includes('°f') || titleLower.includes('°c')) return 'Weather';
-  
-  return 'Other';
-}
-
-// Get category breakdown from markets
-export function getCategoryBreakdown(markets: PolymarketMarket[]): Array<{
-  category: string;
-  count: number;
+// Types for trader data
+export interface LeaderboardTrader {
+  wallet: string;
+  displayName: string;
+  pnl: number;
   volume: number;
-}> {
-  const categories = new Map<string, { count: number; volume: number }>();
-  
-  markets.forEach(market => {
-    const category = categorizeMarket(market.question || market.title || '', market.tags);
-    const existing = categories.get(category) || { count: 0, volume: 0 };
-    categories.set(category, {
-      count: existing.count + 1,
-      volume: existing.volume + (parseFloat(market.volume24hr || market.volume || '0') || 0)
-    });
-  });
-  
-  return Array.from(categories.entries())
-    .map(([category, data]) => ({ category, ...data }))
-    .sort((a, b) => b.count - a.count);
+  rank: number;
+  roi: number; // Calculated as (pnl / volume) * 100
+  marketsTraded: number;
 }
 
-// Format wallet address for display
-export function formatWalletAddress(address: string): string {
-  if (!address) return 'Anonymous';
-  if (address.length < 10) return address;
+// Category mapping (same as discover page)
+export const CATEGORY_MAP: Record<string, string> = {
+  'All': 'overall',
+  'Politics': 'politics',
+  'Sports': 'sports',
+  'Crypto': 'crypto',
+  'Pop Culture': 'culture',
+  'Business': 'finance',
+  'Economics': 'economics',
+  'Tech': 'tech',
+  'Weather': 'weather'
+};
+
+export const CATEGORIES = ['All', 'Politics', 'Sports', 'Crypto', 'Pop Culture', 'Business', 'Economics', 'Tech', 'Weather'];
+
+// Fetch leaderboard from Polymarket API (same as discover page uses)
+// This is for server-side use - directly calls Polymarket API
+export async function fetchLeaderboard(options: {
+  limit?: number;
+  orderBy?: 'PNL' | 'VOL';
+  category?: string;
+  timePeriod?: 'day' | 'week' | 'month' | 'all';
+}): Promise<LeaderboardTrader[]> {
+  const {
+    limit = 50,
+    orderBy = 'PNL',
+    category = 'overall',
+    timePeriod = 'month'
+  } = options;
+
+  const cacheKey = `leaderboard_${category}_${orderBy}_${limit}_${timePeriod}`;
+  const cached = getCached(cacheKey);
+  if (cached) {
+    console.log(`📦 Cache hit for ${cacheKey}`);
+    return cached;
+  }
+
+  try {
+    const url = `https://data-api.polymarket.com/v1/leaderboard?timePeriod=${timePeriod}&orderBy=${orderBy}&limit=${limit}&offset=0&category=${category}`;
+    
+    console.log(`📡 Fetching leaderboard: ${category} (${orderBy})`);
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Polycopy/1.0)',
+      },
+      cache: 'no-store',
+      // 10 second timeout
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!response.ok) {
+      console.error(`❌ Polymarket API error: ${response.status}`);
+      throw new Error(`Polymarket API returned ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (!Array.isArray(data)) {
+      console.error('❌ Unexpected response format:', typeof data);
+      return [];
+    }
+
+    console.log(`✅ Fetched ${data.length} traders for ${category}`);
+
+    // Transform to our format with ROI calculation
+    const traders: LeaderboardTrader[] = data.map((trader: any) => {
+      const pnl = trader.pnl || 0;
+      const volume = trader.vol || 0;
+      const roi = volume > 0 ? (pnl / volume) * 100 : 0;
+      
+      return {
+        wallet: trader.proxyWallet || '',
+        displayName: trader.userName || abbreviateWallet(trader.proxyWallet || ''),
+        pnl: Math.round(pnl * 100) / 100,
+        volume: Math.round(volume * 100) / 100,
+        rank: parseInt(trader.rank) || 0,
+        roi: Math.round(roi * 100) / 100,
+        marketsTraded: trader.marketsTraded || 0 // May not always be available
+      };
+    });
+
+    setCache(cacheKey, traders);
+    return traders;
+  } catch (error: any) {
+    console.error(`❌ Error fetching ${category} leaderboard:`, error.message);
+    return [];
+  }
+}
+
+// Fetch all category leaderboards in parallel
+export async function fetchAllCategoryLeaderboards(limit: number = 10): Promise<Record<string, LeaderboardTrader[]>> {
+  const cacheKey = `all_categories_${limit}`;
+  const cached = getCached(cacheKey);
+  if (cached) {
+    console.log('📦 Cache hit for all category leaderboards');
+    return cached;
+  }
+
+  const categories = ['politics', 'sports', 'crypto', 'finance', 'tech', 'weather'];
+  
+  console.log('🔄 Fetching all category leaderboards in parallel...');
+  
+  const results = await Promise.allSettled(
+    categories.map(category => fetchLeaderboard({ limit, category, orderBy: 'PNL' }))
+  );
+
+  const leaderboards: Record<string, LeaderboardTrader[]> = {};
+  
+  categories.forEach((category, index) => {
+    const result = results[index];
+    if (result.status === 'fulfilled' && result.value.length > 0) {
+      // Sort by ROI for category leaderboards
+      const sortedByROI = [...result.value].sort((a, b) => b.roi - a.roi);
+      leaderboards[category] = sortedByROI;
+    }
+  });
+
+  setCache(cacheKey, leaderboards);
+  console.log(`✅ Fetched ${Object.keys(leaderboards).length} category leaderboards`);
+  
+  return leaderboards;
+}
+
+// Helper function to abbreviate wallet address
+function abbreviateWallet(address: string): string {
+  if (!address || address.length < 10) return address;
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-// Format currency
-export function formatCurrency(value: number | string | undefined): string {
-  if (value === undefined || value === null) return '$0';
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  if (isNaN(num)) return '$0';
+// Format currency values
+export function formatCurrency(value: number): string {
+  if (value === 0) return '$0';
   
-  if (Math.abs(num) >= 1_000_000) {
-    return `$${(num / 1_000_000).toFixed(2)}M`;
+  const isNegative = value < 0;
+  const absValue = Math.abs(value);
+  
+  let formatted: string;
+  if (absValue >= 1_000_000) {
+    formatted = `$${(absValue / 1_000_000).toFixed(2)}M`;
+  } else if (absValue >= 1_000) {
+    formatted = `$${(absValue / 1_000).toFixed(1)}K`;
+  } else {
+    formatted = `$${absValue.toFixed(0)}`;
   }
-  if (Math.abs(num) >= 1_000) {
-    return `$${(num / 1_000).toFixed(1)}K`;
-  }
-  return `$${num.toFixed(2)}`;
+  
+  return isNegative ? `-${formatted}` : formatted;
 }
 
 // Format percentage
-export function formatPercent(value: number | undefined): string {
-  if (value === undefined || value === null) return '--';
+export function formatPercent(value: number): string {
   const sign = value >= 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}%`;
+  return `${sign}${value.toFixed(1)}%`;
 }
 
+// Format wallet for display
+export function formatWallet(address: string): string {
+  if (!address || address.length < 10) return address || 'Unknown';
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+// Get display name for category
+export function getCategoryDisplayName(apiCategory: string): string {
+  for (const [display, api] of Object.entries(CATEGORY_MAP)) {
+    if (api === apiCategory) return display;
+  }
+  return apiCategory.charAt(0).toUpperCase() + apiCategory.slice(1);
+}
