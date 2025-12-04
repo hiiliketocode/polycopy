@@ -793,19 +793,10 @@ export default function TraderProfilePage({
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {trades.map((trade, index) => {
-                      // Generate Polymarket link with multiple fallback strategies
-                      let polymarketUrl = 'https://polymarket.com';
-                      
-                      if (trade.marketSlug) {
-                        // Try event URL with slug
-                        polymarketUrl = `https://polymarket.com/event/${trade.marketSlug}?utm_source=polycopy&utm_medium=copy_trade&utm_campaign=trader_profile`;
-                      } else if (trade.conditionId) {
-                        // Try condition ID
-                        polymarketUrl = `https://polymarket.com/market/${trade.conditionId}?utm_source=polycopy&utm_medium=copy_trade&utm_campaign=trader_profile`;
-                      } else if (trade.market) {
-                        // Fallback: Use search with market title
-                        polymarketUrl = `https://polymarket.com/search?q=${encodeURIComponent(trade.market)}`;
-                      }
+                      // Generate Polymarket search link - most reliable approach
+                      const polymarketUrl = trade.market 
+                        ? `https://polymarket.com/search?q=${encodeURIComponent(trade.market)}`
+                        : 'https://polymarket.com';
 
                       return (
                         <tr 
@@ -852,7 +843,7 @@ export default function TraderProfilePage({
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 px-3 py-1 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-xs font-bold rounded-full cursor-pointer transition-colors"
                               >
-                                Copy Trade
+                                View Market
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                 </svg>
@@ -874,16 +865,10 @@ export default function TraderProfilePage({
             {/* Mobile: Card-Based View */}
             <div className="md:hidden space-y-4">
               {trades.map((trade, index) => {
-                // Generate Polymarket link
-                let polymarketUrl = 'https://polymarket.com';
-                
-                if (trade.marketSlug) {
-                  polymarketUrl = `https://polymarket.com/event/${trade.marketSlug}?utm_source=polycopy&utm_medium=copy_trade&utm_campaign=trader_profile`;
-                } else if (trade.conditionId) {
-                  polymarketUrl = `https://polymarket.com/market/${trade.conditionId}?utm_source=polycopy&utm_medium=copy_trade&utm_campaign=trader_profile`;
-                } else if (trade.market) {
-                  polymarketUrl = `https://polymarket.com/search?q=${encodeURIComponent(trade.market)}`;
-                }
+                // Generate Polymarket search link - most reliable approach
+                const polymarketUrl = trade.market 
+                  ? `https://polymarket.com/search?q=${encodeURIComponent(trade.market)}`
+                  : 'https://polymarket.com';
 
                 return (
                   <div key={`${trade.timestamp}-${index}`} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
@@ -934,7 +919,7 @@ export default function TraderProfilePage({
                         rel="noopener noreferrer"
                         className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-sm font-bold rounded-full cursor-pointer transition-colors"
                       >
-                        <span>Copy Trade</span>
+                        <span>View Market</span>
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>

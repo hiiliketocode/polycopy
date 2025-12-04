@@ -89,15 +89,8 @@ export default function Header() {
           </nav>
         </div>
 
-        {/* Right: Search + Actions */}
+        {/* Right: Actions */}
         <div className="flex items-center gap-4">
-          {/* Search - Desktop only */}
-          <button className="hidden md:flex items-center gap-2 text-slate-500 hover:text-slate-700 transition-colors">
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </button>
-          
           {user ? (
             <>
               {/* Avatar */}
