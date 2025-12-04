@@ -165,22 +165,29 @@ export default function ProfilePage() {
     fetchStats();
   }, [user]);
 
-  // Fetch copied trades when user is available
+  // Fetch copied trades when user is available - using direct Supabase (like follow)
   useEffect(() => {
     if (!user) return;
     
     const fetchCopiedTrades = async () => {
       setLoadingCopiedTrades(true);
       try {
-        const response = await fetch(`/api/copied-trades?userId=${user.id}`, { credentials: 'include' });
-        if (response.ok) {
-          const data = await response.json();
-          setCopiedTrades(data.trades || []);
+        // Direct Supabase query - same pattern as follow/unfollow
+        const { data: trades, error } = await supabase
+          .from('copied_trades')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('copied_at', { ascending: false });
+        
+        if (error) {
+          console.error('Error fetching copied trades:', error);
+          setCopiedTrades([]);
         } else {
-          console.error('Failed to fetch copied trades:', response.status);
+          setCopiedTrades(trades || []);
         }
       } catch (err) {
         console.error('Error fetching copied trades:', err);
+        setCopiedTrades([]);
       } finally {
         setLoadingCopiedTrades(false);
       }
@@ -445,7 +452,7 @@ export default function ProfilePage() {
   // Delete trade state
   const [deletingTradeId, setDeletingTradeId] = useState<string | null>(null);
   
-  // Delete trade handler
+  // Delete trade handler - using direct Supabase (like follow/unfollow)
   const handleDeleteTrade = async (tradeId: string) => {
     if (!user) return;
     
@@ -456,14 +463,15 @@ export default function ProfilePage() {
     setDeletingTradeId(tradeId);
     
     try {
-      const response = await fetch(`/api/copied-trades/${tradeId}?userId=${user.id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
+      // Direct Supabase delete - same pattern as unfollow
+      const { error } = await supabase
+        .from('copied_trades')
+        .delete()
+        .eq('id', tradeId)
+        .eq('user_id', user.id);  // Security: only delete if it's their trade
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete trade');
+      if (error) {
+        throw new Error(error.message || 'Failed to delete trade');
       }
       
       // Remove from local state
