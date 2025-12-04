@@ -184,6 +184,11 @@ export default function ProfilePage() {
           console.error('Error fetching copied trades:', error);
           setCopiedTrades([]);
         } else {
+          console.log('📊 Loaded copied trades:', trades?.length || 0);
+          // Debug: Show what market_ids are stored
+          trades?.forEach((t, i) => {
+            console.log(`  Trade ${i + 1}: market_id="${t.market_id}" | outcome="${t.outcome}" | title="${t.market_title?.substring(0, 40)}..."`);
+          });
           setCopiedTrades(trades || []);
         }
       } catch (err) {
@@ -218,65 +223,117 @@ export default function ProfilePage() {
 
   // Helper function to fetch current price from Polymarket (client-side, no auth needed)
   const fetchCurrentPriceFromPolymarket = async (trade: CopiedTrade): Promise<{ currentPrice: number | null; roi: number | null }> => {
+    const debug = (msg: string) => console.log(`[Price Fetch] ${msg}`);
+    
     try {
       let markets: any[] | null = null;
       
+      debug(`Looking up: market_id="${trade.market_id}", title="${trade.market_title?.substring(0, 40)}..."`);
+      
       // Try 1: Use condition_id if it starts with 0x
       if (trade.market_id && trade.market_id.startsWith('0x')) {
+        debug(`  → Try 1: condition_id search`);
         const gammaUrl = `https://gamma-api.polymarket.com/markets?condition_id=${trade.market_id}`;
         const response = await fetch(gammaUrl, { cache: 'no-store' });
         
         if (response.ok) {
           const data = await response.json();
+          debug(`    Result: ${data?.length || 0} markets found`);
           if (data && data.length > 0) {
             markets = data;
           }
+        } else {
+          debug(`    HTTP ${response.status}`);
         }
       }
       
       // Try 2: Search by slug if condition_id didn't work
       if (!markets && trade.market_id && !trade.market_id.startsWith('0x')) {
+        debug(`  → Try 2: slug search for "${trade.market_id}"`);
         const gammaUrl = `https://gamma-api.polymarket.com/markets?slug=${encodeURIComponent(trade.market_id)}`;
         const response = await fetch(gammaUrl, { cache: 'no-store' });
         
         if (response.ok) {
           const data = await response.json();
+          debug(`    Result: ${data?.length || 0} markets found`);
           if (data && data.length > 0) {
             markets = data;
           }
+        } else {
+          debug(`    HTTP ${response.status}`);
         }
       }
       
-      // Try 3: If market_id looks like a slug that didn't work, try as a partial slug match
-      // (Sometimes slugs get modified or there are slight differences)
-      if (!markets && trade.market_id && !trade.market_id.startsWith('0x')) {
-        // Try fetching all recent markets and match by title
+      // Try 3: Search recent markets by title
+      if (!markets && trade.market_title) {
+        debug(`  → Try 3: title search in recent markets`);
         try {
-          const gammaUrl = `https://gamma-api.polymarket.com/markets?closed=false&limit=50`;
+          const gammaUrl = `https://gamma-api.polymarket.com/markets?closed=false&limit=100`;
           const response = await fetch(gammaUrl, { cache: 'no-store' });
           
           if (response.ok) {
             const data = await response.json();
-            if (data && data.length > 0) {
-              // Find by title match (case-insensitive)
-              const titleLower = trade.market_title?.toLowerCase() || '';
-              const match = data.find((m: any) => 
-                m.question?.toLowerCase() === titleLower ||
+            const titleLower = trade.market_title?.toLowerCase() || '';
+            
+            // Try exact match first
+            let match = data.find((m: any) => 
+              m.question?.toLowerCase() === titleLower
+            );
+            
+            // Then try partial match
+            if (!match && titleLower.length > 20) {
+              match = data.find((m: any) => 
                 m.question?.toLowerCase().includes(titleLower.substring(0, 30))
               );
-              if (match) {
-                markets = [match];
-              }
+            }
+            
+            if (match) {
+              debug(`    Found match: "${match.question?.substring(0, 40)}..."`);
+              markets = [match];
+            } else {
+              debug(`    No title match in ${data?.length || 0} markets`);
             }
           }
-        } catch {
-          // Ignore text search failures
+        } catch (err) {
+          debug(`    Title search error: ${err}`);
+        }
+      }
+      
+      // Try 4: Search in closed markets too
+      if (!markets && trade.market_title) {
+        debug(`  → Try 4: searching closed markets`);
+        try {
+          const gammaUrl = `https://gamma-api.polymarket.com/markets?closed=true&limit=100`;
+          const response = await fetch(gammaUrl, { cache: 'no-store' });
+          
+          if (response.ok) {
+            const data = await response.json();
+            const titleLower = trade.market_title?.toLowerCase() || '';
+            
+            const match = data.find((m: any) => 
+              m.question?.toLowerCase() === titleLower ||
+              (titleLower.length > 20 && m.question?.toLowerCase().includes(titleLower.substring(0, 30)))
+            );
+            
+            if (match) {
+              debug(`    Found in closed: "${match.question?.substring(0, 40)}..."`);
+              markets = [match];
+            } else {
+              debug(`    No match in closed markets`);
+            }
+          }
+        } catch (err) {
+          debug(`    Closed search error: ${err}`);
         }
       }
       
       // Parse the market data and extract price
       if (markets && markets.length > 0) {
         const market = markets[0];
+        debug(`  ✓ Using market: "${market.question?.substring(0, 40)}..."`);
+        debug(`    Raw outcomePrices: ${JSON.stringify(market.outcomePrices)}`);
+        debug(`    Raw outcomes: ${JSON.stringify(market.outcomes)}`);
+        
         let prices = market.outcomePrices;
         let outcomes = market.outcomes;
         
@@ -288,6 +345,10 @@ export default function ProfilePage() {
           try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
         }
         
+        debug(`    Parsed prices: ${JSON.stringify(prices)}`);
+        debug(`    Parsed outcomes: ${JSON.stringify(outcomes)}`);
+        debug(`    Trade outcome: "${trade.outcome}"`);
+        
         if (prices && Array.isArray(prices) && prices.length >= 2) {
           const outcomeUpper = trade.outcome?.toUpperCase();
           let currentPrice: number | null = null;
@@ -295,13 +356,16 @@ export default function ProfilePage() {
           // Standard YES/NO markets
           if (outcomeUpper === 'YES') {
             currentPrice = parseFloat(prices[0]);
+            debug(`    YES → price[0] = ${currentPrice}`);
           } else if (outcomeUpper === 'NO') {
             currentPrice = parseFloat(prices[1]);
+            debug(`    NO → price[1] = ${currentPrice}`);
           } else if (outcomes && Array.isArray(outcomes)) {
             // Custom outcomes - find by name (case-insensitive)
             const outcomeIndex = outcomes.findIndex(
               (o: string) => o?.toUpperCase() === outcomeUpper
             );
+            debug(`    Custom outcome "${outcomeUpper}" → index ${outcomeIndex}`);
             if (outcomeIndex >= 0 && outcomeIndex < prices.length) {
               currentPrice = parseFloat(prices[outcomeIndex]);
             }
@@ -317,8 +381,13 @@ export default function ProfilePage() {
             }
           }
           
+          debug(`  ✓ Final: price=${currentPrice}, roi=${roi}`);
           return { currentPrice, roi };
+        } else {
+          debug(`  ✗ Invalid prices array`);
         }
+      } else {
+        debug(`  ✗ No market found after all attempts`);
       }
     } catch (err) {
       console.error('Error fetching price from Polymarket:', err);
