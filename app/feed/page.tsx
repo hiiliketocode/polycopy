@@ -626,56 +626,41 @@ export default function FeedPage() {
     setModalOpen(true);
   };
 
-  // Confirm mark as copied
+  // Confirm mark as copied - using Supabase directly (like follow/unfollow)
   const handleConfirmCopy = async (entryPrice: number, amountInvested?: number) => {
     if (!selectedTrade || !user) return;
 
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('/api/copied-trades', {
-        method: 'POST',
-        credentials: 'include',  // Ensure cookies are sent for authentication
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: user.id,
-          traderWallet: selectedTrade.trader.wallet,
-          traderUsername: selectedTrade.trader.displayName,
-          marketId: selectedTrade.market.id || selectedTrade.market.slug || selectedTrade.market.title,
-          marketTitle: selectedTrade.market.title,
+      // Insert directly into Supabase (like follow/unfollow does)
+      // This works because the client-side Supabase client already has auth
+      const { data: createdTrade, error: insertError } = await supabase
+        .from('copied_trades')
+        .insert({
+          user_id: user.id,
+          trader_wallet: selectedTrade.trader.wallet,
+          trader_username: selectedTrade.trader.displayName,
+          market_id: selectedTrade.market.id || selectedTrade.market.slug || selectedTrade.market.title,
+          market_title: selectedTrade.market.title,
           outcome: selectedTrade.trade.outcome.toUpperCase(),
-          priceWhenCopied: entryPrice,
-          amountInvested: amountInvested,
-        }),
-      });
+          price_when_copied: entryPrice,
+          amount_invested: amountInvested || null,
+        })
+        .select()
+        .single();
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to save copied trade');
+      if (insertError) {
+        console.error('❌ Insert error:', insertError);
+        throw new Error(insertError.message || 'Failed to save copied trade');
       }
-
-      const responseData = await response.json();
-      const createdTrade = responseData.trade; // Extract trade from nested response
 
       if (!createdTrade?.id) {
         console.error('❌ No trade ID in response');
         throw new Error('Trade created but no ID returned');
       }
 
-      // Immediately fetch current price and ROI for the new trade
-      try {
-        const statusUrl = `/api/copied-trades/${createdTrade.id}/status?userId=${user.id}`;
-        const statusResponse = await fetch(statusUrl, { credentials: 'include' });
-        
-        if (!statusResponse.ok) {
-          console.error('❌ Initial status fetch failed:', statusResponse.status);
-        }
-      } catch (statusErr: any) {
-        // Non-critical - price will be fetched on next refresh
-        console.error('❌ Status fetch error:', statusErr.message);
-      }
+      console.log('✅ Trade copied successfully:', createdTrade.id);
 
       // Update local state
       const tradeKey = `${selectedTrade.market.id || selectedTrade.market.slug || selectedTrade.market.title}-${selectedTrade.trader.wallet}`;
