@@ -172,7 +172,7 @@ export default function ProfilePage() {
     const fetchCopiedTrades = async () => {
       setLoadingCopiedTrades(true);
       try {
-        const response = await fetch(`/api/copied-trades?userId=${user.id}`);
+        const response = await fetch(`/api/copied-trades?userId=${user.id}`, { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
           setCopiedTrades(data.trades || []);
@@ -195,7 +195,7 @@ export default function ProfilePage() {
     
     const fetchNotificationPrefs = async () => {
       try {
-        const response = await fetch(`/api/notification-preferences?userId=${user.id}`);
+        const response = await fetch(`/api/notification-preferences?userId=${user.id}`, { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
           setNotificationsEnabled(data.email_notifications_enabled ?? true);
@@ -287,6 +287,7 @@ export default function ProfilePage() {
     try {
       const response = await fetch('/api/notification-preferences', {
         method: 'PUT',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
@@ -387,7 +388,7 @@ export default function ProfilePage() {
         
         try {
           const url = `/api/copied-trades/${trade.id}/status?userId=${user?.id}`;
-          const response = await fetch(url);
+          const response = await fetch(url, { credentials: 'include' });
           const data = await response.json();
           
           if (response.ok && data.trade) {
@@ -457,6 +458,7 @@ export default function ProfilePage() {
     try {
       const response = await fetch(`/api/copied-trades/${tradeId}?userId=${user.id}`, {
         method: 'DELETE',
+        credentials: 'include',
       });
       
       if (!response.ok) {

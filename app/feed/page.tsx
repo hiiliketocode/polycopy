@@ -445,7 +445,7 @@ export default function FeedPage() {
     const fetchCopiedTrades = async () => {
       setLoadingCopiedTrades(true);
       try {
-        const response = await fetch(`/api/copied-trades?userId=${user.id}`);
+        const response = await fetch(`/api/copied-trades?userId=${user.id}`, { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
           const copiedIds = new Set<string>(
@@ -635,6 +635,7 @@ export default function FeedPage() {
     try {
       const response = await fetch('/api/copied-trades', {
         method: 'POST',
+        credentials: 'include',  // Ensure cookies are sent for authentication
         headers: {
           'Content-Type': 'application/json',
         },
@@ -666,7 +667,7 @@ export default function FeedPage() {
       // Immediately fetch current price and ROI for the new trade
       try {
         const statusUrl = `/api/copied-trades/${createdTrade.id}/status?userId=${user.id}`;
-        const statusResponse = await fetch(statusUrl);
+        const statusResponse = await fetch(statusUrl, { credentials: 'include' });
         
         if (!statusResponse.ok) {
           console.error('❌ Initial status fetch failed:', statusResponse.status);
