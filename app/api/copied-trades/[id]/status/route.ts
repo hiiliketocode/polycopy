@@ -1,6 +1,7 @@
-// Copied trades status API - uses userId passed from client
+// Copied trades status API - with server-side session verification
 
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { checkRateLimit } from '@/lib/rate-limit'
 
@@ -55,6 +56,26 @@ export async function GET(
     if (!userId) {
       console.error('❌ Missing userId in status request')
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
+    }
+
+    // Verify authentication using server client
+    const supabaseAuth = await createAuthClient()
+    const { data: { session }, error: authError } = await supabaseAuth.auth.getSession()
+    
+    if (authError) {
+      console.error('🔐 Auth error:', authError.message)
+    }
+    
+    // SECURITY: Require valid session
+    if (!session) {
+      console.error('❌ No valid session - unauthorized')
+      return NextResponse.json({ error: 'Unauthorized - please log in' }, { status: 401 })
+    }
+    
+    // SECURITY: Verify the userId matches the authenticated user
+    if (session.user.id !== userId) {
+      console.error('❌ User ID mismatch - session:', session.user.id, 'requested:', userId)
+      return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
     }
 
     // Rate limit: 200 status checks per hour per user
@@ -306,6 +327,7 @@ export async function GET(
       .from('copied_trades')
       .update(updateData)
       .eq('id', id)
+      .eq('user_id', userId)  // SECURITY: Only update if it belongs to this user
       .select()
       .single()
 
