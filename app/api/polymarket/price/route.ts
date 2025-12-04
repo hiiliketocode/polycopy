@@ -1,4 +1,5 @@
 // Proxy API for fetching Polymarket prices (bypasses CORS)
+// Uses CLOB API for accurate real-time prices
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
@@ -8,28 +9,45 @@ export async function GET(request: Request) {
   const title = searchParams.get('title');
 
   try {
-    let markets: any[] | null = null;
-
-    // Try 1: condition_id search
+    // Try 1: CLOB API with condition_id (most accurate for real-time prices)
     if (conditionId && conditionId.startsWith('0x')) {
-      console.log(`[Price API] Searching by conditionId: ${conditionId}`);
+      console.log(`[Price API] CLOB search by conditionId: ${conditionId}`);
       const response = await fetch(
-        `https://gamma-api.polymarket.com/markets?condition_id=${conditionId}`,
+        `https://clob.polymarket.com/markets/${conditionId}`,
         { cache: 'no-store' }
       );
       
       if (response.ok) {
-        const data = await response.json();
-        if (data && data.length > 0) {
-          markets = data;
-          console.log(`[Price API] Found ${data.length} markets by conditionId`);
+        const market = await response.json();
+        console.log(`[Price API] CLOB found: ${market.question}`);
+        
+        // CLOB API returns tokens array with outcome and price
+        if (market.tokens && Array.isArray(market.tokens)) {
+          const outcomes = market.tokens.map((t: any) => t.outcome);
+          const prices = market.tokens.map((t: any) => t.price.toString());
+          
+          console.log(`[Price API] Outcomes: ${JSON.stringify(outcomes)}, Prices: ${JSON.stringify(prices)}`);
+          
+          return NextResponse.json({
+            success: true,
+            market: {
+              question: market.question,
+              conditionId: market.condition_id,
+              slug: market.market_slug,
+              closed: market.closed,
+              outcomePrices: prices,
+              outcomes: outcomes,
+            }
+          });
         }
+      } else {
+        console.log(`[Price API] CLOB returned ${response.status}`);
       }
     }
 
-    // Try 2: slug search
-    if (!markets && slug && !slug.startsWith('0x')) {
-      console.log(`[Price API] Searching by slug: ${slug}`);
+    // Try 2: Gamma API by slug (fallback for older markets)
+    if (slug && !slug.startsWith('0x')) {
+      console.log(`[Price API] Gamma search by slug: ${slug}`);
       const response = await fetch(
         `https://gamma-api.polymarket.com/markets?slug=${encodeURIComponent(slug)}`,
         { cache: 'no-store' }
@@ -38,15 +56,37 @@ export async function GET(request: Request) {
       if (response.ok) {
         const data = await response.json();
         if (data && data.length > 0) {
-          markets = data;
-          console.log(`[Price API] Found ${data.length} markets by slug`);
+          const market = data[0];
+          console.log(`[Price API] Gamma found: ${market.question}`);
+          
+          let prices = market.outcomePrices;
+          let outcomes = market.outcomes;
+          
+          if (typeof prices === 'string') {
+            try { prices = JSON.parse(prices); } catch { prices = null; }
+          }
+          if (typeof outcomes === 'string') {
+            try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
+          }
+
+          return NextResponse.json({
+            success: true,
+            market: {
+              question: market.question,
+              conditionId: market.conditionId,
+              slug: market.slug,
+              closed: market.closed,
+              outcomePrices: prices,
+              outcomes: outcomes,
+            }
+          });
         }
       }
     }
 
-    // Try 3: title search in open markets
-    if (!markets && title) {
-      console.log(`[Price API] Searching by title in open markets`);
+    // Try 3: Gamma API title search in open markets
+    if (title) {
+      console.log(`[Price API] Gamma title search: ${title.substring(0, 30)}...`);
       const response = await fetch(
         `https://gamma-api.polymarket.com/markets?closed=false&limit=100`,
         { cache: 'no-store' }
@@ -56,76 +96,47 @@ export async function GET(request: Request) {
         const data = await response.json();
         const titleLower = title.toLowerCase();
         
-        // Try exact match
+        // Try exact match first
         let match = data.find((m: any) => 
           m.question?.toLowerCase() === titleLower
         );
         
-        // Try partial match
-        if (!match && titleLower.length > 20) {
+        // Then partial match
+        if (!match && titleLower.length > 10) {
           match = data.find((m: any) => 
-            m.question?.toLowerCase().includes(titleLower.substring(0, 30))
+            m.question?.toLowerCase().includes(titleLower.substring(0, 20))
           );
         }
         
         if (match) {
-          markets = [match];
-          console.log(`[Price API] Found market by title: ${match.question?.substring(0, 40)}`);
+          console.log(`[Price API] Gamma title found: ${match.question}`);
+          
+          let prices = match.outcomePrices;
+          let outcomes = match.outcomes;
+          
+          if (typeof prices === 'string') {
+            try { prices = JSON.parse(prices); } catch { prices = null; }
+          }
+          if (typeof outcomes === 'string') {
+            try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
+          }
+
+          return NextResponse.json({
+            success: true,
+            market: {
+              question: match.question,
+              conditionId: match.conditionId,
+              slug: match.slug,
+              closed: match.closed,
+              outcomePrices: prices,
+              outcomes: outcomes,
+            }
+          });
         }
       }
     }
 
-    // Try 4: title search in closed markets
-    if (!markets && title) {
-      console.log(`[Price API] Searching by title in closed markets`);
-      const response = await fetch(
-        `https://gamma-api.polymarket.com/markets?closed=true&limit=100`,
-        { cache: 'no-store' }
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        const titleLower = title.toLowerCase();
-        
-        const match = data.find((m: any) => 
-          m.question?.toLowerCase() === titleLower ||
-          (titleLower.length > 20 && m.question?.toLowerCase().includes(titleLower.substring(0, 30)))
-        );
-        
-        if (match) {
-          markets = [match];
-          console.log(`[Price API] Found market in closed: ${match.question?.substring(0, 40)}`);
-        }
-      }
-    }
-
-    if (markets && markets.length > 0) {
-      const market = markets[0];
-      
-      // Parse prices and outcomes
-      let prices = market.outcomePrices;
-      let outcomes = market.outcomes;
-      
-      if (typeof prices === 'string') {
-        try { prices = JSON.parse(prices); } catch { prices = null; }
-      }
-      if (typeof outcomes === 'string') {
-        try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
-      }
-
-      return NextResponse.json({
-        success: true,
-        market: {
-          question: market.question,
-          conditionId: market.conditionId,
-          slug: market.slug,
-          closed: market.closed,
-          outcomePrices: prices,
-          outcomes: outcomes,
-        }
-      });
-    }
-
+    console.log(`[Price API] Market not found for conditionId=${conditionId}, slug=${slug}, title=${title?.substring(0, 30)}`);
     return NextResponse.json({
       success: false,
       error: 'Market not found'
