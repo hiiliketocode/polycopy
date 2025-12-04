@@ -438,23 +438,33 @@ export default function FeedPage() {
     return () => subscription.unsubscribe();
   }, [router]);
 
-  // Fetch copied trades when user is available
+  // Fetch copied trades when user is available - using direct Supabase (like follow)
   useEffect(() => {
     if (!user) return;
     
     const fetchCopiedTrades = async () => {
       setLoadingCopiedTrades(true);
       try {
-        const response = await fetch(`/api/copied-trades?userId=${user.id}`, { credentials: 'include' });
-        if (response.ok) {
-          const data = await response.json();
+        // Direct Supabase query - same pattern as follow/unfollow
+        const { data: trades, error } = await supabase
+          .from('copied_trades')
+          .select('market_id, trader_wallet')
+          .eq('user_id', user.id);
+        
+        if (error) {
+          console.error('Error fetching copied trades:', error);
+          setCopiedTradeIds(new Set());
+        } else {
           const copiedIds = new Set<string>(
-            data.trades?.map((t: CopiedTrade) => `${t.market_id}-${t.trader_wallet}`) || []
+            trades?.map((t: { market_id: string; trader_wallet: string }) => 
+              `${t.market_id}-${t.trader_wallet}`
+            ) || []
           );
           setCopiedTradeIds(copiedIds);
         }
       } catch (err) {
         console.error('Error fetching copied trades:', err);
+        setCopiedTradeIds(new Set());
       } finally {
         setLoadingCopiedTrades(false);
       }
