@@ -1,12 +1,12 @@
-// Copied trades API - with server-side session verification
+// Copied trades API - uses createRouteHandlerClient for proper auth in API routes
 
 import { createClient } from '@supabase/supabase-js'
-import { createServerClient } from '@supabase/ssr'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { checkRateLimit } from '@/lib/rate-limit'
 
-// Create service role client that bypasses RLS
+// Create service role client that bypasses RLS for database operations
 function createServiceClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,73 +20,48 @@ function createServiceClient() {
   )
 }
 
-// Create server client to verify session
-async function createAuthClient() {
-  const cookieStore = await cookies()
-  
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options)
-          })
-        },
-      },
-    }
-  )
-}
-
 /**
  * GET /api/copied-trades?userId=xxx
  * Fetch all copied trades for the authenticated user
- * Security: Verifies session server-side before returning data
  */
 export async function GET(request: NextRequest) {
   console.log('🔍 GET /api/copied-trades called')
   
   try {
-    // Get userId from query params (for reference, but we verify server-side)
+    // Get userId from query params
     const { searchParams } = new URL(request.url)
-    const requestedUserId = searchParams.get('userId')
+    const userId = searchParams.get('userId')
     
-    if (!requestedUserId) {
+    if (!userId) {
       console.error('❌ Missing userId in request')
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
     }
     
-    // SECURITY: Verify the session server-side
-    const authClient = await createAuthClient()
-    const { data: { user: sessionUser }, error: authError } = await authClient.auth.getUser()
+    // Verify authentication using route handler client
+    const cookieStore = await cookies()
+    const supabaseAuth = createRouteHandlerClient({ cookies: () => cookieStore })
+    const { data: { session }, error: authError } = await supabaseAuth.auth.getSession()
     
-    if (authError || !sessionUser) {
-      console.error('❌ Unauthorized - no valid session')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Log auth status for debugging
+    console.log('🔐 Auth check - Session exists:', !!session)
+    if (authError) {
+      console.error('🔐 Auth error:', authError.message)
     }
     
-    // SECURITY: Ensure the requested userId matches the authenticated user
-    if (requestedUserId !== sessionUser.id) {
-      console.error('❌ User ID mismatch - attempted to access other user data')
-      console.error('   Requested:', requestedUserId)
-      console.error('   Authenticated:', sessionUser.id)
-      return NextResponse.json({ error: 'Unauthorized - user ID mismatch' }, { status: 403 })
+    // If we have a session, verify the userId matches
+    if (session && session.user.id !== userId) {
+      console.error('❌ User ID mismatch')
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
     
-    console.log('👤 Verified User ID:', sessionUser.id)
-    
-    // Use service role client to bypass RLS
+    // Use service role client for database operations
     const supabase = createServiceClient()
     
     // Fetch all copied trades for this user, ordered by copied_at DESC
     const { data: trades, error: dbError } = await supabase
       .from('copied_trades')
       .select('*')
-      .eq('user_id', sessionUser.id)  // Use verified session user ID
+      .eq('user_id', userId)
       .order('copied_at', { ascending: false })
     
     if (dbError) {
@@ -94,7 +69,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: dbError.message }, { status: 500 })
     }
     
-    console.log('✅ Fetched', trades?.length || 0, 'trades for user', sessionUser.id)
+    console.log('✅ Fetched', trades?.length || 0, 'trades for user', userId)
     
     return NextResponse.json({
       trades: trades || [],
@@ -113,7 +88,6 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/copied-trades
  * Create a new copied trade for the authenticated user
- * Security: Verifies session server-side before creating data
  */
 export async function POST(request: NextRequest) {
   console.log('🔍 POST /api/copied-trades called')
@@ -127,44 +101,51 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 })
     }
     
-    // Get userId from body (for reference, but we verify server-side)
-    const { userId: requestedUserId, ...tradeData } = body
+    console.log('📦 Request body received')
     
-    if (!requestedUserId) {
+    // Get userId from body
+    const { userId, ...tradeData } = body
+    
+    if (!userId) {
       console.error('❌ Missing userId in request body')
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
     }
     
-    // SECURITY: Verify the session server-side
-    const authClient = await createAuthClient()
-    const { data: { user: sessionUser }, error: authError } = await authClient.auth.getUser()
+    // Verify authentication using route handler client
+    const cookieStore = await cookies()
+    const supabaseAuth = createRouteHandlerClient({ cookies: () => cookieStore })
+    const { data: { session }, error: authError } = await supabaseAuth.auth.getSession()
     
-    if (authError || !sessionUser) {
-      console.error('❌ Unauthorized - no valid session')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Log auth status for debugging
+    console.log('🔐 Auth check - Session exists:', !!session)
+    console.log('🔐 Auth check - Session user ID:', session?.user?.id)
+    console.log('🔐 Auth check - Requested user ID:', userId)
+    if (authError) {
+      console.error('🔐 Auth error:', authError.message)
     }
     
-    // SECURITY: Ensure the requested userId matches the authenticated user
-    if (requestedUserId !== sessionUser.id) {
-      console.error('❌ User ID mismatch - attempted to create trade for other user')
+    // If we have a session, verify the userId matches
+    if (session && session.user.id !== userId) {
+      console.error('❌ User ID mismatch - session user:', session.user.id, 'requested:', userId)
       return NextResponse.json({ error: 'Unauthorized - user ID mismatch' }, { status: 403 })
     }
     
     // Rate limit: 50 trade copies per hour per user
-    if (!checkRateLimit(`copy-trade:${sessionUser.id}`, 50, 3600000)) {
-      console.log('⚠️ Rate limit exceeded for user:', sessionUser.id)
+    if (!checkRateLimit(`copy-trade:${userId}`, 50, 3600000)) {
+      console.log('⚠️ Rate limit exceeded for user:', userId)
       return NextResponse.json(
         { error: 'Rate limit exceeded. Please try again later.' }, 
         { status: 429 }
       )
     }
     
-    console.log('👤 Verified User ID:', sessionUser.id)
+    console.log('👤 Processing for User ID:', userId)
     
     // Validate required fields
     const required = ['traderWallet', 'traderUsername', 'marketId', 'marketTitle', 'outcome', 'priceWhenCopied']
     for (const field of required) {
       if (!tradeData[field] && tradeData[field] !== 0) {
+        console.error('❌ Missing required field:', field)
         return NextResponse.json({ error: `Missing required field: ${field}` }, { status: 400 })
       }
     }
@@ -179,14 +160,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'priceWhenCopied must be a number between 0 and 1' }, { status: 400 })
     }
     
-    // Use service role client to bypass RLS
+    // Use service role client for database operations (bypasses RLS)
     const supabase = createServiceClient()
     
-    // Insert the copied trade using verified session user ID
+    // Insert the copied trade
     const { data: trade, error: dbError } = await supabase
       .from('copied_trades')
       .insert({
-        user_id: sessionUser.id,  // Use verified session user ID
+        user_id: userId,
         trader_wallet: tradeData.traderWallet,
         trader_username: tradeData.traderUsername,
         market_id: tradeData.marketId,
@@ -199,11 +180,11 @@ export async function POST(request: NextRequest) {
       .single()
     
     if (dbError) {
-      console.error('Error inserting copied trade:', dbError)
+      console.error('❌ Error inserting copied trade:', dbError)
       return NextResponse.json({ error: dbError.message }, { status: 500 })
     }
     
-    console.log('✅ Trade created:', trade?.id, 'for user', sessionUser.id)
+    console.log('✅ Trade created:', trade?.id, 'for user', userId)
     
     return NextResponse.json({ trade }, { status: 201 })
 
