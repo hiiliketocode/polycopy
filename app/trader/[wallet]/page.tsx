@@ -853,9 +853,13 @@ export default function TraderProfilePage({
     }
   };
 
-  // Format trades count - returns "--" if no data
-  const formatTradesCount = (count: number | null | undefined): string => {
+  // Format trades count - returns "--" if no data, or "100+" if we've hit the load limit
+  const formatTradesCount = (count: number | null | undefined, showPlus: boolean = false): string => {
     if (count === null || count === undefined) {
+      // If we have loaded trades but no official count, show loaded count with "+"
+      if (showPlus && trades.length > 0) {
+        return `${trades.length}+`;
+      }
       return '--';
     }
     return count.toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -911,7 +915,10 @@ export default function TraderProfilePage({
   // Avatar initials: first 2 characters after "0x" prefix, uppercased
   const initials = wallet.slice(2, 4).toUpperCase();
   const roi = traderData.roiFormatted || calculateROI(traderData.pnl, traderData.volume);
-  const tradesCount = traderData.tradesCount ?? leaderboardData?.total_trades ?? trades.length;
+  // Only show trades count if we have it from leaderboard data (reliable source)
+  // If we only have loaded trades, show that count with "+" to indicate there are more
+  const tradesCount = traderData.tradesCount ?? leaderboardData?.total_trades ?? null;
+  const hasMoreTrades = !tradesCount && trades.length >= 100; // API default limit is 100
 
   // Determine display name: prefer leaderboard username, then traderData, then "Anonymous Trader"
   const displayName = leaderboardData?.username || traderData.displayName || 'Anonymous Trader';
@@ -1043,7 +1050,7 @@ export default function TraderProfilePage({
             <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
               <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">TRADES</div>
               <div className="text-2xl font-bold text-slate-900">
-                {formatTradesCount(tradesCount)}
+                {formatTradesCount(tradesCount, hasMoreTrades)}
               </div>
             </div>
           </div>
@@ -1077,7 +1084,7 @@ export default function TraderProfilePage({
               <div>
                 <div className="text-xs text-slate-500 uppercase mb-1">Trades</div>
                 <div className="text-sm font-bold text-slate-900">
-                  {formatTradesCount(tradesCount)}
+                  {formatTradesCount(tradesCount, hasMoreTrades)}
                 </div>
               </div>
             </div>
