@@ -593,8 +593,19 @@ export default function TraderProfilePage({
           if (openMarketIds.size > 0) {
             // Check if this trade's market is in the open positions
             // IMPORTANT: Normalize to lowercase for case-insensitive matching
-            const isOpen = openMarketIds.has(tradeConditionId.toLowerCase());
+            const normalizedConditionId = tradeConditionId.toLowerCase();
+            const isOpen = openMarketIds.has(normalizedConditionId);
             status = isOpen ? 'Open' : 'Closed';
+            
+            // DEBUG: Log the status assignment for first few trades
+            if (index < 10) {
+              console.log('🏭 PROCESSING TRADE:', (trade.title || 'Unknown').substring(0, 40));
+              console.log('   Raw conditionId:', tradeConditionId);
+              console.log('   Normalized:', normalizedConditionId);
+              console.log('   openMarketIds size:', openMarketIds.size);
+              console.log('   Found in openMarketIds?:', isOpen);
+              console.log('   Assigned status:', status);
+            }
           } else {
             // If positions API returned empty (no open positions), all trades are Closed
             // Unless explicitly marked as bonded
@@ -1122,6 +1133,20 @@ export default function TraderProfilePage({
                       const polymarketUrl = getPolymarketUrl(trade);
                       const isAlreadyCopied = isTradeCopied(trade);
                       const isOpen = trade.status === 'Open';
+                      
+                      // DEBUG: Very visible logging for trade status matching
+                      console.log('='.repeat(50));
+                      console.log('🔍 TRADE STATUS CHECK (Desktop Table)');
+                      console.log('📋 Trade title:', trade.market);
+                      console.log('🆔 Trade conditionId:', trade.conditionId);
+                      console.log('📊 Trade.status from data:', trade.status);
+                      console.log('✅ isOpen variable:', isOpen);
+                      console.log('🔗 polymarketUrl:', polymarketUrl);
+                      console.log('📦 Total positions count:', positions.length);
+                      console.log('📦 All position conditionIds:', positions.map(p => p.conditionId));
+                      console.log('🔎 Case-insensitive match check:', positions.some(p => p.conditionId?.toLowerCase() === trade.conditionId?.toLowerCase()));
+                      console.log('🎯 Will show Copy button?', isOpen && polymarketUrl);
+                      console.log('='.repeat(50));
 
                       return (
                         <tr 
@@ -1222,6 +1247,11 @@ export default function TraderProfilePage({
                 const polymarketUrl = getPolymarketUrl(trade);
                 const isAlreadyCopied = isTradeCopied(trade);
                 const isOpen = trade.status === 'Open';
+                
+                // DEBUG: Very visible logging for trade status matching (Mobile)
+                if (index < 5) { // Limit to first 5 to avoid console spam
+                  console.log('📱 MOBILE TRADE CHECK:', trade.market?.substring(0, 30), '| status:', trade.status, '| isOpen:', isOpen);
+                }
 
                 return (
                   <div key={`${trade.timestamp}-${index}`} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
