@@ -14,6 +14,15 @@ interface TraderData {
   followerCount: number;
   roi?: number; // Optional: calculated value
   roiFormatted?: string; // Optional: pre-formatted ROI
+  tradesCount?: number; // Total number of trades
+}
+
+interface LeaderboardData {
+  username?: string;
+  total_pnl?: number;
+  volume?: number;
+  total_trades?: number;
+  roi?: number;
 }
 
 interface Trade {
@@ -23,9 +32,12 @@ interface Trade {
   outcome: string;
   size: number;
   price: number;
-  timeAgo: string;
+  avgPrice?: number;
+  currentPrice?: number;
+  formattedDate: string;
   marketSlug?: string;
   conditionId?: string;
+  status: 'Open' | 'Closed' | 'Bonded';
 }
 
 export default function TraderProfilePage({
@@ -35,6 +47,7 @@ export default function TraderProfilePage({
 }) {
   const [wallet, setWallet] = useState<string>('');
   const [traderData, setTraderData] = useState<TraderData | null>(null);
+  const [leaderboardData, setLeaderboardData] = useState<LeaderboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
@@ -43,11 +56,21 @@ export default function TraderProfilePage({
   const [copied, setCopied] = useState(false);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loadingTrades, setLoadingTrades] = useState(false);
+  const [openMarketIds, setOpenMarketIds] = useState<Set<string>>(new Set());
   const router = useRouter();
 
   // Unwrap params Promise
   useEffect(() => {
-    params.then((p) => setWallet(p.wallet));
+    params.then((p) => {
+      console.log('🔍 Wallet from URL:', p.wallet);
+      console.log('🔍 Wallet format check:', {
+        length: p.wallet.length,
+        startsWithOx: p.wallet.startsWith('0x'),
+        isValidFormat: p.wallet.startsWith('0x') && p.wallet.length === 42,
+        isUsername: !p.wallet.startsWith('0x'),
+      });
+      setWallet(p.wallet);
+    });
   }, [params]);
 
   // Fetch trader data (hybrid approach: check sessionStorage first for instant load)
@@ -81,19 +104,22 @@ export default function TraderProfilePage({
       }
 
       // No cached data, fetch from API (direct URL visit)
-      console.log('📡 No cached data found, fetching from API...');
+      console.log('📡 No cached data found, fetching from internal API...');
+      console.log('📡 Internal API URL:', `/api/trader/${wallet}`);
       setLoading(true);
       setError(null);
 
       try {
         const response = await fetch(`/api/trader/${wallet}`);
+        
+        console.log('📡 Internal API response status:', response.status);
 
         if (!response.ok) {
           throw new Error('Failed to fetch trader data');
         }
 
         const data = await response.json();
-        console.log('✅ Fetched trader data from API:', data);
+        console.log('📡 Internal API response:', JSON.stringify(data, null, 2));
         setTraderData(data);
       } catch (err: any) {
         console.error('❌ Error fetching trader:', err);
@@ -106,52 +132,143 @@ export default function TraderProfilePage({
     loadTraderData();
   }, [wallet]);
 
-  // Fetch username from leaderboard (SAME AS FEED PAGE)
+  // Fetch username and stats directly from Polymarket leaderboard API
   useEffect(() => {
-    if (!wallet || !traderData) return;
+    if (!wallet) return;
 
-    const fetchUsername = async () => {
-      console.log('🔍 Fetching username from leaderboard for wallet:', wallet);
+    const fetchLeaderboardData = async () => {
+      const apiUrl = `https://data-api.polymarket.com/leaderboard?address=${wallet}`;
+      console.log('📊 Fetching leaderboard data...');
+      console.log('📊 Leaderboard API URL:', apiUrl);
       
       try {
-        // Use the same leaderboard API as Feed page
-        const response = await fetch('/api/polymarket/leaderboard?limit=100&orderBy=PNL');
+        // Use direct address lookup from Polymarket leaderboard API
+        const response = await fetch(apiUrl);
+        
+        console.log('📊 Leaderboard response status:', response.status);
         
         if (!response.ok) {
           console.log('⚠️ Leaderboard request failed:', response.status);
           return;
         }
 
-        const leaderboardData = await response.json();
-        console.log('✅ Leaderboard data fetched');
+        const data = await response.json();
+        console.log('📊 Leaderboard RAW response:', JSON.stringify(data, null, 2));
+        console.log('📊 Leaderboard data type:', typeof data);
+        console.log('📊 Is array:', Array.isArray(data));
+        console.log('📊 Data length:', Array.isArray(data) ? data.length : 'N/A');
         
-        // Find this trader in the leaderboard
-        const trader = leaderboardData.traders?.find(
-          (t: any) => t.wallet.toLowerCase() === wallet.toLowerCase()
-        );
+        // The API returns an array, get the first result
+        const trader = Array.isArray(data) ? data[0] : data;
         
-        if (trader && trader.displayName) {
-          console.log('✅ Found username in leaderboard:', trader.displayName);
-          
-          // Update trader data with username from leaderboard
-          setTraderData(prev => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              displayName: trader.displayName
-            };
+        if (trader) {
+          console.log('📊 Trader data found:', {
+            username: trader.username,
+            name: trader.name,
+            total_pnl: trader.total_pnl,
+            pnl: trader.pnl,
+            volume: trader.volume,
+            total_trades: trader.total_trades,
+            trades_count: trader.trades_count,
+            roi: trader.roi,
+            allKeys: Object.keys(trader),
           });
+          
+          setLeaderboardData({
+            username: trader.username || trader.name,
+            total_pnl: trader.total_pnl ?? trader.pnl,
+            volume: trader.volume,
+            total_trades: trader.total_trades ?? trader.trades_count,
+            roi: trader.roi,
+          });
+          
+          // Update trader data with username if available
+          if (trader.username || trader.name) {
+            setTraderData(prev => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                displayName: trader.username || trader.name || prev.displayName,
+                pnl: trader.total_pnl ?? trader.pnl ?? prev.pnl,
+                volume: trader.volume ?? prev.volume,
+                tradesCount: trader.total_trades ?? trader.trades_count,
+              };
+            });
+          }
         } else {
-          console.log('⚠️ Wallet not found in leaderboard, using:', traderData.displayName);
+          console.log('⚠️ No leaderboard data found for this wallet');
+          console.log('⚠️ Empty response from leaderboard API');
         }
       } catch (err) {
-        console.error('❌ Error fetching username from leaderboard:', err);
-        // Keep existing displayName if leaderboard fetch fails
+        console.error('❌ Error fetching leaderboard data:', err);
       }
     };
 
-    fetchUsername();
-  }, [wallet]); // FIXED: Removed traderData from dependencies to prevent infinite loop
+    fetchLeaderboardData();
+  }, [wallet]);
+  
+  // Fetch trader's current positions from Polymarket
+  // Positions represent OPEN markets that the trader currently has
+  useEffect(() => {
+    if (!wallet) return;
+
+    const fetchPositions = async () => {
+      const apiUrl = `https://data-api.polymarket.com/positions?user=${wallet}`;
+      console.log('📈 Fetching positions data...');
+      console.log('📈 Positions API URL:', apiUrl);
+      
+      try {
+        const response = await fetch(apiUrl);
+        
+        console.log('📈 Positions response status:', response.status);
+        
+        if (!response.ok) {
+          console.log('⚠️ Positions request failed:', response.status);
+          return;
+        }
+
+        const positionsData = await response.json();
+        console.log('📈 Positions RAW response:', JSON.stringify(positionsData?.slice(0, 3), null, 2)); // First 3 for brevity
+        console.log('📈 Number of OPEN positions:', positionsData?.length || 0);
+        
+        // Log each position's details for debugging
+        if (positionsData && positionsData.length > 0) {
+          console.log('📈 Position sample - all keys:', Object.keys(positionsData[0]));
+          positionsData.slice(0, 3).forEach((position: any, index: number) => {
+            console.log(`📈 Position ${index + 1}:`, {
+              conditionId: position.conditionId,
+              asset: position.asset,
+              market: position.title || position.market,
+              outcome: position.outcome,
+              size: position.size,
+            });
+          });
+        }
+        
+        // Build Set of open market identifiers
+        // Positions API only returns markets where the trader currently holds a position
+        // These are OPEN markets - anything not in this set is CLOSED
+        const openIds = new Set<string>();
+        positionsData?.forEach((position: any) => {
+          // Try multiple identifier fields
+          if (position.conditionId) openIds.add(position.conditionId);
+          if (position.asset) openIds.add(position.asset);
+          if (position.condition_id) openIds.add(position.condition_id);
+          if (position.marketId) openIds.add(position.marketId);
+        });
+        
+        console.log('📈 Open market IDs extracted:', openIds.size);
+        console.log('📈 Open market IDs sample:', Array.from(openIds).slice(0, 5));
+        
+        setOpenMarketIds(openIds);
+        
+      } catch (err) {
+        console.error('❌ Error fetching positions:', err);
+      }
+    };
+
+    fetchPositions();
+  }, [wallet]);
 
   // Check if user is following this trader
   useEffect(() => {
@@ -181,28 +298,79 @@ export default function TraderProfilePage({
     checkFollowStatus();
   }, [wallet]);
 
-  // Fetch trader's recent trades
+  // Fetch trader's ALL trades (no limit)
   useEffect(() => {
     if (!wallet) return;
 
     const fetchTraderTrades = async () => {
-      console.log('📊 Fetching recent trades for wallet:', wallet);
+      // Note: Using 'user' parameter instead of 'wallet' for the Polymarket API
+      // Removed limit to get ALL trades
+      const apiUrl = `https://data-api.polymarket.com/trades?user=${wallet}`;
+      console.log('🔄 Fetching ALL trades (no limit)...');
+      console.log('🔄 Trades API URL:', apiUrl);
       setLoadingTrades(true);
 
       try {
-        const response = await fetch(
-          `https://data-api.polymarket.com/trades?wallet=${wallet}&limit=20`
-        );
+        const response = await fetch(apiUrl);
+        
+        console.log('🔄 Trades response status:', response.status);
 
         if (!response.ok) {
           throw new Error('Failed to fetch trades');
         }
 
         const tradesData = await response.json();
-        console.log('✅ Fetched', tradesData.length, 'trades from Polymarket');
+        console.log('🔄 Trades RAW response (first 3):', JSON.stringify(tradesData?.slice(0, 3), null, 2));
+        console.log('🔄 TOTAL trades fetched:', tradesData?.length || 0);
+        
+        // Log first trade structure for debugging
+        if (tradesData && tradesData.length > 0) {
+          console.log('🔄 First trade all keys:', Object.keys(tradesData[0]));
+          console.log('🔄 Trade sample for status matching:', {
+            conditionId: tradesData[0].conditionId,
+            condition_id: tradesData[0].condition_id,
+            asset_id: tradesData[0].asset_id,
+            asset: tradesData[0].asset,
+            marketId: tradesData[0].marketId,
+          });
+        }
 
         // Format trades for display
         const formattedTrades: Trade[] = tradesData.map((trade: any) => {
+          // Parse timestamp - handle both Unix seconds and milliseconds
+          let timestampMs = trade.timestamp;
+          // If timestamp is in seconds (10 digits), convert to milliseconds
+          if (timestampMs < 10000000000) {
+            timestampMs = timestampMs * 1000;
+          }
+          
+          const tradeDate = new Date(timestampMs);
+          const formattedDate = tradeDate.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          });
+          
+          // Get trade's market identifier
+          const tradeConditionId = trade.conditionId || trade.condition_id || trade.asset_id || trade.asset || trade.marketId || '';
+          
+          // Determine market status by checking if this market is in openMarketIds
+          // If the trader has an active position in this market, it's Open
+          // If the trader has no active position (sold or market closed), it's Closed
+          let status: 'Open' | 'Closed' | 'Bonded' = 'Closed'; // Default to Closed
+          
+          if (openMarketIds.size > 0) {
+            // Check if this trade's market is in the open positions
+            const isOpen = openMarketIds.has(tradeConditionId);
+            status = isOpen ? 'Open' : 'Closed';
+          } else {
+            // If positions API returned empty (no open positions), all trades are Closed
+            // Unless explicitly marked as bonded
+            if (trade.status === 'bonded' || trade.marketStatus === 'bonded') {
+              status = 'Bonded';
+            }
+          }
+          
           return {
             timestamp: trade.timestamp,
             market: trade.title || trade.market?.title || trade.marketTitle || 'Unknown Market',
@@ -210,11 +378,17 @@ export default function TraderProfilePage({
             outcome: trade.outcome || trade.option || '',
             size: parseFloat(trade.size || 0),
             price: parseFloat(trade.price || 0),
-            timeAgo: getRelativeTime(trade.timestamp),
+            avgPrice: trade.avgPrice ? parseFloat(trade.avgPrice) : undefined,
+            currentPrice: trade.currentPrice ? parseFloat(trade.currentPrice) : undefined,
+            formattedDate: formattedDate,
             marketSlug: trade.slug || trade.market?.slug || trade.marketSlug || '',
-            conditionId: trade.conditionId || trade.condition_id || trade.asset_id || '',
+            conditionId: tradeConditionId,
+            status: status,
           };
         });
+
+        // Sort by timestamp descending (newest first)
+        formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
 
         setTrades(formattedTrades);
         console.log('✅ Formatted', formattedTrades.length, 'trades for display');
@@ -227,7 +401,7 @@ export default function TraderProfilePage({
     };
 
     fetchTraderTrades();
-  }, [wallet]);
+  }, [wallet, openMarketIds]);
 
   // Toggle follow status
   const handleFollowToggle = async () => {
@@ -275,28 +449,17 @@ export default function TraderProfilePage({
     }
   };
 
-  // Helper function to convert Unix timestamp to relative time
-  const getRelativeTime = (timestamp: number): string => {
-    const now = Date.now();
-    const tradeTime = timestamp * 1000; // Convert seconds to milliseconds
-    const diffInSeconds = Math.floor((now - tradeTime) / 1000);
-    
-    if (diffInSeconds < 0) return 'Just now';
-    if (diffInSeconds < 60) return 'Just now';
-    
-    const diffInMinutes = Math.floor(diffInSeconds / 60);
-    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-    
-    const diffInHours = Math.floor(diffInMinutes / 60);
-    if (diffInHours < 24) return `${diffInHours}h ago`;
-    
-    const diffInDays = Math.floor(diffInHours / 24);
-    if (diffInDays < 7) return `${diffInDays}d ago`;
-    
-    return new Date(tradeTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
-  // Generate consistent color from wallet address
+  /**
+   * Generate a consistent avatar color from wallet address
+   * 
+   * This is a custom implementation (not using external library like Dicebear or Boring Avatars)
+   * - Uses a simple hash function on the wallet address string
+   * - Converts hash to a hue value (0-360) for HSL color
+   * - Saturation fixed at 65%, Lightness at 50% for vibrant, readable colors
+   * - The initials are taken from characters 2-4 of the wallet (after "0x" prefix)
+   * 
+   * Example: "0xabc123..." -> hash -> hue 180 -> "hsl(180, 65%, 50%)" with initials "AB"
+   */
   const getAvatarColor = (address: string) => {
     let hash = 0;
     for (let i = 0; i < address.length; i++) {
@@ -317,8 +480,11 @@ export default function TraderProfilePage({
     }
   };
 
-  // Format P&L with sign and currency
-  const formatPnL = (value: number) => {
+  // Format P&L with sign and currency - returns "--" if no data
+  const formatPnL = (value: number | null | undefined) => {
+    if (value === null || value === undefined || (value === 0 && !leaderboardData)) {
+      return '--';
+    }
     const sign = value >= 0 ? '+' : '';
     return `${sign}$${value.toLocaleString('en-US', {
       minimumFractionDigits: 0,
@@ -326,14 +492,19 @@ export default function TraderProfilePage({
     })}`;
   };
 
-  // Calculate ROI
-  const calculateROI = (pnl: number, volume: number) => {
-    if (volume === 0) return 0;
+  // Calculate ROI - returns "--" string if cannot calculate
+  const calculateROI = (pnl: number | null | undefined, volume: number | null | undefined): string => {
+    if (pnl === null || pnl === undefined || volume === null || volume === undefined || volume === 0) {
+      return '--';
+    }
     return ((pnl / volume) * 100).toFixed(1);
   };
 
-  // Format volume with M/K abbreviations
-  const formatVolume = (value: number) => {
+  // Format volume with M/K abbreviations - returns "--" if no data
+  const formatVolume = (value: number | null | undefined) => {
+    if (value === null || value === undefined || (value === 0 && !leaderboardData)) {
+      return '--';
+    }
     if (value >= 1000000) {
       return `$${(value / 1000000).toFixed(1)}M`;
     } else if (value >= 1000) {
@@ -341,6 +512,14 @@ export default function TraderProfilePage({
     } else {
       return `$${value.toFixed(0)}`;
     }
+  };
+
+  // Format trades count - returns "--" if no data
+  const formatTradesCount = (count: number | null | undefined): string => {
+    if (count === null || count === undefined) {
+      return '--';
+    }
+    return count.toLocaleString('en-US', { maximumFractionDigits: 0 });
   };
 
   // Abbreviate wallet address
@@ -390,8 +569,13 @@ export default function TraderProfilePage({
   }
 
   const avatarColor = getAvatarColor(wallet);
+  // Avatar initials: first 2 characters after "0x" prefix, uppercased
   const initials = wallet.slice(2, 4).toUpperCase();
-  const roi = calculateROI(traderData.pnl, traderData.volume);
+  const roi = traderData.roiFormatted || calculateROI(traderData.pnl, traderData.volume);
+  const tradesCount = traderData.tradesCount ?? leaderboardData?.total_trades ?? trades.length;
+
+  // Determine display name: prefer leaderboard username, then traderData, then "Anonymous Trader"
+  const displayName = leaderboardData?.username || traderData.displayName || 'Anonymous Trader';
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -428,22 +612,20 @@ export default function TraderProfilePage({
               
               {/* Name and Wallet */}
               <div>
-                <h1 className="text-2xl font-bold text-slate-900 mb-1">
-                  {traderData.displayName}
+                <h1 className="text-3xl font-bold text-slate-900">
+                  {displayName}
                 </h1>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm text-slate-500 font-mono">
-                    {abbreviateWallet(wallet)}
-                  </span>
+                <p className="text-sm text-slate-500 font-mono mt-1">
+                  {abbreviateWallet(wallet)}
                   <button
                     onClick={handleCopy}
-                    className="text-slate-400 hover:text-slate-900 transition-colors"
+                    className="ml-2 text-slate-400 hover:text-slate-900 transition-colors"
                     title="Copy wallet address"
                   >
                     {copied ? '✓' : '📋'}
                   </button>
-                </div>
-                <p className="text-sm text-slate-500">
+                </p>
+                <p className="text-sm text-slate-500 mt-1">
                   {traderData.followerCount.toLocaleString()} {traderData.followerCount === 1 ? 'follower' : 'followers'} on Polycopy
                 </p>
               </div>
@@ -487,67 +669,88 @@ export default function TraderProfilePage({
             </button>
           </div>
 
-          {/* Stats Grid - Desktop: 3 separate cards, Mobile: Combined card */}
-          <div className="hidden md:grid grid-cols-3 gap-6">
-            {/* Desktop Stat Cards - Reduced padding to p-5 */}
+          {/* Stats Grid - Desktop: 4 separate cards, Mobile: Combined card */}
+          <div className="hidden md:grid grid-cols-4 gap-4">
+            {/* Desktop Stat Cards */}
             <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
               <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">TOTAL P&L</div>
-              <div className={`text-3xl font-bold ${
-                traderData.pnl >= 0 ? 'text-emerald-600' : 'text-red-500'
+              <div className={`text-2xl font-bold ${
+                traderData.pnl > 0 ? 'text-emerald-600' : traderData.pnl < 0 ? 'text-red-500' : 'text-slate-900'
               }`}>
                 {formatPnL(traderData.pnl)}
               </div>
             </div>
             <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
               <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">ROI</div>
-              <div className={`text-3xl font-bold ${
-                parseFloat(String(roi)) >= 0 ? 'text-emerald-600' : 'text-red-500'
+              <div className={`text-2xl font-bold ${
+                roi !== '--' && parseFloat(String(roi)) > 0 ? 'text-emerald-600' : 
+                roi !== '--' && parseFloat(String(roi)) < 0 ? 'text-red-500' : 'text-slate-900'
               }`}>
-                {traderData.roiFormatted || roi}%
+                {roi !== '--' ? `${roi}%` : '--'}
               </div>
             </div>
             <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
               <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">VOLUME</div>
-              <div className="text-3xl font-bold text-slate-900">
+              <div className="text-2xl font-bold text-slate-900">
                 {formatVolume(traderData.volume)}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+              <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">TRADES</div>
+              <div className="text-2xl font-bold text-slate-900">
+                {formatTradesCount(tradesCount)}
               </div>
             </div>
           </div>
 
-          {/* Mobile: Combined stat card - 3 columns in one card */}
+          {/* Mobile: Combined stat card - 4 columns in one card */}
           <div className="md:hidden bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-4 gap-2 text-center">
               <div>
                 <div className="text-xs text-slate-500 uppercase mb-1">P&L</div>
-                <div className={`text-lg font-bold ${
-                  traderData.pnl >= 0 ? 'text-emerald-600' : 'text-red-500'
+                <div className={`text-sm font-bold ${
+                  traderData.pnl > 0 ? 'text-emerald-600' : traderData.pnl < 0 ? 'text-red-500' : 'text-slate-900'
                 }`}>
                   {formatPnL(traderData.pnl)}
                 </div>
               </div>
               <div>
                 <div className="text-xs text-slate-500 uppercase mb-1">ROI</div>
-                <div className={`text-lg font-bold ${
-                  parseFloat(String(roi)) >= 0 ? 'text-emerald-600' : 'text-red-500'
+                <div className={`text-sm font-bold ${
+                  roi !== '--' && parseFloat(String(roi)) > 0 ? 'text-emerald-600' : 
+                  roi !== '--' && parseFloat(String(roi)) < 0 ? 'text-red-500' : 'text-slate-900'
                 }`}>
-                  {traderData.roiFormatted || roi}%
+                  {roi !== '--' ? `${roi}%` : '--'}
                 </div>
               </div>
               <div>
                 <div className="text-xs text-slate-500 uppercase mb-1">Volume</div>
-                <div className="text-lg font-bold text-slate-900">
+                <div className="text-sm font-bold text-slate-900">
                   {formatVolume(traderData.volume)}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 uppercase mb-1">Trades</div>
+                <div className="text-sm font-bold text-slate-900">
+                  {formatTradesCount(tradesCount)}
                 </div>
               </div>
             </div>
           </div>
+          
+          {/* Leaderboard stats explanation */}
+          {!leaderboardData && (
+            <p className="text-xs text-slate-500 mt-3 text-center md:text-left">
+              * Stats only available for top-ranked Leaderboard traders on Polymarket
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Recent Trades Section */}
+      {/* Trade History Section */}
       <div className="max-w-4xl mx-auto px-4 py-8">
         <h3 className="text-xl font-bold text-slate-900 mb-6">
-          Recent Trades
+          Trade History {trades.length > 0 && <span className="text-slate-400 font-normal">({trades.length})</span>}
         </h3>
         
         {loadingTrades ? (
@@ -559,10 +762,10 @@ export default function TraderProfilePage({
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
             <div className="text-6xl mb-4">📊</div>
             <p className="text-slate-600 text-lg font-medium mb-2">
-              No recent trades found
+              No trade history found
             </p>
             <p className="text-slate-500 text-sm">
-              This trader hasn't made any trades recently
+              This trader hasn't made any trades yet
             </p>
           </div>
         ) : (
@@ -573,12 +776,12 @@ export default function TraderProfilePage({
                 <table className="w-full">
                   <thead className="bg-slate-50 border-b-2 border-slate-200">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Time</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Date</th>
                       <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Side</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Outcome</th>
                       <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Size</th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Price</th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Action</th>
+                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Avg Price</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -603,7 +806,7 @@ export default function TraderProfilePage({
                           className="hover:bg-slate-50 transition-colors"
                         >
                           <td className="py-4 px-4 whitespace-nowrap">
-                            <span className="text-sm text-slate-500">{trade.timeAgo}</span>
+                            <span className="text-sm text-slate-500">{trade.formattedDate}</span>
                           </td>
                           
                           <td className="py-4 px-4">
@@ -634,18 +837,24 @@ export default function TraderProfilePage({
                             </span>
                           </td>
                           
-                          <td className="py-4 px-4 text-right">
-                            <a
-                              href={polymarketUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
-                            >
-                              <span>Copy</span>
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                              </svg>
-                            </a>
+                          <td className="py-4 px-4 text-center">
+                            {trade.status === 'Open' ? (
+                              <a
+                                href={polymarketUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-3 py-1 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-xs font-bold rounded-full cursor-pointer transition-colors"
+                              >
+                                Copy Trade
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </a>
+                            ) : (
+                              <span className="inline-flex items-center px-3 py-1 bg-slate-500 text-white text-xs font-semibold rounded-full">
+                                Closed
+                              </span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -671,9 +880,9 @@ export default function TraderProfilePage({
 
                 return (
                   <div key={`${trade.timestamp}-${index}`} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-                    {/* Header: Time + Side Badge */}
+                    {/* Header: Date + Outcome Badge */}
                     <div className="flex items-center justify-between mb-3">
-                      <div className="text-sm text-slate-500">{trade.timeAgo}</div>
+                      <div className="text-sm text-slate-500">{trade.formattedDate}</div>
                       <span className={`badge ${
                         ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
                           ? 'badge-yes'
@@ -690,38 +899,44 @@ export default function TraderProfilePage({
                     
                     {/* Trade Details Grid */}
                     <div className="bg-slate-50 rounded-xl p-4 mb-3">
-                      <div className="grid grid-cols-3 gap-4 text-center">
+                      <div className="grid grid-cols-3 gap-3 text-center">
                         <div>
                           <div className="text-xs text-slate-500 mb-1">Size</div>
-                          <div className="font-semibold text-slate-900">
+                          <div className="font-semibold text-slate-900 text-sm">
                             ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </div>
                         </div>
                         <div>
-                          <div className="text-xs text-slate-500 mb-1">Price</div>
-                          <div className="font-semibold text-slate-900">${trade.price.toFixed(2)}</div>
+                          <div className="text-xs text-slate-500 mb-1">Avg Price</div>
+                          <div className="font-semibold text-slate-900 text-sm">${trade.price.toFixed(2)}</div>
                         </div>
                         <div>
                           <div className="text-xs text-slate-500 mb-1">Total</div>
-                          <div className="font-semibold text-slate-900">
+                          <div className="font-semibold text-slate-900 text-sm">
                             ${(trade.size * trade.price).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </div>
                         </div>
                       </div>
                     </div>
                     
-                    {/* Copy Button */}
-                    <a
-                      href={polymarketUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-primary w-full flex items-center justify-center gap-2"
-                    >
-                      <span>Copy Trade</span>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                    </a>
+                    {/* Status/Action Button */}
+                    {trade.status === 'Open' ? (
+                      <a
+                        href={polymarketUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-sm font-bold rounded-full cursor-pointer transition-colors"
+                      >
+                        <span>Copy Trade</span>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+                    ) : (
+                      <div className="w-full flex items-center justify-center px-4 py-2.5 bg-slate-500 text-white text-sm font-semibold rounded-full">
+                        Closed
+                      </div>
+                    )}
                   </div>
                 );
               })}
