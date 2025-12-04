@@ -60,21 +60,21 @@ export async function GET(
 
     // Verify authentication using server client
     const supabaseAuth = await createAuthClient()
-    const { data: { session }, error: authError } = await supabaseAuth.auth.getSession()
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
     
     if (authError) {
       console.error('🔐 Auth error:', authError.message)
     }
     
-    // SECURITY: Require valid session
-    if (!session) {
-      console.error('❌ No valid session - unauthorized')
+    // SECURITY: Require valid user
+    if (!user) {
+      console.error('❌ No authenticated user - unauthorized')
       return NextResponse.json({ error: 'Unauthorized - please log in' }, { status: 401 })
     }
     
     // SECURITY: Verify the userId matches the authenticated user
-    if (session.user.id !== userId) {
-      console.error('❌ User ID mismatch - session:', session.user.id, 'requested:', userId)
+    if (user.id !== userId) {
+      console.error('❌ User ID mismatch - auth user:', user.id, 'requested:', userId)
       return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
     }
 

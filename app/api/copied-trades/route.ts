@@ -3,6 +3,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import { checkRateLimit } from '@/lib/rate-limit'
 
 // Create service role client that bypasses RLS for database operations
@@ -38,23 +39,25 @@ export async function GET(request: NextRequest) {
     
     // Verify authentication using server client
     const supabaseAuth = await createAuthClient()
-    const { data: { session }, error: authError } = await supabaseAuth.auth.getSession()
+    
+    // Use getUser() instead of getSession() - more reliable for server-side auth
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
     
     // Log auth status for debugging
-    console.log('🔐 Auth check - Session exists:', !!session)
+    console.log('🔐 Auth check - User exists:', !!user)
     if (authError) {
       console.error('🔐 Auth error:', authError.message)
     }
     
-    // SECURITY: Require valid session
-    if (!session) {
-      console.error('❌ No valid session - unauthorized')
+    // SECURITY: Require valid user
+    if (!user) {
+      console.error('❌ No authenticated user - unauthorized')
       return NextResponse.json({ error: 'Unauthorized - please log in' }, { status: 401 })
     }
     
     // SECURITY: Verify the userId matches the authenticated user
-    if (session.user.id !== userId) {
-      console.error('❌ User ID mismatch - session:', session.user.id, 'requested:', userId)
+    if (user.id !== userId) {
+      console.error('❌ User ID mismatch - auth user:', user.id, 'requested:', userId)
       return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
     }
     
@@ -97,6 +100,15 @@ export async function POST(request: NextRequest) {
   console.log('🔍 POST /api/copied-trades called')
   
   try {
+    // Debug: Log available cookies
+    const cookieStore = await cookies()
+    const allCookies = cookieStore.getAll()
+    console.log('🍪 Available cookies:', allCookies.map(c => c.name))
+    
+    // Check for Supabase auth cookies
+    const authCookies = allCookies.filter(c => c.name.includes('auth') || c.name.startsWith('sb-'))
+    console.log('🔐 Auth-related cookies found:', authCookies.map(c => c.name))
+    
     // Parse request body first
     let body: any
     try {
@@ -117,25 +129,27 @@ export async function POST(request: NextRequest) {
     
     // Verify authentication using server client
     const supabaseAuth = await createAuthClient()
-    const { data: { session }, error: authError } = await supabaseAuth.auth.getSession()
+    
+    // Use getUser() instead of getSession() - more reliable for server-side auth
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
     
     // Log auth status for debugging
-    console.log('🔐 Auth check - Session exists:', !!session)
-    console.log('🔐 Auth check - Session user ID:', session?.user?.id)
+    console.log('🔐 Auth check - User exists:', !!user)
+    console.log('🔐 Auth check - User ID from auth:', user?.id)
     console.log('🔐 Auth check - Requested user ID:', userId)
     if (authError) {
       console.error('🔐 Auth error:', authError.message)
     }
     
-    // SECURITY: Require valid session
-    if (!session) {
-      console.error('❌ No valid session - unauthorized')
+    // SECURITY: Require valid user
+    if (!user) {
+      console.error('❌ No authenticated user - unauthorized')
       return NextResponse.json({ error: 'Unauthorized - please log in' }, { status: 401 })
     }
     
     // SECURITY: Verify the userId matches the authenticated user
-    if (session.user.id !== userId) {
-      console.error('❌ User ID mismatch - session user:', session.user.id, 'requested:', userId)
+    if (user.id !== userId) {
+      console.error('❌ User ID mismatch - auth user:', user.id, 'requested:', userId)
       return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
     }
     
