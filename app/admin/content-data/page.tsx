@@ -2,18 +2,13 @@ import { createClient } from '@supabase/supabase-js'
 import { checkAuth } from './actions'
 import AdminDashboardClient from './AdminDashboardClient'
 import {
-  getTopTraders,
-  getRecentTrades,
-  getMarketsByVolume,
-  getAllMarkets,
-  getCategoryBreakdown,
-  categorizeMarket,
-  formatWalletAddress,
+  fetchLeaderboard,
+  fetchAllCategoryLeaderboards,
   formatCurrency,
   formatPercent,
-  PolymarketTrader,
-  PolymarketTrade,
-  PolymarketMarket
+  formatWallet,
+  getCategoryDisplayName,
+  LeaderboardTrader
 } from '@/lib/polymarket-api'
 
 // Force dynamic rendering - no caching
@@ -67,36 +62,27 @@ function formatROI(roi: number | null): string {
 }
 
 // Dashboard data types
+interface FormattedTrader {
+  wallet: string
+  displayName: string
+  pnl: number
+  pnl_formatted: string
+  volume: number
+  volume_formatted: string
+  roi: number
+  roi_formatted: string
+  rank: number
+  marketsTraded: number
+}
+
 interface SectionAData {
-  // Polymarket API data
-  topTraders: Array<{
-    address: string
-    username: string
-    totalPnL: string
-    volume: string
-    roi: string
-    marketsTraded: number
-  }>
-  recentTrades: Array<{
-    id: string
-    trader: string
-    market: string
-    outcome: string
-    size: string
-    price: string
-    date: string
-  }>
-  categoryBreakdown: Array<{
-    category: string
-    marketCount: number
-    volume24h: string
-  }>
-  topMarketsByVolume: Array<{
-    id: string
-    question: string
-    volume24h: string
-    category: string
-  }>
+  // Overall leaderboard (top 30)
+  topTraders: FormattedTrader[]
+  // Category leaderboards (top 10 each)
+  categoryLeaderboards: {
+    [key: string]: FormattedTrader[]
+  }
+  // Errors
   apiErrors: string[]
 }
 
@@ -148,82 +134,62 @@ interface DashboardData {
   lastUpdated: string
 }
 
+// Format a trader for display
+function formatTrader(trader: LeaderboardTrader): FormattedTrader {
+  return {
+    wallet: trader.wallet,
+    displayName: trader.displayName,
+    pnl: trader.pnl,
+    pnl_formatted: formatCurrency(trader.pnl),
+    volume: trader.volume,
+    volume_formatted: formatCurrency(trader.volume),
+    roi: trader.roi,
+    roi_formatted: formatPercent(trader.roi),
+    rank: trader.rank,
+    marketsTraded: trader.marketsTraded
+  }
+}
+
 async function fetchPolymarketData(): Promise<SectionAData> {
   const apiErrors: string[] = []
   
-  // Fetch all Polymarket data in parallel
-  const [leaderboardResult, tradesResult, marketsByVolumeResult, allMarketsResult] = await Promise.allSettled([
-    getTopTraders(30),
-    getRecentTrades(100),
-    getMarketsByVolume(30),
-    getAllMarkets(200)
+  console.log('🔄 Fetching Polymarket data using leaderboard API...')
+  
+  // Fetch overall leaderboard and all category leaderboards in parallel
+  const [overallResult, categoriesResult] = await Promise.allSettled([
+    fetchLeaderboard({ limit: 30, orderBy: 'PNL', category: 'overall' }),
+    fetchAllCategoryLeaderboards(10)
   ])
 
-  // Process leaderboard
-  let topTraders: SectionAData['topTraders'] = []
-  if (leaderboardResult.status === 'fulfilled' && Array.isArray(leaderboardResult.value)) {
-    topTraders = leaderboardResult.value.slice(0, 30).map((trader: PolymarketTrader) => ({
-      address: trader.address || '',
-      username: trader.username || formatWalletAddress(trader.address || ''),
-      totalPnL: formatCurrency(trader.totalProfitLoss || trader.profit),
-      volume: formatCurrency(trader.volume),
-      roi: formatPercent(trader.roi || trader.profitPercent),
-      marketsTraded: trader.marketsTraded || 0
-    }))
+  // Process overall leaderboard
+  let topTraders: FormattedTrader[] = []
+  if (overallResult.status === 'fulfilled' && overallResult.value.length > 0) {
+    // Sort by ROI (same as discover page)
+    const sortedByROI = [...overallResult.value].sort((a, b) => b.roi - a.roi)
+    topTraders = sortedByROI.map(formatTrader)
+    console.log(`✅ Got ${topTraders.length} top traders`)
   } else {
     apiErrors.push('Failed to fetch Polymarket leaderboard')
+    console.error('❌ Failed to fetch overall leaderboard')
   }
 
-  // Process recent trades
-  let recentTrades: SectionAData['recentTrades'] = []
-  if (tradesResult.status === 'fulfilled' && Array.isArray(tradesResult.value)) {
-    recentTrades = tradesResult.value.slice(0, 50).map((trade: PolymarketTrade) => {
-      const tradeSize = (trade.size || 0) * (trade.price || 0)
-      return {
-        id: trade.id || String(Math.random()),
-        trader: trade.user || trade.maker_address || trade.taker_address || 'Anonymous',
-        market: trade.market || trade.asset_ticker || 'Unknown Market',
-        outcome: trade.outcome || trade.side || '--',
-        size: formatCurrency(tradeSize),
-        price: trade.price ? `${(trade.price * 100).toFixed(1)}¢` : '--',
-        date: trade.timestamp ? formatDate(new Date(trade.timestamp * 1000).toISOString()) : '--'
+  // Process category leaderboards
+  let categoryLeaderboards: { [key: string]: FormattedTrader[] } = {}
+  if (categoriesResult.status === 'fulfilled') {
+    for (const [category, traders] of Object.entries(categoriesResult.value)) {
+      if (traders.length > 0) {
+        categoryLeaderboards[category] = traders.map(formatTrader)
       }
-    })
+    }
+    console.log(`✅ Got ${Object.keys(categoryLeaderboards).length} category leaderboards`)
   } else {
-    apiErrors.push('Failed to fetch Polymarket trades')
-  }
-
-  // Process markets by volume
-  let topMarketsByVolume: SectionAData['topMarketsByVolume'] = []
-  if (marketsByVolumeResult.status === 'fulfilled' && Array.isArray(marketsByVolumeResult.value)) {
-    topMarketsByVolume = marketsByVolumeResult.value.slice(0, 30).map((market: PolymarketMarket) => ({
-      id: market.id || market.condition_id || String(Math.random()),
-      question: truncate(market.question || market.title || 'Unknown Market', 80),
-      volume24h: formatCurrency(market.volume24hr || market.volume),
-      category: categorizeMarket(market.question || market.title || '', market.tags)
-    }))
-  } else {
-    apiErrors.push('Failed to fetch Polymarket markets')
-  }
-
-  // Process category breakdown
-  let categoryBreakdown: SectionAData['categoryBreakdown'] = []
-  if (allMarketsResult.status === 'fulfilled' && Array.isArray(allMarketsResult.value)) {
-    const breakdown = getCategoryBreakdown(allMarketsResult.value)
-    categoryBreakdown = breakdown.map(cat => ({
-      category: cat.category,
-      marketCount: cat.count,
-      volume24h: formatCurrency(cat.volume)
-    }))
-  } else {
-    apiErrors.push('Failed to fetch market categories')
+    apiErrors.push('Failed to fetch category leaderboards')
+    console.error('❌ Failed to fetch category leaderboards')
   }
 
   return {
     topTraders,
-    recentTrades,
-    categoryBreakdown,
-    topMarketsByVolume,
+    categoryLeaderboards,
     apiErrors
   }
 }
