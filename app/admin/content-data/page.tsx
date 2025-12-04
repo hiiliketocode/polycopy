@@ -52,25 +52,75 @@ function formatROI(roi: number | null): string {
   return `${sign}${roi.toFixed(1)}%`
 }
 
+// Category detection function
+function detectCategory(marketTitle: string): string {
+  const title = marketTitle?.toLowerCase() || ''
+  
+  if (title.includes('bitcoin') || title.includes('btc') || title.includes('crypto') || title.includes('ethereum') || title.includes('eth')) {
+    return 'Crypto'
+  }
+  if (title.includes('election') || title.includes('president') || title.includes('vote') || title.includes('congress') || title.includes('senate') || title.includes('trump') || title.includes('biden')) {
+    return 'Politics'
+  }
+  if (title.includes('sport') || title.includes(' vs ') || title.includes('nba') || title.includes('nfl') || title.includes('soccer') || title.includes('game')) {
+    return 'Sports'
+  }
+  if (title.includes('stock') || title.includes('msft') || title.includes('tsla') || title.includes('aapl') || title.includes('spy') || title.includes('s&p')) {
+    return 'Finance'
+  }
+  if (title.includes('ai') || title.includes('tech') || title.includes('openai') || title.includes('google') || title.includes('apple') || title.includes('microsoft')) {
+    return 'AI & Tech'
+  }
+  if (title.includes('temperature') || title.includes('weather') || title.includes('°f') || title.includes('°c')) {
+    return 'Weather'
+  }
+  return 'Other'
+}
+
 interface DashboardData {
-  mostCopiedTraders: Array<{
+  // Section A: Polymarket Trader Data
+  topPerformingTraders: Array<{
     trader_username: string
     trader_wallet: string
-    copy_count: number
+    trade_count: number
+    avg_roi: number | null
+    wins: number
+    losses: number
   }>
   topPerformingTrades: Array<{
     trader_username: string
+    trader_wallet: string
     market_title: string
     outcome: string
     roi: number
     created_at: string
   }>
-  newlyTrackedTraders: Array<{
+  mostCopiedTraders: Array<{
     trader_username: string
     trader_wallet: string
-    first_copied: string
-    unique_markets: number
+    copy_count: number
   }>
+  categoryBreakdown: Array<{
+    category: string
+    trade_count: number
+    avg_roi: number | null
+  }>
+  mostPopularMarkets: Array<{
+    market_title: string
+    copy_count: number
+    avg_roi: number | null
+    resolved_count: number
+  }>
+  categoryLeaderboards: {
+    [key: string]: Array<{
+      trader_username: string
+      trader_wallet: string
+      positions_opened: number
+      avg_roi: number | null
+    }>
+  }
+  
+  // Section B: Polycopy Platform Data
   platformStats: {
     uniqueTraders: number
     totalCopies: number
@@ -78,6 +128,12 @@ interface DashboardData {
     avgRoi: number | null
     winRate: number | null
   }
+  newlyTrackedTraders: Array<{
+    trader_username: string
+    trader_wallet: string
+    first_copied: string
+    unique_markets: number
+  }>
   mostCopiedMarkets: Array<{
     market_title: string
     copy_count: number
@@ -90,6 +146,7 @@ interface DashboardData {
     outcome: string
     created_at: string
   }>
+  
   lastUpdated: string
   errors: string[]
 }
@@ -98,10 +155,15 @@ async function fetchDashboardData(): Promise<DashboardData> {
   const supabase = createServiceClient()
   const errors: string[] = []
   const now = new Date().toISOString()
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
   // Initialize with empty data
-  let mostCopiedTraders: DashboardData['mostCopiedTraders'] = []
+  let topPerformingTraders: DashboardData['topPerformingTraders'] = []
   let topPerformingTrades: DashboardData['topPerformingTrades'] = []
+  let mostCopiedTraders: DashboardData['mostCopiedTraders'] = []
+  let categoryBreakdown: DashboardData['categoryBreakdown'] = []
+  let mostPopularMarkets: DashboardData['mostPopularMarkets'] = []
+  let categoryLeaderboards: DashboardData['categoryLeaderboards'] = {}
   let newlyTrackedTraders: DashboardData['newlyTrackedTraders'] = []
   let mostCopiedMarkets: DashboardData['mostCopiedMarkets'] = []
   let recentActivity: DashboardData['recentActivity'] = []
@@ -113,97 +175,241 @@ async function fetchDashboardData(): Promise<DashboardData> {
     winRate: null
   }
 
-  // SECTION 1: Most Copied Traders (Last 7 Days)
-  try {
-    const { data, error } = await supabase
+  // Run all queries in parallel for better performance
+  const queries = await Promise.allSettled([
+    // Query 1: Top Performing Traders (30)
+    supabase
       .from('copied_trades')
-      .select('trader_username, trader_wallet')
-      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .select('trader_username, trader_wallet, roi')
+      .gte('created_at', sevenDaysAgo),
 
-    if (error) throw error
+    // Query 2: Top Performing Trades (50)
+    supabase
+      .from('copied_trades')
+      .select('trader_username, trader_wallet, market_title, outcome, roi, created_at')
+      .eq('market_resolved', true)
+      .not('roi', 'is', null)
+      .gte('created_at', sevenDaysAgo)
+      .order('roi', { ascending: false })
+      .limit(50),
 
-    // Group and count manually
-    const traderCounts = new Map<string, { username: string, wallet: string, count: number }>()
-    data?.forEach(trade => {
+    // Query 3: All trades for category breakdown and leaderboards
+    supabase
+      .from('copied_trades')
+      .select('trader_username, trader_wallet, market_title, roi, market_resolved')
+      .gte('created_at', sevenDaysAgo),
+
+    // Query 4: Platform stats - all trades
+    supabase
+      .from('copied_trades')
+      .select('trader_username, user_id, roi, market_resolved'),
+
+    // Query 5: Recent activity
+    supabase
+      .from('copied_trades')
+      .select('trader_username, trader_wallet, market_title, outcome, created_at')
+      .order('created_at', { ascending: false })
+      .limit(20),
+  ])
+
+  // Process Query 1: Top Performing Traders
+  if (queries[0].status === 'fulfilled' && !queries[0].value.error) {
+    const data = queries[0].value.data || []
+    
+    // Group by trader and calculate stats
+    const traderStats = new Map<string, {
+      username: string
+      wallet: string
+      trades: number
+      rois: number[]
+      wins: number
+      losses: number
+    }>()
+
+    data.forEach((trade: any) => {
       const key = trade.trader_wallet
-      if (traderCounts.has(key)) {
-        traderCounts.get(key)!.count++
-      } else {
-        traderCounts.set(key, {
+      if (!traderStats.has(key)) {
+        traderStats.set(key, {
           username: trade.trader_username,
           wallet: trade.trader_wallet,
-          count: 1
+          trades: 0,
+          rois: [],
+          wins: 0,
+          losses: 0
         })
+      }
+      const stats = traderStats.get(key)!
+      stats.trades++
+      if (trade.roi !== null) {
+        stats.rois.push(trade.roi)
+        if (trade.roi > 0) stats.wins++
+        else if (trade.roi < 0) stats.losses++
       }
     })
 
-    mostCopiedTraders = Array.from(traderCounts.values())
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10)
+    topPerformingTraders = Array.from(traderStats.values())
       .map(t => ({
         trader_username: t.username,
         trader_wallet: t.wallet,
-        copy_count: t.count
+        trade_count: t.trades,
+        avg_roi: t.rois.length > 0 ? t.rois.reduce((a, b) => a + b, 0) / t.rois.length : null,
+        wins: t.wins,
+        losses: t.losses
       }))
-  } catch (err) {
-    console.error('Error fetching most copied traders:', err)
-    errors.push('Failed to fetch most copied traders')
+      .filter(t => t.avg_roi !== null)
+      .sort((a, b) => (b.avg_roi || 0) - (a.avg_roi || 0))
+      .slice(0, 30)
+
+    // Also calculate most copied traders from this data
+    mostCopiedTraders = Array.from(traderStats.values())
+      .map(t => ({
+        trader_username: t.username,
+        trader_wallet: t.wallet,
+        copy_count: t.trades
+      }))
+      .sort((a, b) => b.copy_count - a.copy_count)
+      .slice(0, 10)
+  } else {
+    errors.push('Failed to fetch top performing traders')
   }
 
-  // SECTION 2: Top Performing Trades (Last 7 Days)
-  try {
-    const { data, error } = await supabase
-      .from('copied_trades')
-      .select('trader_username, market_title, outcome, roi, created_at')
-      .eq('market_resolved', true)
-      .not('roi', 'is', null)
-      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-      .order('roi', { ascending: false })
-      .limit(10)
-
-    if (error) throw error
-    topPerformingTrades = data || []
-  } catch (err) {
-    console.error('Error fetching top performing trades:', err)
+  // Process Query 2: Top Performing Trades
+  if (queries[1].status === 'fulfilled' && !queries[1].value.error) {
+    topPerformingTrades = queries[1].value.data || []
+  } else {
     errors.push('Failed to fetch top performing trades')
   }
 
-  // SECTION 3: Newly Tracked Traders (Last 7 Days)
-  try {
-    const { data, error } = await supabase
-      .from('copied_trades')
-      .select('trader_username, trader_wallet, created_at, market_title')
-      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+  // Process Query 3: Category breakdown and leaderboards
+  if (queries[2].status === 'fulfilled' && !queries[2].value.error) {
+    const data = queries[2].value.data || []
 
-    if (error) throw error
+    // Category breakdown
+    const categoryData = new Map<string, { count: number, rois: number[] }>()
+    
+    data.forEach((trade: any) => {
+      const category = detectCategory(trade.market_title)
+      if (!categoryData.has(category)) {
+        categoryData.set(category, { count: 0, rois: [] })
+      }
+      const cat = categoryData.get(category)!
+      cat.count++
+      if (trade.roi !== null) {
+        cat.rois.push(trade.roi)
+      }
+    })
 
-    // Group by trader and get first copy date + unique markets
-    const traderData = new Map<string, { 
-      username: string, 
-      wallet: string, 
-      firstCopied: string, 
-      markets: Set<string> 
+    categoryBreakdown = Array.from(categoryData.entries())
+      .map(([category, data]) => ({
+        category,
+        trade_count: data.count,
+        avg_roi: data.rois.length > 0 ? data.rois.reduce((a, b) => a + b, 0) / data.rois.length : null
+      }))
+      .sort((a, b) => b.trade_count - a.trade_count)
+
+    // Most Popular Markets
+    const marketData = new Map<string, { count: number, rois: number[], resolved: number }>()
+    
+    data.forEach((trade: any) => {
+      const key = trade.market_title
+      if (!marketData.has(key)) {
+        marketData.set(key, { count: 0, rois: [], resolved: 0 })
+      }
+      const market = marketData.get(key)!
+      market.count++
+      if (trade.market_resolved) {
+        market.resolved++
+        if (trade.roi !== null) {
+          market.rois.push(trade.roi)
+        }
+      }
+    })
+
+    mostPopularMarkets = Array.from(marketData.entries())
+      .map(([title, data]) => ({
+        market_title: title,
+        copy_count: data.count,
+        avg_roi: data.rois.length > 0 ? data.rois.reduce((a, b) => a + b, 0) / data.rois.length : null,
+        resolved_count: data.resolved
+      }))
+      .sort((a, b) => b.copy_count - a.copy_count)
+      .slice(0, 30)
+
+    // Category Leaderboards
+    const categories = ['Crypto', 'Politics', 'Sports', 'Finance', 'Weather', 'AI & Tech']
+    
+    for (const category of categories) {
+      const categoryTrades = data.filter((t: any) => detectCategory(t.market_title) === category)
+      
+      if (categoryTrades.length === 0) continue
+
+      const traderStats = new Map<string, {
+        username: string
+        wallet: string
+        positions: number
+        rois: number[]
+      }>()
+
+      categoryTrades.forEach((trade: any) => {
+        const key = trade.trader_wallet
+        if (!traderStats.has(key)) {
+          traderStats.set(key, {
+            username: trade.trader_username,
+            wallet: trade.trader_wallet,
+            positions: 0,
+            rois: []
+          })
+        }
+        const stats = traderStats.get(key)!
+        stats.positions++
+        if (trade.roi !== null) {
+          stats.rois.push(trade.roi)
+        }
+      })
+
+      const leaderboard = Array.from(traderStats.values())
+        .map(t => ({
+          trader_username: t.username,
+          trader_wallet: t.wallet,
+          positions_opened: t.positions,
+          avg_roi: t.rois.length > 0 ? t.rois.reduce((a, b) => a + b, 0) / t.rois.length : null
+        }))
+        .filter(t => t.avg_roi !== null)
+        .sort((a, b) => (b.avg_roi || 0) - (a.avg_roi || 0))
+        .slice(0, 10)
+
+      if (leaderboard.length > 0) {
+        categoryLeaderboards[category] = leaderboard
+      }
+    }
+
+    // Newly Tracked Traders
+    const traderFirstSeen = new Map<string, {
+      username: string
+      wallet: string
+      firstCopied: string
+      markets: Set<string>
     }>()
 
-    data?.forEach(trade => {
+    data.forEach((trade: any) => {
       const key = trade.trader_wallet
-      if (!traderData.has(key)) {
-        traderData.set(key, {
+      if (!traderFirstSeen.has(key)) {
+        traderFirstSeen.set(key, {
           username: trade.trader_username,
           wallet: trade.trader_wallet,
-          firstCopied: trade.created_at,
+          firstCopied: trade.created_at || now,
           markets: new Set([trade.market_title])
         })
       } else {
-        const existing = traderData.get(key)!
-        if (trade.created_at < existing.firstCopied) {
+        const existing = traderFirstSeen.get(key)!
+        if (trade.created_at && trade.created_at < existing.firstCopied) {
           existing.firstCopied = trade.created_at
         }
         existing.markets.add(trade.market_title)
       }
     })
 
-    newlyTrackedTraders = Array.from(traderData.values())
+    newlyTrackedTraders = Array.from(traderFirstSeen.values())
       .sort((a, b) => new Date(b.firstCopied).getTime() - new Date(a.firstCopied).getTime())
       .slice(0, 10)
       .map(t => ({
@@ -212,130 +418,60 @@ async function fetchDashboardData(): Promise<DashboardData> {
         first_copied: t.firstCopied,
         unique_markets: t.markets.size
       }))
-  } catch (err) {
-    console.error('Error fetching newly tracked traders:', err)
-    errors.push('Failed to fetch newly tracked traders')
-  }
 
-  // SECTION 4: Platform Stats (All Time)
-  try {
-    // Unique traders
-    const { data: tradersData, error: tradersError } = await supabase
-      .from('copied_trades')
-      .select('trader_username')
-
-    if (tradersError) throw tradersError
-    const uniqueTraders = new Set(tradersData?.map(t => t.trader_username)).size
-
-    // Total copies
-    const { count: totalCopies, error: copiesError } = await supabase
-      .from('copied_trades')
-      .select('*', { count: 'exact', head: true })
-
-    if (copiesError) throw copiesError
-
-    // Active users
-    const { data: usersData, error: usersError } = await supabase
-      .from('copied_trades')
-      .select('user_id')
-
-    if (usersError) throw usersError
-    const activeUsers = new Set(usersData?.map(u => u.user_id)).size
-
-    // Avg ROI (resolved)
-    const { data: roiData, error: roiError } = await supabase
-      .from('copied_trades')
-      .select('roi')
-      .eq('market_resolved', true)
-      .not('roi', 'is', null)
-
-    if (roiError) throw roiError
-    
-    let avgRoi: number | null = null
-    let winRate: number | null = null
-    
-    if (roiData && roiData.length > 0) {
-      const totalRoi = roiData.reduce((sum, t) => sum + (t.roi || 0), 0)
-      avgRoi = totalRoi / roiData.length
-      
-      const wins = roiData.filter(t => t.roi && t.roi > 0).length
-      winRate = (wins / roiData.length) * 100
-    }
-
-    platformStats = {
-      uniqueTraders,
-      totalCopies: totalCopies || 0,
-      activeUsers,
-      avgRoi,
-      winRate
-    }
-  } catch (err) {
-    console.error('Error fetching platform stats:', err)
-    errors.push('Failed to fetch platform stats')
-  }
-
-  // SECTION 5: Most Copied Markets (Last 7 Days)
-  try {
-    const { data, error } = await supabase
-      .from('copied_trades')
-      .select('market_title, roi, market_resolved')
-      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-
-    if (error) throw error
-
-    // Group by market
-    const marketData = new Map<string, { 
-      count: number, 
-      rois: number[] 
-    }>()
-
-    data?.forEach(trade => {
-      const key = trade.market_title
-      if (!marketData.has(key)) {
-        marketData.set(key, { count: 0, rois: [] })
-      }
-      const market = marketData.get(key)!
-      market.count++
-      if (trade.market_resolved && trade.roi !== null) {
-        market.rois.push(trade.roi)
-      }
-    })
-
+    // Most Copied Markets (different from popular - this is what users actually copied)
     mostCopiedMarkets = Array.from(marketData.entries())
-      .sort((a, b) => b[1].count - a[1].count)
-      .slice(0, 10)
       .map(([title, data]) => ({
         market_title: title,
         copy_count: data.count,
-        avg_roi: data.rois.length > 0 
-          ? data.rois.reduce((a, b) => a + b, 0) / data.rois.length 
-          : null
+        avg_roi: data.rois.length > 0 ? data.rois.reduce((a, b) => a + b, 0) / data.rois.length : null
       }))
-  } catch (err) {
-    console.error('Error fetching most copied markets:', err)
-    errors.push('Failed to fetch most copied markets')
+      .sort((a, b) => b.copy_count - a.copy_count)
+      .slice(0, 10)
+  } else {
+    errors.push('Failed to fetch category data')
   }
 
-  // SECTION 6: Recent Activity (Last 20)
-  try {
-    const { data, error } = await supabase
-      .from('copied_trades')
-      .select('trader_username, trader_wallet, market_title, outcome, created_at')
-      .order('created_at', { ascending: false })
-      .limit(20)
+  // Process Query 4: Platform Stats
+  if (queries[3].status === 'fulfilled' && !queries[3].value.error) {
+    const data = queries[3].value.data || []
+    
+    const uniqueTraders = new Set(data.map((t: any) => t.trader_username)).size
+    const activeUsers = new Set(data.map((t: any) => t.user_id)).size
+    const totalCopies = data.length
 
-    if (error) throw error
-    recentActivity = data || []
-  } catch (err) {
-    console.error('Error fetching recent activity:', err)
+    const resolvedTrades = data.filter((t: any) => t.market_resolved && t.roi !== null)
+    let avgRoi: number | null = null
+    let winRate: number | null = null
+
+    if (resolvedTrades.length > 0) {
+      const rois = resolvedTrades.map((t: any) => t.roi as number)
+      avgRoi = rois.reduce((a: number, b: number) => a + b, 0) / rois.length
+      const wins = rois.filter((r: number) => r > 0).length
+      winRate = (wins / rois.length) * 100
+    }
+
+    platformStats = { uniqueTraders, totalCopies, activeUsers, avgRoi, winRate }
+  } else {
+    errors.push('Failed to fetch platform stats')
+  }
+
+  // Process Query 5: Recent Activity
+  if (queries[4].status === 'fulfilled' && !queries[4].value.error) {
+    recentActivity = queries[4].value.data || []
+  } else {
     errors.push('Failed to fetch recent activity')
   }
 
   return {
-    mostCopiedTraders,
+    topPerformingTraders,
     topPerformingTrades,
-    newlyTrackedTraders,
+    mostCopiedTraders,
+    categoryBreakdown,
+    mostPopularMarkets,
+    categoryLeaderboards,
     platformStats,
+    newlyTrackedTraders,
     mostCopiedMarkets,
     recentActivity,
     lastUpdated: now,
@@ -356,11 +492,34 @@ export default async function AdminContentDataPage() {
   const formattedData = {
     ...data,
     lastUpdated: formatDateTime(data.lastUpdated),
+    topPerformingTraders: data.topPerformingTraders.map(t => ({
+      ...t,
+      avg_roi_formatted: formatROI(t.avg_roi)
+    })),
     topPerformingTrades: data.topPerformingTrades.map(t => ({
       ...t,
       roi_formatted: formatROI(t.roi),
-      date_formatted: formatDate(t.created_at)
+      date_formatted: formatDate(t.created_at),
+      market_title_truncated: truncate(t.market_title, 60)
     })),
+    categoryBreakdown: data.categoryBreakdown.map(c => ({
+      ...c,
+      avg_roi_formatted: formatROI(c.avg_roi)
+    })),
+    mostPopularMarkets: data.mostPopularMarkets.map(m => ({
+      ...m,
+      market_title_truncated: truncate(m.market_title),
+      avg_roi_formatted: formatROI(m.avg_roi)
+    })),
+    categoryLeaderboards: Object.fromEntries(
+      Object.entries(data.categoryLeaderboards).map(([category, traders]) => [
+        category,
+        traders.map(t => ({
+          ...t,
+          avg_roi_formatted: formatROI(t.avg_roi)
+        }))
+      ])
+    ),
     newlyTrackedTraders: data.newlyTrackedTraders.map(t => ({
       ...t,
       first_copied_formatted: formatDate(t.first_copied)
@@ -386,4 +545,3 @@ export default async function AdminContentDataPage() {
 
   return <AdminDashboardClient isAuthenticated={true} data={formattedData} />
 }
-

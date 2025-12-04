@@ -1,56 +1,94 @@
 'use client'
 
-import { useState, useTransition, useEffect, useCallback } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { verifyPassword } from './actions'
 
 interface DashboardData {
+  // Section A: Polymarket Trader Data
+  topPerformingTraders: Array<{
+    trader_username: string
+    trader_wallet: string
+    trade_count: number
+    avg_roi: number | null
+    avg_roi_formatted: string
+    wins: number
+    losses: number
+  }>
+  topPerformingTrades: Array<{
+    trader_username: string
+    trader_wallet: string
+    market_title: string
+    market_title_truncated: string
+    outcome: string
+    roi: number
+    roi_formatted: string
+    created_at: string
+    date_formatted: string
+  }>
   mostCopiedTraders: Array<{
     trader_username: string
     trader_wallet: string
     copy_count: number
   }>
-  topPerformingTrades: Array<{
-    trader_username: string
+  categoryBreakdown: Array<{
+    category: string
+    trade_count: number
+    avg_roi: number | null
+    avg_roi_formatted: string
+  }>
+  mostPopularMarkets: Array<{
     market_title: string
-    outcome: string
-    roi: number
-    created_at: string
-    roi_formatted: string
-    date_formatted: string
+    market_title_truncated: string
+    copy_count: number
+    avg_roi: number | null
+    avg_roi_formatted: string
+    resolved_count: number
   }>
-  newlyTrackedTraders: Array<{
-    trader_username: string
-    trader_wallet: string
-    first_copied: string
-    unique_markets: number
-    first_copied_formatted: string
-  }>
+  categoryLeaderboards: {
+    [key: string]: Array<{
+      trader_username: string
+      trader_wallet: string
+      positions_opened: number
+      avg_roi: number | null
+      avg_roi_formatted: string
+    }>
+  }
+  
+  // Section B: Polycopy Platform Data
   platformStats: {
     uniqueTraders: number
     totalCopies: number
     activeUsers: number
     avgRoi: number | null
-    winRate: number | null
     avgRoi_formatted: string
+    winRate: number | null
     winRate_formatted: string
   }
+  newlyTrackedTraders: Array<{
+    trader_username: string
+    trader_wallet: string
+    first_copied: string
+    first_copied_formatted: string
+    unique_markets: number
+  }>
   mostCopiedMarkets: Array<{
     market_title: string
+    market_title_truncated: string
     copy_count: number
     avg_roi: number | null
-    market_title_truncated: string
     avg_roi_formatted: string
   }>
   recentActivity: Array<{
     trader_username: string
     trader_wallet: string
     market_title: string
+    market_title_truncated: string
     outcome: string
     created_at: string
     time_formatted: string
-    market_title_truncated: string
   }>
+  
   lastUpdated: string
   errors: string[]
 }
@@ -119,6 +157,8 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
   const [modalCopied, setModalCopied] = useState(false)
   const [walletCopied, setWalletCopied] = useState(false)
   const [urlCopied, setUrlCopied] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshSuccess, setRefreshSuccess] = useState(false)
   const router = useRouter()
 
   // Fetch trader details when wallet is selected
@@ -175,8 +215,21 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
     })
   }
 
-  const handleRefresh = () => {
-    router.refresh()
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    setRefreshSuccess(false)
+    
+    // Use startTransition for the refresh
+    startTransition(() => {
+      router.refresh()
+    })
+    
+    // Show loading for a bit, then show success
+    setTimeout(() => {
+      setRefreshing(false)
+      setRefreshSuccess(true)
+      setTimeout(() => setRefreshSuccess(false), 2000)
+    }, 1000)
   }
 
   const handleCopyAll = async () => {
@@ -275,7 +328,7 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
   return (
     <div className="min-h-screen bg-[#111827] text-white p-4 md:p-8">
       {/* Header */}
-      <div className="max-w-6xl mx-auto mb-8">
+      <div className="max-w-7xl mx-auto mb-8">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-white mb-1">
@@ -286,12 +339,29 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
             </p>
           </div>
           
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-center">
+            {/* Refresh Success Toast */}
+            {refreshSuccess && (
+              <div className="px-4 py-2 bg-green-600 text-white font-medium rounded-lg animate-pulse">
+                ✓ Data refreshed!
+              </div>
+            )}
+            
             <button
               onClick={handleRefresh}
-              className="px-4 py-2 bg-[#374151] hover:bg-[#4b5563] text-white font-medium rounded-lg transition-colors"
+              disabled={refreshing}
+              className="px-4 py-2 bg-[#374151] hover:bg-[#4b5563] text-white font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
             >
-              🔄 Refresh Data
+              {refreshing ? (
+                <>
+                  <span className="animate-spin">⟳</span>
+                  Refreshing...
+                </>
+              ) : (
+                <>
+                  🔄 Refresh Data
+                </>
+              )}
             </button>
             <button
               onClick={handleCopyAll}
@@ -316,128 +386,267 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
       </div>
 
       {/* Content Sections */}
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-8">
         
-        {/* Section 1: Most Copied Traders */}
-        <Section title="📊 MOST COPIED TRADERS (LAST 7 DAYS)">
-          {data.mostCopiedTraders.length === 0 ? (
-            <p className="text-gray-500">No data available</p>
-          ) : (
-            <div className="space-y-1">
-              {data.mostCopiedTraders.map((trader, i) => (
-                <div key={trader.trader_wallet} className="font-mono text-sm">
-                  {i + 1}.{' '}
-                  <TraderName 
-                    username={trader.trader_username} 
-                    wallet={trader.trader_wallet}
-                    onClick={handleTraderClick}
-                  />{' '}
-                  — {trader.copy_count} {trader.copy_count === 1 ? 'copy' : 'copies'}{' '}
-                  <span className="text-gray-500">({trader.trader_wallet.slice(0, 6)}...{trader.trader_wallet.slice(-4)})</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </Section>
+        {/* ═══════════════════════════════════════════════ */}
+        {/* SECTION A: POLYMARKET TRADER DATA */}
+        {/* ═══════════════════════════════════════════════ */}
+        
+        <div className="bg-[#FDB022] p-4 rounded-t-lg -mb-4">
+          <h2 className="text-2xl font-bold text-black">📈 SECTION A: POLYMARKET TRADER DATA</h2>
+          <p className="text-black/70 text-sm">Trader performance and market activity from Polymarket</p>
+        </div>
+        
+        <div className="space-y-6 border-2 border-[#FDB022]/30 rounded-b-lg p-4 md:p-6">
+          
+          {/* 1. Top Performing Traders */}
+          <Section title="🏆 TOP PERFORMING TRADERS (LAST 7 DAYS)">
+            {data.topPerformingTraders.length === 0 ? (
+              <p className="text-gray-500">No data available</p>
+            ) : (
+              <div className="space-y-1">
+                {data.topPerformingTraders.map((trader, i) => (
+                  <div key={trader.trader_wallet} className="font-mono text-sm">
+                    {i + 1}.{' '}
+                    <TraderName 
+                      username={trader.trader_username} 
+                      wallet={trader.trader_wallet}
+                      onClick={handleTraderClick}
+                    />{' '}
+                    — Avg ROI:{' '}
+                    <span className={trader.avg_roi !== null && trader.avg_roi >= 0 ? 'text-green-400' : 'text-red-400'}>
+                      {trader.avg_roi_formatted}
+                    </span>{' '}
+                    ({trader.trade_count} trades, {trader.wins} W / {trader.losses} L)
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
 
-        {/* Section 2: Top Performing Trades */}
-        <Section title="🏆 TOP PERFORMING TRADES (LAST 7 DAYS)">
-          {data.topPerformingTrades.length === 0 ? (
-            <p className="text-gray-500">No data available</p>
-          ) : (
-            <div className="space-y-1">
-              {data.topPerformingTrades.map((trade, i) => (
-                <div key={`${trade.created_at}-${i}`} className="font-mono text-sm">
-                  {i + 1}.{' '}
-                  <TraderName 
-                    username={trade.trader_username} 
-                    wallet={(data.mostCopiedTraders.find(t => t.trader_username === trade.trader_username)?.trader_wallet) || ''}
-                    onClick={handleTraderClick}
-                  />{' '}
-                  | {truncateText(trade.market_title, 50)} | {trade.outcome} |{' '}
-                  <span className={trade.roi >= 0 ? 'text-green-400' : 'text-red-400'}>
-                    ROI: {trade.roi_formatted}
-                  </span>{' '}
-                  | {trade.date_formatted}
-                </div>
-              ))}
-            </div>
-          )}
-        </Section>
+          {/* 2. Top Performing Trades */}
+          <Section title="🏆 TOP PERFORMING TRADES (LAST 7 DAYS)">
+            {data.topPerformingTrades.length === 0 ? (
+              <p className="text-gray-500">No data available</p>
+            ) : (
+              <div className="space-y-1 max-h-[500px] overflow-y-auto">
+                {data.topPerformingTrades.map((trade, i) => (
+                  <div key={`${trade.created_at}-${i}`} className="font-mono text-sm">
+                    {i + 1}.{' '}
+                    <TraderName 
+                      username={trade.trader_username} 
+                      wallet={trade.trader_wallet}
+                      onClick={handleTraderClick}
+                    />{' '}
+                    | {trade.market_title_truncated} | {trade.outcome} |{' '}
+                    <span className={trade.roi >= 0 ? 'text-green-400' : 'text-red-400'}>
+                      ROI: {trade.roi_formatted}
+                    </span>{' '}
+                    | {trade.date_formatted}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
 
-        {/* Section 3: Newly Tracked Traders */}
-        <Section title="🆕 NEWLY TRACKED TRADERS (LAST 7 DAYS)">
-          {data.newlyTrackedTraders.length === 0 ? (
-            <p className="text-gray-500">No data available</p>
-          ) : (
-            <div className="space-y-1">
-              {data.newlyTrackedTraders.map((trader, i) => (
-                <div key={trader.trader_wallet} className="font-mono text-sm">
-                  {i + 1}.{' '}
-                  <TraderName 
-                    username={trader.trader_username} 
-                    wallet={trader.trader_wallet}
-                    onClick={handleTraderClick}
-                  />{' '}
-                  | First copied: {trader.first_copied_formatted} | {trader.unique_markets} {trader.unique_markets === 1 ? 'market' : 'markets'} traded
-                </div>
-              ))}
-            </div>
-          )}
-        </Section>
+          {/* 3. Most Copied Traders */}
+          <Section title="📊 MOST COPIED TRADERS (LAST 7 DAYS)">
+            {data.mostCopiedTraders.length === 0 ? (
+              <p className="text-gray-500">No data available</p>
+            ) : (
+              <div className="space-y-1">
+                {data.mostCopiedTraders.map((trader, i) => (
+                  <div key={trader.trader_wallet} className="font-mono text-sm">
+                    {i + 1}.{' '}
+                    <TraderName 
+                      username={trader.trader_username} 
+                      wallet={trader.trader_wallet}
+                      onClick={handleTraderClick}
+                    />{' '}
+                    — {trader.copy_count} {trader.copy_count === 1 ? 'copy' : 'copies'}{' '}
+                    <span className="text-gray-500">({trader.trader_wallet.slice(0, 6)}...{trader.trader_wallet.slice(-4)})</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
 
-        {/* Section 4: Platform Stats */}
-        <Section title="📈 PLATFORM STATS (ALL TIME)">
-          <div className="font-mono text-sm space-y-1">
-            <div>Unique Traders Tracked: <span className="text-[#FDB022]">{data.platformStats.uniqueTraders.toLocaleString()}</span></div>
-            <div>Total Trades Copied: <span className="text-[#FDB022]">{data.platformStats.totalCopies.toLocaleString()}</span></div>
-            <div>Active Copiers: <span className="text-[#FDB022]">{data.platformStats.activeUsers.toLocaleString()}</span></div>
-            <div>Avg ROI (Resolved): <span className={data.platformStats.avgRoi && data.platformStats.avgRoi >= 0 ? 'text-green-400' : 'text-red-400'}>{data.platformStats.avgRoi_formatted}</span></div>
-            <div>Win Rate: <span className="text-[#FDB022]">{data.platformStats.winRate_formatted}</span></div>
-          </div>
-        </Section>
+          {/* 4. Market Category Breakdown */}
+          <Section title="📊 MARKET CATEGORY BREAKDOWN (LAST 7 DAYS)">
+            {data.categoryBreakdown.length === 0 ? (
+              <p className="text-gray-500">No data available</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full font-mono text-sm">
+                  <thead>
+                    <tr className="border-b border-[#374151]">
+                      <th className="text-left py-2 px-3 text-[#FDB022]">Category</th>
+                      <th className="text-right py-2 px-3 text-[#FDB022]">Trades</th>
+                      <th className="text-right py-2 px-3 text-[#FDB022]">Avg ROI</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.categoryBreakdown.map((cat) => (
+                      <tr key={cat.category} className="border-b border-[#374151]/50">
+                        <td className="py-2 px-3">{cat.category}</td>
+                        <td className="py-2 px-3 text-right text-[#FDB022]">{cat.trade_count}</td>
+                        <td className={`py-2 px-3 text-right ${cat.avg_roi !== null && cat.avg_roi >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {cat.avg_roi_formatted}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Section>
 
-        {/* Section 5: Most Copied Markets */}
-        <Section title="🔥 MOST COPIED MARKETS (LAST 7 DAYS)">
-          {data.mostCopiedMarkets.length === 0 ? (
-            <p className="text-gray-500">No data available</p>
-          ) : (
-            <div className="space-y-1">
-              {data.mostCopiedMarkets.map((market, i) => (
-                <div key={`${market.market_title}-${i}`} className="font-mono text-sm">
-                  {i + 1}. {market.market_title_truncated} — {market.copy_count} {market.copy_count === 1 ? 'copy' : 'copies'}{' '}
-                  {market.avg_roi !== null && (
-                    <span className={market.avg_roi >= 0 ? 'text-green-400' : 'text-red-400'}>
-                      (Avg ROI: {market.avg_roi_formatted})
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </Section>
+          {/* 5. Most Popular Markets by Volume */}
+          <Section title="🏆 MOST POPULAR MARKETS BY VOLUME (LAST 7 DAYS)">
+            {data.mostPopularMarkets.length === 0 ? (
+              <p className="text-gray-500">No data available</p>
+            ) : (
+              <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                {data.mostPopularMarkets.map((market, i) => (
+                  <div key={`${market.market_title}-${i}`} className="font-mono text-sm">
+                    {i + 1}. {market.market_title_truncated}{' '}
+                    — <span className="text-[#FDB022]">{market.copy_count}</span> copies{' '}
+                    {market.avg_roi !== null && (
+                      <>
+                        (Avg ROI:{' '}
+                        <span className={market.avg_roi >= 0 ? 'text-green-400' : 'text-red-400'}>
+                          {market.avg_roi_formatted}
+                        </span>
+                        , {market.resolved_count}/{market.copy_count} resolved)
+                      </>
+                    )}
+                    {market.avg_roi === null && market.resolved_count === 0 && (
+                      <span className="text-gray-500">(0 resolved)</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
 
-        {/* Section 6: Recent Activity */}
-        <Section title="⏱️ RECENT COPY ACTIVITY (LAST 20)">
-          {data.recentActivity.length === 0 ? (
-            <p className="text-gray-500">No data available</p>
-          ) : (
-            <div className="space-y-1">
-              {data.recentActivity.map((activity, i) => (
-                <div key={`${activity.created_at}-${i}`} className="font-mono text-sm">
-                  <span className="text-gray-500">[{activity.time_formatted}]</span>{' '}
-                  <TraderName 
-                    username={activity.trader_username} 
-                    wallet={activity.trader_wallet || ''}
-                    onClick={handleTraderClick}
-                  />{' '}
-                  copied on {activity.market_title_truncated}{' '}
-                  <span className="text-[#FDB022]">({activity.outcome})</span>
-                </div>
-              ))}
-            </div>
+          {/* 6. Category Leaderboards */}
+          {Object.keys(data.categoryLeaderboards).length > 0 && (
+            <Section title="📊 CATEGORY LEADERBOARDS (LAST 7 DAYS)">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {Object.entries(data.categoryLeaderboards).map(([category, traders]) => (
+                  <div key={category} className="border border-[#374151] rounded-lg p-4">
+                    <h4 className="text-[#FDB022] font-bold mb-3">🏆 {category.toUpperCase()} LEADERBOARD</h4>
+                    <div className="space-y-1">
+                      {traders.map((trader, i) => (
+                        <div key={trader.trader_wallet} className="font-mono text-sm">
+                          {i + 1}.{' '}
+                          <TraderName 
+                            username={trader.trader_username} 
+                            wallet={trader.trader_wallet}
+                            onClick={handleTraderClick}
+                          />{' '}
+                          — Avg ROI:{' '}
+                          <span className={trader.avg_roi !== null && trader.avg_roi >= 0 ? 'text-green-400' : 'text-red-400'}>
+                            {trader.avg_roi_formatted}
+                          </span>{' '}
+                          ({trader.positions_opened} pos)
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Section>
           )}
-        </Section>
+          
+        </div>
+
+        {/* ═══════════════════════════════════════════════ */}
+        {/* SECTION B: POLYCOPY PLATFORM DATA */}
+        {/* ═══════════════════════════════════════════════ */}
+        
+        <div className="bg-[#3b82f6] p-4 rounded-t-lg -mb-4 mt-12">
+          <h2 className="text-2xl font-bold text-white">📊 SECTION B: POLYCOPY PLATFORM DATA</h2>
+          <p className="text-white/70 text-sm">User activity and platform metrics</p>
+        </div>
+        
+        <div className="space-y-6 border-2 border-[#3b82f6]/30 rounded-b-lg p-4 md:p-6">
+
+          {/* 1. Platform Stats */}
+          <Section title="📈 PLATFORM STATS (ALL TIME)">
+            <div className="font-mono text-sm space-y-1">
+              <div>Unique Traders Tracked: <span className="text-[#FDB022]">{data.platformStats.uniqueTraders.toLocaleString()}</span></div>
+              <div>Total Trades Copied: <span className="text-[#FDB022]">{data.platformStats.totalCopies.toLocaleString()}</span></div>
+              <div>Active Copiers: <span className="text-[#FDB022]">{data.platformStats.activeUsers.toLocaleString()}</span></div>
+              <div>Avg ROI (Resolved): <span className={data.platformStats.avgRoi !== null && data.platformStats.avgRoi >= 0 ? 'text-green-400' : 'text-red-400'}>{data.platformStats.avgRoi_formatted}</span></div>
+              <div>Win Rate: <span className="text-[#FDB022]">{data.platformStats.winRate_formatted}</span></div>
+            </div>
+          </Section>
+
+          {/* 2. Newly Tracked Traders */}
+          <Section title="🆕 NEWLY TRACKED TRADERS (LAST 7 DAYS)">
+            {data.newlyTrackedTraders.length === 0 ? (
+              <p className="text-gray-500">No data available</p>
+            ) : (
+              <div className="space-y-1">
+                {data.newlyTrackedTraders.map((trader, i) => (
+                  <div key={trader.trader_wallet} className="font-mono text-sm">
+                    {i + 1}.{' '}
+                    <TraderName 
+                      username={trader.trader_username} 
+                      wallet={trader.trader_wallet}
+                      onClick={handleTraderClick}
+                    />{' '}
+                    | First copied: {trader.first_copied_formatted} | {trader.unique_markets} {trader.unique_markets === 1 ? 'market' : 'markets'} traded
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* 3. Most Copied Markets */}
+          <Section title="🔥 MOST COPIED MARKETS (LAST 7 DAYS)">
+            {data.mostCopiedMarkets.length === 0 ? (
+              <p className="text-gray-500">No data available</p>
+            ) : (
+              <div className="space-y-1">
+                {data.mostCopiedMarkets.map((market, i) => (
+                  <div key={`${market.market_title}-${i}`} className="font-mono text-sm">
+                    {i + 1}. {market.market_title_truncated} — {market.copy_count} {market.copy_count === 1 ? 'copy' : 'copies'}{' '}
+                    {market.avg_roi !== null && (
+                      <span className={market.avg_roi >= 0 ? 'text-green-400' : 'text-red-400'}>
+                        (Avg ROI: {market.avg_roi_formatted})
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* 4. Recent Activity */}
+          <Section title="⏱️ RECENT COPY ACTIVITY (LAST 20)">
+            {data.recentActivity.length === 0 ? (
+              <p className="text-gray-500">No data available</p>
+            ) : (
+              <div className="space-y-1">
+                {data.recentActivity.map((activity, i) => (
+                  <div key={`${activity.created_at}-${i}`} className="font-mono text-sm">
+                    <span className="text-gray-500">[{activity.time_formatted}]</span>{' '}
+                    <TraderName 
+                      username={activity.trader_username} 
+                      wallet={activity.trader_wallet || ''}
+                      onClick={handleTraderClick}
+                    />{' '}
+                    copied on {activity.market_title_truncated}{' '}
+                    <span className="text-[#FDB022]">({activity.outcome})</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+        </div>
 
       </div>
 
@@ -771,7 +980,37 @@ function buildAllContent(data: DashboardData): string {
   lines.push('═══════════════════════════════════════════════')
   lines.push('')
   
-  // Section 1
+  // SECTION A: POLYMARKET TRADER DATA
+  lines.push('═══════════════════════════════════════════════')
+  lines.push('SECTION A: POLYMARKET TRADER DATA')
+  lines.push('═══════════════════════════════════════════════')
+  lines.push('')
+  
+  // 1. Top Performing Traders
+  lines.push('🏆 TOP PERFORMING TRADERS (LAST 7 DAYS)')
+  lines.push('───────────────────────────────────────────────')
+  if (data.topPerformingTraders.length === 0) {
+    lines.push('No data available')
+  } else {
+    data.topPerformingTraders.forEach((trader, i) => {
+      lines.push(`${i + 1}. ${trader.trader_username || 'Anonymous'} — Avg ROI: ${trader.avg_roi_formatted} (${trader.trade_count} trades, ${trader.wins} W / ${trader.losses} L)`)
+    })
+  }
+  lines.push('')
+  
+  // 2. Top Performing Trades
+  lines.push('🏆 TOP PERFORMING TRADES (LAST 7 DAYS)')
+  lines.push('───────────────────────────────────────────────')
+  if (data.topPerformingTrades.length === 0) {
+    lines.push('No data available')
+  } else {
+    data.topPerformingTrades.forEach((trade, i) => {
+      lines.push(`${i + 1}. ${trade.trader_username || 'Anonymous'} | ${trade.market_title_truncated} | ${trade.outcome} | ROI: ${trade.roi_formatted} | ${trade.date_formatted}`)
+    })
+  }
+  lines.push('')
+  
+  // 3. Most Copied Traders
   lines.push('📊 MOST COPIED TRADERS (LAST 7 DAYS)')
   lines.push('───────────────────────────────────────────────')
   if (data.mostCopiedTraders.length === 0) {
@@ -783,19 +1022,62 @@ function buildAllContent(data: DashboardData): string {
   }
   lines.push('')
   
-  // Section 2
-  lines.push('🏆 TOP PERFORMING TRADES (LAST 7 DAYS)')
+  // 4. Category Breakdown
+  lines.push('📊 MARKET CATEGORY BREAKDOWN (LAST 7 DAYS)')
   lines.push('───────────────────────────────────────────────')
-  if (data.topPerformingTrades.length === 0) {
+  if (data.categoryBreakdown.length === 0) {
     lines.push('No data available')
   } else {
-    data.topPerformingTrades.forEach((trade, i) => {
-      lines.push(`${i + 1}. ${trade.trader_username || 'Anonymous'} | ${truncateText(trade.market_title, 50)} | ${trade.outcome} | ROI: ${trade.roi_formatted} | ${trade.date_formatted}`)
+    data.categoryBreakdown.forEach((cat) => {
+      lines.push(`${cat.category}: ${cat.trade_count} trades, Avg ROI: ${cat.avg_roi_formatted}`)
     })
   }
   lines.push('')
   
-  // Section 3
+  // 5. Most Popular Markets
+  lines.push('🏆 MOST POPULAR MARKETS BY VOLUME (LAST 7 DAYS)')
+  lines.push('───────────────────────────────────────────────')
+  if (data.mostPopularMarkets.length === 0) {
+    lines.push('No data available')
+  } else {
+    data.mostPopularMarkets.forEach((market, i) => {
+      const roiPart = market.avg_roi !== null ? ` (Avg ROI: ${market.avg_roi_formatted}, ${market.resolved_count}/${market.copy_count} resolved)` : ''
+      lines.push(`${i + 1}. ${market.market_title_truncated} — ${market.copy_count} copies${roiPart}`)
+    })
+  }
+  lines.push('')
+  
+  // 6. Category Leaderboards
+  if (Object.keys(data.categoryLeaderboards).length > 0) {
+    lines.push('📊 CATEGORY LEADERBOARDS (LAST 7 DAYS)')
+    lines.push('───────────────────────────────────────────────')
+    Object.entries(data.categoryLeaderboards).forEach(([category, traders]) => {
+      lines.push('')
+      lines.push(`🏆 ${category.toUpperCase()} LEADERBOARD`)
+      traders.forEach((trader, i) => {
+        lines.push(`${i + 1}. ${trader.trader_username || 'Anonymous'} — Avg ROI: ${trader.avg_roi_formatted} (${trader.positions_opened} positions)`)
+      })
+    })
+    lines.push('')
+  }
+  
+  // SECTION B: POLYCOPY PLATFORM DATA
+  lines.push('═══════════════════════════════════════════════')
+  lines.push('SECTION B: POLYCOPY PLATFORM DATA')
+  lines.push('═══════════════════════════════════════════════')
+  lines.push('')
+  
+  // 1. Platform Stats
+  lines.push('📈 PLATFORM STATS (ALL TIME)')
+  lines.push('───────────────────────────────────────────────')
+  lines.push(`Unique Traders Tracked: ${data.platformStats.uniqueTraders.toLocaleString()}`)
+  lines.push(`Total Trades Copied: ${data.platformStats.totalCopies.toLocaleString()}`)
+  lines.push(`Active Copiers: ${data.platformStats.activeUsers.toLocaleString()}`)
+  lines.push(`Avg ROI (Resolved): ${data.platformStats.avgRoi_formatted}`)
+  lines.push(`Win Rate: ${data.platformStats.winRate_formatted}`)
+  lines.push('')
+  
+  // 2. Newly Tracked Traders
   lines.push('🆕 NEWLY TRACKED TRADERS (LAST 7 DAYS)')
   lines.push('───────────────────────────────────────────────')
   if (data.newlyTrackedTraders.length === 0) {
@@ -807,17 +1089,7 @@ function buildAllContent(data: DashboardData): string {
   }
   lines.push('')
   
-  // Section 4
-  lines.push('📈 PLATFORM STATS (ALL TIME)')
-  lines.push('───────────────────────────────────────────────')
-  lines.push(`Unique Traders Tracked: ${data.platformStats.uniqueTraders.toLocaleString()}`)
-  lines.push(`Total Trades Copied: ${data.platformStats.totalCopies.toLocaleString()}`)
-  lines.push(`Active Copiers: ${data.platformStats.activeUsers.toLocaleString()}`)
-  lines.push(`Avg ROI (Resolved): ${data.platformStats.avgRoi_formatted}`)
-  lines.push(`Win Rate: ${data.platformStats.winRate_formatted}`)
-  lines.push('')
-  
-  // Section 5
+  // 3. Most Copied Markets
   lines.push('🔥 MOST COPIED MARKETS (LAST 7 DAYS)')
   lines.push('───────────────────────────────────────────────')
   if (data.mostCopiedMarkets.length === 0) {
@@ -830,7 +1102,7 @@ function buildAllContent(data: DashboardData): string {
   }
   lines.push('')
   
-  // Section 6
+  // 4. Recent Activity
   lines.push('⏱️ RECENT COPY ACTIVITY (LAST 20)')
   lines.push('───────────────────────────────────────────────')
   if (data.recentActivity.length === 0) {
