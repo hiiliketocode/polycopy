@@ -184,11 +184,7 @@ export default function ProfilePage() {
           console.error('Error fetching copied trades:', error);
           setCopiedTrades([]);
         } else {
-          console.log('📊 Loaded copied trades:', trades?.length || 0);
-          // Debug: Show what market_ids are stored
-          trades?.forEach((t, i) => {
-            console.log(`  Trade ${i + 1}: market_id="${t.market_id}" | outcome="${t.outcome}" | title="${t.market_title?.substring(0, 40)}..."`);
-          });
+          console.log('📊 Loaded', trades?.length || 0, 'copied trades');
           setCopiedTrades(trades || []);
         }
       } catch (err) {
@@ -221,179 +217,83 @@ export default function ProfilePage() {
     fetchNotificationPrefs();
   }, [user]);
 
-  // Helper function to fetch current price from Polymarket (client-side, no auth needed)
+  // Helper function to fetch current price from Polymarket via our proxy API (avoids CORS)
   const fetchCurrentPriceFromPolymarket = async (trade: CopiedTrade): Promise<{ currentPrice: number | null; roi: number | null }> => {
-    const debug = (msg: string) => console.log(`[Price Fetch] ${msg}`);
-    
     try {
-      let markets: any[] | null = null;
+      console.log(`[Price] Fetching price for: "${trade.market_title?.substring(0, 40)}..."`);
       
-      debug(`Looking up: market_id="${trade.market_id}", title="${trade.market_title?.substring(0, 40)}..."`);
-      
-      // Try 1: Use condition_id if it starts with 0x
-      if (trade.market_id && trade.market_id.startsWith('0x')) {
-        debug(`  → Try 1: condition_id search`);
-        const gammaUrl = `https://gamma-api.polymarket.com/markets?condition_id=${trade.market_id}`;
-        const response = await fetch(gammaUrl, { cache: 'no-store' });
-        
-        if (response.ok) {
-          const data = await response.json();
-          debug(`    Result: ${data?.length || 0} markets found`);
-          if (data && data.length > 0) {
-            markets = data;
-          }
+      // Build query params for our proxy API
+      const params = new URLSearchParams();
+      if (trade.market_id) {
+        if (trade.market_id.startsWith('0x')) {
+          params.set('conditionId', trade.market_id);
         } else {
-          debug(`    HTTP ${response.status}`);
+          params.set('slug', trade.market_id);
+        }
+      }
+      if (trade.market_title) {
+        params.set('title', trade.market_title);
+      }
+      
+      // Call our proxy API (server-side, no CORS issues)
+      const response = await fetch(`/api/polymarket/price?${params.toString()}`);
+      const data = await response.json();
+      
+      if (!data.success || !data.market) {
+        console.log(`[Price] Market not found for: "${trade.market_title?.substring(0, 30)}..."`);
+        return { currentPrice: null, roi: null };
+      }
+      
+      const market = data.market;
+      console.log(`[Price] Found market: "${market.question?.substring(0, 40)}..."`);
+      console.log(`[Price] Outcomes: ${JSON.stringify(market.outcomes)}, Prices: ${JSON.stringify(market.outcomePrices)}`);
+      
+      const prices = market.outcomePrices;
+      const outcomes = market.outcomes;
+      
+      if (!prices || !Array.isArray(prices) || prices.length < 2) {
+        console.log(`[Price] Invalid prices array`);
+        return { currentPrice: null, roi: null };
+      }
+      
+      const outcomeUpper = trade.outcome?.toUpperCase();
+      let currentPrice: number | null = null;
+      
+      // Standard YES/NO markets
+      if (outcomeUpper === 'YES') {
+        currentPrice = parseFloat(prices[0]);
+        console.log(`[Price] YES → ${currentPrice}`);
+      } else if (outcomeUpper === 'NO') {
+        currentPrice = parseFloat(prices[1]);
+        console.log(`[Price] NO → ${currentPrice}`);
+      } else if (outcomes && Array.isArray(outcomes)) {
+        // Custom outcomes - find by name (case-insensitive)
+        const outcomeIndex = outcomes.findIndex(
+          (o: string) => o?.toUpperCase() === outcomeUpper
+        );
+        console.log(`[Price] Custom outcome "${outcomeUpper}" → index ${outcomeIndex}`);
+        if (outcomeIndex >= 0 && outcomeIndex < prices.length) {
+          currentPrice = parseFloat(prices[outcomeIndex]);
         }
       }
       
-      // Try 2: Search by slug if condition_id didn't work
-      if (!markets && trade.market_id && !trade.market_id.startsWith('0x')) {
-        debug(`  → Try 2: slug search for "${trade.market_id}"`);
-        const gammaUrl = `https://gamma-api.polymarket.com/markets?slug=${encodeURIComponent(trade.market_id)}`;
-        const response = await fetch(gammaUrl, { cache: 'no-store' });
-        
-        if (response.ok) {
-          const data = await response.json();
-          debug(`    Result: ${data?.length || 0} markets found`);
-          if (data && data.length > 0) {
-            markets = data;
-          }
-        } else {
-          debug(`    HTTP ${response.status}`);
+      // Calculate ROI
+      let roi: number | null = null;
+      if (currentPrice !== null && trade.price_when_copied) {
+        const entryPrice = trade.price_when_copied;
+        if (entryPrice > 0) {
+          roi = ((currentPrice - entryPrice) / entryPrice) * 100;
+          roi = parseFloat(roi.toFixed(2));
         }
       }
       
-      // Try 3: Search recent markets by title
-      if (!markets && trade.market_title) {
-        debug(`  → Try 3: title search in recent markets`);
-        try {
-          const gammaUrl = `https://gamma-api.polymarket.com/markets?closed=false&limit=100`;
-          const response = await fetch(gammaUrl, { cache: 'no-store' });
-          
-          if (response.ok) {
-            const data = await response.json();
-            const titleLower = trade.market_title?.toLowerCase() || '';
-            
-            // Try exact match first
-            let match = data.find((m: any) => 
-              m.question?.toLowerCase() === titleLower
-            );
-            
-            // Then try partial match
-            if (!match && titleLower.length > 20) {
-              match = data.find((m: any) => 
-                m.question?.toLowerCase().includes(titleLower.substring(0, 30))
-              );
-            }
-            
-            if (match) {
-              debug(`    Found match: "${match.question?.substring(0, 40)}..."`);
-              markets = [match];
-            } else {
-              debug(`    No title match in ${data?.length || 0} markets`);
-            }
-          }
-        } catch (err) {
-          debug(`    Title search error: ${err}`);
-        }
-      }
+      console.log(`[Price] ✓ Final: price=${currentPrice}, roi=${roi}%`);
+      return { currentPrice, roi };
       
-      // Try 4: Search in closed markets too
-      if (!markets && trade.market_title) {
-        debug(`  → Try 4: searching closed markets`);
-        try {
-          const gammaUrl = `https://gamma-api.polymarket.com/markets?closed=true&limit=100`;
-          const response = await fetch(gammaUrl, { cache: 'no-store' });
-          
-          if (response.ok) {
-            const data = await response.json();
-            const titleLower = trade.market_title?.toLowerCase() || '';
-            
-            const match = data.find((m: any) => 
-              m.question?.toLowerCase() === titleLower ||
-              (titleLower.length > 20 && m.question?.toLowerCase().includes(titleLower.substring(0, 30)))
-            );
-            
-            if (match) {
-              debug(`    Found in closed: "${match.question?.substring(0, 40)}..."`);
-              markets = [match];
-            } else {
-              debug(`    No match in closed markets`);
-            }
-          }
-        } catch (err) {
-          debug(`    Closed search error: ${err}`);
-        }
-      }
-      
-      // Parse the market data and extract price
-      if (markets && markets.length > 0) {
-        const market = markets[0];
-        debug(`  ✓ Using market: "${market.question?.substring(0, 40)}..."`);
-        debug(`    Raw outcomePrices: ${JSON.stringify(market.outcomePrices)}`);
-        debug(`    Raw outcomes: ${JSON.stringify(market.outcomes)}`);
-        
-        let prices = market.outcomePrices;
-        let outcomes = market.outcomes;
-        
-        // Parse if string
-        if (typeof prices === 'string') {
-          try { prices = JSON.parse(prices); } catch { prices = null; }
-        }
-        if (typeof outcomes === 'string') {
-          try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
-        }
-        
-        debug(`    Parsed prices: ${JSON.stringify(prices)}`);
-        debug(`    Parsed outcomes: ${JSON.stringify(outcomes)}`);
-        debug(`    Trade outcome: "${trade.outcome}"`);
-        
-        if (prices && Array.isArray(prices) && prices.length >= 2) {
-          const outcomeUpper = trade.outcome?.toUpperCase();
-          let currentPrice: number | null = null;
-          
-          // Standard YES/NO markets
-          if (outcomeUpper === 'YES') {
-            currentPrice = parseFloat(prices[0]);
-            debug(`    YES → price[0] = ${currentPrice}`);
-          } else if (outcomeUpper === 'NO') {
-            currentPrice = parseFloat(prices[1]);
-            debug(`    NO → price[1] = ${currentPrice}`);
-          } else if (outcomes && Array.isArray(outcomes)) {
-            // Custom outcomes - find by name (case-insensitive)
-            const outcomeIndex = outcomes.findIndex(
-              (o: string) => o?.toUpperCase() === outcomeUpper
-            );
-            debug(`    Custom outcome "${outcomeUpper}" → index ${outcomeIndex}`);
-            if (outcomeIndex >= 0 && outcomeIndex < prices.length) {
-              currentPrice = parseFloat(prices[outcomeIndex]);
-            }
-          }
-          
-          // Calculate ROI
-          let roi: number | null = null;
-          if (currentPrice !== null && trade.price_when_copied) {
-            const entryPrice = trade.price_when_copied;
-            if (entryPrice > 0) {
-              roi = ((currentPrice - entryPrice) / entryPrice) * 100;
-              roi = parseFloat(roi.toFixed(2));
-            }
-          }
-          
-          debug(`  ✓ Final: price=${currentPrice}, roi=${roi}`);
-          return { currentPrice, roi };
-        } else {
-          debug(`  ✗ Invalid prices array`);
-        }
-      } else {
-        debug(`  ✗ No market found after all attempts`);
-      }
     } catch (err) {
-      console.error('Error fetching price from Polymarket:', err);
+      console.error('[Price] Error fetching price:', err);
+      return { currentPrice: null, roi: null };
     }
-    
-    return { currentPrice: null, roi: null };
   };
 
   // Auto-refresh trade status once when trades are first loaded (to get current prices)
@@ -405,14 +305,10 @@ export default function ProfilePage() {
     // 4. User is logged in
     // 5. We're not currently refreshing
     if (!hasAutoRefreshed && !loadingCopiedTrades && copiedTrades.length > 0 && user && !refreshingStatus) {
-      console.log('🔄 Auto-refreshing trade prices from Polymarket for', copiedTrades.length, 'trades...');
-      // Debug: Log what market_ids we're working with
-      copiedTrades.forEach((t, i) => {
-        console.log(`  Trade ${i + 1}: market_id="${t.market_id}" (${t.market_id?.startsWith('0x') ? 'conditionId' : 'slug/title'})`);
-      });
+      console.log('🔄 Auto-refreshing prices for', copiedTrades.length, 'trades...');
       setHasAutoRefreshed(true); // Mark as done to prevent re-triggering
       
-      // Auto-refresh prices directly from Polymarket (bypasses auth issues)
+      // Auto-refresh prices via our proxy API (avoids CORS)
       const autoRefreshPrices = async () => {
         setRefreshingStatus(true);
         const updatedTrades: CopiedTrade[] = [];
@@ -422,7 +318,6 @@ export default function ProfilePage() {
           const { currentPrice, roi } = await fetchCurrentPriceFromPolymarket(trade);
           if (currentPrice !== null) {
             successCount++;
-            console.log(`  ✓ Found price for "${trade.market_title?.substring(0, 30)}...": ${currentPrice}`);
           }
           updatedTrades.push({
             ...trade,
