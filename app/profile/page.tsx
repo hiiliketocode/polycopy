@@ -216,6 +216,70 @@ export default function ProfilePage() {
     fetchNotificationPrefs();
   }, [user]);
 
+  // Helper function to fetch current price from Polymarket (client-side, no auth needed)
+  const fetchCurrentPriceFromPolymarket = async (trade: CopiedTrade): Promise<{ currentPrice: number | null; roi: number | null }> => {
+    try {
+      // Use Gamma API to get market prices (public API, no auth required)
+      if (trade.market_id && trade.market_id.startsWith('0x')) {
+        const gammaUrl = `https://gamma-api.polymarket.com/markets?condition_id=${trade.market_id}`;
+        const response = await fetch(gammaUrl, { cache: 'no-store' });
+        
+        if (response.ok) {
+          const markets = await response.json();
+          if (markets && markets.length > 0) {
+            const market = markets[0];
+            let prices = market.outcomePrices;
+            let outcomes = market.outcomes;
+            
+            // Parse if string
+            if (typeof prices === 'string') {
+              try { prices = JSON.parse(prices); } catch { prices = null; }
+            }
+            if (typeof outcomes === 'string') {
+              try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
+            }
+            
+            if (prices && Array.isArray(prices) && prices.length >= 2) {
+              const outcomeUpper = trade.outcome?.toUpperCase();
+              let currentPrice: number | null = null;
+              
+              // Standard YES/NO markets
+              if (outcomeUpper === 'YES') {
+                currentPrice = parseFloat(prices[0]);
+              } else if (outcomeUpper === 'NO') {
+                currentPrice = parseFloat(prices[1]);
+              } else if (outcomes && Array.isArray(outcomes)) {
+                // Custom outcomes - find by name (case-insensitive)
+                const outcomeIndex = outcomes.findIndex(
+                  (o: string) => o?.toUpperCase() === outcomeUpper
+                );
+                if (outcomeIndex >= 0 && outcomeIndex < prices.length) {
+                  currentPrice = parseFloat(prices[outcomeIndex]);
+                }
+              }
+              
+              // Calculate ROI
+              let roi: number | null = null;
+              if (currentPrice !== null && trade.price_when_copied) {
+                const entryPrice = trade.price_when_copied;
+                if (entryPrice > 0) {
+                  roi = ((currentPrice - entryPrice) / entryPrice) * 100;
+                  roi = parseFloat(roi.toFixed(2));
+                }
+              }
+              
+              return { currentPrice, roi };
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching price from Polymarket:', err);
+    }
+    
+    return { currentPrice: null, roi: null };
+  };
+
   // Auto-refresh trade status once when trades are first loaded (to get current prices)
   useEffect(() => {
     // Only auto-refresh if:
@@ -225,28 +289,21 @@ export default function ProfilePage() {
     // 4. User is logged in
     // 5. We're not currently refreshing
     if (!hasAutoRefreshed && !loadingCopiedTrades && copiedTrades.length > 0 && user && !refreshingStatus) {
-      console.log('🔄 Auto-refreshing trade status for', copiedTrades.length, 'trades...');
+      console.log('🔄 Auto-refreshing trade prices from Polymarket for', copiedTrades.length, 'trades...');
       setHasAutoRefreshed(true); // Mark as done to prevent re-triggering
       
-      // Auto-refresh status for all trades
-      const autoRefreshStatus = async () => {
+      // Auto-refresh prices directly from Polymarket (bypasses auth issues)
+      const autoRefreshPrices = async () => {
         setRefreshingStatus(true);
         const updatedTrades: CopiedTrade[] = [];
         
         for (const trade of copiedTrades) {
-          try {
-            const url = `/api/copied-trades/${trade.id}/status?userId=${user.id}`;
-            const response = await fetch(url, { credentials: 'include' });
-            const data = await response.json();
-            
-            if (response.ok && data.trade) {
-              updatedTrades.push(data.trade);
-            } else {
-              updatedTrades.push(trade); // Keep original trade data on error
-            }
-          } catch {
-            updatedTrades.push(trade); // Keep original trade data on error
-          }
+          const { currentPrice, roi } = await fetchCurrentPriceFromPolymarket(trade);
+          updatedTrades.push({
+            ...trade,
+            current_price: currentPrice ?? trade.current_price,
+            roi: roi ?? trade.roi,
+          });
         }
         
         setCopiedTrades(updatedTrades);
@@ -254,7 +311,7 @@ export default function ProfilePage() {
         console.log('✅ Auto-refresh complete');
       };
       
-      autoRefreshStatus();
+      autoRefreshPrices();
     }
   }, [hasAutoRefreshed, loadingCopiedTrades, copiedTrades.length, user, refreshingStatus]);
 
@@ -420,40 +477,38 @@ export default function ProfilePage() {
     setTimeout(() => setShowToast(false), 3000);
   };
 
-  // Refresh status for all copied trades
+  // Refresh status for all copied trades - fetches directly from Polymarket (no auth needed)
   const handleRefreshStatus = async () => {
     if (refreshingStatus || copiedTrades.length === 0 || !user) return;
     
     setRefreshingStatus(true);
     let successCount = 0;
     let errorCount = 0;
-    const errorMessages: string[] = [];
     
     try {
-      // Refresh status for each trade sequentially to avoid overwhelming the API
+      // Refresh prices directly from Polymarket (bypasses auth issues)
       const updatedTrades: CopiedTrade[] = [];
       
       for (let i = 0; i < copiedTrades.length; i++) {
         const trade = copiedTrades[i];
         
         try {
-          const url = `/api/copied-trades/${trade.id}/status?userId=${user?.id}`;
-          const response = await fetch(url, { credentials: 'include' });
-          const data = await response.json();
+          const { currentPrice, roi } = await fetchCurrentPriceFromPolymarket(trade);
           
-          if (response.ok && data.trade) {
+          if (currentPrice !== null) {
             successCount++;
-            updatedTrades.push(data.trade);
+            updatedTrades.push({
+              ...trade,
+              current_price: currentPrice,
+              roi: roi,
+            });
           } else {
-            console.error('❌ Status refresh failed:', data.error || response.status);
             errorCount++;
-            errorMessages.push(data.error || `HTTP ${response.status}`);
             updatedTrades.push(trade); // Keep original trade data
           }
         } catch (err: any) {
-          console.error('❌ Status refresh error:', err.message);
+          console.error('❌ Price fetch error:', err.message);
           errorCount++;
-          errorMessages.push(err.message || 'Network error');
           updatedTrades.push(trade); // Keep original trade data
         }
       }
@@ -465,14 +520,13 @@ export default function ProfilePage() {
       if (errorCount === 0) {
         showToastMessage(`${successCount} trade${successCount !== 1 ? 's' : ''} updated!`, 'success');
       } else if (successCount > 0) {
-        showToastMessage(`${successCount} updated, could not update ${errorCount}`, 'error');
+        showToastMessage(`${successCount} updated, ${errorCount} could not find prices`, 'error');
       } else {
-        const uniqueErrors = [...new Set(errorMessages)].slice(0, 2).join(', ');
-        showToastMessage(`Failed to update: ${uniqueErrors}`, 'error');
+        showToastMessage('Could not fetch prices - markets may be resolved', 'error');
       }
     } catch (err: any) {
       console.error('❌ Error in refresh:', err);
-      showToastMessage('Failed to refresh statuses: ' + (err.message || 'Unknown error'), 'error');
+      showToastMessage('Failed to refresh prices: ' + (err.message || 'Unknown error'), 'error');
     } finally {
       setRefreshingStatus(false);
     }
