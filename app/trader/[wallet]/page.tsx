@@ -567,7 +567,7 @@ export default function TraderProfilePage({
         }
 
         // Format trades for display
-        const formattedTrades: Trade[] = tradesData.map((trade: any) => {
+        const formattedTrades: Trade[] = tradesData.map((trade: any, index: number) => {
           // Parse timestamp - handle both Unix seconds and milliseconds
           let timestampMs = trade.timestamp;
           // If timestamp is in seconds (10 digits), convert to milliseconds
