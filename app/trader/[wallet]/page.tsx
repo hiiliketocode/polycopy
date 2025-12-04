@@ -204,7 +204,7 @@ interface Trade {
   marketSlug?: string;
   conditionId?: string;
   eventSlug?: string;
-  status: 'Open' | 'Closed' | 'Bonded';
+  status: 'Open' | 'Trader Closed' | 'Bonded';
 }
 
 interface Position {
@@ -587,15 +587,15 @@ export default function TraderProfilePage({
           
           // Determine market status by checking if this market is in openMarketIds
           // If the trader has an active position in this market, it's Open
-          // If the trader has no active position (sold or market closed), it's Closed
-          let status: 'Open' | 'Closed' | 'Bonded' = 'Closed'; // Default to Closed
+          // If the trader has no active position (sold their shares), it's "Trader Closed"
+          let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Trader Closed'; // Default to Trader Closed
           
           if (openMarketIds.size > 0) {
             // Check if this trade's market is in the open positions
             // IMPORTANT: Normalize to lowercase for case-insensitive matching
             const normalizedConditionId = tradeConditionId.toLowerCase();
             const isOpen = openMarketIds.has(normalizedConditionId);
-            status = isOpen ? 'Open' : 'Closed';
+            status = isOpen ? 'Open' : 'Trader Closed';
             
             // DEBUG: Log the status assignment for first few trades
             if (index < 10) {
@@ -625,6 +625,7 @@ export default function TraderProfilePage({
             currentPrice: trade.currentPrice ? parseFloat(trade.currentPrice) : undefined,
             formattedDate: formattedDate,
             marketSlug: trade.slug || trade.market?.slug || trade.marketSlug || '',
+            eventSlug: trade.eventSlug || trade.event_slug || '',
             conditionId: tradeConditionId,
             status: status,
           };
@@ -774,16 +775,27 @@ export default function TraderProfilePage({
     );
   };
 
-  // Get Polymarket URL for a trade (only for open markets with valid eventSlug)
-  const getPolymarketUrl = (trade: Trade): string | null => {
+  // Get Polymarket URL for a trade - always try to construct a URL
+  const getPolymarketUrl = (trade: Trade): string => {
+    // Try 1: Find matching position (has most accurate eventSlug)
     const position = findPositionForTrade(trade);
-    if (!position) return null; // Market is closed - no valid URL
+    if (position) {
+      const eventSlug = position.eventSlug || position.slug;
+      if (eventSlug) {
+        return `https://polymarket.com/event/${eventSlug}`;
+      }
+    }
     
-    // Use eventSlug from position (more accurate than trade data)
-    const eventSlug = position.eventSlug || position.slug;
-    if (!eventSlug) return null;
+    // Try 2: Use trade's own slug/eventSlug data
+    if (trade.eventSlug) {
+      return `https://polymarket.com/event/${trade.eventSlug}`;
+    }
+    if (trade.marketSlug) {
+      return `https://polymarket.com/event/${trade.marketSlug}`;
+    }
     
-    return `https://polymarket.com/event/${eventSlug}`;
+    // Try 3: Fallback to search URL using market title
+    return `https://polymarket.com/search?q=${encodeURIComponent(trade.market)}`;
   };
 
   /**
@@ -1122,6 +1134,7 @@ export default function TraderProfilePage({
                       <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Date</th>
                       <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
                       <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Outcome</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Status</th>
                       <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Size</th>
                       <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Avg Price</th>
                       <th className="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Actions</th>
@@ -1129,24 +1142,8 @@ export default function TraderProfilePage({
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {trades.map((trade, index) => {
-                      // Get Polymarket URL (only for open markets with valid eventSlug)
                       const polymarketUrl = getPolymarketUrl(trade);
                       const isAlreadyCopied = isTradeCopied(trade);
-                      const isOpen = trade.status === 'Open';
-                      
-                      // DEBUG: Very visible logging for trade status matching
-                      console.log('='.repeat(50));
-                      console.log('🔍 TRADE STATUS CHECK (Desktop Table)');
-                      console.log('📋 Trade title:', trade.market);
-                      console.log('🆔 Trade conditionId:', trade.conditionId);
-                      console.log('📊 Trade.status from data:', trade.status);
-                      console.log('✅ isOpen variable:', isOpen);
-                      console.log('🔗 polymarketUrl:', polymarketUrl);
-                      console.log('📦 Total positions count:', positions.length);
-                      console.log('📦 All position conditionIds:', positions.map(p => p.conditionId));
-                      console.log('🔎 Case-insensitive match check:', positions.some(p => p.conditionId?.toLowerCase() === trade.conditionId?.toLowerCase()));
-                      console.log('🎯 Will show Copy button?', isOpen && polymarketUrl);
-                      console.log('='.repeat(50));
 
                       return (
                         <tr 
@@ -1173,6 +1170,18 @@ export default function TraderProfilePage({
                             </span>
                           </td>
                           
+                          <td className="py-4 px-4 text-center">
+                            <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full ${
+                              trade.status === 'Open'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : trade.status === 'Bonded'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {trade.status}
+                            </span>
+                          </td>
+                          
                           <td className="py-4 px-4 text-right">
                             <span className="text-sm font-semibold text-slate-900">
                               ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -1187,15 +1196,8 @@ export default function TraderProfilePage({
                           
                           <td className="py-4 px-4">
                             <div className="flex items-center justify-center gap-2">
-                              {/* Status badge for closed markets */}
-                              {!isOpen && (
-                                <span className="inline-flex items-center px-2 py-1 bg-slate-100 text-slate-500 text-xs font-medium rounded-full">
-                                  Closed
-                                </span>
-                              )}
-                              
-                              {/* Copy Trade - only show for open markets with valid URL */}
-                              {isOpen && polymarketUrl && (
+                              {/* Copy Trade - always show link to Polymarket */}
+                              {polymarketUrl && (
                                 <a
                                   href={polymarketUrl}
                                   target="_blank"
@@ -1243,27 +1245,24 @@ export default function TraderProfilePage({
             {/* Mobile: Card-Based View */}
             <div className="md:hidden space-y-4">
               {trades.map((trade, index) => {
-                // Get Polymarket URL (only for open markets with valid eventSlug)
                 const polymarketUrl = getPolymarketUrl(trade);
                 const isAlreadyCopied = isTradeCopied(trade);
-                const isOpen = trade.status === 'Open';
-                
-                // DEBUG: Very visible logging for trade status matching (Mobile)
-                if (index < 5) { // Limit to first 5 to avoid console spam
-                  console.log('📱 MOBILE TRADE CHECK:', trade.market?.substring(0, 30), '| status:', trade.status, '| isOpen:', isOpen);
-                }
 
                 return (
                   <div key={`${trade.timestamp}-${index}`} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-                    {/* Header: Date + Status Badge */}
+                    {/* Header: Date + Status + Outcome Badge */}
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <span className="text-sm text-slate-500">{trade.formattedDate}</span>
-                        {!isOpen && (
-                          <span className="inline-flex items-center px-2 py-0.5 bg-slate-100 text-slate-500 text-xs font-medium rounded-full">
-                            Closed
-                          </span>
-                        )}
+                        <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full ${
+                          trade.status === 'Open'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : trade.status === 'Bonded'
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {trade.status}
+                        </span>
                       </div>
                       <span className={`badge ${
                         ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
@@ -1303,26 +1302,24 @@ export default function TraderProfilePage({
                     
                     {/* Action Buttons */}
                     <div className="flex gap-2">
-                      {/* Copy Trade - only show for open markets with valid URL */}
-                      {isOpen && polymarketUrl ? (
-                        <a
-                          href={polymarketUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-sm font-bold rounded-full cursor-pointer transition-colors"
-                        >
-                          <span>Copy Trade</span>
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                        </a>
-                      ) : null}
+                      {/* Copy Trade - always show link to Polymarket */}
+                      <a
+                        href={polymarketUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-sm font-bold rounded-full cursor-pointer transition-colors"
+                      >
+                        <span>Copy Trade</span>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
                       
                       {/* Mark as Copied - available for ALL trades */}
                       <button
                         onClick={() => handleMarkAsCopied(trade)}
                         disabled={isAlreadyCopied}
-                        className={`${isOpen && polymarketUrl ? 'flex-1' : 'w-full'} flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-full transition-colors ${
+                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-full transition-colors ${
                           isAlreadyCopied
                             ? 'bg-emerald-100 text-emerald-700 cursor-default'
                             : 'bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer'
