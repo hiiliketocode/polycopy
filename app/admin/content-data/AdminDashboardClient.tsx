@@ -892,53 +892,75 @@ function getStatusEmoji(roi: number | null, resolved: boolean): string {
   return '⚪'
 }
 
-// Build all content as copyable text
+// Build all content as copyable text (markdown format)
 function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]): string {
   const { sectionA, sectionB } = data
   const lines: string[] = []
   
+  // Header
   lines.push('═══════════════════════════════════════════════')
   lines.push('POLYCOPY CONTENT DATA DASHBOARD')
   lines.push(`Last Updated: ${data.lastUpdated}`)
   lines.push('═══════════════════════════════════════════════')
   lines.push('')
+  lines.push('')
   
+  // ═══════════════════════════════════════════════
   // SECTION A: POLYMARKET TRADER DATA
+  // ═══════════════════════════════════════════════
   lines.push('═══════════════════════════════════════════════')
   lines.push('SECTION A: POLYMARKET TRADER DATA')
   lines.push('(Real-time leaderboard from Polymarket)')
   lines.push('═══════════════════════════════════════════════')
   lines.push('')
   
-  // 1. Top 30 Traders
+  // 1. Top 30 Traders (Overall Leaderboard)
   lines.push('🏆 TOP 30 TRADERS (OVERALL LEADERBOARD)')
   lines.push('───────────────────────────────────────────────')
   if (sortedTraders.length === 0) {
     lines.push('Data unavailable')
   } else {
     sortedTraders.forEach((trader, i) => {
-      lines.push(`${i + 1}. ${trader.displayName} (${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted}`)
+      const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
+      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted}`)
     })
   }
   lines.push('')
+  lines.push('')
   
   // 2. Category Leaderboards
-  if (Object.keys(sectionA.categoryLeaderboards).length > 0) {
+  const categoryCount = Object.keys(sectionA.categoryLeaderboards).length
+  if (categoryCount > 0) {
     lines.push('📊 CATEGORY LEADERBOARDS (TOP 10 BY ROI)')
     lines.push('───────────────────────────────────────────────')
+    lines.push('')
     
-    for (const [category, traders] of Object.entries(sectionA.categoryLeaderboards)) {
-      const displayName = CATEGORY_DISPLAY_NAMES[category] || category.toUpperCase()
-      lines.push('')
-      lines.push(`🏆 ${displayName} TOP 10`)
-      traders.slice(0, 10).forEach((trader, i) => {
-        lines.push(`${i + 1}. ${trader.displayName} — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted}`)
-      })
+    // Define category order for consistent output
+    const categoryOrder = ['politics', 'sports', 'crypto', 'finance', 'tech', 'weather', 'economics', 'culture']
+    
+    for (const category of categoryOrder) {
+      const traders = sectionA.categoryLeaderboards[category]
+      if (traders && traders.length > 0) {
+        const displayName = CATEGORY_DISPLAY_NAMES[category] || category.toUpperCase()
+        lines.push(`🏆 ${displayName} TOP 10`)
+        lines.push('─────────────────────────')
+        traders.slice(0, 10).forEach((trader, i) => {
+          lines.push(`${i + 1}. ${trader.displayName} — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted}`)
+        })
+        lines.push('')
+      }
     }
+  } else {
+    lines.push('📊 CATEGORY LEADERBOARDS')
+    lines.push('───────────────────────────────────────────────')
+    lines.push('No category data available')
     lines.push('')
   }
+  lines.push('')
   
+  // ═══════════════════════════════════════════════
   // SECTION B: POLYCOPY PLATFORM DATA
+  // ═══════════════════════════════════════════════
   lines.push('═══════════════════════════════════════════════')
   lines.push('SECTION B: POLYCOPY PLATFORM DATA')
   lines.push('(User activity from Polycopy database)')
@@ -952,9 +974,11 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     lines.push('No data available')
   } else {
     sectionB.mostCopiedTraders.forEach((trader, i) => {
-      lines.push(`${i + 1}. ${trader.trader_username || 'Anonymous'} — ${trader.copy_count} copies (${trader.trader_wallet.slice(0, 6)}...${trader.trader_wallet.slice(-4)})`)
+      const wallet = trader.trader_wallet ? `${trader.trader_wallet.slice(0, 6)}...${trader.trader_wallet.slice(-4)}` : 'Unknown'
+      lines.push(`${i + 1}. ${trader.trader_username || 'Anonymous'} — ${trader.copy_count} copies (${wallet})`)
     })
   }
+  lines.push('')
   lines.push('')
   
   // 2. Platform Stats
@@ -965,6 +989,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
   lines.push(`Active Copiers: ${sectionB.platformStats.activeUsers.toLocaleString()}`)
   lines.push(`Avg ROI (Resolved): ${sectionB.platformStats.avgRoi_formatted}`)
   lines.push(`Win Rate: ${sectionB.platformStats.winRate_formatted}`)
+  lines.push('')
   lines.push('')
   
   // 3. Newly Tracked Traders
@@ -977,6 +1002,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
       lines.push(`${i + 1}. ${trader.trader_username || 'Anonymous'} | First copied: ${trader.first_copied_formatted} | ${trader.unique_markets} markets traded`)
     })
   }
+  lines.push('')
   lines.push('')
   
   // 4. Most Copied Markets
@@ -991,6 +1017,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     })
   }
   lines.push('')
+  lines.push('')
   
   // 5. Recent Activity
   lines.push('⏱️ RECENT COPY ACTIVITY (LAST 20)')
@@ -1002,6 +1029,13 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
       lines.push(`[${activity.time_formatted}] ${activity.trader_username || 'Anonymous'} copied on ${activity.market_title_truncated} (${activity.outcome})`)
     })
   }
+  lines.push('')
+  lines.push('')
+  
+  // Footer
+  lines.push('═══════════════════════════════════════════════')
+  lines.push('END OF DASHBOARD DATA')
+  lines.push('═══════════════════════════════════════════════')
   
   return lines.join('\n')
 }
