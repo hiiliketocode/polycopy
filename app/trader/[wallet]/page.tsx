@@ -542,13 +542,14 @@ export default function TraderProfilePage({
         const miaOrlKeys = [...openPositionKeys].filter(key => 
           key.includes('mia-orl') || key.includes('magic') || key.includes('heat')
         );
-        console.log('🔥 All Heat vs Magic position keys:', miaOrlKeys.length, miaOrlKeys);
+        console.log('🔥 All Heat vs Magic position keys:', miaOrlKeys.length);
+        console.log('🔥 Heat vs Magic keys LIST:', JSON.stringify(miaOrlKeys, null, 2));
         
         // 📊 Check for all spread positions
         const spreadKeys = [...openPositionKeys].filter(key => key.includes('spread'));
         console.log('📊 All spread position keys:', spreadKeys.length);
         if (spreadKeys.length > 0) {
-          console.log('📊 Spread position examples:', spreadKeys.slice(0, 10));
+          console.log('📊 Spread position examples LIST:', JSON.stringify(spreadKeys.slice(0, 20), null, 2));
         }
         
         setOpenMarketIds(openPositionKeys);
@@ -696,6 +697,22 @@ export default function TraderProfilePage({
             }
             
             status = isOpen ? 'Open' : 'Trader Closed';
+            
+            // 🎯 SPREAD MAGIC TRADE: Special logging for spread Magic trades
+            if ((trade.title?.toLowerCase().includes('spread') && 
+                 (trade.title?.toLowerCase().includes('magic') || trade.outcome?.toLowerCase().includes('magic'))) ||
+                (trade.slug?.includes('spread') && trade.slug?.includes('mia-orl'))) {
+              console.log('🎯 SPREAD MAGIC TRADE:', {
+                tradeTitle: trade.title?.substring(0, 60),
+                tradeSlug: trade.slug,
+                tradeOutcome: trade.outcome,
+                slugKey: tradeSlugKey,
+                searchingFor: tradeSlug ? tradeSlug + ':' : 'N/A',
+                matchingPositionKeys: [...openMarketIds].filter(k => k.includes(tradeSlug || 'NO_SLUG')),
+                matchMethod: matchMethod,
+                status: status
+              });
+            }
             
             // 🔍 DIAGNOSTIC: Log first few trades with detailed matching info
             if (index < 5) {
