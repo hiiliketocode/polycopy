@@ -58,28 +58,36 @@ export async function GET(
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
     }
 
-    // Verify authentication using server client
-    const supabaseAuth = await createAuthClient()
-    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+    // Check if this is a cron job request (bypass auth)
+    const authHeader = request.headers.get('authorization')
+    const isCronRequest = authHeader === `Bearer ${process.env.CRON_SECRET}`
     
-    if (authError) {
-      console.error('🔐 Auth error:', authError.message)
-    }
-    
-    // SECURITY: Require valid user
-    if (!user) {
-      console.error('❌ No authenticated user - unauthorized')
-      return NextResponse.json({ error: 'Unauthorized - please log in' }, { status: 401 })
-    }
-    
-    // SECURITY: Verify the userId matches the authenticated user
-    if (user.id !== userId) {
-      console.error('❌ User ID mismatch - auth user:', user.id, 'requested:', userId)
-      return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
+    if (!isCronRequest) {
+      // Regular user request - verify authentication using server client
+      const supabaseAuth = await createAuthClient()
+      const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+      
+      if (authError) {
+        console.error('🔐 Auth error:', authError.message)
+      }
+      
+      // SECURITY: Require valid user
+      if (!user) {
+        console.error('❌ No authenticated user - unauthorized')
+        return NextResponse.json({ error: 'Unauthorized - please log in' }, { status: 401 })
+      }
+      
+      // SECURITY: Verify the userId matches the authenticated user
+      if (user.id !== userId) {
+        console.error('❌ User ID mismatch - auth user:', user.id, 'requested:', userId)
+        return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
+      }
+    } else {
+      console.log('🤖 Cron request authenticated - bypassing user auth check')
     }
 
-    // Rate limit: 200 status checks per hour per user
-    if (!checkRateLimit(`status-check:${userId}`, 200, 3600000)) {
+    // Rate limit: 200 status checks per hour per user (skip for cron)
+    if (!isCronRequest && !checkRateLimit(`status-check:${userId}`, 200, 3600000)) {
       return NextResponse.json(
         { error: 'Rate limit exceeded. Please try again later.' }, 
         { status: 429 }

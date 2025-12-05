@@ -43,12 +43,12 @@ export async function GET(request: NextRequest) {
   try {
     // Fetch active trades that need checking
     // Only get trades where:
-    // - Market is not resolved yet
+    // - Market is not resolved yet OR resolved notification not sent
     // - Haven't sent all notifications
     const { data: trades, error } = await supabase
       .from('copied_trades')
       .select('*')
-      .eq('market_resolved', false)
+      .or('market_resolved.eq.false,notification_resolved_sent.is.null,notification_resolved_sent.eq.false')
       .or('notification_closed_sent.is.null,notification_closed_sent.eq.false')
       .limit(100)
     
@@ -114,11 +114,25 @@ export async function GET(request: NextRequest) {
         )
         
         if (!statusResponse.ok) {
-          console.error(`Failed to get status for trade ${trade.id}:`, statusResponse.status)
+          const errorText = await statusResponse.text()
+          console.error(`❌ Failed to get status for trade ${trade.id}:`, {
+            status: statusResponse.status,
+            statusText: statusResponse.statusText,
+            error: errorText,
+            url: `${appUrl}/api/copied-trades/${trade.id}/status?userId=${trade.user_id}`
+          })
           continue
         }
         
         const statusData = await statusResponse.json()
+        
+        console.log(`✅ Status check for trade ${trade.id}:`, {
+          traderHasPosition: statusData.traderStillHasPosition,
+          marketResolved: statusData.marketResolved,
+          resolvedOutcome: statusData.resolvedOutcome,
+          currentPrice: statusData.currentPrice,
+          roi: statusData.roi
+        })
         
         // Store previous state
         const oldTraderHasPosition = trade.trader_still_has_position
@@ -171,9 +185,13 @@ export async function GET(request: NextRequest) {
               .eq('id', trade.id)
             
             notificationsSent++
-            console.log(`✅ Sent "Trader Closed" email for trade ${trade.id}`)
-          } catch (emailError) {
-            console.error(`Failed to send email for trade ${trade.id}:`, emailError)
+            console.log(`✅ Sent "Trader Closed" email for trade ${trade.id} to ${profile.email}`)
+          } catch (emailError: any) {
+            console.error(`❌ Failed to send "Trader Closed" email for trade ${trade.id}:`, {
+              error: emailError.message || emailError,
+              to: profile.email,
+              trade: trade.market_title
+            })
           }
         }
         
@@ -185,11 +203,33 @@ export async function GET(request: NextRequest) {
         ) {
           console.log(`📧 Sending "Market Resolved" email for trade ${trade.id}`)
           
-          const didUserWin = (statusData.roi || 0) > 0
+          // Determine if user won based on resolved outcome
+          const resolvedOutcome = statusData.resolvedOutcome
+          let didUserWin = false
+          
+          if (resolvedOutcome) {
+            // Case-insensitive comparison
+            didUserWin = resolvedOutcome.toUpperCase() === trade.outcome.toUpperCase()
+          } else {
+            // Fallback: use ROI if no resolved outcome available
+            didUserWin = (statusData.roi || 0) > 0
+          }
+          
           const traderROI = calculateTraderROI(
             statusData.traderAvgPrice,
             statusData.currentPrice
           )
+          
+          // Only send email if we have a resolved outcome
+          if (!resolvedOutcome) {
+            console.log(`⚠️ Skipping email for trade ${trade.id} - no resolved outcome yet`)
+            // Update market_resolved but don't mark notification as sent
+            await supabase
+              .from('copied_trades')
+              .update({ market_resolved: true })
+              .eq('id', trade.id)
+            continue
+          }
           
           try {
             await resend.emails.send({
@@ -199,7 +239,7 @@ export async function GET(request: NextRequest) {
               react: MarketResolvedEmail({
                 userName: profile.email.split('@')[0],
                 marketTitle: trade.market_title,
-                resolvedOutcome: statusData.resolvedOutcome || 'Unknown',
+                resolvedOutcome: resolvedOutcome,
                 userPosition: trade.outcome,
                 userEntryPrice: trade.price_when_copied,
                 userROI: statusData.roi || 0,
@@ -220,9 +260,18 @@ export async function GET(request: NextRequest) {
               .eq('id', trade.id)
             
             notificationsSent++
-            console.log(`✅ Sent "Market Resolved" email for trade ${trade.id}`)
-          } catch (emailError) {
-            console.error(`Failed to send email for trade ${trade.id}:`, emailError)
+            console.log(`✅ Sent "Market Resolved" email for trade ${trade.id} to ${profile.email}`, {
+              outcome: resolvedOutcome,
+              userWon: didUserWin,
+              userROI: statusData.roi
+            })
+          } catch (emailError: any) {
+            console.error(`❌ Failed to send "Market Resolved" email for trade ${trade.id}:`, {
+              error: emailError.message || emailError,
+              to: profile.email,
+              trade: trade.market_title,
+              resolvedOutcome
+            })
           }
         }
         

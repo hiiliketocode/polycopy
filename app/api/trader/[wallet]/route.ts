@@ -38,59 +38,60 @@ export async function GET(
     let roi = 0
     let foundInLeaderboard = false
     
-    // STEP 1: Try to get data from leaderboard (PRIMARY SOURCE - matches Polymarket's official stats)
+    // STEP 1: Try to get data from leaderboard using address lookup (PRIMARY SOURCE)
+    // This endpoint works for ANY wallet, not just top 500
     try {
-      console.log('🔍 Looking up trader in leaderboard:', wallet);
+      console.log('🔍 Looking up trader by address:', wallet);
       
-      const leaderboardResponse = await fetch(
-        'https://data-api.polymarket.com/v1/leaderboard?timePeriod=month&orderBy=PNL&limit=500',
+      const addressLookupResponse = await fetch(
+        `https://data-api.polymarket.com/leaderboard?address=${wallet}`,
         { cache: 'no-store' }
       );
       
-      if (leaderboardResponse.ok) {
-        const leaderboardData: LeaderboardTrader[] = await leaderboardResponse.json();
-        console.log('✅ Leaderboard data fetched:', leaderboardData?.length || 0, 'traders');
+      if (addressLookupResponse.ok) {
+        const leaderboardData = await addressLookupResponse.json();
+        console.log('✅ Address lookup response:', JSON.stringify(leaderboardData, null, 2));
         
-        // Find this trader in the leaderboard by proxyWallet
-        const trader = leaderboardData?.find(
-          (t) => t.proxyWallet?.toLowerCase() === wallet.toLowerCase()
-        );
+        // API returns array with single trader object
+        const trader = Array.isArray(leaderboardData) ? leaderboardData[0] : leaderboardData;
         
         if (trader) {
           foundInLeaderboard = true;
           
-          // DEBUG: Log raw trader object to verify field names
-          console.log('🔍 Raw leaderboard trader object:', JSON.stringify({
-            proxyWallet: trader.proxyWallet,
-            userName: trader.userName,
+          // Log raw trader object to verify field names
+          console.log('🔍 Raw trader data:', JSON.stringify({
+            username: trader.username,
+            name: trader.name,
+            total_pnl: trader.total_pnl,
             pnl: trader.pnl,
-            vol: trader.vol,
-            rank: trader.rank
+            volume: trader.volume,
+            total_trades: trader.total_trades,
+            roi: trader.roi
           }));
           
-          // Use leaderboard data directly - this is Polymarket's official monthly stats
-          // API returns: { rank, proxyWallet, userName, vol, pnl, profileImage, ... }
-          if (trader.userName) {
-            displayName = trader.userName;
+          // Use leaderboard data - this is Polymarket's official ALL-TIME stats
+          if (trader.username || trader.name) {
+            displayName = trader.username || trader.name;
           }
-          pnl = trader.pnl || 0;
-          volume = trader.vol || 0; // Field is "vol" not "volume"
-          roi = volume > 0 ? ((pnl / volume) * 100) : 0;
+          // Use total_pnl (all-time) instead of pnl (monthly)
+          pnl = trader.total_pnl ?? trader.pnl ?? 0;
+          volume = trader.volume ?? 0;
+          roi = trader.roi ?? (volume > 0 ? ((pnl / volume) * 100) : 0);
           
-          console.log('✅ Found in leaderboard:', {
+          console.log('✅ Found trader stats:', {
             displayName,
             pnl: Math.round(pnl),
             volume: Math.round(volume),
             roi: roi.toFixed(1) + '%'
           });
         } else {
-          console.log('⚠️ Wallet not in top 500 leaderboard, will fall back to positions');
+          console.log('⚠️ No data returned for wallet, will fall back to positions');
         }
       } else {
-        console.log('⚠️ Leaderboard request failed:', leaderboardResponse.status);
+        console.log('⚠️ Address lookup request failed:', addressLookupResponse.status);
       }
     } catch (err) {
-      console.log('⚠️ Could not fetch leaderboard:', err);
+      console.log('⚠️ Could not fetch address lookup:', err);
     }
 
     // STEP 2: Fall back to positions endpoint ONLY if not found in leaderboard
@@ -142,16 +143,23 @@ export async function GET(
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       )
       
+      // Normalize wallet to lowercase for consistent matching
+      // All follows are stored with lowercase wallet addresses
+      const normalizedWallet = wallet.toLowerCase();
+      
       const { count, error: countError } = await supabase
         .from('follows')
         .select('*', { count: 'exact', head: true })
-        .eq('trader_wallet', wallet)
+        .eq('trader_wallet', normalizedWallet)
 
       if (!countError && count !== null) {
         followerCount = count
+        console.log('✅ Follower count for', normalizedWallet, ':', followerCount);
+      } else if (countError) {
+        console.error('❌ Error counting followers:', countError);
       }
     } catch (err) {
-      console.error('Error counting followers:', err)
+      console.error('❌ Exception counting followers:', err)
     }
 
     // Return the data
