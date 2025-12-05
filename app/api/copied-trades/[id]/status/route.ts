@@ -128,7 +128,8 @@ export async function GET(
 
     // STEP 1: Fetch trader's current positions from Polymarket
     try {
-      const positionsUrl = `https://data-api.polymarket.com/positions?user=${trade.trader_wallet}`
+      // IMPORTANT: Add limit parameter to get ALL positions (default is only 100)
+      const positionsUrl = `https://data-api.polymarket.com/positions?user=${trade.trader_wallet}&limit=1000`
       const positionsResponse = await fetch(positionsUrl, { cache: 'no-store' })
 
       if (positionsResponse.ok) {
