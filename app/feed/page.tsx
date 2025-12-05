@@ -758,13 +758,84 @@ export default function FeedPage() {
       <div className="w-full max-w-4xl mx-auto px-4 md:px-8 py-4 md:py-6">
         {/* Page Title - Condensed */}
         <div className="mb-4">
-          <h1 className="text-2xl font-semibold text-neutral-900">
-            <span className="md:hidden">Feed</span>
-            <span className="hidden md:inline">Activity Feed</span>
-          </h1>
-          <p className="hidden md:block text-neutral-600 mt-1">
-            Recent trades from traders you follow
-          </p>
+          {/* Title and Refresh button row for mobile */}
+          <div className="flex items-center justify-between md:block">
+            <h1 className="text-2xl font-semibold text-neutral-900">
+              <span className="md:hidden">Feed</span>
+              <span className="hidden md:inline">Activity Feed</span>
+            </h1>
+            {/* Mobile Refresh button - icon only */}
+            <button
+              onClick={handleManualRefresh}
+              disabled={isRefreshing || loadingFeed}
+              className="md:hidden flex items-center justify-center w-9 h-9 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              aria-label="Refresh feed"
+            >
+              {isRefreshing ? (
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="none"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              )}
+            </button>
+          </div>
+          {/* Desktop: Subheading with Refresh button on the same line */}
+          <div className="hidden md:flex items-center justify-between mt-1">
+            <p className="text-neutral-600">
+              Recent trades from traders you follow
+            </p>
+            {/* Desktop Refresh button - with text */}
+            <button
+              onClick={handleManualRefresh}
+              disabled={isRefreshing || loadingFeed}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isRefreshing ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  <span>Refreshing...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>Refresh</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Stats Banner - Desktop Only - Reordered to match Figma */}
@@ -798,44 +869,6 @@ export default function FeedPage() {
               {todaysTradeCount} {todaysTradeCount === 1 ? 'trade' : 'trades'}
             </p>
           </div>
-        </div>
-
-        {/* Refresh Feed Button - Right-aligned, subtle */}
-        <div className="mb-4 flex justify-end">
-          <button
-            onClick={handleManualRefresh}
-            disabled={isRefreshing || loadingFeed}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {isRefreshing ? (
-              <>
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    fill="none"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                <span>Refreshing...</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                <span>Refresh</span>
-              </>
-            )}
-          </button>
         </div>
 
         {/* Filter Buttons - Centered with equal width */}

@@ -692,6 +692,11 @@ export default function TraderProfilePage({
       // IMPORTANT: Normalize wallet to lowercase for consistent database storage
       const normalizedWallet = wallet.toLowerCase();
       
+      console.log('🔍 Follow toggle - Original wallet:', wallet);
+      console.log('🔍 Follow toggle - Normalized wallet:', normalizedWallet);
+      console.log('🔍 Follow toggle - User ID:', user.id);
+      console.log('🔍 Follow toggle - Action:', following ? 'UNFOLLOW' : 'FOLLOW');
+      
       if (following) {
         // Unfollow
         const { error: deleteError } = await supabase
@@ -707,11 +712,15 @@ export default function TraderProfilePage({
         console.log('✅ Unfollowed trader:', normalizedWallet);
       } else {
         // Follow
-        const { error: insertError } = await supabase
+        const { data: insertData, error: insertError } = await supabase
           .from('follows')
-          .insert({ user_id: user.id, trader_wallet: normalizedWallet });
+          .insert({ user_id: user.id, trader_wallet: normalizedWallet })
+          .select();
 
+        console.log('🔍 Insert result:', insertData);
+        
         if (insertError) {
+          console.error('❌ Insert error:', insertError);
           throw insertError;
         }
         setFollowing(true);
@@ -720,20 +729,35 @@ export default function TraderProfilePage({
       
       // Refetch trader data to update follower count
       try {
+        console.log('🔄 Refetching trader data to update follower count...');
+        console.log('🔄 API URL:', `/api/trader/${wallet}`);
         const response = await fetch(`/api/trader/${wallet}`);
+        console.log('🔄 Response status:', response.status);
+        
         if (response.ok) {
           const data = await response.json();
+          console.log('🔄 API Response:', {
+            wallet: data.wallet,
+            displayName: data.displayName,
+            followerCount: data.followerCount,
+            source: data.source
+          });
+          
           setTraderData(prev => {
             if (!prev) return prev;
+            console.log('🔄 Previous follower count:', prev.followerCount);
+            console.log('🔄 New follower count:', data.followerCount);
             return {
               ...prev,
               followerCount: data.followerCount
             };
           });
           console.log('✅ Updated follower count:', data.followerCount);
+        } else {
+          console.error('❌ API response not OK:', response.status);
         }
       } catch (err) {
-        console.error('Failed to refetch follower count:', err);
+        console.error('❌ Failed to refetch follower count:', err);
       }
     } catch (err: any) {
       console.error('Error toggling follow:', err);

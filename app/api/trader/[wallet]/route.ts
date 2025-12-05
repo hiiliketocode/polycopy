@@ -128,6 +128,8 @@ export async function GET(
     // STEP 4: Count followers from Supabase
     let followerCount = 0
     try {
+      console.log('📊 Counting followers for wallet:', wallet);
+      
       const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -136,11 +138,33 @@ export async function GET(
       // Normalize wallet to lowercase for consistent matching
       // All follows are stored with lowercase wallet addresses
       const normalizedWallet = wallet.toLowerCase();
+      console.log('📊 Normalized wallet for query:', normalizedWallet);
       
-      const { count, error: countError } = await supabase
+      // First, let's verify the table exists and see what data is there
+      const { data: allFollows, error: fetchError } = await supabase
+        .from('follows')
+        .select('trader_wallet, user_id')
+        .limit(10);
+      
+      console.log('📊 Sample follows in database:', allFollows);
+      console.log('📊 Fetch error:', fetchError);
+      
+      // Now count followers for this specific wallet
+      const { count, error: countError, data: countData } = await supabase
         .from('follows')
         .select('*', { count: 'exact', head: true })
-        .eq('trader_wallet', normalizedWallet)
+        .eq('trader_wallet', normalizedWallet);
+
+      console.log('📊 Count query result:', { count, error: countError });
+      
+      // Also try to fetch the actual rows to debug
+      const { data: matchingFollows, error: debugError } = await supabase
+        .from('follows')
+        .select('*')
+        .eq('trader_wallet', normalizedWallet);
+      
+      console.log('📊 Matching follows for this wallet:', matchingFollows);
+      console.log('📊 Debug error:', debugError);
 
       if (!countError && count !== null) {
         followerCount = count
