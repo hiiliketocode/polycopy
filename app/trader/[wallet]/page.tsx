@@ -717,6 +717,24 @@ export default function TraderProfilePage({
         setFollowing(true);
         console.log('✅ Followed trader:', normalizedWallet);
       }
+      
+      // Refetch trader data to update follower count
+      try {
+        const response = await fetch(`/api/trader/${wallet}`);
+        if (response.ok) {
+          const data = await response.json();
+          setTraderData(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              followerCount: data.followerCount
+            };
+          });
+          console.log('✅ Updated follower count:', data.followerCount);
+        }
+      } catch (err) {
+        console.error('Failed to refetch follower count:', err);
+      }
     } catch (err: any) {
       console.error('Error toggling follow:', err);
       alert(err.message || 'Failed to update follow status.');
