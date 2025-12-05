@@ -421,6 +421,9 @@ export default function FeedPage() {
   // Toast state
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  
+  // Manual refresh state
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Auth check
   useEffect(() => {
@@ -484,15 +487,14 @@ export default function FeedPage() {
     fetchCopiedTrades();
   }, [user]);
 
-  // Fetch feed data
-  useEffect(() => {
+  // Extract fetchFeed as a reusable function
+  const fetchFeed = async () => {
     if (!user) return;
+    
+    setLoadingFeed(true);
+    setError(null);
 
-    const fetchFeed = async () => {
-      setLoadingFeed(true);
-      setError(null);
-
-      try {
+    try {
         // 1. Fetch followed traders
         const { data: follows, error: followsError } = await supabase
           .from('follows')
@@ -609,14 +611,29 @@ export default function FeedPage() {
         setTodayVolume(volumeToday);
         setTodaysTradeCount(todaysTrades.length);
 
-      } catch (err: any) {
-        console.error('Error fetching feed:', err);
-        setError(err.message || 'Failed to load feed');
-      } finally {
-        setLoadingFeed(false);
-      }
-    };
+    } catch (err: any) {
+      console.error('Error fetching feed:', err);
+      setError(err.message || 'Failed to load feed');
+    } finally {
+      setLoadingFeed(false);
+    }
+  };
 
+  // Manual refresh handler
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchFeed();
+    setIsRefreshing(false);
+    
+    // Show success toast
+    setToastMessage('Feed refreshed!');
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2000);
+  };
+
+  // Fetch feed data on mount (only when user changes, NOT on tab focus)
+  useEffect(() => {
+    if (!user) return;
     fetchFeed();
   }, [user]);
 
@@ -774,6 +791,44 @@ export default function FeedPage() {
               {todaysTradeCount} {todaysTradeCount === 1 ? 'trade' : 'trades'}
             </p>
           </div>
+        </div>
+
+        {/* Refresh Feed Button - Above filters */}
+        <div className="mb-4">
+          <button
+            onClick={handleManualRefresh}
+            disabled={isRefreshing || loadingFeed}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#FDB022] hover:bg-[#E69E1A] disabled:bg-slate-200 disabled:text-slate-400 text-neutral-900 font-semibold rounded-lg transition-all duration-200 shadow-sm border-b-4 border-[#D97706] disabled:border-slate-300 active:border-b-0 active:translate-y-1"
+          >
+            {isRefreshing ? (
+              <>
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="none"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                <span>Refreshing...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Refresh Feed</span>
+              </>
+            )}
+          </button>
         </div>
 
         {/* Filter Buttons - Centered with equal width */}

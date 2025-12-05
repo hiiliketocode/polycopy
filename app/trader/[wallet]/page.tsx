@@ -356,6 +356,8 @@ export default function TraderProfilePage({
   }, [wallet]);
 
   // Fetch username and stats directly from Polymarket leaderboard API
+  // NOTE: This duplicates some data from /api/trader/[wallet] but ensures we have
+  // the username and all-time stats even if the API route fails
   useEffect(() => {
     if (!wallet) return;
 
@@ -399,22 +401,24 @@ export default function TraderProfilePage({
           
           setLeaderboardData({
             username: trader.username || trader.name,
+            // CRITICAL: Use total_pnl (all-time) not pnl (monthly/period)
             total_pnl: trader.total_pnl ?? trader.pnl,
             volume: trader.volume,
             total_trades: trader.total_trades ?? trader.trades_count,
             roi: trader.roi,
           });
           
-          // Update trader data with username if available
-          if (trader.username || trader.name) {
+          // Update trader data with username and ALL-TIME stats
+          if (trader.username || trader.name || trader.total_pnl !== undefined) {
             setTraderData(prev => {
               if (!prev) return prev;
               return {
                 ...prev,
                 displayName: trader.username || trader.name || prev.displayName,
-                pnl: trader.total_pnl ?? trader.pnl ?? prev.pnl,
+                // Override with all-time P&L if available (more accurate than monthly)
+                pnl: trader.total_pnl ?? prev.pnl,
                 volume: trader.volume ?? prev.volume,
-                tradesCount: trader.total_trades ?? trader.trades_count,
+                tradesCount: trader.total_trades ?? trader.trades_count ?? prev.tradesCount,
               };
             });
           }
@@ -475,13 +479,29 @@ export default function TraderProfilePage({
         const positionsList: Position[] = [];
         
         positionsData?.forEach((position: any) => {
-          // Try multiple identifier fields
-          const conditionId = position.conditionId || position.condition_id || position.asset || position.marketId || '';
+          // Try ALL possible identifier fields and add them to the set
+          // This ensures we catch trades regardless of which ID field they use
+          const identifiers = [
+            position.conditionId,
+            position.condition_id,
+            position.asset,
+            position.assetId,
+            position.asset_id,
+            position.marketId,
+            position.market_id,
+            position.id,
+          ].filter(Boolean); // Remove null/undefined
+          
           // IMPORTANT: Normalize to lowercase for case-insensitive matching
-          if (conditionId) openIds.add(conditionId.toLowerCase());
-          if (position.asset) openIds.add(position.asset.toLowerCase());
+          // Add all possible identifiers to maximize match rate
+          identifiers.forEach(id => {
+            if (id && typeof id === 'string') {
+              openIds.add(id.toLowerCase());
+            }
+          });
           
           // Store full position data for URL construction
+          const conditionId = position.conditionId || position.condition_id || position.asset || position.marketId || '';
           positionsList.push({
             conditionId: conditionId,
             asset: position.asset,
@@ -495,7 +515,7 @@ export default function TraderProfilePage({
         
         console.log('📈 Open market IDs extracted:', openIds.size);
         console.log('📈 Open market IDs sample:', Array.from(openIds).slice(0, 5));
-        console.log('📈 Sample position with eventSlug:', positionsList[0]);
+        console.log('📈 Sample position data:', positionsList[0]);
         
         setOpenMarketIds(openIds);
         setPositions(positionsList);
@@ -518,11 +538,14 @@ export default function TraderProfilePage({
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
+        // IMPORTANT: Normalize wallet to lowercase for consistent database queries
+        const normalizedWallet = wallet.toLowerCase();
+        
         const { data, error } = await supabase
           .from('follows')
           .select('id')
           .eq('user_id', user.id)
-          .eq('trader_wallet', wallet)
+          .eq('trader_wallet', normalizedWallet)
           .single();
 
         if (error && error.code !== 'PGRST116') {
@@ -582,27 +605,50 @@ export default function TraderProfilePage({
             year: 'numeric'
           });
           
-          // Get trade's market identifier
-          const tradeConditionId = trade.conditionId || trade.condition_id || trade.asset_id || trade.asset || trade.marketId || '';
+          // Get trade's market identifier - try ALL possible fields
+          const tradeIdentifiers = [
+            trade.conditionId,
+            trade.condition_id,
+            trade.asset_id,
+            trade.assetId,
+            trade.asset,
+            trade.marketId,
+            trade.market_id,
+            trade.id,
+          ].filter(Boolean); // Remove null/undefined
           
-          // Determine market status by checking if this market is in openMarketIds
           // Determine trade status:
-          // - If positions API returned data AND this trade is in it -> "Open"
-          // - If positions API returned data AND this trade is NOT in it -> "Trader Closed"
-          // - If positions API returned empty -> Default to "Open" (unreliable API)
           // - If trade is marked bonded -> "Bonded"
-          let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open'; // Default to Open (positions API is often unreliable)
+          // - If positions API returned data AND any trade ID matches -> "Open"
+          // - If positions API returned data AND no trade IDs match -> "Trader Closed"
+          // - If positions API returned empty -> Default to "Open" (unreliable API)
+          let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open'; // Default to Open
           
           if (trade.status === 'bonded' || trade.marketStatus === 'bonded') {
             status = 'Bonded';
           } else if (openMarketIds.size > 0) {
-            // Only mark as "Trader Closed" if we have position data AND this trade is NOT in it
-            const normalizedConditionId = tradeConditionId.toLowerCase();
-            const isInPositions = openMarketIds.has(normalizedConditionId);
+            // Check if ANY of the trade's identifiers match an open position
+            const isInPositions = tradeIdentifiers.some(id => 
+              id && typeof id === 'string' && openMarketIds.has(id.toLowerCase())
+            );
+            
             status = isInPositions ? 'Open' : 'Trader Closed';
+            
+            // Debug logging for first few trades
+            if (index < 3) {
+              console.log(`🔄 Trade ${index} status check:`, {
+                tradeIdentifiers: tradeIdentifiers.slice(0, 3),
+                isInPositions,
+                status,
+                openMarketIdsSize: openMarketIds.size
+              });
+            }
           }
           // If openMarketIds is empty, keep default "Open" status
           // (positions API may have failed or returned empty due to proxy wallet issues)
+          
+          // Store first identifier for other uses
+          const tradeConditionId = tradeIdentifiers[0] || '';
           
           return {
             timestamp: trade.timestamp,
@@ -652,28 +698,33 @@ export default function TraderProfilePage({
     }
 
     try {
+      // IMPORTANT: Normalize wallet to lowercase for consistent database storage
+      const normalizedWallet = wallet.toLowerCase();
+      
       if (following) {
         // Unfollow
         const { error: deleteError } = await supabase
           .from('follows')
           .delete()
           .eq('user_id', user.id)
-          .eq('trader_wallet', wallet);
+          .eq('trader_wallet', normalizedWallet);
 
         if (deleteError) {
           throw deleteError;
         }
         setFollowing(false);
+        console.log('✅ Unfollowed trader:', normalizedWallet);
       } else {
         // Follow
         const { error: insertError } = await supabase
           .from('follows')
-          .insert({ user_id: user.id, trader_wallet: wallet });
+          .insert({ user_id: user.id, trader_wallet: normalizedWallet });
 
         if (insertError) {
           throw insertError;
         }
         setFollowing(true);
+        console.log('✅ Followed trader:', normalizedWallet);
       }
     } catch (err: any) {
       console.error('Error toggling follow:', err);
@@ -945,8 +996,90 @@ export default function TraderProfilePage({
       {/* Profile Header Section */}
       <div className="bg-white border-b border-slate-200">
         <div className="max-w-4xl mx-auto px-4 py-6">
-          {/* Avatar + Name + Follow Button */}
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-6">
+          {/* Mobile: Avatar + Name + Follow Button (single row with button right-aligned) */}
+          <div className="md:hidden mb-6">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              {/* Left side: Avatar + Name */}
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                {/* Avatar */}
+                <div
+                  className="h-12 w-12 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 ring-2 ring-white shadow-sm"
+                  style={{ backgroundColor: avatarColor }}
+                >
+                  {initials}
+                </div>
+                
+                {/* Name and Wallet */}
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-xl font-bold text-slate-900 truncate">
+                    {displayName}
+                  </h1>
+                </div>
+              </div>
+
+              {/* Right side: Follow Button */}
+              <button
+                onClick={handleFollowToggle}
+                disabled={followLoading || checkingFollow}
+                className={`rounded-lg px-4 py-2 text-xs font-bold transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed border-b-4 active:border-b-0 active:translate-y-1 flex-shrink-0 ${
+                  following
+                    ? 'bg-slate-200 text-slate-700 hover:bg-slate-300 border-slate-400'
+                    : 'bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 border-[#D97706]'
+                }`}
+              >
+                {checkingFollow || followLoading ? (
+                  <span className="flex items-center justify-center gap-1">
+                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                  </span>
+                ) : following ? (
+                  '✓ Following'
+                ) : (
+                  '+ Follow'
+                )}
+              </button>
+            </div>
+            
+            {/* Wallet address and copy button (second row) */}
+            <div className="flex items-center gap-2 pl-15 mb-1">
+              <span className="text-sm text-slate-500 font-mono">
+                {abbreviateWallet(wallet)}
+              </span>
+              <button
+                onClick={handleCopy}
+                className="p-1 hover:bg-slate-100 rounded transition-colors"
+                title="Copy wallet address"
+              >
+                {copied ? (
+                  <Check className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <Copy className="w-4 h-4 text-slate-400 hover:text-slate-600" />
+                )}
+              </button>
+            </div>
+            
+            {/* Follower count (third row) */}
+            <p className="text-sm text-slate-500 pl-15">
+              {traderData.followerCount.toLocaleString()} {traderData.followerCount === 1 ? 'follower' : 'followers'} on Polycopy
+            </p>
+          </div>
+
+          {/* Desktop: Avatar + Name + Follow Button (original layout) */}
+          <div className="hidden md:flex flex-row items-center justify-between gap-6 mb-6">
             <div className="flex items-center gap-4">
               {/* Avatar */}
               <div
