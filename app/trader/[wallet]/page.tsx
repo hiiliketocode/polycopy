@@ -434,23 +434,44 @@ export default function TraderProfilePage({
     setPositionsLoaded(false);
 
     const fetchPositions = async () => {
-      // IMPORTANT: Add limit parameter to get ALL positions (default is only 100)
-      const apiUrl = `https://data-api.polymarket.com/positions?user=${wallet}&limit=1000`;
-      console.log('📈 Fetching positions data...');
-      console.log('📈 Positions API URL:', apiUrl);
+      console.log('📈 Fetching ALL positions with pagination...');
       
       try {
-        const response = await fetch(apiUrl);
+        let allPositions: any[] = [];
+        let offset = 0;
+        const limit = 500; // API seems to cap at 500 per request
+        let hasMore = true;
         
-        console.log('📈 Positions response status:', response.status);
-        
-        if (!response.ok) {
-          console.log('⚠️ Positions request failed:', response.status);
-          return;
-        }
+        // Fetch positions in batches until we get all of them
+        while (hasMore) {
+          const apiUrl = `https://data-api.polymarket.com/positions?user=${wallet}&limit=${limit}&offset=${offset}`;
+          console.log(`📈 Fetching positions batch: offset=${offset}, limit=${limit}`);
+          
+          const response = await fetch(apiUrl);
+          
+          if (!response.ok) {
+            console.log('⚠️ Positions request failed:', response.status);
+            break;
+          }
 
-        const positionsData = await response.json();
-        console.log('📈 Number of OPEN positions:', positionsData?.length || 0);
+          const positionsData = await response.json();
+          const batchSize = positionsData?.length || 0;
+          
+          console.log(`📈 Batch received: ${batchSize} positions`);
+          
+          if (batchSize > 0) {
+            allPositions = allPositions.concat(positionsData);
+            offset += batchSize;
+            
+            // If we got fewer positions than the limit, we've reached the end
+            hasMore = batchSize === limit;
+          } else {
+            hasMore = false;
+          }
+        }
+        
+        console.log('📈 TOTAL positions fetched:', allPositions.length);
+        const positionsData = allPositions;
         
         // 🏀 NBA DIAGNOSTIC: Check if raw response contains NBA positions
         if (positionsData && positionsData.length > 0) {

@@ -126,14 +126,35 @@ export async function GET(
     let marketResolved: boolean = trade.market_resolved || false
     let resolvedOutcome: string | null = null
 
-    // STEP 1: Fetch trader's current positions from Polymarket
+    // STEP 1: Fetch trader's current positions from Polymarket (with pagination)
     try {
-      // IMPORTANT: Add limit parameter to get ALL positions (default is only 100)
-      const positionsUrl = `https://data-api.polymarket.com/positions?user=${trade.trader_wallet}&limit=1000`
-      const positionsResponse = await fetch(positionsUrl, { cache: 'no-store' })
+      let positions: PolymarketPosition[] = [];
+      let offset = 0;
+      const limit = 500; // API seems to cap at 500 per request
+      let hasMore = true;
+      
+      // Fetch ALL positions using pagination
+      while (hasMore) {
+        const positionsUrl = `https://data-api.polymarket.com/positions?user=${trade.trader_wallet}&limit=${limit}&offset=${offset}`
+        const positionsResponse = await fetch(positionsUrl, { cache: 'no-store' })
 
-      if (positionsResponse.ok) {
-        const positions: PolymarketPosition[] = await positionsResponse.json()
+        if (positionsResponse.ok) {
+          const batch: PolymarketPosition[] = await positionsResponse.json()
+          const batchSize = batch?.length || 0;
+          
+          if (batchSize > 0) {
+            positions = positions.concat(batch);
+            offset += batchSize;
+            hasMore = batchSize === limit;
+          } else {
+            hasMore = false;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+      
+      if (positions.length > 0) {
 
         // Find ALL positions matching this market (any outcome)
         const marketPositions = positions.filter((pos) => {
