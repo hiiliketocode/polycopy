@@ -434,7 +434,8 @@ export default function TraderProfilePage({
     setPositionsLoaded(false);
 
     const fetchPositions = async () => {
-      const apiUrl = `https://data-api.polymarket.com/positions?user=${wallet}`;
+      // IMPORTANT: Add limit parameter to get ALL positions (default is only 100)
+      const apiUrl = `https://data-api.polymarket.com/positions?user=${wallet}&limit=1000`;
       console.log('📈 Fetching positions data...');
       console.log('📈 Positions API URL:', apiUrl);
       
