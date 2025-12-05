@@ -1429,17 +1429,17 @@ export default function TraderProfilePage({
             {/* Desktop: Table View */}
             <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full min-w-[750px]">
                   <thead className="bg-slate-50 border-b-2 border-slate-200">
                     <tr>
-                      <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Date</th>
+                      <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[90px]">Date</th>
                       <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
                       <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Outcome</th>
                       <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Status</th>
-                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Size</th>
-                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Price</th>
-                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">ROI</th>
-                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Actions</th>
+                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[75px]">Size</th>
+                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[65px]">Price</th>
+                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[70px]">ROI</th>
+                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[100px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1462,13 +1462,13 @@ export default function TraderProfilePage({
                             <span className="text-sm text-slate-500">{trade.formattedDate}</span>
                           </td>
                           
-                          <td className="py-3 px-3 max-w-[300px]">
+                          <td className="py-3 px-3 max-w-[220px]">
                             <div className="text-sm text-slate-900 font-medium truncate">
                               {trade.market}
                             </div>
                           </td>
                           
-                          <td className="py-3 px-3">
+                          <td className="py-3 px-3 whitespace-nowrap">
                             <span className={`inline-flex items-center px-2 py-0.5 text-xs font-bold rounded uppercase ${
                               ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
                                 ? 'bg-green-100 text-green-700'
@@ -1478,7 +1478,7 @@ export default function TraderProfilePage({
                             </span>
                           </td>
                           
-                          <td className="py-3 px-3 text-center">
+                          <td className="py-3 px-3 text-center whitespace-nowrap">
                             <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full ${
                               trade.status === 'Open'
                                 ? 'bg-emerald-100 text-emerald-700'
@@ -1490,19 +1490,19 @@ export default function TraderProfilePage({
                             </span>
                           </td>
                           
-                          <td className="py-3 px-3 text-right">
+                          <td className="py-3 px-3 text-right whitespace-nowrap">
                             <span className="text-sm font-semibold text-slate-900">
                               ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                             </span>
                           </td>
                           
-                          <td className="py-3 px-3 text-right">
+                          <td className="py-3 px-3 text-right whitespace-nowrap">
                             <span className="text-sm font-semibold text-slate-900">
                               ${trade.price.toFixed(2)}
                             </span>
                           </td>
                           
-                          <td className="py-3 px-3 text-right">
+                          <td className="py-3 px-3 text-right whitespace-nowrap">
                             <span className={`text-sm font-semibold ${
                               roi === null ? 'text-slate-400' :
                               roi > 0 ? 'text-green-600' :
@@ -1513,15 +1513,15 @@ export default function TraderProfilePage({
                             </span>
                           </td>
                           
-                          <td className="py-3 px-3">
-                            <div className="flex items-center justify-center gap-2">
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1.5">
                               {/* Copy Trade - always show link to Polymarket */}
                               {polymarketUrl && (
                                 <a
                                   href={polymarketUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-xs font-bold rounded-full cursor-pointer transition-colors"
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-xs font-bold rounded-full cursor-pointer transition-colors"
                                 >
                                   Copy
                                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1534,7 +1534,7 @@ export default function TraderProfilePage({
                               <button
                                 onClick={() => handleMarkAsCopied(trade)}
                                 disabled={isAlreadyCopied}
-                                className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-full transition-colors ${
+                                className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-full transition-colors ${
                                   isAlreadyCopied
                                     ? 'bg-emerald-100 text-emerald-700 cursor-default'
                                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer'
