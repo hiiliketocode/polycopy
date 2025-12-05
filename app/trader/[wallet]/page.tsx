@@ -735,13 +735,26 @@ export default function TraderProfilePage({
           .select();
 
         console.log('🔍 Insert result:', insertData);
+        console.log('🔍 Insert error:', insertError);
         
         if (insertError) {
-          console.error('❌ Insert error:', insertError);
+          console.error('❌ Insert error details:', {
+            message: insertError.message,
+            code: insertError.code,
+            details: insertError.details,
+            hint: insertError.hint
+          });
           throw insertError;
         }
+        
+        if (!insertData || insertData.length === 0) {
+          console.error('❌ No data returned from insert - RLS may be blocking');
+          throw new Error('Failed to create follow - please try again');
+        }
+        
         setFollowing(true);
         console.log('✅ Followed trader:', normalizedWallet);
+        console.log('✅ Follow record created:', insertData[0]);
       }
       
       // Refetch trader data to update follower count
