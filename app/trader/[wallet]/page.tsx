@@ -492,6 +492,7 @@ export default function TraderProfilePage({
         });
         
         console.log('📈 Open position keys:', openPositionKeys.size);
+        console.log('🔍 DIAGNOSTIC: Sample position keys (first 10):', [...openPositionKeys].slice(0, 10));
         
         setOpenMarketIds(openPositionKeys);
         setPositions(positionsList);
@@ -558,6 +559,8 @@ export default function TraderProfilePage({
 
         const tradesData = await response.json();
         console.log('🔄 TOTAL trades fetched:', tradesData?.length || 0);
+        console.log('🔍 DIAGNOSTIC: openMarketIds size when formatting trades:', openMarketIds.size);
+        console.log('🔍 DIAGNOSTIC: openMarketIds sample:', [...openMarketIds].slice(0, 5));
 
         // Format trades for display
         const formattedTrades: Trade[] = tradesData.map((trade: any, index: number) => {
@@ -612,6 +615,26 @@ export default function TraderProfilePage({
             }
             
             status = isOpen ? 'Open' : 'Trader Closed';
+          }
+          
+          // 🔍 DIAGNOSTIC: Log first few trades
+          if (index < 3) {
+            const tradeSlug = trade.slug || trade.market_slug || '';
+            const tradeOutcome = trade.outcome || '';
+            const tradeSlugKey = tradeSlug && tradeOutcome 
+              ? `${tradeSlug.toLowerCase()}:${tradeOutcome.toLowerCase()}`
+              : null;
+              
+            console.log('🔍 DIAGNOSTIC: Trade', index, {
+              title: trade.title?.substring(0, 50),
+              slug: tradeSlug,
+              outcome: tradeOutcome,
+              slugKey: tradeSlugKey,
+              hasSlugKey: !!tradeSlugKey,
+              inSet: tradeSlugKey ? openMarketIds.has(tradeSlugKey) : false,
+              setSize: openMarketIds.size,
+              status: status
+            });
           }
           
           // Store first identifier for other uses
