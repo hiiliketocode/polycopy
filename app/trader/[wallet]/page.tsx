@@ -400,8 +400,8 @@ export default function TraderProfilePage({
             username: trader.userName,  // userName from V1 API
             total_pnl: trader.pnl,      // pnl is all-time in V1 API
             volume: trader.vol,         // vol from V1 API
-            total_trades: null,         // Not provided by V1 API
-            roi: null,                  // Will calculate from pnl/vol
+            total_trades: undefined,    // Not provided by V1 API
+            roi: undefined,             // Will calculate from pnl/vol
           });
           
           // Update trader data with V1 API stats (most accurate)
