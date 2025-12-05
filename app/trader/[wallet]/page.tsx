@@ -235,6 +235,7 @@ export default function TraderProfilePage({
   const [loadingTrades, setLoadingTrades] = useState(false);
   const [openMarketIds, setOpenMarketIds] = useState<Set<string>>(new Set());
   const [positions, setPositions] = useState<Position[]>([]);  // Store full position data for URL construction
+  const [positionsLoaded, setPositionsLoaded] = useState(false); // Track if positions have been fetched
   const router = useRouter();
   
   // User state
@@ -429,6 +430,9 @@ export default function TraderProfilePage({
   useEffect(() => {
     if (!wallet) return;
 
+    // Reset positions loaded state when wallet changes
+    setPositionsLoaded(false);
+
     const fetchPositions = async () => {
       const apiUrl = `https://data-api.polymarket.com/positions?user=${wallet}`;
       console.log('📈 Fetching positions data...');
@@ -496,9 +500,11 @@ export default function TraderProfilePage({
         
         setOpenMarketIds(openPositionKeys);
         setPositions(positionsList);
+        setPositionsLoaded(true); // Mark positions as loaded
         
       } catch (err) {
         console.error('❌ Error fetching positions:', err);
+        setPositionsLoaded(true); // Mark as loaded even on error so trades can proceed
       }
     };
 
@@ -537,8 +543,13 @@ export default function TraderProfilePage({
   }, [wallet]);
 
   // Fetch trader's ALL trades (no limit)
+  // IMPORTANT: Only fetch after positions are loaded to avoid race condition
   useEffect(() => {
     if (!wallet) return;
+    if (!positionsLoaded) {
+      console.log('⏳ Waiting for positions to load before formatting trades...');
+      return;
+    }
 
     const fetchTraderTrades = async () => {
       // Note: Using 'user' parameter instead of 'wallet' for the Polymarket API
@@ -671,7 +682,7 @@ export default function TraderProfilePage({
     };
 
     fetchTraderTrades();
-  }, [wallet, openMarketIds]);
+  }, [wallet, positionsLoaded, openMarketIds]); // Depend on positionsLoaded to ensure proper sequencing
 
   // Toggle follow status
   const handleFollowToggle = async () => {
