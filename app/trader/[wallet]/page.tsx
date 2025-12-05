@@ -445,57 +445,22 @@ export default function TraderProfilePage({
         }
 
         const positionsData = await response.json();
-        console.log('📈 Positions RAW response:', JSON.stringify(positionsData?.slice(0, 3), null, 2)); // First 3 for brevity
         console.log('📈 Number of OPEN positions:', positionsData?.length || 0);
         
-        // Log each position's details for debugging
-        if (positionsData && positionsData.length > 0) {
-          console.log('📈 Position sample - all keys:', Object.keys(positionsData[0]));
-          positionsData.slice(0, 3).forEach((position: any, index: number) => {
-            console.log(`📈 Position ${index + 1}:`, {
-              conditionId: position.conditionId,
-              asset: position.asset,
-              market: position.title || position.market,
-              outcome: position.outcome,
-              size: position.size,
-            });
-          });
-          
-          // 🏀 MAGIC TRADE DEBUG: Check if Magic position is in positions API
-          const magicPositions = positionsData.filter((p: any) => 
-            (p.title?.toLowerCase().includes('magic') || 
-             p.market?.toLowerCase().includes('magic') ||
-             p.outcome?.toLowerCase().includes('magic'))
-          );
-          
-          if (magicPositions.length > 0) {
-            console.log('🏀 FOUND MAGIC POSITION(S) in positions API:', magicPositions.map((p: any) => ({
-              title: p.title,
-              market: p.market,
-              outcome: p.outcome,
-              conditionId: p.conditionId,
-              asset: p.asset,
-              assetId: p.assetId,
-              marketId: p.marketId,
-              id: p.id,
-              size: p.size,
-              allFields: Object.keys(p)
-            })));
-          } else {
-            console.log('🏀 NO MAGIC POSITIONS found in positions API');
-            console.log('🏀 All position titles:', positionsData.map((p: any) => p.title || p.market).slice(0, 10));
-          }
-        }
-        
-        // Build Set of open market identifiers
-        // Positions API only returns markets where the trader currently holds a position
-        // These are OPEN markets - anything not in this set is CLOSED
-        const openIds = new Set<string>();
+        // Build Set of open position keys for matching
+        // Use slug:outcome as primary (most reliable), with ID fallbacks
+        const openPositionKeys = new Set<string>();
         const positionsList: Position[] = [];
         
         positionsData?.forEach((position: any) => {
-          // Try ALL possible identifier fields and add them to the set
-          // This ensures we catch trades regardless of which ID field they use
+          // PRIMARY: slug + outcome (most reliable matching method)
+          const posSlug = position.slug || position.market_slug || '';
+          const posOutcome = position.outcome || '';
+          if (posSlug && posOutcome) {
+            openPositionKeys.add(`${posSlug.toLowerCase()}:${posOutcome.toLowerCase()}`);
+          }
+          
+          // FALLBACK: Add ID-based identifiers for positions without slug
           const identifiers = [
             position.conditionId,
             position.condition_id,
@@ -505,13 +470,11 @@ export default function TraderProfilePage({
             position.marketId,
             position.market_id,
             position.id,
-          ].filter(Boolean); // Remove null/undefined
+          ].filter(Boolean);
           
-          // IMPORTANT: Normalize to lowercase for case-insensitive matching
-          // Add all possible identifiers to maximize match rate
           identifiers.forEach(id => {
             if (id && typeof id === 'string') {
-              openIds.add(id.toLowerCase());
+              openPositionKeys.add(id.toLowerCase());
             }
           });
           
@@ -521,18 +484,16 @@ export default function TraderProfilePage({
             conditionId: conditionId,
             asset: position.asset,
             eventSlug: position.eventSlug || position.event_slug || position.slug || '',
-            slug: position.slug || position.market_slug || '',
+            slug: posSlug,
             title: position.title || position.market,
-            outcome: position.outcome,
+            outcome: posOutcome,
             size: position.size,
           });
         });
         
-        console.log('📈 Open market IDs extracted:', openIds.size);
-        console.log('📈 Open market IDs sample:', Array.from(openIds).slice(0, 5));
-        console.log('📈 Sample position data:', positionsList[0]);
+        console.log('📈 Open position keys:', openPositionKeys.size);
         
-        setOpenMarketIds(openIds);
+        setOpenMarketIds(openPositionKeys);
         setPositions(positionsList);
         
       } catch (err) {
@@ -596,47 +557,7 @@ export default function TraderProfilePage({
         }
 
         const tradesData = await response.json();
-        console.log('🔄 Trades RAW response (first 3):', JSON.stringify(tradesData?.slice(0, 3), null, 2));
         console.log('🔄 TOTAL trades fetched:', tradesData?.length || 0);
-        
-        // Log first trade structure for debugging
-        if (tradesData && tradesData.length > 0) {
-          console.log('🔄 First trade keys:', Object.keys(tradesData[0]));
-          
-          // 🏀 MAGIC TRADE DEBUG: Find and log Magic trades
-          const magicTrades = tradesData.filter((t: any) => 
-            (t.title?.toLowerCase().includes('magic') || 
-             t.market?.title?.toLowerCase().includes('magic') ||
-             t.market?.toLowerCase().includes('magic') ||
-             t.marketTitle?.toLowerCase().includes('magic') ||
-             t.outcome?.toLowerCase().includes('magic'))
-          );
-          
-          if (magicTrades.length > 0) {
-            console.log('🏀 FOUND', magicTrades.length, 'MAGIC TRADE(S) in trades API');
-            magicTrades.forEach((trade: any, idx: number) => {
-              console.log(`🏀 Magic Trade ${idx + 1} FULL DATA:`, {
-                title: trade.title,
-                market: trade.market,
-                marketTitle: trade.marketTitle,
-                outcome: trade.outcome,
-                side: trade.side,
-                size: trade.size,
-                conditionId: trade.conditionId,
-                condition_id: trade.condition_id,
-                asset: trade.asset,
-                assetId: trade.assetId,
-                asset_id: trade.asset_id,
-                marketId: trade.marketId,
-                market_id: trade.market_id,
-                id: trade.id,
-                status: trade.status,
-                marketStatus: trade.marketStatus,
-                allKeys: Object.keys(trade)
-              });
-            });
-          }
-        }
 
         // Format trades for display
         const formattedTrades: Trade[] = tradesData.map((trade: any, index: number) => {
@@ -654,86 +575,47 @@ export default function TraderProfilePage({
             year: 'numeric'
           });
           
-          // Get trade's market identifier - try ALL possible fields
-          const tradeIdentifiers = [
-            trade.conditionId,
-            trade.condition_id,
-            trade.asset_id,
-            trade.assetId,
-            trade.asset,
-            trade.marketId,
-            trade.market_id,
-            trade.id,
-          ].filter(Boolean); // Remove null/undefined
-          
-          // Determine trade status:
-          // - If trade is marked bonded -> "Bonded"
-          // - If positions API returned data AND any trade ID matches -> "Open"
-          // - If positions API returned data AND no trade IDs match -> "Trader Closed"
-          // - If positions API returned empty -> Default to "Open" (unreliable API)
+          // Determine trade status using slug:outcome matching (most reliable)
           let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open'; // Default to Open
-          
-          // 🏀 MAGIC TRADE DEBUG: Check if this is a Magic trade
-          const isMagicTrade = (
-            trade.title?.toLowerCase().includes('magic') || 
-            trade.market?.title?.toLowerCase().includes('magic') ||
-            trade.market?.toLowerCase().includes('magic') ||
-            trade.marketTitle?.toLowerCase().includes('magic') ||
-            trade.outcome?.toLowerCase().includes('magic')
-          );
           
           if (trade.status === 'bonded' || trade.marketStatus === 'bonded') {
             status = 'Bonded';
           } else if (openMarketIds.size > 0) {
-            // Check if ANY of the trade's identifiers match an open position
-            const isInPositions = tradeIdentifiers.some(id => 
-              id && typeof id === 'string' && openMarketIds.has(id.toLowerCase())
-            );
+            // PRIMARY: Try slug:outcome matching (most reliable)
+            const tradeSlug = trade.slug || trade.market_slug || '';
+            const tradeOutcome = trade.outcome || '';
+            const tradeSlugKey = tradeSlug && tradeOutcome 
+              ? `${tradeSlug.toLowerCase()}:${tradeOutcome.toLowerCase()}`
+              : null;
             
-            status = isInPositions ? 'Open' : 'Trader Closed';
+            let isOpen = false;
             
-            // 🏀 MAGIC TRADE DEBUG: Detailed logging for Magic trade
-            if (isMagicTrade) {
-              console.log('🏀 ============================================');
-              console.log('🏀 MAGIC TRADE STATUS CHECK:');
-              console.log('🏀 ============================================');
-              console.log('🏀 Trade title:', trade.title || trade.market?.title || trade.marketTitle);
-              console.log('🏀 Trade outcome:', trade.outcome);
-              console.log('🏀 Trade side:', trade.side);
-              console.log('🏀 Trade size:', trade.size);
-              console.log('🏀 Trade identifiers:', tradeIdentifiers);
-              console.log('🏀 Trade identifiers (lowercase):', tradeIdentifiers.map(id => id?.toLowerCase()));
-              console.log('🏀 Open position IDs (all):', Array.from(openMarketIds));
-              console.log('🏀 Number of open positions:', openMarketIds.size);
-              console.log('🏀 Match found?:', isInPositions);
-              console.log('🏀 Status assigned:', status);
+            // Check slug:outcome match first
+            if (tradeSlugKey && openMarketIds.has(tradeSlugKey)) {
+              isOpen = true;
+            } else {
+              // FALLBACK: Try ID-based matching
+              const tradeIdentifiers = [
+                trade.conditionId,
+                trade.condition_id,
+                trade.asset,
+                trade.assetId,
+                trade.asset_id,
+                trade.marketId,
+                trade.market_id,
+                trade.id,
+              ].filter(Boolean);
               
-              // Check each identifier individually
-              tradeIdentifiers.forEach((id, idIdx) => {
-                if (id && typeof id === 'string') {
-                  const normalized = id.toLowerCase();
-                  const found = openMarketIds.has(normalized);
-                  console.log(`🏀 Identifier ${idIdx}: "${id}" → "${normalized}" → Match: ${found}`);
-                }
-              });
-              console.log('🏀 ============================================');
+              isOpen = tradeIdentifiers.some(id => 
+                id && typeof id === 'string' && openMarketIds.has(id.toLowerCase())
+              );
             }
             
-            // Debug logging for first few trades
-            if (index < 3) {
-              console.log(`🔄 Trade ${index} status check:`, {
-                tradeIdentifiers: tradeIdentifiers.slice(0, 3),
-                isInPositions,
-                status,
-                openMarketIdsSize: openMarketIds.size
-              });
-            }
+            status = isOpen ? 'Open' : 'Trader Closed';
           }
-          // If openMarketIds is empty, keep default "Open" status
-          // (positions API may have failed or returned empty due to proxy wallet issues)
           
           // Store first identifier for other uses
-          const tradeConditionId = tradeIdentifiers[0] || '';
+          const tradeConditionId = trade.conditionId || trade.condition_id || trade.asset || trade.marketId || '';
           
           return {
             timestamp: trade.timestamp,
