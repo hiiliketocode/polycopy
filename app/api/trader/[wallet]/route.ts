@@ -23,6 +23,11 @@ export async function GET(
 ) {
   const { wallet } = await params
   
+  console.log('👥 ========================================');
+  console.log('👥 API ROUTE /api/trader/[wallet] CALLED');
+  console.log('👥 Wallet param:', wallet);
+  console.log('👥 ========================================');
+  
   if (!wallet) {
     return NextResponse.json(
       { error: 'Wallet address is required' },
