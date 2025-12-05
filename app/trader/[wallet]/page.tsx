@@ -538,6 +538,19 @@ export default function TraderProfilePage({
         const todayKeys = [...openPositionKeys].filter(key => key.includes('2025-12-05'));
         console.log('🏀 Positions with today\'s date (2025-12-05):', todayKeys.length, todayKeys);
         
+        // 🔥 Check for all Heat vs Magic positions (moneyline + spread)
+        const miaOrlKeys = [...openPositionKeys].filter(key => 
+          key.includes('mia-orl') || key.includes('magic') || key.includes('heat')
+        );
+        console.log('🔥 All Heat vs Magic position keys:', miaOrlKeys.length, miaOrlKeys);
+        
+        // 📊 Check for all spread positions
+        const spreadKeys = [...openPositionKeys].filter(key => key.includes('spread'));
+        console.log('📊 All spread position keys:', spreadKeys.length);
+        if (spreadKeys.length > 0) {
+          console.log('📊 Spread position examples:', spreadKeys.slice(0, 10));
+        }
+        
         setOpenMarketIds(openPositionKeys);
         setPositions(positionsList);
         setPositionsLoaded(true); // Mark positions as loaded
