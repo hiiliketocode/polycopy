@@ -589,13 +589,12 @@ export default function TraderProfilePage({
             year: 'numeric'
           });
           
-          // Determine trade status using slug:outcome matching (most reliable)
+          // Determine trade status using slug matching (without outcome to catch both sides)
           let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open'; // Default to Open
           
           if (trade.status === 'bonded' || trade.marketStatus === 'bonded') {
             status = 'Bonded';
           } else if (openMarketIds.size > 0) {
-            // PRIMARY: Try slug:outcome matching (most reliable)
             const tradeSlug = trade.slug || trade.market_slug || '';
             const tradeOutcome = trade.outcome || '';
             const tradeSlugKey = tradeSlug && tradeOutcome 
@@ -603,12 +602,26 @@ export default function TraderProfilePage({
               : null;
             
             let isOpen = false;
+            let matchMethod = 'none';
             
-            // Check slug:outcome match first
+            // PRIMARY: Try slug:outcome match
             if (tradeSlugKey && openMarketIds.has(tradeSlugKey)) {
               isOpen = true;
-            } else {
-              // FALLBACK: Try ID-based matching
+              matchMethod = 'slug:outcome';
+            } 
+            // SECONDARY: Try slug-only match (catches opposite side of same market)
+            else if (tradeSlug) {
+              const slugOnlyMatch = Array.from(openMarketIds).some(key => 
+                key.startsWith(tradeSlug.toLowerCase() + ':')
+              );
+              if (slugOnlyMatch) {
+                isOpen = true;
+                matchMethod = 'slug-only';
+              }
+            }
+            
+            // FALLBACK: Try ID-based matching
+            if (!isOpen) {
               const tradeIdentifiers = [
                 trade.conditionId,
                 trade.condition_id,
@@ -623,29 +636,41 @@ export default function TraderProfilePage({
               isOpen = tradeIdentifiers.some(id => 
                 id && typeof id === 'string' && openMarketIds.has(id.toLowerCase())
               );
+              
+              if (isOpen) {
+                matchMethod = 'id-based';
+              }
             }
             
             status = isOpen ? 'Open' : 'Trader Closed';
-          }
-          
-          // 🔍 DIAGNOSTIC: Log first few trades
-          if (index < 3) {
-            const tradeSlug = trade.slug || trade.market_slug || '';
-            const tradeOutcome = trade.outcome || '';
-            const tradeSlugKey = tradeSlug && tradeOutcome 
-              ? `${tradeSlug.toLowerCase()}:${tradeOutcome.toLowerCase()}`
-              : null;
+            
+            // 🔍 DIAGNOSTIC: Log first few trades with detailed matching info
+            if (index < 5) {
+              console.log('🔍 DIAGNOSTIC: Trade', index, {
+                title: trade.title?.substring(0, 50),
+                slug: tradeSlug,
+                outcome: tradeOutcome,
+                slugKey: tradeSlugKey,
+                conditionId: trade.conditionId?.substring(0, 20),
+                asset: trade.asset?.substring(0, 20),
+                matchMethod: matchMethod,
+                isOpen: isOpen,
+                status: status,
+                setSize: openMarketIds.size
+              });
               
-            console.log('🔍 DIAGNOSTIC: Trade', index, {
-              title: trade.title?.substring(0, 50),
-              slug: tradeSlug,
-              outcome: tradeOutcome,
-              slugKey: tradeSlugKey,
-              hasSlugKey: !!tradeSlugKey,
-              inSet: tradeSlugKey ? openMarketIds.has(tradeSlugKey) : false,
-              setSize: openMarketIds.size,
-              status: status
-            });
+              // Show if slug exists in any form
+              if (tradeSlug) {
+                const slugMatches = Array.from(openMarketIds)
+                  .filter(key => key.includes(tradeSlug.toLowerCase()))
+                  .slice(0, 3);
+                if (slugMatches.length > 0) {
+                  console.log('  └─ Slug found in position keys:', slugMatches);
+                } else {
+                  console.log('  └─ Slug NOT found in any position keys');
+                }
+              }
+            }
           }
           
           // Store first identifier for other uses
