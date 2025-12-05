@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -487,8 +487,9 @@ export default function FeedPage() {
     fetchCopiedTrades();
   }, [user]);
 
-  // Extract fetchFeed as a reusable function
-  const fetchFeed = async () => {
+  // Extract fetchFeed as a stable function using useCallback
+  // This prevents unnecessary re-renders and ensures it only changes when user changes
+  const fetchFeed = useCallback(async () => {
     if (!user) return;
     
     setLoadingFeed(true);
@@ -617,7 +618,7 @@ export default function FeedPage() {
     } finally {
       setLoadingFeed(false);
     }
-  };
+  }, [user]); // Only recreate when user changes
 
   // Manual refresh handler
   const handleManualRefresh = async () => {
@@ -631,11 +632,17 @@ export default function FeedPage() {
     setTimeout(() => setShowToast(false), 2000);
   };
 
-  // Fetch feed data on mount (only when user changes, NOT on tab focus)
+  // Fetch feed data ONLY on initial mount or when user logs in/out
+  // No automatic refresh on tab focus, visibility change, or any other event
   useEffect(() => {
     if (!user) return;
-    fetchFeed();
-  }, [user]);
+    
+    // Only fetch if we haven't loaded trades yet (initial load)
+    if (trades.length === 0 && !loadingFeed) {
+      console.log('📊 Initial feed load');
+      fetchFeed();
+    }
+  }, [user, fetchFeed, trades.length, loadingFeed]);
 
   // Filter trades
   const filteredTrades = trades.filter(trade => {
@@ -793,16 +800,16 @@ export default function FeedPage() {
           </div>
         </div>
 
-        {/* Refresh Feed Button - Above filters */}
-        <div className="mb-4">
+        {/* Refresh Feed Button - Right-aligned, subtle */}
+        <div className="mb-4 flex justify-end">
           <button
             onClick={handleManualRefresh}
             disabled={isRefreshing || loadingFeed}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#FDB022] hover:bg-[#E69E1A] disabled:bg-slate-200 disabled:text-slate-400 text-neutral-900 font-semibold rounded-lg transition-all duration-200 shadow-sm border-b-4 border-[#D97706] disabled:border-slate-300 active:border-b-0 active:translate-y-1"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isRefreshing ? (
               <>
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
                   <circle
                     className="opacity-25"
                     cx="12"
@@ -822,10 +829,10 @@ export default function FeedPage() {
               </>
             ) : (
               <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                <span>Refresh Feed</span>
+                <span>Refresh</span>
               </>
             )}
           </button>
