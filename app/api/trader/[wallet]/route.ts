@@ -127,7 +127,6 @@ export async function GET(
     
     // STEP 4: Count followers from Supabase
     let followerCount = 0
-    let debugInfo: any = {}
     
     try {
       // CRITICAL: Use SERVICE_ROLE_KEY to bypass RLS
@@ -148,52 +147,22 @@ export async function GET(
       // All follows are stored with lowercase wallet addresses
       const normalizedWallet = wallet.toLowerCase();
       
-      // First, let's verify the table exists and see what data is there
-      const { data: allFollows, error: fetchError } = await supabase
-        .from('follows')
-        .select('trader_wallet, user_id, created_at')
-        .limit(10);
-      
-      debugInfo.sampleFollows = {
-        count: allFollows?.length || 0,
-        sample: allFollows?.slice(0, 3) || [],
-        error: fetchError?.message || null,
-      };
-      
-      // Now count followers for this specific wallet
+      // Count followers for this specific wallet
       const { count, error: countError } = await supabase
         .from('follows')
         .select('*', { count: 'exact', head: true })
         .eq('trader_wallet', normalizedWallet);
 
-      // Also try to fetch the actual rows to debug
-      const { data: matchingFollows, error: debugError } = await supabase
-        .from('follows')
-        .select('*')
-        .eq('trader_wallet', normalizedWallet);
-      
-      debugInfo.followerCountQuery = {
-        tableName: 'follows',
-        columnName: 'trader_wallet',
-        originalWallet: wallet,
-        normalizedWallet: normalizedWallet,
-        rawCount: count,
-        matchingRows: matchingFollows || [],
-        queryError: countError?.message || null,
-        fetchError: debugError?.message || null,
-      };
-
       if (!countError && count !== null) {
         followerCount = count
       } else if (countError) {
-        console.error('❌ Error counting followers:', countError);
+        console.error('Error counting followers:', countError);
       }
     } catch (err: any) {
-      console.error('❌ Exception counting followers:', err)
-      debugInfo.exception = err.message || String(err);
+      console.error('Exception counting followers:', err)
     }
 
-    // Return the data with debug info
+    // Return the data
     return NextResponse.json({
       wallet,
       displayName,
@@ -202,9 +171,7 @@ export async function GET(
       volume: hasStats ? Math.round(volume) : null,
       followerCount,
       hasStats, // Indicates if stats are available (user on leaderboard)
-      source: foundInLeaderboard ? 'v1_leaderboard' : 'none', // Debug: shows which data source was used
-      // Debug info visible in browser console
-      _debug: debugInfo,
+      source: foundInLeaderboard ? 'v1_leaderboard' : 'none',
     })
 
   } catch (error) {

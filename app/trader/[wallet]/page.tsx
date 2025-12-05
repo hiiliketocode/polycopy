@@ -342,24 +342,6 @@ export default function TraderProfilePage({
         }
 
         const data = await response.json();
-        console.log('📡 Internal API response:', JSON.stringify(data, null, 2));
-        
-        // Show debug info prominently in console
-        if (data._debug) {
-          console.log('👥 ========================================');
-          console.log('👥 FOLLOWER COUNT DEBUG (from API):');
-          console.log('👥 ========================================');
-          console.log('👥 Table:', data._debug.followerCountQuery?.tableName);
-          console.log('👥 Column:', data._debug.followerCountQuery?.columnName);
-          console.log('👥 Wallet queried:', data._debug.followerCountQuery?.normalizedWallet);
-          console.log('👥 Raw count from DB:', data._debug.followerCountQuery?.rawCount);
-          console.log('👥 Matching rows:', data._debug.followerCountQuery?.matchingRows);
-          console.log('👥 Sample follows in DB:', data._debug.sampleFollows?.sample);
-          console.log('👥 Total follows in DB:', data._debug.sampleFollows?.count);
-          console.log('👥 Query error:', data._debug.followerCountQuery?.queryError);
-          console.log('👥 ========================================');
-        }
-        
         setTraderData(data);
       } catch (err: any) {
         console.error('❌ Error fetching trader:', err);
@@ -709,11 +691,6 @@ export default function TraderProfilePage({
       // IMPORTANT: Normalize wallet to lowercase for consistent database storage
       const normalizedWallet = wallet.toLowerCase();
       
-      console.log('🔍 Follow toggle - Original wallet:', wallet);
-      console.log('🔍 Follow toggle - Normalized wallet:', normalizedWallet);
-      console.log('🔍 Follow toggle - User ID:', user.id);
-      console.log('🔍 Follow toggle - Action:', following ? 'UNFOLLOW' : 'FOLLOW');
-      
       if (following) {
         // Unfollow
         const { error: deleteError } = await supabase
@@ -726,61 +703,30 @@ export default function TraderProfilePage({
           throw deleteError;
         }
         setFollowing(false);
-        console.log('✅ Unfollowed trader:', normalizedWallet);
       } else {
         // Follow
         const { data: insertData, error: insertError } = await supabase
           .from('follows')
           .insert({ user_id: user.id, trader_wallet: normalizedWallet })
           .select();
-
-        console.log('🔍 Insert result:', insertData);
-        console.log('🔍 Insert error:', insertError);
         
         if (insertError) {
-          console.error('❌ Insert error details:', {
-            message: insertError.message,
-            code: insertError.code,
-            details: insertError.details,
-            hint: insertError.hint
-          });
           throw insertError;
         }
         
         if (!insertData || insertData.length === 0) {
-          console.error('❌ No data returned from insert - RLS may be blocking');
           throw new Error('Failed to create follow - please try again');
         }
         
         setFollowing(true);
-        console.log('✅ Followed trader:', normalizedWallet);
-        console.log('✅ Follow record created:', insertData[0]);
       }
       
       // Refetch trader data to update follower count
       try {
-        console.log('🔄 Refetching trader data to update follower count...');
-        console.log('🔄 API URL:', `/api/trader/${wallet}`);
         const response = await fetch(`/api/trader/${wallet}`);
-        console.log('🔄 Response status:', response.status);
         
         if (response.ok) {
           const data = await response.json();
-          console.log('🔄 API Response:', {
-            wallet: data.wallet,
-            displayName: data.displayName,
-            followerCount: data.followerCount,
-            source: data.source
-          });
-          
-          // Show debug info after follow/unfollow
-          if (data._debug) {
-            console.log('👥 ========================================');
-            console.log('👥 FOLLOWER COUNT AFTER FOLLOW/UNFOLLOW:');
-            console.log('👥 Count from DB:', data._debug.followerCountQuery?.rawCount);
-            console.log('👥 Matching rows:', data._debug.followerCountQuery?.matchingRows);
-            console.log('👥 ========================================');
-          }
           
           setTraderData(prev => {
             if (!prev) return prev;

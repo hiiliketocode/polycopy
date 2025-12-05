@@ -187,7 +187,6 @@ export default function TraderCard({
         }
 
         setFollowing(false);
-        console.log('✅ TraderCard: Unfollowed trader:', normalizedWallet);
         
         // Notify parent component with new follow status
         if (onFollowChange) {
@@ -204,13 +203,10 @@ export default function TraderCard({
           .select();
 
         if (insertError) {
-          console.error('❌ TraderCard: Insert error:', insertError);
           throw insertError;
         }
 
         setFollowing(true);
-        console.log('✅ TraderCard: Followed trader:', normalizedWallet);
-        console.log('✅ TraderCard: Insert result:', insertData);
         
         // Notify parent component with new follow status
         if (onFollowChange) {
