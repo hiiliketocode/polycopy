@@ -38,104 +38,94 @@ export async function GET(
     let roi = 0
     let foundInLeaderboard = false
     
-    // STEP 1: Try to get data from leaderboard using address lookup (PRIMARY SOURCE)
-    // This endpoint works for ANY wallet, not just top 500
+    // STEP 1: Get data from V1 leaderboard endpoint (CORRECT API)
+    // This is the same endpoint Polymarket's website uses
     try {
-      console.log('🔍 Looking up trader by address:', wallet);
+      console.log('🔍 Looking up trader using V1 leaderboard API:', wallet);
       
-      const addressLookupResponse = await fetch(
-        `https://data-api.polymarket.com/leaderboard?address=${wallet}`,
-        { cache: 'no-store' }
-      );
+      // IMPORTANT: Use V1 endpoint with user parameter for accurate all-time stats
+      const v1LeaderboardUrl = `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${wallet}`;
       
-      if (addressLookupResponse.ok) {
-        const leaderboardData = await addressLookupResponse.json();
-        console.log('✅ Address lookup response:', JSON.stringify(leaderboardData, null, 2));
+      const leaderboardResponse = await fetch(v1LeaderboardUrl, { cache: 'no-store' });
+      
+      if (leaderboardResponse.ok) {
+        const leaderboardData = await leaderboardResponse.json();
+        console.log('✅ V1 Leaderboard response:', JSON.stringify(leaderboardData, null, 2));
         
-        // API returns array with single trader object
-        const trader = Array.isArray(leaderboardData) ? leaderboardData[0] : leaderboardData;
+        // API returns array - get first result
+        const trader = Array.isArray(leaderboardData) && leaderboardData.length > 0 ? leaderboardData[0] : null;
         
         if (trader) {
           foundInLeaderboard = true;
           
           // Log raw trader object to verify field names
-          console.log('🔍 Raw trader data:', JSON.stringify({
-            username: trader.username,
-            name: trader.name,
-            total_pnl: trader.total_pnl,
+          console.log('🔍 Raw V1 trader data:', JSON.stringify({
+            userName: trader.userName,
+            proxyWallet: trader.proxyWallet,
             pnl: trader.pnl,
-            volume: trader.volume,
-            total_trades: trader.total_trades,
-            roi: trader.roi
+            vol: trader.vol,
+            rank: trader.rank
           }));
           
-          // Use leaderboard data - this is Polymarket's official ALL-TIME stats
-          if (trader.username || trader.name) {
-            displayName = trader.username || trader.name;
+          // Map V1 API response fields (CORRECT mapping):
+          // - userName (not username!)
+          // - vol (not volume!)
+          // - pnl (all-time P&L)
+          if (trader.userName) {
+            displayName = trader.userName;
           }
-          // Use total_pnl (all-time) instead of pnl (monthly)
-          pnl = trader.total_pnl ?? trader.pnl ?? 0;
-          volume = trader.volume ?? 0;
-          roi = trader.roi ?? (volume > 0 ? ((pnl / volume) * 100) : 0);
+          pnl = trader.pnl ?? 0;
+          volume = trader.vol ?? 0;
+          roi = volume > 0 ? ((pnl / volume) * 100) : 0;
           
-          console.log('✅ Found trader stats:', {
+          console.log('✅ Found trader stats from V1 API:', {
             displayName,
             pnl: Math.round(pnl),
             volume: Math.round(volume),
-            roi: roi.toFixed(1) + '%'
+            roi: roi.toFixed(1) + '%',
+            rank: trader.rank
           });
         } else {
-          console.log('⚠️ No data returned for wallet, will fall back to positions');
+          console.log('⚠️ User not found in V1 leaderboard (empty array returned)');
         }
       } else {
-        console.log('⚠️ Address lookup request failed:', addressLookupResponse.status);
+        console.log('⚠️ V1 Leaderboard request failed:', leaderboardResponse.status);
       }
     } catch (err) {
-      console.log('⚠️ Could not fetch address lookup:', err);
+      console.log('⚠️ Could not fetch V1 leaderboard:', err);
     }
 
-    // STEP 2: Fall back to positions endpoint ONLY if not found in leaderboard
+    // STEP 2: Try to get username from recent trades if not on leaderboard
+    // Don't calculate P&L from positions - it's always wrong!
     if (!foundInLeaderboard) {
-      console.log('📊 Fetching positions as fallback for:', wallet);
+      console.log('📊 User not on leaderboard - attempting to get username from trades');
       
       try {
-        const response = await fetch(
-          `https://data-api.polymarket.com/positions?user=${wallet}`,
+        const tradesResponse = await fetch(
+          `https://data-api.polymarket.com/trades?user=${wallet}&limit=1`,
           { cache: 'no-store' }
         );
 
-        if (response.ok) {
-          const positions: Position[] = await response.json();
+        if (tradesResponse.ok) {
+          const trades = await tradesResponse.json();
           
-          if (positions && positions.length > 0) {
-            let totalPnl = 0;
-            let totalVolume = 0;
-
-            positions.forEach((position) => {
-              const positionPnl = parseFloat(String(position.cashPnl || 0));
-              const size = parseFloat(String(position.size || 0));
-              totalPnl += positionPnl;
-              totalVolume += size;
-            });
-
-            pnl = totalPnl;
-            volume = totalVolume;
-            roi = totalVolume > 0 ? ((totalPnl / totalVolume) * 100) : 0;
-            
-            console.log('📊 Positions fallback data:', {
-              pnl: Math.round(pnl),
-              volume: Math.round(volume),
-              roi: roi.toFixed(1) + '%',
-              positionCount: positions.length
-            });
+          if (trades && trades.length > 0 && trades[0].name) {
+            displayName = trades[0].name;
+            console.log('✅ Got username from trades:', displayName);
           }
         }
       } catch (err) {
-        console.log('⚠️ Could not fetch positions:', err);
+        console.log('⚠️ Could not fetch trades for username:', err);
       }
+      
+      // Leave stats as zero - we don't have reliable data
+      console.log('⚠️ No leaderboard stats available for this wallet');
     }
 
-    // STEP 3: Count followers from Supabase
+    // STEP 3: Determine if we have valid stats
+    const hasStats = foundInLeaderboard;
+    
+    // STEP 4: Count followers from Supabase
     let followerCount = 0
     try {
       const supabase = createClient(
@@ -166,11 +156,12 @@ export async function GET(
     return NextResponse.json({
       wallet,
       displayName,
-      pnl: Math.round(pnl),
-      roi: parseFloat(roi.toFixed(1)),
-      volume: Math.round(volume),
+      pnl: hasStats ? Math.round(pnl) : null,
+      roi: hasStats ? parseFloat(roi.toFixed(1)) : null,
+      volume: hasStats ? Math.round(volume) : null,
       followerCount,
-      source: foundInLeaderboard ? 'leaderboard' : 'positions', // Debug: shows which data source was used
+      hasStats, // Indicates if stats are available (user on leaderboard)
+      source: foundInLeaderboard ? 'v1_leaderboard' : 'none', // Debug: shows which data source was used
     })
 
   } catch (error) {

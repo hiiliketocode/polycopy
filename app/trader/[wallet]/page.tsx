@@ -355,79 +355,70 @@ export default function TraderProfilePage({
     loadTraderData();
   }, [wallet]);
 
-  // Fetch username and stats directly from Polymarket leaderboard API
+  // Fetch username and stats directly from Polymarket V1 leaderboard API
   // NOTE: This duplicates some data from /api/trader/[wallet] but ensures we have
   // the username and all-time stats even if the API route fails
   useEffect(() => {
     if (!wallet) return;
 
     const fetchLeaderboardData = async () => {
-      const apiUrl = `https://data-api.polymarket.com/leaderboard?address=${wallet}`;
-      console.log('📊 Fetching leaderboard data...');
-      console.log('📊 Leaderboard API URL:', apiUrl);
+      // CORRECT API: V1 endpoint that Polymarket actually uses
+      const apiUrl = `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${wallet}`;
+      console.log('📊 Fetching V1 leaderboard data...');
+      console.log('📊 V1 Leaderboard API URL:', apiUrl);
       
       try {
-        // Use direct address lookup from Polymarket leaderboard API
         const response = await fetch(apiUrl);
         
-        console.log('📊 Leaderboard response status:', response.status);
+        console.log('📊 V1 Leaderboard response status:', response.status);
         
         if (!response.ok) {
-          console.log('⚠️ Leaderboard request failed:', response.status);
+          console.log('⚠️ V1 Leaderboard request failed:', response.status);
           return;
         }
 
         const data = await response.json();
-        console.log('📊 Leaderboard RAW response:', JSON.stringify(data, null, 2));
-        console.log('📊 Leaderboard data type:', typeof data);
+        console.log('📊 V1 Leaderboard RAW response:', JSON.stringify(data, null, 2));
+        console.log('📊 V1 Leaderboard data type:', typeof data);
         console.log('📊 Is array:', Array.isArray(data));
         console.log('📊 Data length:', Array.isArray(data) ? data.length : 'N/A');
         
-        // The API returns an array, get the first result
-        const trader = Array.isArray(data) ? data[0] : data;
+        // The V1 API returns an array, get the first result
+        const trader = Array.isArray(data) && data.length > 0 ? data[0] : null;
         
         if (trader) {
-          console.log('📊 Trader data found:', {
-            username: trader.username,
-            name: trader.name,
-            total_pnl: trader.total_pnl,
+          console.log('📊 V1 Trader data found:', {
+            userName: trader.userName,  // Note: userName not username!
+            proxyWallet: trader.proxyWallet,
             pnl: trader.pnl,
-            volume: trader.volume,
-            total_trades: trader.total_trades,
-            trades_count: trader.trades_count,
-            roi: trader.roi,
+            vol: trader.vol,  // Note: vol not volume!
+            rank: trader.rank,
             allKeys: Object.keys(trader),
           });
           
           setLeaderboardData({
-            username: trader.username || trader.name,
-            // CRITICAL: Use total_pnl (all-time) not pnl (monthly/period)
-            total_pnl: trader.total_pnl ?? trader.pnl,
-            volume: trader.volume,
-            total_trades: trader.total_trades ?? trader.trades_count,
-            roi: trader.roi,
+            username: trader.userName,  // userName from V1 API
+            total_pnl: trader.pnl,      // pnl is all-time in V1 API
+            volume: trader.vol,         // vol from V1 API
+            total_trades: null,         // Not provided by V1 API
+            roi: null,                  // Will calculate from pnl/vol
           });
           
-          // Update trader data with username and ALL-TIME stats
-          if (trader.username || trader.name || trader.total_pnl !== undefined) {
-            setTraderData(prev => {
-              if (!prev) return prev;
-              return {
-                ...prev,
-                displayName: trader.username || trader.name || prev.displayName,
-                // Override with all-time P&L if available (more accurate than monthly)
-                pnl: trader.total_pnl ?? prev.pnl,
-                volume: trader.volume ?? prev.volume,
-                tradesCount: trader.total_trades ?? trader.trades_count ?? prev.tradesCount,
-              };
-            });
-          }
+          // Update trader data with V1 API stats (most accurate)
+          setTraderData(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              displayName: trader.userName || prev.displayName,
+              pnl: trader.pnl ?? prev.pnl,
+              volume: trader.vol ?? prev.volume,
+            };
+          });
         } else {
-          console.log('⚠️ No leaderboard data found for this wallet');
-          console.log('⚠️ Empty response from leaderboard API');
+          console.log('⚠️ No V1 leaderboard data found for this wallet (empty array)');
         }
       } catch (err) {
-        console.error('❌ Error fetching leaderboard data:', err);
+        console.error('❌ Error fetching V1 leaderboard data:', err);
       }
     };
 
@@ -872,7 +863,7 @@ export default function TraderProfilePage({
 
   // Format P&L with sign and currency - returns "--" if no data
   const formatPnL = (value: number | null | undefined) => {
-    if (value === null || value === undefined || (value === 0 && !leaderboardData)) {
+    if (value === null || value === undefined) {
       return '--';
     }
     const sign = value >= 0 ? '+' : '';
@@ -892,7 +883,7 @@ export default function TraderProfilePage({
 
   // Format volume with M/K abbreviations - returns "--" if no data
   const formatVolume = (value: number | null | undefined) => {
-    if (value === null || value === undefined || (value === 0 && !leaderboardData)) {
+    if (value === null || value === undefined) {
       return '--';
     }
     if (value >= 1000000) {
@@ -1223,10 +1214,10 @@ export default function TraderProfilePage({
             </div>
           </div>
           
-          {/* Leaderboard stats explanation */}
-          {!leaderboardData && (
+          {/* Stats availability explanation */}
+          {(traderData.pnl === null || traderData.pnl === undefined || !leaderboardData) && (
             <p className="text-xs text-slate-500 mt-3 text-center md:text-left">
-              * Stats only available for top-ranked Leaderboard traders on Polymarket
+              ℹ️ Stats unavailable - This trader is not on Polymarket's leaderboard
             </p>
           )}
         </div>
