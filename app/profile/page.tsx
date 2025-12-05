@@ -346,22 +346,18 @@ export default function ProfilePage() {
 
       // Wallet connected - try to find username from V1 leaderboard API
       try {
-        console.log('👤 Fetching Polymarket username for wallet:', walletAddress);
-        
         // Use V1 leaderboard API with user parameter (same as trader profile page)
         const v1LeaderboardUrl = `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${walletAddress}`;
         const response = await fetch(v1LeaderboardUrl);
         
         if (response.ok) {
           const leaderboardData = await response.json();
-          console.log('👤 V1 Leaderboard response:', leaderboardData);
           
           // API returns array - get first result
           const trader = Array.isArray(leaderboardData) && leaderboardData.length > 0 ? leaderboardData[0] : null;
           
           if (trader && trader.userName) {
             // Found username in V1 leaderboard (userName not username!)
-            console.log('👤 Found Polymarket username:', trader.userName);
             setDisplayName(trader.userName);
             
             // Also save it to the database for future reference
@@ -378,7 +374,6 @@ export default function ProfilePage() {
           }
         }
         
-        console.log('👤 Username not found on leaderboard - using shortened wallet');
         // Not found in leaderboard - show shortened wallet
         const shortened = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
         setDisplayName(shortened);
