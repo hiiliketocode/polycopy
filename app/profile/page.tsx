@@ -183,8 +183,58 @@ export default function ProfilePage() {
         if (error) {
           console.error('Error fetching copied trades:', error);
           setCopiedTrades([]);
+          setLoadingCopiedTrades(false);
+          return;
+        }
+        
+        console.log('📊 Loaded', trades?.length || 0, 'copied trades from database');
+        
+        // Auto-refresh status for active trades (not resolved)
+        const activeTrades = trades?.filter(t => !t.market_resolved) || [];
+        console.log('🔄 Auto-refreshing status for', activeTrades.length, 'active trades...');
+        
+        if (activeTrades.length > 0) {
+          // Refresh status for all active trades in parallel
+          const tradesWithFreshStatus = await Promise.all(
+            (trades || []).map(async (trade) => {
+              // Skip trades that are already market resolved
+              if (trade.market_resolved) {
+                return trade;
+              }
+              
+              try {
+                // Call status API to get fresh status
+                const statusRes = await fetch(`/api/copied-trades/${trade.id}/status?userId=${user.id}`);
+                if (statusRes.ok) {
+                  const statusData = await statusRes.json();
+                  console.log(`✅ Refreshed status for trade ${trade.id}:`, {
+                    traderStillHas: statusData.traderStillHasPosition,
+                    marketResolved: statusData.marketResolved,
+                    currentPrice: statusData.currentPrice
+                  });
+                  
+                  // Merge fresh status data with database trade
+                  return {
+                    ...trade,
+                    trader_still_has_position: statusData.traderStillHasPosition ?? trade.trader_still_has_position,
+                    market_resolved: statusData.marketResolved ?? trade.market_resolved,
+                    current_price: statusData.currentPrice ?? trade.current_price,
+                    roi: statusData.roi ?? trade.roi,
+                    resolved_outcome: statusData.resolvedOutcome ?? trade.resolved_outcome
+                  };
+                } else {
+                  console.warn(`⚠️ Failed to refresh status for trade ${trade.id}:`, statusRes.status);
+                }
+              } catch (e) {
+                console.error('❌ Failed to refresh status for trade:', trade.id, e);
+              }
+              return trade;
+            })
+          );
+          
+          console.log('✅ Status refresh complete for all active trades');
+          setCopiedTrades(tradesWithFreshStatus);
         } else {
-          console.log('📊 Loaded', trades?.length || 0, 'copied trades');
           setCopiedTrades(trades || []);
         }
       } catch (err) {
@@ -208,9 +258,15 @@ export default function ProfilePage() {
         if (response.ok) {
           const data = await response.json();
           setNotificationsEnabled(data.email_notifications_enabled ?? true);
+        } else {
+          console.warn('⚠️ Could not fetch notification preferences:', response.status);
+          // Default to enabled if API fails
+          setNotificationsEnabled(true);
         }
       } catch (err) {
         console.error('Error fetching notification preferences:', err);
+        // Default to enabled if API fails
+        setNotificationsEnabled(true);
       }
     };
 
