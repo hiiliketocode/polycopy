@@ -652,6 +652,67 @@ export default function TraderProfilePage({
         console.log('🔍 DIAGNOSTIC: openMarketIds size when formatting trades:', openMarketIds.size);
         console.log('🔍 DIAGNOSTIC: openMarketIds sample:', [...openMarketIds].slice(0, 5));
 
+        // Helper function to fetch current price from Gamma API
+        const fetchMarketPrice = async (conditionId: string, outcome: string): Promise<number | null> => {
+          try {
+            const gammaUrl = `https://gamma-api.polymarket.com/markets?condition_id=${conditionId}`;
+            const gammaResponse = await fetch(gammaUrl);
+            
+            if (!gammaResponse.ok) return null;
+            
+            const markets = await gammaResponse.json();
+            
+            if (markets && markets.length > 0) {
+              const market = markets[0];
+              let prices = market.outcomePrices;
+              let outcomes = market.outcomes;
+              
+              // Parse if strings
+              if (typeof prices === 'string') prices = JSON.parse(prices);
+              if (typeof outcomes === 'string') outcomes = JSON.parse(outcomes);
+              
+              // Find price for this trade's outcome
+              const outcomeIndex = outcomes.findIndex((o: string) => o?.toUpperCase() === outcome?.toUpperCase());
+              if (outcomeIndex >= 0 && prices[outcomeIndex]) {
+                return parseFloat(prices[outcomeIndex]);
+              }
+            }
+            
+            return null;
+          } catch (err) {
+            console.error('Error fetching market price:', err);
+            return null;
+          }
+        };
+
+        // Batch fetch prices for unique markets
+        const marketPriceCache = new Map<string, number>();
+        const uniqueMarkets = new Map<string, { conditionId: string; outcome: string }>();
+        
+        // Collect unique markets
+        tradesData.forEach((trade: any) => {
+          const conditionId = trade.conditionId || trade.condition_id || trade.asset || trade.marketId || '';
+          const outcome = trade.outcome || '';
+          if (conditionId && outcome) {
+            const key = `${conditionId}-${outcome}`;
+            if (!uniqueMarkets.has(key)) {
+              uniqueMarkets.set(key, { conditionId, outcome });
+            }
+          }
+        });
+
+        // Fetch prices for all unique markets in parallel
+        console.log('📊 Fetching current prices for', uniqueMarkets.size, 'unique markets...');
+        await Promise.all(
+          Array.from(uniqueMarkets.entries()).map(async ([key, { conditionId, outcome }]) => {
+            const price = await fetchMarketPrice(conditionId, outcome);
+            if (price !== null) {
+              marketPriceCache.set(key, price);
+            }
+          })
+        );
+        console.log('📊 Fetched', marketPriceCache.size, 'market prices');
+
         // Format trades for display
         const formattedTrades: Trade[] = tradesData.map((trade: any, index: number) => {
           // Parse timestamp - handle both Unix seconds and milliseconds
@@ -793,6 +854,21 @@ export default function TraderProfilePage({
             }
           }
           
+          // Determine current price: try position data first, then cache
+          let currentPrice: number | undefined;
+          if (matchingPosition?.curPrice) {
+            currentPrice = matchingPosition.curPrice;
+          } else if (trade.currentPrice) {
+            currentPrice = parseFloat(trade.currentPrice);
+          } else {
+            // Try to get from cache
+            const cacheKey = `${tradeConditionId}-${trade.outcome}`;
+            const cachedPrice = marketPriceCache.get(cacheKey);
+            if (cachedPrice !== undefined) {
+              currentPrice = cachedPrice;
+            }
+          }
+          
           return {
             timestamp: trade.timestamp,
             market: trade.title || trade.market?.title || trade.marketTitle || 'Unknown Market',
@@ -801,7 +877,7 @@ export default function TraderProfilePage({
             size: parseFloat(trade.size || 0),
             price: parseFloat(trade.price || 0),
             avgPrice: matchingPosition?.avgPrice || trade.avgPrice ? parseFloat(trade.avgPrice || matchingPosition?.avgPrice || 0) : undefined,
-            currentPrice: matchingPosition?.curPrice || trade.currentPrice ? parseFloat(trade.currentPrice || matchingPosition?.curPrice || 0) : undefined,
+            currentPrice: currentPrice,
             formattedDate: formattedDate,
             marketSlug: trade.slug || trade.market?.slug || trade.marketSlug || '',
             eventSlug: trade.eventSlug || trade.event_slug || '',
@@ -1429,17 +1505,16 @@ export default function TraderProfilePage({
             {/* Desktop: Table View */}
             <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[750px]">
+                <table className="w-full min-w-[650px]">
                   <thead className="bg-slate-50 border-b-2 border-slate-200">
                     <tr>
                       <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[90px]">Date</th>
                       <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
-                      <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Outcome</th>
-                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Status</th>
+                      <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[95px]">Outcome</th>
+                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[95px]">Status</th>
                       <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[75px]">Size</th>
                       <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[65px]">Price</th>
                       <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[70px]">ROI</th>
-                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[100px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1463,13 +1538,31 @@ export default function TraderProfilePage({
                           </td>
                           
                           <td className="py-3 px-3 max-w-[220px]">
-                            <div className="text-sm text-slate-900 font-medium truncate">
-                              {trade.market}
-                            </div>
+                            <a 
+                              href={polymarketUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-slate-900 font-medium hover:text-[#FDB022] transition-colors flex items-center gap-1 group"
+                            >
+                              <span className="truncate">{trade.market}</span>
+                              <svg 
+                                className="w-3 h-3 flex-shrink-0 text-slate-400 group-hover:text-[#FDB022]" 
+                                fill="none" 
+                                stroke="currentColor" 
+                                viewBox="0 0 24 24"
+                              >
+                                <path 
+                                  strokeLinecap="round" 
+                                  strokeLinejoin="round" 
+                                  strokeWidth={2} 
+                                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" 
+                                />
+                              </svg>
+                            </a>
                           </td>
                           
                           <td className="py-3 px-3 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2 py-0.5 text-xs font-bold rounded uppercase ${
+                            <span className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full uppercase ${
                               ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
                                 ? 'bg-green-100 text-green-700'
                                 : 'bg-red-100 text-red-700'
@@ -1511,47 +1604,6 @@ export default function TraderProfilePage({
                             }`}>
                               {roi === null ? '--' : `${roi > 0 ? '+' : ''}${roi.toFixed(1)}%`}
                             </span>
-                          </td>
-                          
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {/* Copy Trade - always show link to Polymarket */}
-                              {polymarketUrl && (
-                                <a
-                                  href={polymarketUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 px-2 py-1 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-xs font-bold rounded-full cursor-pointer transition-colors"
-                                >
-                                  Copy
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                  </svg>
-                                </a>
-                              )}
-                              
-                              {/* Mark as Copied - available for ALL trades */}
-                              <button
-                                onClick={() => handleMarkAsCopied(trade)}
-                                disabled={isAlreadyCopied}
-                                className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-full transition-colors ${
-                                  isAlreadyCopied
-                                    ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer'
-                                }`}
-                              >
-                                {isAlreadyCopied ? (
-                                  <>
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                    Copied
-                                  </>
-                                ) : (
-                                  'Mark'
-                                )}
-                              </button>
-                            </div>
                           </td>
                         </tr>
                       );
