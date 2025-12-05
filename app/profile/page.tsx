@@ -989,6 +989,7 @@ export default function ProfilePage() {
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
                       <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">Market</th>
+                      <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">Outcome</th>
                       <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">Trader</th>
                       <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">
                         <div className="relative inline-flex items-center gap-1">
@@ -1046,6 +1047,16 @@ export default function ProfilePage() {
                                 {truncateText(trade.market_title, 40)}
                               </p>
                             </td>
+                            {/* OUTCOME */}
+                            <td className="px-4 py-3">
+                              <span className={`text-sm font-semibold ${
+                                trade.outcome?.toUpperCase() === 'YES' ? 'text-green-600' :
+                                trade.outcome?.toUpperCase() === 'NO' ? 'text-red-600' :
+                                'text-slate-700'
+                              }`}>
+                                {trade.outcome || '--'}
+                              </span>
+                            </td>
                             {/* TRADER */}
                             <td className="px-4 py-3">
                             <Link
@@ -1098,7 +1109,7 @@ export default function ProfilePage() {
                           {/* Expanded Details Row */}
                           {isExpanded && (
                             <tr>
-                              <td colSpan={5} className="px-4 pb-4 bg-slate-50 border-t border-slate-100">
+                              <td colSpan={6} className="px-4 pb-4 bg-slate-50 border-t border-slate-100">
                                 <div className="pt-4">
                                   <p className="text-sm text-slate-700 mb-4">{trade.market_title}</p>
                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -1190,6 +1201,14 @@ export default function ProfilePage() {
                         <div className="flex items-center gap-3 text-xs">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded font-medium ${status.color} ${status.bg}`}>
                             {status.label}
+                          </span>
+                          <span className="text-slate-400">•</span>
+                          <span className={`font-semibold ${
+                            trade.outcome?.toUpperCase() === 'YES' ? 'text-green-600' :
+                            trade.outcome?.toUpperCase() === 'NO' ? 'text-red-600' :
+                            'text-slate-700'
+                          }`}>
+                            {trade.outcome || '--'}
                           </span>
                           <span className="text-slate-400">•</span>
                           <span className={`font-semibold ${
