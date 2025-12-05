@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
@@ -82,6 +82,11 @@ export default function ProfilePage() {
   // Notification preferences state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loadingNotificationPrefs, setLoadingNotificationPrefs] = useState(false);
+  
+  // Refs to prevent re-fetching on tab focus
+  const hasLoadedStatsRef = useRef(false);
+  const hasLoadedTradesRef = useRef(false);
+  const hasLoadedNotificationPrefsRef = useRef(false);
 
   // Check auth status on mount
   useEffect(() => {
@@ -119,9 +124,10 @@ export default function ProfilePage() {
     return () => subscription.unsubscribe();
   }, [router]);
 
-  // Fetch user stats and wallet
+  // Fetch user stats and wallet (only once on mount)
   useEffect(() => {
-    if (!user) return;
+    if (!user || hasLoadedStatsRef.current) return;
+    hasLoadedStatsRef.current = true;
 
     const fetchStats = async () => {
       setLoadingStats(true);
@@ -167,8 +173,10 @@ export default function ProfilePage() {
   }, [user]);
 
   // Fetch copied trades when user is available - using direct Supabase (like follow)
+  // Only fetch once on mount to prevent re-fetching when switching tabs
   useEffect(() => {
-    if (!user) return;
+    if (!user || hasLoadedTradesRef.current) return;
+    hasLoadedTradesRef.current = true;
     
     const fetchCopiedTrades = async () => {
       setLoadingCopiedTrades(true);
@@ -254,9 +262,10 @@ export default function ProfilePage() {
     fetchCopiedTrades();
   }, [user]);
 
-  // Fetch notification preferences when user is available
+  // Fetch notification preferences when user is available (only once on mount)
   useEffect(() => {
-    if (!user) return;
+    if (!user || hasLoadedNotificationPrefsRef.current) return;
+    hasLoadedNotificationPrefsRef.current = true;
     
     const fetchNotificationPrefs = async () => {
       try {
