@@ -460,6 +460,31 @@ export default function TraderProfilePage({
               size: position.size,
             });
           });
+          
+          // 🏀 MAGIC TRADE DEBUG: Check if Magic position is in positions API
+          const magicPositions = positionsData.filter((p: any) => 
+            (p.title?.toLowerCase().includes('magic') || 
+             p.market?.toLowerCase().includes('magic') ||
+             p.outcome?.toLowerCase().includes('magic'))
+          );
+          
+          if (magicPositions.length > 0) {
+            console.log('🏀 FOUND MAGIC POSITION(S) in positions API:', magicPositions.map((p: any) => ({
+              title: p.title,
+              market: p.market,
+              outcome: p.outcome,
+              conditionId: p.conditionId,
+              asset: p.asset,
+              assetId: p.assetId,
+              marketId: p.marketId,
+              id: p.id,
+              size: p.size,
+              allFields: Object.keys(p)
+            })));
+          } else {
+            console.log('🏀 NO MAGIC POSITIONS found in positions API');
+            console.log('🏀 All position titles:', positionsData.map((p: any) => p.title || p.market).slice(0, 10));
+          }
         }
         
         // Build Set of open market identifiers
@@ -577,6 +602,40 @@ export default function TraderProfilePage({
         // Log first trade structure for debugging
         if (tradesData && tradesData.length > 0) {
           console.log('🔄 First trade keys:', Object.keys(tradesData[0]));
+          
+          // 🏀 MAGIC TRADE DEBUG: Find and log Magic trades
+          const magicTrades = tradesData.filter((t: any) => 
+            (t.title?.toLowerCase().includes('magic') || 
+             t.market?.title?.toLowerCase().includes('magic') ||
+             t.market?.toLowerCase().includes('magic') ||
+             t.marketTitle?.toLowerCase().includes('magic') ||
+             t.outcome?.toLowerCase().includes('magic'))
+          );
+          
+          if (magicTrades.length > 0) {
+            console.log('🏀 FOUND', magicTrades.length, 'MAGIC TRADE(S) in trades API');
+            magicTrades.forEach((trade: any, idx: number) => {
+              console.log(`🏀 Magic Trade ${idx + 1} FULL DATA:`, {
+                title: trade.title,
+                market: trade.market,
+                marketTitle: trade.marketTitle,
+                outcome: trade.outcome,
+                side: trade.side,
+                size: trade.size,
+                conditionId: trade.conditionId,
+                condition_id: trade.condition_id,
+                asset: trade.asset,
+                assetId: trade.assetId,
+                asset_id: trade.asset_id,
+                marketId: trade.marketId,
+                market_id: trade.market_id,
+                id: trade.id,
+                status: trade.status,
+                marketStatus: trade.marketStatus,
+                allKeys: Object.keys(trade)
+              });
+            });
+          }
         }
 
         // Format trades for display
@@ -614,6 +673,15 @@ export default function TraderProfilePage({
           // - If positions API returned empty -> Default to "Open" (unreliable API)
           let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open'; // Default to Open
           
+          // 🏀 MAGIC TRADE DEBUG: Check if this is a Magic trade
+          const isMagicTrade = (
+            trade.title?.toLowerCase().includes('magic') || 
+            trade.market?.title?.toLowerCase().includes('magic') ||
+            trade.market?.toLowerCase().includes('magic') ||
+            trade.marketTitle?.toLowerCase().includes('magic') ||
+            trade.outcome?.toLowerCase().includes('magic')
+          );
+          
           if (trade.status === 'bonded' || trade.marketStatus === 'bonded') {
             status = 'Bonded';
           } else if (openMarketIds.size > 0) {
@@ -623,6 +691,33 @@ export default function TraderProfilePage({
             );
             
             status = isInPositions ? 'Open' : 'Trader Closed';
+            
+            // 🏀 MAGIC TRADE DEBUG: Detailed logging for Magic trade
+            if (isMagicTrade) {
+              console.log('🏀 ============================================');
+              console.log('🏀 MAGIC TRADE STATUS CHECK:');
+              console.log('🏀 ============================================');
+              console.log('🏀 Trade title:', trade.title || trade.market?.title || trade.marketTitle);
+              console.log('🏀 Trade outcome:', trade.outcome);
+              console.log('🏀 Trade side:', trade.side);
+              console.log('🏀 Trade size:', trade.size);
+              console.log('🏀 Trade identifiers:', tradeIdentifiers);
+              console.log('🏀 Trade identifiers (lowercase):', tradeIdentifiers.map(id => id?.toLowerCase()));
+              console.log('🏀 Open position IDs (all):', Array.from(openMarketIds));
+              console.log('🏀 Number of open positions:', openMarketIds.size);
+              console.log('🏀 Match found?:', isInPositions);
+              console.log('🏀 Status assigned:', status);
+              
+              // Check each identifier individually
+              tradeIdentifiers.forEach((id, idIdx) => {
+                if (id && typeof id === 'string') {
+                  const normalized = id.toLowerCase();
+                  const found = openMarketIds.has(normalized);
+                  console.log(`🏀 Identifier ${idIdx}: "${id}" → "${normalized}" → Match: ${found}`);
+                }
+              });
+              console.log('🏀 ============================================');
+            }
             
             // Debug logging for first few trades
             if (index < 3) {
