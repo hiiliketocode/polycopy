@@ -1412,6 +1412,7 @@ export default function TraderProfilePage({
                       <th className="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Status</th>
                       <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Size</th>
                       <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Avg Price</th>
+                      <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">ROI</th>
                       <th className="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
@@ -1419,6 +1420,12 @@ export default function TraderProfilePage({
                     {trades.map((trade, index) => {
                       const polymarketUrl = getPolymarketUrl(trade);
                       const isAlreadyCopied = isTradeCopied(trade);
+                      
+                      // Calculate ROI
+                      let roi: number | null = null;
+                      if (trade.avgPrice && trade.currentPrice) {
+                        roi = ((trade.currentPrice - trade.avgPrice) / trade.avgPrice) * 100;
+                      }
 
                       return (
                         <tr 
@@ -1466,6 +1473,17 @@ export default function TraderProfilePage({
                           <td className="py-4 px-4 text-right">
                             <span className="text-sm font-semibold text-slate-900">
                               ${trade.price.toFixed(2)}
+                            </span>
+                          </td>
+                          
+                          <td className="py-4 px-4 text-right">
+                            <span className={`text-sm font-semibold ${
+                              roi === null ? 'text-slate-400' :
+                              roi > 0 ? 'text-green-600' :
+                              roi < 0 ? 'text-red-600' :
+                              'text-slate-500'
+                            }`}>
+                              {roi === null ? '--' : `${roi > 0 ? '+' : ''}${roi.toFixed(1)}%`}
                             </span>
                           </td>
                           
@@ -1522,6 +1540,12 @@ export default function TraderProfilePage({
               {trades.map((trade, index) => {
                 const polymarketUrl = getPolymarketUrl(trade);
                 const isAlreadyCopied = isTradeCopied(trade);
+                
+                // Calculate ROI
+                let roi: number | null = null;
+                if (trade.avgPrice && trade.currentPrice) {
+                  roi = ((trade.currentPrice - trade.avgPrice) / trade.avgPrice) * 100;
+                }
 
                 return (
                   <div key={`${trade.timestamp}-${index}`} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
@@ -1555,7 +1579,7 @@ export default function TraderProfilePage({
                     
                     {/* Trade Details Grid */}
                     <div className="bg-slate-50 rounded-xl p-4 mb-3">
-                      <div className="grid grid-cols-3 gap-3 text-center">
+                      <div className="grid grid-cols-4 gap-3 text-center">
                         <div>
                           <div className="text-xs text-slate-500 mb-1">Size</div>
                           <div className="font-semibold text-slate-900 text-sm">
@@ -1565,6 +1589,17 @@ export default function TraderProfilePage({
                         <div>
                           <div className="text-xs text-slate-500 mb-1">Avg Price</div>
                           <div className="font-semibold text-slate-900 text-sm">${trade.price.toFixed(2)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-500 mb-1">ROI</div>
+                          <div className={`font-semibold text-sm ${
+                            roi === null ? 'text-slate-400' :
+                            roi > 0 ? 'text-green-600' :
+                            roi < 0 ? 'text-red-600' :
+                            'text-slate-500'
+                          }`}>
+                            {roi === null ? '--' : `${roi > 0 ? '+' : ''}${roi.toFixed(1)}%`}
+                          </div>
                         </div>
                         <div>
                           <div className="text-xs text-slate-500 mb-1">Total</div>
