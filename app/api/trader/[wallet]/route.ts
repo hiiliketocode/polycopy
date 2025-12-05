@@ -130,9 +130,18 @@ export async function GET(
     let debugInfo: any = {}
     
     try {
+      // CRITICAL: Use SERVICE_ROLE_KEY to bypass RLS
+      // The follows table has RLS that only allows users to read their own follows
+      // But we need to count ALL users following this trader
       const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false
+          }
+        }
       )
       
       // Normalize wallet to lowercase for consistent matching

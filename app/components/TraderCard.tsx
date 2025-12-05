@@ -56,12 +56,15 @@ export default function TraderCard({
           return;
         }
 
+        // IMPORTANT: Normalize wallet to lowercase for consistent database queries
+        const normalizedWallet = wallet.toLowerCase();
+
         // Check if follow relationship exists
         const { data, error } = await supabase
           .from('follows')
           .select('*')
           .eq('user_id', user.id)
-          .eq('trader_wallet', wallet)
+          .eq('trader_wallet', normalizedWallet)
           .single();
 
         if (error && error.code !== 'PGRST116') {
@@ -168,19 +171,23 @@ export default function TraderCard({
     try {
       // User is logged in, proceed with follow/unfollow
 
+      // IMPORTANT: Normalize wallet to lowercase for consistent database storage
+      const normalizedWallet = wallet.toLowerCase();
+      
       if (following) {
         // Unfollow: DELETE from follows table
         const { error: deleteError } = await supabase
           .from('follows')
           .delete()
           .eq('user_id', user.id)
-          .eq('trader_wallet', wallet);
+          .eq('trader_wallet', normalizedWallet);
 
         if (deleteError) {
           throw deleteError;
         }
 
         setFollowing(false);
+        console.log('✅ TraderCard: Unfollowed trader:', normalizedWallet);
         
         // Notify parent component with new follow status
         if (onFollowChange) {
@@ -188,18 +195,22 @@ export default function TraderCard({
         }
       } else {
         // Follow: INSERT into follows table
-        const { error: insertError } = await supabase
+        const { data: insertData, error: insertError } = await supabase
           .from('follows')
           .insert({
             user_id: user.id,
-            trader_wallet: wallet,
-          });
+            trader_wallet: normalizedWallet,
+          })
+          .select();
 
         if (insertError) {
+          console.error('❌ TraderCard: Insert error:', insertError);
           throw insertError;
         }
 
         setFollowing(true);
+        console.log('✅ TraderCard: Followed trader:', normalizedWallet);
+        console.log('✅ TraderCard: Insert result:', insertData);
         
         // Notify parent component with new follow status
         if (onFollowChange) {
