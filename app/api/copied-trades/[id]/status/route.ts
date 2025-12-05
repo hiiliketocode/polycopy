@@ -222,47 +222,61 @@ export async function GET(
           if (markets && markets.length > 0) {
             const market = markets[0]
             
-            // Check if market is resolved
-            if (market.closed || market.resolved) {
-              marketResolved = true
-              
-              // Get the winning outcome - try multiple methods
-              if (market.winningOutcome) {
-                resolvedOutcome = market.winningOutcome
-              } else if (market.resolutionSource) {
-                resolvedOutcome = market.resolutionSource
-              } else {
-                // Determine winner from outcome prices
-                // When a market resolves, winning outcome goes to $1.00, losers to $0
-                try {
-                  let outcomes = market.outcomes
-                  let prices = market.outcomePrices
+            // Check if market is ACTUALLY resolved
+            // IMPORTANT: Don't trust 'closed' alone - it can mean "closed for new bets" not "resolved"
+            // Only mark resolved if we have strong evidence: explicit resolved flag, winning outcome, or prices at 0.95+
+            
+            let isActuallyResolved = false
+            
+            // Method 1: Explicit resolved flag
+            if (market.resolved === true) {
+              isActuallyResolved = true
+            }
+            
+            // Method 2: Has a winning outcome specified
+            if (market.winningOutcome) {
+              isActuallyResolved = true
+              resolvedOutcome = market.winningOutcome
+            } else if (market.resolutionSource) {
+              isActuallyResolved = true
+              resolvedOutcome = market.resolutionSource
+            }
+            
+            // Method 3: Check if prices show clear resolution (one outcome at 95%+)
+            if (!isActuallyResolved) {
+              try {
+                let outcomes = market.outcomes
+                let prices = market.outcomePrices
+                
+                // Parse if they're strings
+                if (typeof outcomes === 'string') {
+                  outcomes = JSON.parse(outcomes)
+                }
+                if (typeof prices === 'string') {
+                  prices = JSON.parse(prices)
+                }
+                
+                if (outcomes && prices && Array.isArray(outcomes) && Array.isArray(prices)) {
+                  const priceNumbers = prices.map((p: any) => parseFloat(String(p)))
+                  const maxPrice = Math.max(...priceNumbers)
                   
-                  // Parse if they're strings
-                  if (typeof outcomes === 'string') {
-                    outcomes = JSON.parse(outcomes)
-                  }
-                  if (typeof prices === 'string') {
-                    prices = JSON.parse(prices)
-                  }
-                  
-                  if (outcomes && prices && Array.isArray(outcomes) && Array.isArray(prices)) {
-                    // Find the outcome with price closest to 1.00 (the winner)
-                    const priceNumbers = prices.map((p: any) => parseFloat(String(p)))
-                    const maxPrice = Math.max(...priceNumbers)
-                    
-                    // Only consider it resolved with a winner if one outcome is very close to $1
-                    if (maxPrice >= 0.95) {
-                      const winningIndex = priceNumbers.indexOf(maxPrice)
-                      if (winningIndex >= 0 && winningIndex < outcomes.length) {
-                        resolvedOutcome = outcomes[winningIndex]
-                      }
+                  // Only consider resolved if one outcome is at 95%+ (nearly $1.00)
+                  if (maxPrice >= 0.95) {
+                    isActuallyResolved = true
+                    const winningIndex = priceNumbers.indexOf(maxPrice)
+                    if (winningIndex >= 0 && winningIndex < outcomes.length) {
+                      resolvedOutcome = outcomes[winningIndex]
                     }
                   }
-                } catch (parseErr) {
-                  console.error('Error parsing outcomes for resolution:', parseErr)
                 }
+              } catch (parseErr) {
+                console.error('Error parsing outcomes for resolution:', parseErr)
               }
+            }
+            
+            // Only set marketResolved if we have actual evidence
+            if (isActuallyResolved) {
+              marketResolved = true
             }
             
             // Get price if we don't have one yet
