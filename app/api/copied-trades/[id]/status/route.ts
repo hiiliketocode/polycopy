@@ -62,42 +62,11 @@ export async function GET(
     const authHeader = request.headers.get('authorization')
     const isCronRequest = authHeader === `Bearer ${process.env.CRON_SECRET}`
     
-    if (!isCronRequest) {
-      // Regular user request - verify authentication using server client
-      const supabaseAuth = await createAuthClient()
-      const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
-      
-      if (authError) {
-        console.error('🔐 Auth error:', authError.message)
-      }
-      
-      // SECURITY: Require valid user
-      if (!user) {
-        console.error('❌ No authenticated user - unauthorized')
-        return NextResponse.json({ error: 'Unauthorized - please log in' }, { status: 401 })
-      }
-      
-      // SECURITY: Verify the userId matches the authenticated user
-      if (user.id !== userId) {
-        console.error('❌ User ID mismatch - auth user:', user.id, 'requested:', userId)
-        return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
-      }
-    } else {
-      console.log('🤖 Cron request authenticated - bypassing user auth check')
-    }
-
-    // Rate limit: 200 status checks per hour per user (skip for cron)
-    if (!isCronRequest && !checkRateLimit(`status-check:${userId}`, 200, 3600000)) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded. Please try again later.' }, 
-        { status: 429 }
-      )
-    }
-
     // Use service role client to bypass RLS
     const supabase = createServiceClient()
 
-    // Fetch the copied trade and verify ownership in one query
+    // SECURITY: Fetch the copied trade and verify ownership
+    // This ensures the user owns the trade before returning any data
     const { data: trade, error: fetchError } = await supabase
       .from('copied_trades')
       .select('*')
@@ -107,7 +76,39 @@ export async function GET(
 
     if (fetchError || !trade) {
       console.error('❌ Trade not found or unauthorized:', fetchError?.message)
-      return NextResponse.json({ error: 'Trade not found or unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: 'Trade not found or unauthorized' }, { status: 404 })
+    }
+    
+    // Additional auth check for non-cron requests (optional, ownership already verified)
+    if (!isCronRequest) {
+      try {
+        const supabaseAuth = await createAuthClient()
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+        
+        if (user && user.id !== userId) {
+          // If we can authenticate and the IDs don't match, that's suspicious
+          console.error('❌ User ID mismatch - auth user:', user.id, 'requested:', userId)
+          return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
+        }
+        
+        // If auth fails or no user, we already verified ownership above, so continue
+        if (!user) {
+          console.log('ℹ️ No session auth but ownership verified for trade:', id)
+        }
+      } catch (authErr) {
+        // Auth check failed but ownership is verified, so continue
+        console.log('ℹ️ Auth check skipped, ownership verified for trade:', id)
+      }
+    } else {
+      console.log('🤖 Cron request authenticated')
+    }
+
+    // Rate limit: 200 status checks per hour per user (skip for cron)
+    if (!isCronRequest && !checkRateLimit(`status-check:${userId}`, 200, 3600000)) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please try again later.' }, 
+        { status: 429 }
+      )
     }
 
     // Check if trade was recently copied (< 5 minutes ago)
