@@ -189,34 +189,40 @@ export default function ProfilePage() {
         
         console.log('📊 Loaded', trades?.length || 0, 'copied trades from database');
         
-        // Auto-refresh status for active trades (not resolved)
-        const activeTrades = trades?.filter(t => !t.market_resolved) || [];
-        console.log('🔄 Auto-refreshing status for', activeTrades.length, 'active trades...');
+        // Auto-refresh status for ALL trades (database status may be stale)
+        // The status API will determine if market is resolved or trader exited
+        console.log('🔄 Auto-refreshing status for', trades?.length || 0, 'trades...');
         
-        if (activeTrades.length > 0) {
-          // Refresh status for all active trades in parallel
+        if (trades && trades.length > 0) {
+          // Refresh status for ALL trades in parallel
           const tradesWithFreshStatus = await Promise.all(
-            (trades || []).map(async (trade) => {
-              // Skip trades that are already market resolved
-              if (trade.market_resolved) {
-                return trade;
-              }
-              
+            trades.map(async (trade) => {
               try {
                 // Call status API to get fresh status
                 const statusRes = await fetch(`/api/copied-trades/${trade.id}/status?userId=${user.id}`);
                 if (statusRes.ok) {
                   const statusData = await statusRes.json();
-                  console.log(`✅ Refreshed status for trade ${trade.id}:`, {
-                    traderStillHas: statusData.traderStillHasPosition,
-                    marketResolved: statusData.marketResolved,
-                    currentPrice: statusData.currentPrice
+                  
+                  // Log the status change
+                  console.log(`📊 Trade ${trade.id} status refreshed:`, {
+                    market: trade.market_title?.substring(0, 40),
+                    oldStatus: {
+                      traderHasPosition: trade.trader_still_has_position,
+                      marketResolved: trade.market_resolved
+                    },
+                    newStatus: {
+                      traderHasPosition: statusData.traderStillHasPosition,
+                      marketResolved: statusData.marketResolved
+                    },
+                    currentPrice: statusData.currentPrice,
+                    roi: statusData.roi
                   });
                   
                   // Merge fresh status data with database trade
                   return {
                     ...trade,
                     trader_still_has_position: statusData.traderStillHasPosition ?? trade.trader_still_has_position,
+                    trader_closed_at: statusData.traderClosedAt ?? trade.trader_closed_at,
                     market_resolved: statusData.marketResolved ?? trade.market_resolved,
                     current_price: statusData.currentPrice ?? trade.current_price,
                     roi: statusData.roi ?? trade.roi,
@@ -232,7 +238,7 @@ export default function ProfilePage() {
             })
           );
           
-          console.log('✅ Status refresh complete for all active trades');
+          console.log('✅ Status refresh complete for all trades');
           setCopiedTrades(tradesWithFreshStatus);
         } else {
           setCopiedTrades(trades || []);
