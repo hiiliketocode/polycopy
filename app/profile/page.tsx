@@ -344,25 +344,41 @@ export default function ProfilePage() {
         return;
       }
 
-      // Wallet connected - try to find username from leaderboard
+      // Wallet connected - try to find username from V1 leaderboard API
       try {
-        const response = await fetch('/api/polymarket/leaderboard?limit=100&orderBy=PNL');
+        console.log('👤 Fetching Polymarket username for wallet:', walletAddress);
+        
+        // Use V1 leaderboard API with user parameter (same as trader profile page)
+        const v1LeaderboardUrl = `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${walletAddress}`;
+        const response = await fetch(v1LeaderboardUrl);
         
         if (response.ok) {
           const leaderboardData = await response.json();
+          console.log('👤 V1 Leaderboard response:', leaderboardData);
           
-          // Find this wallet in the leaderboard
-          const trader = leaderboardData.traders?.find(
-            (t: any) => t.wallet.toLowerCase() === walletAddress.toLowerCase()
-          );
+          // API returns array - get first result
+          const trader = Array.isArray(leaderboardData) && leaderboardData.length > 0 ? leaderboardData[0] : null;
           
-          if (trader && trader.displayName) {
-            // Found username in leaderboard
-            setDisplayName(trader.displayName);
+          if (trader && trader.userName) {
+            // Found username in V1 leaderboard (userName not username!)
+            console.log('👤 Found Polymarket username:', trader.userName);
+            setDisplayName(trader.userName);
+            
+            // Also save it to the database for future reference
+            try {
+              await supabase
+                .from('profiles')
+                .update({ polymarket_username: trader.userName })
+                .eq('id', user!.id);
+            } catch (err) {
+              console.error('Failed to save username to profile:', err);
+            }
+            
             return;
           }
         }
         
+        console.log('👤 Username not found on leaderboard - using shortened wallet');
         // Not found in leaderboard - show shortened wallet
         const shortened = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
         setDisplayName(shortened);
@@ -375,7 +391,7 @@ export default function ProfilePage() {
     };
 
     updateDisplayName();
-  }, [walletAddress]);
+  }, [walletAddress, user]);
 
   const handleLogout = async () => {
     try {
