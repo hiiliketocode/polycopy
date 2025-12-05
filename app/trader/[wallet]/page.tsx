@@ -215,6 +215,8 @@ interface Position {
   title?: string;
   outcome?: string;
   size?: number;
+  avgPrice?: number;
+  curPrice?: number;
 }
 
 export default function TraderProfilePage({
@@ -524,7 +526,7 @@ export default function TraderProfilePage({
             }
           });
           
-          // Store full position data for URL construction
+          // Store full position data for URL construction AND price data
           const conditionId = position.conditionId || position.condition_id || position.asset || position.marketId || '';
           positionsList.push({
             conditionId: conditionId,
@@ -534,6 +536,8 @@ export default function TraderProfilePage({
             title: position.title || position.market,
             outcome: posOutcome,
             size: position.size,
+            avgPrice: position.avgPrice ? parseFloat(position.avgPrice) : undefined,
+            curPrice: position.curPrice || position.currentPrice ? parseFloat(position.curPrice || position.currentPrice) : undefined,
           });
         });
         
@@ -767,6 +771,28 @@ export default function TraderProfilePage({
           // Store first identifier for other uses
           const tradeConditionId = trade.conditionId || trade.condition_id || trade.asset || trade.marketId || '';
           
+          // Find matching position to get current price for ROI calculation
+          let matchingPosition = null;
+          if (status === 'Open') {
+            // Try to find position by slug:outcome
+            const tradeSlug = trade.slug || trade.market_slug || '';
+            const tradeOutcome = trade.outcome || '';
+            
+            if (tradeSlug && tradeOutcome) {
+              matchingPosition = positions.find(pos => 
+                pos.slug?.toLowerCase() === tradeSlug.toLowerCase() &&
+                pos.outcome?.toLowerCase() === tradeOutcome.toLowerCase()
+              );
+            }
+            
+            // Fallback: Find by conditionId
+            if (!matchingPosition && tradeConditionId) {
+              matchingPosition = positions.find(pos => 
+                pos.conditionId?.toLowerCase() === tradeConditionId.toLowerCase()
+              );
+            }
+          }
+          
           return {
             timestamp: trade.timestamp,
             market: trade.title || trade.market?.title || trade.marketTitle || 'Unknown Market',
@@ -774,8 +800,8 @@ export default function TraderProfilePage({
             outcome: trade.outcome || trade.option || '',
             size: parseFloat(trade.size || 0),
             price: parseFloat(trade.price || 0),
-            avgPrice: trade.avgPrice ? parseFloat(trade.avgPrice) : undefined,
-            currentPrice: trade.currentPrice ? parseFloat(trade.currentPrice) : undefined,
+            avgPrice: matchingPosition?.avgPrice || trade.avgPrice ? parseFloat(trade.avgPrice || matchingPosition?.avgPrice || 0) : undefined,
+            currentPrice: matchingPosition?.curPrice || trade.currentPrice ? parseFloat(trade.currentPrice || matchingPosition?.curPrice || 0) : undefined,
             formattedDate: formattedDate,
             marketSlug: trade.slug || trade.market?.slug || trade.marketSlug || '',
             eventSlug: trade.eventSlug || trade.event_slug || '',
@@ -1403,27 +1429,17 @@ export default function TraderProfilePage({
             {/* Desktop: Table View */}
             <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full table-fixed">
-                  <colgroup>
-                    <col className="w-[85px]" />   {/* DATE */}
-                    <col className="w-auto" />      {/* MARKET - flexible */}
-                    <col className="w-[95px]" />    {/* OUTCOME */}
-                    <col className="w-[85px]" />    {/* STATUS */}
-                    <col className="w-[90px]" />    {/* SIZE */}
-                    <col className="w-[75px]" />    {/* AVG PRICE */}
-                    <col className="w-[70px]" />    {/* ROI */}
-                    <col className="w-[140px]" />   {/* ACTIONS */}
-                  </colgroup>
+                <table className="w-full">
                   <thead className="bg-slate-50 border-b-2 border-slate-200">
                     <tr>
-                      <th className="px-2 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Date</th>
-                      <th className="px-2 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
-                      <th className="px-2 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Outcome</th>
-                      <th className="px-2 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Status</th>
-                      <th className="px-2 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Size</th>
-                      <th className="px-2 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Price</th>
-                      <th className="px-2 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">ROI</th>
-                      <th className="px-2 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Actions</th>
+                      <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Date</th>
+                      <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
+                      <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Outcome</th>
+                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Status</th>
+                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Size</th>
+                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Price</th>
+                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">ROI</th>
+                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1442,18 +1458,18 @@ export default function TraderProfilePage({
                           key={`${trade.timestamp}-${index}`}
                           className="hover:bg-slate-50 transition-colors"
                         >
-                          <td className="py-3 px-2 whitespace-nowrap">
-                            <span className="text-xs text-slate-500">{trade.formattedDate}</span>
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <span className="text-sm text-slate-500">{trade.formattedDate}</span>
                           </td>
                           
-                          <td className="py-3 px-2">
-                            <div className="text-xs text-slate-900 font-medium truncate">
+                          <td className="py-3 px-3 max-w-[300px]">
+                            <div className="text-sm text-slate-900 font-medium truncate">
                               {trade.market}
                             </div>
                           </td>
                           
-                          <td className="py-3 px-2">
-                            <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold rounded uppercase ${
+                          <td className="py-3 px-3">
+                            <span className={`inline-flex items-center px-2 py-0.5 text-xs font-bold rounded uppercase ${
                               ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
                                 ? 'bg-green-100 text-green-700'
                                 : 'bg-red-100 text-red-700'
@@ -1462,8 +1478,8 @@ export default function TraderProfilePage({
                             </span>
                           </td>
                           
-                          <td className="py-3 px-2 text-center">
-                            <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded-full ${
+                          <td className="py-3 px-3 text-center">
+                            <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full ${
                               trade.status === 'Open'
                                 ? 'bg-emerald-100 text-emerald-700'
                                 : trade.status === 'Bonded'
@@ -1474,20 +1490,20 @@ export default function TraderProfilePage({
                             </span>
                           </td>
                           
-                          <td className="py-3 px-2 text-right">
-                            <span className="text-xs font-semibold text-slate-900">
+                          <td className="py-3 px-3 text-right">
+                            <span className="text-sm font-semibold text-slate-900">
                               ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                             </span>
                           </td>
                           
-                          <td className="py-3 px-2 text-right">
-                            <span className="text-xs font-semibold text-slate-900">
+                          <td className="py-3 px-3 text-right">
+                            <span className="text-sm font-semibold text-slate-900">
                               ${trade.price.toFixed(2)}
                             </span>
                           </td>
                           
-                          <td className="py-3 px-2 text-right">
-                            <span className={`text-xs font-semibold ${
+                          <td className="py-3 px-3 text-right">
+                            <span className={`text-sm font-semibold ${
                               roi === null ? 'text-slate-400' :
                               roi > 0 ? 'text-green-600' :
                               roi < 0 ? 'text-red-600' :
@@ -1497,18 +1513,18 @@ export default function TraderProfilePage({
                             </span>
                           </td>
                           
-                          <td className="py-3 px-2">
-                            <div className="flex items-center justify-center gap-1">
+                          <td className="py-3 px-3">
+                            <div className="flex items-center justify-center gap-2">
                               {/* Copy Trade - always show link to Polymarket */}
                               {polymarketUrl && (
                                 <a
                                   href={polymarketUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-0.5 px-2 py-1 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-[10px] font-bold rounded-full cursor-pointer transition-colors"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-xs font-bold rounded-full cursor-pointer transition-colors"
                                 >
                                   Copy
-                                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                   </svg>
                                 </a>
@@ -1518,7 +1534,7 @@ export default function TraderProfilePage({
                               <button
                                 onClick={() => handleMarkAsCopied(trade)}
                                 disabled={isAlreadyCopied}
-                                className={`inline-flex items-center gap-0.5 px-2 py-1 text-[10px] font-bold rounded-full transition-colors ${
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-full transition-colors ${
                                   isAlreadyCopied
                                     ? 'bg-emerald-100 text-emerald-700 cursor-default'
                                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer'
@@ -1526,7 +1542,7 @@ export default function TraderProfilePage({
                               >
                                 {isAlreadyCopied ? (
                                   <>
-                                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                                     </svg>
                                     Copied
