@@ -451,6 +451,26 @@ export default function TraderProfilePage({
         const positionsData = await response.json();
         console.log('📈 Number of OPEN positions:', positionsData?.length || 0);
         
+        // 🏀 NBA DIAGNOSTIC: Check if raw response contains NBA positions
+        if (positionsData && positionsData.length > 0) {
+          const nbaPositions = positionsData.filter((p: any) => 
+            p.title?.toLowerCase().includes('nba') ||
+            p.title?.toLowerCase().includes('magic') ||
+            p.title?.toLowerCase().includes('heat') ||
+            p.market?.toLowerCase().includes('nba')
+          );
+          console.log('🏀 NBA positions in raw API response:', nbaPositions.length);
+          if (nbaPositions.length > 0) {
+            console.log('🏀 NBA position examples (raw):', nbaPositions.slice(0, 3).map((p: any) => ({
+              title: p.title,
+              slug: p.slug,
+              market_slug: p.market_slug,
+              outcome: p.outcome,
+              conditionId: p.conditionId
+            })));
+          }
+        }
+        
         // Build Set of open position keys for matching
         // Use slug:outcome as primary (most reliable), with ID fallbacks
         const openPositionKeys = new Set<string>();
@@ -497,6 +517,25 @@ export default function TraderProfilePage({
         
         console.log('📈 Open position keys:', openPositionKeys.size);
         console.log('🔍 DIAGNOSTIC: Sample position keys (first 10):', [...openPositionKeys].slice(0, 10));
+        
+        // 🏀 NBA/TODAY DIAGNOSTIC: Check if current NBA/today positions exist
+        const nbaKeys = [...openPositionKeys].filter(key => 
+          key.includes('nba') || key.includes('magic') || key.includes('heat') || key.includes('2025-12-05')
+        );
+        console.log('🏀 NBA/Today position keys found:', nbaKeys.length);
+        console.log('🏀 NBA/Today position keys:', nbaKeys);
+        
+        // Log first 10 position objects to see actual slug values
+        console.log('🏀 First 10 position objects (raw):', positionsList.slice(0, 10).map(p => ({
+          title: p.title,
+          slug: p.slug,
+          outcome: p.outcome,
+          conditionId: p.conditionId?.substring(0, 20)
+        })));
+        
+        // Also check if positions contain today's date at all
+        const todayKeys = [...openPositionKeys].filter(key => key.includes('2025-12-05'));
+        console.log('🏀 Positions with today\'s date (2025-12-05):', todayKeys.length, todayKeys);
         
         setOpenMarketIds(openPositionKeys);
         setPositions(positionsList);
