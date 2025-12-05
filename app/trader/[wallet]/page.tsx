@@ -343,6 +343,23 @@ export default function TraderProfilePage({
 
         const data = await response.json();
         console.log('📡 Internal API response:', JSON.stringify(data, null, 2));
+        
+        // Show debug info prominently in console
+        if (data._debug) {
+          console.log('👥 ========================================');
+          console.log('👥 FOLLOWER COUNT DEBUG (from API):');
+          console.log('👥 ========================================');
+          console.log('👥 Table:', data._debug.followerCountQuery?.tableName);
+          console.log('👥 Column:', data._debug.followerCountQuery?.columnName);
+          console.log('👥 Wallet queried:', data._debug.followerCountQuery?.normalizedWallet);
+          console.log('👥 Raw count from DB:', data._debug.followerCountQuery?.rawCount);
+          console.log('👥 Matching rows:', data._debug.followerCountQuery?.matchingRows);
+          console.log('👥 Sample follows in DB:', data._debug.sampleFollows?.sample);
+          console.log('👥 Total follows in DB:', data._debug.sampleFollows?.count);
+          console.log('👥 Query error:', data._debug.followerCountQuery?.queryError);
+          console.log('👥 ========================================');
+        }
+        
         setTraderData(data);
       } catch (err: any) {
         console.error('❌ Error fetching trader:', err);
@@ -742,6 +759,15 @@ export default function TraderProfilePage({
             followerCount: data.followerCount,
             source: data.source
           });
+          
+          // Show debug info after follow/unfollow
+          if (data._debug) {
+            console.log('👥 ========================================');
+            console.log('👥 FOLLOWER COUNT AFTER FOLLOW/UNFOLLOW:');
+            console.log('👥 Count from DB:', data._debug.followerCountQuery?.rawCount);
+            console.log('👥 Matching rows:', data._debug.followerCountQuery?.matchingRows);
+            console.log('👥 ========================================');
+          }
           
           setTraderData(prev => {
             if (!prev) return prev;
