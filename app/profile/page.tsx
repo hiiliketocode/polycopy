@@ -1039,13 +1039,18 @@ export default function ProfilePage() {
                             </td>
                             {/* TRADER */}
                             <td className="px-4 py-3">
-                              <Link
-                                href={`/trader/${trade.trader_wallet}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-sm text-[#FDB022] hover:underline"
-                              >
-                                {trade.trader_username || `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
-                              </Link>
+                            <Link
+                              href={`/trader/${trade.trader_wallet}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-sm text-[#FDB022] hover:underline"
+                            >
+                              {trade.trader_username 
+                                ? (trade.trader_username.length > 15 
+                                    ? `${trade.trader_username.slice(0, 6)}...${trade.trader_username.slice(-4)}` 
+                                    : trade.trader_username)
+                                : `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`
+                              }
+                            </Link>
                             </td>
                             {/* STATUS */}
                             <td className="px-4 py-3">
