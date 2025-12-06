@@ -352,15 +352,20 @@ export default function ProfilePage() {
       
       // Calculate ROI
       let roi: number | null = null;
-      if (currentPrice !== null && trade.price_when_copied) {
+      if (trade.price_when_copied) {
         const entryPrice = trade.price_when_copied;
-        if (entryPrice > 0) {
-          roi = ((currentPrice - entryPrice) / entryPrice) * 100;
+        
+        // Use user's exit price if they manually closed the trade
+        // Otherwise use current market price
+        const exitPrice = trade.user_exit_price ?? currentPrice;
+        
+        if (entryPrice > 0 && exitPrice !== null) {
+          roi = ((exitPrice - entryPrice) / entryPrice) * 100;
           roi = parseFloat(roi.toFixed(2));
         }
       }
       
-      console.log(`[Price] ✓ Final: price=${currentPrice}, roi=${roi}%`);
+      console.log(`[Price] ✓ Final: price=${currentPrice}, exitPrice=${trade.user_exit_price ?? currentPrice}, roi=${roi}%`);
       return { currentPrice, roi };
       
     } catch (err) {
@@ -389,6 +394,12 @@ export default function ProfilePage() {
       const tradesToRefresh = [...copiedTrades];
       
       for (const trade of tradesToRefresh) {
+        // Skip price refresh for user-closed trades - their ROI is locked
+        if (trade.user_closed_at) {
+          updatedTrades.push(trade);
+          continue;
+        }
+        
         const { currentPrice, roi } = await fetchCurrentPriceFromPolymarket(trade);
         if (currentPrice !== null) {
           successCount++;
@@ -595,6 +606,12 @@ export default function ProfilePage() {
       
       for (let i = 0; i < copiedTrades.length; i++) {
         const trade = copiedTrades[i];
+        
+        // Skip price refresh for user-closed trades - their ROI is locked
+        if (trade.user_closed_at) {
+          updatedTrades.push(trade);
+          continue;
+        }
         
         try {
           const { currentPrice, roi } = await fetchCurrentPriceFromPolymarket(trade);
