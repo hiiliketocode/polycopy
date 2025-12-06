@@ -898,10 +898,10 @@ export default function TraderProfilePage({
           let currentPrice: number | undefined;
           let priceSource = 'none';
           
-          if (matchingPosition?.curPrice) {
+          if (matchingPosition?.curPrice !== undefined && matchingPosition?.curPrice !== null) {
             currentPrice = matchingPosition.curPrice;
             priceSource = 'position';
-          } else if (trade.currentPrice) {
+          } else if (trade.currentPrice !== undefined && trade.currentPrice !== null) {
             currentPrice = parseFloat(trade.currentPrice);
             priceSource = 'trade-data';
           } else {
@@ -1628,7 +1628,7 @@ export default function TraderProfilePage({
                       const entryPrice = trade.price; // This is the actual trade price
                       const currentPrice = trade.currentPrice;
                       
-                      if (entryPrice && currentPrice) {
+                      if (entryPrice && (currentPrice !== undefined && currentPrice !== null)) {
                         roi = ((currentPrice - entryPrice) / entryPrice) * 100;
                       }
                       
@@ -1642,7 +1642,7 @@ export default function TraderProfilePage({
                           currentPrice: trade.currentPrice,
                           conditionId: trade.conditionId?.substring(0, 12) + '...',
                           roi: roi !== null ? `${roi.toFixed(1)}%` : 'NULL - missing currentPrice',
-                          hasCurrentPrice: !!trade.currentPrice
+                          hasCurrentPrice: trade.currentPrice !== undefined && trade.currentPrice !== null
                         });
                       }
 
@@ -1761,7 +1761,7 @@ export default function TraderProfilePage({
                 const entryPrice = trade.price;
                 const currentPrice = trade.currentPrice;
                 
-                if (entryPrice && currentPrice) {
+                if (entryPrice && (currentPrice !== undefined && currentPrice !== null)) {
                   roi = ((currentPrice - entryPrice) / entryPrice) * 100;
                 }
 
