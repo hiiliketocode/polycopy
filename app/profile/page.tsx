@@ -918,13 +918,50 @@ export default function ProfilePage() {
                     <div>
                       <span className={`font-semibold ${
                         copiedTrades.length === 0 ? 'text-slate-400' :
-                        (copiedTrades.filter(t => t.roi !== null).reduce((sum, t) => sum + (t.roi || 0), 0) / 
-                         Math.max(copiedTrades.filter(t => t.roi !== null).length, 1)) >= 0 
-                          ? 'text-emerald-600' : 'text-red-600'
+                        (() => {
+                          const tradesWithRoi = copiedTrades.filter(t => t.roi !== null && t.roi !== undefined);
+                          if (tradesWithRoi.length === 0) return 'text-slate-400';
+                          
+                          // Calculate weighted ROI by amount_invested
+                          const totalInvested = tradesWithRoi.reduce((sum, t) => sum + (t.amount_invested || 0), 0);
+                          
+                          let weightedRoi: number;
+                          if (totalInvested > 0) {
+                            // Weighted average: weight each ROI by investment amount
+                            weightedRoi = tradesWithRoi.reduce((sum, t) => {
+                              const weight = (t.amount_invested || 0) / totalInvested;
+                              return sum + ((t.roi || 0) * weight);
+                            }, 0);
+                          } else {
+                            // Fallback to simple average if no investment amounts
+                            weightedRoi = tradesWithRoi.reduce((sum, t) => sum + (t.roi || 0), 0) / tradesWithRoi.length;
+                          }
+                          
+                          return weightedRoi >= 0 ? 'text-emerald-600' : 'text-red-600';
+                        })()
                       }`}>
                         {copiedTrades.length === 0 ? '--' : 
-                          `${(copiedTrades.filter(t => t.roi !== null).reduce((sum, t) => sum + (t.roi || 0), 0) / 
-                            Math.max(copiedTrades.filter(t => t.roi !== null).length, 1)).toFixed(1)}%`
+                          (() => {
+                            const tradesWithRoi = copiedTrades.filter(t => t.roi !== null && t.roi !== undefined);
+                            if (tradesWithRoi.length === 0) return '--';
+                            
+                            // Calculate weighted ROI by amount_invested
+                            const totalInvested = tradesWithRoi.reduce((sum, t) => sum + (t.amount_invested || 0), 0);
+                            
+                            let weightedRoi: number;
+                            if (totalInvested > 0) {
+                              // Weighted average: weight each ROI by investment amount
+                              weightedRoi = tradesWithRoi.reduce((sum, t) => {
+                                const weight = (t.amount_invested || 0) / totalInvested;
+                                return sum + ((t.roi || 0) * weight);
+                              }, 0);
+                            } else {
+                              // Fallback to simple average if no investment amounts
+                              weightedRoi = tradesWithRoi.reduce((sum, t) => sum + (t.roi || 0), 0) / tradesWithRoi.length;
+                            }
+                            
+                            return `${weightedRoi >= 0 ? '+' : ''}${weightedRoi.toFixed(1)}%`;
+                          })()
                         }
                       </span>
                       <span className="text-slate-500 ml-1">Avg. ROI</span>
