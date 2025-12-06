@@ -544,6 +544,29 @@ export default function TraderProfilePage({
         console.log('📈 Open position keys:', openPositionKeys.size);
         console.log('🔍 DIAGNOSTIC: Sample position keys (first 10):', [...openPositionKeys].slice(0, 10));
         
+        // Log position price data availability
+        const positionsWithPrice = positionsList.filter(p => p.curPrice).length;
+        console.log('💰 Position price data:', {
+          totalPositions: positionsList.length,
+          withCurPrice: positionsWithPrice,
+          withoutCurPrice: positionsList.length - positionsWithPrice,
+          coverage: ((positionsWithPrice / positionsList.length) * 100).toFixed(1) + '%'
+        });
+        
+        // Sample of positions with price data
+        const sampleWithPrice = positionsList
+          .filter(p => p.curPrice)
+          .slice(0, 3)
+          .map(p => ({
+            title: p.title?.substring(0, 30),
+            outcome: p.outcome,
+            avgPrice: p.avgPrice,
+            curPrice: p.curPrice
+          }));
+        if (sampleWithPrice.length > 0) {
+          console.log('💰 Sample positions with curPrice:', sampleWithPrice);
+        }
+        
         // 🏀 NBA/TODAY DIAGNOSTIC: Check if current NBA/today positions exist
         const nbaKeys = [...openPositionKeys].filter(key => 
           key.includes('nba') || key.includes('magic') || key.includes('heat') || key.includes('2025-12-05')
@@ -865,16 +888,37 @@ export default function TraderProfilePage({
           
           // Determine current price: try position data first, then cache
           let currentPrice: number | undefined;
+          let priceSource = 'none';
+          
           if (matchingPosition?.curPrice) {
             currentPrice = matchingPosition.curPrice;
+            priceSource = 'position';
           } else if (trade.currentPrice) {
             currentPrice = parseFloat(trade.currentPrice);
+            priceSource = 'trade-data';
           } else {
             // Try to get from cache
             const cacheKey = `${tradeConditionId}-${trade.outcome}`;
             const cachedPrice = marketPriceCache.get(cacheKey);
             if (cachedPrice !== undefined) {
               currentPrice = cachedPrice;
+              priceSource = 'gamma-cache';
+            }
+            
+            // Debug logging for first 3 trades without price
+            if (!currentPrice && index < 3) {
+              console.log(`❌ Trade ${index} missing price:`, {
+                market: trade.title?.substring(0, 30),
+                conditionId: tradeConditionId?.substring(0, 12),
+                outcome: trade.outcome,
+                cacheKey: cacheKey,
+                cacheHasKey: marketPriceCache.has(cacheKey),
+                cacheSize: marketPriceCache.size,
+                // Show similar keys in cache
+                similarKeys: Array.from(marketPriceCache.keys())
+                  .filter(k => k.includes(tradeConditionId?.substring(0, 10) || 'none'))
+                  .slice(0, 3)
+              });
             }
           }
           
@@ -887,6 +931,7 @@ export default function TraderProfilePage({
             price: parseFloat(trade.price || 0),
             avgPrice: matchingPosition?.avgPrice || trade.avgPrice ? parseFloat(trade.avgPrice || matchingPosition?.avgPrice || 0) : undefined,
             currentPrice: currentPrice,
+            priceSource: priceSource, // Track where price came from
             formattedDate: formattedDate,
             marketSlug: trade.slug || trade.market?.slug || trade.marketSlug || '',
             eventSlug: trade.eventSlug || trade.event_slug || '',
@@ -898,15 +943,25 @@ export default function TraderProfilePage({
         // Sort by timestamp descending (newest first)
         formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
 
-        // Log ROI coverage statistics
+        // Log ROI coverage statistics with price sources
         const tradesWithPrice = formattedTrades.filter(t => t.currentPrice).length;
         const tradesWithoutPrice = formattedTrades.length - tradesWithPrice;
+        
+        // Break down by price source
+        const priceSourceStats = {
+          position: formattedTrades.filter(t => (t as any).priceSource === 'position').length,
+          'gamma-cache': formattedTrades.filter(t => (t as any).priceSource === 'gamma-cache').length,
+          'trade-data': formattedTrades.filter(t => (t as any).priceSource === 'trade-data').length,
+          none: formattedTrades.filter(t => (t as any).priceSource === 'none').length
+        };
+        
         console.log('✅ Formatted', formattedTrades.length, 'trades for display');
         console.log('📊 ROI Coverage:', {
           withCurrentPrice: tradesWithPrice,
           withoutCurrentPrice: tradesWithoutPrice,
           coveragePercent: ((tradesWithPrice / formattedTrades.length) * 100).toFixed(1) + '%'
         });
+        console.log('📊 Price Sources:', priceSourceStats);
 
         setTrades(formattedTrades);
       } catch (err) {
