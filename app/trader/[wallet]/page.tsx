@@ -713,7 +713,8 @@ export default function TraderProfilePage({
                   if (Array.isArray(outcomes) && Array.isArray(prices)) {
                     outcomes.forEach((outcome: string, index: number) => {
                       if (prices[index] !== undefined) {
-                        const key = `${conditionId}-${outcome}`;
+                        // Use lowercase for case-insensitive matching
+                        const key = `${conditionId}-${outcome}`.toLowerCase();
                         marketPriceCache.set(key, parseFloat(prices[index]));
                       }
                     });
@@ -723,7 +724,7 @@ export default function TraderProfilePage({
                       console.log('🔍 Cache key example:', {
                         conditionId: conditionId.substring(0, 12) + '...',
                         outcomes,
-                        keys: outcomes.map(o => `${conditionId.substring(0, 12)}...-${o}`)
+                        keys: outcomes.map(o => `${conditionId.substring(0, 12)}...-${o}`.toLowerCase())
                       });
                     }
                   }
@@ -734,6 +735,9 @@ export default function TraderProfilePage({
             }
             
             console.log('📊 Successfully cached', marketPriceCache.size, 'outcome prices');
+            
+            // Log first 5 actual cache keys to debug mismatches
+            console.log('🔑 First 5 cache keys:', [...marketPriceCache.keys()].slice(0, 5));
             
             // Log sample of cached prices for debugging
             if (marketPriceCache.size > 0) {
@@ -902,8 +906,10 @@ export default function TraderProfilePage({
             currentPrice = parseFloat(trade.currentPrice);
             priceSource = 'trade-data';
           } else {
-            // Try to get from cache
-            const cacheKey = `${tradeConditionId}-${trade.outcome}`;
+            // Try to get from cache (case-insensitive)
+            const cacheKey = `${tradeConditionId}-${trade.outcome}`.toLowerCase();
+            console.log('🔍 Looking for key:', cacheKey.substring(0, 40) + '...', 'in cache of size:', marketPriceCache.size);
+            
             const cachedPrice = marketPriceCache.get(cacheKey);
             if (cachedPrice !== undefined) {
               currentPrice = cachedPrice;
