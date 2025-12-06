@@ -1177,11 +1177,18 @@ export default function ProfilePage() {
                                       </p>
                                     </div>
                                     <div>
-                                      <p className="text-xs text-slate-500 mb-1">Current Price</p>
+                                      <p className="text-xs text-slate-500 mb-1">
+                                        {trade.user_closed_at ? "Closed Price" : "Current Price"}
+                                      </p>
                                       <p className="text-sm font-semibold text-slate-900">
-                                        {trade.current_price !== null && trade.current_price !== undefined
-                                          ? `${Math.round(trade.current_price * 100)}¢`
-                                          : '--'}
+                                        {trade.user_closed_at 
+                                          ? (trade.user_exit_price !== null && trade.user_exit_price !== undefined
+                                              ? `${Math.round(trade.user_exit_price * 100)}¢`
+                                              : '--')
+                                          : (trade.current_price !== null && trade.current_price !== undefined
+                                              ? `${Math.round(trade.current_price * 100)}¢`
+                                              : '--')
+                                        }
                                       </p>
                                     </div>
                                     <div>
@@ -1306,11 +1313,18 @@ export default function ProfilePage() {
                                 </p>
                               </div>
                               <div>
-                                <p className="text-xs text-slate-500">Current Price</p>
+                                <p className="text-xs text-slate-500">
+                                  {trade.user_closed_at ? "Closed Price" : "Current Price"}
+                                </p>
                                 <p className="text-sm font-semibold text-slate-900">
-                                  {trade.current_price !== null && trade.current_price !== undefined
-                                    ? `${Math.round(trade.current_price * 100)}¢`
-                                    : '--'}
+                                  {trade.user_closed_at 
+                                    ? (trade.user_exit_price !== null && trade.user_exit_price !== undefined
+                                        ? `${Math.round(trade.user_exit_price * 100)}¢`
+                                        : '--')
+                                    : (trade.current_price !== null && trade.current_price !== undefined
+                                        ? `${Math.round(trade.current_price * 100)}¢`
+                                        : '--')
+                                  }
                                 </p>
                               </div>
                               <div>

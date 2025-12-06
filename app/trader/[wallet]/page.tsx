@@ -1523,9 +1523,26 @@ export default function TraderProfilePage({
                       const isAlreadyCopied = isTradeCopied(trade);
                       
                       // Calculate ROI
+                      // For ROI calculation, use:
+                      // - Entry price: trade.price (the price from the trade data)
+                      // - Current price: trade.currentPrice (from position or Gamma API)
                       let roi: number | null = null;
-                      if (trade.avgPrice && trade.currentPrice) {
-                        roi = ((trade.currentPrice - trade.avgPrice) / trade.avgPrice) * 100;
+                      const entryPrice = trade.price; // This is the actual trade price
+                      const currentPrice = trade.currentPrice;
+                      
+                      if (entryPrice && currentPrice) {
+                        roi = ((currentPrice - entryPrice) / entryPrice) * 100;
+                      }
+                      
+                      // Debug logging for first 3 trades
+                      if (index < 3) {
+                        console.log(`Trade ${index}:`, {
+                          market: trade.market.substring(0, 40),
+                          price: trade.price,
+                          avgPrice: trade.avgPrice,
+                          currentPrice: trade.currentPrice,
+                          roi: roi
+                        });
                       }
 
                       return (
@@ -1538,27 +1555,47 @@ export default function TraderProfilePage({
                           </td>
                           
                           <td className="py-3 px-3 max-w-[220px]">
-                            <a 
-                              href={polymarketUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm text-slate-900 font-medium hover:text-[#FDB022] transition-colors flex items-center gap-1 group"
-                            >
-                              <span className="truncate">{trade.market}</span>
-                              <svg 
-                                className="w-3 h-3 flex-shrink-0 text-slate-400 group-hover:text-[#FDB022]" 
-                                fill="none" 
-                                stroke="currentColor" 
-                                viewBox="0 0 24 24"
+                            <div className="flex items-center gap-2">
+                              <a 
+                                href={polymarketUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm text-slate-900 font-medium hover:text-[#FDB022] transition-colors flex items-center gap-1 group flex-1 min-w-0"
                               >
-                                <path 
-                                  strokeLinecap="round" 
-                                  strokeLinejoin="round" 
-                                  strokeWidth={2} 
-                                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" 
-                                />
-                              </svg>
-                            </a>
+                                <span className="truncate">{trade.market}</span>
+                                <svg 
+                                  className="w-3 h-3 flex-shrink-0 text-slate-400 group-hover:text-[#FDB022]" 
+                                  fill="none" 
+                                  stroke="currentColor" 
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path 
+                                    strokeLinecap="round" 
+                                    strokeLinejoin="round" 
+                                    strokeWidth={2} 
+                                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" 
+                                  />
+                                </svg>
+                              </a>
+                              {/* Mark as Copied button */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMarkAsCopied(trade);
+                                }}
+                                disabled={isTradeCopied(trade)}
+                                className={`flex-shrink-0 transition-colors ${
+                                  isTradeCopied(trade)
+                                    ? 'text-emerald-600 cursor-default'
+                                    : 'text-slate-400 hover:text-[#FDB022] cursor-pointer'
+                                }`}
+                                title={isTradeCopied(trade) ? "Already copied" : "Mark as Copied"}
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </button>
+                            </div>
                           </td>
                           
                           <td className="py-3 px-3 whitespace-nowrap">
@@ -1619,10 +1656,13 @@ export default function TraderProfilePage({
                 const polymarketUrl = getPolymarketUrl(trade);
                 const isAlreadyCopied = isTradeCopied(trade);
                 
-                // Calculate ROI
+                // Calculate ROI - same logic as desktop
                 let roi: number | null = null;
-                if (trade.avgPrice && trade.currentPrice) {
-                  roi = ((trade.currentPrice - trade.avgPrice) / trade.avgPrice) * 100;
+                const entryPrice = trade.price;
+                const currentPrice = trade.currentPrice;
+                
+                if (entryPrice && currentPrice) {
+                  roi = ((currentPrice - entryPrice) / entryPrice) * 100;
                 }
 
                 return (
