@@ -79,6 +79,20 @@ export async function GET(
       return NextResponse.json({ error: 'Trade not found or unauthorized' }, { status: 404 })
     }
     
+    // If user manually closed this trade, return existing values without updates
+    if (trade.user_closed_at) {
+      console.log(`⏭️ User-closed trade ${id} - returning locked values (user_exit_price: ${trade.user_exit_price})`);
+      return NextResponse.json({
+        traderStillHasPosition: trade.trader_still_has_position,
+        traderClosedAt: trade.trader_closed_at,
+        currentPrice: trade.user_exit_price, // Use user's exit price
+        roi: trade.roi, // Use locked ROI
+        marketResolved: trade.market_resolved,
+        resolvedOutcome: trade.resolved_outcome,
+        priceSource: 'user-closed'
+      });
+    }
+    
     // Additional auth check for non-cron requests (optional, ownership already verified)
     if (!isCronRequest) {
       try {

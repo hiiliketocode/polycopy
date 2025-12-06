@@ -207,6 +207,12 @@ export default function ProfilePage() {
           // Refresh status for ALL trades in parallel
           const tradesWithFreshStatus = await Promise.all(
             trades.map(async (trade) => {
+              // Skip user-closed trades - their status and ROI are locked
+              if (trade.user_closed_at) {
+                console.log(`⏭️ Skipping status refresh for user-closed trade: ${trade.market_title?.substring(0, 30)} (locked at user_exit_price: ${trade.user_exit_price})`);
+                return trade; // Return unchanged
+              }
+              
               try {
                 // Call status API to get fresh status
                 const statusRes = await fetch(`/api/copied-trades/${trade.id}/status?userId=${user.id}`);

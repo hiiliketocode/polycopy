@@ -676,7 +676,8 @@ export default function TraderProfilePage({
         console.log('🔍 DIAGNOSTIC: openMarketIds sample:', [...openMarketIds].slice(0, 5));
 
         // Batch fetch prices for unique markets using our API proxy (avoids CORS)
-        const marketPriceCache = new Map<string, number>();
+        // Store cache as Map<conditionId, {prices: number[], outcomes: string[]}>
+        const marketPriceCache = new Map<string, { prices: number[]; outcomes: string[] }>();
         const uniqueConditionIds = new Set<string>();
         
         // Collect unique condition IDs
@@ -709,22 +710,19 @@ export default function TraderProfilePage({
                   if (typeof prices === 'string') prices = JSON.parse(prices);
                   if (typeof outcomes === 'string') outcomes = JSON.parse(outcomes);
                   
-                  // Store price for each outcome
+                  // Store entire market data by conditionId (includes all outcomes and prices)
                   if (Array.isArray(outcomes) && Array.isArray(prices)) {
-                    outcomes.forEach((outcome: string, index: number) => {
-                      if (prices[index] !== undefined) {
-                        // Use lowercase for case-insensitive matching
-                        const key = `${conditionId}-${outcome}`.toLowerCase();
-                        marketPriceCache.set(key, parseFloat(prices[index]));
-                      }
+                    marketPriceCache.set(conditionId.toLowerCase(), {
+                      prices: prices.map((p: any) => parseFloat(p)),
+                      outcomes: outcomes
                     });
                     
                     // Debug: Log for first market to show structure
-                    if (marketPriceCache.size <= outcomes.length) {
-                      console.log('🔍 Cache key example:', {
+                    if (marketPriceCache.size <= 3) {
+                      console.log('🔍 Cache entry example:', {
                         conditionId: conditionId.substring(0, 12) + '...',
                         outcomes,
-                        keys: outcomes.map(o => `${conditionId.substring(0, 12)}...-${o}`.toLowerCase())
+                        prices: prices.map((p: any) => parseFloat(p))
                       });
                     }
                   }
@@ -734,19 +732,19 @@ export default function TraderProfilePage({
               });
             }
             
-            console.log('📊 Successfully cached', marketPriceCache.size, 'outcome prices');
+            console.log('📊 Successfully cached', marketPriceCache.size, 'markets (each with multiple outcomes)');
             
-            // Log first 5 actual cache keys to debug mismatches
-            console.log('🔑 First 5 cache keys:', [...marketPriceCache.keys()].slice(0, 5));
+            // Log first 5 actual cache entries to debug mismatches
+            const cacheEntries = Array.from(marketPriceCache.entries()).slice(0, 3);
+            console.log('🔑 First 3 cache entries:', cacheEntries.map(([conditionId, data]) => ({
+              conditionId: conditionId.substring(0, 12) + '...',
+              outcomes: data.outcomes,
+              prices: data.prices
+            })));
             
-            // Log sample of cached prices for debugging
-            if (marketPriceCache.size > 0) {
-              const sampleEntries = Array.from(marketPriceCache.entries()).slice(0, 3);
-              console.log('📊 Sample cached prices:', sampleEntries.map(([key, price]) => ({
-                key: key.substring(0, 30) + '...',
-                price
-              })));
-            }
+            // Calculate total outcome prices
+            const totalOutcomes = Array.from(marketPriceCache.values()).reduce((sum, data) => sum + data.outcomes.length, 0);
+            console.log('📊 Total outcome prices available:', totalOutcomes);
           } else {
             console.error('📊 Batch API failed:', response.status, response.statusText);
           }
@@ -906,35 +904,43 @@ export default function TraderProfilePage({
             currentPrice = parseFloat(trade.currentPrice);
             priceSource = 'trade-data';
           } else {
-            // Try to get from cache (case-insensitive)
-            const cacheKey = `${tradeConditionId}-${trade.outcome}`.toLowerCase();
-            console.log('🔍 Looking for key:', cacheKey.substring(0, 40) + '...', 'in cache of size:', marketPriceCache.size);
+            // Try to get from cache using conditionId
+            const cachedMarket = marketPriceCache.get(tradeConditionId?.toLowerCase() || '');
             
-            const cachedPrice = marketPriceCache.get(cacheKey);
-            if (cachedPrice !== undefined) {
-              currentPrice = cachedPrice;
-              priceSource = 'gamma-cache';
+            if (cachedMarket) {
+              // For binary markets (2 outcomes), match by position
+              // Gamma returns ["Yes", "No"] but trades have actual names
+              // We need to determine which outcome index this trade represents
+              
+              // Try to match by outcome name first (case-insensitive)
+              const outcomeIndex = cachedMarket.outcomes.findIndex((o: string) => 
+                o.toLowerCase() === trade.outcome?.toLowerCase()
+              );
+              
+              if (outcomeIndex >= 0 && cachedMarket.prices[outcomeIndex] !== undefined) {
+                currentPrice = cachedMarket.prices[outcomeIndex];
+                priceSource = 'gamma-cache';
+                console.log(`✅ Matched by outcome name: ${trade.outcome} → index ${outcomeIndex} → price ${currentPrice}`);
+              } else if (cachedMarket.prices.length === 2) {
+                // Binary market fallback: if we can't match by name, 
+                // we can't reliably determine which outcome without more data
+                // Log this case for debugging
+                console.log(`⚠️ Binary market: couldn't match "${trade.outcome}" to outcomes [${cachedMarket.outcomes.join(', ')}]`);
+              }
             }
             
             // Debug logging for first 5 trades without price
             if (!currentPrice && index < 5) {
-              // Try case-insensitive lookup to diagnose issue
-              const allCacheKeys = Array.from(marketPriceCache.keys());
-              const conditionMatches = allCacheKeys.filter(k => 
-                k.toLowerCase().includes(tradeConditionId?.toLowerCase() || 'none')
-              );
+              const cachedForCondition = marketPriceCache.get(tradeConditionId?.toLowerCase() || '');
               
               console.log(`❌ Trade ${index} missing price:`, {
                 market: trade.title?.substring(0, 30),
                 tradeOutcome: trade.outcome,
                 conditionId: tradeConditionId?.substring(0, 12),
-                exactCacheKey: cacheKey.substring(0, 40) + '...',
-                cacheHasExactKey: marketPriceCache.has(cacheKey),
-                cacheSize: marketPriceCache.size,
-                conditionMatches: conditionMatches.slice(0, 3).map(k => ({
-                  key: k.substring(0, 40) + '...',
-                  price: marketPriceCache.get(k)
-                }))
+                cacheHasCondition: !!cachedForCondition,
+                cachedOutcomes: cachedForCondition?.outcomes,
+                cachedPrices: cachedForCondition?.prices,
+                cacheSize: marketPriceCache.size
               });
             }
           }
