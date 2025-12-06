@@ -409,6 +409,7 @@ export default function ProfilePage() {
       for (const trade of tradesToRefresh) {
         // Skip price refresh for user-closed trades - their ROI is locked
         if (trade.user_closed_at) {
+          console.log(`⏭️ Skipping user-closed trade: ${trade.market_title?.substring(0, 30)} (user_exit_price: ${trade.user_exit_price})`);
           updatedTrades.push(trade);
           continue;
         }
@@ -622,6 +623,7 @@ export default function ProfilePage() {
         
         // Skip price refresh for user-closed trades - their ROI is locked
         if (trade.user_closed_at) {
+          console.log(`⏭️ Skipping user-closed trade: ${trade.market_title?.substring(0, 30)} (user_exit_price: ${trade.user_exit_price})`);
           updatedTrades.push(trade);
           continue;
         }
