@@ -675,74 +675,70 @@ export default function TraderProfilePage({
         console.log('🔍 DIAGNOSTIC: openMarketIds size when formatting trades:', openMarketIds.size);
         console.log('🔍 DIAGNOSTIC: openMarketIds sample:', [...openMarketIds].slice(0, 5));
 
-        // Helper function to fetch current price from Gamma API
-        const fetchMarketPrice = async (conditionId: string, outcome: string): Promise<number | null> => {
-          try {
-            const gammaUrl = `https://gamma-api.polymarket.com/markets?condition_id=${conditionId}`;
-            const gammaResponse = await fetch(gammaUrl);
-            
-            if (!gammaResponse.ok) return null;
-            
-            const markets = await gammaResponse.json();
-            
-            if (markets && markets.length > 0) {
-              const market = markets[0];
-              let prices = market.outcomePrices;
-              let outcomes = market.outcomes;
-              
-              // Parse if strings
-              if (typeof prices === 'string') prices = JSON.parse(prices);
-              if (typeof outcomes === 'string') outcomes = JSON.parse(outcomes);
-              
-              // Find price for this trade's outcome
-              const outcomeIndex = outcomes.findIndex((o: string) => o?.toUpperCase() === outcome?.toUpperCase());
-              if (outcomeIndex >= 0 && prices[outcomeIndex]) {
-                return parseFloat(prices[outcomeIndex]);
-              }
-            }
-            
-            return null;
-          } catch (err) {
-            console.error('Error fetching market price:', err);
-            return null;
-          }
-        };
-
-        // Batch fetch prices for unique markets
+        // Batch fetch prices for unique markets using our API proxy (avoids CORS)
         const marketPriceCache = new Map<string, number>();
-        const uniqueMarkets = new Map<string, { conditionId: string; outcome: string }>();
+        const uniqueConditionIds = new Set<string>();
         
-        // Collect unique markets
+        // Collect unique condition IDs
         tradesData.forEach((trade: any) => {
           const conditionId = trade.conditionId || trade.condition_id || trade.asset || trade.marketId || '';
-          const outcome = trade.outcome || '';
-          if (conditionId && outcome) {
-            const key = `${conditionId}-${outcome}`;
-            if (!uniqueMarkets.has(key)) {
-              uniqueMarkets.set(key, { conditionId, outcome });
-            }
+          if (conditionId) {
+            uniqueConditionIds.add(conditionId);
           }
         });
 
-        // Fetch prices for all unique markets in parallel
-        console.log('📊 Fetching current prices for', uniqueMarkets.size, 'unique markets...');
-        await Promise.all(
-          Array.from(uniqueMarkets.entries()).map(async ([key, { conditionId, outcome }]) => {
-            const price = await fetchMarketPrice(conditionId, outcome);
-            if (price !== null) {
-              marketPriceCache.set(key, price);
-            }
-          })
-        );
-        console.log('📊 Successfully fetched', marketPriceCache.size, 'out of', uniqueMarkets.size, 'market prices');
+        // Fetch prices via batch API proxy (no CORS issues)
+        console.log('📊 Fetching current prices for', uniqueConditionIds.size, 'unique markets via API proxy...');
         
-        // Log sample of cached prices for debugging
-        if (marketPriceCache.size > 0) {
-          const sampleEntries = Array.from(marketPriceCache.entries()).slice(0, 3);
-          console.log('📊 Sample cached prices:', sampleEntries.map(([key, price]) => ({
-            key: key.substring(0, 20) + '...',
-            price
-          })));
+        try {
+          const conditionIdsArray = Array.from(uniqueConditionIds);
+          const response = await fetch(`/api/gamma/markets?condition_ids=${conditionIdsArray.join(',')}`);
+          
+          if (response.ok) {
+            const data = await response.json();
+            console.log(`📊 Batch API returned ${data.count} out of ${data.total} markets`);
+            
+            // Parse the prices response and populate cache
+            if (data.prices) {
+              Object.entries(data.prices).forEach(([conditionId, marketData]: [string, any]) => {
+                try {
+                  let prices = marketData.outcomePrices;
+                  let outcomes = marketData.outcomes;
+                  
+                  // Parse if strings
+                  if (typeof prices === 'string') prices = JSON.parse(prices);
+                  if (typeof outcomes === 'string') outcomes = JSON.parse(outcomes);
+                  
+                  // Store price for each outcome
+                  if (Array.isArray(outcomes) && Array.isArray(prices)) {
+                    outcomes.forEach((outcome: string, index: number) => {
+                      if (prices[index] !== undefined) {
+                        const key = `${conditionId}-${outcome}`;
+                        marketPriceCache.set(key, parseFloat(prices[index]));
+                      }
+                    });
+                  }
+                } catch (parseErr) {
+                  console.error('Error parsing market data for', conditionId, parseErr);
+                }
+              });
+            }
+            
+            console.log('📊 Successfully cached', marketPriceCache.size, 'outcome prices');
+            
+            // Log sample of cached prices for debugging
+            if (marketPriceCache.size > 0) {
+              const sampleEntries = Array.from(marketPriceCache.entries()).slice(0, 3);
+              console.log('📊 Sample cached prices:', sampleEntries.map(([key, price]) => ({
+                key: key.substring(0, 30) + '...',
+                price
+              })));
+            }
+          } else {
+            console.error('📊 Batch API failed:', response.status, response.statusText);
+          }
+        } catch (err) {
+          console.error('📊 Error fetching batch prices:', err);
         }
 
         // Format trades for display
