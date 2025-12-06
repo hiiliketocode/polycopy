@@ -219,17 +219,14 @@ export default function ProfilePage() {
           return trade;
         });
         
-        // Update trades with corrected ROIs
-        trades = tradesWithCorrectRoi;
-        
         // Auto-refresh status for ALL trades (database status may be stale)
         // The status API will determine if market is resolved or trader exited
-        console.log('🔄 Auto-refreshing status for', trades?.length || 0, 'trades...');
+        console.log('🔄 Auto-refreshing status for', tradesWithCorrectRoi?.length || 0, 'trades...');
         
-        if (trades && trades.length > 0) {
+        if (tradesWithCorrectRoi && tradesWithCorrectRoi.length > 0) {
           // Refresh status for ALL trades in parallel
           const tradesWithFreshStatus = await Promise.all(
-            trades.map(async (trade) => {
+            tradesWithCorrectRoi.map(async (trade) => {
               // Skip user-closed trades - their status and ROI are locked
               if (trade.user_closed_at) {
                 console.log(`⏭️ Skipping status refresh for user-closed trade: ${trade.market_title?.substring(0, 30)} (locked at user_exit_price: ${trade.user_exit_price})`);
