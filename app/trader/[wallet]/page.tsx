@@ -1576,7 +1576,7 @@ export default function TraderProfilePage({
                           </td>
                           
                           <td className="py-3 px-3 max-w-[220px]">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-3">
                               <a 
                                 href={polymarketUrl}
                                 target="_blank"
@@ -1618,7 +1618,7 @@ export default function TraderProfilePage({
                             </div>
                           </td>
                           
-                          <td className="py-3 px-2 whitespace-nowrap">
+                          <td className="py-3 pl-5 pr-2 whitespace-nowrap">
                             <span className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full uppercase ${
                               ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
                                 ? 'bg-green-100 text-green-700'
