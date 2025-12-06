@@ -711,7 +711,16 @@ export default function TraderProfilePage({
             }
           })
         );
-        console.log('📊 Fetched', marketPriceCache.size, 'market prices');
+        console.log('📊 Successfully fetched', marketPriceCache.size, 'out of', uniqueMarkets.size, 'market prices');
+        
+        // Log sample of cached prices for debugging
+        if (marketPriceCache.size > 0) {
+          const sampleEntries = Array.from(marketPriceCache.entries()).slice(0, 3);
+          console.log('📊 Sample cached prices:', sampleEntries.map(([key, price]) => ({
+            key: key.substring(0, 20) + '...',
+            price
+          })));
+        }
 
         // Format trades for display
         const formattedTrades: Trade[] = tradesData.map((trade: any, index: number) => {
@@ -889,8 +898,17 @@ export default function TraderProfilePage({
         // Sort by timestamp descending (newest first)
         formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
 
-        setTrades(formattedTrades);
+        // Log ROI coverage statistics
+        const tradesWithPrice = formattedTrades.filter(t => t.currentPrice).length;
+        const tradesWithoutPrice = formattedTrades.length - tradesWithPrice;
         console.log('✅ Formatted', formattedTrades.length, 'trades for display');
+        console.log('📊 ROI Coverage:', {
+          withCurrentPrice: tradesWithPrice,
+          withoutCurrentPrice: tradesWithoutPrice,
+          coveragePercent: ((tradesWithPrice / formattedTrades.length) * 100).toFixed(1) + '%'
+        });
+
+        setTrades(formattedTrades);
       } catch (err) {
         console.error('❌ Error fetching trades:', err);
         setTrades([]);
@@ -1524,7 +1542,7 @@ export default function TraderProfilePage({
                       
                       // Calculate ROI
                       // For ROI calculation, use:
-                      // - Entry price: trade.price (the price from the trade data)
+                      // - Entry price: trade.price (the actual trade execution price)
                       // - Current price: trade.currentPrice (from position or Gamma API)
                       let roi: number | null = null;
                       const entryPrice = trade.price; // This is the actual trade price
@@ -1534,14 +1552,17 @@ export default function TraderProfilePage({
                         roi = ((currentPrice - entryPrice) / entryPrice) * 100;
                       }
                       
-                      // Debug logging for first 3 trades
-                      if (index < 3) {
-                        console.log(`Trade ${index}:`, {
-                          market: trade.market.substring(0, 40),
-                          price: trade.price,
+                      // Enhanced debug logging for first 5 trades to diagnose ROI issues
+                      if (index < 5) {
+                        console.log(`Trade ${index}: "${trade.market.substring(0, 35)}..."`, {
+                          outcome: trade.outcome,
+                          status: trade.status,
+                          entryPrice: trade.price,
                           avgPrice: trade.avgPrice,
                           currentPrice: trade.currentPrice,
-                          roi: roi
+                          conditionId: trade.conditionId?.substring(0, 12) + '...',
+                          roi: roi !== null ? `${roi.toFixed(1)}%` : 'NULL - missing currentPrice',
+                          hasCurrentPrice: !!trade.currentPrice
                         });
                       }
 
@@ -1580,25 +1601,24 @@ export default function TraderProfilePage({
                               {/* Mark as Copied button */}
                               <button
                                 onClick={(e) => {
+                                  e.preventDefault();
                                   e.stopPropagation();
                                   handleMarkAsCopied(trade);
                                 }}
-                                disabled={isTradeCopied(trade)}
-                                className={`flex-shrink-0 transition-colors ${
-                                  isTradeCopied(trade)
-                                    ? 'text-emerald-600 cursor-default'
-                                    : 'text-slate-400 hover:text-[#FDB022] cursor-pointer'
+                                disabled={isAlreadyCopied}
+                                className={`flex-shrink-0 px-2 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+                                  isAlreadyCopied
+                                    ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                                    : 'bg-[#FDB022] text-white hover:bg-[#E69E1A] cursor-pointer'
                                 }`}
-                                title={isTradeCopied(trade) ? "Already copied" : "Mark as Copied"}
+                                title={isAlreadyCopied ? "Already copied" : "Mark as Copied"}
                               >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
+                                {isAlreadyCopied ? 'Copied' : 'Copy'}
                               </button>
                             </div>
                           </td>
                           
-                          <td className="py-3 px-3 whitespace-nowrap">
+                          <td className="py-3 px-2 whitespace-nowrap">
                             <span className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full uppercase ${
                               ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
                                 ? 'bg-green-100 text-green-700'
