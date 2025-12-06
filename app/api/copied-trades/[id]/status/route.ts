@@ -378,6 +378,28 @@ export async function GET(
         roi = parseFloat(roi.toFixed(2))
       }
     }
+    
+    // ADDITIONAL: Check if current price indicates resolution
+    // If this trade's outcome is at $0 or $1, the market is likely resolved
+    if (!marketResolved && currentPrice !== null) {
+      if (currentPrice >= 0.99 || currentPrice <= 0.01) {
+        marketResolved = true;
+        
+        // Determine if this outcome won or lost
+        if (currentPrice >= 0.99) {
+          resolvedOutcome = trade.outcome; // This outcome won
+        }
+        
+        console.log('🔍 Resolution detected via current price:', {
+          tradeId: id.substring(0, 10),
+          market: trade.market_title?.substring(0, 30),
+          outcome: trade.outcome,
+          currentPrice,
+          isResolved: currentPrice >= 0.99 || currentPrice <= 0.01,
+          marketResolved
+        });
+      }
+    }
 
     // STEP 5: Update the database
     const updateData: Record<string, any> = {
