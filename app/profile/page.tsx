@@ -199,6 +199,29 @@ export default function ProfilePage() {
         
         console.log('📊 Loaded', trades?.length || 0, 'copied trades from database');
         
+        // Recalculate ROI for user-closed trades (fixes old wrong ROIs saved before skip logic)
+        const tradesWithCorrectRoi = trades.map(trade => {
+          if (trade.user_closed_at && trade.user_exit_price && trade.price_when_copied) {
+            const correctRoi = ((trade.user_exit_price - trade.price_when_copied) / trade.price_when_copied) * 100;
+            
+            // Only log and update if ROI is different
+            if (Math.abs(correctRoi - (trade.roi || 0)) > 0.1) {
+              console.log(`🔧 Recalculated ROI for user-closed trade: ${trade.market_title?.substring(0, 30)}`, {
+                entry: trade.price_when_copied,
+                exit: trade.user_exit_price,
+                oldRoi: trade.roi,
+                newRoi: parseFloat(correctRoi.toFixed(2))
+              });
+            }
+            
+            return { ...trade, roi: parseFloat(correctRoi.toFixed(2)) };
+          }
+          return trade;
+        });
+        
+        // Update trades with corrected ROIs
+        trades = tradesWithCorrectRoi;
+        
         // Auto-refresh status for ALL trades (database status may be stale)
         // The status API will determine if market is resolved or trader exited
         console.log('🔄 Auto-refreshing status for', trades?.length || 0, 'trades...');
