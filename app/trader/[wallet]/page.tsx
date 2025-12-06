@@ -717,6 +717,15 @@ export default function TraderProfilePage({
                         marketPriceCache.set(key, parseFloat(prices[index]));
                       }
                     });
+                    
+                    // Debug: Log for first market to show structure
+                    if (marketPriceCache.size <= outcomes.length) {
+                      console.log('🔍 Cache key example:', {
+                        conditionId: conditionId.substring(0, 12) + '...',
+                        outcomes,
+                        keys: outcomes.map(o => `${conditionId.substring(0, 12)}...-${o}`)
+                      });
+                    }
                   }
                 } catch (parseErr) {
                   console.error('Error parsing market data for', conditionId, parseErr);
@@ -901,19 +910,25 @@ export default function TraderProfilePage({
               priceSource = 'gamma-cache';
             }
             
-            // Debug logging for first 3 trades without price
-            if (!currentPrice && index < 3) {
+            // Debug logging for first 5 trades without price
+            if (!currentPrice && index < 5) {
+              // Try case-insensitive lookup to diagnose issue
+              const allCacheKeys = Array.from(marketPriceCache.keys());
+              const conditionMatches = allCacheKeys.filter(k => 
+                k.toLowerCase().includes(tradeConditionId?.toLowerCase() || 'none')
+              );
+              
               console.log(`❌ Trade ${index} missing price:`, {
                 market: trade.title?.substring(0, 30),
+                tradeOutcome: trade.outcome,
                 conditionId: tradeConditionId?.substring(0, 12),
-                outcome: trade.outcome,
-                cacheKey: cacheKey,
-                cacheHasKey: marketPriceCache.has(cacheKey),
+                exactCacheKey: cacheKey.substring(0, 40) + '...',
+                cacheHasExactKey: marketPriceCache.has(cacheKey),
                 cacheSize: marketPriceCache.size,
-                // Show similar keys in cache
-                similarKeys: Array.from(marketPriceCache.keys())
-                  .filter(k => k.includes(tradeConditionId?.substring(0, 10) || 'none'))
-                  .slice(0, 3)
+                conditionMatches: conditionMatches.slice(0, 3).map(k => ({
+                  key: k.substring(0, 40) + '...',
+                  price: marketPriceCache.get(k)
+                }))
               });
             }
           }

@@ -363,6 +363,19 @@ export default function ProfilePage() {
           roi = ((exitPrice - entryPrice) / entryPrice) * 100;
           roi = parseFloat(roi.toFixed(2));
         }
+        
+        // Debug logging for user-closed trades
+        if (trade.user_closed_at) {
+          console.log('💰 User-Closed Trade ROI:', {
+            market: trade.market_title?.substring(0, 30),
+            entryPrice,
+            userExitPrice: trade.user_exit_price,
+            currentPrice,
+            exitPriceUsed: exitPrice,
+            calculation: `((${exitPrice} - ${entryPrice}) / ${entryPrice}) * 100`,
+            roi
+          });
+        }
       }
       
       console.log(`[Price] ✓ Final: price=${currentPrice}, exitPrice=${trade.user_exit_price ?? currentPrice}, roi=${roi}%`);
@@ -722,6 +735,16 @@ export default function ProfilePage() {
     const exitPrice = parseFloat(exitPriceCents) / 100; // Convert cents to decimal
     const entryPrice = tradeToClose.price_when_copied;
     const finalRoi = entryPrice > 0 ? ((exitPrice - entryPrice) / entryPrice) * 100 : null;
+    
+    // Debug logging
+    console.log('💰 Mark as Closed - ROI Calculation:', {
+      exitPriceCents,
+      exitPriceDecimal: exitPrice,
+      entryPrice,
+      calculation: `((${exitPrice} - ${entryPrice}) / ${entryPrice}) * 100`,
+      finalRoi,
+      finalRoiRounded: finalRoi ? parseFloat(finalRoi.toFixed(2)) : null
+    });
     
     try {
       const { error } = await supabase
