@@ -688,68 +688,69 @@ export default function TraderProfilePage({
           }
         });
 
-        // Fetch prices via batch API proxy (no CORS issues)
-        console.log('📊 Fetching current prices for', uniqueConditionIds.size, 'unique markets via API proxy...');
+        // Fetch prices via CLOB API (returns actual outcome names like "PARIVISION", "3DMAX")
+        console.log('📊 Fetching current prices for', uniqueConditionIds.size, 'unique markets via CLOB API...');
         
         try {
           const conditionIdsArray = Array.from(uniqueConditionIds);
-          const response = await fetch(`/api/gamma/markets?condition_ids=${conditionIdsArray.join(',')}`);
           
-          if (response.ok) {
-            const data = await response.json();
-            console.log(`📊 Batch API returned ${data.count} out of ${data.total} markets`);
-            
-            // Parse the prices response and populate cache
-            if (data.prices) {
-              Object.entries(data.prices).forEach(([conditionId, marketData]: [string, any]) => {
-                try {
-                  let prices = marketData.outcomePrices;
-                  let outcomes = marketData.outcomes;
+          // Fetch all markets in parallel using CLOB API
+          const fetchPromises = conditionIdsArray.map(async (conditionId) => {
+            try {
+              const response = await fetch(`https://clob.polymarket.com/markets/${conditionId}`);
+              
+              if (response.ok) {
+                const market = await response.json();
+                
+                // CLOB returns tokens array with actual outcome names
+                if (market.tokens && Array.isArray(market.tokens)) {
+                  const outcomes = market.tokens.map((t: any) => t.outcome);
+                  const prices = market.tokens.map((t: any) => parseFloat(t.price));
                   
-                  // Parse if strings
-                  if (typeof prices === 'string') prices = JSON.parse(prices);
-                  if (typeof outcomes === 'string') outcomes = JSON.parse(outcomes);
-                  
-                  // Store entire market data by conditionId (includes all outcomes and prices)
-                  if (Array.isArray(outcomes) && Array.isArray(prices)) {
-                    marketPriceCache.set(conditionId.toLowerCase(), {
-                      prices: prices.map((p: any) => parseFloat(p)),
-                      outcomes: outcomes
-                    });
-                    
-                    // Debug: Log for first market to show structure
-                    if (marketPriceCache.size <= 3) {
-                      console.log('🔍 Cache entry example:', {
-                        conditionId: conditionId.substring(0, 12) + '...',
-                        outcomes,
-                        prices: prices.map((p: any) => parseFloat(p))
-                      });
-                    }
-                  }
-                } catch (parseErr) {
-                  console.error('Error parsing market data for', conditionId, parseErr);
+                  return {
+                    conditionId,
+                    outcomes,
+                    prices
+                  };
                 }
-              });
+              }
+              return null;
+            } catch (err) {
+              console.error('Error fetching market:', conditionId.substring(0, 12), err);
+              return null;
             }
-            
-            console.log('📊 Successfully cached', marketPriceCache.size, 'markets (each with multiple outcomes)');
-            
-            // Log first 5 actual cache entries to debug mismatches
-            const cacheEntries = Array.from(marketPriceCache.entries()).slice(0, 3);
-            console.log('🔑 First 3 cache entries:', cacheEntries.map(([conditionId, data]) => ({
-              conditionId: conditionId.substring(0, 12) + '...',
-              outcomes: data.outcomes,
-              prices: data.prices
-            })));
-            
-            // Calculate total outcome prices
-            const totalOutcomes = Array.from(marketPriceCache.values()).reduce((sum, data) => sum + data.outcomes.length, 0);
-            console.log('📊 Total outcome prices available:', totalOutcomes);
-          } else {
-            console.error('📊 Batch API failed:', response.status, response.statusText);
-          }
+          });
+          
+          const results = await Promise.all(fetchPromises);
+          
+          // Populate cache with successful results
+          let successCount = 0;
+          results.forEach((result) => {
+            if (result) {
+              marketPriceCache.set(result.conditionId.toLowerCase(), {
+                prices: result.prices,
+                outcomes: result.outcomes
+              });
+              successCount++;
+              
+              // Debug: Log for first market to show structure
+              if (marketPriceCache.size <= 3) {
+                console.log('🔍 Cache entry example (CLOB):', {
+                  conditionId: result.conditionId.substring(0, 12) + '...',
+                  outcomes: result.outcomes,
+                  prices: result.prices
+                });
+              }
+            }
+          });
+          
+          console.log(`📊 Successfully cached ${successCount} out of ${conditionIdsArray.length} markets from CLOB`);
+          
+          // Calculate total outcome prices
+          const totalOutcomes = Array.from(marketPriceCache.values()).reduce((sum, data) => sum + data.outcomes.length, 0);
+          console.log('📊 Total outcome prices available:', totalOutcomes);
         } catch (err) {
-          console.error('📊 Error fetching batch prices:', err);
+          console.error('📊 Error fetching CLOB prices:', err);
         }
 
         // Format trades for display
@@ -919,7 +920,7 @@ export default function TraderProfilePage({
               
               if (outcomeIndex >= 0 && cachedMarket.prices[outcomeIndex] !== undefined) {
                 currentPrice = cachedMarket.prices[outcomeIndex];
-                priceSource = 'gamma-cache';
+                priceSource = 'clob-cache';
                 console.log(`✅ Matched by outcome name: ${trade.outcome} → index ${outcomeIndex} → price ${currentPrice}`);
               } else if (cachedMarket.prices.length === 2) {
                 // Binary market fallback: if we can't match by name, 
