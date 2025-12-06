@@ -24,6 +24,8 @@ interface CopiedTrade {
   market_resolved: boolean;
   market_resolved_at: string | null;
   roi: number | null;
+  user_closed_at: string | null;
+  user_exit_price: number | null;
 }
 
 // Helper: Format relative time
@@ -639,8 +641,11 @@ export default function ProfilePage() {
     if (trade.market_resolved) {
       return { label: 'Resolved', color: 'text-blue-600', bg: 'bg-blue-50' };
     }
+    if (trade.user_closed_at) {
+      return { label: 'You Closed', color: 'text-purple-600', bg: 'bg-purple-50' };
+    }
     if (!trade.trader_still_has_position) {
-      return { label: 'Closed', color: 'text-red-600', bg: 'bg-red-50' };
+      return { label: 'Trader Closed', color: 'text-red-600', bg: 'bg-red-50' };
     }
     return { label: 'Open', color: 'text-green-600', bg: 'bg-green-50' };
   };
@@ -650,6 +655,11 @@ export default function ProfilePage() {
   
   // Delete trade state
   const [deletingTradeId, setDeletingTradeId] = useState<string | null>(null);
+  
+  // Mark as Closed state
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [tradeToClose, setTradeToClose] = useState<CopiedTrade | null>(null);
+  const [exitPriceCents, setExitPriceCents] = useState('');
   
   // Delete trade handler - using direct Supabase (like follow/unfollow)
   const handleDeleteTrade = async (tradeId: string) => {
@@ -688,6 +698,51 @@ export default function ProfilePage() {
     }
   };
 
+  // Mark trade as closed handler
+  const handleMarkAsClosed = async () => {
+    if (!tradeToClose || !exitPriceCents || !user) return;
+    
+    const exitPrice = parseFloat(exitPriceCents) / 100; // Convert cents to decimal
+    const entryPrice = tradeToClose.price_when_copied;
+    const finalRoi = entryPrice > 0 ? ((exitPrice - entryPrice) / entryPrice) * 100 : null;
+    
+    try {
+      const { error } = await supabase
+        .from('copied_trades')
+        .update({
+          user_closed_at: new Date().toISOString(),
+          user_exit_price: exitPrice,
+          current_price: exitPrice,
+          roi: finalRoi ? parseFloat(finalRoi.toFixed(2)) : null,
+        })
+        .eq('id', tradeToClose.id)
+        .eq('user_id', user.id);
+      
+      if (error) throw error;
+      
+      // Update local state
+      setCopiedTrades(trades => trades.map(t => 
+        t.id === tradeToClose.id 
+          ? { 
+              ...t, 
+              user_closed_at: new Date().toISOString(), 
+              user_exit_price: exitPrice, 
+              current_price: exitPrice, 
+              roi: finalRoi 
+            }
+          : t
+      ));
+      
+      setShowCloseModal(false);
+      setTradeToClose(null);
+      setExitPriceCents('');
+      showToastMessage('Trade marked as closed', 'success');
+    } catch (err: any) {
+      console.error('Error marking trade as closed:', err);
+      showToastMessage('Failed to update trade', 'error');
+    }
+  };
+
   // Truncate text
   const truncateText = (text: string, maxLength: number) => {
     if (text.length <= maxLength) return text;
@@ -698,9 +753,9 @@ export default function ProfilePage() {
   const filteredCopiedTrades = copiedTrades.filter((trade) => {
     switch (tradeFilter) {
       case 'open':
-        return trade.trader_still_has_position && !trade.market_resolved;
+        return trade.trader_still_has_position && !trade.market_resolved && !trade.user_closed_at;
       case 'closed':
-        return !trade.trader_still_has_position && !trade.market_resolved;
+        return (!trade.trader_still_has_position || trade.user_closed_at) && !trade.market_resolved;
       case 'resolved':
         return trade.market_resolved;
       default:
@@ -1151,16 +1206,30 @@ export default function ProfilePage() {
                                     >
                                       View on Polymarket ↗
                                     </a>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDeleteTrade(trade.id);
-                                      }}
-                                      disabled={deletingTradeId === trade.id}
-                                      className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
-                                    >
-                                      {deletingTradeId === trade.id ? 'Deleting...' : 'Delete Trade'}
-                                    </button>
+                                    <div className="flex items-center gap-3">
+                                      {!trade.market_resolved && !trade.user_closed_at && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setTradeToClose(trade);
+                                            setShowCloseModal(true);
+                                          }}
+                                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                        >
+                                          Mark as Closed
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteTrade(trade.id);
+                                        }}
+                                        disabled={deletingTradeId === trade.id}
+                                        className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
+                                      >
+                                        {deletingTradeId === trade.id ? 'Deleting...' : 'Delete Trade'}
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               </td>
@@ -1266,16 +1335,30 @@ export default function ProfilePage() {
                               >
                                 View on Polymarket ↗
                               </a>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteTrade(trade.id);
-                                }}
-                                disabled={deletingTradeId === trade.id}
-                                className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
-                              >
-                                {deletingTradeId === trade.id ? 'Deleting...' : 'Delete Trade'}
-                              </button>
+                              <div className="flex items-center gap-3">
+                                {!trade.market_resolved && !trade.user_closed_at && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setTradeToClose(trade);
+                                      setShowCloseModal(true);
+                                    }}
+                                    className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                  >
+                                    Mark as Closed
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteTrade(trade.id);
+                                  }}
+                                  disabled={deletingTradeId === trade.id}
+                                  className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
+                                >
+                                  {deletingTradeId === trade.id ? 'Deleting...' : 'Delete Trade'}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1488,6 +1571,60 @@ export default function ProfilePage() {
               </svg>
             )}
             <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Mark as Closed Modal */}
+      {showCloseModal && tradeToClose && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Mark Trade as Closed</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Enter the price you sold at to calculate your final ROI.
+            </p>
+            
+            <div className="mb-4">
+              <p className="text-sm text-slate-500 mb-1">Market: {tradeToClose.market_title}</p>
+              <p className="text-sm text-slate-500 mb-3">Entry Price: {Math.round(tradeToClose.price_when_copied * 100)}¢</p>
+              
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Exit Price (in cents)
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={exitPriceCents}
+                  onChange={(e) => setExitPriceCents(e.target.value)}
+                  placeholder="e.g. 65"
+                  className="flex-1 px-4 py-2 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022]"
+                />
+                <span className="text-slate-500">¢</span>
+              </div>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowCloseModal(false);
+                  setTradeToClose(null);
+                  setExitPriceCents('');
+                }}
+                className="flex-1 bg-slate-100 text-slate-700 py-2 px-4 rounded-lg font-semibold hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMarkAsClosed}
+                disabled={!exitPriceCents}
+                className="flex-1 bg-[#FDB022] text-black py-2 px-4 rounded-lg font-semibold hover:bg-[#E69E1A] disabled:opacity-50"
+              >
+                Confirm
+              </button>
+            </div>
           </div>
         </div>
       )}
