@@ -931,7 +931,7 @@ export default function TraderProfilePage({
             }
             
             // Debug logging for first 5 trades without price
-            if (!currentPrice && index < 5) {
+            if ((currentPrice === undefined || currentPrice === null) && index < 5) {
               const cachedForCondition = marketPriceCache.get(tradeConditionId?.toLowerCase() || '');
               
               console.log(`❌ Trade ${index} missing price:`, {
@@ -968,13 +968,14 @@ export default function TraderProfilePage({
         formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
 
         // Log ROI coverage statistics with price sources
-        const tradesWithPrice = formattedTrades.filter(t => t.currentPrice).length;
+        // Note: 0 is a valid price (trade lost), so check for null/undefined explicitly
+        const tradesWithPrice = formattedTrades.filter(t => t.currentPrice !== undefined && t.currentPrice !== null).length;
         const tradesWithoutPrice = formattedTrades.length - tradesWithPrice;
         
         // Break down by price source
         const priceSourceStats = {
           position: formattedTrades.filter(t => (t as any).priceSource === 'position').length,
-          'gamma-cache': formattedTrades.filter(t => (t as any).priceSource === 'gamma-cache').length,
+          'clob-cache': formattedTrades.filter(t => (t as any).priceSource === 'clob-cache').length,
           'trade-data': formattedTrades.filter(t => (t as any).priceSource === 'trade-data').length,
           none: formattedTrades.filter(t => (t as any).priceSource === 'none').length
         };
