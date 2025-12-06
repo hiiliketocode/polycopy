@@ -222,9 +222,17 @@ export async function GET(
           if (markets && markets.length > 0) {
             const market = markets[0]
             
+            // Debug logging for Gamma API response
+            console.log('🔍 Gamma API response for', trade.market_id, ':', {
+              resolved: market.resolved,
+              closed: market.closed,
+              winningOutcome: market.winningOutcome,
+              outcomePrices: market.outcomePrices
+            });
+            
             // Check if market is ACTUALLY resolved
             // IMPORTANT: Don't trust 'closed' alone - it can mean "closed for new bets" not "resolved"
-            // Only mark resolved if we have strong evidence: explicit resolved flag, winning outcome, or prices at 0.95+
+            // Only mark resolved if we have strong evidence: explicit resolved flag, winning outcome, or prices at 0.95+/0.05-
             
             let isActuallyResolved = false
             
@@ -242,7 +250,7 @@ export async function GET(
               resolvedOutcome = market.resolutionSource
             }
             
-            // Method 3: Check if prices show clear resolution (one outcome at 95%+)
+            // Method 3: Check if prices show clear resolution (one outcome at 95%+ OR one at 5% or less)
             if (!isActuallyResolved) {
               try {
                 let outcomes = market.outcomes
@@ -259,14 +267,25 @@ export async function GET(
                 if (outcomes && prices && Array.isArray(outcomes) && Array.isArray(prices)) {
                   const priceNumbers = prices.map((p: any) => parseFloat(String(p)))
                   const maxPrice = Math.max(...priceNumbers)
+                  const minPrice = Math.min(...priceNumbers)
                   
-                  // Only consider resolved if one outcome is at 95%+ (nearly $1.00)
-                  if (maxPrice >= 0.95) {
+                  // Market is resolved if one outcome is at 95%+ OR one outcome is at 5% or less
+                  // (High price = winner at ~$1, Low price = loser at ~$0)
+                  if (maxPrice >= 0.95 || minPrice <= 0.05) {
                     isActuallyResolved = true
                     const winningIndex = priceNumbers.indexOf(maxPrice)
                     if (winningIndex >= 0 && winningIndex < outcomes.length) {
                       resolvedOutcome = outcomes[winningIndex]
                     }
+                    
+                    // Log resolution detection
+                    console.log('✅ Market resolved detected:', {
+                      marketId: trade.market_id,
+                      maxPrice,
+                      minPrice,
+                      resolvedOutcome,
+                      method: maxPrice >= 0.95 ? 'high-price' : 'low-price'
+                    });
                   }
                 }
               } catch (parseErr) {
