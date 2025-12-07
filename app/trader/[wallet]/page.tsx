@@ -1320,7 +1320,10 @@ export default function TraderProfilePage({
   const avatarColor = getAvatarColor(wallet);
   // Avatar initials: first 2 characters after "0x" prefix, uppercased
   const initials = wallet.slice(2, 4).toUpperCase();
-  const roi = traderData.roiFormatted || calculateROI(traderData.pnl, traderData.volume);
+  // Use roi from API if available, otherwise calculate it
+  const roi = traderData.roi !== null && traderData.roi !== undefined 
+    ? traderData.roi.toFixed(1)
+    : calculateROI(traderData.pnl, traderData.volume);
   // Only show trades count if we have it from leaderboard data (reliable source)
   // If we only have loaded trades, show that count with "+" to indicate there are more
   const tradesCount = traderData.tradesCount ?? leaderboardData?.total_trades ?? null;
