@@ -10,6 +10,7 @@ interface TraderCardProps {
   displayName: string;
   pnl: number;
   volume: number;
+  roi?: number; // Pre-calculated ROI (optional)
   followerCount?: number; // Number of followers on Polycopy
   isFollowing?: boolean; // Pre-computed follow status
   skipFollowCheck?: boolean; // Skip the DB check if we already know
@@ -23,6 +24,7 @@ export default function TraderCard({
   displayName,
   pnl,
   volume,
+  roi: providedRoi, // Rename to avoid conflict
   followerCount = 0,
   isFollowing: initialIsFollowing,
   skipFollowCheck = false,
@@ -126,8 +128,8 @@ export default function TraderCard({
     return `${sign}$${value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   };
 
-  // Calculate ROI
-  const roi = volume > 0 ? ((pnl / volume) * 100) : 0;
+  // Calculate ROI - use provided ROI if available, otherwise calculate from pnl/volume
+  const roi = providedRoi !== undefined ? providedRoi : (volume > 0 ? ((pnl / volume) * 100) : 0);
   const roiFormatted = roi.toFixed(1);
 
   // Format volume with M/K abbreviations
