@@ -120,8 +120,8 @@ export default function DiscoverPage() {
     const fetchFeaturedTraders = async () => {
       setLoadingFeatured(true);
       try {
-        // Try using our working leaderboard API endpoint
-        const url = '/api/polymarket/leaderboard?limit=30&orderBy=PNL';
+        // Use 'all' time period to get lifetime stats (not just last month)
+        const url = '/api/polymarket/leaderboard?limit=30&orderBy=PNL&timePeriod=all';
         console.log('🔄 Fetching featured traders...');
         console.log('   📡 URL:', url);
         
@@ -178,8 +178,9 @@ export default function DiscoverPage() {
       setLoadingTraders(true);
       try {
         console.log('🔄 Fetching traders from leaderboard API...', { category: selectedCategory });
+        // Use 'all' time period for lifetime stats
         const response = await fetch(
-          `/api/polymarket/leaderboard?limit=50&orderBy=PNL&category=${selectedCategory}`
+          `/api/polymarket/leaderboard?limit=50&orderBy=PNL&category=${selectedCategory}&timePeriod=all`
         );
         
         if (!response.ok) {
@@ -231,9 +232,9 @@ export default function DiscoverPage() {
       console.log(`📡 Fetching #1 trader for ${selectedHeroCategory} category (API value: ${heroCategoryValue})...`);
       
       try {
-        // Make the SAME API call as the filter buttons
+        // Make the SAME API call as the filter buttons, with timePeriod=all
         const response = await fetch(
-          `/api/polymarket/leaderboard?limit=50&orderBy=PNL&category=${heroCategoryValue}`
+          `/api/polymarket/leaderboard?limit=50&orderBy=PNL&category=${heroCategoryValue}&timePeriod=all`
         );
         
         if (!response.ok) {
