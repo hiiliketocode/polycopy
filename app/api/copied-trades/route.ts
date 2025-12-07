@@ -195,6 +195,7 @@ export async function POST(request: NextRequest) {
         trader_username: tradeData.traderUsername,
         market_id: tradeData.marketId,
         market_title: tradeData.marketTitle,
+        market_slug: tradeData.marketSlug || null,
         outcome: tradeData.outcome,
         price_when_copied: tradeData.priceWhenCopied,
         amount_invested: tradeData.amountInvested || null,
