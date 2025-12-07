@@ -1324,6 +1324,23 @@ export default function TraderProfilePage({
   const roi = traderData.roi !== null && traderData.roi !== undefined 
     ? traderData.roi.toFixed(1)
     : calculateROI(traderData.pnl, traderData.volume);
+  
+  // Calculate win rate from closed trades
+  const closedTrades = trades.filter(t => t.status === 'Trader Closed');
+  const winningTrades = closedTrades.filter(t => {
+    // A trade is winning if ROI is positive
+    const entryPrice = t.price;
+    const currentPrice = t.currentPrice;
+    if (entryPrice && currentPrice !== undefined && currentPrice !== null && entryPrice !== 0) {
+      const tradeROI = ((currentPrice - entryPrice) / entryPrice) * 100;
+      return tradeROI > 0;
+    }
+    return false;
+  });
+  const winRate = closedTrades.length > 0 
+    ? ((winningTrades.length / closedTrades.length) * 100).toFixed(1)
+    : '--';
+  
   // Only show trades count if we have it from leaderboard data (reliable source)
   // If we only have loaded trades, show that count with "+" to indicate there are more
   const tradesCount = traderData.tradesCount ?? leaderboardData?.total_trades ?? null;
@@ -1512,8 +1529,8 @@ export default function TraderProfilePage({
             </button>
           </div>
 
-          {/* Stats Grid - Desktop: 4 separate cards, Mobile: Combined card */}
-          <div className="hidden md:grid grid-cols-4 gap-4">
+          {/* Stats Grid - Desktop: 5 separate cards, Mobile: Combined card */}
+          <div className="hidden md:grid grid-cols-5 gap-4">
             {/* Desktop Stat Cards */}
             <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
               <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">TOTAL P&L</div>
@@ -1533,6 +1550,15 @@ export default function TraderProfilePage({
               </div>
             </div>
             <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+              <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">WIN RATE</div>
+              <div className={`text-2xl font-bold ${
+                winRate !== '--' && parseFloat(String(winRate)) >= 50 ? 'text-emerald-600' : 
+                winRate !== '--' && parseFloat(String(winRate)) < 50 ? 'text-slate-600' : 'text-slate-900'
+              }`}>
+                {winRate !== '--' ? `${winRate}%` : '--'}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
               <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">VOLUME</div>
               <div className="text-2xl font-bold text-slate-900">
                 {formatVolume(traderData.volume)}
@@ -1546,9 +1572,9 @@ export default function TraderProfilePage({
             </div>
           </div>
 
-          {/* Mobile: Combined stat card - 4 columns in one card */}
+          {/* Mobile: Combined stat card - 5 columns in one card */}
           <div className="md:hidden bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-            <div className="grid grid-cols-4 gap-2 text-center">
+            <div className="grid grid-cols-5 gap-2 text-center">
               <div>
                 <div className="text-xs text-slate-500 uppercase mb-1">P&L</div>
                 <div className={`text-sm font-bold ${
@@ -1567,7 +1593,16 @@ export default function TraderProfilePage({
                 </div>
               </div>
               <div>
-                <div className="text-xs text-slate-500 uppercase mb-1">Volume</div>
+                <div className="text-xs text-slate-500 uppercase mb-1">Win</div>
+                <div className={`text-sm font-bold ${
+                  winRate !== '--' && parseFloat(String(winRate)) >= 50 ? 'text-emerald-600' : 
+                  winRate !== '--' && parseFloat(String(winRate)) < 50 ? 'text-slate-600' : 'text-slate-900'
+                }`}>
+                  {winRate !== '--' ? `${winRate}%` : '--'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 uppercase mb-1">Vol</div>
                 <div className="text-sm font-bold text-slate-900">
                   {formatVolume(traderData.volume)}
                 </div>
