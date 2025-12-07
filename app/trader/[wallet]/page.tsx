@@ -1099,6 +1099,15 @@ export default function TraderProfilePage({
       // Generate market ID from trade data
       const marketId = selectedTrade.conditionId || selectedTrade.marketSlug || selectedTrade.market;
       
+      // Log what we're about to save for debugging
+      console.log('📝 Copying trade:', {
+        market_title: selectedTrade.market,
+        market_slug: selectedTrade.marketSlug || selectedTrade.eventSlug,
+        conditionId: selectedTrade.conditionId,
+        outcome: selectedTrade.outcome,
+        entryPrice,
+      });
+      
       // Insert directly into Supabase (like follow/unfollow does)
       const { data: createdTrade, error: insertError } = await supabase
         .from('copied_trades')
@@ -1108,6 +1117,7 @@ export default function TraderProfilePage({
           trader_username: traderData?.displayName || wallet.slice(0, 8),
           market_id: marketId,
           market_title: selectedTrade.market,
+          market_slug: selectedTrade.marketSlug || selectedTrade.eventSlug || null,
           outcome: selectedTrade.outcome.toUpperCase(),
           price_when_copied: entryPrice,
           amount_invested: amountInvested || null,
@@ -1603,16 +1613,16 @@ export default function TraderProfilePage({
             {/* Desktop: Table View */}
             <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[650px]">
+                <table className="w-full min-w-[600px]">
                   <thead className="bg-slate-50 border-b-2 border-slate-200">
                     <tr>
                       <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[90px]">Date</th>
                       <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
-                      <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[95px]">Outcome</th>
-                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[95px]">Status</th>
-                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[75px]">Size</th>
-                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[65px]">Price</th>
-                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[70px]">ROI</th>
+                      <th className="px-2 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[80px]">Outcome</th>
+                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[85px]">Status</th>
+                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[70px]">Size</th>
+                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[60px]">Price</th>
+                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[65px]">ROI</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1702,8 +1712,8 @@ export default function TraderProfilePage({
                             </div>
                           </td>
                           
-                          <td className="py-3 pl-5 pr-2 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full uppercase ${
+                          <td className="py-3 pl-3 pr-2">
+                            <span className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full uppercase truncate max-w-[70px] ${
                               ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
                                 ? 'bg-green-100 text-green-700'
                                 : 'bg-red-100 text-red-700'
