@@ -14,6 +14,7 @@ interface CopiedTrade {
   trader_username: string | null;
   market_id: string;
   market_title: string;
+  market_slug: string | null;
   outcome: string;
   price_when_copied: number;
   amount_invested: number | null;
@@ -1311,7 +1312,11 @@ export default function ProfilePage() {
                                   </div>
                                   <div className="flex items-center justify-between">
                                     <a
-                                      href={`https://polymarket.com/search?q=${encodeURIComponent(trade.market_title)}`}
+                                      href={
+                                        trade.market_slug 
+                                          ? `https://polymarket.com/event/${trade.market_slug}`
+                                          : `https://polymarket.com/search?q=${encodeURIComponent(trade.market_title)}`
+                                      }
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="text-sm text-[#FDB022] hover:underline font-medium"
@@ -1447,7 +1452,11 @@ export default function ProfilePage() {
                             </div>
                             <div className="pt-2 flex items-center justify-between">
                               <a
-                                href={`https://polymarket.com/search?q=${encodeURIComponent(trade.market_title)}`}
+                                href={
+                                  trade.market_slug 
+                                    ? `https://polymarket.com/event/${trade.market_slug}`
+                                    : `https://polymarket.com/search?q=${encodeURIComponent(trade.market_title)}`
+                                }
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-sm text-[#FDB022] hover:underline font-medium"
