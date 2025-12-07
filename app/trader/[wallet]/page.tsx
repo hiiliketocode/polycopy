@@ -1670,16 +1670,16 @@ export default function TraderProfilePage({
                           </td>
                           
                           <td className="py-3 px-3 max-w-[220px]">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-start gap-3">
                               <a 
                                 href={polymarketUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-sm text-slate-900 font-medium hover:text-[#FDB022] transition-colors flex items-center gap-1 group flex-1 min-w-0"
+                                className="text-sm text-slate-900 font-medium hover:text-[#FDB022] transition-colors flex items-start gap-1 group flex-1 min-w-0 leading-snug"
                               >
-                                <span className="truncate">{trade.market}</span>
+                                <span className="break-words">{trade.market}</span>
                                 <svg 
-                                  className="w-3 h-3 flex-shrink-0 text-slate-400 group-hover:text-[#FDB022]" 
+                                  className="w-3 h-3 flex-shrink-0 text-slate-400 group-hover:text-[#FDB022] mt-0.5" 
                                   fill="none" 
                                   stroke="currentColor" 
                                   viewBox="0 0 24 24"
