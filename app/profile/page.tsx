@@ -77,6 +77,10 @@ export default function ProfilePage() {
   const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved'>('all');
   const [hasAutoRefreshed, setHasAutoRefreshed] = useState(false); // Track if we've done initial auto-refresh
   
+  // Edit trade modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [tradeToEdit, setTradeToEdit] = useState<CopiedTrade | null>(null);
+  
   // Toast state
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -757,6 +761,57 @@ export default function ProfilePage() {
     }
   };
 
+  // Handle edit trade
+  const handleEditTrade = async (updatedEntryPrice: number, updatedAmountInvested?: number) => {
+    if (!tradeToEdit || !user) return;
+
+    try {
+      // Update in Supabase
+      const { error } = await supabase
+        .from('copied_trades')
+        .update({
+          price_when_copied: updatedEntryPrice,
+          amount_invested: updatedAmountInvested || null,
+        })
+        .eq('id', tradeToEdit.id)
+        .eq('user_id', user.id);  // Security: only update if it's their trade
+
+      if (error) {
+        throw new Error(error.message || 'Failed to update trade');
+      }
+
+      // Recalculate ROI if there's a current price
+      let newRoi = tradeToEdit.roi;
+      if (tradeToEdit.user_closed_at && tradeToEdit.user_exit_price) {
+        // User-closed trade: recalculate ROI with new entry price
+        newRoi = ((tradeToEdit.user_exit_price - updatedEntryPrice) / updatedEntryPrice) * 100;
+      } else if (tradeToEdit.current_price !== null && tradeToEdit.current_price !== undefined) {
+        // Open trade: recalculate ROI with new entry price
+        newRoi = ((tradeToEdit.current_price - updatedEntryPrice) / updatedEntryPrice) * 100;
+      }
+
+      // Update local state
+      setCopiedTrades(prev => 
+        prev.map(t => 
+          t.id === tradeToEdit.id 
+            ? { ...t, price_when_copied: updatedEntryPrice, amount_invested: updatedAmountInvested || null, roi: newRoi }
+            : t
+        )
+      );
+
+      // Show success toast
+      showToastMessage('Trade updated successfully', 'success');
+      
+      // Close modal
+      setShowEditModal(false);
+      setTradeToEdit(null);
+      
+    } catch (err: any) {
+      console.error('Error updating trade:', err);
+      showToastMessage(err.message || 'Failed to update trade', 'error');
+    }
+  };
+
   // Mark trade as closed handler
   const handleMarkAsClosed = async () => {
     if (!tradeToClose || !exitPriceCents || !user) return;
@@ -1324,6 +1379,16 @@ export default function ProfilePage() {
                                       View on Polymarket ↗
                                     </a>
                                     <div className="flex items-center gap-3">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setTradeToEdit(trade);
+                                          setShowEditModal(true);
+                                        }}
+                                        className="text-xs text-slate-600 hover:text-slate-900 font-medium"
+                                      >
+                                        Edit
+                                      </button>
                                       {!trade.market_resolved && !trade.user_closed_at && (
                                         <button
                                           onClick={(e) => {
@@ -1464,6 +1529,16 @@ export default function ProfilePage() {
                                 View on Polymarket ↗
                               </a>
                               <div className="flex items-center gap-3">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setTradeToEdit(trade);
+                                    setShowEditModal(true);
+                                  }}
+                                  className="text-xs text-slate-600 hover:text-slate-900 font-medium"
+                                >
+                                  Edit
+                                </button>
                                 {!trade.market_resolved && !trade.user_closed_at && (
                                   <button
                                     onClick={(e) => {
@@ -1751,6 +1826,87 @@ export default function ProfilePage() {
                 className="flex-1 bg-[#FDB022] text-black py-2 px-4 rounded-lg font-semibold hover:bg-[#E69E1A] disabled:opacity-50"
               >
                 Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Trade Modal */}
+      {showEditModal && tradeToEdit && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Edit Copied Trade</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Update your entry price and investment amount.
+            </p>
+            
+            <div className="mb-4">
+              <p className="text-sm text-slate-500 mb-1">Market: {tradeToEdit.market_title}</p>
+              <p className="text-sm text-slate-500 mb-3">Outcome: {tradeToEdit.outcome}</p>
+              
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Entry Price <span className="text-red-500">*</span>
+              </label>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-slate-500">$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max="0.99"
+                  defaultValue={tradeToEdit.price_when_copied}
+                  id="edit-entry-price"
+                  placeholder="0.58"
+                  className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
+                />
+              </div>
+              
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Amount Invested (optional)
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  defaultValue={tradeToEdit.amount_invested || ''}
+                  id="edit-amount-invested"
+                  placeholder="0.00"
+                  className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
+                />
+              </div>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setTradeToEdit(null);
+                }}
+                className="flex-1 bg-slate-100 text-slate-700 py-2.5 px-4 rounded-lg font-semibold hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const entryPriceInput = document.getElementById('edit-entry-price') as HTMLInputElement;
+                  const amountInput = document.getElementById('edit-amount-invested') as HTMLInputElement;
+                  
+                  const entryPrice = parseFloat(entryPriceInput.value);
+                  const amount = amountInput.value ? parseFloat(amountInput.value) : undefined;
+                  
+                  if (!entryPrice || entryPrice <= 0 || entryPrice >= 1) {
+                    alert('Please enter a valid entry price between $0.01 and $0.99');
+                    return;
+                  }
+                  
+                  handleEditTrade(entryPrice, amount);
+                }}
+                className="flex-1 bg-[#FDB022] text-white py-2.5 px-4 rounded-lg font-semibold hover:bg-[#E69E1A] transition-colors"
+              >
+                Save Changes
               </button>
             </div>
           </div>
