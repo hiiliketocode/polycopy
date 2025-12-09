@@ -4,6 +4,7 @@ import Script from "next/script";
 import "./globals.css";
 import "./styles/design-system.css";
 import BottomNav from "./components/BottomNav";
+import Footer from "./components/Footer";
 
 const inter = Inter({ 
   subsets: ['latin'],
@@ -63,7 +64,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         </Script>
       </head>
       <body
-        className={`${inter.variable} font-sans antialiased bg-slate-50 relative`}
+        className={`${inter.variable} font-sans antialiased bg-slate-50 relative flex flex-col`}
         style={{ minHeight: '100vh', overflowX: 'hidden' }}
       >
         {/* Google Tag Manager (noscript) */}
@@ -77,7 +78,10 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         </noscript>
         {/* End Google Tag Manager (noscript) */}
         
-        {children}
+        <div className="flex-1">
+          {children}
+        </div>
+        <Footer />
         <BottomNav />
       </body>
     </html>
