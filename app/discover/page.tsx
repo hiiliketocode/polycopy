@@ -436,73 +436,43 @@ export default function DiscoverPage() {
     console.log('🔍 Searching for:', query);
 
     try {
-      let walletToNavigate = query;
-      let foundViaUsername = false;
-      
-      // Check if query looks like a wallet address (0x followed by 40 hex chars)
+      // ONLY accept wallet addresses (0x followed by 40 hex chars)
       const isWalletAddress = /^0x[a-fA-F0-9]{40}$/.test(query);
       
       if (!isWalletAddress) {
-        // Query might be a username, search the leaderboard with larger limit
-        console.log('🔍 Query is not a wallet address, searching leaderboard for username...');
-        
-        // Try multiple searches with different limits to find the trader
-        const searchLimits = [500, 1000];
-        let matchingTrader = null;
-        
-        for (const limit of searchLimits) {
-          try {
-            console.log(`🔍 Searching top ${limit} traders...`);
-            const leaderboardResponse = await fetch(`/api/polymarket/leaderboard?limit=${limit}&orderBy=PNL&timePeriod=all`);
-            
-            if (leaderboardResponse.ok) {
-              const leaderboardData = await leaderboardResponse.json();
-              console.log(`📊 Received ${leaderboardData.traders?.length || 0} traders`);
-              
-              matchingTrader = leaderboardData.traders?.find(
-                (t: any) => t.displayName?.toLowerCase() === query.toLowerCase()
-              );
-              
-              if (matchingTrader) {
-                console.log(`✅ Found trader by username: ${matchingTrader.displayName} -> ${matchingTrader.wallet}`);
-                walletToNavigate = matchingTrader.wallet;
-                foundViaUsername = true;
-                break;
-              }
-            }
-          } catch (err) {
-            console.warn(`Failed to search with limit ${limit}:`, err);
-          }
-        }
-        
-        // If username search failed, try using the query directly as a wallet/identifier anyway
-        if (!matchingTrader) {
-          console.log('⚠️ Username not found in leaderboard, trying as direct identifier...');
-          walletToNavigate = query;
-        }
+        // Reject non-wallet inputs with clear instructions
+        throw new Error('WALLET_REQUIRED');
       }
       
       // Verify the trader exists by fetching their profile
-      console.log(`🔍 Fetching trader profile for: ${walletToNavigate}`);
-      const response = await fetch(`/api/trader/${walletToNavigate}`);
+      console.log(`🔍 Fetching trader profile for wallet: ${query}`);
+      const response = await fetch(`/api/trader/${query}`);
       
       if (!response.ok) {
-        if (!isWalletAddress && !foundViaUsername) {
-          throw new Error(`Username "${query}" not found in top 1000 traders. Please use the trader's wallet address instead (found on their Polymarket profile page).`);
-        } else {
-          throw new Error('Trader profile not found');
-        }
+        throw new Error('Trader profile not found for this wallet address.');
       }
       
       const trader = await response.json();
-      console.log('✅ Found trader:', trader.displayName || walletToNavigate);
+      console.log('✅ Found trader:', trader.displayName || query);
       
-      // Navigate to trader profile with the resolved wallet address
-      router.push(`/trader/${walletToNavigate}`);
+      // Navigate to trader profile
+      router.push(`/trader/${query}`);
     } catch (error) {
       console.error('❌ Search error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      alert(errorMessage.includes('not found in top') ? errorMessage : `No trader found for "${query}". Please check the wallet address or username and try again.`);
+      
+      if (errorMessage === 'WALLET_REQUIRED') {
+        alert(
+          `Please enter a wallet address, not a username.\n\n` +
+          `How to find a wallet address:\n` +
+          `1. Go to the trader's Polymarket profile\n` +
+          `2. Look for the wallet address at the top (starts with "0x")\n` +
+          `3. Copy and paste it into the search box\n\n` +
+          `Example: 0x1234567890abcdef1234567890abcdef12345678`
+        );
+      } else {
+        alert(`No trader found for "${query}". Please check the wallet address and try again.`);
+      }
     } finally {
       setIsSearching(false);
     }
