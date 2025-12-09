@@ -19,6 +19,7 @@ interface FeedTrade {
     title: string;
     slug: string;
     eventSlug?: string;
+    category?: string;
   };
   trade: {
     side: 'BUY' | 'SELL';
@@ -540,22 +541,12 @@ export default function FeedPage() {
 
         setFollowingCount(follows.length);
 
-        // 2. Fetch trader names from leaderboard (filtered by category)
+        // 2. Fetch trader names from leaderboard (all traders, no category filter)
         const traderNames: Record<string, string> = {};
-        const tradersInCategory = new Set<string>();
         try {
-          // Build leaderboard URL - omit category parameter if 'all'
-          const leaderboardUrl = categoryFilter === 'all'
-            ? '/api/polymarket/leaderboard?limit=100&orderBy=PNL&timePeriod=all'
-            : `/api/polymarket/leaderboard?limit=100&orderBy=PNL&category=${categoryFilter}&timePeriod=all`;
-          
-          const leaderboardRes = await fetch(leaderboardUrl);
+          const leaderboardRes = await fetch('/api/polymarket/leaderboard?limit=100&orderBy=PNL&timePeriod=all');
           if (leaderboardRes.ok) {
             const leaderboardData = await leaderboardRes.json();
-            // Build set of wallets in this category
-            leaderboardData.traders?.forEach((t: any) => {
-              tradersInCategory.add(t.wallet.toLowerCase());
-            });
             // Map names for followed traders
             for (const follow of follows) {
               const trader = leaderboardData.traders?.find(
@@ -570,15 +561,8 @@ export default function FeedPage() {
           console.warn('Failed to fetch trader names:', err);
         }
 
-        // 3. Filter follows by category (if not 'all')
-        const followsToFetch = categoryFilter === 'all' 
-          ? follows 
-          : follows.filter(f => tradersInCategory.has(f.trader_wallet.toLowerCase()));
-        
-        console.log(`📊 Fetching trades from ${followsToFetch.length}/${follows.length} traders (category: ${categoryFilter})`);
-        
-        // 4. Fetch trades for each followed wallet (parallel)
-        const tradePromises = followsToFetch.map(async (follow) => {
+        // 3. Fetch trades for each followed wallet (parallel)
+        const tradePromises = follows.map(async (follow) => {
           const wallet = follow.trader_wallet;
           
           try {
@@ -630,6 +614,7 @@ export default function FeedPage() {
               title: trade.market || trade.title || 'Unknown Market',
               slug: trade.market_slug || trade.slug || '',
               eventSlug: trade.eventSlug || trade.event_slug || '',
+              category: undefined, // Will be populated next
             },
             trade: {
               side: (trade.side || 'BUY').toUpperCase() as 'BUY' | 'SELL',
@@ -639,6 +624,54 @@ export default function FeedPage() {
               timestamp: (trade.timestamp || Date.now() / 1000) * 1000,
             },
           };
+        });
+
+        // 5. Fetch market details to get categories (for unique condition IDs)
+        const uniqueConditionIds = [...new Set(
+          formattedTrades
+            .map(t => t.market.id)
+            .filter(id => id && id.startsWith('0x')) // Only fetch for valid condition IDs
+        )];
+
+        console.log(`📊 Fetching categories for ${uniqueConditionIds.length} unique markets`);
+
+        const categoryMap: Record<string, string> = {};
+        if (uniqueConditionIds.length > 0) {
+          try {
+            // Fetch market details in batches to get categories
+            const batchSize = 10;
+            for (let i = 0; i < uniqueConditionIds.length; i += batchSize) {
+              const batch = uniqueConditionIds.slice(i, i + batchSize);
+              const categoryPromises = batch.map(async (conditionId) => {
+                try {
+                  const response = await fetch(`https://gamma-api.polymarket.com/markets/${conditionId}`);
+                  if (response.ok) {
+                    const data = await response.json();
+                    return { conditionId, category: data.category || data.groupItemTitle || 'other' };
+                  }
+                } catch (err) {
+                  console.warn(`Failed to fetch category for ${conditionId}`);
+                }
+                return null;
+              });
+
+              const results = await Promise.all(categoryPromises);
+              results.forEach(result => {
+                if (result) {
+                  categoryMap[result.conditionId] = result.category.toLowerCase();
+                }
+              });
+            }
+          } catch (err) {
+            console.warn('Failed to fetch market categories:', err);
+          }
+        }
+
+        // Add categories to trades
+        formattedTrades.forEach(trade => {
+          if (trade.market.id && categoryMap[trade.market.id]) {
+            trade.market.category = categoryMap[trade.market.id];
+          }
         });
 
         // Store all trades and reset display count
@@ -693,13 +726,36 @@ export default function FeedPage() {
   const handleLoadMore = () => {
     const newCount = displayedTradesCount + 35;
     setDisplayedTradesCount(newCount);
-    setTrades(allTrades.slice(0, newCount));
   };
 
-  // Filter trades (filter from allTrades, then slice for display)
+  // Filter trades by buy/sell AND category
   const filteredAllTrades = allTrades.filter(trade => {
-    if (filter === 'buys') return trade.trade.side === 'BUY';
-    if (filter === 'sells') return trade.trade.side === 'SELL';
+    // Filter by buy/sell
+    if (filter === 'buys' && trade.trade.side !== 'BUY') return false;
+    if (filter === 'sells' && trade.trade.side !== 'SELL') return false;
+    
+    // Filter by category
+    if (categoryFilter !== 'all') {
+      const tradeCategory = trade.market.category?.toLowerCase();
+      
+      // Map filter values to expected category values
+      const categoryMapping: Record<string, string[]> = {
+        'politics': ['politics'],
+        'sports': ['sports'],
+        'crypto': ['crypto'],
+        'culture': ['pop culture', 'culture'],
+        'finance': ['business', 'finance'],
+        'economics': ['economics'],
+        'tech': ['technology', 'tech'],
+        'weather': ['weather']
+      };
+      
+      const validCategories = categoryMapping[categoryFilter] || [categoryFilter];
+      if (!tradeCategory || !validCategories.some(cat => tradeCategory.includes(cat))) {
+        return false;
+      }
+    }
+    
     return true;
   });
   
@@ -1007,10 +1063,27 @@ export default function FeedPage() {
         ) : filteredTrades.length === 0 ? (
           <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-8 text-center">
             <div className="text-6xl mb-4">🔍</div>
-            <h3 className="text-xl font-bold text-neutral-900 mb-2">No {filter} trades</h3>
-            <p className="text-neutral-600">
-              Try selecting a different filter to see more trades.
-            </p>
+            {categoryFilter !== 'all' ? (
+              <>
+                <h3 className="text-xl font-bold text-neutral-900 mb-2">No trades in this category</h3>
+                <p className="text-neutral-600 mb-6">
+                  None of the traders you follow have traded in this category. Find traders that do on the Discover page.
+                </p>
+                <Link
+                  href="/discover"
+                  className="inline-block bg-[#FDB022] hover:bg-[#E69E1A] text-neutral-900 font-semibold py-2.5 px-6 rounded-lg transition-colors"
+                >
+                  Discover Page
+                </Link>
+              </>
+            ) : (
+              <>
+                <h3 className="text-xl font-bold text-neutral-900 mb-2">No {filter} trades</h3>
+                <p className="text-neutral-600">
+                  Try selecting a different filter to see more trades.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
