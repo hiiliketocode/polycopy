@@ -401,7 +401,9 @@ export default function FeedPage() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   
   // Data state
-  const [trades, setTrades] = useState<FeedTrade[]>([]);
+  const [allTrades, setAllTrades] = useState<FeedTrade[]>([]); // Store all trades
+  const [displayedTradesCount, setDisplayedTradesCount] = useState(35); // How many to show
+  const [trades, setTrades] = useState<FeedTrade[]>([]); // Currently displayed trades
   const [followingCount, setFollowingCount] = useState(0);
   const [loadingFeed, setLoadingFeed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -542,7 +544,12 @@ export default function FeedPage() {
         const traderNames: Record<string, string> = {};
         const tradersInCategory = new Set<string>();
         try {
-          const leaderboardRes = await fetch(`/api/polymarket/leaderboard?limit=100&orderBy=PNL&category=${categoryFilter}&timePeriod=all`);
+          // Build leaderboard URL - omit category parameter if 'all'
+          const leaderboardUrl = categoryFilter === 'all'
+            ? '/api/polymarket/leaderboard?limit=100&orderBy=PNL&timePeriod=all'
+            : `/api/polymarket/leaderboard?limit=100&orderBy=PNL&category=${categoryFilter}&timePeriod=all`;
+          
+          const leaderboardRes = await fetch(leaderboardUrl);
           if (leaderboardRes.ok) {
             const leaderboardData = await leaderboardRes.json();
             // Build set of wallets in this category
@@ -634,7 +641,10 @@ export default function FeedPage() {
           };
         });
 
-        setTrades(formattedTrades);
+        // Store all trades and reset display count
+        setAllTrades(formattedTrades);
+        setDisplayedTradesCount(35);
+        setTrades(formattedTrades.slice(0, 35));
 
         // Calculate today's volume and trade count
         const today = new Date();
@@ -657,7 +667,7 @@ export default function FeedPage() {
     } finally {
       setLoadingFeed(false);
     }
-  }, [user]); // Only recreate when user changes
+  }, [user, categoryFilter]); // Recreate when user or category changes
 
   // Manual refresh handler
   const handleManualRefresh = async () => {
@@ -679,12 +689,22 @@ export default function FeedPage() {
     fetchFeed();
   }, [user, fetchFeed, categoryFilter]);
 
-  // Filter trades
-  const filteredTrades = trades.filter(trade => {
+  // Load more trades
+  const handleLoadMore = () => {
+    const newCount = displayedTradesCount + 35;
+    setDisplayedTradesCount(newCount);
+    setTrades(allTrades.slice(0, newCount));
+  };
+
+  // Filter trades (filter from allTrades, then slice for display)
+  const filteredAllTrades = allTrades.filter(trade => {
     if (filter === 'buys') return trade.trade.side === 'BUY';
     if (filter === 'sells') return trade.trade.side === 'SELL';
     return true;
   });
+  
+  const filteredTrades = filteredAllTrades.slice(0, displayedTradesCount);
+  const hasMoreTrades = filteredAllTrades.length > displayedTradesCount;
 
   // Copy trade handler - opens Polymarket
   const handleCopyTrade = (trade: FeedTrade) => {
@@ -924,6 +944,7 @@ export default function FeedPage() {
               <button
                 key={category}
                 onClick={() => setCategoryFilter(categoryValue)}
+                disabled={loadingFeed}
                 className={`
                   px-4 py-2 rounded-full font-medium whitespace-nowrap text-sm
                   transition-all duration-200 flex-shrink-0
@@ -932,6 +953,7 @@ export default function FeedPage() {
                       ? 'bg-[#FDB022] text-slate-900 shadow-sm border-b-2 border-[#D97706]'
                       : 'bg-white text-slate-900 shadow-[0_2px_8px_rgb(0,0,0,0.04)] ring-1 ring-slate-900/5 hover:ring-slate-900/10'
                   }
+                  ${loadingFeed ? 'opacity-50 cursor-not-allowed' : ''}
                 `}
               >
                 {category}
@@ -1009,6 +1031,18 @@ export default function FeedPage() {
                 onMarkAsCopied={() => handleMarkAsCopied(trade)}
               />
             ))}
+            
+            {/* Load More Button */}
+            {hasMoreTrades && (
+              <div className="flex justify-center pt-4">
+                <button
+                  onClick={handleLoadMore}
+                  className="bg-white hover:bg-neutral-50 text-neutral-900 font-semibold py-3 px-8 rounded-lg border-2 border-neutral-200 transition-colors"
+                >
+                  Load More Trades
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
