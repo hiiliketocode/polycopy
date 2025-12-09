@@ -442,25 +442,36 @@ export default function DiscoverPage() {
       const isWalletAddress = /^0x[a-fA-F0-9]{40}$/.test(query);
       
       if (!isWalletAddress) {
-        // Query might be a username, search the leaderboard
+        // Query might be a username, search the leaderboard with larger limit
         console.log('🔍 Query is not a wallet address, searching leaderboard for username...');
         
-        const leaderboardResponse = await fetch('/api/polymarket/leaderboard?limit=200&orderBy=PNL&timePeriod=all');
+        // Try multiple searches with different limits to find the trader
+        const searchLimits = [500, 1000];
+        let matchingTrader = null;
         
-        if (leaderboardResponse.ok) {
-          const leaderboardData = await leaderboardResponse.json();
-          const matchingTrader = leaderboardData.traders?.find(
-            (t: any) => t.displayName?.toLowerCase() === query.toLowerCase()
-          );
-          
-          if (matchingTrader) {
-            console.log(`✅ Found trader by username: ${matchingTrader.displayName} -> ${matchingTrader.wallet}`);
-            walletToNavigate = matchingTrader.wallet;
-          } else {
-            throw new Error('Username not found in top 200 traders');
+        for (const limit of searchLimits) {
+          try {
+            const leaderboardResponse = await fetch(`/api/polymarket/leaderboard?limit=${limit}&orderBy=PNL&timePeriod=all`);
+            
+            if (leaderboardResponse.ok) {
+              const leaderboardData = await leaderboardResponse.json();
+              matchingTrader = leaderboardData.traders?.find(
+                (t: any) => t.displayName?.toLowerCase() === query.toLowerCase()
+              );
+              
+              if (matchingTrader) {
+                console.log(`✅ Found trader by username: ${matchingTrader.displayName} -> ${matchingTrader.wallet}`);
+                walletToNavigate = matchingTrader.wallet;
+                break;
+              }
+            }
+          } catch (err) {
+            console.warn(`Failed to search with limit ${limit}:`, err);
           }
-        } else {
-          throw new Error('Failed to search leaderboard');
+        }
+        
+        if (!matchingTrader) {
+          throw new Error('Username not found in leaderboard. Try using the wallet address instead.');
         }
       }
       
