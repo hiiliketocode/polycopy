@@ -1686,19 +1686,19 @@ export default function ProfilePage() {
                     <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                     </svg>
-                    <span>Display your Polymarket username</span>
+                    <span>Display your Polymarket username on your profile</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                     </svg>
-                    <span>Track your copied trades performance</span>
+                    <span>Personalize your Polycopy profile</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                     </svg>
-                    <span>See your overall ROI across all trades</span>
+                    <span>Show others which Polymarket trader you are</span>
                   </li>
                 </ul>
               </div>
