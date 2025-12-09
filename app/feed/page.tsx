@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -710,12 +710,28 @@ export default function FeedPage() {
     setTimeout(() => setShowToast(false), 2000);
   };
 
-  // Fetch feed data on initial mount, when user changes, or when category filter changes
+  // Track if we've done the initial fetch
+  const hasFetchedRef = useRef(false);
+  const lastCategoryRef = useRef(categoryFilter);
+
+  // Fetch feed data ONLY on initial mount or when category filter changes
+  // Do NOT refetch when user switches tabs and comes back
   useEffect(() => {
     if (!user) return;
     
-    console.log('📊 Fetching feed for category:', categoryFilter);
-    fetchFeed();
+    // Only fetch if:
+    // 1. Haven't fetched yet (initial load), OR
+    // 2. Category filter changed
+    const shouldFetch = !hasFetchedRef.current || lastCategoryRef.current !== categoryFilter;
+    
+    if (shouldFetch) {
+      console.log('📊 Fetching feed for category:', categoryFilter);
+      fetchFeed();
+      hasFetchedRef.current = true;
+      lastCategoryRef.current = categoryFilter;
+    } else {
+      console.log('📊 Skipping fetch - data already loaded');
+    }
   }, [user, fetchFeed, categoryFilter]);
 
   // Load more trades
