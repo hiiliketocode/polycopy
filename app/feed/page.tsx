@@ -657,7 +657,7 @@ export default function FeedPage() {
 
               const results = await Promise.all(categoryPromises);
               results.forEach(result => {
-                if (result) {
+                if (result && result.conditionId) {
                   categoryMap[result.conditionId] = result.category.toLowerCase();
                 }
               });
