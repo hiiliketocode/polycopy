@@ -1668,7 +1668,7 @@ export default function TraderProfilePage({
             {/* Desktop: Table View */}
             <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[600px]">
+                <table className="w-full min-w-[700px]">
                   <thead className="bg-slate-50 border-b-2 border-slate-200">
                     <tr>
                       <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[90px]">Date</th>
@@ -1678,6 +1678,7 @@ export default function TraderProfilePage({
                       <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[70px]">Size</th>
                       <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[60px]">Price</th>
                       <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[65px]">ROI</th>
+                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[100px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1725,46 +1726,7 @@ export default function TraderProfilePage({
                           </td>
                           
                           <td className="py-3 px-3 max-w-[220px]">
-                            <div className="flex items-start gap-3">
-                              <a 
-                                href={polymarketUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-sm text-slate-900 font-medium hover:text-[#FDB022] transition-colors flex items-start gap-1 group flex-1 min-w-0 leading-snug"
-                              >
-                                <span className="break-words">{trade.market}</span>
-                                <svg 
-                                  className="w-3 h-3 flex-shrink-0 text-slate-400 group-hover:text-[#FDB022] mt-0.5" 
-                                  fill="none" 
-                                  stroke="currentColor" 
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path 
-                                    strokeLinecap="round" 
-                                    strokeLinejoin="round" 
-                                    strokeWidth={2} 
-                                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" 
-                                  />
-                                </svg>
-                              </a>
-                              {/* Mark as Copied button */}
-                              <button
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleMarkAsCopied(trade);
-                                }}
-                                disabled={isAlreadyCopied}
-                                className={`flex-shrink-0 px-2 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${
-                                  isAlreadyCopied
-                                    ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                                    : 'bg-[#FDB022] text-white hover:bg-[#E69E1A] cursor-pointer'
-                                }`}
-                                title={isAlreadyCopied ? "Already copied" : "Mark as Copied"}
-                              >
-                                {isAlreadyCopied ? 'Copied' : 'Copy'}
-                              </button>
-                            </div>
+                            <span className="text-sm text-slate-900 font-medium break-words leading-snug">{trade.market}</span>
                           </td>
                           
                           <td className="py-3 pl-3 pr-2">
@@ -1810,6 +1772,38 @@ export default function TraderProfilePage({
                             }`}>
                               {roi === null ? '--' : `${roi > 0 ? '+' : ''}${roi.toFixed(1)}%`}
                             </span>
+                          </td>
+                          
+                          <td className="py-3 px-3">
+                            <div className="flex flex-col gap-1">
+                              {/* Copy Trade button - opens Polymarket */}
+                              <a
+                                href={polymarketUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap text-center bg-[#FDB022] text-white hover:bg-[#E69E1A]"
+                              >
+                                Copy Trade
+                              </a>
+                              
+                              {/* Mark as Copied button */}
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleMarkAsCopied(trade);
+                                }}
+                                disabled={isAlreadyCopied}
+                                className={`px-2 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+                                  isAlreadyCopied
+                                    ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                                    : 'bg-slate-200 text-slate-700 hover:bg-slate-300 cursor-pointer'
+                                }`}
+                                title={isAlreadyCopied ? "Already marked as copied" : "Mark as Copied"}
+                              >
+                                {isAlreadyCopied ? '✓ Copied' : 'Mark as Copied'}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
