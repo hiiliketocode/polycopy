@@ -437,6 +437,7 @@ export default function DiscoverPage() {
 
     try {
       let walletToNavigate = query;
+      let foundViaUsername = false;
       
       // Check if query looks like a wallet address (0x followed by 40 hex chars)
       const isWalletAddress = /^0x[a-fA-F0-9]{40}$/.test(query);
@@ -451,10 +452,13 @@ export default function DiscoverPage() {
         
         for (const limit of searchLimits) {
           try {
+            console.log(`🔍 Searching top ${limit} traders...`);
             const leaderboardResponse = await fetch(`/api/polymarket/leaderboard?limit=${limit}&orderBy=PNL&timePeriod=all`);
             
             if (leaderboardResponse.ok) {
               const leaderboardData = await leaderboardResponse.json();
+              console.log(`📊 Received ${leaderboardData.traders?.length || 0} traders`);
+              
               matchingTrader = leaderboardData.traders?.find(
                 (t: any) => t.displayName?.toLowerCase() === query.toLowerCase()
               );
@@ -462,6 +466,7 @@ export default function DiscoverPage() {
               if (matchingTrader) {
                 console.log(`✅ Found trader by username: ${matchingTrader.displayName} -> ${matchingTrader.wallet}`);
                 walletToNavigate = matchingTrader.wallet;
+                foundViaUsername = true;
                 break;
               }
             }
@@ -470,16 +475,23 @@ export default function DiscoverPage() {
           }
         }
         
+        // If username search failed, try using the query directly as a wallet/identifier anyway
         if (!matchingTrader) {
-          throw new Error('Username not found in leaderboard. Try using the wallet address instead.');
+          console.log('⚠️ Username not found in leaderboard, trying as direct identifier...');
+          walletToNavigate = query;
         }
       }
       
       // Verify the trader exists by fetching their profile
+      console.log(`🔍 Fetching trader profile for: ${walletToNavigate}`);
       const response = await fetch(`/api/trader/${walletToNavigate}`);
       
       if (!response.ok) {
-        throw new Error('Trader not found');
+        if (!isWalletAddress && !foundViaUsername) {
+          throw new Error(`Username "${query}" not found in top 1000 traders. Please use the trader's wallet address instead (found on their Polymarket profile page).`);
+        } else {
+          throw new Error('Trader profile not found');
+        }
       }
       
       const trader = await response.json();
@@ -490,12 +502,7 @@ export default function DiscoverPage() {
     } catch (error) {
       console.error('❌ Search error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
-      if (errorMessage.includes('Username not found')) {
-        alert(`No trader found with username "${query}". Try searching by wallet address or check that the username is in the top 200 traders.`);
-      } else {
-        alert(`No trader found for "${query}". Please check the wallet address or username and try again.`);
-      }
+      alert(errorMessage.includes('not found in top') ? errorMessage : `No trader found for "${query}". Please check the wallet address or username and try again.`);
     } finally {
       setIsSearching(false);
     }
@@ -678,7 +685,7 @@ export default function DiscoverPage() {
               </div>
               <input
                 type="text"
-                placeholder="Search by username or wallet address..."
+                placeholder="Enter wallet address (0x...)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -709,7 +716,7 @@ export default function DiscoverPage() {
               </button>
             </div>
             <p className="text-xs text-neutral-500 mt-2 text-center">
-              Search by username (e.g., ChinesePro) or wallet address (e.g., 0x1234...5678)
+              Enter the wallet address from a trader's Polymarket profile (e.g., 0x1234...5678)
             </p>
           </div>
         </div>
