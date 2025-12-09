@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
@@ -155,10 +156,20 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Footer Text */}
-          <p className="text-center text-sm text-slate-500 mt-6">
-            By signing in, you agree to our Terms of Service and Privacy Policy
-          </p>
+          {/* Legal Disclaimer */}
+          <div className="mt-6 pt-6 border-t border-slate-200">
+            <p className="text-center text-xs text-slate-600 leading-relaxed">
+              By signing up, you agree to Polycopy's{' '}
+              <Link href="/terms" className="text-[#FDB022] hover:text-[#E69E1A] font-medium underline">
+                Terms of Service
+              </Link>
+              {' '}and{' '}
+              <Link href="/privacy" className="text-[#FDB022] hover:text-[#E69E1A] font-medium underline">
+                Privacy Policy
+              </Link>
+              . Trading involves risk and past performance does not guarantee future results.
+            </p>
+          </div>
         </div>
       </div>
     </div>
