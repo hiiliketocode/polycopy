@@ -1722,7 +1722,16 @@ export default function TraderProfilePage({
                           className="hover:bg-slate-50 transition-colors"
                         >
                           <td className="py-3 px-3 whitespace-nowrap">
-                            <span className="text-sm text-slate-500">{trade.formattedDate}</span>
+                            <div className="flex flex-col">
+                              <span className="text-sm text-slate-500">{trade.formattedDate}</span>
+                              <span className="text-xs text-slate-400">
+                                {new Date(trade.timestamp).toLocaleTimeString('en-US', { 
+                                  hour: 'numeric', 
+                                  minute: '2-digit',
+                                  hour12: true 
+                                })}
+                              </span>
+                            </div>
                           </td>
                           
                           <td className="py-3 px-3 max-w-[220px]">
@@ -1835,7 +1844,16 @@ export default function TraderProfilePage({
                     {/* Header: Date + Status + Outcome Badge */}
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-slate-500">{trade.formattedDate}</span>
+                        <div className="flex flex-col">
+                          <span className="text-sm text-slate-500">{trade.formattedDate}</span>
+                          <span className="text-xs text-slate-400">
+                            {new Date(trade.timestamp).toLocaleTimeString('en-US', { 
+                              hour: 'numeric', 
+                              minute: '2-digit',
+                              hour12: true 
+                            })}
+                          </span>
+                        </div>
                         <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full ${
                           trade.status === 'Open'
                             ? 'bg-emerald-100 text-emerald-700'
