@@ -823,7 +823,6 @@ export default function TraderProfilePage({
             }
             
             status = isOpen ? 'Open' : 'Trader Closed';
-            
             // 🎯 SPREAD MAGIC TRADE: Special logging for spread Magic trades
             if ((trade.title?.toLowerCase().includes('spread') && 
                  (trade.title?.toLowerCase().includes('magic') || trade.outcome?.toLowerCase().includes('magic'))) ||
@@ -943,6 +942,18 @@ export default function TraderProfilePage({
                 cachedPrices: cachedForCondition?.prices,
                 cacheSize: marketPriceCache.size
               });
+            }
+          }
+          
+          // MARKET RESOLUTION DETECTION: Check if market has resolved based on price
+          // If current price is $1 or $0, the market has resolved regardless of position status
+          if (currentPrice !== undefined && currentPrice !== null && status !== 'Bonded') {
+            if (currentPrice >= 0.99) {
+              // Market resolved in favor of this outcome
+              status = 'Trader Closed';
+            } else if (currentPrice <= 0.01) {
+              // Market resolved against this outcome
+              status = 'Trader Closed';
             }
           }
           
@@ -1325,10 +1336,15 @@ export default function TraderProfilePage({
     ? traderData.roi.toFixed(1)
     : calculateROI(traderData.pnl, traderData.volume);
   
-  // Calculate win rate from closed trades
-  const closedTrades = trades.filter(t => t.status === 'Trader Closed');
-  const winningTrades = closedTrades.filter(t => {
-    // A trade is winning if ROI is positive
+  // Calculate win rate: (Profitable Trades / Total Trades) × 100%
+  // Only count trades where we have price data to calculate ROI
+  const tradesWithROI = trades.filter(t => {
+    const entryPrice = t.price;
+    const currentPrice = t.currentPrice;
+    return entryPrice && currentPrice !== undefined && currentPrice !== null && entryPrice !== 0;
+  });
+  
+  const profitableTrades = tradesWithROI.filter(t => {
     const entryPrice = t.price;
     const currentPrice = t.currentPrice;
     if (entryPrice && currentPrice !== undefined && currentPrice !== null && entryPrice !== 0) {
@@ -1337,8 +1353,9 @@ export default function TraderProfilePage({
     }
     return false;
   });
-  const winRate = closedTrades.length > 0 
-    ? ((winningTrades.length / closedTrades.length) * 100).toFixed(1)
+  
+  const winRate = tradesWithROI.length > 0 
+    ? ((profitableTrades.length / tradesWithROI.length) * 100).toFixed(1)
     : '--';
   
   // Only show trades count if we have it from leaderboard data (reliable source)
@@ -1530,62 +1547,62 @@ export default function TraderProfilePage({
           </div>
 
           {/* Stats Grid - Desktop: 5 separate cards, Mobile: Combined card */}
-          <div className="hidden md:grid grid-cols-5 gap-4">
+          <div className="hidden md:grid grid-cols-5 gap-3">
             {/* Desktop Stat Cards */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-              <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">TOTAL P&L</div>
-              <div className={`text-2xl font-bold ${
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">P&L</div>
+              <div className={`text-xl font-bold ${
                 traderData.pnl > 0 ? 'text-emerald-600' : traderData.pnl < 0 ? 'text-red-500' : 'text-slate-900'
               }`}>
                 {formatPnL(traderData.pnl)}
               </div>
             </div>
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-              <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">ROI</div>
-              <div className={`text-2xl font-bold ${
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">ROI</div>
+              <div className={`text-xl font-bold ${
                 roi !== '--' && parseFloat(String(roi)) > 0 ? 'text-emerald-600' : 
                 roi !== '--' && parseFloat(String(roi)) < 0 ? 'text-red-500' : 'text-slate-900'
               }`}>
                 {roi !== '--' ? `${roi}%` : '--'}
               </div>
             </div>
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-              <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">WIN RATE</div>
-              <div className={`text-2xl font-bold ${
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">WIN RATE</div>
+              <div className={`text-xl font-bold ${
                 winRate !== '--' && parseFloat(String(winRate)) >= 50 ? 'text-emerald-600' : 
                 winRate !== '--' && parseFloat(String(winRate)) < 50 ? 'text-slate-600' : 'text-slate-900'
               }`}>
                 {winRate !== '--' ? `${winRate}%` : '--'}
               </div>
             </div>
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-              <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">VOLUME</div>
-              <div className="text-2xl font-bold text-slate-900">
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">VOLUME</div>
+              <div className="text-xl font-bold text-slate-900">
                 {formatVolume(traderData.volume)}
               </div>
             </div>
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-              <div className="text-sm text-slate-500 uppercase tracking-wide mb-1">TRADES</div>
-              <div className="text-2xl font-bold text-slate-900">
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">TRADES</div>
+              <div className="text-xl font-bold text-slate-900">
                 {formatTradesCount(tradesCount, hasMoreTrades)}
               </div>
             </div>
           </div>
 
           {/* Mobile: Combined stat card - 5 columns in one card */}
-          <div className="md:hidden bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-            <div className="grid grid-cols-5 gap-2 text-center">
+          <div className="md:hidden bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+            <div className="grid grid-cols-5 gap-1 text-center">
               <div>
-                <div className="text-xs text-slate-500 uppercase mb-1">P&L</div>
-                <div className={`text-sm font-bold ${
+                <div className="text-[10px] text-slate-500 uppercase mb-1">P&L</div>
+                <div className={`text-xs font-bold ${
                   traderData.pnl > 0 ? 'text-emerald-600' : traderData.pnl < 0 ? 'text-red-500' : 'text-slate-900'
                 }`}>
                   {formatPnL(traderData.pnl)}
                 </div>
               </div>
               <div>
-                <div className="text-xs text-slate-500 uppercase mb-1">ROI</div>
-                <div className={`text-sm font-bold ${
+                <div className="text-[10px] text-slate-500 uppercase mb-1">ROI</div>
+                <div className={`text-xs font-bold ${
                   roi !== '--' && parseFloat(String(roi)) > 0 ? 'text-emerald-600' : 
                   roi !== '--' && parseFloat(String(roi)) < 0 ? 'text-red-500' : 'text-slate-900'
                 }`}>
@@ -1593,8 +1610,8 @@ export default function TraderProfilePage({
                 </div>
               </div>
               <div>
-                <div className="text-xs text-slate-500 uppercase mb-1">Win</div>
-                <div className={`text-sm font-bold ${
+                <div className="text-[10px] text-slate-500 uppercase mb-1">Win</div>
+                <div className={`text-xs font-bold ${
                   winRate !== '--' && parseFloat(String(winRate)) >= 50 ? 'text-emerald-600' : 
                   winRate !== '--' && parseFloat(String(winRate)) < 50 ? 'text-slate-600' : 'text-slate-900'
                 }`}>
@@ -1602,14 +1619,14 @@ export default function TraderProfilePage({
                 </div>
               </div>
               <div>
-                <div className="text-xs text-slate-500 uppercase mb-1">Vol</div>
-                <div className="text-sm font-bold text-slate-900">
+                <div className="text-[10px] text-slate-500 uppercase mb-1">Vol</div>
+                <div className="text-xs font-bold text-slate-900">
                   {formatVolume(traderData.volume)}
                 </div>
               </div>
               <div>
-                <div className="text-xs text-slate-500 uppercase mb-1">Trades</div>
-                <div className="text-sm font-bold text-slate-900">
+                <div className="text-[10px] text-slate-500 uppercase mb-1">Trades</div>
+                <div className="text-xs font-bold text-slate-900">
                   {formatTradesCount(tradesCount, hasMoreTrades)}
                 </div>
               </div>

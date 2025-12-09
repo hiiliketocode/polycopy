@@ -398,6 +398,7 @@ export default function FeedPage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'buys' | 'sells'>('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   
   // Data state
   const [trades, setTrades] = useState<FeedTrade[]>([]);
@@ -408,6 +409,31 @@ export default function FeedPage() {
   // Stats
   const [todayVolume, setTodayVolume] = useState(0);
   const [todaysTradeCount, setTodaysTradeCount] = useState(0);
+  
+  // Category mapping (same as discover page)
+  const categoryMap: Record<string, string> = {
+    'All': 'all',
+    'Politics': 'politics',
+    'Sports': 'sports',
+    'Crypto': 'crypto',
+    'Pop Culture': 'culture',
+    'Business': 'finance',
+    'Economics': 'economics',
+    'Tech': 'tech',
+    'Weather': 'weather'
+  };
+  
+  const categories = [
+    'All',
+    'Politics', 
+    'Sports',
+    'Crypto',
+    'Pop Culture',
+    'Business',
+    'Economics',
+    'Tech',
+    'Weather'
+  ];
 
   // Copied trades state
   const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
@@ -512,12 +538,18 @@ export default function FeedPage() {
 
         setFollowingCount(follows.length);
 
-        // 2. Fetch trader names from leaderboard
+        // 2. Fetch trader names from leaderboard (filtered by category)
         const traderNames: Record<string, string> = {};
+        const tradersInCategory = new Set<string>();
         try {
-          const leaderboardRes = await fetch('/api/polymarket/leaderboard?limit=100&orderBy=PNL');
+          const leaderboardRes = await fetch(`/api/polymarket/leaderboard?limit=100&orderBy=PNL&category=${categoryFilter}&timePeriod=all`);
           if (leaderboardRes.ok) {
             const leaderboardData = await leaderboardRes.json();
+            // Build set of wallets in this category
+            leaderboardData.traders?.forEach((t: any) => {
+              tradersInCategory.add(t.wallet.toLowerCase());
+            });
+            // Map names for followed traders
             for (const follow of follows) {
               const trader = leaderboardData.traders?.find(
                 (t: any) => t.wallet.toLowerCase() === follow.trader_wallet.toLowerCase()
@@ -531,8 +563,15 @@ export default function FeedPage() {
           console.warn('Failed to fetch trader names:', err);
         }
 
-        // 3. Fetch trades for each followed wallet (parallel)
-        const tradePromises = follows.map(async (follow) => {
+        // 3. Filter follows by category (if not 'all')
+        const followsToFetch = categoryFilter === 'all' 
+          ? follows 
+          : follows.filter(f => tradersInCategory.has(f.trader_wallet.toLowerCase()));
+        
+        console.log(`📊 Fetching trades from ${followsToFetch.length}/${follows.length} traders (category: ${categoryFilter})`);
+        
+        // 4. Fetch trades for each followed wallet (parallel)
+        const tradePromises = followsToFetch.map(async (follow) => {
           const wallet = follow.trader_wallet;
           
           try {
@@ -632,17 +671,13 @@ export default function FeedPage() {
     setTimeout(() => setShowToast(false), 2000);
   };
 
-  // Fetch feed data ONLY on initial mount or when user logs in/out
-  // No automatic refresh on tab focus, visibility change, or any other event
+  // Fetch feed data on initial mount, when user changes, or when category filter changes
   useEffect(() => {
     if (!user) return;
     
-    // Only fetch if we haven't loaded trades yet (initial load)
-    if (trades.length === 0 && !loadingFeed) {
-      console.log('📊 Initial feed load');
-      fetchFeed();
-    }
-  }, [user, fetchFeed, trades.length, loadingFeed]);
+    console.log('📊 Fetching feed for category:', categoryFilter);
+    fetchFeed();
+  }, [user, fetchFeed, categoryFilter]);
 
   // Filter trades
   const filteredTrades = trades.filter(trade => {
@@ -877,6 +912,32 @@ export default function FeedPage() {
           >
             Sells Only
           </button>
+        </div>
+
+        {/* Category Filter Pills */}
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
+          {categories.map((category) => {
+            const categoryValue = categoryMap[category];
+            const isActive = categoryFilter === categoryValue;
+            
+            return (
+              <button
+                key={category}
+                onClick={() => setCategoryFilter(categoryValue)}
+                className={`
+                  px-4 py-2 rounded-full font-medium whitespace-nowrap text-sm
+                  transition-all duration-200 flex-shrink-0
+                  ${
+                    isActive
+                      ? 'bg-[#FDB022] text-slate-900 shadow-sm border-b-2 border-[#D97706]'
+                      : 'bg-white text-slate-900 shadow-[0_2px_8px_rgb(0,0,0,0.04)] ring-1 ring-slate-900/5 hover:ring-slate-900/10'
+                  }
+                `}
+              >
+                {category}
+              </button>
+            );
+          })}
         </div>
 
         {/* Feed Content */}
