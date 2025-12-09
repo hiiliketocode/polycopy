@@ -1675,17 +1675,55 @@ export default function ProfilePage() {
             {/* Instructions */}
             <div className="mb-6">
               <p className="text-gray-600 text-sm mb-4">
-                Enter your Polymarket wallet address to connect your account.
+                Connect your Polymarket wallet to unlock your full profile.
               </p>
               
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
-                <p className="text-sm font-semibold text-blue-900 mb-2">
+              {/* Benefits Section */}
+              <div className="mb-4 text-sm text-gray-600">
+                <p className="font-medium text-gray-800 mb-2">Why connect?</p>
+                <ul className="space-y-1.5">
+                  <li className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>Display your Polymarket username</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>Track your copied trades performance</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>See your overall ROI across all trades</span>
+                  </li>
+                </ul>
+              </div>
+              
+              {/* Instructions Box */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                <p className="text-sm font-semibold text-amber-900 mb-2">
                   💡 <strong>Where to find your wallet address:</strong>
                 </p>
-                <ol className="text-xs text-blue-800 space-y-1 ml-4 list-decimal">
-                  <li>Go to <a href="https://polymarket.com/profile" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-900">polymarket.com/profile</a></li>
-                  <li>Click "Copy address" next to your username</li>
-                  <li>Paste it below</li>
+                <ol className="text-xs text-amber-900 space-y-1.5 ml-4 list-decimal">
+                  <li>
+                    Go to{' '}
+                    <a 
+                      href="https://polymarket.com" 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="underline hover:text-amber-950 font-medium"
+                    >
+                      Polymarket.com
+                    </a>
+                    {' '}and log in.
+                  </li>
+                  <li>Navigate to your profile using the icon in the top right of the page.</li>
+                  <li>To the right of your username, click the "head in a box" icon to copy your wallet address.</li>
+                  <li>Paste it below.</li>
                 </ol>
               </div>
 
