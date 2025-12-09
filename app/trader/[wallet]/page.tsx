@@ -1546,6 +1546,12 @@ export default function TraderProfilePage({
             </button>
           </div>
 
+          {/* Stats Section Header */}
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Performance</span>
+            <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-medium rounded-full">Lifetime</span>
+          </div>
+
           {/* Stats Grid - Desktop: 5 separate cards, Mobile: Combined card */}
           <div className="hidden md:grid grid-cols-5 gap-3">
             {/* Desktop Stat Cards */}

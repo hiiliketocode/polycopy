@@ -952,7 +952,13 @@ export default function ProfilePage() {
               </div>
               <div>
                 {/* Username */}
-                <h1 className="text-xl font-bold text-slate-900 mb-3">{displayName}</h1>
+                <h1 className="text-xl font-bold text-slate-900 mb-2">{displayName}</h1>
+                
+                {/* Stats Section Header */}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Performance</span>
+                  <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-medium rounded-full">Lifetime</span>
+                </div>
                 
                 {/* Stats Row */}
                 {loadingStats ? (
