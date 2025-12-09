@@ -433,25 +433,58 @@ export default function DiscoverPage() {
     }
 
     setIsSearching(true);
-    console.log('🔍 Searching for wallet:', query);
+    console.log('🔍 Searching for:', query);
 
     try {
-      // Try to fetch trader profile directly using existing API
-      const response = await fetch(`/api/trader/${query}`);
+      let walletToNavigate = query;
+      
+      // Check if query looks like a wallet address (0x followed by 40 hex chars)
+      const isWalletAddress = /^0x[a-fA-F0-9]{40}$/.test(query);
+      
+      if (!isWalletAddress) {
+        // Query might be a username, search the leaderboard
+        console.log('🔍 Query is not a wallet address, searching leaderboard for username...');
+        
+        const leaderboardResponse = await fetch('/api/polymarket/leaderboard?limit=200&orderBy=PNL&timePeriod=all');
+        
+        if (leaderboardResponse.ok) {
+          const leaderboardData = await leaderboardResponse.json();
+          const matchingTrader = leaderboardData.traders?.find(
+            (t: any) => t.displayName?.toLowerCase() === query.toLowerCase()
+          );
+          
+          if (matchingTrader) {
+            console.log(`✅ Found trader by username: ${matchingTrader.displayName} -> ${matchingTrader.wallet}`);
+            walletToNavigate = matchingTrader.wallet;
+          } else {
+            throw new Error('Username not found in top 200 traders');
+          }
+        } else {
+          throw new Error('Failed to search leaderboard');
+        }
+      }
+      
+      // Verify the trader exists by fetching their profile
+      const response = await fetch(`/api/trader/${walletToNavigate}`);
       
       if (!response.ok) {
         throw new Error('Trader not found');
       }
       
       const trader = await response.json();
+      console.log('✅ Found trader:', trader.displayName || walletToNavigate);
       
-      console.log('✅ Found trader:', trader.displayName || query);
-      
-      // Navigate to trader profile
-      router.push(`/trader/${query}`);
+      // Navigate to trader profile with the resolved wallet address
+      router.push(`/trader/${walletToNavigate}`);
     } catch (error) {
       console.error('❌ Search error:', error);
-      alert(`No trader found with wallet address "${query}". Please check the address and try again.`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      if (errorMessage.includes('Username not found')) {
+        alert(`No trader found with username "${query}". Try searching by wallet address or check that the username is in the top 200 traders.`);
+      } else {
+        alert(`No trader found for "${query}". Please check the wallet address or username and try again.`);
+      }
     } finally {
       setIsSearching(false);
     }
@@ -634,7 +667,7 @@ export default function DiscoverPage() {
               </div>
               <input
                 type="text"
-                placeholder="Search by wallet address..."
+                placeholder="Search by username or wallet address..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -665,7 +698,7 @@ export default function DiscoverPage() {
               </button>
             </div>
             <p className="text-xs text-neutral-500 mt-2 text-center">
-              Enter a full wallet address (e.g., 0x1234...5678). Tip: You can copy wallet addresses from the top of Polymarket trader profiles.
+              Search by username (e.g., ChinesePro) or wallet address (e.g., 0x1234...5678)
             </p>
           </div>
         </div>
