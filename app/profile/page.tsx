@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import Header from '../components/Header';
+import { useUpgrade } from '@/hooks/useUpgrade';
 
 // Types for copied trades
 interface CopiedTrade {
@@ -57,6 +58,9 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [followingCount, setFollowingCount] = useState(0);
   const [loadingStats, setLoadingStats] = useState(true);
+  
+  // Stripe upgrade hook
+  const { upgrade, loading: upgradeLoading } = useUpgrade();
   
   // Wallet state
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -1079,6 +1083,17 @@ export default function ProfilePage() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Test Upgrade Button */}
+        <div className="mb-6">
+          <button
+            onClick={upgrade}
+            disabled={upgradeLoading}
+            className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-black rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {upgradeLoading ? 'Loading...' : 'Test Upgrade'}
+          </button>
         </div>
 
         {/* Copied Trades Section */}
