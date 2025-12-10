@@ -19,7 +19,7 @@ This guide walks you through setting up the premium subscription feature for Pol
 
 ## Step 1: Database Migration
 
-Run the migration to add premium columns to your users table:
+Run the migration to add premium columns to your profiles table:
 
 ### Option A: Via Supabase Dashboard
 1. Go to your Supabase project dashboard
@@ -254,7 +254,7 @@ export default async function ProfilePage() {
   const { data: { user } } = await supabase.auth.getUser()
   
   const { data: profile } = await supabase
-    .from('users')
+    .from('profiles')
     .select('is_premium, premium_since')
     .eq('id', user?.id)
     .single()
@@ -282,7 +282,7 @@ export default async function PremiumFeaturePage() {
   }
   
   const { data: profile } = await supabase
-    .from('users')
+    .from('profiles')
     .select('is_premium')
     .eq('id', user.id)
     .single()
