@@ -5,11 +5,10 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
-import { useFundWallet } from '@privy-io/react-auth';
-import { polygon } from 'viem/chains';
 import Header from '../components/Header';
 import WalletSetupModal from '@/components/WalletSetupModal';
 import PrivyWrapper from '@/components/PrivyWrapper';
+import TradingWalletSection from '@/components/TradingWalletSection';
 
 // Types for copied trades
 interface CopiedTrade {
@@ -65,11 +64,6 @@ export default function ProfilePage() {
   // Premium and trading wallet state
   const [profile, setProfile] = useState<any>(null);
   const [showWalletSetup, setShowWalletSetup] = useState(false);
-  const [walletBalance, setWalletBalance] = useState<string | null>(null);
-  const [loadingBalance, setLoadingBalance] = useState(false);
-  
-  // Privy funding hook
-  const { fundWallet } = useFundWallet();
   
   // Display name state
   const [displayName, setDisplayName] = useState<string>('You');
@@ -464,37 +458,6 @@ export default function ProfilePage() {
     autoRefreshPrices();
   }, [hasAutoRefreshed, loadingCopiedTrades, copiedTrades, user]);
 
-  // Fetch USDC.e balance for trading wallet
-  useEffect(() => {
-    const fetchBalance = async () => {
-      if (!profile?.trading_wallet_address) {
-        setWalletBalance(null);
-        return;
-      }
-
-      setLoadingBalance(true);
-      try {
-        // Query USDC.e balance on Polygon
-        const USDC_E_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
-        const response = await fetch(
-          `https://api.polygonscan.com/api?module=account&action=tokenbalance&contractaddress=${USDC_E_ADDRESS}&address=${profile.trading_wallet_address}&tag=latest&apikey=YourApiKeyToken`
-        );
-        const data = await response.json();
-        
-        if (data.status === '1' && data.result) {
-          // USDC.e has 6 decimals
-          const balance = (parseInt(data.result) / 1000000).toFixed(2);
-          setWalletBalance(balance);
-        }
-      } catch (err) {
-        console.error('Error fetching balance:', err);
-      } finally {
-        setLoadingBalance(false);
-      }
-    };
-
-    fetchBalance();
-  }, [profile?.trading_wallet_address]);
 
   const handleLogout = async () => {
     try {
@@ -505,24 +468,6 @@ export default function ProfilePage() {
     }
   };
 
-  // Abbreviate wallet address
-  const abbreviateWallet = (address: string): string => {
-    if (!address || address.length < 10) return address;
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
-  };
-
-  // Handle deposit using Privy's fundWallet
-  const handleDeposit = () => {
-    if (!profile?.trading_wallet_address) return;
-    fundWallet(profile.trading_wallet_address);
-  };
-
-  // Handle withdraw (Privy will show withdrawal UI)
-  const handleWithdraw = () => {
-    if (!profile?.trading_wallet_address) return;
-    // Privy's fundWallet also handles withdrawals
-    fundWallet(profile.trading_wallet_address);
-  };
 
   // Toggle email notifications
   const handleToggleNotifications = async () => {
@@ -948,78 +893,10 @@ export default function ProfilePage() {
           
           {/* Trading Wallet Section - Only show for premium users */}
           {profile?.is_premium && (
-            profile?.trading_wallet_address ? (
-              <div className="mt-4 p-4 bg-slate-800/50 rounded-lg border border-slate-700">
-                <h3 className="text-sm font-medium text-slate-400 mb-3">Trading Wallet</h3>
-                
-                {/* Wallet Address */}
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="font-mono text-sm text-white">
-                    {abbreviateWallet(profile.trading_wallet_address)}
-                  </span>
-                  <button
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(profile.trading_wallet_address);
-                        showToastMessage('Address copied!', 'success');
-                      } catch (err) {
-                        console.error('Failed to copy:', err);
-                      }
-                    }}
-                    className="text-slate-400 hover:text-white transition-colors"
-                    title="Copy address"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  </button>
-                </div>
-
-                {/* Balance */}
-                <div className="mb-3">
-                  <p className="text-xs text-slate-500 mb-1">USDC.e Balance</p>
-                  {loadingBalance ? (
-                    <div className="h-6 w-20 bg-slate-700 animate-pulse rounded"></div>
-                  ) : (
-                    <p className="text-lg font-semibold text-white">
-                      ${walletBalance || '0.00'}
-                    </p>
-                  )}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleDeposit}
-                    className="flex-1 px-4 py-2 bg-[#FDB022] hover:bg-[#E69E1A] text-black rounded-lg font-medium transition-colors text-sm"
-                  >
-                    Deposit
-                  </button>
-                  <button
-                    onClick={handleWithdraw}
-                    className="flex-1 px-4 py-2 border border-slate-600 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors text-sm"
-                  >
-                    Withdraw
-                  </button>
-                </div>
-                
-                <p className="text-xs text-slate-500 mt-2">
-                  Powered by Privy • Polygon Network
-                </p>
-              </div>
-            ) : (
-              <div className="mt-4 p-4 bg-slate-800/50 rounded-lg border border-slate-700 text-center">
-                <p className="text-sm text-slate-400 mb-3">
-                  Set up your trading wallet to start copy trading automatically
-                </p>
-                <button
-                  onClick={() => setShowWalletSetup(true)}
-                  className="px-4 py-2 bg-[#FDB022] hover:bg-[#E69E1A] text-black rounded-lg font-medium transition-colors text-sm"
-                >
-                  Set Up Trading Wallet
-                </button>
-              </div>
-            )
+            <TradingWalletSection
+              walletAddress={profile?.trading_wallet_address || ''}
+              onSetupClick={() => setShowWalletSetup(true)}
+            />
           )}
         </div>
 
