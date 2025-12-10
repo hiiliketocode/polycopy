@@ -9,31 +9,33 @@ interface WalletSetupModalProps {
 }
 
 export default function WalletSetupModal({ isOpen, onClose, onSuccess }: WalletSetupModalProps) {
+  // IMPORTANT: Call hooks BEFORE any conditional returns (Rules of Hooks)
   const { setupWallet, isCreating, error, walletAddress, authenticated } = useWalletSetup();
   const [step, setStep] = useState<'intro' | 'creating'>('intro');
 
-  if (!isOpen) return null;
-
   // Watch for wallet creation completion
   useEffect(() => {
-    if (step === 'creating' && !isCreating && walletAddress && authenticated) {
+    if (isOpen && step === 'creating' && !isCreating && walletAddress && authenticated) {
       // Wallet was created successfully
       // The hook will automatically reload the page, so we don't need to show success step
       onSuccess(walletAddress);
     }
-  }, [step, isCreating, walletAddress, authenticated, onSuccess]);
+  }, [isOpen, step, isCreating, walletAddress, authenticated, onSuccess]);
 
   // Watch for errors to go back to intro
   useEffect(() => {
-    if (error && step === 'creating') {
+    if (isOpen && error && step === 'creating') {
       setStep('intro');
     }
-  }, [error, step]);
+  }, [isOpen, error, step]);
 
   const handleSetup = () => {
     setStep('creating');
     setupWallet();
   };
+
+  // Render nothing if modal is closed (after hooks are called)
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
