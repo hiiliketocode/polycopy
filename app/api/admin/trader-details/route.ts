@@ -201,7 +201,7 @@ export async function GET(request: NextRequest) {
       roi: roi,
       roi_formatted: `${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%`,
       markets_traded: marketsTraded,
-      first_trade: earliestTrade ? earliestTrade.toISOString() : null
+      first_trade: (earliestTrade as Date | null) ? (earliestTrade as Date).toISOString() : null
     }
     
     // Recent Activity (Last 7 Days)
