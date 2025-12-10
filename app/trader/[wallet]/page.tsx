@@ -234,7 +234,7 @@ export default function TraderProfilePage({
   const [checkingFollow, setCheckingFollow] = useState(false);
   const [copied, setCopied] = useState(false);
   const [trades, setTrades] = useState<Trade[]>([]);
-  const [loadingTrades, setLoadingTrades] = useState(false);
+  const [loadingTrades, setLoadingTrades] = useState(true); // Start as true to show loading state initially
   const [openMarketIds, setOpenMarketIds] = useState<Set<string>>(new Set());
   const [positions, setPositions] = useState<Position[]>([]);  // Store full position data for URL construction
   const [positionsLoaded, setPositionsLoaded] = useState(false); // Track if positions have been fetched
@@ -645,13 +645,8 @@ export default function TraderProfilePage({
   }, [wallet]);
 
   // Fetch trader's ALL trades (no limit)
-  // IMPORTANT: Only fetch after positions are loaded to avoid race condition
   useEffect(() => {
     if (!wallet) return;
-    if (!positionsLoaded) {
-      console.log('⏳ Waiting for positions to load before formatting trades...');
-      return;
-    }
 
     const fetchTraderTrades = async () => {
       // Note: Using 'user' parameter instead of 'wallet' for the Polymarket API
@@ -1009,7 +1004,7 @@ export default function TraderProfilePage({
     };
 
     fetchTraderTrades();
-  }, [wallet, positionsLoaded, openMarketIds]); // Depend on positionsLoaded to ensure proper sequencing
+  }, [wallet, openMarketIds]); // Fetch trades immediately when wallet loads
 
   // Toggle follow status
   const handleFollowToggle = async () => {
@@ -1734,7 +1729,8 @@ export default function TraderProfilePage({
                                 {new Date(trade.timestamp).toLocaleTimeString('en-US', { 
                                   hour: 'numeric', 
                                   minute: '2-digit',
-                                  hour12: true 
+                                  hour12: true,
+                                  timeZoneName: 'short'
                                 })}
                               </span>
                             </div>
@@ -1856,7 +1852,8 @@ export default function TraderProfilePage({
                             {new Date(trade.timestamp).toLocaleTimeString('en-US', { 
                               hour: 'numeric', 
                               minute: '2-digit',
-                              hour12: true 
+                              hour12: true,
+                              timeZoneName: 'short'
                             })}
                           </span>
                         </div>
