@@ -190,6 +190,8 @@ export async function GET(request: NextRequest) {
     const roi = totalVolume > 0 ? (totalPnl / totalVolume) * 100 : 0
     
     // Lifetime Stats from REAL Polymarket data
+    const firstTradeDate = earliestTrade ? earliestTrade.toISOString() : null
+    
     const lifetimeStats = {
       trader_username: displayName,
       trader_wallet: wallet,
@@ -201,7 +203,7 @@ export async function GET(request: NextRequest) {
       roi: roi,
       roi_formatted: `${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%`,
       markets_traded: marketsTraded,
-      first_trade: (earliestTrade as Date | null) ? (earliestTrade as Date).toISOString() : null
+      first_trade: firstTradeDate
     }
     
     // Recent Activity (Last 7 Days)
