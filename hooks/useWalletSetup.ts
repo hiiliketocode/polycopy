@@ -1,6 +1,6 @@
 'use client';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export function useWalletSetup() {
@@ -9,18 +9,16 @@ export function useWalletSetup() {
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Find the embedded wallet
   const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
 
-  // Create wallet and save to Supabase
   const setupWallet = async () => {
     setIsCreating(true);
     setError(null);
+
     try {
-      // If not authenticated with Privy, login first
       if (!authenticated) {
-        await login();
-        return; // Will continue after login completes
+        login();
+        return;
       }
 
       // Check if embedded wallet already exists
@@ -36,7 +34,6 @@ export function useWalletSetup() {
         throw new Error('Failed to create wallet');
       }
 
-      // Save wallet address to Supabase profile
       const { data: { user: supabaseUser } } = await supabase.auth.getUser();
       if (!supabaseUser) {
         throw new Error('Not logged in');
@@ -51,9 +48,7 @@ export function useWalletSetup() {
         })
         .eq('id', supabaseUser.id);
 
-      if (updateError) {
-        throw updateError;
-      }
+      if (updateError) throw updateError;
 
       return walletAddress;
     } catch (err: any) {
