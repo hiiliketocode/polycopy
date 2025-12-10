@@ -626,53 +626,136 @@ export default function FeedPage() {
           };
         });
 
-        // 5. Fetch categories from Gamma API (batched for efficiency)
-        // Collect unique condition IDs
-        const uniqueConditionIds = [...new Set(
-          formattedTrades
-            .map(t => t.market.id)
-            .filter(id => id && id.length > 0)
-        )];
-
-        console.log(`📦 Fetching categories for ${uniqueConditionIds.length} unique markets`);
-
-        // Fetch market details in parallel (batched)
-        const categoryPromises = uniqueConditionIds.map(async (conditionId) => {
-          try {
-            const response = await fetch(`/api/gamma/markets?conditionId=${conditionId}`);
-            if (!response.ok) return { conditionId, category: null };
-            const data = await response.json();
-            return { 
-              conditionId, 
-              category: data.category?.toLowerCase() || null 
-            };
-          } catch (error) {
-            console.warn(`Failed to fetch category for ${conditionId}:`, error);
-            return { conditionId, category: null };
-          }
-        });
-
-        const categoryResults = await Promise.all(categoryPromises);
-        
-        // Create a map of conditionId -> category
-        const categoryMap: Record<string, string> = {};
-        categoryResults.forEach(result => {
-          if (result.category && result.conditionId) {
-            categoryMap[result.conditionId] = result.category;
-          }
-        });
-
-        // Assign categories to trades
+        // 5. Categorize trades using comprehensive keyword matching
+        // This is much faster and more reliable than API calls
         formattedTrades.forEach(trade => {
-          if (trade.market.id) {
-            const category = categoryMap[trade.market.id];
-            if (category) {
-              trade.market.category = category;
-            }
+          const title = trade.market.title.toLowerCase();
+          
+          // Politics
+          if (title.includes('trump') || title.includes('biden') || title.includes('election') || 
+              title.includes('senate') || title.includes('congress') || title.includes('president') ||
+              title.includes('vote') || title.includes('poll') || title.includes('democrat') || 
+              title.includes('republican') || title.includes('white house') || title.includes('governor') ||
+              title.includes('kamala') || title.includes('desantis') || title.includes('nikki haley')) {
+            trade.market.category = 'politics';
+          }
+          // Sports - comprehensive coverage
+          else if (
+            // General sports keywords
+            title.includes('nba') || title.includes('nfl') || title.includes('mlb') || title.includes('nhl') ||
+            title.includes('soccer') || title.includes('football') || title.includes('basketball') || 
+            title.includes('baseball') || title.includes('hockey') || title.includes('championship') || 
+            title.includes('super bowl') || title.includes('world cup') || title.includes('playoffs') || 
+            title.includes(' vs ') || title.includes(' v ') || title.includes(' @ ') ||
+            title.includes('game') || title.includes('match') || title.includes('bowl') ||
+            title.includes('series') || title.includes('finals') || title.includes('spread') ||
+            title.includes('over/under') || title.includes('win on 20') || title.includes('score') ||
+            title.includes('points') || title.includes('season') || title.includes('playoff') ||
+            
+            // NBA Teams
+            title.includes('lakers') || title.includes('celtics') || title.includes('warriors') || 
+            title.includes('heat') || title.includes('bucks') || title.includes('nuggets') || 
+            title.includes('suns') || title.includes('mavs') || title.includes('mavericks') ||
+            title.includes('clippers') || title.includes('nets') || title.includes('bulls') || 
+            title.includes('pacers') || title.includes('thunder') || title.includes('knicks') ||
+            title.includes('76ers') || title.includes('sixers') || title.includes('rockets') ||
+            title.includes('spurs') || title.includes('raptors') || title.includes('jazz') ||
+            title.includes('grizzlies') || title.includes('pelicans') || title.includes('blazers') ||
+            title.includes('kings') || title.includes('hornets') || title.includes('pistons') ||
+            title.includes('magic') || title.includes('wizards') || title.includes('cavaliers') ||
+            title.includes('cavs') || title.includes('timberwolves') || title.includes('wolves') ||
+            
+            // NFL Teams
+            title.includes('chiefs') || title.includes('eagles') || title.includes('bills') ||
+            title.includes('49ers') || title.includes('niners') || title.includes('cowboys') ||
+            title.includes('ravens') || title.includes('bengals') || title.includes('dolphins') ||
+            title.includes('chargers') || title.includes('jaguars') || title.includes('jets') ||
+            title.includes('patriots') || title.includes('raiders') || title.includes('steelers') ||
+            title.includes('broncos') || title.includes('colts') || title.includes('titans') ||
+            title.includes('browns') || title.includes('packers') || title.includes('vikings') ||
+            title.includes('lions') || title.includes('bears') || title.includes('saints') ||
+            title.includes('falcons') || title.includes('panthers') || title.includes('buccaneers') ||
+            title.includes('bucs') || title.includes('cardinals') || title.includes('rams') ||
+            title.includes('seahawks') || title.includes('commanders') || title.includes('giants') ||
+            
+            // MLB Teams
+            title.includes('yankees') || title.includes('red sox') || title.includes('dodgers') ||
+            title.includes('astros') || title.includes('braves') || title.includes('mets') ||
+            title.includes('phillies') || title.includes('padres') || title.includes('cardinals') ||
+            title.includes('cubs') || title.includes('white sox') || title.includes('giants') ||
+            title.includes('mariners') || title.includes('angels') || title.includes('rangers') ||
+            title.includes('blue jays') || title.includes('orioles') || title.includes('rays') ||
+            title.includes('guardians') || title.includes('twins') || title.includes('royals') ||
+            title.includes('tigers') || title.includes('athletics') || title.includes('brewers') ||
+            title.includes('pirates') || title.includes('reds') || title.includes('marlins') ||
+            title.includes('nationals') || title.includes('rockies') || title.includes('diamondbacks') ||
+            
+            // Soccer/Football
+            title.includes('premier league') || title.includes('champions league') ||
+            title.includes('la liga') || title.includes('serie a') || title.includes('bundesliga') ||
+            title.includes('mls') || title.includes('world cup') || title.includes('uefa') ||
+            title.includes('fifa') || title.includes('manchester') || title.includes('liverpool') ||
+            title.includes('chelsea') || title.includes('arsenal') || title.includes('tottenham') ||
+            title.includes('barcelona') || title.includes('real madrid') || title.includes('bayern') ||
+            title.includes('psg') || title.includes('juventus') || title.includes('milan') ||
+            title.includes('inter') || title.includes('atletico') || title.includes('dortmund') ||
+            
+            // Individual Athletes (examples - add more as needed)
+            title.includes('lebron') || title.includes('curry') || title.includes('jokic') ||
+            title.includes('giannis') || title.includes('embiid') || title.includes('luka') ||
+            title.includes('mahomes') || title.includes('josh allen') || title.includes('lamar') ||
+            title.includes('burrow') || title.includes('herbert') || title.includes('prescott') ||
+            title.includes('messi') || title.includes('ronaldo') || title.includes('mbappe') ||
+            title.includes('haaland') || title.includes('neymar') || title.includes('salah') ||
+            
+            // Other sports
+            title.includes('ufc') || title.includes('boxing') || title.includes('mma') ||
+            title.includes('tennis') || title.includes('golf') || title.includes('f1') ||
+            title.includes('formula 1') || title.includes('nascar') || title.includes('olympics')
+          ) {
+            trade.market.category = 'sports';
+          }
+          // Crypto
+          else if (title.includes('bitcoin') || title.includes('btc') || title.includes('ethereum') || 
+                   title.includes('eth') || title.includes('crypto') || title.includes('blockchain') ||
+                   title.includes('solana') || title.includes('dogecoin') || title.includes('xrp') ||
+                   title.includes('cardano') || title.includes('polygon') || title.includes('matic')) {
+            trade.market.category = 'crypto';
+          }
+          // Economics
+          else if (title.includes('stock') || title.includes('trading') ||
+                   title.includes('economy') || title.includes('fed') || title.includes('interest rate') ||
+                   title.includes('inflation') || title.includes('recession') || title.includes('gdp') ||
+                   title.includes('unemployment') || title.includes('jobs report')) {
+            trade.market.category = 'economics';
+          }
+          // Tech
+          else if (title.includes('ai') || title.includes('tech') || title.includes('apple') || 
+                   title.includes('google') || title.includes('microsoft') || title.includes('meta') ||
+                   title.includes('tesla') || title.includes('openai') || title.includes('chatgpt') ||
+                   title.includes('amazon') || title.includes('nvidia') || title.includes('spacex')) {
+            trade.market.category = 'tech';
+          }
+          // Weather
+          else if (title.includes('temperature') || title.includes('snow') || title.includes('rain') ||
+                   title.includes('weather') || title.includes('forecast') || title.includes('climate') ||
+                   title.includes('hurricane') || title.includes('storm') || title.includes('tornado')) {
+            trade.market.category = 'weather';
+          }
+          // Pop Culture
+          else if (title.includes('movie') || title.includes('oscars') || title.includes('grammy') ||
+                   title.includes('celebrity') || title.includes('album') || title.includes('box office') ||
+                   title.includes('emmy') || title.includes('tv show') || title.includes('netflix') ||
+                   title.includes('spotify') || title.includes('billboard')) {
+            trade.market.category = 'culture';
+          }
+          // Business/Finance
+          else if (title.includes('company') || title.includes('ceo') || title.includes('revenue') ||
+                   title.includes('earnings') || title.includes('ipo') || title.includes('acquisition') ||
+                   title.includes('market cap') || title.includes('stock price')) {
+            trade.market.category = 'finance';
           }
         });
-
-        console.log(`✅ Categorized ${Object.keys(categoryMap).length} markets`);
 
         // Store all trades and reset display count
         setAllTrades(formattedTrades);
