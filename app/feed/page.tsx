@@ -664,9 +664,11 @@ export default function FeedPage() {
 
         // Assign categories to trades
         formattedTrades.forEach(trade => {
-          const category = categoryMap[trade.market.id];
-          if (category) {
-            trade.market.category = category;
+          if (trade.market.id) {
+            const category = categoryMap[trade.market.id];
+            if (category) {
+              trade.market.category = category;
+            }
           }
         });
 
