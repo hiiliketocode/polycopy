@@ -80,26 +80,31 @@ interface TraderDetails {
     trader_username: string
     trader_wallet: string
     total_trades: number
-    avg_roi: number | null
-    best_roi: number | null
-    worst_roi: number | null
-    wins: number
-    losses: number
-    breakeven: number
-    first_tracked: string | null
+    total_pnl: number
+    total_pnl_formatted: string
+    total_volume: number
+    total_volume_formatted: string
+    roi: number
+    roi_formatted: string
+    markets_traded: number
+    first_trade: string | null
   }
   tradeHistory: Array<{
     market_title: string
     outcome: string
-    roi: number | null
+    side: string
+    price: number
+    size: number
+    value: number
     market_resolved: boolean
     created_at: string
+    category: string
   }>
   marketFocus: Array<{
     category: string
     trade_count: number
     percentage: number
-    avg_roi: number | null
+    avg_value: number
   }>
   copyMetrics: {
     unique_copiers: number
@@ -107,16 +112,16 @@ interface TraderDetails {
     first_copy: string | null
     last_copy: string | null
   }
-  platformStats: {
-    platform_avg_roi: number | null
-    platform_win_rate: number | null
-  }
   recentActivity: Array<{
     market_title: string
     outcome: string
-    roi: number | null
+    side: string
+    price: number
+    size: number
+    value: number
     market_resolved: boolean
     created_at: string
+    category: string
   }>
   tradingStyle: string
   primaryCategory: string
@@ -502,8 +507,8 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
                       wallet={trader.trader_wallet}
                       onClick={handleTraderClick}
                     />{' '}
-                    — {trader.copy_count} {trader.copy_count === 1 ? 'copy' : 'copies'}{' '}
-                    <span className="text-gray-500">({trader.trader_wallet.slice(0, 6)}...{trader.trader_wallet.slice(-4)})</span>
+                    <span className="text-gray-500">({trader.trader_wallet})</span>{' '}
+                    — {trader.copy_count} {trader.copy_count === 1 ? 'copy' : 'copies'}
                   </div>
                 ))}
               </div>
@@ -535,6 +540,7 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
                       wallet={trader.trader_wallet}
                       onClick={handleTraderClick}
                     />{' '}
+                    <span className="text-gray-500">({trader.trader_wallet})</span>{' '}
                     | First copied: {trader.first_copied_formatted} | {trader.unique_markets} {trader.unique_markets === 1 ? 'market' : 'markets'} traded
                   </div>
                 ))}
@@ -576,6 +582,7 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
                       wallet={activity.trader_wallet || ''}
                       onClick={handleTraderClick}
                     />{' '}
+                    <span className="text-gray-500">({activity.trader_wallet})</span>{' '}
                     copied on {activity.market_title_truncated}{' '}
                     <span className="text-[#FDB022]">({activity.outcome})</span>
                   </div>
@@ -758,26 +765,26 @@ function TraderModal({
               </div>
             </div>
 
-            <ModalSection title="📊 LIFETIME STATS (POLYCOPY DATA)">
+            <ModalSection title="📊 LIFETIME STATS (REAL POLYMARKET DATA)">
               <div className="space-y-1 text-sm">
-                <div>Total Trades Copied: <span className="text-[#FDB022]">{details.lifetimeStats.total_trades}</span></div>
-                <div>Average ROI: <span className={getRoiColor(details.lifetimeStats.avg_roi)}>{formatROI(details.lifetimeStats.avg_roi)}</span></div>
-                <div>Win Rate: <span className="text-[#FDB022]">{formatWinRate(details.lifetimeStats.wins, details.lifetimeStats.losses)}</span> ({details.lifetimeStats.wins} wins, {details.lifetimeStats.losses} losses, {details.lifetimeStats.breakeven} breakeven)</div>
-                <div>Best Trade: <span className="text-green-400">{formatROI(details.lifetimeStats.best_roi)}</span></div>
-                <div>Worst Trade: <span className={getRoiColor(details.lifetimeStats.worst_roi)}>{formatROI(details.lifetimeStats.worst_roi)}</span></div>
-                <div>Times Copied: <span className="text-[#FDB022]">{details.copyMetrics.total_copies}</span> by <span className="text-[#FDB022]">{details.copyMetrics.unique_copiers}</span> users</div>
-                <div>First Tracked: <span className="text-gray-300">{formatDateLong(details.lifetimeStats.first_tracked)}</span></div>
+                <div>Total Trades: <span className="text-[#FDB022]">{details.lifetimeStats.total_trades}</span></div>
+                <div>P&L: <span className={getRoiColor(details.lifetimeStats.total_pnl)}>{details.lifetimeStats.total_pnl_formatted}</span></div>
+                <div>Volume: <span className="text-[#FDB022]">{details.lifetimeStats.total_volume_formatted}</span></div>
+                <div>ROI: <span className={getRoiColor(details.lifetimeStats.roi)}>{details.lifetimeStats.roi_formatted}</span></div>
+                <div>Markets Traded: <span className="text-[#FDB022]">{details.lifetimeStats.markets_traded}</span></div>
+                <div>Times Copied on Polycopy: <span className="text-[#3b82f6]">{details.copyMetrics.total_copies}</span> by <span className="text-[#3b82f6]">{details.copyMetrics.unique_copiers}</span> users</div>
+                <div>First Trade: <span className="text-gray-300">{formatDateLong(details.lifetimeStats.first_trade)}</span></div>
               </div>
             </ModalSection>
 
-            <ModalSection title="📋 TRADE HISTORY (All Time)">
+            <ModalSection title="📋 RECENT TRADE HISTORY (Last 100)">
               {details.tradeHistory.length === 0 ? (
                 <p className="text-gray-500">No trades found</p>
               ) : (
                 <div className="space-y-1 text-sm max-h-[200px] overflow-y-auto">
-                  {details.tradeHistory.map((trade, i) => (
+                  {details.tradeHistory.slice(0, 20).map((trade, i) => (
                     <div key={`${trade.created_at}-${i}`}>
-                      {i + 1}. {truncateText(trade.market_title, 60)} | {trade.outcome} | {formatROI(trade.roi)} | {formatDateShort(trade.created_at)} {getStatusEmoji(trade.roi, trade.market_resolved)}
+                      {i + 1}. {truncateText(trade.market_title, 50)} | <span className={trade.side === 'BUY' ? 'text-green-400' : 'text-red-400'}>{trade.side}</span> {trade.outcome} @ ${trade.price.toFixed(2)} | ${trade.value.toFixed(0)} | {formatDateShort(trade.created_at)} | <span className="text-gray-500">{trade.category}</span>
                     </div>
                   ))}
                 </div>
@@ -791,7 +798,7 @@ function TraderModal({
                 <div className="space-y-1 text-sm">
                   {details.marketFocus.map((cat) => (
                     <div key={cat.category}>
-                      {cat.category}: <span className="text-[#FDB022]">{cat.trade_count}</span> trades ({cat.percentage}%) - Avg ROI: <span className={getRoiColor(cat.avg_roi)}>{formatROI(cat.avg_roi)}</span>
+                      {cat.category}: <span className="text-[#FDB022]">{cat.trade_count}</span> trades ({cat.percentage}%) - Avg Value: <span className="text-green-400">${cat.avg_value.toFixed(0)}</span>
                     </div>
                   ))}
                   <div className="mt-3 pt-3 border-t border-[#374151]">
@@ -914,13 +921,41 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
   lines.push('═══════════════════════════════════════════════')
   lines.push('')
   
-  // 1. Top 30 Traders (Overall Leaderboard)
+  // 1. Top 30 Traders (Overall Leaderboard) - Show all 3 sort variants
   lines.push('🏆 TOP 30 TRADERS (OVERALL LEADERBOARD)')
   lines.push('───────────────────────────────────────────────')
-  if (sortedTraders.length === 0) {
+  
+  if (sectionA.topTraders.length === 0) {
     lines.push('Data unavailable')
   } else {
-    sortedTraders.forEach((trader, i) => {
+    const traders = sectionA.topTraders
+    
+    // Sort by ROI
+    lines.push('')
+    lines.push('📊 SORTED BY ROI:')
+    lines.push('')
+    const byROI = [...traders].sort((a, b) => b.roi - a.roi)
+    byROI.forEach((trader, i) => {
+      const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
+      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted}`)
+    })
+    
+    // Sort by P&L
+    lines.push('')
+    lines.push('💰 SORTED BY P&L:')
+    lines.push('')
+    const byPNL = [...traders].sort((a, b) => b.pnl - a.pnl)
+    byPNL.forEach((trader, i) => {
+      const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
+      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted}`)
+    })
+    
+    // Sort by Volume
+    lines.push('')
+    lines.push('📈 SORTED BY VOLUME:')
+    lines.push('')
+    const byVolume = [...traders].sort((a, b) => b.volume - a.volume)
+    byVolume.forEach((trader, i) => {
       const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
       lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted}`)
     })
@@ -974,8 +1009,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     lines.push('No data available')
   } else {
     sectionB.mostCopiedTraders.forEach((trader, i) => {
-      const wallet = trader.trader_wallet ? `${trader.trader_wallet.slice(0, 6)}...${trader.trader_wallet.slice(-4)}` : 'Unknown'
-      lines.push(`${i + 1}. ${trader.trader_username || 'Anonymous'} — ${trader.copy_count} copies (${wallet})`)
+      lines.push(`${i + 1}. ${trader.trader_username || 'Anonymous'} (${trader.trader_wallet}) — ${trader.copy_count} copies`)
     })
   }
   lines.push('')
@@ -999,7 +1033,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     lines.push('No data available')
   } else {
     sectionB.newlyTrackedTraders.forEach((trader, i) => {
-      lines.push(`${i + 1}. ${trader.trader_username || 'Anonymous'} | First copied: ${trader.first_copied_formatted} | ${trader.unique_markets} markets traded`)
+      lines.push(`${i + 1}. ${trader.trader_username || 'Anonymous'} (${trader.trader_wallet}) | First copied: ${trader.first_copied_formatted} | ${trader.unique_markets} markets traded`)
     })
   }
   lines.push('')
@@ -1026,7 +1060,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     lines.push('No data available')
   } else {
     sectionB.recentActivity.forEach((activity) => {
-      lines.push(`[${activity.time_formatted}] ${activity.trader_username || 'Anonymous'} copied on ${activity.market_title_truncated} (${activity.outcome})`)
+      lines.push(`[${activity.time_formatted}] ${activity.trader_username || 'Anonymous'} (${activity.trader_wallet}) copied on ${activity.market_title_truncated} (${activity.outcome})`)
     })
   }
   lines.push('')
@@ -1051,24 +1085,24 @@ function buildTraderContent(details: TraderDetails): string {
   lines.push('═══════════════════════════════════════════════')
   lines.push('')
   
-  lines.push('📊 LIFETIME STATS (POLYCOPY DATA)')
+  lines.push('📊 LIFETIME STATS (REAL POLYMARKET DATA)')
   lines.push('───────────────────────────────────────────────')
-  lines.push(`Total Trades Copied: ${lifetimeStats.total_trades}`)
-  lines.push(`Average ROI: ${formatROI(lifetimeStats.avg_roi)}`)
-  lines.push(`Win Rate: ${formatWinRate(lifetimeStats.wins, lifetimeStats.losses)} (${lifetimeStats.wins} wins, ${lifetimeStats.losses} losses, ${lifetimeStats.breakeven} breakeven)`)
-  lines.push(`Best Trade: ${formatROI(lifetimeStats.best_roi)}`)
-  lines.push(`Worst Trade: ${formatROI(lifetimeStats.worst_roi)}`)
-  lines.push(`Times Copied: ${copyMetrics.total_copies} by ${copyMetrics.unique_copiers} users`)
-  lines.push(`First Tracked: ${formatDateLong(lifetimeStats.first_tracked)}`)
+  lines.push(`Total Trades: ${lifetimeStats.total_trades}`)
+  lines.push(`P&L: ${lifetimeStats.total_pnl_formatted}`)
+  lines.push(`Volume: ${lifetimeStats.total_volume_formatted}`)
+  lines.push(`ROI: ${lifetimeStats.roi_formatted}`)
+  lines.push(`Markets Traded: ${lifetimeStats.markets_traded}`)
+  lines.push(`Times Copied on Polycopy: ${copyMetrics.total_copies} by ${copyMetrics.unique_copiers} users`)
+  lines.push(`First Trade: ${formatDateLong(lifetimeStats.first_trade)}`)
   lines.push('')
   
-  lines.push('📋 TRADE HISTORY (All Time)')
+  lines.push('📋 RECENT TRADE HISTORY (Last 100)')
   lines.push('───────────────────────────────────────────────')
   if (tradeHistory.length === 0) {
     lines.push('No trades found')
   } else {
-    tradeHistory.forEach((trade, i) => {
-      lines.push(`${i + 1}. ${truncateText(trade.market_title, 60)} | ${trade.outcome} | ${formatROI(trade.roi)} | ${formatDateShort(trade.created_at)} ${getStatusEmoji(trade.roi, trade.market_resolved)}`)
+    tradeHistory.slice(0, 20).forEach((trade, i) => {
+      lines.push(`${i + 1}. ${truncateText(trade.market_title, 50)} | ${trade.side} ${trade.outcome} @ $${trade.price.toFixed(2)} | $${trade.value.toFixed(0)} | ${formatDateShort(trade.created_at)} | ${trade.category}`)
     })
   }
   lines.push('')
@@ -1079,7 +1113,7 @@ function buildTraderContent(details: TraderDetails): string {
     lines.push('No data available')
   } else {
     marketFocus.forEach((cat) => {
-      lines.push(`${cat.category}: ${cat.trade_count} trades (${cat.percentage}%) - Avg ROI: ${formatROI(cat.avg_roi)}`)
+      lines.push(`${cat.category}: ${cat.trade_count} trades (${cat.percentage}%) - Avg Value: $${cat.avg_value.toFixed(0)}`)
     })
   }
   lines.push('')

@@ -6,7 +6,7 @@ import { cookies } from 'next/headers'
 function createServiceClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    process.SUPABASE_SERVICE_ROLE_KEY!,
     {
       auth: {
         autoRefreshToken: false,
@@ -21,6 +21,27 @@ async function isAuthenticated() {
   const cookieStore = await cookies()
   const authCookie = cookieStore.get('admin_dashboard_auth')
   return authCookie?.value === 'authenticated'
+}
+
+// Helper to categorize markets
+function categorizeMarket(title: string): string {
+  const lowerTitle = title.toLowerCase()
+  
+  if (lowerTitle.includes('temperature') || lowerTitle.includes('weather') || lowerTitle.includes('°f') || lowerTitle.includes('°c') || lowerTitle.includes('snow') || lowerTitle.includes('rain')) {
+    return 'Weather'
+  } else if (lowerTitle.includes('bitcoin') || lowerTitle.includes('btc') || lowerTitle.includes('crypto') || lowerTitle.includes('eth') || lowerTitle.includes('ethereum')) {
+    return 'Crypto'
+  } else if (lowerTitle.includes('election') || lowerTitle.includes('vote') || lowerTitle.includes('president') || lowerTitle.includes('trump') || lowerTitle.includes('biden') || lowerTitle.includes('democrat') || lowerTitle.includes('republican')) {
+    return 'Politics'
+  } else if (lowerTitle.includes('stock') || lowerTitle.includes('earnings') || lowerTitle.includes('ipo') || lowerTitle.includes('ceo') || lowerTitle.includes('company')) {
+    return 'Business/Finance'
+  } else if (lowerTitle.includes('vs.') || lowerTitle.includes(' vs ') || lowerTitle.includes('sports') || lowerTitle.includes('nfl') || lowerTitle.includes('nba') || lowerTitle.includes('mlb') || lowerTitle.includes('nhl') || lowerTitle.includes('soccer')) {
+    return 'Sports'
+  } else if (lowerTitle.includes('ai') || lowerTitle.includes('tech') || lowerTitle.includes('apple') || lowerTitle.includes('google') || lowerTitle.includes('microsoft')) {
+    return 'Tech'
+  }
+  
+  return 'Other'
 }
 
 export async function GET(request: NextRequest) {
@@ -39,108 +60,163 @@ export async function GET(request: NextRequest) {
   const supabase = createServiceClient()
 
   try {
-    // QUERY 1: Lifetime Stats
-    const { data: tradesData, error: tradesError } = await supabase
-      .from('copied_trades')
-      .select('trader_username, trader_wallet, roi, market_resolved, created_at')
-      .eq('trader_wallet', wallet)
-
-    if (tradesError) throw tradesError
-
-    // Calculate lifetime stats
-    let lifetimeStats = {
-      trader_username: tradesData?.[0]?.trader_username || 'Unknown',
-      trader_wallet: wallet,
-      total_trades: tradesData?.length || 0,
-      avg_roi: null as number | null,
-      best_roi: null as number | null,
-      worst_roi: null as number | null,
-      wins: 0,
-      losses: 0,
-      breakeven: 0,
-      first_tracked: tradesData?.[0]?.created_at || null
-    }
-
-    if (tradesData && tradesData.length > 0) {
-      const roiValues = tradesData.filter(t => t.roi !== null).map(t => t.roi as number)
-      
-      if (roiValues.length > 0) {
-        lifetimeStats.avg_roi = roiValues.reduce((a, b) => a + b, 0) / roiValues.length
-        lifetimeStats.best_roi = Math.max(...roiValues)
-        lifetimeStats.worst_roi = Math.min(...roiValues)
-      }
-
-      tradesData.forEach(t => {
-        if (t.roi !== null) {
-          if (t.roi > 0) lifetimeStats.wins++
-          else if (t.roi < 0) lifetimeStats.losses++
-          else lifetimeStats.breakeven++
-        }
-      })
-
-      // Get first tracked date
-      const dates = tradesData.map(t => new Date(t.created_at).getTime())
-      lifetimeStats.first_tracked = new Date(Math.min(...dates)).toISOString()
-    }
-
-    // QUERY 2: All Trade History
-    const { data: tradeHistory, error: historyError } = await supabase
-      .from('copied_trades')
-      .select('market_title, outcome, roi, market_resolved, created_at')
-      .eq('trader_wallet', wallet)
-      .order('created_at', { ascending: false })
-
-    if (historyError) throw historyError
-
-    // QUERY 3: Market Focus (Category Breakdown)
-    const categoryData = new Map<string, { count: number, rois: number[] }>()
+    // Fetch REAL Polymarket data from Data API
+    const tradesResponse = await fetch(
+      `https://data-api.polymarket.com/trades?limit=100&user=${wallet}`
+    )
     
-    tradeHistory?.forEach(trade => {
-      const title = trade.market_title?.toLowerCase() || ''
-      let category = 'Other'
-      
-      if (title.includes('temperature') || title.includes('weather') || title.includes('°f') || title.includes('°c')) {
-        category = 'Weather'
-      } else if (title.includes('bitcoin') || title.includes('btc') || title.includes('crypto') || title.includes('eth')) {
-        category = 'Crypto'
-      } else if (title.includes('election') || title.includes('vote') || title.includes('president') || title.includes('trump') || title.includes('biden')) {
-        category = 'Politics'
-      } else if (title.includes('stock') || title.includes('msft') || title.includes('tsla') || title.includes('spy') || title.includes('aapl')) {
-        category = 'Stocks'
-      } else if (title.includes('vs.') || title.includes('sports') || title.includes('nfl') || title.includes('nba')) {
-        category = 'Sports'
+    if (!tradesResponse.ok) {
+      throw new Error('Failed to fetch Polymarket trades')
+    }
+    
+    const realTrades = await tradesResponse.json()
+    
+    // Fetch positions for current P&L
+    const positionsResponse = await fetch(
+      `https://data-api.polymarket.com/positions?user=${wallet}`
+    )
+    
+    let positions = []
+    if (positionsResponse.ok) {
+      positions = await positionsResponse.json()
+    }
+    
+    // Get trader displayName from leaderboard
+    let displayName = `${wallet.slice(0, 6)}...${wallet.slice(-4)}`
+    try {
+      const leaderboardRes = await fetch(
+        'https://data-api.polymarket.com/leaderboard?limit=1000&orderBy=PNL&timePeriod=all'
+      )
+      if (leaderboardRes.ok) {
+        const leaderboardData = await leaderboardRes.json()
+        const traderInfo = leaderboardData.traders?.find(
+          (t: any) => t.wallet.toLowerCase() === wallet.toLowerCase()
+        )
+        if (traderInfo?.displayName) {
+          displayName = traderInfo.displayName
+        }
       }
-
+    } catch (err) {
+      console.warn('Failed to fetch trader displayName:', err)
+    }
+    
+    // Calculate stats from REAL Polymarket trades
+    const categoryData = new Map<string, { count: number, totalValue: number }>()
+    let totalTradeValue = 0
+    let earliestTrade: Date | null = null
+    
+    // Format trade history
+    const tradeHistory = realTrades.map((trade: any) => {
+      const timestampMs = (trade.timestamp || Date.now() / 1000) * 1000
+      const tradeDate = new Date(timestampMs)
+      const category = categorizeMarket(trade.market || '')
+      const tradeValue = parseFloat(trade.price || 0) * parseFloat(trade.size || 0)
+      
+      // Track category stats
       if (!categoryData.has(category)) {
-        categoryData.set(category, { count: 0, rois: [] })
+        categoryData.set(category, { count: 0, totalValue: 0 })
       }
       const cat = categoryData.get(category)!
       cat.count++
-      if (trade.roi !== null) {
-        cat.rois.push(trade.roi)
+      cat.totalValue += tradeValue
+      
+      totalTradeValue += tradeValue
+      
+      // Track earliest trade
+      if (!earliestTrade || tradeDate < earliestTrade) {
+        earliestTrade = tradeDate
       }
-    })
-
+      
+      return {
+        market_title: trade.market || 'Unknown Market',
+        outcome: trade.outcome || trade.option || 'YES',
+        side: (trade.side || 'BUY').toUpperCase(),
+        price: parseFloat(trade.price || 0),
+        size: parseFloat(trade.size || 0),
+        value: tradeValue,
+        market_resolved: false, // We don't have resolution data from trades API
+        created_at: tradeDate.toISOString(),
+        category
+      }
+    }).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    
+    // Market Focus breakdown
     const marketFocus = Array.from(categoryData.entries())
       .map(([category, data]) => ({
         category,
         trade_count: data.count,
-        percentage: Math.round((data.count / (tradeHistory?.length || 1)) * 100),
-        avg_roi: data.rois.length > 0 
-          ? data.rois.reduce((a, b) => a + b, 0) / data.rois.length 
-          : null
+        percentage: Math.round((data.count / (realTrades.length || 1)) * 100),
+        avg_value: data.totalValue / data.count
       }))
       .sort((a, b) => b.trade_count - a.trade_count)
-
-    // QUERY 4: Copy Metrics
+    
+    // Infer trading style from primary category
+    const primaryCategory = marketFocus[0]?.category || 'General'
+    let tradingStyle = 'Diversified trader'
+    
+    if (primaryCategory === 'Weather' && marketFocus[0]?.percentage >= 50) {
+      tradingStyle = 'High-precision weather predictions'
+    } else if (primaryCategory === 'Crypto' && marketFocus[0]?.percentage >= 50) {
+      tradingStyle = 'Crypto price speculation'
+    } else if (primaryCategory === 'Politics' && marketFocus[0]?.percentage >= 50) {
+      tradingStyle = 'Political event forecasting'
+    } else if (primaryCategory === 'Business/Finance' && marketFocus[0]?.percentage >= 50) {
+      tradingStyle = 'Financial market predictions'
+    } else if (primaryCategory === 'Sports' && marketFocus[0]?.percentage >= 50) {
+      tradingStyle = 'Sports betting predictions'
+    } else if (primaryCategory === 'Tech' && marketFocus[0]?.percentage >= 50) {
+      tradingStyle = 'Tech industry forecasting'
+    }
+    
+    // Calculate P&L from positions
+    let totalPnl = 0
+    let totalVolume = 0
+    let marketsTraded = 0
+    
+    if (positions && positions.length > 0) {
+      totalPnl = positions.reduce((sum: number, pos: any) => {
+        const pnl = parseFloat(pos.pnl || 0)
+        return sum + pnl
+      }, 0)
+      
+      totalVolume = positions.reduce((sum: number, pos: any) => {
+        const volume = parseFloat(pos.notional || 0)
+        return sum + volume
+      }, 0)
+      
+      marketsTraded = positions.length
+    }
+    
+    const roi = totalVolume > 0 ? (totalPnl / totalVolume) * 100 : 0
+    
+    // Lifetime Stats from REAL Polymarket data
+    const lifetimeStats = {
+      trader_username: displayName,
+      trader_wallet: wallet,
+      total_trades: realTrades.length,
+      total_pnl: totalPnl,
+      total_pnl_formatted: `$${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}`,
+      total_volume: totalVolume,
+      total_volume_formatted: `$${(totalVolume / 1000).toFixed(1)}K`,
+      roi: roi,
+      roi_formatted: `${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%`,
+      markets_traded: marketsTraded,
+      first_trade: earliestTrade?.toISOString() || null
+    }
+    
+    // Recent Activity (Last 7 Days)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    const recentActivity = tradeHistory
+      .filter((t: any) => new Date(t.created_at) >= sevenDaysAgo)
+      .slice(0, 10)
+    
+    // POLYCOPY copy metrics (internal tracking)
     const { data: copyData, error: copyError } = await supabase
       .from('copied_trades')
       .select('user_id, created_at')
       .eq('trader_wallet', wallet)
-
-    if (copyError) throw copyError
-
-    const uniqueCopiers = new Set(copyData?.map(c => c.user_id)).size
+    
+    const uniqueCopiers = new Set(copyData?.map(c => c.user_id) || []).size
     const copyDates = copyData?.map(c => new Date(c.created_at).getTime()) || []
     
     const copyMetrics = {
@@ -150,54 +226,11 @@ export async function GET(request: NextRequest) {
       last_copy: copyDates.length > 0 ? new Date(Math.max(...copyDates)).toISOString() : null
     }
 
-    // QUERY 5: Platform Comparison
-    const { data: platformData, error: platformError } = await supabase
-      .from('copied_trades')
-      .select('roi')
-      .not('roi', 'is', null)
-
-    if (platformError) throw platformError
-
-    let platformStats = {
-      platform_avg_roi: null as number | null,
-      platform_win_rate: null as number | null
-    }
-
-    if (platformData && platformData.length > 0) {
-      const platformRois = platformData.map(p => p.roi as number)
-      platformStats.platform_avg_roi = platformRois.reduce((a, b) => a + b, 0) / platformRois.length
-      const platformWins = platformRois.filter(r => r > 0).length
-      platformStats.platform_win_rate = (platformWins / platformRois.length) * 100
-    }
-
-    // Recent Activity (Last 7 Days)
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-    const recentActivity = tradeHistory
-      ?.filter(t => new Date(t.created_at) >= new Date(sevenDaysAgo))
-      .slice(0, 10) || []
-
-    // Infer trading style
-    const primaryCategory = marketFocus[0]?.category || 'General'
-    let tradingStyle = 'Diversified trader'
-    
-    if (primaryCategory === 'Weather' && marketFocus[0]?.percentage >= 50) {
-      tradingStyle = 'High-precision narrow temperature ranges'
-    } else if (primaryCategory === 'Crypto' && marketFocus[0]?.percentage >= 50) {
-      tradingStyle = 'Short-term crypto price predictions'
-    } else if (primaryCategory === 'Politics' && marketFocus[0]?.percentage >= 50) {
-      tradingStyle = 'Political event forecasting'
-    } else if (primaryCategory === 'Stocks' && marketFocus[0]?.percentage >= 50) {
-      tradingStyle = 'Stock market movements'
-    } else if (primaryCategory === 'Sports' && marketFocus[0]?.percentage >= 50) {
-      tradingStyle = 'Sports betting predictions'
-    }
-
     return NextResponse.json({
       lifetimeStats,
-      tradeHistory: tradeHistory || [],
+      tradeHistory,
       marketFocus,
       copyMetrics,
-      platformStats,
       recentActivity,
       tradingStyle,
       primaryCategory
