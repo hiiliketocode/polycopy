@@ -19,31 +19,50 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Polycopy - Copy Trades from Top Polymarket Traders',
-  description: 'Discover and copy trades from the best prediction market traders on Polymarket. Follow top performers and replicate their strategies.',
+  title: {
+    default: 'Polycopy - Copy Trading for Polymarket',
+    template: '%s | Polycopy'
+  },
+  description: 'Discover and copy top Polymarket traders. Track performance, follow winning strategies, and make smarter prediction market trades.',
+  keywords: ['Polymarket', 'copy trading', 'prediction markets', 'crypto trading', 'trading signals', 'Polymarket traders', 'prediction trading', 'market forecasting'],
+  authors: [{ name: 'Polycopy' }],
+  creator: 'Polycopy',
   metadataBase: new URL('https://polycopy.app'),
   openGraph: {
-    title: 'Polycopy - Copy Trades from Top Polymarket Traders',
-    description: 'Discover and copy trades from the best prediction market traders on Polymarket. Follow top performers and replicate their strategies.',
+    type: 'website',
+    locale: 'en_US',
     url: 'https://polycopy.app',
     siteName: 'Polycopy',
+    title: 'Polycopy - Copy Trading for Polymarket',
+    description: 'Discover and copy top Polymarket traders. Track performance, follow winning strategies, and make smarter prediction market trades.',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Polycopy - Copy Trading Platform',
-      },
-    ],
-    locale: 'en_US',
-    type: 'website',
+        alt: 'Polycopy - Copy Trading for Polymarket'
+      }
+    ]
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Polycopy - Copy Trades from Top Polymarket Traders',
-    description: 'Discover and copy trades from the best prediction market traders on Polymarket.',
-    images: ['/og-image.png'],
+    title: 'Polycopy - Copy Trading for Polymarket',
+    description: 'Discover and copy top Polymarket traders.',
+    site: '@polycopyapp',
+    creator: '@polycopyapp',
+    images: ['/og-image.png']
   },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1
+    }
+  }
 };
 
 export default function RootLayout({
