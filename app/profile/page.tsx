@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import Header from '../components/Header';
+import WalletSetupModal from '@/components/WalletSetupModal';
 
 // Types for copied trades
 interface CopiedTrade {
@@ -65,6 +66,10 @@ export default function ProfilePage() {
   const [walletInput, setWalletInput] = useState('');
   const [connectionError, setConnectionError] = useState('');
   const [savingConnection, setSavingConnection] = useState(false);
+  
+  // Premium and trading wallet state
+  const [profile, setProfile] = useState<any>(null);
+  const [showWalletSetup, setShowWalletSetup] = useState(false);
   
   // Display name state
   const [displayName, setDisplayName] = useState<string>('You');
@@ -152,21 +157,22 @@ export default function ProfilePage() {
           setFollowingCount(count || 0);
         }
 
-        // Fetch wallet address and username from profile
-        const { data: profile, error: profileError } = await supabase
+        // Fetch wallet address, username, premium status, and trading wallet from profile
+        const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('wallet_address, polymarket_username')
+          .select('wallet_address, polymarket_username, is_premium, trading_wallet_address, premium_since')
           .eq('id', user.id)
           .single();
 
         if (profileError) {
           console.error('Error fetching profile:', profileError);
         } else {
-          if (profile?.wallet_address) {
-            setWalletAddress(profile.wallet_address);
+          setProfile(profileData);
+          if (profileData?.wallet_address) {
+            setWalletAddress(profileData.wallet_address);
           }
-          if (profile?.polymarket_username) {
-            setPolymarketUsername(profile.polymarket_username);
+          if (profileData?.polymarket_username) {
+            setPolymarketUsername(profileData.polymarket_username);
           }
         }
       } catch (err) {
@@ -1079,6 +1085,30 @@ export default function ProfilePage() {
               )}
             </div>
           </div>
+          
+          {/* Trading Wallet Section - Only show for premium users */}
+          {profile?.is_premium && (
+            <div className="mt-4 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
+              <h3 className="text-sm font-medium text-gray-400 mb-2">Trading Wallet</h3>
+              {profile?.trading_wallet_address ? (
+                <div>
+                  <p className="font-mono text-sm text-white break-all">
+                    {profile.trading_wallet_address}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Fund with USDC.e on Polygon to start copy trading
+                  </p>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowWalletSetup(true)}
+                  className="px-4 py-2 bg-yellow-500 text-black rounded-lg font-medium hover:bg-yellow-600 text-sm"
+                >
+                  Set Up Trading Wallet
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Copied Trades Section */}
@@ -1956,6 +1986,17 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+
+      {/* Wallet Setup Modal */}
+      <WalletSetupModal
+        isOpen={showWalletSetup}
+        onClose={() => setShowWalletSetup(false)}
+        onSuccess={(address) => {
+          setShowWalletSetup(false);
+          // Refresh profile data to show new wallet
+          window.location.reload();
+        }}
+      />
     </div>
   );
 }

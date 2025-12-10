@@ -16,7 +16,8 @@ const supabase = createClient(
   }
 )
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Initialize Resend only if API key is available (prevents build errors)
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
 // Helper to calculate trader's ROI
 function calculateTraderROI(traderAvgPrice: number | null, currentPrice: number | null): number {
@@ -156,6 +157,11 @@ export async function GET(request: NextRequest) {
           )
           
           try {
+            if (!resend) {
+              console.error('Resend not configured, skipping email notification')
+              continue
+            }
+            
             await resend.emails.send({
               from: 'Polycopy <notifications@polycopy.app>',
               to: profile.email,
@@ -232,6 +238,11 @@ export async function GET(request: NextRequest) {
           }
           
           try {
+            if (!resend) {
+              console.error('Resend not configured, skipping email notification')
+              continue
+            }
+            
             await resend.emails.send({
               from: 'Polycopy <notifications@polycopy.app>',
               to: profile.email,
