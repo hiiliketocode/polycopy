@@ -953,7 +953,7 @@ export default function TraderProfilePage({
           }
           
           return {
-            timestamp: trade.timestamp,
+            timestamp: timestampMs, // Use converted milliseconds timestamp
             market: trade.title || trade.market?.title || trade.marketTitle || 'Unknown Market',
             side: trade.side || 'BUY',
             outcome: trade.outcome || trade.option || '',
