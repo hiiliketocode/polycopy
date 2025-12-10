@@ -690,6 +690,19 @@ export default function FeedPage() {
             title.includes('pirates') || title.includes('reds') || title.includes('marlins') ||
             title.includes('nationals') || title.includes('rockies') || title.includes('diamondbacks') ||
             
+            // NHL Teams
+            title.includes('bruins') || title.includes('maple leafs') || title.includes('canadiens') ||
+            title.includes('habs') || title.includes('senators') || title.includes('sabres') ||
+            title.includes('red wings') || title.includes('lightning') || title.includes('panthers') ||
+            title.includes('hurricanes') || title.includes('blue jackets') || title.includes('devils') ||
+            title.includes('islanders') || title.includes('flyers') || title.includes('penguins') ||
+            title.includes('capitals') || title.includes('blackhawks') || title.includes('avalanche') ||
+            title.includes('stars') || title.includes('wild') || title.includes('predators') ||
+            title.includes('blues') || title.includes('flames') || title.includes('oilers') ||
+            title.includes('canucks') || title.includes('ducks') || title.includes('sharks') ||
+            title.includes('golden knights') || title.includes('kraken') || title.includes('coyotes') ||
+            title.includes('jets') || title.includes('rangers') ||
+            
             // Soccer/Football
             title.includes('premier league') || title.includes('champions league') ||
             title.includes('la liga') || title.includes('serie a') || title.includes('bundesliga') ||
