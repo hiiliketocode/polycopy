@@ -62,7 +62,13 @@ export default function TradingWalletSection({ walletAddress, onSetupClick }: Tr
   // Handle deposit using Privy's fundWallet
   const handleDeposit = async () => {
     try {
-      await fundWallet({ address: walletAddress });
+      // Specify Polygon chain explicitly for USDC.e deposits (chain ID 137)
+      await fundWallet({ 
+        address: walletAddress,
+        options: {
+          chain: { id: 137 }
+        }
+      });
     } catch (error) {
       console.error('Deposit error:', error);
       showToastMessage('Failed to open deposit');
@@ -72,8 +78,13 @@ export default function TradingWalletSection({ walletAddress, onSetupClick }: Tr
   // Handle withdraw
   const handleWithdraw = async () => {
     try {
-      // Privy's fundWallet also handles withdrawals
-      await fundWallet({ address: walletAddress });
+      // Privy's fundWallet also handles withdrawals on Polygon
+      await fundWallet({ 
+        address: walletAddress,
+        options: {
+          chain: { id: 137 }
+        }
+      });
     } catch (error) {
       console.error('Withdraw error:', error);
       showToastMessage('Failed to open withdraw');

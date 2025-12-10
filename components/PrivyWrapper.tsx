@@ -1,7 +1,7 @@
 'use client';
 
 import { PrivyProvider } from '@privy-io/react-auth';
-import { polygon } from 'viem/chains';
+import { polygon, mainnet } from 'viem/chains';
 
 export default function PrivyWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -11,7 +11,7 @@ export default function PrivyWrapper({ children }: { children: React.ReactNode }
         appearance: {
           theme: 'dark',
           accentColor: '#FDB022',
-          logo: 'https://polycopy.app/logo.png',
+          // Remove logo to avoid 404 error
         },
         embeddedWallets: {
           ethereum: {
@@ -19,7 +19,8 @@ export default function PrivyWrapper({ children }: { children: React.ReactNode }
           },
         },
         defaultChain: polygon,
-        supportedChains: [polygon],
+        // Support both Polygon and Ethereum mainnet for funding flexibility
+        supportedChains: [polygon, mainnet],
         loginMethods: ['email'],
       }}
     >
