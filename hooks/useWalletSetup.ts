@@ -1,10 +1,10 @@
 'use client';
-import { usePrivy, useWallets, useLoginWithEmail } from '@privy-io/react-auth';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export function useWalletSetup() {
-  const { ready, authenticated, user, logout, createWallet } = usePrivy();
+  const { ready, authenticated, user, login, logout, createWallet } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -12,21 +12,7 @@ export function useWalletSetup() {
 
   const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
 
-  // Use the login hook with onComplete callback
-  const { sendCode, loginWithCode, state } = useLoginWithEmail({
-    onComplete: async ({ user, isNewUser }) => {
-      console.log('Privy login complete', { user, isNewUser });
-      // After login completes, trigger wallet creation
-      setPendingWalletCreation(true);
-    },
-    onError: (error) => {
-      console.error('Privy login error:', error);
-      setError('Login failed. Please try again.');
-      setIsCreating(false);
-    },
-  });
-
-  // Watch for pending wallet creation after login
+  // Watch for authentication changes - create wallet after login completes
   useEffect(() => {
     const createWalletAfterLogin = async () => {
       if (!pendingWalletCreation || !authenticated || !walletsReady) return;
@@ -70,12 +56,10 @@ export function useWalletSetup() {
         }
 
         console.log('Wallet saved to profile');
-        // Force reload to show updated profile
         window.location.reload();
       } catch (err: any) {
         console.error('Wallet creation error:', err);
         setError(err.message || 'Failed to create wallet');
-      } finally {
         setIsCreating(false);
       }
     };
@@ -83,17 +67,29 @@ export function useWalletSetup() {
     createWalletAfterLogin();
   }, [pendingWalletCreation, authenticated, walletsReady, embeddedWallet, createWallet, user?.id]);
 
-  // If already authenticated with Privy, just create wallet directly
+  // Also watch for authenticated becoming true (login completed)
+  useEffect(() => {
+    if (authenticated && isCreating && !pendingWalletCreation) {
+      console.log('Auth detected, triggering wallet creation');
+      setPendingWalletCreation(true);
+    }
+  }, [authenticated, isCreating, pendingWalletCreation]);
+
   const setupWallet = useCallback(async () => {
     setIsCreating(true);
     setError(null);
 
     if (authenticated) {
       // Already logged into Privy, create wallet directly
+      console.log('Already authenticated, creating wallet...');
       setPendingWalletCreation(true);
+    } else {
+      // Not authenticated, open Privy login modal
+      console.log('Not authenticated, opening login...');
+      login();
+      // The useEffect watching 'authenticated' will trigger wallet creation when login completes
     }
-    // If not authenticated, the modal will handle login via sendCode/loginWithCode
-  }, [authenticated]);
+  }, [authenticated, login]);
 
   return {
     ready,
@@ -104,9 +100,5 @@ export function useWalletSetup() {
     isCreating,
     error,
     privyLogout: logout,
-    // Expose email login methods for the modal
-    sendCode,
-    loginWithCode,
-    loginState: state,
   };
 }
