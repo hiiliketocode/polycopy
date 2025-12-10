@@ -980,7 +980,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
         lines.push(`🏆 ${displayName} TOP 10`)
         lines.push('─────────────────────────')
         traders.slice(0, 10).forEach((trader, i) => {
-          lines.push(`${i + 1}. ${trader.displayName} — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted}`)
+          lines.push(`${i + 1}. ${trader.displayName} (${trader.wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted}`)
         })
         lines.push('')
       }
