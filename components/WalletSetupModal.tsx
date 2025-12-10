@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useWalletSetup } from '@/hooks/useWalletSetup';
 
 interface WalletSetupModalProps {
@@ -9,22 +9,30 @@ interface WalletSetupModalProps {
 }
 
 export default function WalletSetupModal({ isOpen, onClose, onSuccess }: WalletSetupModalProps) {
-  const { setupWallet, isCreating, error, walletAddress } = useWalletSetup();
-  const [step, setStep] = useState<'intro' | 'creating' | 'success'>('intro');
+  const { setupWallet, isCreating, error, walletAddress, authenticated } = useWalletSetup();
+  const [step, setStep] = useState<'intro' | 'creating'>('intro');
 
   if (!isOpen) return null;
 
-  const handleSetup = async () => {
-    setStep('creating');
-    try {
-      const address = await setupWallet();
-      if (address) {
-        setStep('success');
-        onSuccess(address);
-      }
-    } catch (err) {
+  // Watch for wallet creation completion
+  useEffect(() => {
+    if (step === 'creating' && !isCreating && walletAddress && authenticated) {
+      // Wallet was created successfully
+      // The hook will automatically reload the page, so we don't need to show success step
+      onSuccess(walletAddress);
+    }
+  }, [step, isCreating, walletAddress, authenticated, onSuccess]);
+
+  // Watch for errors to go back to intro
+  useEffect(() => {
+    if (error && step === 'creating') {
       setStep('intro');
     }
+  }, [error, step]);
+
+  const handleSetup = () => {
+    setStep('creating');
+    setupWallet();
   };
 
   return (
@@ -67,22 +75,6 @@ export default function WalletSetupModal({ isOpen, onClose, onSuccess }: WalletS
             <div className="animate-spin w-12 h-12 border-4 border-yellow-500 border-t-transparent rounded-full mx-auto mb-4"></div>
             <p className="text-white font-medium">Creating your wallet...</p>
             <p className="text-gray-400 text-sm mt-2">This may take a moment</p>
-          </div>
-        )}
-
-        {step === 'success' && (
-          <div className="text-center py-4">
-            <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl text-green-500">✓</span>
-            </div>
-            <h2 className="text-xl font-bold text-white mb-2">Wallet Created!</h2>
-            <p className="text-gray-400 mb-4 font-mono text-sm break-all">{walletAddress}</p>
-            <p className="text-gray-400 text-sm mb-6">
-              Next step: Fund your wallet with USDC.e on Polygon to start trading.
-            </p>
-            <button onClick={onClose} className="w-full px-4 py-2 bg-yellow-500 text-black rounded-lg font-medium hover:bg-yellow-600">
-              Got It
-            </button>
           </div>
         )}
       </div>
