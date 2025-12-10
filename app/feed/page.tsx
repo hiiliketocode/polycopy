@@ -657,7 +657,7 @@ export default function FeedPage() {
         // Create a map of conditionId -> category
         const categoryMap: Record<string, string> = {};
         categoryResults.forEach(result => {
-          if (result.category) {
+          if (result.category && result.conditionId) {
             categoryMap[result.conditionId] = result.category;
           }
         });
