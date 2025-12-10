@@ -36,21 +36,49 @@ export async function POST(request: NextRequest) {
     const authCookies = allCookies.filter(c => c.name.includes('auth') || c.name.startsWith('sb-'))
     console.log('🔐 Auth-related cookies found:', authCookies.map(c => c.name))
     
-    // Verify authentication using server client
-    const supabaseAuth = await createAuthClient()
-    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+    // Check for Authorization header (for client-side auth)
+    const authHeader = request.headers.get('authorization')
+    console.log('🔐 Authorization header present:', !!authHeader)
+    
+    let user = null
+    let authError = null
+    
+    // Try Authorization header first (for client-side localStorage auth)
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.replace('Bearer ', '')
+      console.log('🔑 Using Bearer token from header')
+      
+      const supabaseWithToken = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      
+      const { data, error } = await supabaseWithToken.auth.getUser(token)
+      user = data.user
+      authError = error
+      
+      console.log('🔐 Auth via header - User exists:', !!user)
+      if (error) console.error('🔐 Auth header error:', error.message)
+    }
+    
+    // Fallback to cookie-based auth
+    if (!user) {
+      console.log('🍪 Falling back to cookie-based auth')
+      const supabaseAuth = await createAuthClient()
+      const { data, error } = await supabaseAuth.auth.getUser()
+      user = data.user
+      authError = error
+      
+      console.log('🔐 Auth via cookies - User exists:', !!user)
+      if (error) console.error('🔐 Cookie auth error:', error.message)
+    }
     
     // Log auth status for debugging
-    console.log('🔐 Auth check - User exists:', !!user)
-    console.log('🔐 Auth check - User ID:', user?.id)
-    
-    if (authError) {
-      console.error('🔐 Stripe portal auth error:', authError.message, authError)
-    }
+    console.log('🔐 Final auth check - User ID:', user?.id)
     
     // SECURITY: Require valid user
     if (!user) {
-      console.error('❌ No authenticated user for Stripe portal')
+      console.error('❌ No authenticated user for Stripe portal - tried both header and cookies')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
