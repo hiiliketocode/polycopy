@@ -50,20 +50,12 @@ export default function WalletSetupModal({ isOpen, onClose, onSuccess }: WalletS
                 <span>You control your keys</span>
               </li>
             </ul>
-            {error && (
-              <p className="text-red-500 text-sm mb-4">{error}</p>
-            )}
+            {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
             <div className="flex gap-3">
-              <button
-                onClick={onClose}
-                className="flex-1 px-4 py-2 border border-gray-700 rounded-lg text-gray-400 hover:bg-gray-800"
-              >
+              <button onClick={onClose} className="flex-1 px-4 py-2 border border-gray-700 rounded-lg text-gray-400 hover:bg-gray-800">
                 Later
               </button>
-              <button
-                onClick={handleSetup}
-                className="flex-1 px-4 py-2 bg-yellow-500 text-black rounded-lg font-medium hover:bg-yellow-600"
-              >
+              <button onClick={handleSetup} className="flex-1 px-4 py-2 bg-yellow-500 text-black rounded-lg font-medium hover:bg-yellow-600">
                 Create Wallet
               </button>
             </div>
@@ -81,19 +73,14 @@ export default function WalletSetupModal({ isOpen, onClose, onSuccess }: WalletS
         {step === 'success' && (
           <div className="text-center py-4">
             <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">✓</span>
+              <span className="text-3xl text-green-500">✓</span>
             </div>
             <h2 className="text-xl font-bold text-white mb-2">Wallet Created!</h2>
-            <p className="text-gray-400 mb-4 font-mono text-sm break-all">
-              {walletAddress}
-            </p>
+            <p className="text-gray-400 mb-4 font-mono text-sm break-all">{walletAddress}</p>
             <p className="text-gray-400 text-sm mb-6">
               Next step: Fund your wallet with USDC.e on Polygon to start trading.
             </p>
-            <button
-              onClick={onClose}
-              className="w-full px-4 py-2 bg-yellow-500 text-black rounded-lg font-medium hover:bg-yellow-600"
-            >
+            <button onClick={onClose} className="w-full px-4 py-2 bg-yellow-500 text-black rounded-lg font-medium hover:bg-yellow-600">
               Got It
             </button>
           </div>
