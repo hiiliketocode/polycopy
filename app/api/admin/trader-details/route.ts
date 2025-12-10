@@ -103,7 +103,6 @@ export async function GET(request: NextRequest) {
     // Calculate stats from REAL Polymarket trades
     const categoryData = new Map<string, { count: number, totalValue: number }>()
     let totalTradeValue = 0
-    let earliestTrade: Date | null = null
     
     // Format trade history
     const tradeHistory = realTrades.map((trade: any) => {
@@ -122,11 +121,6 @@ export async function GET(request: NextRequest) {
       
       totalTradeValue += tradeValue
       
-      // Track earliest trade
-      if (!earliestTrade || tradeDate < earliestTrade) {
-        earliestTrade = tradeDate
-      }
-      
       return {
         market_title: trade.market || 'Unknown Market',
         outcome: trade.outcome || trade.option || 'YES',
@@ -139,6 +133,11 @@ export async function GET(request: NextRequest) {
         category
       }
     }).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    
+    // Find earliest trade date
+    const earliestTradeDate = tradeHistory.length > 0 
+      ? tradeHistory[tradeHistory.length - 1].created_at 
+      : null
     
     // Market Focus breakdown
     const marketFocus = Array.from(categoryData.entries())
@@ -190,8 +189,6 @@ export async function GET(request: NextRequest) {
     const roi = totalVolume > 0 ? (totalPnl / totalVolume) * 100 : 0
     
     // Lifetime Stats from REAL Polymarket data
-    const firstTradeDate = earliestTrade ? earliestTrade.toISOString() : null
-    
     const lifetimeStats = {
       trader_username: displayName,
       trader_wallet: wallet,
@@ -203,7 +200,7 @@ export async function GET(request: NextRequest) {
       roi: roi,
       roi_formatted: `${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%`,
       markets_traded: marketsTraded,
-      first_trade: firstTradeDate
+      first_trade: earliestTradeDate
     }
     
     // Recent Activity (Last 7 Days)
