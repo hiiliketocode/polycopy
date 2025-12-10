@@ -17,7 +17,7 @@ export async function POST(request: Request) {
 
     // Check if user already has a Stripe customer ID
     const { data: profile } = await supabase
-      .from('users')
+      .from('profiles')
       .select('stripe_customer_id')
       .eq('id', user.id)
       .single()
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
       // Save customer ID to database
       await supabase
-        .from('users')
+        .from('profiles')
         .update({ stripe_customer_id: customerId })
         .eq('id', user.id)
     }

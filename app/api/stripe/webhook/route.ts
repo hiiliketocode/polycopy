@@ -37,7 +37,7 @@ export async function POST(request: Request) {
 
         if (userId) {
           await supabase
-            .from('users')
+            .from('profiles')
             .update({ 
               is_premium: true,
               stripe_customer_id: session.customer as string,
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
 
         // Find user by stripe_customer_id
         const { data: user } = await supabase
-          .from('users')
+          .from('profiles')
           .select('id')
           .eq('stripe_customer_id', customerId)
           .single()
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
         if (user) {
           const isActive = subscription.status === 'active' || subscription.status === 'trialing'
           await supabase
-            .from('users')
+            .from('profiles')
             .update({ is_premium: isActive })
             .eq('id', user.id)
         }

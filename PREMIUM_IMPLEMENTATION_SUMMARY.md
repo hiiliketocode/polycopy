@@ -46,7 +46,7 @@ const { upgrade, manageSubscription, loading } = useUpgrade()
 ### 4. **Database Migration**
 
 #### `/supabase/migrations/009_add_premium_columns.sql`
-Adds to `users` table:
+Adds to `profiles` table:
 - `stripe_customer_id` (TEXT) - Links to Stripe customer
 - `is_premium` (BOOLEAN) - Premium status flag
 - `premium_since` (TIMESTAMPTZ) - Subscription start date
@@ -148,7 +148,7 @@ export default async function SomeServerComponent() {
   if (!user) return null
   
   const { data: profile } = await supabase
-    .from('users')
+    .from('profiles')
     .select('is_premium')
     .eq('id', user.id)
     .single()
@@ -174,7 +174,7 @@ export default async function PremiumFeaturePage() {
   if (!user) redirect('/login')
   
   const { data: profile } = await supabase
-    .from('users')
+    .from('profiles')
     .select('is_premium')
     .eq('id', user.id)
     .single()
