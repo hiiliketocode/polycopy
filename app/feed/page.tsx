@@ -641,7 +641,14 @@ export default function FeedPage() {
                      title.includes('nhl') || title.includes('soccer') || title.includes('football') ||
                      title.includes('basketball') || title.includes('baseball') || title.includes('hockey') ||
                      title.includes('championship') || title.includes('super bowl') || title.includes('world cup') ||
-                     title.includes('playoffs') || title.includes(' vs ') || title.includes(' v ')) {
+                     title.includes('playoffs') || title.includes(' vs ') || title.includes(' v ') ||
+                     title.includes('game') || title.includes('match') || title.includes('bowl') ||
+                     title.includes('series') || title.includes('finals') || title.includes('lakers') ||
+                     title.includes('celtics') || title.includes('warriors') || title.includes('heat') ||
+                     title.includes('bucks') || title.includes('nuggets') || title.includes('suns') ||
+                     title.includes('mavs') || title.includes('clippers') || title.includes('nets') ||
+                     title.includes('bulls') || title.includes('pacers') || title.includes('thunder') ||
+                     title.includes('win on 20') || title.includes('spread')) {
             trade.market.category = 'sports';
           } else if (title.includes('bitcoin') || title.includes('btc') || title.includes('ethereum') || 
                      title.includes('eth') || title.includes('crypto') || title.includes('blockchain') ||
@@ -696,7 +703,7 @@ export default function FeedPage() {
     } finally {
       setLoadingFeed(false);
     }
-  }, [user, categoryFilter]); // Recreate when user or category changes
+  }, [user]); // Only recreate when user changes, not category
 
   // Manual refresh handler
   const handleManualRefresh = async () => {
@@ -712,27 +719,21 @@ export default function FeedPage() {
 
   // Track if we've done the initial fetch
   const hasFetchedRef = useRef(false);
-  const lastCategoryRef = useRef(categoryFilter);
 
-  // Fetch feed data ONLY on initial mount or when category filter changes
-  // Do NOT refetch when user switches tabs and comes back
+  // Fetch feed data ONLY on initial mount
+  // Do NOT refetch when user switches tabs or changes category filter
   useEffect(() => {
     if (!user) return;
     
-    // Only fetch if:
-    // 1. Haven't fetched yet (initial load), OR
-    // 2. Category filter changed
-    const shouldFetch = !hasFetchedRef.current || lastCategoryRef.current !== categoryFilter;
-    
-    if (shouldFetch) {
-      console.log('📊 Fetching feed for category:', categoryFilter);
+    // Only fetch if haven't fetched yet (initial load)
+    if (!hasFetchedRef.current) {
+      console.log('📊 Initial feed fetch');
       fetchFeed();
       hasFetchedRef.current = true;
-      lastCategoryRef.current = categoryFilter;
     } else {
       console.log('📊 Skipping fetch - data already loaded');
     }
-  }, [user, fetchFeed, categoryFilter]);
+  }, [user, fetchFeed]);
 
   // Load more trades
   const handleLoadMore = () => {
