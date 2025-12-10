@@ -418,7 +418,7 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
         <div className="space-y-6 border-2 border-[#FDB022]/30 rounded-b-lg p-4 md:p-6">
           
           {/* 1. Top 30 Traders (Overall Leaderboard) with Sort Options */}
-          <Section title="🏆 TOP 30 TRADERS (OVERALL LEADERBOARD)">
+          <Section title="🏆 TOP 30 TRADERS (OVERALL LEADERBOARD) - Last 30 Days">
             {/* Sort Buttons */}
             <div className="flex gap-2 mb-4">
               <span className="text-gray-400 text-sm mr-2">Sort by:</span>
@@ -452,7 +452,7 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
 
           {/* 2. Category Leaderboards */}
           {Object.keys(sectionA.categoryLeaderboards).length > 0 && (
-            <Section title="📊 CATEGORY LEADERBOARDS (TOP 10 BY ROI)">
+            <Section title="📊 CATEGORY LEADERBOARDS (TOP 10 BY ROI) - Last 30 Days">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {Object.entries(sectionA.categoryLeaderboards).map(([category, traders]) => (
                   <div key={category} className="border border-[#374151] rounded-lg p-4">
@@ -922,7 +922,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
   lines.push('')
   
   // 1. Top 30 Traders (Overall Leaderboard) - Show all 3 sort variants
-  lines.push('🏆 TOP 30 TRADERS (OVERALL LEADERBOARD)')
+  lines.push('🏆 TOP 30 TRADERS (OVERALL LEADERBOARD) - Last 30 Days')
   lines.push('───────────────────────────────────────────────')
   
   if (sectionA.topTraders.length === 0) {
@@ -966,7 +966,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
   // 2. Category Leaderboards
   const categoryCount = Object.keys(sectionA.categoryLeaderboards).length
   if (categoryCount > 0) {
-    lines.push('📊 CATEGORY LEADERBOARDS (TOP 10 BY ROI)')
+    lines.push('📊 CATEGORY LEADERBOARDS (TOP 10 BY ROI) - Last 30 Days')
     lines.push('───────────────────────────────────────────────')
     lines.push('')
     
