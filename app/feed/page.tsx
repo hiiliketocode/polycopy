@@ -626,56 +626,51 @@ export default function FeedPage() {
           };
         });
 
-        // 5. Infer categories from market title (fast, no API calls)
-        // This is a heuristic approach but much faster than fetching each market
-        formattedTrades.forEach(trade => {
-          const title = trade.market.title.toLowerCase();
-          
-          // Category detection based on keywords in market title
-          if (title.includes('trump') || title.includes('biden') || title.includes('election') || 
-              title.includes('senate') || title.includes('congress') || title.includes('president') ||
-              title.includes('vote') || title.includes('poll') || title.includes('democrat') || 
-              title.includes('republican') || title.includes('white house') || title.includes('governor')) {
-            trade.market.category = 'politics';
-          } else if (title.includes('nba') || title.includes('nfl') || title.includes('mlb') || 
-                     title.includes('nhl') || title.includes('soccer') || title.includes('football') ||
-                     title.includes('basketball') || title.includes('baseball') || title.includes('hockey') ||
-                     title.includes('championship') || title.includes('super bowl') || title.includes('world cup') ||
-                     title.includes('playoffs') || title.includes(' vs ') || title.includes(' v ') ||
-                     title.includes('game') || title.includes('match') || title.includes('bowl') ||
-                     title.includes('series') || title.includes('finals') || title.includes('lakers') ||
-                     title.includes('celtics') || title.includes('warriors') || title.includes('heat') ||
-                     title.includes('bucks') || title.includes('nuggets') || title.includes('suns') ||
-                     title.includes('mavs') || title.includes('clippers') || title.includes('nets') ||
-                     title.includes('bulls') || title.includes('pacers') || title.includes('thunder') ||
-                     title.includes('win on 20') || title.includes('spread')) {
-            trade.market.category = 'sports';
-          } else if (title.includes('bitcoin') || title.includes('btc') || title.includes('ethereum') || 
-                     title.includes('eth') || title.includes('crypto') || title.includes('blockchain') ||
-                     title.includes('solana') || title.includes('dogecoin')) {
-            trade.market.category = 'crypto';
-          } else if (title.includes('stock') || title.includes('market') || title.includes('trading') ||
-                     title.includes('economy') || title.includes('fed') || title.includes('interest rate') ||
-                     title.includes('inflation') || title.includes('recession') || title.includes('gdp')) {
-            trade.market.category = 'economics';
-          } else if (title.includes('ai') || title.includes('tech') || title.includes('apple') || 
-                     title.includes('google') || title.includes('microsoft') || title.includes('meta') ||
-                     title.includes('tesla') || title.includes('openai') || title.includes('chatgpt')) {
-            trade.market.category = 'tech';
-          } else if (title.includes('temperature') || title.includes('snow') || title.includes('rain') ||
-                     title.includes('weather') || title.includes('forecast') || title.includes('climate') ||
-                     title.includes('hurricane') || title.includes('storm')) {
-            trade.market.category = 'weather';
-          } else if (title.includes('movie') || title.includes('oscars') || title.includes('grammy') ||
-                     title.includes('celebrity') || title.includes('album') || title.includes('box office') ||
-                     title.includes('emmy') || title.includes('tv show')) {
-            trade.market.category = 'culture';
-          } else if (title.includes('company') || title.includes('ceo') || title.includes('revenue') ||
-                     title.includes('earnings') || title.includes('ipo') || title.includes('acquisition')) {
-            trade.market.category = 'finance';
+        // 5. Fetch categories from Gamma API (batched for efficiency)
+        // Collect unique condition IDs
+        const uniqueConditionIds = [...new Set(
+          formattedTrades
+            .map(t => t.market.id)
+            .filter(id => id && id.length > 0)
+        )];
+
+        console.log(`📦 Fetching categories for ${uniqueConditionIds.length} unique markets`);
+
+        // Fetch market details in parallel (batched)
+        const categoryPromises = uniqueConditionIds.map(async (conditionId) => {
+          try {
+            const response = await fetch(`/api/gamma/markets?conditionId=${conditionId}`);
+            if (!response.ok) return { conditionId, category: null };
+            const data = await response.json();
+            return { 
+              conditionId, 
+              category: data.category?.toLowerCase() || null 
+            };
+          } catch (error) {
+            console.warn(`Failed to fetch category for ${conditionId}:`, error);
+            return { conditionId, category: null };
           }
-          // If no category matched, leave as undefined
         });
+
+        const categoryResults = await Promise.all(categoryPromises);
+        
+        // Create a map of conditionId -> category
+        const categoryMap: Record<string, string> = {};
+        categoryResults.forEach(result => {
+          if (result.category) {
+            categoryMap[result.conditionId] = result.category;
+          }
+        });
+
+        // Assign categories to trades
+        formattedTrades.forEach(trade => {
+          const category = categoryMap[trade.market.id];
+          if (category) {
+            trade.market.category = category;
+          }
+        });
+
+        console.log(`✅ Categorized ${Object.keys(categoryMap).length} markets`);
 
         // Store all trades and reset display count
         setAllTrades(formattedTrades);
