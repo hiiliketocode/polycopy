@@ -178,7 +178,12 @@ function TradeCard({
           </div>
           <div>
             <p className="text-xs text-neutral-600 mb-0.5">Total</p>
-            <p className="font-semibold text-neutral-900">${total.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+            <p className="font-semibold text-neutral-900">
+              ${total < 1 
+                ? total.toFixed(2) 
+                : total.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+              }
+            </p>
           </div>
         </div>
         
