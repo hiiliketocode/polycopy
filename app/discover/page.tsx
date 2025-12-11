@@ -120,8 +120,8 @@ export default function DiscoverPage() {
     const fetchFeaturedTraders = async () => {
       setLoadingFeatured(true);
       try {
-        // Use 'all' time period to get lifetime stats (not just last month)
-        const url = '/api/polymarket/leaderboard?limit=30&orderBy=PNL&timePeriod=all';
+        // Use 'month' time period to match "Last 30 Days" heading
+        const url = '/api/polymarket/leaderboard?limit=30&orderBy=PNL&timePeriod=month';
         console.log('🔄 Fetching featured traders...');
         console.log('   📡 URL:', url);
         
@@ -178,9 +178,9 @@ export default function DiscoverPage() {
       setLoadingTraders(true);
       try {
         console.log('🔄 Fetching traders from leaderboard API...', { category: selectedCategory });
-        // Use 'all' time period for lifetime stats
+        // Use 'month' time period to match "Last 30 Days" heading
         const response = await fetch(
-          `/api/polymarket/leaderboard?limit=50&orderBy=PNL&category=${selectedCategory}&timePeriod=all`
+          `/api/polymarket/leaderboard?limit=50&orderBy=PNL&category=${selectedCategory}&timePeriod=month`
         );
         
         if (!response.ok) {
@@ -232,9 +232,9 @@ export default function DiscoverPage() {
       console.log(`📡 Fetching #1 trader for ${selectedHeroCategory} category (API value: ${heroCategoryValue})...`);
       
       try {
-        // Make the SAME API call as the filter buttons, with timePeriod=all
+        // Make the SAME API call as the filter buttons, with timePeriod=month
         const response = await fetch(
-          `/api/polymarket/leaderboard?limit=50&orderBy=PNL&category=${heroCategoryValue}&timePeriod=all`
+          `/api/polymarket/leaderboard?limit=50&orderBy=PNL&category=${heroCategoryValue}&timePeriod=month`
         );
         
         if (!response.ok) {
@@ -498,20 +498,16 @@ export default function DiscoverPage() {
                   Copy trades from the best prediction market traders on Polymarket.
                 </p>
                 
-                {/* Last 24 Hours Stats */}
+                {/* Last 30 Days Stats */}
                 <div className="text-sm text-neutral-400 font-semibold mb-3 uppercase tracking-wide">
-                  Last 24 Hours
+                  Last 30 Days
                 </div>
                 
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <div className="text-sm text-neutral-400 mb-1">Trades</div>
+                    <div className="text-sm text-neutral-400 mb-1">Active Traders</div>
                     <div className="text-2xl font-bold text-white">
-                      {(() => {
-                        // Estimate trades: each featured trader made ~3-4 trades today
-                        const estimatedTrades = traders ? Math.floor(traders.length * 3.5) : 0;
-                        return estimatedTrades;
-                      })()}
+                      {traders.length || 0}
                     </div>
                   </div>
                   
