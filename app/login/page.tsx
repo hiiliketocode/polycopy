@@ -1,14 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
-export default function LoginPage() {
+function LoginForm() {
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [isSignupMode, setIsSignupMode] = useState(false);
+
+  // Check if we're in signup mode
+  useEffect(() => {
+    setIsSignupMode(searchParams.get('mode') === 'signup');
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,8 +75,12 @@ export default function LoginPage() {
 
         {/* Login Form Card */}
         <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
-          <h2 className="text-2xl font-bold text-[#0F0F0F] mb-2">Welcome back</h2>
-          <p className="text-slate-600 mb-6">Sign in to your account</p>
+          <h2 className="text-2xl font-bold text-[#0F0F0F] mb-2">
+            {isSignupMode ? 'Create your account' : 'Welcome back'}
+          </h2>
+          <p className="text-slate-600 mb-6">
+            {isSignupMode ? 'Start copying the best Polymarket traders' : 'Sign in to your account'}
+          </p>
 
           {/* Success Message */}
           {success && (
@@ -78,7 +90,10 @@ export default function LoginPage() {
                 <div>
                   <p className="font-semibold text-green-800">Check your email!</p>
                   <p className="text-sm text-green-700">
-                    We've sent you a magic link to sign in. Click the link in your email to continue.
+                    {isSignupMode 
+                      ? "We've sent you a magic link to create your account. Click the link in your email to get started."
+                      : "We've sent you a magic link to sign in. Click the link in your email to continue."
+                    }
                   </p>
                 </div>
               </div>
@@ -101,7 +116,10 @@ export default function LoginPage() {
           {/* Info Box */}
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
             <p className="text-sm text-blue-800">
-              💡 We'll send you a magic link to sign in. No password needed!
+              💡 {isSignupMode 
+                ? "We'll send you a magic link to create your account. No password needed!"
+                : "We'll send you a magic link to sign in. No password needed!"
+              }
             </p>
           </div>
 
@@ -156,6 +174,27 @@ export default function LoginPage() {
             </button>
           </form>
 
+          {/* Toggle between Sign Up and Log In */}
+          <div className="mt-6 text-center">
+            <p className="text-sm text-slate-600">
+              {isSignupMode ? (
+                <>
+                  Already have an account?{' '}
+                  <Link href="/login" className="text-[#FDB022] hover:text-[#E69E1A] font-semibold">
+                    Log in
+                  </Link>
+                </>
+              ) : (
+                <>
+                  Don't have an account?{' '}
+                  <Link href="/login?mode=signup" className="text-[#FDB022] hover:text-[#E69E1A] font-semibold">
+                    Sign up
+                  </Link>
+                </>
+              )}
+            </p>
+          </div>
+
           {/* Legal Disclaimer */}
           <div className="mt-6 pt-6 border-t border-slate-200">
             <p className="text-center text-xs text-slate-600 leading-relaxed">
@@ -173,6 +212,42 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-md">
+          <div className="flex flex-col items-center mb-8">
+            <img 
+              src="/logos/polycopy-logo-primary.png"
+              alt="Polycopy"
+              width={202}
+              height={48}
+              className="h-12 w-auto mb-3"
+              style={{ 
+                imageRendering: '-webkit-optimize-contrast',
+                WebkitBackfaceVisibility: 'hidden',
+                backfaceVisibility: 'hidden'
+              }}
+            />
+            <p className="text-slate-600 text-center">Copy the best Polymarket traders</p>
+          </div>
+          <div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
+            <div className="animate-pulse">
+              <div className="h-8 bg-slate-200 rounded w-3/4 mb-2"></div>
+              <div className="h-4 bg-slate-200 rounded w-1/2 mb-6"></div>
+              <div className="h-12 bg-slate-200 rounded mb-6"></div>
+              <div className="h-12 bg-slate-200 rounded"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
 
