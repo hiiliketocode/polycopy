@@ -90,7 +90,7 @@ export default function Header() {
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {user ? (
             <>
               {/* Avatar */}
@@ -103,12 +103,23 @@ export default function Header() {
               </Link>
             </>
           ) : (
-            <button
-              onClick={() => router.push('/login')}
-              className="text-sm font-medium text-[#0F0F0F] hover:text-slate-600 transition-colors"
-            >
-              Sign in →
-            </button>
+            <>
+              {/* Log In - Secondary style */}
+              <button
+                onClick={() => router.push('/login')}
+                className="text-sm font-medium text-[#0F0F0F] hover:text-slate-600 transition-colors"
+              >
+                Log In
+              </button>
+              
+              {/* Sign Up - Primary style with brand color */}
+              <button
+                onClick={() => router.push('/login?mode=signup')}
+                className="px-4 py-1.5 text-sm font-semibold bg-[#FDB022] hover:bg-[#E69E1A] text-[#0F0F0F] rounded-lg transition-colors"
+              >
+                Sign Up
+              </button>
+            </>
           )}
         </div>
       </div>
