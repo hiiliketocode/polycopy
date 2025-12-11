@@ -144,17 +144,33 @@ export async function GET(request: NextRequest) {
         const newMarketResolved = statusData.marketResolved
         
         // Check for "Trader Closed Position" event
+        // Only send if market is NOT resolved yet (if market resolved, user already got that notification)
         if (
           oldTraderHasPosition === true && 
           newTraderHasPosition === false &&
           !trade.notification_closed_sent
         ) {
-          console.log(`📧 Sending "Trader Closed" email for trade ${trade.id}`)
+          // Skip if market is/was already resolved - user already got resolution notification
+          // Check BOTH the existing DB state AND the refreshed status
+          const marketAlreadyResolved = trade.market_resolved || newMarketResolved;
           
-          const traderROI = calculateTraderROI(
-            statusData.traderAvgPrice,
-            statusData.currentPrice
-          )
+          if (marketAlreadyResolved) {
+            console.log(`⏭️ Skipping "Trader Closed" email for trade ${trade.id} - market already resolved (DB: ${trade.market_resolved}, API: ${newMarketResolved})`)
+            // Still mark as "sent" so we don't check again
+            await supabase
+              .from('copied_trades')
+              .update({ 
+                notification_closed_sent: true,
+                trader_still_has_position: false
+              })
+              .eq('id', trade.id)
+          } else {
+            console.log(`📧 Sending "Trader Closed" email for trade ${trade.id}`)
+            
+            const traderROI = calculateTraderROI(
+              statusData.traderAvgPrice,
+              statusData.currentPrice
+            )
           
           try {
             if (!resend) {
@@ -198,6 +214,7 @@ export async function GET(request: NextRequest) {
               to: profile.email,
               trade: trade.market_title
             })
+          }
           }
         }
         
