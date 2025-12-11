@@ -837,52 +837,54 @@ export default function ProfilePage() {
                       <span className={`font-semibold ${
                         copiedTrades.length === 0 ? 'text-slate-400' :
                         (() => {
-                          const tradesWithRoi = copiedTrades.filter(t => t.roi !== null && t.roi !== undefined);
-                          if (tradesWithRoi.length === 0) return 'text-slate-400';
+                          const tradesWithData = copiedTrades.filter(t => 
+                            t.roi !== null && t.roi !== undefined && t.amount_invested
+                          );
+                          if (tradesWithData.length === 0) return 'text-slate-400';
                           
-                          // Calculate weighted ROI by amount_invested
-                          const totalInvested = tradesWithRoi.reduce((sum, t) => sum + (t.amount_invested || 0), 0);
+                          // Calculate total P&L and total investment (same as trader profile ROI)
+                          const totalInvestment = tradesWithData.reduce((sum, t) => sum + (t.amount_invested || 0), 0);
                           
-                          let weightedRoi: number;
-                          if (totalInvested > 0) {
-                            // Weighted average: weight each ROI by investment amount
-                            weightedRoi = tradesWithRoi.reduce((sum, t) => {
-                              const weight = (t.amount_invested || 0) / totalInvested;
-                              return sum + ((t.roi || 0) * weight);
-                            }, 0);
-                          } else {
-                            // Fallback to simple average if no investment amounts
-                            weightedRoi = tradesWithRoi.reduce((sum, t) => sum + (t.roi || 0), 0) / tradesWithRoi.length;
-                          }
+                          if (totalInvestment === 0) return 'text-slate-400';
                           
-                          return weightedRoi >= 0 ? 'text-emerald-600' : 'text-red-600';
+                          // Calculate total P&L: for each trade, P&L = (ROI / 100) × investment
+                          const totalPnL = tradesWithData.reduce((sum, t) => {
+                            const pnl = ((t.roi || 0) / 100) * (t.amount_invested || 0);
+                            return sum + pnl;
+                          }, 0);
+                          
+                          // ROI = (Total P&L / Total Investment) × 100
+                          const roi = (totalPnL / totalInvestment) * 100;
+                          
+                          return roi >= 0 ? 'text-emerald-600' : 'text-red-600';
                         })()
                       }`}>
                         {copiedTrades.length === 0 ? '--' : 
                           (() => {
-                            const tradesWithRoi = copiedTrades.filter(t => t.roi !== null && t.roi !== undefined);
-                            if (tradesWithRoi.length === 0) return '--';
+                            const tradesWithData = copiedTrades.filter(t => 
+                              t.roi !== null && t.roi !== undefined && t.amount_invested
+                            );
+                            if (tradesWithData.length === 0) return '--';
                             
-                            // Calculate weighted ROI by amount_invested
-                            const totalInvested = tradesWithRoi.reduce((sum, t) => sum + (t.amount_invested || 0), 0);
+                            // Calculate total P&L and total investment (same as trader profile ROI)
+                            const totalInvestment = tradesWithData.reduce((sum, t) => sum + (t.amount_invested || 0), 0);
                             
-                            let weightedRoi: number;
-                            if (totalInvested > 0) {
-                              // Weighted average: weight each ROI by investment amount
-                              weightedRoi = tradesWithRoi.reduce((sum, t) => {
-                                const weight = (t.amount_invested || 0) / totalInvested;
-                                return sum + ((t.roi || 0) * weight);
-                              }, 0);
-                            } else {
-                              // Fallback to simple average if no investment amounts
-                              weightedRoi = tradesWithRoi.reduce((sum, t) => sum + (t.roi || 0), 0) / tradesWithRoi.length;
-                            }
+                            if (totalInvestment === 0) return '--';
                             
-                            return `${weightedRoi >= 0 ? '+' : ''}${weightedRoi.toFixed(1)}%`;
+                            // Calculate total P&L: for each trade, P&L = (ROI / 100) × investment
+                            const totalPnL = tradesWithData.reduce((sum, t) => {
+                              const pnl = ((t.roi || 0) / 100) * (t.amount_invested || 0);
+                              return sum + pnl;
+                            }, 0);
+                            
+                            // ROI = (Total P&L / Total Investment) × 100
+                            const roi = (totalPnL / totalInvestment) * 100;
+                            
+                            return `${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%`;
                           })()
                         }
                       </span>
-                      <span className="text-slate-500 ml-1">Avg. ROI</span>
+                      <span className="text-slate-500 ml-1">ROI</span>
                     </div>
                   </div>
                 )}
