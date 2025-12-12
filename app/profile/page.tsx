@@ -8,7 +8,6 @@ import type { User } from '@supabase/supabase-js';
 import Header from '../components/Header';
 import ImportWalletModal from '@/components/ImportWalletModal';
 import PrivyWrapper from '@/components/PrivyWrapper';
-import TradingWalletSection from '@/components/TradingWalletSection';
 
 // Types for copied trades
 interface CopiedTrade {
@@ -64,6 +63,7 @@ export default function ProfilePage() {
   // Premium and trading wallet state
   const [profile, setProfile] = useState<any>(null);
   const [showWalletSetup, setShowWalletSetup] = useState(false);
+  const [disconnectingWallet, setDisconnectingWallet] = useState(false);
   
   // Display name state
   const [displayName, setDisplayName] = useState<string>('You');
@@ -892,15 +892,121 @@ export default function ProfilePage() {
             </div>
 
           </div>
-          
-          {/* Trading Wallet Section - Only show for premium users */}
-          {profile?.is_premium && (
-            <TradingWalletSection
-              walletAddress={profile?.trading_wallet_address || ''}
-              onSetupClick={() => setShowWalletSetup(true)}
-            />
-          )}
         </div>
+
+        {/* Polymarket Wallet Section - Only show for premium users */}
+        {profile?.is_premium && (
+          <div className="mb-6">
+            <h2 className="text-label text-slate-400 mb-4">POLYMARKET WALLET</h2>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+              <div className="flex items-start gap-4">
+                {/* Wallet Icon */}
+                <div className="w-12 h-12 rounded-full bg-[#FDB022]/10 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-[#FDB022]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                  </svg>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-lg font-semibold text-slate-900 mb-1">
+                    Polymarket Wallet
+                  </h3>
+                  <p className="text-sm text-slate-600 mb-4">
+                    {profile?.trading_wallet_address 
+                      ? 'Your wallet is connected and ready to copy trades'
+                      : 'Import your Polymarket wallet to automatically copy trades'
+                    }
+                  </p>
+
+                  {profile?.trading_wallet_address ? (
+                    <>
+                      {/* Connected Wallet Display */}
+                      <div className="bg-slate-50 rounded-lg p-4 mb-4">
+                        <div className="flex items-center gap-2 mb-1">
+                          <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="text-sm font-medium text-slate-700">Wallet Connected</span>
+                        </div>
+                        <p className="font-mono text-sm text-slate-900 break-all">
+                          {profile.trading_wallet_address}
+                        </p>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <button
+                          onClick={() => setShowWalletSetup(true)}
+                          className="px-4 py-2 border border-slate-300 rounded-lg font-medium text-slate-700 hover:bg-slate-50 transition-colors text-sm"
+                        >
+                          Re-import Wallet
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Are you sure you want to disconnect your wallet? You will need to import it again to copy trades.')) {
+                              return;
+                            }
+                            
+                            setDisconnectingWallet(true);
+                            try {
+                              const { data: { session } } = await supabase.auth.getSession();
+                              
+                              if (!session?.access_token) {
+                                throw new Error('Not authenticated');
+                              }
+
+                              const response = await fetch('/api/wallet/disconnect', {
+                                method: 'POST',
+                                headers: {
+                                  'Authorization': `Bearer ${session.access_token}`
+                                }
+                              });
+
+                              const data = await response.json();
+
+                              if (!response.ok) {
+                                throw new Error(data.error || 'Failed to disconnect wallet');
+                              }
+
+                              showToastMessage('Wallet disconnected successfully', 'success');
+                              window.location.reload();
+                            } catch (error: any) {
+                              console.error('Disconnect error:', error);
+                              showToastMessage(error.message || 'Failed to disconnect wallet', 'error');
+                            } finally {
+                              setDisconnectingWallet(false);
+                            }
+                          }}
+                          disabled={disconnectingWallet}
+                          className="px-4 py-2 border border-red-300 rounded-lg font-medium text-red-700 hover:bg-red-50 transition-colors text-sm disabled:opacity-50"
+                        >
+                          {disconnectingWallet ? 'Disconnecting...' : 'Disconnect Wallet'}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Not Connected - Import Button */}
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                        <p className="text-sm text-blue-800">
+                          💡 <strong>How it works:</strong> Import your Polymarket wallet private key. 
+                          We'll securely encrypt and store it to execute trades on your behalf when you copy a trader.
+                        </p>
+                      </div>
+                      
+                      <button
+                        onClick={() => setShowWalletSetup(true)}
+                        className="px-6 py-3 bg-[#FDB022] hover:bg-[#E69E1A] text-black rounded-lg font-semibold transition-colors text-sm"
+                      >
+                        Import Wallet
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Copied Trades Section */}
         <div className="mb-6">
