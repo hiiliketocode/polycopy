@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useWallets } from '@privy-io/react-auth';
+import { Wallet } from '@ethersproject/wallet';
 
 interface ImportWalletModalProps {
   isOpen: boolean;
@@ -13,7 +13,6 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
   const [privateKey, setPrivateKey] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { importWallet } = useWallets();
 
   const handleImport = async () => {
     setError('');
@@ -26,14 +25,14 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
         formattedKey = '0x' + formattedKey;
       }
 
-      // Import wallet using Privy (they handle encryption and storage)
-      const wallet = await importWallet({
-        privateKey: formattedKey,
-        type: 'ethereum',
-      });
-
-      if (!wallet?.address) {
-        throw new Error('Failed to import wallet - no address returned');
+      // Validate the private key by creating a wallet instance
+      // This happens CLIENT-SIDE only for validation
+      let walletAddress: string;
+      try {
+        const wallet = new Wallet(formattedKey);
+        walletAddress = wallet.address;
+      } catch (error) {
+        throw new Error('Invalid private key. Please check and try again.');
       }
 
       // Save only the wallet ADDRESS to our database (not the private key!)
@@ -51,7 +50,7 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          walletAddress: wallet.address // Only send the address
+          walletAddress // Only send the address (public info)
         })
       });
 
@@ -65,7 +64,7 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
       setPrivateKey('');
       
       // Call success callback with the wallet address
-      onSuccess(wallet.address);
+      onSuccess(walletAddress);
       
     } catch (err: any) {
       console.error('Import error:', err);
@@ -108,14 +107,14 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
         </div>
 
         {/* Security Warning */}
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-4">
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
           <div className="flex items-start gap-2">
-            <span className="text-yellow-600 dark:text-yellow-400 text-xl">⚠️</span>
-            <div className="text-sm text-yellow-800 dark:text-yellow-200">
-              <p className="font-semibold mb-1">Security Notice:</p>
+            <span className="text-blue-600 dark:text-blue-400 text-xl">🔒</span>
+            <div className="text-sm text-blue-800 dark:text-blue-200">
+              <p className="font-semibold mb-1">Privacy & Security:</p>
               <p>
-                Never share your private key with anyone. Polycopy encrypts and stores it securely, 
-                using it only to execute trades on your behalf.
+                Your private key is validated locally in your browser to verify your wallet address. 
+                We only store your public wallet address - your private key is never sent to our servers.
               </p>
             </div>
           </div>
