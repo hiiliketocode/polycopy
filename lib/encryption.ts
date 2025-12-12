@@ -1,3 +1,14 @@
+/**
+ * DEPRECATED: This encryption module is no longer used for wallet private keys.
+ * 
+ * We now use Privy for all private key storage and encryption.
+ * Privy handles encryption/decryption securely on their infrastructure.
+ * We only store public wallet addresses in our database.
+ * 
+ * This file is kept for backwards compatibility only.
+ * DO NOT USE for new implementations.
+ */
+
 import crypto from 'crypto';
 
 const ALGORITHM = 'aes-256-gcm';
@@ -5,6 +16,8 @@ const ALGORITHM = 'aes-256-gcm';
 /**
  * Get the encryption key from environment variables
  * Only checks at runtime, not during build
+ * 
+ * @deprecated Use Privy for wallet encryption instead
  */
 function getEncryptionKey(): string {
   const key = process.env.WALLET_ENCRYPTION_KEY || '';
@@ -17,6 +30,8 @@ function getEncryptionKey(): string {
 /**
  * Encrypt a private key for secure storage
  * Uses AES-256-GCM for authenticated encryption
+ * 
+ * @deprecated Use Privy's importWallet() instead - they handle encryption
  */
 export function encryptPrivateKey(privateKey: string): string {
   const ENCRYPTION_KEY = getEncryptionKey();
@@ -44,6 +59,8 @@ export function encryptPrivateKey(privateKey: string): string {
 /**
  * Decrypt a private key for use in trade execution
  * Only call this server-side when needed
+ * 
+ * @deprecated Use Privy's wallet.signTransaction() instead
  */
 export function decryptPrivateKey(encryptedData: string): string {
   const ENCRYPTION_KEY = getEncryptionKey();
