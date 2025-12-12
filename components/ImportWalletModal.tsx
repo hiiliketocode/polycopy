@@ -102,15 +102,36 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
         </div>
 
         {/* Security Warning */}
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
-          <div className="flex items-start gap-2">
-            <span className="text-blue-600 dark:text-blue-400 text-xl">🔒</span>
-            <div className="text-sm text-blue-800 dark:text-blue-200">
-              <p className="font-semibold mb-1">Privacy & Security:</p>
-              <p>
-                Your private key is validated locally in your browser to verify your wallet address. 
-                We only store your public wallet address - your private key is never sent to our servers.
-              </p>
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-4">
+          <div className="flex items-start gap-3">
+            <span className="text-green-600 dark:text-green-400 text-2xl flex-shrink-0">🔒</span>
+            <div className="text-sm text-green-900 dark:text-green-100">
+              <p className="font-bold mb-2">How We Secure Your Private Key:</p>
+              <div className="space-y-2">
+                <p className="flex items-start gap-2">
+                  <span className="text-green-600 dark:text-green-400 font-bold">✓</span>
+                  <span><strong>Encrypted by Privy:</strong> Your private key is securely encrypted and stored by Privy, a trusted Web3 infrastructure provider.</span>
+                </p>
+                <p className="flex items-start gap-2">
+                  <span className="text-green-600 dark:text-green-400 font-bold">✓</span>
+                  <span><strong>Never Stored by Polycopy:</strong> We only store your public wallet address (like an email address - it's public info).</span>
+                </p>
+                <p className="flex items-start gap-2">
+                  <span className="text-green-600 dark:text-green-400 font-bold">✓</span>
+                  <span><strong>Temporary Transit Only:</strong> Your key passes through our server for ~100ms to reach Privy, then it's immediately deleted from memory.</span>
+                </p>
+              </div>
+              <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-800">
+                <p className="text-xs">
+                  <strong>About Privy:</strong> Privy is SOC 2 Type II certified and uses bank-level encryption (TEE/HSM) to secure your keys.{' '}
+                  <a 
+                    href="/faq#wallet-security" 
+                    className="underline hover:text-green-700 dark:hover:text-green-300 font-semibold"
+                  >
+                    Learn more in our FAQ
+                  </a>
+                </p>
+              </div>
             </div>
           </div>
         </div>
