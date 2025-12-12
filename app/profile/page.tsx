@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import Header from '../components/Header';
-import WalletSetupModal from '@/components/WalletSetupModal';
+import ImportWalletModal from '@/components/ImportWalletModal';
 import PrivyWrapper from '@/components/PrivyWrapper';
 import TradingWalletSection from '@/components/TradingWalletSection';
 
@@ -1632,12 +1632,14 @@ export default function ProfilePage() {
         </div>
       )}
 
-        {/* Wallet Setup Modal */}
-        <WalletSetupModal
+        {/* Import Wallet Modal */}
+        <ImportWalletModal
           isOpen={showWalletSetup}
           onClose={() => setShowWalletSetup(false)}
           onSuccess={(address) => {
+            // Wallet is already saved by the API endpoint
             setShowWalletSetup(false);
+            showToastMessage('Wallet imported successfully!', 'success');
             // Refresh profile data to show new wallet
             window.location.reload();
           }}
