@@ -11,17 +11,24 @@ export default function PrivyWrapper({ children }: { children: React.ReactNode }
         appearance: {
           theme: 'dark',
           accentColor: '#FDB022',
-          // Remove logo to avoid 404 error
         },
+        // Disable embedded wallet creation - users must import their Polymarket wallet
         embeddedWallets: {
-          ethereum: {
-            createOnLogin: 'off',
-          },
+          createOnLogin: 'off',
+          requireUserPasswordOnCreate: false,
         },
         defaultChain: polygon,
-        // Support both Polygon and Ethereum mainnet for funding flexibility
         supportedChains: [polygon, mainnet],
-        loginMethods: ['email'],
+        // Only allow wallet-based login for import flow
+        loginMethods: ['wallet'],
+        externalWallets: {
+          coinbaseWallet: { 
+            connectionOptions: 'eoaOnly' 
+          },
+          metamask: { 
+            connectionOptions: 'eoaOnly' 
+          },
+        },
       }}
     >
       {children}
