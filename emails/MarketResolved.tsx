@@ -21,7 +21,7 @@ interface MarketResolvedEmailProps {
   userPosition: string
   userEntryPrice: number
   userROI: number
-  traderROI: number
+  betAmount: number | null
   didUserWin: boolean
   tradeUrl: string
   unsubscribeUrl: string
@@ -32,7 +32,7 @@ export default function MarketResolvedEmail({
   userPosition,
   userEntryPrice,
   userROI,
-  traderROI,
+  betAmount,
   didUserWin,
   tradeUrl,
   unsubscribeUrl,
@@ -40,6 +40,23 @@ export default function MarketResolvedEmail({
   const formatPrice = (price: number) => {
     const cents = Math.round(price * 100)
     return `${cents}¢`
+  }
+  
+  const formatMoney = (amount: number) => {
+    if (amount < 1) {
+      return `${Math.round(amount * 100)}¢`
+    }
+    return `$${amount.toFixed(2)}`
+  }
+  
+  // Calculate winnings: profit = (final payout - entry price) * bet amount
+  // If won: (1.00 - entry price) * bet amount
+  // If lost: (0.00 - entry price) * bet amount = negative
+  const calculateWinnings = () => {
+    if (!betAmount) return '$0.00'
+    const finalPayout = didUserWin ? 1.00 : 0.00
+    const profit = (finalPayout - userEntryPrice) * betAmount
+    return formatMoney(profit)
   }
 
   return (
@@ -100,12 +117,23 @@ export default function MarketResolvedEmail({
                 </Column>
                 <Column style={statColumn}>
                   <Section style={statBox}>
-                    <Text style={statLabel}>Final Payout</Text>
-                    <Text style={statValue}>{didUserWin ? '100¢' : '0¢'}</Text>
+                    <Text style={statLabel}>Bet Amount</Text>
+                    <Text style={statValue}>{betAmount ? formatMoney(betAmount) : '--'}</Text>
                   </Section>
                 </Column>
               </Row>
               <Row style={statsRow}>
+                <Column style={statColumn}>
+                  <Section style={statBox}>
+                    <Text style={statLabel}>Winnings</Text>
+                    <Text style={{
+                      ...statValue,
+                      color: didUserWin ? '#10b981' : '#ef4444',
+                    }}>
+                      {didUserWin ? '+' : ''}{calculateWinnings()}
+                    </Text>
+                  </Section>
+                </Column>
                 <Column style={statColumn}>
                   <Section style={statBoxHighlight}>
                     <Text style={statLabel}>Your ROI</Text>
@@ -114,17 +142,6 @@ export default function MarketResolvedEmail({
                       color: userROI >= 0 ? '#10b981' : '#ef4444',
                     }}>
                       {userROI >= 0 ? '+' : ''}{userROI.toFixed(1)}%
-                    </Text>
-                  </Section>
-                </Column>
-                <Column style={statColumn}>
-                  <Section style={statBox}>
-                    <Text style={statLabel}>Trader ROI</Text>
-                    <Text style={{
-                      ...statValue,
-                      color: traderROI >= 0 ? '#10b981' : '#ef4444',
-                    }}>
-                      {traderROI >= 0 ? '+' : ''}{traderROI.toFixed(1)}%
                     </Text>
                   </Section>
                 </Column>

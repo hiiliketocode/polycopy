@@ -271,7 +271,7 @@ export async function GET(request: NextRequest) {
                 userPosition: trade.outcome,
                 userEntryPrice: trade.price_when_copied,
                 userROI: statusData.roi || 0,
-                traderROI,
+                betAmount: trade.amount_invested,
                 didUserWin,
                 tradeUrl: `${appUrl}/profile`,
                 unsubscribeUrl: `${appUrl}/profile`
