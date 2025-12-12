@@ -1435,6 +1435,40 @@ export default function ProfilePage() {
               </label>
             </div>
           </div>
+
+          {/* Polymarket Wallet - Only show for premium users */}
+          {profile?.is_premium && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-4">
+              <div className="flex items-center justify-between p-4">
+                <div className="flex items-center gap-3">
+                  {/* Wallet icon */}
+                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                    </svg>
+                  </div>
+                  
+                  <div className="flex-1">
+                    <p className="font-semibold text-slate-900">Import Polymarket Wallet</p>
+                    <p className="text-small text-slate-500">
+                      {profile?.trading_wallet_address 
+                        ? `Connected: ${profile.trading_wallet_address.slice(0, 6)}...${profile.trading_wallet_address.slice(-4)}`
+                        : 'Connect your wallet to copy trades automatically'
+                      }
+                    </p>
+                  </div>
+                </div>
+
+                {/* Import/Re-import Button */}
+                <button
+                  onClick={() => setShowWalletSetup(true)}
+                  className="px-4 py-2 bg-[#FDB022] hover:bg-[#E69E1A] text-black rounded-lg font-medium transition-colors text-sm whitespace-nowrap"
+                >
+                  {profile?.trading_wallet_address ? 'Re-import' : 'Import Wallet'}
+                </button>
+              </div>
+            </div>
+          )}
           
           {/* Help & Support */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
