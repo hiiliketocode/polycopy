@@ -1,24 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createClient as createAuthClient } from '@/lib/supabase/server';
 
-// Create Supabase client with service role for server-side operations
-const supabase = createClient(
+// Create Supabase client with service role for database operations (bypassing RLS)
+const supabaseServiceRole = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 export async function POST(request: NextRequest) {
   try {
-    // Get the current user's session from cookies
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Get the current user's session from cookies using auth client
+    const supabaseAuth = await createAuthClient();
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
     
     if (authError || !user) {
-      console.error('Auth error:', authError);
+      console.error('🔐 Auth error:', authError);
       return NextResponse.json(
         { error: 'Unauthorized - please log in' },
         { status: 401 }
       );
     }
+
+    console.log('✅ User authenticated:', user.id);
 
     // Get the private key from request body
     const { privateKey } = await request.json();
@@ -68,8 +72,9 @@ export async function POST(request: NextRequest) {
 
     // Save only the wallet address to our database (not the private key!)
     // Privy stores the private key securely on their infrastructure
+    // Use service role client to bypass RLS
     const timestamp = new Date().toISOString();
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseServiceRole
       .from('profiles')
       .update({
         trading_wallet_address: wallet.address,
