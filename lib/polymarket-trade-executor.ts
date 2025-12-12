@@ -1,14 +1,16 @@
-import { createRelayClient } from './polymarket-relay';
+import { PrivyClient } from '@privy-io/node';
 import { ClobClient } from '@dschz/polymarket-clob-client';
 
+// Initialize Privy client for server-side wallet operations
+const privy = new PrivyClient({
+  appId: process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
+  appSecret: process.env.PRIVY_APP_SECRET!,
+});
+
 /**
- * Execute a trade on Polymarket on behalf of a user
+ * Execute a trade on Polymarket on behalf of a user using Privy-managed wallet
  * 
- * IMPORTANT: This function needs to be updated to use Privy's wallet methods
- * instead of handling private keys directly. The wallet should be retrieved
- * from Privy's API using the user's session.
- * 
- * @param userId - User's ID to get their wallet from Privy
+ * @param userId - User's Supabase ID
  * @param marketId - Polymarket market/token ID
  * @param outcome - 'YES' or 'NO'
  * @param amount - Amount in USDC to invest
@@ -24,19 +26,18 @@ export async function executeTradeForUser(params: {
   const { userId, marketId, outcome, amount, price } = params;
   
   try {
-    // Get user's wallet address (we only store the address, not private key)
-    const walletAddress = await getUserWalletAddress(userId);
+    // Get user's Privy wallet ID from database
+    const { privyWalletId, walletAddress } = await getUserWalletInfo(userId);
     
-    // TODO: Implement trade execution using Privy's wallet
-    // This will involve:
-    // 1. Get user's wallet from Privy using their session
-    // 2. Use wallet.getEthersProvider() for signing
-    // 3. Get market details from CLOB client
-    // 4. Create order transaction
-    // 5. Sign with Privy's wallet.signTransaction()
-    // 6. Submit via relay client
+    // TODO: Implement trade execution using Privy's signing API
+    // Flow:
+    // 1. Create Polymarket order payload
+    // 2. Sign order using Privy wallet (privy.wallets().signMessage())
+    // 3. Submit signed order to Polymarket CLOB
+    // 4. Return transaction result
     
     console.log('Trade execution params:', {
+      privyWalletId,
       walletAddress,
       marketId,
       outcome,
@@ -44,9 +45,17 @@ export async function executeTradeForUser(params: {
       price
     });
     
+    // Example of how Privy signing will work:
+    // const orderPayload = createOrderPayload({ marketId, outcome, amount, price });
+    // const signature = await privy.wallets().signMessage({
+    //   walletId: privyWalletId,
+    //   message: orderPayload
+    // });
+    // const result = await submitToPolymarket(signature, orderPayload);
+    
     return {
       success: true,
-      message: 'Trade execution logic to be implemented with Privy wallet'
+      message: 'Trade execution logic to be implemented with Privy signing'
     };
     
   } catch (error: any) {
@@ -56,19 +65,16 @@ export async function executeTradeForUser(params: {
 }
 
 /**
- * Get user's wallet address from database
+ * Get user's wallet information from database
+ * Returns both the Privy wallet ID (for signing) and wallet address (for display)
  * 
- * NOTE: We no longer store private keys in our database!
- * Private keys are managed by Privy on their infrastructure.
- * 
- * For trade execution, use Privy's wallet methods:
- * - wallet.getEthersProvider()
- * - wallet.signMessage()
- * - wallet.signTransaction()
- * 
- * This should only be called server-side when executing trades
+ * NOTE: Private keys are NEVER stored in our database!
+ * They are managed securely by Privy on their infrastructure.
  */
-export async function getUserWalletAddress(userId: string): Promise<string> {
+export async function getUserWalletInfo(userId: string): Promise<{
+  privyWalletId: string;
+  walletAddress: string;
+}> {
   const { createClient } = await import('@supabase/supabase-js');
   
   // Create Supabase client with service role for server-side operations
@@ -77,10 +83,10 @@ export async function getUserWalletAddress(userId: string): Promise<string> {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Get the user's wallet address (public info only)
+  // Get the user's wallet information
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('trading_wallet_address')
+    .select('privy_wallet_id, trading_wallet_address')
     .eq('id', userId)
     .single();
 
@@ -88,9 +94,12 @@ export async function getUserWalletAddress(userId: string): Promise<string> {
     throw new Error('User profile not found');
   }
 
-  if (!profile.trading_wallet_address) {
+  if (!profile.privy_wallet_id || !profile.trading_wallet_address) {
     throw new Error('User has not connected a wallet');
   }
 
-  return profile.trading_wallet_address;
+  return {
+    privyWalletId: profile.privy_wallet_id,
+    walletAddress: profile.trading_wallet_address,
+  };
 }
