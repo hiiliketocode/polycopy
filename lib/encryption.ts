@@ -1,10 +1,17 @@
 import crypto from 'crypto';
 
-const ENCRYPTION_KEY = process.env.WALLET_ENCRYPTION_KEY || '';
 const ALGORITHM = 'aes-256-gcm';
 
-if (!ENCRYPTION_KEY && process.env.NODE_ENV === 'production') {
-  throw new Error('WALLET_ENCRYPTION_KEY environment variable is required in production');
+/**
+ * Get the encryption key from environment variables
+ * Only checks at runtime, not during build
+ */
+function getEncryptionKey(): string {
+  const key = process.env.WALLET_ENCRYPTION_KEY || '';
+  if (!key) {
+    throw new Error('WALLET_ENCRYPTION_KEY environment variable is required');
+  }
+  return key;
 }
 
 /**
@@ -12,9 +19,7 @@ if (!ENCRYPTION_KEY && process.env.NODE_ENV === 'production') {
  * Uses AES-256-GCM for authenticated encryption
  */
 export function encryptPrivateKey(privateKey: string): string {
-  if (!ENCRYPTION_KEY) {
-    throw new Error('Encryption key not configured');
-  }
+  const ENCRYPTION_KEY = getEncryptionKey();
 
   // Generate a random initialization vector
   const iv = crypto.randomBytes(16);
@@ -41,9 +46,7 @@ export function encryptPrivateKey(privateKey: string): string {
  * Only call this server-side when needed
  */
 export function decryptPrivateKey(encryptedData: string): string {
-  if (!ENCRYPTION_KEY) {
-    throw new Error('Encryption key not configured');
-  }
+  const ENCRYPTION_KEY = getEncryptionKey();
 
   try {
     // Split the encrypted data
