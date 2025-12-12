@@ -9,58 +9,70 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    // Get the authorization header
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Missing or invalid authorization header' },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.substring(7);
-
-    // Verify the user's session token
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    // Get the current user's session from cookies
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
     
     if (authError || !user) {
       console.error('Auth error:', authError);
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: 'Unauthorized - please log in' },
         { status: 401 }
       );
     }
 
-    // Get wallet information from request
-    // Privy handles private key encryption/storage on their infrastructure
-    // We ONLY store reference IDs and public addresses
-    const { walletId, walletAddress } = await request.json();
+    // Get the private key from request body
+    const { privateKey } = await request.json();
 
-    if (!walletId || !walletAddress) {
+    if (!privateKey) {
       return NextResponse.json(
-        { error: 'Wallet ID and address are required' },
+        { error: 'Private key is required' },
         { status: 400 }
       );
     }
 
-    // Validate it's a valid Ethereum address
-    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+    // Validate private key format (0x + 64 hex chars = 66 total)
+    if (!privateKey.startsWith('0x') || privateKey.length !== 66) {
       return NextResponse.json(
-        { error: 'Invalid wallet address format' },
+        { error: 'Invalid private key format. Must be 66 characters (0x + 64 hex)' },
         { status: 400 }
       );
     }
 
-    // Save wallet reference to user's profile
-    // - privy_wallet_id: Reference ID (not sensitive)
-    // - trading_wallet_address: Public address (not sensitive)
-    // - Private key: Stored by Privy (never in our DB)
+    console.log(`📤 Importing wallet to Privy for user: ${user.id}`);
+
+    // Import wallet via Privy's REST API
+    // The private key is sent securely to Privy (never stored by us)
+    const privyResponse = await fetch('https://auth.privy.io/api/v1/wallets', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'privy-app-id': process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
+        'privy-app-secret': process.env.PRIVY_APP_SECRET!,
+      },
+      body: JSON.stringify({
+        user_id: user.id, // Link to current user
+        chain_type: 'ethereum',
+        wallet_type: 'imported',
+        private_key: privateKey,
+      }),
+    });
+
+    if (!privyResponse.ok) {
+      const error = await privyResponse.json();
+      console.error('Privy API error:', error);
+      throw new Error(error.message || 'Failed to import wallet to Privy');
+    }
+
+    const wallet = await privyResponse.json();
+    console.log(`✅ Wallet imported to Privy: ${wallet.address}`);
+
+    // Save only the wallet address to our database (not the private key!)
+    // Privy stores the private key securely on their infrastructure
     const timestamp = new Date().toISOString();
     const { error: updateError } = await supabase
       .from('profiles')
       .update({
-        privy_wallet_id: walletId,
-        trading_wallet_address: walletAddress,
+        trading_wallet_address: wallet.address,
         wallet_connected_at: timestamp,
       })
       .eq('id', user.id);
@@ -68,16 +80,16 @@ export async function POST(request: NextRequest) {
     if (updateError) {
       console.error('Database update error:', updateError);
       return NextResponse.json(
-        { error: 'Failed to save wallet information' },
+        { error: 'Failed to save wallet address to database' },
         { status: 500 }
       );
     }
 
-    console.log(`✅ Saved wallet for user ${user.id}: ${walletAddress}`);
+    console.log(`✅ Saved wallet address to database: ${wallet.address}`);
 
     return NextResponse.json({
       success: true,
-      address: walletAddress,
+      address: wallet.address,
       message: 'Wallet imported successfully'
     });
 

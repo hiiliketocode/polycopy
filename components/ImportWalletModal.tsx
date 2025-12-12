@@ -1,19 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { useImportWallet } from '@privy-io/react-auth';
 
 interface ImportWalletModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (address: string, walletId: string) => void;
+  onSuccess: (address: string) => void;
 }
 
 export default function ImportWalletModal({ isOpen, onClose, onSuccess }: ImportWalletModalProps) {
   const [privateKey, setPrivateKey] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { importWallet } = useImportWallet();
 
   const handleImport = async () => {
     setError('');
@@ -26,51 +24,42 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
         formattedKey = '0x' + formattedKey;
       }
 
-      // Import wallet to Privy (they handle encryption and secure storage)
-      console.log('Importing wallet to Privy...');
-      const wallet = await importWallet({
-        privateKey: formattedKey
-      });
-
-      if (!wallet?.address || !wallet?.id) {
-        throw new Error('Failed to import wallet - invalid wallet returned from Privy');
+      // Validate format (0x + 64 hex characters = 66 total)
+      if (formattedKey.length !== 66) {
+        throw new Error('Private key must be 66 characters (0x + 64 hex characters)');
       }
 
-      console.log('Wallet imported to Privy:', { address: wallet.address, id: wallet.id });
-
-      // Save only the wallet ID and address to our database (not the private key!)
-      const { supabase } = await import('@/lib/supabase');
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session?.access_token) {
-        throw new Error('You must be logged in');
+      if (!/^0x[a-fA-F0-9]{64}$/.test(formattedKey)) {
+        throw new Error('Private key must contain only hexadecimal characters (0-9, a-f)');
       }
 
+      console.log('Sending private key to API for Privy import...');
+
+      // Send to our API endpoint (which securely forwards to Privy)
+      // The private key is sent over HTTPS and never stored by us
       const response = await fetch('/api/wallet/import', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
         },
-        body: JSON.stringify({
-          walletId: wallet.id,      // Privy wallet ID (reference only)
-          walletAddress: wallet.address // Public wallet address
-        })
+        body: JSON.stringify({ 
+          privateKey: formattedKey 
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to save wallet information');
+        throw new Error(data.error || 'Failed to import wallet');
       }
 
-      console.log('Wallet information saved to database');
+      console.log('Wallet imported successfully:', data.address);
 
       // Clear the private key input for security
       setPrivateKey('');
       
-      // Call success callback
-      onSuccess(wallet.address, wallet.id);
+      // Call success callback with the wallet address
+      onSuccess(data.address);
       
     } catch (err: any) {
       console.error('Import error:', err);
