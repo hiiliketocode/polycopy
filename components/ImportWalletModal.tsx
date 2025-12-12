@@ -12,7 +12,6 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
   const [privateKey, setPrivateKey] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { wallets } = useWallets();
 
   const handleImport = async () => {
     setError('');
