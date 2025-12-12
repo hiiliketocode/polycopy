@@ -32,13 +32,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Remove wallet data from user's profile
+    // NOTE: We only store the wallet address, not private keys
+    // Private keys are managed by Privy on their infrastructure
     const { error: updateError } = await supabase
       .from('profiles')
       .update({
         trading_wallet_address: null,
-        encrypted_private_key: null,
         wallet_connected_at: null,
-        // Keep wallet_created_at for historical record
+        // Note: encrypted_private_key column is deprecated (kept for backwards compatibility)
       })
       .eq('id', user.id);
 
