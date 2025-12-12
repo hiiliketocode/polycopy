@@ -1,8 +1,6 @@
 import { ClobClient } from '@dschz/polymarket-clob-client';
 
 // Initialize CLOB client for Polymarket API
-export const clobClient = new ClobClient(
-  'https://clob.polymarket.com',
-  process.env.POLYMARKET_API_KEY,
-  137 // Polygon chain ID
-);
+// For read-only operations (leaderboards, market data), no authentication needed
+// Uses default: host='https://clob.polymarket.com', chainId=137 (Polygon)
+export const clobClient = new ClobClient();

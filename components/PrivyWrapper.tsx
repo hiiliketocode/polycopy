@@ -14,21 +14,17 @@ export default function PrivyWrapper({ children }: { children: React.ReactNode }
         },
         // Disable embedded wallet creation - users must import their Polymarket wallet
         embeddedWallets: {
-          createOnLogin: 'off',
-          requireUserPasswordOnCreate: false,
+          ethereum: {
+            createOnLogin: 'off',
+          },
+          solana: {
+            createOnLogin: 'off',
+          },
         },
         defaultChain: polygon,
         supportedChains: [polygon, mainnet],
         // Only allow wallet-based login for import flow
         loginMethods: ['wallet'],
-        externalWallets: {
-          coinbaseWallet: { 
-            connectionOptions: 'eoaOnly' 
-          },
-          metamask: { 
-            connectionOptions: 'eoaOnly' 
-          },
-        },
       }}
     >
       {children}
