@@ -73,12 +73,14 @@ export async function POST(request: NextRequest) {
     const encryptedKey = encryptPrivateKey(formattedKey);
 
     // Save to user's profile
+    const timestamp = new Date().toISOString();
     const { error: updateError } = await supabase
       .from('profiles')
       .update({
         trading_wallet_address: walletAddress,
         encrypted_private_key: encryptedKey,
-        wallet_created_at: new Date().toISOString(),
+        wallet_created_at: timestamp,
+        wallet_connected_at: timestamp, // Track when user imported/connected wallet
       })
       .eq('id', user.id);
 
