@@ -1,18 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { Wallet } from '@ethersproject/wallet';
+import { useImportWallet } from '@privy-io/react-auth';
 
 interface ImportWalletModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (address: string) => void;
+  onSuccess: (address: string, walletId: string) => void;
 }
 
 export default function ImportWalletModal({ isOpen, onClose, onSuccess }: ImportWalletModalProps) {
   const [privateKey, setPrivateKey] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const { importWallet } = useImportWallet();
 
   const handleImport = async () => {
     setError('');
@@ -25,17 +26,19 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
         formattedKey = '0x' + formattedKey;
       }
 
-      // Validate the private key by creating a wallet instance
-      // This happens CLIENT-SIDE only for validation
-      let walletAddress: string;
-      try {
-        const wallet = new Wallet(formattedKey);
-        walletAddress = wallet.address;
-      } catch (error) {
-        throw new Error('Invalid private key. Please check and try again.');
+      // Import wallet to Privy (they handle encryption and secure storage)
+      console.log('Importing wallet to Privy...');
+      const wallet = await importWallet({
+        privateKey: formattedKey
+      });
+
+      if (!wallet?.address || !wallet?.id) {
+        throw new Error('Failed to import wallet - invalid wallet returned from Privy');
       }
 
-      // Save only the wallet ADDRESS to our database (not the private key!)
+      console.log('Wallet imported to Privy:', { address: wallet.address, id: wallet.id });
+
+      // Save only the wallet ID and address to our database (not the private key!)
       const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -50,21 +53,24 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          walletAddress // Only send the address (public info)
+          walletId: wallet.id,      // Privy wallet ID (reference only)
+          walletAddress: wallet.address // Public wallet address
         })
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to save wallet address');
+        throw new Error(data.error || 'Failed to save wallet information');
       }
+
+      console.log('Wallet information saved to database');
 
       // Clear the private key input for security
       setPrivateKey('');
       
-      // Call success callback with the wallet address
-      onSuccess(walletAddress);
+      // Call success callback
+      onSuccess(wallet.address, wallet.id);
       
     } catch (err: any) {
       console.error('Import error:', err);

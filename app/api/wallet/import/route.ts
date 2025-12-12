@@ -31,14 +31,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get the wallet address from the request body
-    // NOTE: Privy handles private key encryption/storage on their infrastructure
-    // We ONLY store the public wallet address (which is safe to store)
-    const { walletAddress } = await request.json();
+    // Get wallet information from request
+    // Privy handles private key encryption/storage on their infrastructure
+    // We ONLY store reference IDs and public addresses
+    const { walletId, walletAddress } = await request.json();
 
-    if (!walletAddress) {
+    if (!walletId || !walletAddress) {
       return NextResponse.json(
-        { error: 'Wallet address is required' },
+        { error: 'Wallet ID and address are required' },
         { status: 400 }
       );
     }
@@ -51,35 +51,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Save only the wallet ADDRESS to user's profile
-    // Private key is stored securely by Privy
+    // Save wallet reference to user's profile
+    // - privy_wallet_id: Reference ID (not sensitive)
+    // - trading_wallet_address: Public address (not sensitive)
+    // - Private key: Stored by Privy (never in our DB)
     const timestamp = new Date().toISOString();
     const { error: updateError } = await supabase
       .from('profiles')
       .update({
+        privy_wallet_id: walletId,
         trading_wallet_address: walletAddress,
         wallet_connected_at: timestamp,
-        // NOTE: We no longer store encrypted_private_key
-        // Privy handles all private key encryption/storage
       })
       .eq('id', user.id);
 
     if (updateError) {
       console.error('Database update error:', updateError);
       return NextResponse.json(
-        { error: 'Failed to save wallet address' },
+        { error: 'Failed to save wallet information' },
         { status: 500 }
       );
     }
 
+    console.log(`✅ Saved wallet for user ${user.id}: ${walletAddress}`);
+
     return NextResponse.json({
       success: true,
       address: walletAddress,
-      message: 'Wallet address saved successfully'
+      message: 'Wallet imported successfully'
     });
 
   } catch (error: any) {
-    console.error('Wallet save error:', error);
+    console.error('Wallet import error:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
       { status: 500 }
