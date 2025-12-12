@@ -619,27 +619,34 @@ export default function TraderProfilePage({
 
     const checkFollowStatus = async () => {
       setCheckingFollow(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        // IMPORTANT: Normalize wallet to lowercase for consistent database queries
-        const normalizedWallet = wallet.toLowerCase();
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         
-        const { data, error } = await supabase
-          .from('follows')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('trader_wallet', normalizedWallet)
-          .single();
+        if (user) {
+          // IMPORTANT: Normalize wallet to lowercase for consistent database queries
+          const normalizedWallet = wallet.toLowerCase();
+          
+          const { data, error } = await supabase
+            .from('follows')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('trader_wallet', normalizedWallet)
+            .single();
 
-        if (error && error.code !== 'PGRST116') {
-          console.error('Error checking follow status:', error);
-        } else if (data) {
-          setFollowing(true);
+          if (error && error.code !== 'PGRST116') {
+            console.error('Error checking follow status:', error);
+          } else if (data) {
+            setFollowing(true);
+          }
         }
+      } catch (error) {
+        console.error('Error in checkFollowStatus:', error);
+      } finally {
+        // Always set loading to false, even if there's an error
+        setCheckingFollow(false);
       }
-      setCheckingFollow(false);
     };
     checkFollowStatus();
   }, [wallet]);
