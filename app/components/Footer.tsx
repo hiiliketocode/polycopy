@@ -9,6 +9,12 @@ export default function Footer() {
           {/* Links Section */}
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-6 gap-y-2">
             <Link 
+              href="/faq" 
+              className="text-sm text-slate-400 hover:text-[#FDB022] transition-colors font-medium"
+            >
+              FAQ
+            </Link>
+            <Link 
               href="/terms" 
               className="text-sm text-slate-400 hover:text-[#FDB022] transition-colors"
             >
@@ -42,8 +48,9 @@ export default function Footer() {
         {/* Disclaimer */}
         <div className="pt-6 border-t border-slate-800">
           <p className="text-xs text-slate-500 text-center max-w-3xl mx-auto leading-relaxed">
-            Trading involves risk. Past performance does not guarantee future results. Polycopy is an informational 
-            tool and does not provide financial advice. We do not execute trades on your behalf.
+            Trading involves risk. Past performance does not guarantee future results. Polycopy is a copy trading 
+            platform and does not provide financial advice. By importing your wallet, you authorize Polycopy to 
+            execute trades on your behalf based on the traders you follow. You can disconnect your wallet anytime.
           </p>
         </div>
       </div>
