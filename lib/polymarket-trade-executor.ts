@@ -4,33 +4,40 @@ import { ClobClient } from '@dschz/polymarket-clob-client';
 /**
  * Execute a trade on Polymarket on behalf of a user
  * 
- * @param userPrivateKey - User's wallet private key (from Privy embedded wallet)
+ * IMPORTANT: This function needs to be updated to use Privy's wallet methods
+ * instead of handling private keys directly. The wallet should be retrieved
+ * from Privy's API using the user's session.
+ * 
+ * @param userId - User's ID to get their wallet from Privy
  * @param marketId - Polymarket market/token ID
  * @param outcome - 'YES' or 'NO'
  * @param amount - Amount in USDC to invest
  * @param price - Price to buy/sell at (0.01 to 0.99)
  */
 export async function executeTradeForUser(params: {
-  userPrivateKey: string;
+  userId: string;
   marketId: string;
   outcome: 'YES' | 'NO';
   amount: number;
   price: number;
 }) {
-  const { userPrivateKey, marketId, outcome, amount, price } = params;
+  const { userId, marketId, outcome, amount, price } = params;
   
   try {
-    // Create relay client for this user
-    const relayClient = createRelayClient(userPrivateKey);
+    // Get user's wallet address (we only store the address, not private key)
+    const walletAddress = await getUserWalletAddress(userId);
     
-    // TODO: Implement trade execution using relay client
+    // TODO: Implement trade execution using Privy's wallet
     // This will involve:
-    // 1. Get market details from CLOB client
-    // 2. Create order transaction
-    // 3. Sign with user's wallet
-    // 4. Submit via relay client
+    // 1. Get user's wallet from Privy using their session
+    // 2. Use wallet.getEthersProvider() for signing
+    // 3. Get market details from CLOB client
+    // 4. Create order transaction
+    // 5. Sign with Privy's wallet.signTransaction()
+    // 6. Submit via relay client
     
     console.log('Trade execution params:', {
+      walletAddress,
       marketId,
       outcome,
       amount,
@@ -39,7 +46,7 @@ export async function executeTradeForUser(params: {
     
     return {
       success: true,
-      message: 'Trade execution logic to be implemented'
+      message: 'Trade execution logic to be implemented with Privy wallet'
     };
     
   } catch (error: any) {
@@ -49,12 +56,20 @@ export async function executeTradeForUser(params: {
 }
 
 /**
- * Get user's wallet private key from database and decrypt it
+ * Get user's wallet address from database
+ * 
+ * NOTE: We no longer store private keys in our database!
+ * Private keys are managed by Privy on their infrastructure.
+ * 
+ * For trade execution, use Privy's wallet methods:
+ * - wallet.getEthersProvider()
+ * - wallet.signMessage()
+ * - wallet.signTransaction()
+ * 
  * This should only be called server-side when executing trades
  */
-export async function getUserWalletPrivateKey(userId: string): Promise<string> {
+export async function getUserWalletAddress(userId: string): Promise<string> {
   const { createClient } = await import('@supabase/supabase-js');
-  const { decryptPrivateKey } = await import('./encryption');
   
   // Create Supabase client with service role for server-side operations
   const supabase = createClient(
@@ -62,10 +77,10 @@ export async function getUserWalletPrivateKey(userId: string): Promise<string> {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Get the user's encrypted private key
+  // Get the user's wallet address (public info only)
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('encrypted_private_key')
+    .select('trading_wallet_address')
     .eq('id', userId)
     .single();
 
@@ -73,10 +88,9 @@ export async function getUserWalletPrivateKey(userId: string): Promise<string> {
     throw new Error('User profile not found');
   }
 
-  if (!profile.encrypted_private_key) {
-    throw new Error('User has not imported a wallet');
+  if (!profile.trading_wallet_address) {
+    throw new Error('User has not connected a wallet');
   }
 
-  // Decrypt and return the private key
-  return decryptPrivateKey(profile.encrypted_private_key);
+  return profile.trading_wallet_address;
 }

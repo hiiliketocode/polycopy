@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useWallets } from '@privy-io/react-auth';
 
 interface ImportWalletModalProps {
   isOpen: boolean;
@@ -12,21 +13,37 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
   const [privateKey, setPrivateKey] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const { importWallet } = useWallets();
 
   const handleImport = async () => {
     setError('');
     setLoading(true);
 
     try {
-      // Get the user's session token from Supabase
+      // Format the private key
+      let formattedKey = privateKey.trim();
+      if (!formattedKey.startsWith('0x')) {
+        formattedKey = '0x' + formattedKey;
+      }
+
+      // Import wallet using Privy (they handle encryption and storage)
+      const wallet = await importWallet({
+        privateKey: formattedKey,
+        type: 'ethereum',
+      });
+
+      if (!wallet?.address) {
+        throw new Error('Failed to import wallet - no address returned');
+      }
+
+      // Save only the wallet ADDRESS to our database (not the private key!)
       const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
-        throw new Error('You must be logged in to import a wallet');
+        throw new Error('You must be logged in');
       }
 
-      // Call the secure API endpoint to import and encrypt the wallet
       const response = await fetch('/api/wallet/import', {
         method: 'POST',
         headers: {
@@ -34,21 +51,21 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          privateKey: privateKey.trim()
+          walletAddress: wallet.address // Only send the address
         })
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to import wallet');
+        throw new Error(data.error || 'Failed to save wallet address');
       }
 
       // Clear the private key input for security
       setPrivateKey('');
       
       // Call success callback with the wallet address
-      onSuccess(data.address);
+      onSuccess(wallet.address);
       
     } catch (err: any) {
       console.error('Import error:', err);
