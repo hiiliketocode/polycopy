@@ -1,11 +1,4 @@
-import { PrivyClient } from '@privy-io/node';
 import { ClobClient } from '@dschz/polymarket-clob-client';
-
-// Initialize Privy client for server-side wallet operations
-const privy = new PrivyClient({
-  appId: process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
-  appSecret: process.env.PRIVY_APP_SECRET!,
-});
 
 /**
  * Execute a trade on Polymarket on behalf of a user using Privy-managed wallet
@@ -26,18 +19,30 @@ export async function executeTradeForUser(params: {
   const { userId, marketId, outcome, amount, price } = params;
   
   try {
-    // Get user's Privy wallet ID from database
-    const { privyWalletId, walletAddress } = await getUserWalletInfo(userId);
+    // Get user's wallet address from database
+    const walletAddress = await getUserWalletAddress(userId);
     
-    // TODO: Implement trade execution using Privy's signing API
+    // TODO: Implement trade execution using Privy's REST API
     // Flow:
-    // 1. Create Polymarket order payload
-    // 2. Sign order using Privy wallet (privy.wallets().signMessage())
-    // 3. Submit signed order to Polymarket CLOB
-    // 4. Return transaction result
+    // 1. Get user's wallets from Privy:
+    //    GET https://auth.privy.io/api/v1/users/${userId}/wallets
+    //    Headers: privy-app-id, privy-app-secret
+    //
+    // 2. Find the imported wallet matching walletAddress
+    //
+    // 3. Create Polymarket order payload
+    //
+    // 4. Sign using Privy's signing endpoint:
+    //    POST https://auth.privy.io/api/v1/wallets/${walletId}/sign
+    //    Body: { message: orderPayload }
+    //    (Privy handles private key decryption + signing securely)
+    //
+    // 5. Submit signed order to Polymarket CLOB
+    //
+    // 6. Return transaction result
     
     console.log('Trade execution params:', {
-      privyWalletId,
+      userId,
       walletAddress,
       marketId,
       outcome,
@@ -45,17 +50,9 @@ export async function executeTradeForUser(params: {
       price
     });
     
-    // Example of how Privy signing will work:
-    // const orderPayload = createOrderPayload({ marketId, outcome, amount, price });
-    // const signature = await privy.wallets().signMessage({
-    //   walletId: privyWalletId,
-    //   message: orderPayload
-    // });
-    // const result = await submitToPolymarket(signature, orderPayload);
-    
     return {
       success: true,
-      message: 'Trade execution logic to be implemented with Privy signing'
+      message: 'Trade execution logic to be implemented with Privy REST API'
     };
     
   } catch (error: any) {
@@ -65,16 +62,13 @@ export async function executeTradeForUser(params: {
 }
 
 /**
- * Get user's wallet information from database
- * Returns both the Privy wallet ID (for signing) and wallet address (for display)
+ * Get user's wallet address from database
  * 
  * NOTE: Private keys are NEVER stored in our database!
  * They are managed securely by Privy on their infrastructure.
+ * For signing, we'll use Privy's REST API with the user's ID.
  */
-export async function getUserWalletInfo(userId: string): Promise<{
-  privyWalletId: string;
-  walletAddress: string;
-}> {
+export async function getUserWalletAddress(userId: string): Promise<string> {
   const { createClient } = await import('@supabase/supabase-js');
   
   // Create Supabase client with service role for server-side operations
@@ -83,10 +77,10 @@ export async function getUserWalletInfo(userId: string): Promise<{
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Get the user's wallet information
+  // Get the user's wallet address (public info only)
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('privy_wallet_id, trading_wallet_address')
+    .select('trading_wallet_address')
     .eq('id', userId)
     .single();
 
@@ -94,12 +88,9 @@ export async function getUserWalletInfo(userId: string): Promise<{
     throw new Error('User profile not found');
   }
 
-  if (!profile.privy_wallet_id || !profile.trading_wallet_address) {
+  if (!profile.trading_wallet_address) {
     throw new Error('User has not connected a wallet');
   }
 
-  return {
-    privyWalletId: profile.privy_wallet_id,
-    walletAddress: profile.trading_wallet_address,
-  };
+  return profile.trading_wallet_address;
 }

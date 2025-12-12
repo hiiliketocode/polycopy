@@ -1776,11 +1776,11 @@ export default function ProfilePage() {
         <ImportWalletModal
           isOpen={showWalletSetup}
           onClose={() => setShowWalletSetup(false)}
-          onSuccess={(address, walletId) => {
+          onSuccess={(address) => {
             // Wallet is already saved by the API endpoint
             // Privy stores the private key securely on their infrastructure
-            // We only store: walletId (reference) and address (public info)
-            console.log('Wallet imported successfully:', { address, walletId });
+            // We only store the public wallet address (not the private key!)
+            console.log('Wallet imported successfully:', address);
             setShowWalletSetup(false);
             showToastMessage('Wallet imported successfully!', 'success');
             // Refresh profile data to show new wallet
