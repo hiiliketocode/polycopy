@@ -24,60 +24,36 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ User authenticated:', user.id);
 
-    // Get the private key from request body
-    const { privateKey } = await request.json();
+    // Get the wallet address from request body
+    // NOTE: Privy handles private key import client-side via their UI
+    // We only receive and store the public wallet address
+    const { walletAddress } = await request.json();
 
-    if (!privateKey) {
+    if (!walletAddress) {
       return NextResponse.json(
-        { error: 'Private key is required' },
+        { error: 'Wallet address is required' },
         { status: 400 }
       );
     }
 
-    // Validate private key format (0x + 64 hex chars = 66 total)
-    if (!privateKey.startsWith('0x') || privateKey.length !== 66) {
+    // Validate it's a valid Ethereum address
+    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
       return NextResponse.json(
-        { error: 'Invalid private key format. Must be 66 characters (0x + 64 hex)' },
+        { error: 'Invalid wallet address format' },
         { status: 400 }
       );
     }
 
-    console.log(`📤 Importing wallet to Privy for user: ${user.id}`);
+    console.log(`📝 Saving wallet address for user: ${user.id}`);
 
-    // Import wallet via Privy's REST API
-    // The private key is sent securely to Privy (never stored by us)
-    const privyResponse = await fetch('https://auth.privy.io/api/v1/wallets', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'privy-app-id': process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
-        'privy-app-secret': process.env.PRIVY_APP_SECRET!,
-      },
-      body: JSON.stringify({
-        user_id: user.id, // Link to current user
-        chain_type: 'ethereum',
-        wallet_type: 'imported',
-        private_key: privateKey,
-      }),
-    });
-
-    if (!privyResponse.ok) {
-      const error = await privyResponse.json();
-      console.error('Privy API error:', error);
-      throw new Error(error.message || 'Failed to import wallet to Privy');
-    }
-
-    const wallet = await privyResponse.json();
-    console.log(`✅ Wallet imported to Privy: ${wallet.address}`);
-
-    // Save only the wallet address to our database (not the private key!)
+    // Save only the wallet address to our database
     // Privy stores the private key securely on their infrastructure
     // Use service role client to bypass RLS
     const timestamp = new Date().toISOString();
     const { error: updateError } = await supabaseServiceRole
       .from('profiles')
       .update({
-        trading_wallet_address: wallet.address,
+        trading_wallet_address: walletAddress,
         wallet_connected_at: timestamp,
       })
       .eq('id', user.id);
@@ -90,11 +66,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`✅ Saved wallet address to database: ${wallet.address}`);
+    console.log(`✅ Saved wallet address to database: ${walletAddress}`);
 
     return NextResponse.json({
       success: true,
-      address: wallet.address,
+      address: walletAddress,
       message: 'Wallet imported successfully'
     });
 
