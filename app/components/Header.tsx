@@ -105,10 +105,10 @@ export default function Header() {
           ) : (
             <>
               {/* Log In - Secondary style */}
-              <button
-                onClick={() => router.push('/login')}
-                className="text-sm font-medium text-[#0F0F0F] hover:text-slate-600 transition-colors"
-              >
+            <button
+              onClick={() => router.push('/login')}
+              className="text-sm font-medium text-[#0F0F0F] hover:text-slate-600 transition-colors"
+            >
                 Log In
               </button>
               
@@ -118,7 +118,7 @@ export default function Header() {
                 className="px-4 py-1.5 text-sm font-semibold bg-[#FDB022] hover:bg-[#E69E1A] text-[#0F0F0F] rounded-lg transition-colors"
               >
                 Sign Up
-              </button>
+            </button>
             </>
           )}
         </div>
