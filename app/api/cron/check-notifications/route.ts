@@ -166,11 +166,11 @@ export async function GET(request: NextRequest) {
               .eq('id', trade.id)
           } else {
             console.log(`📧 Sending "Trader Closed" email for trade ${trade.id}`)
-            
-            const traderROI = calculateTraderROI(
-              statusData.traderAvgPrice,
-              statusData.currentPrice
-            )
+          
+          const traderROI = calculateTraderROI(
+            statusData.traderAvgPrice,
+            statusData.currentPrice
+          )
           
           try {
             if (!resend) {

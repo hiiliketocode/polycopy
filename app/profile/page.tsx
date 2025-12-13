@@ -752,6 +752,41 @@ export default function ProfilePage() {
     }
   };
 
+  // Unmark trade as closed handler
+  const handleUnmarkAsClosed = async (tradeId: string) => {
+    if (!user) return;
+    
+    try {
+      const { error } = await supabase
+        .from('copied_trades')
+        .update({
+          user_closed_at: null,
+          user_exit_price: null,
+          // Keep current_price and roi as they may still be valid
+        })
+        .eq('id', tradeId)
+        .eq('user_id', user.id);
+      
+      if (error) throw error;
+      
+      // Update local state
+      setCopiedTrades(trades => trades.map(t => 
+        t.id === tradeId 
+          ? { 
+              ...t, 
+              user_closed_at: null, 
+              user_exit_price: null
+            }
+          : t
+      ));
+      
+      showToastMessage('Trade reopened', 'success');
+    } catch (err: any) {
+      console.error('Error unmarking trade as closed:', err);
+      showToastMessage('Failed to reopen trade', 'error');
+    }
+  };
+
   // Truncate text
   const truncateText = (text: string, maxLength: number) => {
     if (text.length <= maxLength) return text;
@@ -1322,17 +1357,29 @@ export default function ProfilePage() {
                                       >
                                         Edit
                                       </button>
-                                      {!trade.market_resolved && !trade.user_closed_at && (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setTradeToClose(trade);
-                                            setShowCloseModal(true);
-                                          }}
-                                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                                        >
-                                          Mark as Closed
-                                        </button>
+                                      {!trade.market_resolved && (
+                                        trade.user_closed_at ? (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleUnmarkAsClosed(trade.id);
+                                            }}
+                                            className="text-xs text-green-600 hover:text-green-800 font-medium"
+                                          >
+                                            Unmark as Closed
+                                          </button>
+                                        ) : (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setTradeToClose(trade);
+                                              setShowCloseModal(true);
+                                            }}
+                                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                          >
+                                            Mark as Closed
+                                          </button>
+                                        )
                                       )}
                                       <button
                                         onClick={(e) => {
@@ -1472,17 +1519,29 @@ export default function ProfilePage() {
                                 >
                                   Edit
                                 </button>
-                                {!trade.market_resolved && !trade.user_closed_at && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setTradeToClose(trade);
-                                      setShowCloseModal(true);
-                                    }}
-                                    className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                                  >
-                                    Mark as Closed
-                                  </button>
+                                {!trade.market_resolved && (
+                                  trade.user_closed_at ? (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUnmarkAsClosed(trade.id);
+                                      }}
+                                      className="text-xs text-green-600 hover:text-green-800 font-medium"
+                                    >
+                                      Unmark as Closed
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setTradeToClose(trade);
+                                        setShowCloseModal(true);
+                                      }}
+                                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                    >
+                                      Mark as Closed
+                                    </button>
+                                  )
                                 )}
                                 <button
                                   onClick={(e) => {
