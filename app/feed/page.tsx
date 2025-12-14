@@ -549,19 +549,31 @@ export default function FeedPage() {
         // 2. Fetch trader names from leaderboard (all traders, no category filter)
         const traderNames: Record<string, string> = {};
         try {
-          const leaderboardRes = await fetch('/api/polymarket/leaderboard?limit=100&orderBy=PNL&timePeriod=all');
-          if (leaderboardRes.ok) {
-            const leaderboardData = await leaderboardRes.json();
-            // Map names for followed traders
-            for (const follow of follows) {
-              const trader = leaderboardData.traders?.find(
-                (t: any) => t.wallet.toLowerCase() === follow.trader_wallet.toLowerCase()
-              );
-              if (trader?.displayName) {
-                traderNames[follow.trader_wallet.toLowerCase()] = trader.displayName;
+          // Fetch each trader's profile individually (parallel)
+          const traderProfilePromises = follows.map(async (follow) => {
+            try {
+              const res = await fetch(`https://data-api.polymarket.com/users/${follow.trader_wallet}`);
+              if (res.ok) {
+                const profile = await res.json();
+                const displayName = profile.name || profile.userName || profile.username;
+                if (displayName) {
+                  return { wallet: follow.trader_wallet.toLowerCase(), displayName };
+                }
               }
+            } catch (err) {
+              console.warn(`Failed to fetch profile for ${follow.trader_wallet}:`, err);
             }
-          }
+            return null;
+          });
+
+          const profiles = await Promise.all(traderProfilePromises);
+          profiles.forEach(profile => {
+            if (profile) {
+              traderNames[profile.wallet] = profile.displayName;
+            }
+          });
+
+          console.log('📛 Fetched trader names:', traderNames);
         } catch (err) {
           console.warn('Failed to fetch trader names:', err);
         }
