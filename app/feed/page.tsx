@@ -546,63 +546,36 @@ export default function FeedPage() {
 
         setFollowingCount(follows.length);
 
-        // 2. Fetch trader names - try direct profile API first, fallback to leaderboard
+        // 2. Fetch trader names from leaderboard API (max 100 per request)
         const traderNames: Record<string, string> = {};
         try {
-          // Method 1: Fetch each trader's profile individually (parallel)
-          const traderProfilePromises = follows.map(async (follow) => {
-            try {
-              const res = await fetch(`https://data-api.polymarket.com/users/${follow.trader_wallet}`);
-              if (res.ok) {
-                const profile = await res.json();
-                // Try multiple possible field names for username
-                const displayName = profile.name || profile.userName || profile.username || 
-                                   profile.display_name || profile.displayName;
-                if (displayName) {
-                  console.log(`✅ Found name for ${follow.trader_wallet}: ${displayName}`);
-                  return { wallet: follow.trader_wallet.toLowerCase(), displayName };
-                }
-              }
-            } catch (err) {
-              console.warn(`Failed to fetch profile for ${follow.trader_wallet}:`, err);
-            }
-            return null;
-          });
-
-          const profiles = await Promise.all(traderProfilePromises);
-          profiles.forEach(profile => {
-            if (profile) {
-              traderNames[profile.wallet] = profile.displayName;
-            }
-          });
-
-          console.log('📛 Fetched trader names from profiles:', traderNames);
-
-          // Method 2: Fallback to leaderboard for any missing names
-          if (Object.keys(traderNames).length < follows.length) {
-            console.log('⚠️ Some names missing, trying leaderboard fallback...');
-            const leaderboardRes = await fetch('/api/polymarket/leaderboard?limit=100&orderBy=PNL&timePeriod=all');
-            if (leaderboardRes.ok) {
-              const leaderboardData = await leaderboardRes.json();
-              for (const follow of follows) {
-                const walletKey = follow.trader_wallet.toLowerCase();
-                // Only use leaderboard if we don't already have a name
-                if (!traderNames[walletKey]) {
-                  const trader = leaderboardData.traders?.find(
-                    (t: any) => t.wallet.toLowerCase() === walletKey
-                  );
-                  if (trader?.displayName) {
-                    traderNames[walletKey] = trader.displayName;
-                    console.log(`✅ Found name in leaderboard for ${follow.trader_wallet}: ${trader.displayName}`);
-                  }
-                }
+          console.log('📡 Fetching trader names from leaderboard...');
+          const leaderboardRes = await fetch('/api/polymarket/leaderboard?limit=100&orderBy=PNL&timePeriod=all');
+          if (leaderboardRes.ok) {
+            const leaderboardData = await leaderboardRes.json();
+            console.log(`📊 Leaderboard returned ${leaderboardData.traders?.length || 0} traders`);
+            
+            // Map names for followed traders
+            for (const follow of follows) {
+              const walletKey = follow.trader_wallet.toLowerCase();
+              const trader = leaderboardData.traders?.find(
+                (t: any) => t.wallet.toLowerCase() === walletKey
+              );
+              if (trader?.displayName) {
+                traderNames[walletKey] = trader.displayName;
+                console.log(`✅ Found name: ${trader.displayName} for ${follow.trader_wallet.slice(0, 10)}...`);
+              } else {
+                console.warn(`⚠️ No name found for ${follow.trader_wallet.slice(0, 10)}... (not in top 100)`);
               }
             }
+          } else {
+            console.error(`❌ Leaderboard API error: ${leaderboardRes.status}`);
           }
 
-          console.log('📛 Final trader names:', traderNames);
+          console.log('📛 Final trader names:', JSON.stringify(traderNames, null, 2));
+          console.log('📛 Total names found:', Object.keys(traderNames).length, 'out of', follows.length);
         } catch (err) {
-          console.warn('Failed to fetch trader names:', err);
+          console.error('Failed to fetch trader names:', err);
         }
 
         // 3. Fetch trades for each followed wallet (parallel)
@@ -643,8 +616,20 @@ export default function FeedPage() {
         // 4. Format trades
         const formattedTrades: FeedTrade[] = allTradesRaw.map((trade: any) => {
           const wallet = trade._followedWallet || trade.user || trade.wallet || '';
-          const displayName = traderNames[wallet.toLowerCase()] || 
+          const walletKey = wallet.toLowerCase();
+          const displayName = traderNames[walletKey] || 
                              (wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : 'Unknown');
+          
+          // Debug logging for first few trades
+          if (allTradesRaw.indexOf(trade) < 3) {
+            console.log(`🔍 Trade ${allTradesRaw.indexOf(trade)}:`, {
+              wallet,
+              walletKey,
+              displayName,
+              hasNameInMap: !!traderNames[walletKey],
+              traderNamesKeys: Object.keys(traderNames)
+            });
+          }
           
           return {
             id: `${trade.id || trade.timestamp}-${Math.random()}`,
