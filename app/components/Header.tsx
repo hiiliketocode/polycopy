@@ -112,10 +112,10 @@ export default function Header() {
                 Log In
               </button>
               
-              {/* Sign Up - Primary style with brand color */}
+              {/* Sign Up - Primary style with green color */}
               <button
                 onClick={() => router.push('/login?mode=signup')}
-                className="px-4 py-1.5 text-sm font-semibold bg-[#FDB022] hover:bg-[#E69E1A] text-[#0F0F0F] rounded-lg transition-colors"
+                className="px-4 py-1.5 text-sm font-semibold bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
               >
                 Sign Up
             </button>
