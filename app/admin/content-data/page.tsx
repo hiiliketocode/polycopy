@@ -61,6 +61,27 @@ function formatROI(roi: number | null): string {
   return `${sign}${roi.toFixed(1)}%`
 }
 
+// Helper to categorize markets (same logic as trader-details API)
+function categorizeMarket(title: string): string {
+  const lowerTitle = title.toLowerCase()
+  
+  if (lowerTitle.includes('temperature') || lowerTitle.includes('weather') || lowerTitle.includes('°f') || lowerTitle.includes('°c') || lowerTitle.includes('snow') || lowerTitle.includes('rain')) {
+    return 'Weather'
+  } else if (lowerTitle.includes('bitcoin') || lowerTitle.includes('btc') || lowerTitle.includes('crypto') || lowerTitle.includes('eth') || lowerTitle.includes('ethereum')) {
+    return 'Crypto'
+  } else if (lowerTitle.includes('election') || lowerTitle.includes('vote') || lowerTitle.includes('president') || lowerTitle.includes('trump') || lowerTitle.includes('biden') || lowerTitle.includes('democrat') || lowerTitle.includes('republican')) {
+    return 'Politics'
+  } else if (lowerTitle.includes('stock') || lowerTitle.includes('earnings') || lowerTitle.includes('ipo') || lowerTitle.includes('ceo') || lowerTitle.includes('company')) {
+    return 'Business/Finance'
+  } else if (lowerTitle.includes('vs.') || lowerTitle.includes(' vs ') || lowerTitle.includes('sports') || lowerTitle.includes('nfl') || lowerTitle.includes('nba') || lowerTitle.includes('mlb') || lowerTitle.includes('nhl') || lowerTitle.includes('soccer')) {
+    return 'Sports'
+  } else if (lowerTitle.includes('ai') || lowerTitle.includes('tech') || lowerTitle.includes('apple') || lowerTitle.includes('google') || lowerTitle.includes('microsoft')) {
+    return 'Tech'
+  }
+  
+  return 'Other'
+}
+
 // Dashboard data types
 interface FormattedTrader {
   wallet: string
@@ -82,6 +103,39 @@ interface SectionAData {
   categoryLeaderboards: {
     [key: string]: FormattedTrader[]
   }
+  // NEW: Enriched trader analytics (Phase 2)
+  traderAnalytics: Array<{
+    trader_wallet: string
+    trader_username: string
+    // Win Rate
+    win_rate: number | null
+    win_rate_formatted: string
+    total_resolved: number
+    wins: number
+    losses: number
+    // Category Breakdown
+    categories: Array<{
+      category: string
+      count: number
+      percentage: number
+    }>
+    primary_category: string
+    // Position Sizing
+    avg_position_size: number | null
+    avg_position_formatted: string
+    total_invested: number
+    // Trading Activity
+    trades_per_day: number | null
+    trades_per_day_formatted: string
+    first_trade_date: string | null
+    total_trades: number
+    // Week over Week
+    wow_roi_change: number | null
+    wow_roi_change_formatted: string
+    wow_status: 'heating_up' | 'cooling_down' | 'stable' | 'new'
+    last_week_roi: number | null
+    prev_week_roi: number | null
+  }>
   // Errors
   apiErrors: string[]
 }
@@ -211,9 +265,151 @@ async function fetchPolymarketData(): Promise<SectionAData> {
     console.error('❌ Failed to fetch category leaderboards')
   }
 
+  // NEW: Fetch enriched trader analytics (Phase 2)
+  let traderAnalytics: SectionAData['traderAnalytics'] = []
+  
+  try {
+    console.log('🔄 Fetching Phase 2 trader analytics from Polycopy database...')
+    const supabase = createServiceClient()
+    
+    // Get all unique trader wallets from the leaderboard
+    const traderWallets = topTraders.map(t => t.wallet)
+    
+    if (traderWallets.length > 0) {
+      // Fetch all copied_trades for these traders
+      const { data: allTrades, error } = await supabase
+        .from('copied_trades')
+        .select('trader_wallet, trader_username, market_title, roi, market_resolved, amount_invested, copied_at')
+        .in('trader_wallet', traderWallets)
+      
+      if (!error && allTrades) {
+        // Group trades by trader
+        const traderData = new Map<string, any[]>()
+        allTrades.forEach((trade: any) => {
+          if (!traderData.has(trade.trader_wallet)) {
+            traderData.set(trade.trader_wallet, [])
+          }
+          traderData.get(trade.trader_wallet)!.push(trade)
+        })
+        
+        // Calculate analytics for each trader
+        traderAnalytics = Array.from(traderData.entries()).map(([wallet, trades]) => {
+          // Win Rate calculation
+          const resolvedTrades = trades.filter(t => t.market_resolved && t.roi !== null)
+          const wins = resolvedTrades.filter(t => t.roi > 0).length
+          const losses = resolvedTrades.length - wins
+          const winRate = resolvedTrades.length > 0 ? (wins / resolvedTrades.length) * 100 : null
+          
+          // Category Breakdown
+          const categoryCount = new Map<string, number>()
+          trades.forEach(t => {
+            const category = categorizeMarket(t.market_title)
+            categoryCount.set(category, (categoryCount.get(category) || 0) + 1)
+          })
+          
+          const categories = Array.from(categoryCount.entries())
+            .map(([category, count]) => ({
+              category,
+              count,
+              percentage: Math.round((count / trades.length) * 100)
+            }))
+            .sort((a, b) => b.count - a.count)
+          
+          const primaryCategory = categories[0]?.category || 'Unknown'
+          
+          // Average Position Size
+          const tradesWithAmount = trades.filter(t => t.amount_invested && t.amount_invested > 0)
+          const avgPositionSize = tradesWithAmount.length > 0
+            ? tradesWithAmount.reduce((sum, t) => sum + parseFloat(t.amount_invested || 0), 0) / tradesWithAmount.length
+            : null
+          const totalInvested = tradesWithAmount.reduce((sum, t) => sum + parseFloat(t.amount_invested || 0), 0)
+          
+          // Trade Frequency (trades per day)
+          const tradeDates = trades.map(t => new Date(t.copied_at).getTime()).sort((a, b) => a - b)
+          const firstTradeDate = tradeDates.length > 0 ? new Date(tradeDates[0]).toISOString() : null
+          const daysSinceFirst = tradeDates.length > 0 
+            ? (Date.now() - tradeDates[0]) / (1000 * 60 * 60 * 24)
+            : null
+          const tradesPerDay = daysSinceFirst && daysSinceFirst > 0 ? trades.length / daysSinceFirst : null
+          
+          // Week-over-Week Performance
+          const now = Date.now()
+          const lastWeekStart = now - (7 * 24 * 60 * 60 * 1000)
+          const prevWeekStart = now - (14 * 24 * 60 * 60 * 1000)
+          
+          const lastWeekTrades = resolvedTrades.filter(t => {
+            const tradeTime = new Date(t.copied_at).getTime()
+            return tradeTime >= lastWeekStart && tradeTime < now
+          })
+          
+          const prevWeekTrades = resolvedTrades.filter(t => {
+            const tradeTime = new Date(t.copied_at).getTime()
+            return tradeTime >= prevWeekStart && tradeTime < lastWeekStart
+          })
+          
+          const lastWeekRoi = lastWeekTrades.length > 0
+            ? lastWeekTrades.reduce((sum, t) => sum + t.roi, 0) / lastWeekTrades.length
+            : null
+          
+          const prevWeekRoi = prevWeekTrades.length > 0
+            ? prevWeekTrades.reduce((sum, t) => sum + t.roi, 0) / prevWeekTrades.length
+            : null
+          
+          const wowRoiChange = lastWeekRoi !== null && prevWeekRoi !== null
+            ? lastWeekRoi - prevWeekRoi
+            : null
+          
+          let wowStatus: 'heating_up' | 'cooling_down' | 'stable' | 'new' = 'new'
+          if (wowRoiChange !== null) {
+            if (wowRoiChange > 5) wowStatus = 'heating_up'
+            else if (wowRoiChange < -5) wowStatus = 'cooling_down'
+            else wowStatus = 'stable'
+          } else if (lastWeekTrades.length > 0 && prevWeekTrades.length === 0) {
+            wowStatus = 'new'
+          }
+          
+          // Find trader username
+          const traderUsername = trades[0]?.trader_username || `${wallet.slice(0, 6)}...${wallet.slice(-4)}`
+          
+          return {
+            trader_wallet: wallet,
+            trader_username: traderUsername,
+            win_rate: winRate,
+            win_rate_formatted: winRate !== null ? `${winRate.toFixed(1)}%` : '--',
+            total_resolved: resolvedTrades.length,
+            wins,
+            losses,
+            categories,
+            primary_category: primaryCategory,
+            avg_position_size: avgPositionSize,
+            avg_position_formatted: avgPositionSize !== null ? `$${avgPositionSize.toFixed(0)}` : '--',
+            total_invested: totalInvested,
+            trades_per_day: tradesPerDay,
+            trades_per_day_formatted: tradesPerDay !== null ? `${tradesPerDay.toFixed(1)}/day` : '--',
+            first_trade_date: firstTradeDate,
+            total_trades: trades.length,
+            wow_roi_change: wowRoiChange,
+            wow_roi_change_formatted: wowRoiChange !== null ? formatROI(wowRoiChange) : '--',
+            wow_status: wowStatus,
+            last_week_roi: lastWeekRoi,
+            prev_week_roi: prevWeekRoi
+          }
+        })
+        
+        console.log(`✅ Generated analytics for ${traderAnalytics.length} traders`)
+      } else {
+        console.warn('⚠️ Failed to fetch trader analytics:', error)
+      }
+    }
+  } catch (err) {
+    console.error('❌ Error fetching trader analytics:', err)
+    apiErrors.push('Failed to generate trader analytics')
+  }
+
   return {
     topTraders,
     categoryLeaderboards,
+    traderAnalytics,
     apiErrors
   }
 }
