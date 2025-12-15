@@ -99,6 +99,9 @@ export async function fetchLeaderboard(options: {
       const volume = trader.vol || 0;
       const roi = volume > 0 ? (pnl / volume) * 100 : 0;
       
+      // Try multiple fields for trade count
+      const marketsTraded = trader.marketsTraded || trader.markets_traded || trader.totalTrades || 0;
+      
       return {
         wallet: trader.proxyWallet || '',
         displayName: trader.userName || abbreviateWallet(trader.proxyWallet || ''),
@@ -106,7 +109,7 @@ export async function fetchLeaderboard(options: {
         volume: Math.round(volume * 100) / 100,
         rank: parseInt(trader.rank) || 0,
         roi: Math.round(roi * 100) / 100,
-        marketsTraded: trader.marketsTraded || 0 // May not always be available
+        marketsTraded: marketsTraded
       };
     });
 
@@ -195,4 +198,84 @@ export function getCategoryDisplayName(apiCategory: string): string {
     if (api === apiCategory) return display;
   }
   return apiCategory.charAt(0).toUpperCase() + apiCategory.slice(1);
+}
+
+// Fetch actual trade count for a trader
+export async function fetchTraderTradeCount(wallet: string): Promise<number> {
+  try {
+    const response = await fetch(
+      `https://data-api.polymarket.com/trades?limit=1&user=${wallet}`,
+      {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Polycopy/1.0)' },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(5000)
+      }
+    );
+    
+    if (!response.ok) return 0;
+    
+    // The API returns total count in headers or we need to count
+    const trades = await response.json();
+    
+    // If we can get the count from a header, use it
+    const countHeader = response.headers.get('x-total-count');
+    if (countHeader) {
+      return parseInt(countHeader) || 0;
+    }
+    
+    // Otherwise, fetch more to estimate (this is a fallback)
+    if (Array.isArray(trades) && trades.length > 0) {
+      // Fetch a reasonable sample to estimate
+      const sampleResponse = await fetch(
+        `https://data-api.polymarket.com/trades?limit=100&user=${wallet}`,
+        {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Polycopy/1.0)' },
+          cache: 'no-store',
+          signal: AbortSignal.timeout(5000)
+        }
+      );
+      
+      if (sampleResponse.ok) {
+        const sampleTrades = await sampleResponse.json();
+        return Array.isArray(sampleTrades) ? sampleTrades.length : 0;
+      }
+    }
+    
+    return 0;
+  } catch (error) {
+    console.error(`Error fetching trade count for ${wallet}:`, error);
+    return 0;
+  }
+}
+
+// Enrich traders with actual trade counts
+export async function enrichTradersWithTradeCounts(traders: LeaderboardTrader[]): Promise<LeaderboardTrader[]> {
+  console.log('🔄 Enriching traders with actual trade counts...');
+  
+  // Fetch trade counts in parallel (limit concurrency to avoid rate limits)
+  const batchSize = 5;
+  const enrichedTraders = [...traders];
+  
+  for (let i = 0; i < enrichedTraders.length; i += batchSize) {
+    const batch = enrichedTraders.slice(i, i + batchSize);
+    
+    const counts = await Promise.all(
+      batch.map(trader => fetchTraderTradeCount(trader.wallet))
+    );
+    
+    counts.forEach((count, index) => {
+      if (count > 0) {
+        enrichedTraders[i + index].marketsTraded = count;
+      }
+    });
+    
+    // Small delay to avoid rate limiting
+    if (i + batchSize < enrichedTraders.length) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  }
+  
+  console.log(`✅ Enriched ${enrichedTraders.filter(t => t.marketsTraded > 0).length}/${enrichedTraders.length} traders with trade counts`);
+  
+  return enrichedTraders;
 }
