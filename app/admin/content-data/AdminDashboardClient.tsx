@@ -24,6 +24,33 @@ interface SectionAData {
   categoryLeaderboards: {
     [key: string]: FormattedTrader[]
   }
+  traderAnalytics: Array<{
+    trader_wallet: string
+    trader_username: string
+    win_rate: number | null
+    win_rate_formatted: string
+    total_resolved: number
+    wins: number
+    losses: number
+    categories: Array<{
+      category: string
+      count: number
+      percentage: number
+    }>
+    primary_category: string
+    avg_position_size: number | null
+    avg_position_formatted: string
+    total_invested: number
+    trades_per_day: number | null
+    trades_per_day_formatted: string
+    first_trade_date: string | null
+    total_trades: number
+    wow_roi_change: number | null
+    wow_roi_change_formatted: string
+    wow_status: 'heating_up' | 'cooling_down' | 'stable' | 'new'
+    last_week_roi: number | null
+    prev_week_roi: number | null
+  }>
   apiErrors: string[]
 }
 
@@ -501,6 +528,113 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
                     </div>
                   </div>
                 ))}
+              </div>
+            </Section>
+          )}
+
+          {/* 3. PHASE 2: Trader Deep Analytics */}
+          {sectionA.traderAnalytics.length > 0 && (
+            <Section title="🔬 PHASE 2: TRADER DEEP ANALYTICS (Top 30 Enriched Data)">
+              <p className="text-sm text-gray-400 mb-4">
+                💡 Detailed performance metrics for content creation: win rates, category specialization, position sizing, trade frequency, and momentum
+              </p>
+              <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                {sectionA.traderAnalytics.map((trader) => {
+                  const wowIcon = trader.wow_status === 'heating_up' ? '🔥' : 
+                                  trader.wow_status === 'cooling_down' ? '❄️' : 
+                                  trader.wow_status === 'new' ? '🆕' : '➡️'
+                  
+                  return (
+                    <div key={trader.trader_wallet} className="border border-[#374151] rounded-lg p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <button
+                            onClick={() => handleTraderClick(trader.trader_wallet)}
+                            className="text-[#FDB022] font-bold text-lg hover:underline"
+                          >
+                            {trader.trader_username}
+                          </button>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {trader.trader_wallet.slice(0, 10)}...{trader.trader_wallet.slice(-6)}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-bold">
+                            {wowIcon} {trader.wow_status === 'heating_up' && 'HEATING UP'}
+                            {trader.wow_status === 'cooling_down' && 'COOLING DOWN'}
+                            {trader.wow_status === 'stable' && 'STABLE'}
+                            {trader.wow_status === 'new' && 'NEW'}
+                          </div>
+                          {trader.wow_roi_change !== null && (
+                            <div className={`text-xs ${trader.wow_roi_change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              WoW: {trader.wow_roi_change_formatted}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 font-mono text-sm">
+                        {/* Win Rate */}
+                        <div>
+                          <div className="text-gray-400 text-xs mb-1">Win Rate</div>
+                          <div className="text-white font-bold">
+                            {trader.win_rate_formatted}
+                          </div>
+                          <div className="text-gray-500 text-xs">
+                            {trader.wins}W / {trader.losses}L ({trader.total_resolved} resolved)
+                          </div>
+                        </div>
+                        
+                        {/* Category Specialization */}
+                        <div>
+                          <div className="text-gray-400 text-xs mb-1">Specialization</div>
+                          <div className="text-white font-bold">
+                            {trader.primary_category}
+                          </div>
+                          <div className="text-gray-500 text-xs">
+                            {trader.categories[0]?.percentage}% of trades
+                          </div>
+                        </div>
+                        
+                        {/* Avg Position Size */}
+                        <div>
+                          <div className="text-gray-400 text-xs mb-1">Avg Position</div>
+                          <div className="text-white font-bold">
+                            {trader.avg_position_formatted}
+                          </div>
+                          <div className="text-gray-500 text-xs">
+                            ${(trader.total_invested / 1000).toFixed(1)}K total
+                          </div>
+                        </div>
+                        
+                        {/* Trade Frequency */}
+                        <div>
+                          <div className="text-gray-400 text-xs mb-1">Frequency</div>
+                          <div className="text-white font-bold">
+                            {trader.trades_per_day_formatted}
+                          </div>
+                          <div className="text-gray-500 text-xs">
+                            {trader.total_trades} total trades
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Category Breakdown */}
+                      {trader.categories.length > 1 && (
+                        <div className="mt-3 pt-3 border-t border-[#374151]">
+                          <div className="text-gray-400 text-xs mb-2">Full Category Breakdown:</div>
+                          <div className="flex flex-wrap gap-2">
+                            {trader.categories.map((cat) => (
+                              <span key={cat.category} className="text-xs bg-[#374151] px-2 py-1 rounded">
+                                {cat.category}: {cat.percentage}% <span className="text-gray-500">({cat.count})</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </Section>
           )}
@@ -1079,6 +1213,40 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     lines.push('📊 CATEGORY LEADERBOARDS')
     lines.push('───────────────────────────────────────────────')
     lines.push('No category data available')
+    lines.push('')
+  }
+  lines.push('')
+  
+  // 3. Phase 2: Trader Deep Analytics
+  if (sectionA.traderAnalytics.length > 0) {
+    lines.push('🔬 PHASE 2: TRADER DEEP ANALYTICS')
+    lines.push('───────────────────────────────────────────────')
+    lines.push('Detailed performance metrics for content creation')
+    lines.push('')
+    
+    sectionA.traderAnalytics.forEach((trader) => {
+      const wowLabel = trader.wow_status === 'heating_up' ? '🔥 HEATING UP' :
+                       trader.wow_status === 'cooling_down' ? '❄️ COOLING DOWN' :
+                       trader.wow_status === 'new' ? '🆕 NEW' : '➡️ STABLE'
+      
+      lines.push(`${trader.trader_username} (${trader.trader_wallet})`)
+      lines.push(`  Status: ${wowLabel} | WoW Change: ${trader.wow_roi_change_formatted}`)
+      lines.push(`  Win Rate: ${trader.win_rate_formatted} (${trader.wins}W / ${trader.losses}L, ${trader.total_resolved} resolved)`)
+      lines.push(`  Specialization: ${trader.primary_category} (${trader.categories[0]?.percentage}% of trades)`)
+      lines.push(`  Avg Position: ${trader.avg_position_formatted} | Total Invested: $${(trader.total_invested / 1000).toFixed(1)}K`)
+      lines.push(`  Frequency: ${trader.trades_per_day_formatted} | Total: ${trader.total_trades} trades`)
+      
+      if (trader.categories.length > 1) {
+        const catBreakdown = trader.categories.map(c => `${c.category}: ${c.percentage}%`).join(', ')
+        lines.push(`  Categories: ${catBreakdown}`)
+      }
+      
+      lines.push('')
+    })
+  } else {
+    lines.push('🔬 PHASE 2: TRADER DEEP ANALYTICS')
+    lines.push('───────────────────────────────────────────────')
+    lines.push('No analytics data available')
     lines.push('')
   }
   lines.push('')
