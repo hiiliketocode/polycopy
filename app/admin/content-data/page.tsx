@@ -125,6 +125,30 @@ interface SectionBData {
     created_at: string
     time_formatted: string
   }>
+  // NEW: Phase 1 Analytics
+  fastestGrowingTraders: Array<{
+    trader_username: string
+    trader_wallet: string
+    new_followers_7d: number
+    total_followers: number
+    growth_rate: string
+  }>
+  copierPerformance: Array<{
+    user_email: string
+    user_id: string
+    total_copies: number
+    avg_roi: number | null
+    avg_roi_formatted: string
+    win_rate: number | null
+    win_rate_formatted: string
+    best_trader: string | null
+  }>
+  roiByFollowerCount: Array<{
+    follower_bucket: string
+    trader_count: number
+    avg_roi: number | null
+    avg_roi_formatted: string
+  }>
   dbErrors: string[]
 }
 
@@ -391,12 +415,196 @@ async function fetchPolycopyData(): Promise<SectionBData> {
     dbErrors.push('Failed to fetch trader/market data')
   }
 
+  // NEW: Query for fastest growing traders (follower growth)
+  let fastestGrowingTraders: SectionBData['fastestGrowingTraders'] = []
+  try {
+    // Get all follows
+    const { data: allFollows, error: followsError } = await supabase
+      .from('follows')
+      .select('trader_wallet, created_at')
+
+    if (!followsError && allFollows) {
+      const now = new Date()
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      
+      // Group by trader
+      const traderFollowers = new Map<string, { total: number, recent: number }>()
+      
+      allFollows.forEach((follow: any) => {
+        const wallet = follow.trader_wallet
+        if (!traderFollowers.has(wallet)) {
+          traderFollowers.set(wallet, { total: 0, recent: 0 })
+        }
+        const stats = traderFollowers.get(wallet)!
+        stats.total++
+        
+        if (new Date(follow.created_at) >= sevenDaysAgo) {
+          stats.recent++
+        }
+      })
+      
+      // Filter traders with new followers and sort
+      fastestGrowingTraders = Array.from(traderFollowers.entries())
+        .filter(([_, stats]) => stats.recent > 0)
+        .sort((a, b) => b[1].recent - a[1].recent)
+        .slice(0, 10)
+        .map(([wallet, stats]) => {
+          // Find username from copied_trades
+          const trade = allFollows.find((f: any) => f.trader_wallet === wallet)
+          const copiedTrade = queries[0].status === 'fulfilled' ? 
+            queries[0].value.data?.find((t: any) => t.trader_wallet === wallet) : null
+          
+          return {
+            trader_username: copiedTrade?.trader_username || 'Anonymous',
+            trader_wallet: wallet,
+            new_followers_7d: stats.recent,
+            total_followers: stats.total,
+            growth_rate: `+${stats.recent} this week`
+          }
+        })
+    }
+  } catch (err) {
+    console.error('Failed to fetch fastest growing traders:', err)
+    dbErrors.push('Failed to fetch fastest growing traders')
+  }
+
+  // NEW: Query for copier performance leaderboard
+  let copierPerformance: SectionBData['copierPerformance'] = []
+  try {
+    // Get all resolved trades with ROI
+    const { data: resolvedTrades, error: resolvedError } = await supabase
+      .from('copied_trades')
+      .select('user_id, trader_username, roi, market_resolved')
+      .eq('market_resolved', true)
+      .not('roi', 'is', null)
+
+    if (!resolvedError && resolvedTrades) {
+      // Group by user
+      const userStats = new Map<string, { 
+        trades: number
+        rois: number[]
+        traders: Set<string>
+      }>()
+      
+      resolvedTrades.forEach((trade: any) => {
+        if (!userStats.has(trade.user_id)) {
+          userStats.set(trade.user_id, { trades: 0, rois: [], traders: new Set() })
+        }
+        const stats = userStats.get(trade.user_id)!
+        stats.trades++
+        stats.rois.push(trade.roi)
+        if (trade.trader_username) {
+          stats.traders.add(trade.trader_username)
+        }
+      })
+      
+      // Get user emails
+      const userIds = Array.from(userStats.keys())
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .in('id', userIds)
+      
+      const emailMap = new Map(profiles?.map(p => [p.id, p.email]) || [])
+      
+      // Calculate performance and sort
+      copierPerformance = Array.from(userStats.entries())
+        .map(([userId, stats]) => {
+          const avgRoi = stats.rois.reduce((a, b) => a + b, 0) / stats.rois.length
+          const wins = stats.rois.filter(r => r > 0).length
+          const winRate = (wins / stats.rois.length) * 100
+          const bestTrader = Array.from(stats.traders)[0] || null
+          
+          return {
+            user_email: emailMap.get(userId) || 'Unknown',
+            user_id: userId,
+            total_copies: stats.trades,
+            avg_roi: avgRoi,
+            avg_roi_formatted: formatROI(avgRoi),
+            win_rate: winRate,
+            win_rate_formatted: `${winRate.toFixed(1)}%`,
+            best_trader: bestTrader
+          }
+        })
+        .filter(u => u.total_copies >= 3) // At least 3 resolved trades
+        .sort((a, b) => (b.avg_roi || 0) - (a.avg_roi || 0))
+        .slice(0, 10)
+    }
+  } catch (err) {
+    console.error('Failed to fetch copier performance:', err)
+    dbErrors.push('Failed to fetch copier performance')
+  }
+
+  // NEW: Query for ROI by follower count analysis
+  let roiByFollowerCount: SectionBData['roiByFollowerCount'] = []
+  try {
+    // Get all follows to count followers per trader
+    const { data: allFollows } = await supabase
+      .from('follows')
+      .select('trader_wallet')
+    
+    const followerCounts = new Map<string, number>()
+    allFollows?.forEach((f: any) => {
+      followerCounts.set(f.trader_wallet, (followerCounts.get(f.trader_wallet) || 0) + 1)
+    })
+    
+    // Get resolved trades with ROI
+    const { data: resolvedTrades } = await supabase
+      .from('copied_trades')
+      .select('trader_wallet, roi, market_resolved')
+      .eq('market_resolved', true)
+      .not('roi', 'is', null)
+    
+    // Bucket traders by follower count
+    const buckets = {
+      '0 followers': { traders: new Set(), rois: [] as number[] },
+      '1-2 followers': { traders: new Set(), rois: [] as number[] },
+      '3-5 followers': { traders: new Set(), rois: [] as number[] },
+      '6-10 followers': { traders: new Set(), rois: [] as number[] },
+      '11+ followers': { traders: new Set(), rois: [] as number[] }
+    }
+    
+    resolvedTrades?.forEach((trade: any) => {
+      const followers = followerCounts.get(trade.trader_wallet) || 0
+      let bucket: keyof typeof buckets
+      
+      if (followers === 0) bucket = '0 followers'
+      else if (followers <= 2) bucket = '1-2 followers'
+      else if (followers <= 5) bucket = '3-5 followers'
+      else if (followers <= 10) bucket = '6-10 followers'
+      else bucket = '11+ followers'
+      
+      buckets[bucket].traders.add(trade.trader_wallet)
+      buckets[bucket].rois.push(trade.roi)
+    })
+    
+    // Calculate average ROI per bucket
+    roiByFollowerCount = Object.entries(buckets)
+      .map(([bucket, data]) => ({
+        follower_bucket: bucket,
+        trader_count: data.traders.size,
+        avg_roi: data.rois.length > 0 
+          ? data.rois.reduce((a, b) => a + b, 0) / data.rois.length
+          : null,
+        avg_roi_formatted: data.rois.length > 0
+          ? formatROI(data.rois.reduce((a, b) => a + b, 0) / data.rois.length)
+          : '--'
+      }))
+      .filter(b => b.trader_count > 0)
+  } catch (err) {
+    console.error('Failed to fetch ROI by follower count:', err)
+    dbErrors.push('Failed to fetch ROI analysis')
+  }
+
   return {
     mostCopiedTraders,
     platformStats,
     newlyTrackedTraders,
     mostCopiedMarkets,
     recentActivity,
+    fastestGrowingTraders,
+    copierPerformance,
+    roiByFollowerCount,
     dbErrors
   }
 }
