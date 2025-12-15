@@ -643,41 +643,70 @@ async function fetchPolycopyData(): Promise<SectionBData> {
         }
       })
       
-      // Get unique wallets for username lookup
-      const uniqueWallets = Array.from(traderFollowers.keys())
+      // Get unique wallets for username lookup (lowercase for consistency)
+      const uniqueWallets = Array.from(traderFollowers.keys()).map(w => w.toLowerCase())
       
-      // Query copied_trades for usernames
+      // Query copied_trades for usernames (case-insensitive)
       const { data: traderNames } = await supabase
         .from('copied_trades')
         .select('trader_wallet, trader_username')
         .in('trader_wallet', uniqueWallets)
       
-      // Create username map
+      // Create username map (case-insensitive keys)
       const usernameMap = new Map<string, string>()
       traderNames?.forEach((trade: any) => {
-        if (trade.trader_username && !usernameMap.has(trade.trader_wallet)) {
-          usernameMap.set(trade.trader_wallet, trade.trader_username)
+        const walletLower = trade.trader_wallet?.toLowerCase()
+        if (trade.trader_username && walletLower && !usernameMap.has(walletLower)) {
+          usernameMap.set(walletLower, trade.trader_username)
         }
       })
       
-      // If still missing usernames, fetch from Polymarket leaderboard
+      console.log(`📝 Found ${usernameMap.size} usernames from copied_trades`)
+      
+      // For wallets still missing names, fetch from Polymarket trades API
       const walletsNeedingNames = uniqueWallets.filter(w => !usernameMap.has(w))
+      console.log(`🔍 Need to fetch ${walletsNeedingNames.length} names from Polymarket API`)
+      
       if (walletsNeedingNames.length > 0) {
         try {
-          const leaderboardRes = await fetch(
-            'https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=PNL&limit=1000&offset=0&category=overall'
-          )
-          if (leaderboardRes.ok) {
-            const leaderboardData = await leaderboardRes.json()
-            leaderboardData.forEach((trader: any) => {
-              const wallet = trader.proxyWallet?.toLowerCase()
-              if (wallet && walletsNeedingNames.includes(wallet)) {
-                usernameMap.set(wallet, trader.userName || `${wallet.slice(0, 6)}...${wallet.slice(-4)}`)
-              }
-            })
+          // Fetch in smaller batches to avoid rate limits
+          const batchSize = 3
+          for (let i = 0; i < walletsNeedingNames.length; i += batchSize) {
+            const batch = walletsNeedingNames.slice(i, i + batchSize)
+            
+            const results = await Promise.allSettled(
+              batch.map(async (wallet) => {
+                try {
+                  const res = await fetch(
+                    `https://data-api.polymarket.com/trades?limit=1&user=${wallet}`
+                  )
+                  if (res.ok) {
+                    const trades = await res.json()
+                    if (Array.isArray(trades) && trades.length > 0) {
+                      const name = trades[0].name || trades[0].userName
+                      if (name) {
+                        usernameMap.set(wallet, name)
+                        console.log(`✅ Found name for ${wallet.slice(0, 10)}...: ${name}`)
+                        return { wallet, name }
+                      }
+                    }
+                  }
+                } catch (err) {
+                  console.warn(`Failed to fetch name for ${wallet.slice(0, 10)}...`, err)
+                }
+                return null
+              })
+            )
+            
+            // Small delay between batches
+            if (i + batchSize < walletsNeedingNames.length) {
+              await new Promise(resolve => setTimeout(resolve, 300))
+            }
           }
+          
+          console.log(`📝 Total usernames found: ${usernameMap.size}/${uniqueWallets.length}`)
         } catch (err) {
-          console.warn('Failed to fetch trader names from leaderboard:', err)
+          console.error('Error fetching trader names:', err)
         }
       }
       
@@ -687,7 +716,9 @@ async function fetchPolycopyData(): Promise<SectionBData> {
         .sort((a, b) => b[1].recent - a[1].recent)
         .slice(0, 10)
         .map(([wallet, stats]) => {
-          const username = usernameMap.get(wallet) || `${wallet.slice(0, 6)}...${wallet.slice(-4)}`
+          // Case-insensitive lookup
+          const walletLower = wallet.toLowerCase()
+          const username = usernameMap.get(walletLower) || `${wallet.slice(0, 6)}...${wallet.slice(-4)}`
           
           return {
             trader_username: username,

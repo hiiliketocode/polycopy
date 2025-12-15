@@ -200,72 +200,65 @@ export function getCategoryDisplayName(apiCategory: string): string {
   return apiCategory.charAt(0).toUpperCase() + apiCategory.slice(1);
 }
 
-// Fetch actual trade count for a trader
-export async function fetchTraderTradeCount(wallet: string): Promise<number> {
+// Fetch actual trade count and username for a trader
+export async function fetchTraderTradeCount(wallet: string): Promise<{ count: number; username?: string }> {
   try {
+    // Fetch up to 100 trades (enough for accurate count for most traders)
     const response = await fetch(
-      `https://data-api.polymarket.com/trades?limit=1&user=${wallet}`,
+      `https://data-api.polymarket.com/trades?limit=100&user=${wallet.toLowerCase()}`,
       {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Polycopy/1.0)' },
         cache: 'no-store',
-        signal: AbortSignal.timeout(5000)
+        signal: AbortSignal.timeout(8000)
       }
     );
     
-    if (!response.ok) return 0;
+    if (!response.ok) return { count: 0 };
     
-    // The API returns total count in headers or we need to count
     const trades = await response.json();
     
-    // If we can get the count from a header, use it
-    const countHeader = response.headers.get('x-total-count');
-    if (countHeader) {
-      return parseInt(countHeader) || 0;
-    }
+    if (!Array.isArray(trades)) return { count: 0 };
     
-    // Otherwise, fetch more to estimate (this is a fallback)
-    if (Array.isArray(trades) && trades.length > 0) {
-      // Fetch a reasonable sample to estimate
-      const sampleResponse = await fetch(
-        `https://data-api.polymarket.com/trades?limit=100&user=${wallet}`,
-        {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Polycopy/1.0)' },
-          cache: 'no-store',
-          signal: AbortSignal.timeout(5000)
-        }
-      );
-      
-      if (sampleResponse.ok) {
-        const sampleTrades = await sampleResponse.json();
-        return Array.isArray(sampleTrades) ? sampleTrades.length : 0;
-      }
-    }
+    // Get username from first trade if available
+    const username = trades.length > 0 ? trades[0].name || trades[0].userName : undefined;
     
-    return 0;
+    // Return actual trade count
+    return { 
+      count: trades.length,
+      username: username || undefined
+    };
   } catch (error) {
-    console.error(`Error fetching trade count for ${wallet}:`, error);
-    return 0;
+    console.error(`Error fetching trade data for ${wallet}:`, error);
+    return { count: 0 };
   }
 }
 
-// Enrich traders with actual trade counts
+// Enrich traders with actual trade counts and usernames
 export async function enrichTradersWithTradeCounts(traders: LeaderboardTrader[]): Promise<LeaderboardTrader[]> {
-  console.log('🔄 Enriching traders with actual trade counts...');
+  console.log('🔄 Enriching traders with actual trade counts and usernames...');
   
-  // Fetch trade counts in parallel (limit concurrency to avoid rate limits)
+  // Fetch trade data in parallel (limit concurrency to avoid rate limits)
   const batchSize = 5;
   const enrichedTraders = [...traders];
   
   for (let i = 0; i < enrichedTraders.length; i += batchSize) {
     const batch = enrichedTraders.slice(i, i + batchSize);
     
-    const counts = await Promise.all(
+    const tradeData = await Promise.all(
       batch.map(trader => fetchTraderTradeCount(trader.wallet))
     );
     
-    counts.forEach((count, index) => {
-      if (count > 0) {
-        enrichedTraders[i + index].marketsTraded = count;
+    tradeData.forEach((data, index) => {
+      const traderIndex = i + index;
+      if (data.count > 0) {
+        enrichedTraders[traderIndex].marketsTraded = data.count;
+      }
+      // Update username if we got one from trades API and current name is abbreviated
+      if (data.username && (
+        enrichedTraders[traderIndex].displayName.includes('...') ||
+        enrichedTraders[traderIndex].displayName === abbreviateWallet(enrichedTraders[traderIndex].wallet)
+      )) {
+        enrichedTraders[traderIndex].displayName = data.username;
       }
     });
     
@@ -275,7 +268,8 @@ export async function enrichTradersWithTradeCounts(traders: LeaderboardTrader[])
     }
   }
   
-  console.log(`✅ Enriched ${enrichedTraders.filter(t => t.marketsTraded > 0).length}/${enrichedTraders.length} traders with trade counts`);
+  const successCount = enrichedTraders.filter(t => t.marketsTraded > 0).length;
+  console.log(`✅ Enriched ${successCount}/${enrichedTraders.length} traders with trade counts`);
   
   return enrichedTraders;
 }
