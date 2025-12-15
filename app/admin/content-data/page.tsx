@@ -669,8 +669,8 @@ async function fetchPolycopyData(): Promise<SectionBData> {
       
       if (walletsNeedingNames.length > 0) {
         try {
-          // Fetch in smaller batches to avoid rate limits
-          const batchSize = 3
+          // Fetch in optimized batches
+          const batchSize = 5 // Increased from 3
           for (let i = 0; i < walletsNeedingNames.length; i += batchSize) {
             const batch = walletsNeedingNames.slice(i, i + batchSize)
             
@@ -678,7 +678,8 @@ async function fetchPolycopyData(): Promise<SectionBData> {
               batch.map(async (wallet) => {
                 try {
                   const res = await fetch(
-                    `https://data-api.polymarket.com/trades?limit=1&user=${wallet}`
+                    `https://data-api.polymarket.com/trades?limit=1&user=${wallet}`,
+                    { signal: AbortSignal.timeout(5000) } // Add timeout
                   )
                   if (res.ok) {
                     const trades = await res.json()
@@ -698,9 +699,9 @@ async function fetchPolycopyData(): Promise<SectionBData> {
               })
             )
             
-            // Small delay between batches
+            // Reduced delay between batches
             if (i + batchSize < walletsNeedingNames.length) {
-              await new Promise(resolve => setTimeout(resolve, 300))
+              await new Promise(resolve => setTimeout(resolve, 150)) // Reduced from 300ms
             }
           }
           

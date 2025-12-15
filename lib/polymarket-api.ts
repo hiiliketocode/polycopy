@@ -2,7 +2,7 @@
 // Helper functions for fetching data from Polymarket APIs
 // Uses the same API as the discover page for consistency
 
-const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
+const CACHE_DURATION = 20 * 60 * 1000; // 20 minutes (extended for admin dashboard)
 const cache = new Map<string, { data: any; timestamp: number }>();
 
 function getCached(key: string) {
@@ -203,13 +203,13 @@ export function getCategoryDisplayName(apiCategory: string): string {
 // Fetch actual trade count and username for a trader
 export async function fetchTraderTradeCount(wallet: string): Promise<{ count: number; username?: string }> {
   try {
-    // Fetch up to 100 trades (enough for accurate count for most traders)
+    // Fetch up to 50 trades (optimized for speed while maintaining accuracy)
     const response = await fetch(
-      `https://data-api.polymarket.com/trades?limit=100&user=${wallet.toLowerCase()}`,
+      `https://data-api.polymarket.com/trades?limit=50&user=${wallet.toLowerCase()}`,
       {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Polycopy/1.0)' },
         cache: 'no-store',
-        signal: AbortSignal.timeout(8000)
+        signal: AbortSignal.timeout(6000) // Reduced timeout for faster failures
       }
     );
     
@@ -222,7 +222,7 @@ export async function fetchTraderTradeCount(wallet: string): Promise<{ count: nu
     // Get username from first trade if available
     const username = trades.length > 0 ? trades[0].name || trades[0].userName : undefined;
     
-    // Return actual trade count
+    // Return actual trade count (50+ if we got 50 trades, likely has more)
     return { 
       count: trades.length,
       username: username || undefined
@@ -235,10 +235,19 @@ export async function fetchTraderTradeCount(wallet: string): Promise<{ count: nu
 
 // Enrich traders with actual trade counts and usernames
 export async function enrichTradersWithTradeCounts(traders: LeaderboardTrader[]): Promise<LeaderboardTrader[]> {
-  console.log('🔄 Enriching traders with actual trade counts and usernames...');
+  // Check cache first
+  const cacheKey = `enriched_traders_${traders.map(t => t.wallet).join(',')}`;
+  const cached = getCached(cacheKey);
+  if (cached) {
+    console.log('📦 Using cached enriched trader data');
+    return cached;
+  }
   
-  // Fetch trade data in parallel (limit concurrency to avoid rate limits)
-  const batchSize = 5;
+  console.log('🔄 Enriching traders with actual trade counts and usernames...');
+  const startTime = Date.now();
+  
+  // Fetch trade data in parallel (optimized batch size)
+  const batchSize = 10; // Increased from 5
   const enrichedTraders = [...traders];
   
   for (let i = 0; i < enrichedTraders.length; i += batchSize) {
@@ -262,14 +271,18 @@ export async function enrichTradersWithTradeCounts(traders: LeaderboardTrader[])
       }
     });
     
-    // Small delay to avoid rate limiting
+    // Reduced delay for faster processing
     if (i + batchSize < enrichedTraders.length) {
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 100)); // Reduced from 200ms
     }
   }
   
   const successCount = enrichedTraders.filter(t => t.marketsTraded > 0).length;
-  console.log(`✅ Enriched ${successCount}/${enrichedTraders.length} traders with trade counts`);
+  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`✅ Enriched ${successCount}/${enrichedTraders.length} traders in ${duration}s`);
+  
+  // Cache the enriched results
+  setCache(cacheKey, enrichedTraders);
   
   return enrichedTraders;
 }
