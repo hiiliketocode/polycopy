@@ -4,6 +4,7 @@ import AdminDashboardClient from './AdminDashboardClient'
 import {
   fetchLeaderboard,
   fetchAllCategoryLeaderboards,
+  enrichTradersWithTradeCounts,
   formatCurrency,
   formatPercent,
   formatWallet,
@@ -242,10 +243,13 @@ async function fetchPolymarketData(): Promise<SectionAData> {
   // Process overall leaderboard
   let topTraders: FormattedTrader[] = []
   if (overallResult.status === 'fulfilled' && overallResult.value.length > 0) {
+    // Enrich with actual trade counts
+    const enrichedTraders = await enrichTradersWithTradeCounts(overallResult.value)
+    
     // Sort by ROI (same as discover page)
-    const sortedByROI = [...overallResult.value].sort((a, b) => b.roi - a.roi)
+    const sortedByROI = [...enrichedTraders].sort((a, b) => b.roi - a.roi)
     topTraders = sortedByROI.map(formatTrader)
-    console.log(`✅ Got ${topTraders.length} top traders`)
+    console.log(`✅ Got ${topTraders.length} top traders with trade counts`)
   } else {
     apiErrors.push('Failed to fetch Polymarket leaderboard')
     console.error('❌ Failed to fetch overall leaderboard')
@@ -639,19 +643,54 @@ async function fetchPolycopyData(): Promise<SectionBData> {
         }
       })
       
+      // Get unique wallets for username lookup
+      const uniqueWallets = Array.from(traderFollowers.keys())
+      
+      // Query copied_trades for usernames
+      const { data: traderNames } = await supabase
+        .from('copied_trades')
+        .select('trader_wallet, trader_username')
+        .in('trader_wallet', uniqueWallets)
+      
+      // Create username map
+      const usernameMap = new Map<string, string>()
+      traderNames?.forEach((trade: any) => {
+        if (trade.trader_username && !usernameMap.has(trade.trader_wallet)) {
+          usernameMap.set(trade.trader_wallet, trade.trader_username)
+        }
+      })
+      
+      // If still missing usernames, fetch from Polymarket leaderboard
+      const walletsNeedingNames = uniqueWallets.filter(w => !usernameMap.has(w))
+      if (walletsNeedingNames.length > 0) {
+        try {
+          const leaderboardRes = await fetch(
+            'https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=PNL&limit=1000&offset=0&category=overall'
+          )
+          if (leaderboardRes.ok) {
+            const leaderboardData = await leaderboardRes.json()
+            leaderboardData.forEach((trader: any) => {
+              const wallet = trader.proxyWallet?.toLowerCase()
+              if (wallet && walletsNeedingNames.includes(wallet)) {
+                usernameMap.set(wallet, trader.userName || `${wallet.slice(0, 6)}...${wallet.slice(-4)}`)
+              }
+            })
+          }
+        } catch (err) {
+          console.warn('Failed to fetch trader names from leaderboard:', err)
+        }
+      }
+      
       // Filter traders with new followers and sort
       fastestGrowingTraders = Array.from(traderFollowers.entries())
         .filter(([_, stats]) => stats.recent > 0)
         .sort((a, b) => b[1].recent - a[1].recent)
         .slice(0, 10)
         .map(([wallet, stats]) => {
-          // Find username from copied_trades
-          const trade = allFollows.find((f: any) => f.trader_wallet === wallet)
-          const copiedTrade = queries[0].status === 'fulfilled' ? 
-            queries[0].value.data?.find((t: any) => t.trader_wallet === wallet) : null
+          const username = usernameMap.get(wallet) || `${wallet.slice(0, 6)}...${wallet.slice(-4)}`
           
           return {
-            trader_username: copiedTrade?.trader_username || 'Anonymous',
+            trader_username: username,
             trader_wallet: wallet,
             new_followers_7d: stats.recent,
             total_followers: stats.total,
