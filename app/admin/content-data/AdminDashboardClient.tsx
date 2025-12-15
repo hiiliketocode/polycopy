@@ -66,6 +66,29 @@ interface SectionBData {
     created_at: string
     time_formatted: string
   }>
+  fastestGrowingTraders: Array<{
+    trader_username: string
+    trader_wallet: string
+    new_followers_7d: number
+    total_followers: number
+    growth_rate: string
+  }>
+  copierPerformance: Array<{
+    user_email: string
+    user_id: string
+    total_copies: number
+    avg_roi: number | null
+    avg_roi_formatted: string
+    win_rate: number | null
+    win_rate_formatted: string
+    best_trader: string | null
+  }>
+  roiByFollowerCount: Array<{
+    follower_bucket: string
+    trader_count: number
+    avg_roi: number | null
+    avg_roi_formatted: string
+  }>
   dbErrors: string[]
 }
 
@@ -443,7 +466,8 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
                     <span className="text-gray-500">({trader.wallet.slice(0, 6)}...{trader.wallet.slice(-4)})</span>{' '}
                     — P&L: <span className={trader.pnl >= 0 ? 'text-green-400' : 'text-red-400'}>{trader.pnl_formatted}</span>{' '}
                     | ROI: <span className={trader.roi >= 0 ? 'text-green-400' : 'text-red-400'}>{trader.roi_formatted}</span>{' '}
-                    | Volume: <span className="text-[#FDB022]">{trader.volume_formatted}</span>
+                    | Volume: <span className="text-[#FDB022]">{trader.volume_formatted}</span>{' '}
+                    | Trades: <span className="text-blue-400">{trader.marketsTraded}</span>
                   </div>
                 ))}
               </div>
@@ -470,7 +494,8 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
                             {trader.displayName}
                           </button>{' '}
                           — P&L: <span className={trader.pnl >= 0 ? 'text-green-400' : 'text-red-400'}>{trader.pnl_formatted}</span>{' '}
-                          | ROI: <span className={trader.roi >= 0 ? 'text-green-400' : 'text-red-400'}>{trader.roi_formatted}</span>
+                          | ROI: <span className={trader.roi >= 0 ? 'text-green-400' : 'text-red-400'}>{trader.roi_formatted}</span>{' '}
+                          | Trades: <span className="text-blue-400">{trader.marketsTraded}</span>
                         </div>
                       ))}
                     </div>
@@ -585,6 +610,71 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
                     <span className="text-gray-500">({activity.trader_wallet})</span>{' '}
                     copied on {activity.market_title_truncated}{' '}
                     <span className="text-[#FDB022]">({activity.outcome})</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* 6. Fastest Growing Traders */}
+          <Section title="🚀 FASTEST GROWING TRADERS (BY NEW FOLLOWERS)">
+            {sectionB.fastestGrowingTraders.length === 0 ? (
+              <p className="text-gray-500">No new followers this week</p>
+            ) : (
+              <div className="space-y-1">
+                {sectionB.fastestGrowingTraders.map((trader, i) => (
+                  <div key={trader.trader_wallet} className="font-mono text-sm">
+                    {i + 1}.{' '}
+                    <TraderName 
+                      username={trader.trader_username} 
+                      wallet={trader.trader_wallet}
+                      onClick={handleTraderClick}
+                    />{' '}
+                    <span className="text-gray-500">({trader.trader_wallet})</span>{' '}
+                    — <span className="text-green-400 font-bold">{trader.growth_rate}</span>{' '}
+                    | Total: {trader.total_followers} {trader.total_followers === 1 ? 'follower' : 'followers'}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* 7. Copier Performance Leaderboard */}
+          <Section title="👥 TOP COPIER PERFORMANCE (BEST ROI)">
+            {sectionB.copierPerformance.length === 0 ? (
+              <p className="text-gray-500">No resolved trades yet (need 3+ resolved trades per user)</p>
+            ) : (
+              <div className="space-y-1">
+                {sectionB.copierPerformance.map((copier, i) => (
+                  <div key={copier.user_id} className="font-mono text-sm">
+                    {i + 1}.{' '}
+                    <span className="text-white">{copier.user_email}</span>{' '}
+                    — Avg ROI: <span className={copier.avg_roi !== null && copier.avg_roi >= 0 ? 'text-green-400' : 'text-red-400'}>{copier.avg_roi_formatted}</span>{' '}
+                    | Win Rate: <span className="text-blue-400">{copier.win_rate_formatted}</span>{' '}
+                    | {copier.total_copies} {copier.total_copies === 1 ? 'trade' : 'trades'}{' '}
+                    {copier.best_trader && (
+                      <span className="text-gray-500">| Copying: {copier.best_trader}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* 8. ROI Analysis by Follower Count */}
+          <Section title="📊 ROI ANALYSIS BY POPULARITY">
+            {sectionB.roiByFollowerCount.length === 0 ? (
+              <p className="text-gray-500">No data available</p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm text-gray-400 mb-3">
+                  💡 Shows if more popular traders perform better (social proof validation)
+                </p>
+                {sectionB.roiByFollowerCount.map((bucket) => (
+                  <div key={bucket.follower_bucket} className="font-mono text-sm">
+                    <span className="text-white">{bucket.follower_bucket}:</span>{' '}
+                    <span className="text-gray-400">{bucket.trader_count} {bucket.trader_count === 1 ? 'trader' : 'traders'}</span>{' '}
+                    — Avg ROI: <span className={bucket.avg_roi !== null && bucket.avg_roi >= 0 ? 'text-green-400' : 'text-red-400'}>{bucket.avg_roi_formatted}</span>
                   </div>
                 ))}
               </div>
@@ -937,7 +1027,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     const byROI = [...traders].sort((a, b) => b.roi - a.roi)
     byROI.forEach((trader, i) => {
       const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
-      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted}`)
+      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted} | Trades: ${trader.marketsTraded}`)
     })
     
     // Sort by P&L
@@ -947,7 +1037,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     const byPNL = [...traders].sort((a, b) => b.pnl - a.pnl)
     byPNL.forEach((trader, i) => {
       const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
-      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted}`)
+      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted} | Trades: ${trader.marketsTraded}`)
     })
     
     // Sort by Volume
@@ -957,7 +1047,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     const byVolume = [...traders].sort((a, b) => b.volume - a.volume)
     byVolume.forEach((trader, i) => {
       const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
-      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted}`)
+      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted} | Trades: ${trader.marketsTraded}`)
     })
   }
   lines.push('')
@@ -980,7 +1070,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
         lines.push(`🏆 ${displayName} TOP 10`)
         lines.push('─────────────────────────')
         traders.slice(0, 10).forEach((trader, i) => {
-          lines.push(`${i + 1}. ${trader.displayName} (${trader.wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted}`)
+          lines.push(`${i + 1}. ${trader.displayName} (${trader.wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Trades: ${trader.marketsTraded}`)
         })
         lines.push('')
       }
@@ -1061,6 +1151,48 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
   } else {
     sectionB.recentActivity.forEach((activity) => {
       lines.push(`[${activity.time_formatted}] ${activity.trader_username || 'Anonymous'} (${activity.trader_wallet}) copied on ${activity.market_title_truncated} (${activity.outcome})`)
+    })
+  }
+  lines.push('')
+  lines.push('')
+  
+  // 6. Fastest Growing Traders
+  lines.push('🚀 FASTEST GROWING TRADERS (BY NEW FOLLOWERS)')
+  lines.push('───────────────────────────────────────────────')
+  if (sectionB.fastestGrowingTraders.length === 0) {
+    lines.push('No new followers this week')
+  } else {
+    sectionB.fastestGrowingTraders.forEach((trader, i) => {
+      lines.push(`${i + 1}. ${trader.trader_username || 'Anonymous'} (${trader.trader_wallet}) — ${trader.growth_rate} | Total: ${trader.total_followers} followers`)
+    })
+  }
+  lines.push('')
+  lines.push('')
+  
+  // 7. Copier Performance
+  lines.push('👥 TOP COPIER PERFORMANCE (BEST ROI)')
+  lines.push('───────────────────────────────────────────────')
+  if (sectionB.copierPerformance.length === 0) {
+    lines.push('No resolved trades yet')
+  } else {
+    sectionB.copierPerformance.forEach((copier, i) => {
+      const traderInfo = copier.best_trader ? ` | Copying: ${copier.best_trader}` : ''
+      lines.push(`${i + 1}. ${copier.user_email} — Avg ROI: ${copier.avg_roi_formatted} | Win Rate: ${copier.win_rate_formatted} | ${copier.total_copies} trades${traderInfo}`)
+    })
+  }
+  lines.push('')
+  lines.push('')
+  
+  // 8. ROI by Follower Count
+  lines.push('📊 ROI ANALYSIS BY POPULARITY')
+  lines.push('───────────────────────────────────────────────')
+  lines.push('Shows if more popular traders perform better (social proof validation)')
+  lines.push('')
+  if (sectionB.roiByFollowerCount.length === 0) {
+    lines.push('No data available')
+  } else {
+    sectionB.roiByFollowerCount.forEach((bucket) => {
+      lines.push(`${bucket.follower_bucket}: ${bucket.trader_count} traders — Avg ROI: ${bucket.avg_roi_formatted}`)
     })
   }
   lines.push('')
