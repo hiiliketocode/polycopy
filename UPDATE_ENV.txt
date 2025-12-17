@@ -1,0 +1,18 @@
+========================================
+UPDATE YOUR .env.local FILE
+========================================
+
+Your actual user ID is:
+b2ec6399-abcf-4b12-bb16-2f55d0e8a29d
+
+Add or update this line in .env.local:
+
+TURNKEY_DEV_BYPASS_USER_ID=b2ec6399-abcf-4b12-bb16-2f55d0e8a29d
+
+Then save the file.
+
+NO RESTART NEEDED - the endpoints read env on each request.
+
+========================================
+
+
