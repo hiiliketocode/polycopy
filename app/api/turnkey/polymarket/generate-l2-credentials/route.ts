@@ -163,12 +163,16 @@ export async function POST(request: NextRequest) {
     console.log('[POLY-CLOB] Timestamp:', timestamp, 'Nonce:', nonce)
 
     // 4. Sign the payload using Turnkey
-    const signResult = await signMessageForUser(userId, authMessage)
-    
-    if (!signResult.success || !signResult.signature) {
-      console.error('[POLY-CLOB] Signature failed:', signResult.error)
+    let signResult
+    try {
+      signResult = await signMessageForUser(userId, authMessage)
+    } catch (signError: any) {
+      console.error('[POLY-CLOB] Signature failed:', signError.message)
       return NextResponse.json(
-        { error: `Signature failed: ${signResult.error}` },
+        { 
+          error: `Signature failed: ${signError.message}`,
+          hint: 'Make sure you have created a Turnkey wallet first (Stage 1)'
+        },
         { status: 500 }
       )
     }
