@@ -267,26 +267,12 @@ export default function ConnectWalletTurnkeyPage() {
     setImportData(null)
 
     try {
-      // Step 1: Get initialization data
-      const initRes = await fetch('/api/turnkey/import/init', {
-        method: 'POST',
-        credentials: 'include',
-      })
-
-      const initData = await initRes.json()
-
-      if (!initRes.ok) {
-        throw new Error(initData?.error || 'Failed to initialize import')
-      }
-
-      const { walletName } = initData
-
-      // Step 2: Prompt user for private key
+      // Step 1: Prompt user for private key FIRST
       const privateKey = prompt(
         '🔑 Paste Your Private Key\n\n' +
         'Paste your Magic Link private key below.\n' +
         '(Get it from: https://reveal.magic.link/polymarket)\n\n' +
-        '⚠️ Your key will be securely encrypted before sending to Turnkey.\n' +
+        '⚠️ Your key will be encrypted in your browser using Turnkey SDK.\n' +
         'PolyCopy backend never sees your plaintext key.'
       )
 
@@ -302,26 +288,89 @@ export default function ConnectWalletTurnkeyPage() {
         throw new Error('Invalid private key format. Expected 64 hex characters.')
       }
 
-      console.log('[Import] Importing wallet:', walletName)
+      console.log('[Import] Initializing Turnkey import...')
 
-      // Step 3: Send to backend for secure import
-      const importRes = await fetch('/api/turnkey/import/execute', {
+      // Step 2: Get Turnkey organization info
+      const initRes = await fetch('/api/turnkey/import/init', {
+        method: 'POST',
+        credentials: 'include',
+      })
+
+      const initData = await initRes.json()
+
+      if (!initRes.ok) {
+        throw new Error(initData?.error || 'Failed to initialize import')
+      }
+
+      const { organizationId, walletName } = initData
+
+      console.log('[Import] Using Turnkey org:', organizationId)
+      console.log('[Import] Wallet name:', walletName)
+
+      // Step 3: Use Turnkey SDK to encrypt and import the key client-side
+      const { Turnkey } = await import('@turnkey/sdk-browser')
+      const { IframeStamper } = await import('@turnkey/iframe-stamper')
+
+      // Create iframe stamper for signing
+      const stamper = new IframeStamper({
+        iframeUrl: 'https://auth.turnkey.com',
+        iframeContainer: document.body,
+        iframeElementId: 'turnkey-import-iframe-hidden',
+      })
+
+      await stamper.init()
+
+      // Hide the iframe (we only need it for signing, not display)
+      const iframe = document.getElementById('turnkey-import-iframe-hidden')
+      if (iframe) {
+        (iframe as HTMLElement).style.display = 'none'
+      }
+
+      console.log('[Import] Turnkey stamper initialized')
+
+      // Create Turnkey client
+      const turnkeyClient = new Turnkey({
+        apiBaseUrl: 'https://api.turnkey.com',
+        stamper,
+        organizationId,
+      })
+
+      console.log('[Import] Importing private key to Turnkey...')
+
+      // Import the private key using Turnkey SDK
+      // This encrypts the key client-side before sending to Turnkey
+      const importResult = await turnkeyClient.importPrivateKey({
+        type: 'ACTIVITY_TYPE_IMPORT_PRIVATE_KEY',
+        timestampMs: String(Date.now()),
+        organizationId,
+        parameters: {
+          privateKeyName: walletName,
+          privateKey: cleanKey,
+          curve: 'CURVE_SECP256K1',
+          addressFormats: ['ADDRESS_FORMAT_ETHEREUM'],
+        },
+      })
+
+      console.log('[Import] Private key imported to Turnkey')
+
+      // Clean up iframe
+      stamper.clear()
+
+      // Step 4: Store wallet reference in our database
+      const completeRes = await fetch('/api/turnkey/import/complete', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          walletName,
-          privateKey: `0x${cleanKey}` // Ensure 0x prefix
-        }),
+        body: JSON.stringify({ walletName }),
       })
 
-      const importResult = await importRes.json()
+      const completeData = await completeRes.json()
 
-      if (!importRes.ok) {
-        throw new Error(importResult?.error || 'Failed to import wallet')
+      if (!completeRes.ok) {
+        throw new Error(completeData?.error || 'Failed to store wallet reference')
       }
 
-      setImportData(importResult)
+      setImportData(completeData)
     } catch (err: any) {
       setImportError(err?.message || 'Failed to import wallet')
     } finally {
