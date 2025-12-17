@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { TURNKEY_ENABLED, DEV_BYPASS_AUTH } from '@/lib/turnkey/config'
+import { TURNKEY_ENABLED } from '@/lib/turnkey/config'
 import { getTurnkeyClient } from '@/lib/turnkey/client'
 import { createActivityPoller } from '@turnkey/http'
 
@@ -15,6 +15,9 @@ const supabaseServiceRole = createServiceClient(
     },
   }
 )
+
+// Dev bypass for testing
+const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development' && process.env.TURNKEY_DEV_BYPASS_USER_ID
 
 /**
  * POST /api/turnkey/import/execute
