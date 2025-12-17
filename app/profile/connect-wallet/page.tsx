@@ -267,30 +267,7 @@ export default function ConnectWalletTurnkeyPage() {
     setImportData(null)
 
     try {
-      // Step 1: Prompt user for private key FIRST
-      const privateKey = prompt(
-        '🔑 Paste Your Private Key\n\n' +
-        'Paste your Magic Link private key below.\n' +
-        '(Get it from: https://reveal.magic.link/polymarket)\n\n' +
-        '⚠️ Your key will be encrypted in your browser using Turnkey SDK.\n' +
-        'PolyCopy backend never sees your plaintext key.'
-      )
-
-      if (!privateKey || !privateKey.trim()) {
-        setImportLoading(false)
-        setImportError('Import cancelled - no private key provided')
-        return
-      }
-
-      // Validate private key format (should be 64 hex chars with or without 0x prefix)
-      const cleanKey = privateKey.trim().replace(/^0x/, '')
-      if (!/^[0-9a-fA-F]{64}$/.test(cleanKey)) {
-        throw new Error('Invalid private key format. Expected 64 hex characters.')
-      }
-
-      console.log('[Import] Initializing Turnkey import...')
-
-      // Step 2: Get Turnkey organization info
+      // Get wallet name from backend
       const initRes = await fetch('/api/turnkey/import/init', {
         method: 'POST',
         credentials: 'include',
@@ -304,59 +281,53 @@ export default function ConnectWalletTurnkeyPage() {
 
       const { organizationId, walletName } = initData
 
-      console.log('[Import] Using Turnkey org:', organizationId)
-      console.log('[Import] Wallet name:', walletName)
+      // Show instructions and get confirmation
+      const proceed = confirm(
+        '📋 Turnkey Import Instructions:\n\n' +
+        '1. Open Turnkey Dashboard in a new tab:\n' +
+        '   https://app.turnkey.com\n\n' +
+        '2. Click "Import Wallet" or "Import Private Key"\n\n' +
+        '3. Paste your Magic Link private key\n' +
+        '   (Get it from: https://reveal.magic.link/polymarket)\n\n' +
+        '4. Use this wallet name (COPY IT!):\n' +
+        '   ' + walletName + '\n\n' +
+        '5. After import completes, return here and click OK\n\n' +
+        'Ready to continue?'
+      )
 
-      // Step 3: Use Turnkey SDK to encrypt and import the key client-side
-      const { Turnkey } = await import('@turnkey/sdk-browser')
-      const { IframeStamper } = await import('@turnkey/iframe-stamper')
-
-      // Create iframe stamper for signing
-      const stamper = new IframeStamper({
-        iframeUrl: 'https://auth.turnkey.com',
-        iframeContainer: document.body,
-        iframeElementId: 'turnkey-import-iframe-hidden',
-      })
-
-      await stamper.init()
-
-      // Hide the iframe (we only need it for signing, not display)
-      const iframe = document.getElementById('turnkey-import-iframe-hidden')
-      if (iframe) {
-        (iframe as HTMLElement).style.display = 'none'
+      if (!proceed) {
+        setImportLoading(false)
+        setImportError('Import cancelled by user')
+        return
       }
 
-      console.log('[Import] Turnkey stamper initialized')
+      // Try to copy wallet name to clipboard
+      try {
+        await navigator.clipboard.writeText(walletName)
+        alert('✅ Wallet name copied to clipboard!\n\nNow go to Turnkey dashboard and paste it.')
+      } catch (e) {
+        alert('⚠️ Could not copy to clipboard.\n\nWallet name: ' + walletName + '\n\nPlease copy it manually.')
+      }
 
-      // Create Turnkey client
-      const turnkeyClient = new Turnkey({
-        apiBaseUrl: 'https://api.turnkey.com',
-        stamper,
-        organizationId,
-      })
+      // Open Turnkey dashboard
+      window.open('https://app.turnkey.com', '_blank')
 
-      console.log('[Import] Importing private key to Turnkey...')
+      // Wait for user to complete import
+      const completed = confirm(
+        '✅ Import Complete?\n\n' +
+        'Click OK after you\'ve imported the wallet in Turnkey dashboard.\n' +
+        'We\'ll search for wallet: ' + walletName
+      )
 
-      // Import the private key using Turnkey SDK
-      // This encrypts the key client-side before sending to Turnkey
-      const importResult = await turnkeyClient.importPrivateKey({
-        type: 'ACTIVITY_TYPE_IMPORT_PRIVATE_KEY',
-        timestampMs: String(Date.now()),
-        organizationId,
-        parameters: {
-          privateKeyName: walletName,
-          privateKey: cleanKey,
-          curve: 'CURVE_SECP256K1',
-          addressFormats: ['ADDRESS_FORMAT_ETHEREUM'],
-        },
-      })
+      if (!completed) {
+        setImportLoading(false)
+        setImportError('Import cancelled by user')
+        return
+      }
 
-      console.log('[Import] Private key imported to Turnkey')
+      // Complete import - search for wallet and store reference
+      console.log('[Import] Searching for wallet:', walletName)
 
-      // Clean up iframe
-      stamper.clear()
-
-      // Step 4: Store wallet reference in our database
       const completeRes = await fetch('/api/turnkey/import/complete', {
         method: 'POST',
         credentials: 'include',
@@ -367,7 +338,7 @@ export default function ConnectWalletTurnkeyPage() {
       const completeData = await completeRes.json()
 
       if (!completeRes.ok) {
-        throw new Error(completeData?.error || 'Failed to store wallet reference')
+        throw new Error(completeData?.error || 'Failed to complete import')
       }
 
       setImportData(completeData)
