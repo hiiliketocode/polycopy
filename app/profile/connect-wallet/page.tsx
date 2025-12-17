@@ -267,6 +267,8 @@ export default function ConnectWalletTurnkeyPage() {
     setImportData(null)
 
     let iframeContainer: HTMLDivElement | null = null
+    let tempContainer: HTMLDivElement | null = null
+    let iframeStamper: any = null
 
     try {
       // Step 1: Initialize import - get import bundle from backend
@@ -289,49 +291,45 @@ export default function ConnectWalletTurnkeyPage() {
       console.log('[Import] Private key name:', privateKeyName)
       console.log('[Import] Import bundle obtained')
 
-      // Step 2: Create Turnkey iframe client to inject the import bundle
-      console.log('[Import] Step 2: Creating Turnkey iframe...')
+      // Step 2: Create Turnkey iframe with import UI
+      // https://docs.turnkey.com/embedded-wallets/code-examples/import
+      console.log('[Import] Step 2: Creating Turnkey import iframe...')
       
-      const { Turnkey } = await import('@turnkey/sdk-browser')
       const { IframeStamper } = await import('@turnkey/iframe-stamper')
 
-      // Create iframe stamper
-      const iframeStamper = new IframeStamper({
-        iframeUrl: 'https://auth.turnkey.com',
-        iframeContainer: document.body,
+      // Create container for iframe
+      tempContainer = document.createElement('div')
+      tempContainer.id = 'turnkey-iframe-container'
+      document.body.appendChild(tempContainer)
+
+      // Create iframe stamper pointing to official Turnkey import UI
+      iframeStamper = new IframeStamper({
+        iframeUrl: 'https://import.turnkey.com',
+        iframeContainer: tempContainer,
         iframeElementId: 'turnkey-import-iframe',
       })
 
-      // Initialize the iframe
+      // Initialize the iframe (inserts it in the DOM)
       await iframeStamper.init()
       
-      console.log('[Import] Iframe initialized')
-
-      // Create Turnkey SDK client with iframe stamper
-      const turnkey = new Turnkey({
-        apiBaseUrl: 'https://api.turnkey.com',
-        defaultOrganizationId: organizationId,
-        stamper: iframeStamper,
-      })
-
-      // Get iframe client to inject the import bundle
-      const iframeClient = await turnkey.iframeClient({ iframeContainer: document.body, iframeElementId: 'turnkey-import-iframe' })
+      console.log('[Import] Iframe initialized - Turnkey import UI loaded')
 
       // Inject the import bundle into the iframe
-      // Note: We don't pass userId because we're using organization-level import
-      console.log('[Import] Injecting import bundle into iframe...')
-      const injected = await iframeClient.injectImportBundle(importBundle, organizationId)
+      // This configures the iframe with the encryption keys
+      console.log('[Import] Injecting import bundle...')
+      const injected = await iframeStamper.injectImportBundle(importBundle, organizationId)
 
       if (!injected) {
         throw new Error('Failed to inject import bundle into iframe')
       }
 
       console.log('[Import] Import bundle injected successfully')
+      console.log('[Import] User can now enter their private key in the iframe')
 
-      // Step 3: Show UI modal around the iframe
+      // Step 3: Get the iframe element to display in modal
       const iframeElement = document.getElementById('turnkey-import-iframe') as HTMLIFrameElement
       if (!iframeElement) {
-        throw new Error('Turnkey iframe not found')
+        throw new Error('Turnkey iframe not found after initialization')
       }
 
       // Create modal UI
@@ -409,7 +407,7 @@ export default function ConnectWalletTurnkeyPage() {
       }
 
       const completeBtn = document.createElement('button')
-      completeBtn.textContent = 'Complete Import'
+      completeBtn.textContent = 'I\'ve Entered My Key - Complete Import'
       completeBtn.style.cssText = `
         padding: 12px 24px;
         background: #10b981;
@@ -421,16 +419,54 @@ export default function ConnectWalletTurnkeyPage() {
         font-size: 14px;
       `
       completeBtn.onclick = async () => {
-        completeBtn.textContent = 'Processing...'
+        completeBtn.textContent = 'Extracting & Importing...'
         completeBtn.disabled = true
         completeBtn.style.opacity = '0.6'
 
         try {
-          // Wait a moment for Turnkey to process
-          await new Promise(resolve => setTimeout(resolve, 2000))
+          // Step 4: Extract the encrypted bundle from the iframe
+          // https://docs.turnkey.com/embedded-wallets/code-examples/import
+          console.log('[Import] Extracting encrypted bundle from iframe...')
+          
+          // Use 'HEXADECIMAL' format for Ethereum keys (default for MetaMask, etc.)
+          const encryptedBundle = await iframeStamper.extractKeyEncryptedBundle('HEXADECIMAL')
+          
+          if (!encryptedBundle) {
+            throw new Error('Failed to extract encrypted bundle. Please make sure you entered your private key in the form above.')
+          }
 
-          // Step 4: Complete import - query Turnkey and store reference
-          console.log('[Import] Step 3: Completing import...')
+          console.log('[Import] Encrypted bundle extracted successfully')
+          console.log('[Import] Private key was encrypted client-side by Turnkey iframe')
+
+          // Step 5: Import the encrypted private key via Turnkey API
+          console.log('[Import] Importing encrypted private key to Turnkey...')
+          
+          // We need to call the Turnkey API directly here with the encrypted bundle
+          // This happens client-side but the encrypted bundle is sent to Turnkey, not PolyCopy
+          const { Turnkey } = await import('@turnkey/sdk-browser')
+          
+          const turnkey = new Turnkey({
+            apiBaseUrl: 'https://api.turnkey.com',
+            defaultOrganizationId: organizationId,
+            stamper: iframeStamper,
+          })
+
+          const importResult = await turnkey.importPrivateKey({
+            type: 'ACTIVITY_TYPE_IMPORT_PRIVATE_KEY',
+            timestampMs: String(Date.now()),
+            organizationId,
+            parameters: {
+              privateKeyName,
+              encryptedBundle,
+              curve: 'CURVE_SECP256K1',
+              addressFormats: ['ADDRESS_FORMAT_ETHEREUM'],
+            },
+          })
+
+          console.log('[Import] Private key imported to Turnkey successfully')
+
+          // Step 6: Store wallet reference in our database
+          console.log('[Import] Storing wallet reference...')
 
           const completeRes = await fetch('/api/turnkey/import/complete', {
             method: 'POST',
@@ -442,11 +478,12 @@ export default function ConnectWalletTurnkeyPage() {
           const completeData = await completeRes.json()
 
           if (!completeRes.ok) {
-            throw new Error(completeData?.error || 'Failed to complete import')
+            throw new Error(completeData?.error || 'Failed to store wallet reference')
           }
 
           // Success!
           if (iframeContainer) document.body.removeChild(iframeContainer)
+          if (tempContainer) document.body.removeChild(tempContainer)
           iframeStamper.clear()
           setImportData(completeData)
           setImportLoading(false)
@@ -454,7 +491,7 @@ export default function ConnectWalletTurnkeyPage() {
           completeBtn.textContent = 'Retry'
           completeBtn.disabled = false
           completeBtn.style.opacity = '1'
-          alert(`❌ ${err.message}\n\nMake sure you pasted your private key in the iframe above.`)
+          alert(`❌ ${err.message}\n\nMake sure you entered your private key in the Turnkey form above.`)
         }
       }
 
