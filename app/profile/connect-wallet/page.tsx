@@ -266,8 +266,10 @@ export default function ConnectWalletTurnkeyPage() {
     setImportError(null)
     setImportData(null)
 
+    let iframeContainer: HTMLDivElement | null = null
+
     try {
-      // Step 1: Initialize import
+      // Step 1: Initialize import - get iframe URL
       const initRes = await fetch('/api/turnkey/import/init', {
         method: 'POST',
         credentials: 'include',
@@ -279,58 +281,143 @@ export default function ConnectWalletTurnkeyPage() {
         throw new Error(initData?.error || 'Failed to initialize import')
       }
 
-      // Show wallet name prominently and give clear instructions
-      alert(
-        `🔑 IMPORTANT: Copy this wallet name!\n\n` +
-        `Wallet Name:\n${initData.walletName}\n\n` +
-        `Next steps:\n` +
-        `1. Copy the wallet name above\n` +
-        `2. Go to https://app.turnkey.com\n` +
-        `3. Click "Import Wallet"\n` +
-        `4. Paste your private key\n` +
-        `5. PASTE THE WALLET NAME EXACTLY when prompted\n` +
-        `6. After import completes, come back here\n\n` +
-        `Click OK to copy wallet name to clipboard...`
-      )
+      const { iframeUrl, activityId, walletName } = initData
 
-      // Try to copy wallet name to clipboard
-      try {
-        await navigator.clipboard.writeText(initData.walletName)
-        alert('✅ Wallet name copied to clipboard!\n\nNow go to Turnkey and paste it when creating the wallet.')
-      } catch (e) {
-        alert('⚠️ Could not copy to clipboard.\n\nPlease manually copy this name:\n' + initData.walletName)
+      console.log('[Import] Iframe URL:', iframeUrl)
+      console.log('[Import] Activity ID:', activityId)
+
+      // Step 2: Show Turnkey iframe in a modal where user pastes private key
+      iframeContainer = document.createElement('div')
+      iframeContainer.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.85);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(4px);
+      `
+
+      const iframeWrapper = document.createElement('div')
+      iframeWrapper.style.cssText = `
+        background: white;
+        border-radius: 16px;
+        padding: 32px;
+        max-width: 600px;
+        width: 90%;
+        box-shadow: 0 25px 80px rgba(0,0,0,0.5);
+      `
+
+      const title = document.createElement('h2')
+      title.textContent = '🔑 Import Your Private Key'
+      title.style.cssText = 'margin: 0 0 12px 0; font-size: 24px; font-weight: 700; color: #1a1a1a;'
+
+      const instructions = document.createElement('p')
+      instructions.innerHTML = `
+        <strong style="color: #059669;">✅ Secure Import via Turnkey</strong><br>
+        Paste your Magic Link private key below.<br>
+        <span style="color: #666; font-size: 13px;">Your key is encrypted by Turnkey and never sent to PolyCopy servers.</span>
+      `
+      instructions.style.cssText = 'margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #333;'
+
+      const iframe = document.createElement('iframe')
+      iframe.src = iframeUrl
+      iframe.style.cssText = 'width: 100%; height: 450px; border: 2px solid #e5e7eb; border-radius: 12px; background: #f9fafb;'
+      
+      // Add loading state to iframe
+      iframe.onload = () => {
+        console.log('[Import] Turnkey iframe loaded')
       }
 
-      // Final confirmation
-      const confirmed = confirm(
-        `Did you import the wallet in Turnkey?\n\n` +
-        `Wallet name: ${initData.walletName}\n\n` +
-        `Click OK if you completed the import.\n` +
-        `(We'll search for it by that exact name)`
-      )
+      const buttonContainer = document.createElement('div')
+      buttonContainer.style.cssText = 'display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end;'
 
-      if (!confirmed) {
-        throw new Error('Import cancelled')
+      const cancelBtn = document.createElement('button')
+      cancelBtn.textContent = 'Cancel Import'
+      cancelBtn.style.cssText = `
+        padding: 12px 24px;
+        background: #ef4444;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 14px;
+        transition: all 0.2s;
+      `
+      cancelBtn.onmouseover = () => { cancelBtn.style.background = '#dc2626' }
+      cancelBtn.onmouseout = () => { cancelBtn.style.background = '#ef4444' }
+      cancelBtn.onclick = () => {
+        if (iframeContainer) document.body.removeChild(iframeContainer)
+        setImportLoading(false)
+        setImportError('Import cancelled by user')
       }
 
-      // Step 2: Complete import by searching for wallet by name
-      const completeRes = await fetch('/api/turnkey/import/complete', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletNameOrId: initData.walletName }),
-      })
+      const completeBtn = document.createElement('button')
+      completeBtn.textContent = 'I\'ve Pasted My Key'
+      completeBtn.style.cssText = `
+        padding: 12px 24px;
+        background: #10b981;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 14px;
+        transition: all 0.2s;
+      `
+      completeBtn.onmouseover = () => { completeBtn.style.background = '#059669' }
+      completeBtn.onmouseout = () => { completeBtn.style.background = '#10b981' }
+      completeBtn.onclick = async () => {
+        completeBtn.textContent = 'Processing...'
+        completeBtn.disabled = true
+        completeBtn.style.opacity = '0.6'
+        completeBtn.style.cursor = 'wait'
 
-      const completeData = await completeRes.json()
+        try {
+          // Step 3: Complete import - poll for activity completion
+          const completeRes = await fetch('/api/turnkey/import/complete', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ activityId, walletName }),
+          })
 
-      if (!completeRes.ok) {
-        throw new Error(completeData?.error || 'Failed to complete import')
+          const completeData = await completeRes.json()
+
+          if (!completeRes.ok) {
+            throw new Error(completeData?.error || 'Failed to complete import')
+          }
+
+          // Success!
+          if (iframeContainer) document.body.removeChild(iframeContainer)
+          setImportData(completeData)
+          setImportLoading(false)
+        } catch (err: any) {
+          completeBtn.textContent = 'Retry'
+          completeBtn.disabled = false
+          completeBtn.style.opacity = '1'
+          completeBtn.style.cursor = 'pointer'
+          alert(`❌ ${err.message}`)
+        }
       }
 
-      setImportData(completeData)
+      buttonContainer.appendChild(cancelBtn)
+      buttonContainer.appendChild(completeBtn)
+
+      iframeWrapper.appendChild(title)
+      iframeWrapper.appendChild(instructions)
+      iframeWrapper.appendChild(iframe)
+      iframeWrapper.appendChild(buttonContainer)
+      iframeContainer.appendChild(iframeWrapper)
+      document.body.appendChild(iframeContainer)
     } catch (err: any) {
+      if (iframeContainer) document.body.removeChild(iframeContainer)
       setImportError(err?.message || 'Failed to import wallet')
-    } finally {
       setImportLoading(false)
     }
   }

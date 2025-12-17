@@ -49,19 +49,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { walletNameOrId } = await request.json()
+    const { activityId, walletName } = await request.json()
 
-    if (!walletNameOrId) {
+    if (!activityId || !walletName) {
       return NextResponse.json(
-        { error: 'walletNameOrId is required' },
+        { error: 'activityId and walletName are required' },
         { status: 400 }
       )
     }
 
-    console.log('[POLY-AUTH] Completing import - User:', userId, 'Input:', walletNameOrId)
+    console.log('[POLY-AUTH] Completing import - User:', userId, 'Activity ID:', activityId)
 
-    // Complete import - searches for wallet by name or ID
-    const result = await completeTurnkeyImport(userId, walletNameOrId)
+    // Complete import - polls activity and stores wallet
+    const result = await completeTurnkeyImport(userId, activityId, walletName)
 
     console.log('[POLY-AUTH] Import completed successfully')
 

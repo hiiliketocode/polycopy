@@ -16,6 +16,8 @@ const supabaseServiceRole = createClient(
 export interface TurnkeyImportInitResult {
   organizationId: string
   walletName: string
+  iframeUrl: string
+  activityId: string
 }
 
 export interface TurnkeyImportCompleteResult {
@@ -27,8 +29,8 @@ export interface TurnkeyImportCompleteResult {
 /**
  * Initialize Turnkey import ceremony for private key import
  * 
- * Returns organization ID and wallet name that the frontend will use
- * with @turnkey/iframe-stamper to create the import iframe
+ * Creates an ACTIVITY_TYPE_IMPORT_WALLET activity and returns iframe URL
+ * The user will paste their private key into the Turnkey iframe (not our app)
  * 
  * The private key is collected by Turnkey's iframe and NEVER sent to our backend
  */
@@ -52,34 +54,65 @@ export async function initTurnkeyImport(
 
   if (existing) {
     console.log('[POLY-AUTH] User already has imported wallet:', existing.eoa_address)
-    // Return existing wallet info so frontend can show it
-    return {
-      organizationId: client.config.organizationId,
-      walletName: `imported-${userId}`, // Will not be used for new import
-    }
+    throw new Error('You have already imported a wallet. Cannot import another one.')
   }
 
   // Create unique wallet name for this import
   const walletName = `imported-${userId}-${Date.now()}`
 
-  console.log('[POLY-AUTH] Import initialized - wallet name:', walletName)
+  console.log('[POLY-AUTH] Creating import wallet activity...')
+  console.log('[POLY-AUTH] Wallet name:', walletName)
   console.log('[POLY-AUTH] Organization ID:', client.config.organizationId)
 
-  return {
-    organizationId: client.config.organizationId,
-    walletName,
+  try {
+    // Create the import wallet activity
+    const importActivityResponse = await client.turnkeyClient.importWallet({
+      organizationId: client.config.organizationId,
+      timestampMs: String(Date.now()),
+      type: 'ACTIVITY_TYPE_IMPORT_WALLET',
+      parameters: {
+        walletName,
+        accounts: [
+          {
+            curve: 'CURVE_SECP256K1',
+            addressFormat: 'ADDRESS_FORMAT_ETHEREUM',
+            pathFormat: 'PATH_FORMAT_BIP32',
+            path: "m/44'/60'/0'/0/0",
+          },
+        ],
+      },
+    })
+
+    const activityId = importActivityResponse.activity.id
+    console.log('[POLY-AUTH] Import activity created:', activityId)
+
+    // Generate iframe URL for this import activity
+    // The Turnkey iframe URL follows the pattern:
+    // https://auth.turnkey.com/turnkey/{orgId}/{activityType}/{activityId}
+    const iframeUrl = `https://auth.turnkey.com/turnkey/${client.config.organizationId}/import/${activityId}`
+
+    return {
+      organizationId: client.config.organizationId,
+      walletName,
+      iframeUrl,
+      activityId,
+    }
+  } catch (error: any) {
+    console.error('[POLY-AUTH] Failed to create import activity:', error)
+    throw new Error(`Failed to initialize import: ${error.message}`)
   }
 }
 
 /**
- * Complete Turnkey import by searching for wallet by name
+ * Complete Turnkey import by polling for activity completion
  * 
- * Searches for the wallet with the expected name in Turnkey org
- * More user-friendly than asking for wallet ID
+ * Polls the import activity until it completes (or fails/times out)
+ * Then stores the wallet reference in our database
  */
 export async function completeTurnkeyImport(
   userId: string,
-  walletNameOrId: string
+  activityId: string,
+  walletName: string
 ): Promise<TurnkeyImportCompleteResult> {
   const client = getTurnkeyClient()
   if (!client) {
@@ -87,6 +120,7 @@ export async function completeTurnkeyImport(
   }
 
   console.log('[POLY-AUTH] Completing import for user:', userId)
+  console.log('[POLY-AUTH] Activity ID:', activityId)
 
   // Check if already stored (idempotency)
   const { data: existing } = await supabaseServiceRole
@@ -105,144 +139,84 @@ export async function completeTurnkeyImport(
     }
   }
 
-  // Try to find wallet - could be by ID or by name
-  let wallet
-  let walletId
-
-  // First, try as wallet ID (UUID format)
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  if (uuidRegex.test(walletNameOrId)) {
-    try {
-      console.log('[POLY-AUTH] Trying to get wallet by ID:', walletNameOrId)
-      const walletResponse = await client.turnkeyClient.getWallet({
-        organizationId: client.config.organizationId,
-        walletId: walletNameOrId,
-      })
-      wallet = walletResponse.wallet
-      walletId = walletNameOrId
-    } catch (error) {
-      console.log('[POLY-AUTH] Wallet not found by ID, will try searching by name')
-    }
-  }
-
-  // If not found by ID, search by name
-  if (!wallet) {
-    try {
-      console.log('[POLY-AUTH] Searching for wallet by name:', walletNameOrId)
-      const walletsResponse = await client.turnkeyClient.getWallets({
-        organizationId: client.config.organizationId,
-      })
-
-      console.log('[POLY-AUTH] Found', walletsResponse.wallets.length, 'total wallets in org')
-      
-      // Log all wallet names for debugging
-      if (walletsResponse.wallets.length > 0) {
-        console.log('[POLY-AUTH] Available wallet names:')
-        walletsResponse.wallets.forEach((w: any) => {
-          console.log('  -', w.walletName, '(ID:', w.walletId, ')')
-        })
-      }
-
-      // Find wallet matching the name
-      const matchingWallet = walletsResponse.wallets.find(
-        (w: any) => w.walletName === walletNameOrId
-      )
-
-      if (matchingWallet) {
-        wallet = matchingWallet
-        walletId = matchingWallet.walletId
-        console.log('[POLY-AUTH] Found wallet by name:', walletId)
-      } else {
-        console.error('[POLY-AUTH] No wallet found with name:', walletNameOrId)
-        
-        // Build helpful error message with available wallets
-        let availableWallets = 'None found'
-        if (walletsResponse.wallets.length > 0) {
-          availableWallets = walletsResponse.wallets
-            .map((w: any) => `\n  • ${w.walletName}`)
-            .join('')
-        }
-        
-        throw new Error(
-          `Wallet not found: "${walletNameOrId}"\n\n` +
-          `Available wallets in your Turnkey org:${availableWallets}\n\n` +
-          `Please:\n` +
-          `1. Go to https://app.turnkey.com\n` +
-          `2. Check if you imported the wallet\n` +
-          `3. Verify the wallet name matches EXACTLY (copy/paste recommended)\n` +
-          `4. If you just imported, wait 10-30 seconds and try again`
-        )
-      }
-    } catch (error: any) {
-      console.error('[POLY-AUTH] Error searching for wallet:', error.message)
-      // Re-throw if it's already our custom error
-      if (error.message.includes('Wallet not found:')) {
-        throw error
-      }
-      throw new Error(`Failed to search wallets: ${error.message}`)
-    }
-  }
-
-  if (!wallet || !walletId) {
-    throw new Error(
-      'Wallet not found in Turnkey.\n\n' +
-      'Please verify:\n' +
-      '1. You imported the wallet in Turnkey dashboard\n' +
-      '2. The wallet name matches exactly: ' + walletNameOrId + '\n' +
-      '3. You\'re looking in the correct Turnkey organization\n\n' +
-      'If you just imported, wait a few seconds and try again.'
-    )
-  }
-
-  if (!wallet.accounts || wallet.accounts.length === 0) {
-    throw new Error('Wallet found but has no accounts')
-  }
-
-  const address = wallet.accounts[0].address
-
-  console.log('[POLY-AUTH] Wallet verified - Address:', address)
-
-  // Store wallet reference in database
-  const { error: insertError } = await supabaseServiceRole
-    .from('turnkey_wallets')
-    .insert({
-      user_id: userId,
-      turnkey_wallet_id: walletId,
-      turnkey_sub_org_id: 'N/A',
-      turnkey_private_key_id: 'N/A',
-      eoa_address: address,
-      polymarket_account_address: '',
-      wallet_type: 'imported_magic',
+  try {
+    // Poll for activity completion
+    console.log('[POLY-AUTH] Polling for activity completion...')
+    const poller = createActivityPoller({
+      client: client.turnkeyClient,
+      requestFn: (input: { organizationId: string; activityId: string }) =>
+        client.turnkeyClient.getActivity(input),
     })
 
-  if (insertError) {
-    // Handle race condition
-    if (insertError.code === '23505') {
-      console.log('[POLY-AUTH] Unique conflict, wallet already stored')
-      const { data: reFetched } = await supabaseServiceRole
-        .from('turnkey_wallets')
-        .select('*')
-        .eq('user_id', userId)
-        .single()
+    const completedActivity = await poller({
+      organizationId: client.config.organizationId,
+      activityId,
+    })
 
-      if (reFetched) {
-        return {
-          walletId: reFetched.turnkey_wallet_id,
-          address: reFetched.eoa_address,
-          alreadyImported: true,
-        }
-      }
+    if (completedActivity.status !== 'ACTIVITY_STATUS_COMPLETED') {
+      throw new Error(
+        `Import activity failed with status: ${completedActivity.status}`
+      )
     }
 
-    console.error('[POLY-AUTH] Failed to store imported wallet:', insertError)
-    throw new Error(`Failed to store wallet: ${insertError.message}`)
-  }
+    const walletId = completedActivity.result?.importWalletResult?.walletId
+    const addresses = completedActivity.result?.importWalletResult?.walletAddresses
 
-  console.log('[POLY-AUTH] Imported wallet stored successfully')
+    if (!walletId || !addresses || addresses.length === 0) {
+      throw new Error('Import completed but wallet ID or address not found in result')
+    }
 
-  return {
-    walletId,
-    address,
-    alreadyImported: false,
+    const address = addresses[0].address
+
+    console.log('[POLY-AUTH] Import completed successfully')
+    console.log('[POLY-AUTH] Wallet ID:', walletId)
+    console.log('[POLY-AUTH] Address:', address)
+
+    // Store wallet reference in database
+    const { error: insertError } = await supabaseServiceRole
+      .from('turnkey_wallets')
+      .insert({
+        user_id: userId,
+        turnkey_wallet_id: walletId,
+        turnkey_sub_org_id: 'N/A',
+        turnkey_private_key_id: 'N/A',
+        eoa_address: address,
+        polymarket_account_address: '',
+        wallet_type: 'imported_magic',
+      })
+
+    if (insertError) {
+      // Handle race condition
+      if (insertError.code === '23505') {
+        console.log('[POLY-AUTH] Unique conflict, wallet already stored')
+        const { data: reFetched } = await supabaseServiceRole
+          .from('turnkey_wallets')
+          .select('*')
+          .eq('user_id', userId)
+          .single()
+
+        if (reFetched) {
+          return {
+            walletId: reFetched.turnkey_wallet_id,
+            address: reFetched.eoa_address,
+            alreadyImported: true,
+          }
+        }
+      }
+
+      console.error('[POLY-AUTH] Failed to store imported wallet:', insertError)
+      throw new Error(`Failed to store wallet: ${insertError.message}`)
+    }
+
+    console.log('[POLY-AUTH] Imported wallet stored successfully')
+
+    return {
+      walletId,
+      address,
+      alreadyImported: false,
+    }
+  } catch (error: any) {
+    console.error('[POLY-AUTH] Error completing import:', error.message)
+    throw new Error(`Failed to complete import: ${error.message}`)
   }
 }
