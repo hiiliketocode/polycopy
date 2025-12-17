@@ -167,51 +167,47 @@ export async function completeTurnkeyImport(
 
   console.log('[POLY-AUTH] Wallet verified - Address:', address)
 
-    // Store wallet reference in database
-    const { error: insertError } = await supabaseServiceRole
-      .from('turnkey_wallets')
-      .insert({
-        user_id: userId,
-        turnkey_wallet_id: walletId,
-        turnkey_sub_org_id: 'N/A',
-        turnkey_private_key_id: 'N/A',
-        eoa_address: address,
-        polymarket_account_address: '',
-        wallet_type: 'imported_magic',
-      })
+  // Store wallet reference in database
+  const { error: insertError } = await supabaseServiceRole
+    .from('turnkey_wallets')
+    .insert({
+      user_id: userId,
+      turnkey_wallet_id: walletId,
+      turnkey_sub_org_id: 'N/A',
+      turnkey_private_key_id: 'N/A',
+      eoa_address: address,
+      polymarket_account_address: '',
+      wallet_type: 'imported_magic',
+    })
 
-    if (insertError) {
-      // Handle race condition
-      if (insertError.code === '23505') {
-        console.log('[POLY-AUTH] Unique conflict, wallet already stored')
-        const { data: reFetched } = await supabaseServiceRole
-          .from('turnkey_wallets')
-          .select('*')
-          .eq('user_id', userId)
-          .single()
+  if (insertError) {
+    // Handle race condition
+    if (insertError.code === '23505') {
+      console.log('[POLY-AUTH] Unique conflict, wallet already stored')
+      const { data: reFetched } = await supabaseServiceRole
+        .from('turnkey_wallets')
+        .select('*')
+        .eq('user_id', userId)
+        .single()
 
-        if (reFetched) {
-          return {
-            walletId: reFetched.turnkey_wallet_id,
-            address: reFetched.eoa_address,
-            alreadyImported: true,
-          }
+      if (reFetched) {
+        return {
+          walletId: reFetched.turnkey_wallet_id,
+          address: reFetched.eoa_address,
+          alreadyImported: true,
         }
       }
-
-      console.error('[POLY-AUTH] Failed to store imported wallet:', insertError)
-      throw new Error(`Failed to store wallet: ${insertError.message}`)
     }
 
-    console.log('[POLY-AUTH] Imported wallet stored successfully')
+    console.error('[POLY-AUTH] Failed to store imported wallet:', insertError)
+    throw new Error(`Failed to store wallet: ${insertError.message}`)
+  }
 
-    return {
-      walletId,
-      address,
-      alreadyImported: false,
-    }
-  } catch (error: any) {
-    console.error('[POLY-AUTH] Failed to verify/store wallet:', error.message)
-    throw new Error(`Failed to complete import: ${error.message}`)
+  console.log('[POLY-AUTH] Imported wallet stored successfully')
+
+  return {
+    walletId,
+    address,
+    alreadyImported: false,
   }
 }
