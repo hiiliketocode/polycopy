@@ -13,10 +13,9 @@ export const USDC_DECIMALS = 6
 
 // Polymarket CLOB API Configuration
 export const POLYMARKET_CLOB_BASE_URL =
-  process.env.POLYMARKET_CLOB_BASE_URL || 'https://clob.polymarket.com'
-
-// Optional geo block token (only include in requests if set)
-export const POLYMARKET_GEO_BLOCK_TOKEN = process.env.POLYMARKET_GEO_BLOCK_TOKEN || ''
+  process.env.NEXT_PUBLIC_POLYMARKET_CLOB_BASE_URL || 
+  process.env.POLYMARKET_CLOB_BASE_URL || 
+  'https://clob.polymarket.com'
 
 // Encryption key for storing CLOB credentials (must be set in production)
 export const CLOB_ENCRYPTION_KEY = process.env.CLOB_ENCRYPTION_KEY || 'dev-key-change-in-production'

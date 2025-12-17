@@ -223,11 +223,14 @@ export default function ConnectWalletTurnkeyPage() {
     setL2Data(null)
 
     try {
-      const res = await fetch('/api/turnkey/polymarket/generate-l2-credentials', {
+      const res = await fetch('/api/polymarket/l2-credentials', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ polymarketAccountAddress: polymarketAddress }),
+        body: JSON.stringify({ 
+          polymarketAccountAddress: polymarketAddress,
+          signatureType: 0 // 0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE
+        }),
       })
 
       const data = await res.json()
