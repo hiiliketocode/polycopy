@@ -49,19 +49,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { walletId } = await request.json()
+    const { walletNameOrId } = await request.json()
 
-    if (!walletId) {
+    if (!walletNameOrId) {
       return NextResponse.json(
-        { error: 'walletId is required' },
+        { error: 'walletNameOrId is required' },
         { status: 400 }
       )
     }
 
-    console.log('[POLY-AUTH] Completing import - User:', userId, 'WalletId:', walletId)
+    console.log('[POLY-AUTH] Completing import - User:', userId, 'Input:', walletNameOrId)
 
-    // Complete import - verifies wallet exists in Turnkey and stores reference
-    const result = await completeTurnkeyImport(userId, walletId)
+    // Complete import - searches for wallet by name or ID
+    const result = await completeTurnkeyImport(userId, walletNameOrId)
 
     console.log('[POLY-AUTH] Import completed successfully')
 

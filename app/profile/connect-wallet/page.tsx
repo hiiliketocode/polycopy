@@ -279,45 +279,27 @@ export default function ConnectWalletTurnkeyPage() {
         throw new Error(initData?.error || 'Failed to initialize import')
       }
 
-      // Guide user through import process
-      const instructions = 
-        `🔑 Turnkey Import Ready!\n\n` +
-        `Organization: ${initData.organizationId}\n` +
-        `Wallet Name: ${initData.walletName}\n\n` +
-        `Next steps:\n` +
-        `1. Go to Turnkey dashboard (https://app.turnkey.com)\n` +
-        `2. Navigate to Wallets section\n` +
-        `3. Import your private key with the wallet name above\n` +
-        `4. After import, find the new wallet and copy its Wallet ID\n` +
-        `   (Should look like: a1b2c3d4-e5f6-7890-abcd-ef1234567890)\n` +
-        `5. Paste the Wallet ID below\n\n` +
-        `Enter Wallet ID (UUID format):`
+      // Simplified: Just confirm they imported with the wallet name
+      const confirmed = confirm(
+        `✅ Ready to complete import!\n\n` +
+        `Please confirm:\n` +
+        `1. You went to Turnkey dashboard (https://app.turnkey.com)\n` +
+        `2. You imported your private key\n` +
+        `3. You used this exact wallet name: ${initData.walletName}\n\n` +
+        `Click OK if you completed the import.\n` +
+        `We'll automatically find your wallet by name.`
+      )
 
-      const walletId = prompt(instructions)?.trim()
-
-      if (!walletId) {
-        throw new Error('Import cancelled - no walletId provided')
+      if (!confirmed) {
+        throw new Error('Import cancelled')
       }
 
-      // Validate wallet ID format (should be UUID-like)
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-      if (!uuidRegex.test(walletId)) {
-        throw new Error(
-          'Invalid Wallet ID format.\n\n' +
-          'Wallet ID should be a UUID like:\n' +
-          'a1b2c3d4-e5f6-7890-abcd-ef1234567890\n\n' +
-          'You entered: ' + walletId.substring(0, 50) +
-          (walletId.length > 50 ? '...' : '') + '\n\n' +
-          'Please copy the Wallet ID (not address or hash) from Turnkey dashboard.'
-        )
-      }
-
-      // Step 2: Complete import with walletId
+      // Step 2: Complete import by searching for wallet by name
       const completeRes = await fetch('/api/turnkey/import/complete', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletId }),
+        body: JSON.stringify({ walletNameOrId: initData.walletName }),
       })
 
       const completeData = await completeRes.json()

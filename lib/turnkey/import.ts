@@ -72,28 +72,28 @@ export async function initTurnkeyImport(
 }
 
 /**
- * Complete Turnkey import after user has imported via iframe
+ * Complete Turnkey import by searching for wallet by name
  * 
- * Frontend calls this with the walletId returned by the iframe
- * We verify it exists in Turnkey and store the reference in our DB
+ * Searches for the wallet with the expected name in Turnkey org
+ * More user-friendly than asking for wallet ID
  */
 export async function completeTurnkeyImport(
   userId: string,
-  walletId: string
+  walletNameOrId: string
 ): Promise<TurnkeyImportCompleteResult> {
   const client = getTurnkeyClient()
   if (!client) {
     throw new Error('Turnkey client not available')
   }
 
-  console.log('[POLY-AUTH] Completing import for user:', userId, 'walletId:', walletId)
+  console.log('[POLY-AUTH] Completing import for user:', userId)
 
   // Check if already stored (idempotency)
   const { data: existing } = await supabaseServiceRole
     .from('turnkey_wallets')
     .select('*')
     .eq('user_id', userId)
-    .eq('turnkey_wallet_id', walletId)
+    .eq('wallet_type', 'imported_magic')
     .single()
 
   if (existing) {
@@ -105,27 +105,67 @@ export async function completeTurnkeyImport(
     }
   }
 
-  // Get wallet details from Turnkey to verify it exists and get address
-  try {
-    const walletResponse = await client.turnkeyClient.getWallet({
-      organizationId: client.config.organizationId,
-      walletId: walletId,
-    })
+  // Try to find wallet - could be by ID or by name
+  let wallet
+  let walletId
 
-    const wallet = walletResponse.wallet
-    if (!wallet || !wallet.accounts || wallet.accounts.length === 0) {
-      throw new Error(
-        'Wallet not found or has no accounts.\n\n' +
-        'Please verify:\n' +
-        '1. The wallet was imported in Turnkey dashboard\n' +
-        '2. You copied the correct Wallet ID (UUID format)\n' +
-        '3. The wallet exists in your Turnkey organization'
-      )
+  // First, try as wallet ID (UUID format)
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (uuidRegex.test(walletNameOrId)) {
+    try {
+      console.log('[POLY-AUTH] Trying to get wallet by ID:', walletNameOrId)
+      const walletResponse = await client.turnkeyClient.getWallet({
+        organizationId: client.config.organizationId,
+        walletId: walletNameOrId,
+      })
+      wallet = walletResponse.wallet
+      walletId = walletNameOrId
+    } catch (error) {
+      console.log('[POLY-AUTH] Wallet not found by ID, will try searching by name')
     }
+  }
 
-    const address = wallet.accounts[0].address
+  // If not found by ID, search by name
+  if (!wallet) {
+    try {
+      console.log('[POLY-AUTH] Searching for wallet by name:', walletNameOrId)
+      const walletsResponse = await client.turnkeyClient.getWallets({
+        organizationId: client.config.organizationId,
+      })
 
-    console.log('[POLY-AUTH] Wallet verified - Address:', address)
+      // Find wallet matching the name
+      const matchingWallet = walletsResponse.wallets.find(
+        (w: any) => w.walletName === walletNameOrId
+      )
+
+      if (matchingWallet) {
+        wallet = matchingWallet
+        walletId = matchingWallet.walletId
+        console.log('[POLY-AUTH] Found wallet by name:', walletId)
+      }
+    } catch (error: any) {
+      console.error('[POLY-AUTH] Error searching for wallet:', error.message)
+    }
+  }
+
+  if (!wallet || !walletId) {
+    throw new Error(
+      'Wallet not found in Turnkey.\n\n' +
+      'Please verify:\n' +
+      '1. You imported the wallet in Turnkey dashboard\n' +
+      '2. The wallet name matches exactly: ' + walletNameOrId + '\n' +
+      '3. You\'re looking in the correct Turnkey organization\n\n' +
+      'If you just imported, wait a few seconds and try again.'
+    )
+  }
+
+  if (!wallet.accounts || wallet.accounts.length === 0) {
+    throw new Error('Wallet found but has no accounts')
+  }
+
+  const address = wallet.accounts[0].address
+
+  console.log('[POLY-AUTH] Wallet verified - Address:', address)
 
     // Store wallet reference in database
     const { error: insertError } = await supabaseServiceRole
