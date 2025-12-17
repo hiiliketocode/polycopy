@@ -11,6 +11,16 @@ export const USDC_CONTRACT_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359
 export const USDC_E_CONTRACT_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174' // USDC.e (bridged)
 export const USDC_DECIMALS = 6
 
+// Polymarket CLOB API Configuration
+export const POLYMARKET_CLOB_BASE_URL =
+  process.env.POLYMARKET_CLOB_BASE_URL || 'https://clob.polymarket.com'
+
+// Optional geo block token (only include in requests if set)
+export const POLYMARKET_GEO_BLOCK_TOKEN = process.env.POLYMARKET_GEO_BLOCK_TOKEN || ''
+
+// Encryption key for storing CLOB credentials (must be set in production)
+export const CLOB_ENCRYPTION_KEY = process.env.CLOB_ENCRYPTION_KEY || 'dev-key-change-in-production'
+
 export function loadTurnkeyConfig(): TurnkeyConfig | null {
   if (!TURNKEY_ENABLED) return null
 

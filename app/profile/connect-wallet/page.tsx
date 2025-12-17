@@ -60,6 +60,17 @@ export default function ConnectWalletTurnkeyPage() {
   const [balanceError, setBalanceError] = useState<string | null>(null)
   const [balanceData, setBalanceData] = useState<BalanceResponse | null>(null)
 
+  // L2 credentials state
+  const [l2Loading, setL2Loading] = useState(false)
+  const [l2Error, setL2Error] = useState<string | null>(null)
+  const [l2Data, setL2Data] = useState<{
+    ok: boolean
+    apiKey: string
+    validated: boolean
+    createdAt: string
+    isExisting?: boolean
+  } | null>(null)
+
   const createWallet = async () => {
     setCreateLoading(true)
     setCreateError(null)
@@ -193,6 +204,43 @@ export default function ConnectWalletTurnkeyPage() {
       setBalanceError(err?.message || 'Failed to fetch balance')
     } finally {
       setBalanceLoading(false)
+    }
+  }
+
+  const generateL2Credentials = async () => {
+    if (!polymarketAddress.trim()) {
+      setL2Error('Please enter and validate a Polymarket wallet address first')
+      return
+    }
+
+    if (!validateData?.isContract) {
+      setL2Error('Please validate that the address is a contract wallet first')
+      return
+    }
+
+    setL2Loading(true)
+    setL2Error(null)
+    setL2Data(null)
+
+    try {
+      const res = await fetch('/api/turnkey/polymarket/generate-l2-credentials', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ polymarketAccountAddress: polymarketAddress }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to generate L2 credentials')
+      }
+
+      setL2Data(data)
+    } catch (err: any) {
+      setL2Error(err?.message || 'Failed to generate L2 credentials')
+    } finally {
+      setL2Loading(false)
     }
   }
 
@@ -472,6 +520,77 @@ export default function ConnectWalletTurnkeyPage() {
                 <span>Raw Value:</span>
                 <code>{balanceData.usdcBalanceRaw}</code>
               </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Stage 4: Generate L2 CLOB Credentials */}
+      <section className="rounded-lg border border-orange-200 bg-orange-50 p-4 space-y-3">
+        <div>
+          <h2 className="text-xl font-semibold text-orange-900">Stage 4: Generate L2 CLOB Credentials</h2>
+          <p className="text-sm text-orange-700">Create API credentials for Polymarket CLOB trading (requires validated contract wallet)</p>
+        </div>
+
+        <div className="space-y-3">
+          <button
+            onClick={generateL2Credentials}
+            disabled={l2Loading || !TURNKEY_UI_ENABLED || !validateData?.isContract}
+            className="rounded-md bg-orange-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-orange-700 transition-colors"
+          >
+            {l2Loading ? 'Generating...' : 'Generate L2 Credentials'}
+          </button>
+
+          {!validateData?.isContract && (
+            <p className="text-sm text-orange-700">
+              ⚠️ Please validate a contract wallet address in Stage 3 first
+            </p>
+          )}
+        </div>
+
+        {l2Error && (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
+            ❌ {l2Error}
+          </div>
+        )}
+
+        {l2Data && (
+          <div className="space-y-3 rounded-md border border-green-200 bg-green-50 p-4">
+            <div className="flex items-center gap-2 text-green-800 font-semibold text-lg">
+              {l2Data.isExisting ? '✅ Existing Credentials Retrieved' : '🔑 L2 Credentials Generated'}
+            </div>
+            
+            <div className="space-y-2 text-sm">
+              <div className="flex flex-col gap-1">
+                <span className="font-semibold text-slate-700">API Key:</span>
+                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
+                  {l2Data.apiKey}
+                </code>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="font-semibold text-slate-700">Validated:</span>
+                <span className={`font-bold ${l2Data.validated ? 'text-green-700' : 'text-red-700'}`}>
+                  {l2Data.validated ? '✅ Yes' : '❌ No'}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center text-xs text-slate-600">
+                <span>Created:</span>
+                <span>{new Date(l2Data.createdAt).toLocaleString()}</span>
+              </div>
+
+              {l2Data.isExisting && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+                  ℹ️ Using existing credentials (idempotent - no new key created)
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-green-300 pt-2 mt-2">
+              <p className="text-xs text-slate-600">
+                🔒 <strong>Security Note:</strong> API secret and passphrase are stored encrypted in the database and never exposed to the client.
+              </p>
             </div>
           </div>
         )}
