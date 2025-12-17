@@ -2,50 +2,60 @@
 -- Purpose: Store encrypted Polymarket CLOB API credentials for L2 trading
 -- Security: Secrets and passphrases are encrypted, only api_key is stored in plaintext
 
-CREATE TABLE IF NOT EXISTS clob_credentials (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+-- Drop table if it exists (clean slate)
+DROP TABLE IF EXISTS clob_credentials CASCADE;
+
+-- Create the table
+CREATE TABLE clob_credentials (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  polymarket_account_address text NOT NULL, -- The Safe/proxy wallet address
-  turnkey_address text NOT NULL, -- The Turnkey EOA that signed the auth
+  polymarket_account_address text NOT NULL,
+  turnkey_address text NOT NULL,
   
   -- CLOB credentials (api_key is ok to show, others must be encrypted)
   api_key text NOT NULL,
-  api_secret_encrypted text NOT NULL, -- Encrypted using Supabase vault
-  api_passphrase_encrypted text NOT NULL, -- Encrypted using Supabase vault
+  api_secret_encrypted text NOT NULL,
+  api_passphrase_encrypted text NOT NULL,
   
   -- Metadata
-  validated boolean DEFAULT false, -- Whether credentials were validated after creation
-  created_at timestamp DEFAULT now(),
-  updated_at timestamp DEFAULT now(),
-  last_validated_at timestamp,
+  validated boolean DEFAULT false,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  last_validated_at timestamptz,
   
   -- Constraints
-  UNIQUE(user_id, polymarket_account_address) -- One set of credentials per user+account
+  CONSTRAINT clob_credentials_user_account_unique UNIQUE(user_id, polymarket_account_address)
 );
 
--- Index for fast lookups
-CREATE INDEX IF NOT EXISTS idx_clob_credentials_user_id ON clob_credentials(user_id);
-CREATE INDEX IF NOT EXISTS idx_clob_credentials_account ON clob_credentials(polymarket_account_address);
+-- Add indexes
+CREATE INDEX idx_clob_credentials_user_id ON clob_credentials(user_id);
+CREATE INDEX idx_clob_credentials_account ON clob_credentials(polymarket_account_address);
 
--- RLS policies
-ALTER TABLE clob_credentials ENABLE ROW LEVEL SECURITY;
-
--- Users can only see their own credentials
-CREATE POLICY "Users can view own CLOB credentials"
-  ON clob_credentials FOR SELECT
-  USING (auth.uid() = clob_credentials.user_id);
-
--- Users can insert their own credentials
-CREATE POLICY "Users can insert own CLOB credentials"
-  ON clob_credentials FOR INSERT
-  WITH CHECK (auth.uid() = clob_credentials.user_id);
-
--- Users can update their own credentials
-CREATE POLICY "Users can update own CLOB credentials"
-  ON clob_credentials FOR UPDATE
-  USING (auth.uid() = clob_credentials.user_id);
-
+-- Add comments
 COMMENT ON TABLE clob_credentials IS 'Stores encrypted Polymarket CLOB L2 API credentials for trading';
 COMMENT ON COLUMN clob_credentials.api_secret_encrypted IS 'Encrypted API secret - never expose to client';
 COMMENT ON COLUMN clob_credentials.api_passphrase_encrypted IS 'Encrypted API passphrase - never expose to client';
 
+-- Enable RLS
+ALTER TABLE clob_credentials ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if any
+DROP POLICY IF EXISTS "Users can view own CLOB credentials" ON clob_credentials;
+DROP POLICY IF EXISTS "Users can insert own CLOB credentials" ON clob_credentials;
+DROP POLICY IF EXISTS "Users can update own CLOB credentials" ON clob_credentials;
+
+-- Create RLS policies
+CREATE POLICY "Users can view own CLOB credentials"
+  ON clob_credentials
+  FOR SELECT
+  USING (user_id = auth.uid());
+
+CREATE POLICY "Users can insert own CLOB credentials"
+  ON clob_credentials
+  FOR INSERT
+  WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Users can update own CLOB credentials"
+  ON clob_credentials
+  FOR UPDATE
+  USING (user_id = auth.uid());
