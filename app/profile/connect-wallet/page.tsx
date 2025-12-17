@@ -310,66 +310,6 @@ export default function ConnectWalletTurnkeyPage() {
     }
   }
 
-  const startImport = async () => {
-    setImportLoading(true)
-    setImportError(null)
-    setImportData(null)
-
-    try {
-      const res = await fetch('/api/turnkey/import/init', {
-        method: 'POST',
-        credentials: 'include',
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to initialize import')
-      }
-
-      setImportIframeUrl(data.iframeUrl)
-      setImportBundle(data.importBundle)
-
-      // If existing wallet, complete immediately
-      if (data.importBundle === 'existing') {
-        await completeImport(data.importBundle)
-      }
-    } catch (err: any) {
-      setImportError(err?.message || 'Failed to start import')
-      setImportLoading(false)
-    }
-  }
-
-  const completeImport = async (bundle?: string) => {
-    const bundleToUse = bundle || importBundle
-
-    if (!bundleToUse) {
-      setImportError('No import bundle available')
-      return
-    }
-
-    try {
-      const res = await fetch('/api/turnkey/import/complete', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ importBundle: bundleToUse }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to complete import')
-      }
-
-      setImportData(data)
-      setImportIframeUrl(null)
-    } catch (err: any) {
-      setImportError(err?.message || 'Failed to complete import')
-    } finally {
-      setImportLoading(false)
-    }
-  }
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
@@ -801,34 +741,17 @@ export default function ConnectWalletTurnkeyPage() {
 
         <div className="space-y-3">
           <button
-            onClick={startImport}
+            onClick={startImportFlow}
             disabled={importLoading || !TURNKEY_UI_ENABLED}
             className="rounded-md bg-indigo-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-indigo-700 transition-colors"
           >
-            {importLoading ? 'Importing...' : 'Import Wallet (Secure)'}
+            {importLoading ? 'Importing...' : 'Import Magic Link Key'}
           </button>
 
-          {importIframeUrl && importBundle !== 'existing' && (
-            <div className="space-y-2">
-              <p className="text-sm text-indigo-700 font-semibold">
-                📋 Turnkey Import Iframe:
-              </p>
-              <div className="bg-white border border-indigo-300 rounded p-2">
-                <p className="text-xs text-slate-600 mb-2">
-                  Open this URL in a new window and follow Turnkey's instructions to securely import your private key:
-                </p>
-                <code className="text-xs break-all bg-slate-100 p-2 rounded block">
-                  {importIframeUrl}
-                </code>
-              </div>
-              <button
-                onClick={() => completeImport()}
-                className="rounded-md bg-green-600 px-4 py-2 text-white font-semibold hover:bg-green-700 transition-colors"
-              >
-                ✓ I've Completed Import in Turnkey
-              </button>
-            </div>
-          )}
+          <div className="text-xs text-indigo-600 border border-indigo-300 bg-white rounded p-2">
+            ℹ️ <strong>MVP Note:</strong> Full Turnkey iframe integration requires @turnkey/iframe-stamper component.
+            This demo uses manual walletId input for testing.
+          </div>
         </div>
 
         {importError && (
