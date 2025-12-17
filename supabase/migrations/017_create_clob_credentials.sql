@@ -33,17 +33,17 @@ ALTER TABLE clob_credentials ENABLE ROW LEVEL SECURITY;
 -- Users can only see their own credentials
 CREATE POLICY "Users can view own CLOB credentials"
   ON clob_credentials FOR SELECT
-  USING (auth.uid() = user_id);
+  USING (auth.uid() = clob_credentials.user_id);
 
 -- Users can insert their own credentials
 CREATE POLICY "Users can insert own CLOB credentials"
   ON clob_credentials FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (auth.uid() = clob_credentials.user_id);
 
 -- Users can update their own credentials
 CREATE POLICY "Users can update own CLOB credentials"
   ON clob_credentials FOR UPDATE
-  USING (auth.uid() = user_id);
+  USING (auth.uid() = clob_credentials.user_id);
 
 COMMENT ON TABLE clob_credentials IS 'Stores encrypted Polymarket CLOB L2 API credentials for trading';
 COMMENT ON COLUMN clob_credentials.api_secret_encrypted IS 'Encrypted API secret - never expose to client';
