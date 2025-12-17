@@ -67,13 +67,13 @@ export async function initTurnkeyImport(
 
   try {
     // Call Turnkey API to initialize the import and get the import bundle
+    // Note: We don't pass userId here because we're using organization-level import,
+    // not user-specific import within Turnkey's user system
     const initResult = await client.turnkeyClient.initImportPrivateKey({
       type: 'ACTIVITY_TYPE_INIT_IMPORT_PRIVATE_KEY',
       timestampMs: String(Date.now()),
       organizationId: client.config.organizationId,
-      parameters: {
-        userId,
-      },
+      parameters: {},
     })
 
     console.log('[TURNKEY-IMPORT] Init activity status:', initResult.activity.status)
@@ -93,7 +93,7 @@ export async function initTurnkeyImport(
     return {
       organizationId: client.config.organizationId,
       privateKeyName,
-      userId,
+      userId, // Our Supabase user ID (for our own reference, not sent to Turnkey)
       importBundle,
     }
   } catch (error: any) {

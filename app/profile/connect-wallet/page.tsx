@@ -318,8 +318,9 @@ export default function ConnectWalletTurnkeyPage() {
       const iframeClient = await turnkey.iframeClient({ iframeContainer: document.body, iframeElementId: 'turnkey-import-iframe' })
 
       // Inject the import bundle into the iframe
+      // Note: We don't pass userId because we're using organization-level import
       console.log('[Import] Injecting import bundle into iframe...')
-      const injected = await iframeClient.injectImportBundle(importBundle, organizationId, userId)
+      const injected = await iframeClient.injectImportBundle(importBundle, organizationId)
 
       if (!injected) {
         throw new Error('Failed to inject import bundle into iframe')
