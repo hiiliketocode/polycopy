@@ -266,10 +266,8 @@ export default function ConnectWalletTurnkeyPage() {
     setImportError(null)
     setImportData(null)
 
-    let iframeContainer: HTMLDivElement | null = null
-
     try {
-      // Step 1: Initialize import - get org ID and wallet name
+      // Step 1: Get initialization data
       const initRes = await fetch('/api/turnkey/import/init', {
         method: 'POST',
         credentials: 'include',
@@ -281,165 +279,52 @@ export default function ConnectWalletTurnkeyPage() {
         throw new Error(initData?.error || 'Failed to initialize import')
       }
 
-      const { organizationId, walletName, iframeUrl } = initData
+      const { walletName } = initData
 
-      console.log('[Import] Organization ID:', organizationId)
-      console.log('[Import] Wallet Name:', walletName)
-      console.log('[Import] Iframe URL:', iframeUrl)
+      // Step 2: Prompt user for private key
+      const privateKey = prompt(
+        '🔑 Paste Your Private Key\n\n' +
+        'Paste your Magic Link private key below.\n' +
+        '(Get it from: https://reveal.magic.link/polymarket)\n\n' +
+        '⚠️ Your key will be securely encrypted before sending to Turnkey.\n' +
+        'PolyCopy backend never sees your plaintext key.'
+      )
 
-      // Step 2: Load Turnkey iframe stamper dynamically
-      const { IframeStamper } = await import('@turnkey/iframe-stamper')
+      if (!privateKey || !privateKey.trim()) {
+        setImportLoading(false)
+        setImportError('Import cancelled - no private key provided')
+        return
+      }
 
-      // Step 3: Create iframe stamper instance
-      const iframeStamper = new IframeStamper({
-        iframeUrl: iframeUrl,
-        iframeContainer: document.body,
-        iframeElementId: 'turnkey-import-iframe',
+      // Validate private key format (should be 64 hex chars with or without 0x prefix)
+      const cleanKey = privateKey.trim().replace(/^0x/, '')
+      if (!/^[0-9a-fA-F]{64}$/.test(cleanKey)) {
+        throw new Error('Invalid private key format. Expected 64 hex characters.')
+      }
+
+      console.log('[Import] Importing wallet:', walletName)
+
+      // Step 3: Send to backend for secure import
+      const importRes = await fetch('/api/turnkey/import/execute', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          walletName,
+          privateKey: `0x${cleanKey}` // Ensure 0x prefix
+        }),
       })
 
-      // Step 4: Inject iframe and wait for it to be ready
-      await iframeStamper.init()
+      const importResult = await importRes.json()
 
-      console.log('[Import] Iframe stamper initialized')
-
-      // Step 5: Show modal UI around the iframe
-      const iframeElement = document.getElementById('turnkey-import-iframe') as HTMLIFrameElement
-      if (!iframeElement) {
-        throw new Error('Turnkey iframe not found after initialization')
+      if (!importRes.ok) {
+        throw new Error(importResult?.error || 'Failed to import wallet')
       }
 
-      // Create modal wrapper
-      iframeContainer = document.createElement('div')
-      iframeContainer.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.85);
-        z-index: 10000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        backdrop-filter: blur(4px);
-      `
-
-      const iframeWrapper = document.createElement('div')
-      iframeWrapper.style.cssText = `
-        background: white;
-        border-radius: 16px;
-        padding: 32px;
-        max-width: 600px;
-        width: 90%;
-        box-shadow: 0 25px 80px rgba(0,0,0,0.5);
-      `
-
-      const title = document.createElement('h2')
-      title.textContent = '🔑 Import Your Private Key'
-      title.style.cssText = 'margin: 0 0 12px 0; font-size: 24px; font-weight: 700; color: #1a1a1a;'
-
-      const instructions = document.createElement('p')
-      instructions.innerHTML = `
-        <strong style="color: #059669;">✅ Secure Import via Turnkey</strong><br>
-        Paste your Magic Link private key (from https://reveal.magic.link/polymarket) below.<br>
-        <span style="color: #666; font-size: 13px;">Your key is encrypted by Turnkey and never sent to PolyCopy servers.</span>
-      `
-      instructions.style.cssText = 'margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #333;'
-
-      // Style the iframe
-      iframeElement.style.cssText = 'width: 100%; height: 450px; border: 2px solid #e5e7eb; border-radius: 12px; background: #f9fafb;'
-
-      const buttonContainer = document.createElement('div')
-      buttonContainer.style.cssText = 'display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end;'
-
-      const cancelBtn = document.createElement('button')
-      cancelBtn.textContent = 'Cancel Import'
-      cancelBtn.style.cssText = `
-        padding: 12px 24px;
-        background: #ef4444;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: 600;
-        font-size: 14px;
-        transition: all 0.2s;
-      `
-      cancelBtn.onmouseover = () => { cancelBtn.style.background = '#dc2626' }
-      cancelBtn.onmouseout = () => { cancelBtn.style.background = '#ef4444' }
-      cancelBtn.onclick = () => {
-        if (iframeContainer) document.body.removeChild(iframeContainer)
-        iframeStamper.clear()
-        setImportLoading(false)
-        setImportError('Import cancelled by user')
-      }
-
-      const completeBtn = document.createElement('button')
-      completeBtn.textContent = 'I\'ve Pasted My Key'
-      completeBtn.style.cssText = `
-        padding: 12px 24px;
-        background: #10b981;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: 600;
-        font-size: 14px;
-        transition: all 0.2s;
-      `
-      completeBtn.onmouseover = () => { completeBtn.style.background = '#059669' }
-      completeBtn.onmouseout = () => { completeBtn.style.background = '#10b981' }
-      completeBtn.onclick = async () => {
-        completeBtn.textContent = 'Processing...'
-        completeBtn.disabled = true
-        completeBtn.style.opacity = '0.6'
-        completeBtn.style.cursor = 'wait'
-
-        try {
-          // Wait a bit for Turnkey to finish processing
-          await new Promise(resolve => setTimeout(resolve, 2000))
-
-          // Step 6: Complete import - search for wallet and store it
-          const completeRes = await fetch('/api/turnkey/import/complete', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ walletName }),
-          })
-
-          const completeData = await completeRes.json()
-
-          if (!completeRes.ok) {
-            throw new Error(completeData?.error || 'Failed to complete import')
-          }
-
-          // Success!
-          if (iframeContainer) document.body.removeChild(iframeContainer)
-          iframeStamper.clear()
-          setImportData(completeData)
-          setImportLoading(false)
-        } catch (err: any) {
-          completeBtn.textContent = 'Retry'
-          completeBtn.disabled = false
-          completeBtn.style.opacity = '1'
-          completeBtn.style.cursor = 'pointer'
-          alert(`❌ ${err.message}\n\nMake sure you pasted your private key and waited for it to finish importing.`)
-        }
-      }
-
-      buttonContainer.appendChild(cancelBtn)
-      buttonContainer.appendChild(completeBtn)
-
-      iframeWrapper.appendChild(title)
-      iframeWrapper.appendChild(instructions)
-      // Move iframe into wrapper
-      iframeWrapper.appendChild(iframeElement)
-      iframeWrapper.appendChild(buttonContainer)
-      iframeContainer.appendChild(iframeWrapper)
-      document.body.appendChild(iframeContainer)
+      setImportData(importResult)
     } catch (err: any) {
-      if (iframeContainer) document.body.removeChild(iframeContainer)
       setImportError(err?.message || 'Failed to import wallet')
+    } finally {
       setImportLoading(false)
     }
   }
