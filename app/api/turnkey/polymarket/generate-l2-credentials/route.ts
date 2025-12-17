@@ -5,6 +5,9 @@ import { TURNKEY_ENABLED, POLYMARKET_CLOB_BASE_URL, POLYMARKET_GEO_BLOCK_TOKEN, 
 import { signMessageForUser } from '@/lib/turnkey/wallet-simple'
 import { createHash, createCipheriv, randomBytes } from 'crypto'
 
+// Dev bypass for local testing (same as wallet creation endpoint)
+const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development' && process.env.TURNKEY_DEV_BYPASS_USER_ID
+
 // Service role client for DB operations
 const supabaseServiceRole = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -75,16 +78,30 @@ export async function POST(request: NextRequest) {
 
   try {
     // Authenticate user
+    console.log('[POLY-CLOB] Checking authentication...')
     const supabase = await createClient()
     const {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser()
 
-    if (authError || !user) {
-      console.log('[POLY-CLOB] Authentication failed')
+    console.log('[POLY-CLOB] User:', user?.id, 'Error:', authError?.message)
+
+    // Allow dev bypass
+    let userId: string | null = null
+
+    if (user?.id) {
+      userId = user.id
+      console.log('[POLY-CLOB] Using authenticated user:', userId)
+    } else if (DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
+      userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
+      console.log('[POLY-CLOB] DEV BYPASS: Using env user:', userId)
+    }
+
+    if (!userId) {
+      console.error('[POLY-CLOB] Auth failed:', authError?.message)
       return NextResponse.json(
-        { error: 'Unauthorized - please log in' },
+        { error: 'Unauthorized - please log in', details: authError?.message },
         { status: 401 }
       )
     }
@@ -98,13 +115,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('[POLY-CLOB] User:', user.id, 'Account:', polymarketAccountAddress)
+    console.log('[POLY-CLOB] User:', userId, 'Account:', polymarketAccountAddress)
 
     // 1. Check if credentials already exist (idempotency)
     const { data: existingCreds, error: fetchError } = await supabaseServiceRole
       .from('clob_credentials')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('polymarket_account_address', polymarketAccountAddress)
       .single()
 
@@ -123,7 +140,7 @@ export async function POST(request: NextRequest) {
     const { data: wallet, error: walletError } = await supabaseServiceRole
       .from('turnkey_wallets')
       .select('eoa_address, turnkey_wallet_id')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single()
 
     if (walletError || !wallet) {
@@ -146,7 +163,7 @@ export async function POST(request: NextRequest) {
     console.log('[POLY-CLOB] Timestamp:', timestamp, 'Nonce:', nonce)
 
     // 4. Sign the payload using Turnkey
-    const signResult = await signMessageForUser(user.id, authMessage)
+    const signResult = await signMessageForUser(userId, authMessage)
     
     if (!signResult.success || !signResult.signature) {
       console.error('[POLY-CLOB] Signature failed:', signResult.error)
@@ -244,7 +261,7 @@ export async function POST(request: NextRequest) {
     const { data: storedCreds, error: insertError } = await supabaseServiceRole
       .from('clob_credentials')
       .insert({
-        user_id: user.id,
+        user_id: userId,
         polymarket_account_address: polymarketAccountAddress,
         turnkey_address: turnkeyAddress,
         api_key: apiKey,
@@ -263,7 +280,7 @@ export async function POST(request: NextRequest) {
         const { data: existingAfterRace } = await supabaseServiceRole
           .from('clob_credentials')
           .select('*')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('polymarket_account_address', polymarketAccountAddress)
           .single()
 
