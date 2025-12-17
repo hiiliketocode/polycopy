@@ -80,16 +80,6 @@ export default function ConnectWalletTurnkeyPage() {
     alreadyImported?: boolean
   } | null>(null)
 
-  // Import wallet state
-  const [importLoading, setImportLoading] = useState(false)
-  const [importError, setImportError] = useState<string | null>(null)
-  const [importData, setImportData] = useState<{
-    walletId: string
-    address: string
-  } | null>(null)
-  const [importIframeUrl, setImportIframeUrl] = useState<string | null>(null)
-  const [importBundle, setImportBundle] = useState<string | null>(null)
-
   const createWallet = async () => {
     setCreateLoading(true)
     setCreateError(null)
