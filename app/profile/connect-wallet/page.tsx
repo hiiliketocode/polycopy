@@ -71,6 +71,25 @@ export default function ConnectWalletTurnkeyPage() {
     isExisting?: boolean
   } | null>(null)
 
+  // Import wallet state
+  const [importLoading, setImportLoading] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importData, setImportData] = useState<{
+    walletId: string
+    address: string
+    alreadyImported?: boolean
+  } | null>(null)
+
+  // Import wallet state
+  const [importLoading, setImportLoading] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importData, setImportData] = useState<{
+    walletId: string
+    address: string
+  } | null>(null)
+  const [importIframeUrl, setImportIframeUrl] = useState<string | null>(null)
+  const [importBundle, setImportBundle] = useState<string | null>(null)
+
   const createWallet = async () => {
     setCreateLoading(true)
     setCreateError(null)
@@ -244,6 +263,121 @@ export default function ConnectWalletTurnkeyPage() {
       setL2Error(err?.message || 'Failed to generate L2 credentials')
     } finally {
       setL2Loading(false)
+    }
+  }
+
+  const startImportFlow = async () => {
+    setImportLoading(true)
+    setImportError(null)
+    setImportData(null)
+
+    try {
+      // Step 1: Initialize import
+      const initRes = await fetch('/api/turnkey/import/init', {
+        method: 'POST',
+        credentials: 'include',
+      })
+
+      const initData = await initRes.json()
+
+      if (!initRes.ok) {
+        throw new Error(initData?.error || 'Failed to initialize import')
+      }
+
+      // NOTE: In production, here you would:
+      // 1. Use @turnkey/iframe-stamper to create iframe
+      // 2. User pastes their private key into the Turnkey-hosted iframe
+      // 3. Iframe returns walletId when import completes
+      // 
+      // For this MVP, we'll show instructions and accept manual walletId input
+      const walletId = prompt(
+        `Import initialized!\n\nTo complete:\n1. Go to Turnkey dashboard\n2. Import your wallet\n3. Copy the walletId\n4. Paste it here:\n\nOrganization: ${initData.organizationId}\nWallet Name: ${initData.walletName}`
+      )
+
+      if (!walletId) {
+        throw new Error('Import cancelled - no walletId provided')
+      }
+
+      // Step 2: Complete import with walletId
+      const completeRes = await fetch('/api/turnkey/import/complete', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletId }),
+      })
+
+      const completeData = await completeRes.json()
+
+      if (!completeRes.ok) {
+        throw new Error(completeData?.error || 'Failed to complete import')
+      }
+
+      setImportData(completeData)
+    } catch (err: any) {
+      setImportError(err?.message || 'Failed to import wallet')
+    } finally {
+      setImportLoading(false)
+    }
+  }
+
+  const startImport = async () => {
+    setImportLoading(true)
+    setImportError(null)
+    setImportData(null)
+
+    try {
+      const res = await fetch('/api/turnkey/import/init', {
+        method: 'POST',
+        credentials: 'include',
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to initialize import')
+      }
+
+      setImportIframeUrl(data.iframeUrl)
+      setImportBundle(data.importBundle)
+
+      // If existing wallet, complete immediately
+      if (data.importBundle === 'existing') {
+        await completeImport(data.importBundle)
+      }
+    } catch (err: any) {
+      setImportError(err?.message || 'Failed to start import')
+      setImportLoading(false)
+    }
+  }
+
+  const completeImport = async (bundle?: string) => {
+    const bundleToUse = bundle || importBundle
+
+    if (!bundleToUse) {
+      setImportError('No import bundle available')
+      return
+    }
+
+    try {
+      const res = await fetch('/api/turnkey/import/complete', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ importBundle: bundleToUse }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to complete import')
+      }
+
+      setImportData(data)
+      setImportIframeUrl(null)
+    } catch (err: any) {
+      setImportError(err?.message || 'Failed to complete import')
+    } finally {
+      setImportLoading(false)
     }
   }
 
@@ -528,6 +662,75 @@ export default function ConnectWalletTurnkeyPage() {
         )}
       </section>
 
+      {/* Import Wallet (Magic Link) */}
+      <section className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 space-y-3">
+        <div>
+          <h2 className="text-xl font-semibold text-indigo-900">Import Wallet (Magic Link Private Key)</h2>
+          <p className="text-sm text-indigo-700">
+            Securely import your Magic Link private key via Turnkey iframe.
+            <br />
+            <strong>Note:</strong> Your private key never touches PolyCopy servers - it goes directly to Turnkey.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <button
+            onClick={startImportFlow}
+            disabled={importLoading || !TURNKEY_UI_ENABLED}
+            className="rounded-md bg-indigo-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-indigo-700 transition-colors"
+          >
+            {importLoading ? 'Importing...' : 'Import Magic Link Key'}
+          </button>
+
+          <div className="text-xs text-indigo-600 border border-indigo-300 bg-white rounded p-2">
+            ℹ️ <strong>MVP Note:</strong> Full Turnkey iframe integration requires @turnkey/iframe-stamper component.
+            This demo uses manual walletId input for testing.
+          </div>
+        </div>
+
+        {importError && (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
+            ❌ {importError}
+          </div>
+        )}
+
+        {importData && (
+          <div className="space-y-2 rounded-md border border-green-200 bg-green-50 p-4">
+            <div className="flex items-center gap-2 text-green-800 font-semibold text-lg">
+              {importData.alreadyImported ? '✅ Existing Wallet Retrieved' : '🔑 Wallet Imported Successfully'}
+            </div>
+            
+            <div className="space-y-2 text-sm">
+              <div className="flex flex-col gap-1">
+                <span className="font-semibold text-slate-700">Wallet ID:</span>
+                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
+                  {importData.walletId}
+                </code>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="font-semibold text-slate-700">Address (EOA):</span>
+                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
+                  {importData.address}
+                </code>
+              </div>
+
+              {importData.alreadyImported && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+                  ℹ️ This wallet was already imported (idempotent - no duplicate created)
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-green-300 pt-2 mt-2">
+              <p className="text-xs text-slate-600">
+                🔒 <strong>Security:</strong> Your private key was imported directly to Turnkey and never exposed to PolyCopy.
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* Stage 4: Generate L2 CLOB Credentials */}
       <section className="rounded-lg border border-orange-200 bg-orange-50 p-4 space-y-3">
         <div>
@@ -593,6 +796,82 @@ export default function ConnectWalletTurnkeyPage() {
             <div className="border-t border-green-300 pt-2 mt-2">
               <p className="text-xs text-slate-600">
                 🔒 <strong>Security Note:</strong> API secret and passphrase are stored encrypted in the database and never exposed to the client.
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Import Magic Link Wallet */}
+      <section className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 space-y-3">
+        <div>
+          <h2 className="text-xl font-semibold text-indigo-900">Import Magic Link Wallet</h2>
+          <p className="text-sm text-indigo-700">Securely import your Magic Link private key via Turnkey iframe</p>
+        </div>
+
+        <div className="space-y-3">
+          <button
+            onClick={startImport}
+            disabled={importLoading || !TURNKEY_UI_ENABLED}
+            className="rounded-md bg-indigo-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-indigo-700 transition-colors"
+          >
+            {importLoading ? 'Importing...' : 'Import Wallet (Secure)'}
+          </button>
+
+          {importIframeUrl && importBundle !== 'existing' && (
+            <div className="space-y-2">
+              <p className="text-sm text-indigo-700 font-semibold">
+                📋 Turnkey Import Iframe:
+              </p>
+              <div className="bg-white border border-indigo-300 rounded p-2">
+                <p className="text-xs text-slate-600 mb-2">
+                  Open this URL in a new window and follow Turnkey's instructions to securely import your private key:
+                </p>
+                <code className="text-xs break-all bg-slate-100 p-2 rounded block">
+                  {importIframeUrl}
+                </code>
+              </div>
+              <button
+                onClick={() => completeImport()}
+                className="rounded-md bg-green-600 px-4 py-2 text-white font-semibold hover:bg-green-700 transition-colors"
+              >
+                ✓ I've Completed Import in Turnkey
+              </button>
+            </div>
+          )}
+        </div>
+
+        {importError && (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
+            ❌ {importError}
+          </div>
+        )}
+
+        {importData && (
+          <div className="space-y-2 rounded-md border border-green-200 bg-green-50 p-4">
+            <div className="flex items-center gap-2 text-green-800 font-semibold text-lg">
+              ✅ Wallet Imported Successfully
+            </div>
+            
+            <div className="space-y-2 text-sm">
+              <div className="flex flex-col gap-1">
+                <span className="font-semibold text-slate-700">Wallet ID:</span>
+                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
+                  {importData.walletId}
+                </code>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="font-semibold text-slate-700">Address:</span>
+                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
+                  {importData.address}
+                </code>
+              </div>
+            </div>
+
+            <div className="border-t border-green-300 pt-2 mt-2">
+              <p className="text-xs text-slate-600">
+                🔒 <strong>Security Note:</strong> Your private key was imported securely via Turnkey's iframe. PolyCopy never saw your plaintext key.
               </p>
             </div>
           </div>

@@ -51,7 +51,8 @@ export async function POST() {
     // Initialize import
     const result = await initTurnkeyImport(userId)
 
-    console.log('[POLY-AUTH] Import initialized successfully')
+    console.log('[TURNKEY-IMPORT] Init successful, iframe URL:', result.iframeUrl)
+    console.log('[TURNKEY-IMPORT] Import bundle:', result.importBundle)
 
     return NextResponse.json(result)
   } catch (error: any) {

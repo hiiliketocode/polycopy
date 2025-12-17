@@ -9,8 +9,11 @@ const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development' && process.env.TU
 /**
  * POST /api/turnkey/import/complete
  * 
- * Complete Turnkey import after user has pasted private key in iframe
- * Polls for completion and stores wallet reference in DB
+ * Complete Turnkey import after user has imported via iframe
+ * Frontend provides the walletId returned by Turnkey iframe
+ * We verify it exists and store the reference in our DB
+ * 
+ * Private key never touches our servers - it goes directly to Turnkey
  */
 export async function POST(request: NextRequest) {
   console.log('[POLY-AUTH] Import complete request received')
@@ -46,21 +49,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { importId } = await request.json()
+    const { walletId } = await request.json()
 
-    if (!importId) {
+    if (!walletId) {
       return NextResponse.json(
-        { error: 'importId is required' },
+        { error: 'walletId is required' },
         { status: 400 }
       )
     }
 
-    // Complete import
-    const result = await completeTurnkeyImport(userId, importId)
+    console.log('[POLY-AUTH] Completing import - User:', userId, 'WalletId:', walletId)
+
+    // Complete import - verifies wallet exists in Turnkey and stores reference
+    const result = await completeTurnkeyImport(userId, walletId)
 
     console.log('[POLY-AUTH] Import completed successfully')
 
-    return NextResponse.json(result)
+    return NextResponse.json({
+      success: true,
+      ...result,
+    })
   } catch (error: any) {
     console.error('[POLY-AUTH] Import complete error:', error.message)
     return NextResponse.json(
@@ -69,4 +77,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-
