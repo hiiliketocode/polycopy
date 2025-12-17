@@ -41,16 +41,17 @@ export async function GET() {
     for (const user of allUsers) {
       if (user.apiKeys && user.apiKeys.length > 0) {
         for (const apiKey of user.apiKeys) {
+          const publicKey = (apiKey as any).credential?.publicKey || (apiKey as any).publicKey
           allApiKeys.push({
             userId: user.userId,
             userName: user.userName,
             apiKeyId: apiKey.apiKeyId,
             apiKeyName: apiKey.apiKeyName,
-            publicKey: apiKey.publicKey?.substring(0, 30) + '...',
+            publicKey: publicKey ? publicKey.substring(0, 30) + '...' : 'N/A',
           })
 
           // Check if this API key matches our public key
-          if (apiKey.publicKey === apiPublicKey) {
+          if (publicKey === apiPublicKey) {
             apiKeyUser = {
               userId: user.userId,
               userName: user.userName,
