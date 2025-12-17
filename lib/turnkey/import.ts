@@ -1,6 +1,5 @@
 import { getTurnkeyClient } from './client'
 import { createClient } from '@supabase/supabase-js'
-import { createActivityPoller } from '@turnkey/http'
 
 const supabaseServiceRole = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,23 +14,27 @@ const supabaseServiceRole = createClient(
 
 export interface TurnkeyImportInitResult {
   organizationId: string
-  walletName: string
-  iframeUrl: string
+  privateKeyName: string
+  userId: string
+  importBundle: string
 }
 
 export interface TurnkeyImportCompleteResult {
-  walletId: string
+  privateKeyId: string
   address: string
+  addresses: Array<{ address: string; format: string }>
   alreadyImported: boolean
 }
 
 /**
- * Initialize Turnkey import ceremony for private key import
+ * Initialize Turnkey import ceremony (Step 1 of 3)
  * 
- * Returns configuration for the frontend @turnkey/iframe-stamper
- * The iframe stamper will handle activity creation and private key collection
+ * Creates an init_import_private_key activity and returns the import bundle.
+ * The bundle will be injected into the Turnkey iframe where the user
+ * pastes their private key. The iframe encrypts the key and creates the
+ * final import activity.
  * 
- * The private key is collected by Turnkey's iframe and NEVER sent to our backend
+ * Security: PolyCopy backend never receives the plaintext private key.
  */
 export async function initTurnkeyImport(
   userId: string
@@ -41,7 +44,7 @@ export async function initTurnkeyImport(
     throw new Error('Turnkey client not available')
   }
 
-  console.log('[POLY-AUTH] Initializing Turnkey import for user:', userId)
+  console.log('[TURNKEY-IMPORT] Initializing import for user:', userId)
 
   // Check if user already has an imported wallet (idempotency)
   const { data: existing } = await supabaseServiceRole
@@ -52,47 +55,73 @@ export async function initTurnkeyImport(
     .single()
 
   if (existing) {
-    console.log('[POLY-AUTH] User already has imported wallet:', existing.eoa_address)
+    console.log('[TURNKEY-IMPORT] User already has imported wallet:', existing.eoa_address)
     throw new Error('You have already imported a wallet. Cannot import another one.')
   }
 
-  // Create unique wallet name for this import
-  const walletName = `imported-${userId}-${Date.now()}`
+  // Create unique private key name for this import
+  const privateKeyName = `imported-magic-${userId}-${Date.now()}`
 
-  console.log('[POLY-AUTH] Import initialized')
-  console.log('[POLY-AUTH] Wallet name:', walletName)
-  console.log('[POLY-AUTH] Organization ID:', client.config.organizationId)
+  console.log('[TURNKEY-IMPORT] Creating init_import_private_key activity...')
+  console.log('[TURNKEY-IMPORT] Private key name:', privateKeyName)
 
-  // Return configuration for iframe stamper
-  // The frontend will use @turnkey/iframe-stamper to:
-  // 1. Create the iframe
-  // 2. User enters private key
-  // 3. Iframe creates the import activity
-  // 4. Returns wallet ID when complete
-  return {
-    organizationId: client.config.organizationId,
-    walletName,
-    iframeUrl: 'https://auth.turnkey.com', // Base URL, iframe stamper will handle the rest
+  try {
+    // Call Turnkey API to initialize the import and get the import bundle
+    const initResult = await client.turnkeyClient.initImportPrivateKey({
+      type: 'ACTIVITY_TYPE_INIT_IMPORT_PRIVATE_KEY',
+      timestampMs: String(Date.now()),
+      organizationId: client.config.organizationId,
+      parameters: {
+        userId,
+      },
+    })
+
+    console.log('[TURNKEY-IMPORT] Init activity status:', initResult.activity.status)
+
+    if (initResult.activity.status !== 'ACTIVITY_STATUS_COMPLETED') {
+      throw new Error(`Init activity failed with status: ${initResult.activity.status}`)
+    }
+
+    const importBundle = initResult.activity.result?.initImportPrivateKeyResult?.importBundle
+
+    if (!importBundle) {
+      throw new Error('Import bundle not found in init activity result')
+    }
+
+    console.log('[TURNKEY-IMPORT] Import bundle obtained successfully')
+
+    return {
+      organizationId: client.config.organizationId,
+      privateKeyName,
+      userId,
+      importBundle,
+    }
+  } catch (error: any) {
+    console.error('[TURNKEY-IMPORT] Init failed:', error.message)
+    throw new Error(`Failed to initialize import: ${error.message}`)
   }
 }
 
 /**
- * Complete Turnkey import by searching for wallet by name
+ * Complete Turnkey import ceremony (Step 3 of 3)
  * 
- * After the frontend iframe stamper completes the import,
- * we search for the wallet by name and store it in our database
+ * After the iframe extracts the encrypted bundle and submits it to Turnkey,
+ * we query Turnkey for the imported private key details and store the reference
+ * in our database.
+ * 
+ * Security: We only store the private key ID and derived address, never the key itself.
  */
 export async function completeTurnkeyImport(
   userId: string,
-  walletName: string
+  privateKeyName: string
 ): Promise<TurnkeyImportCompleteResult> {
   const client = getTurnkeyClient()
   if (!client) {
     throw new Error('Turnkey client not available')
   }
 
-  console.log('[POLY-AUTH] Completing import for user:', userId)
-  console.log('[POLY-AUTH] Searching for wallet:', walletName)
+  console.log('[TURNKEY-IMPORT] Completing import for user:', userId)
+  console.log('[TURNKEY-IMPORT] Private key name:', privateKeyName)
 
   // Check if already stored (idempotency)
   const { data: existing } = await supabaseServiceRole
@@ -103,64 +132,68 @@ export async function completeTurnkeyImport(
     .single()
 
   if (existing) {
-    console.log('[POLY-AUTH] Wallet already stored in DB')
+    console.log('[TURNKEY-IMPORT] Private key already stored in DB')
     return {
-      walletId: existing.turnkey_wallet_id,
+      privateKeyId: existing.turnkey_private_key_id,
       address: existing.eoa_address,
+      addresses: [{ address: existing.eoa_address, format: 'ADDRESS_FORMAT_ETHEREUM' }],
       alreadyImported: true,
     }
   }
 
   try {
-    // Search for the wallet by name in Turnkey
-    console.log('[POLY-AUTH] Fetching wallets from Turnkey...')
-    const walletsResponse = await client.turnkeyClient.getWallets({
+    // Query Turnkey for private keys in the organization
+    console.log('[TURNKEY-IMPORT] Searching for private key in Turnkey...')
+    
+    const privateKeysResponse = await client.turnkeyClient.getPrivateKeys({
       organizationId: client.config.organizationId,
     })
 
-    console.log(`[POLY-AUTH] Found ${walletsResponse.wallets.length} wallets in org`)
+    console.log(`[TURNKEY-IMPORT] Found ${privateKeysResponse.privateKeys.length} private keys in org`)
 
-    // Find the wallet with matching name
-    const matchingWallet = walletsResponse.wallets.find(
-      (w: any) => w.walletName === walletName
+    // Find the private key with matching name
+    const matchingKey = privateKeysResponse.privateKeys.find(
+      (pk: any) => pk.privateKeyName === privateKeyName
     )
 
-    if (!matchingWallet) {
-      // Log available wallets for debugging
-      if (walletsResponse.wallets.length > 0) {
-        console.log('[POLY-AUTH] Available wallets:')
-        walletsResponse.wallets.forEach((w: any) => {
-          console.log(`  - ${w.walletName} (ID: ${w.walletId})`)
+    if (!matchingKey) {
+      // Log available keys for debugging
+      if (privateKeysResponse.privateKeys.length > 0) {
+        console.log('[TURNKEY-IMPORT] Available private keys:')
+        privateKeysResponse.privateKeys.forEach((pk: any) => {
+          console.log(`  - ${pk.privateKeyName} (ID: ${pk.privateKeyId})`)
         })
       }
 
       throw new Error(
-        `Wallet not found: "${walletName}"\n\n` +
-        `Please ensure the wallet was successfully imported in the Turnkey iframe.\n` +
-        `If you just imported, wait 10-30 seconds and try again.`
+        `Private key not found: "${privateKeyName}"\n\n` +
+        `The import may not have completed in the Turnkey iframe.\n` +
+        `Please try again.`
       )
     }
 
-    const walletId = matchingWallet.walletId
-    const address = matchingWallet.accounts?.[0]?.address
-
-    if (!address) {
-      throw new Error('Wallet found but has no accounts')
+    const privateKeyId = matchingKey.privateKeyId
+    const addresses = matchingKey.addresses || []
+    
+    if (addresses.length === 0) {
+      throw new Error('Private key found but has no addresses')
     }
 
-    console.log('[POLY-AUTH] Wallet found successfully')
-    console.log('[POLY-AUTH] Wallet ID:', walletId)
-    console.log('[POLY-AUTH] Address:', address)
+    const primaryAddress = addresses[0].address
 
-    // Store wallet reference in database
+    console.log('[TURNKEY-IMPORT] Private key found successfully')
+    console.log('[TURNKEY-IMPORT] Private Key ID:', privateKeyId)
+    console.log('[TURNKEY-IMPORT] Primary Address:', primaryAddress)
+
+    // Store private key reference in database
     const { error: insertError } = await supabaseServiceRole
       .from('turnkey_wallets')
       .insert({
         user_id: userId,
-        turnkey_wallet_id: walletId,
+        turnkey_wallet_id: privateKeyId, // Store private key ID as wallet ID
         turnkey_sub_org_id: 'N/A',
-        turnkey_private_key_id: 'N/A',
-        eoa_address: address,
+        turnkey_private_key_id: privateKeyId,
+        eoa_address: primaryAddress,
         polymarket_account_address: '',
         wallet_type: 'imported_magic',
       })
@@ -168,7 +201,7 @@ export async function completeTurnkeyImport(
     if (insertError) {
       // Handle race condition
       if (insertError.code === '23505') {
-        console.log('[POLY-AUTH] Unique conflict, wallet already stored')
+        console.log('[TURNKEY-IMPORT] Unique conflict, private key already stored')
         const { data: reFetched } = await supabaseServiceRole
           .from('turnkey_wallets')
           .select('*')
@@ -177,26 +210,31 @@ export async function completeTurnkeyImport(
 
         if (reFetched) {
           return {
-            walletId: reFetched.turnkey_wallet_id,
+            privateKeyId: reFetched.turnkey_private_key_id,
             address: reFetched.eoa_address,
+            addresses: [{ address: reFetched.eoa_address, format: 'ADDRESS_FORMAT_ETHEREUM' }],
             alreadyImported: true,
           }
         }
       }
 
-      console.error('[POLY-AUTH] Failed to store imported wallet:', insertError)
-      throw new Error(`Failed to store wallet: ${insertError.message}`)
+      console.error('[TURNKEY-IMPORT] Failed to store imported private key:', insertError)
+      throw new Error(`Failed to store private key reference: ${insertError.message}`)
     }
 
-    console.log('[POLY-AUTH] Imported wallet stored successfully')
+    console.log('[TURNKEY-IMPORT] Imported private key reference stored successfully')
 
     return {
-      walletId,
-      address,
+      privateKeyId,
+      address: primaryAddress,
+      addresses: addresses.map((addr: any) => ({
+        address: addr.address,
+        format: addr.format,
+      })),
       alreadyImported: false,
     }
   } catch (error: any) {
-    console.error('[POLY-AUTH] Error completing import:', error.message)
+    console.error('[TURNKEY-IMPORT] Error completing import:', error.message)
     throw new Error(`Failed to complete import: ${error.message}`)
   }
 }
