@@ -564,12 +564,52 @@ export default function FeedPage() {
               if (trader?.displayName) {
                 traderNames[walletKey] = trader.displayName;
                 console.log(`✅ Found name: ${trader.displayName} for ${follow.trader_wallet.slice(0, 10)}...`);
-              } else {
-                console.warn(`⚠️ No name found for ${follow.trader_wallet.slice(0, 10)}... (not in top 100)`);
               }
             }
           } else {
             console.error(`❌ Leaderboard API error: ${leaderboardRes.status}`);
+          }
+
+          // 2b. For traders not in top 100, fetch from trades API
+          const walletsNeedingNames = follows
+            .filter(f => !traderNames[f.trader_wallet.toLowerCase()])
+            .map(f => f.trader_wallet.toLowerCase());
+          
+          if (walletsNeedingNames.length > 0) {
+            console.log(`🔍 Fetching names for ${walletsNeedingNames.length} traders not in top 100...`);
+            
+            // Fetch in batches to avoid rate limits
+            const batchSize = 5;
+            for (let i = 0; i < walletsNeedingNames.length; i += batchSize) {
+              const batch = walletsNeedingNames.slice(i, i + batchSize);
+              
+              await Promise.allSettled(
+                batch.map(async (wallet) => {
+                  try {
+                    const res = await fetch(
+                      `https://data-api.polymarket.com/trades?limit=1&user=${wallet}`
+                    );
+                    if (res.ok) {
+                      const trades = await res.json();
+                      if (Array.isArray(trades) && trades.length > 0) {
+                        const name = trades[0].name || trades[0].userName;
+                        if (name) {
+                          traderNames[wallet] = name;
+                          console.log(`✅ Found name from trades API: ${name} for ${wallet.slice(0, 10)}...`);
+                        }
+                      }
+                    }
+                  } catch (err) {
+                    console.warn(`Failed to fetch name for ${wallet.slice(0, 10)}...`, err);
+                  }
+                })
+              );
+              
+              // Small delay between batches
+              if (i + batchSize < walletsNeedingNames.length) {
+                await new Promise(resolve => setTimeout(resolve, 150));
+              }
+            }
           }
 
           console.log('📛 Final trader names:', JSON.stringify(traderNames, null, 2));
