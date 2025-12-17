@@ -133,6 +133,16 @@ export async function completeTurnkeyImport(
         organizationId: client.config.organizationId,
       })
 
+      console.log('[POLY-AUTH] Found', walletsResponse.wallets.length, 'total wallets in org')
+      
+      // Log all wallet names for debugging
+      if (walletsResponse.wallets.length > 0) {
+        console.log('[POLY-AUTH] Available wallet names:')
+        walletsResponse.wallets.forEach((w: any) => {
+          console.log('  -', w.walletName, '(ID:', w.walletId, ')')
+        })
+      }
+
       // Find wallet matching the name
       const matchingWallet = walletsResponse.wallets.find(
         (w: any) => w.walletName === walletNameOrId
@@ -142,9 +152,34 @@ export async function completeTurnkeyImport(
         wallet = matchingWallet
         walletId = matchingWallet.walletId
         console.log('[POLY-AUTH] Found wallet by name:', walletId)
+      } else {
+        console.error('[POLY-AUTH] No wallet found with name:', walletNameOrId)
+        
+        // Build helpful error message with available wallets
+        let availableWallets = 'None found'
+        if (walletsResponse.wallets.length > 0) {
+          availableWallets = walletsResponse.wallets
+            .map((w: any) => `\n  • ${w.walletName}`)
+            .join('')
+        }
+        
+        throw new Error(
+          `Wallet not found: "${walletNameOrId}"\n\n` +
+          `Available wallets in your Turnkey org:${availableWallets}\n\n` +
+          `Please:\n` +
+          `1. Go to https://app.turnkey.com\n` +
+          `2. Check if you imported the wallet\n` +
+          `3. Verify the wallet name matches EXACTLY (copy/paste recommended)\n` +
+          `4. If you just imported, wait 10-30 seconds and try again`
+        )
       }
     } catch (error: any) {
       console.error('[POLY-AUTH] Error searching for wallet:', error.message)
+      // Re-throw if it's already our custom error
+      if (error.message.includes('Wallet not found:')) {
+        throw error
+      }
+      throw new Error(`Failed to search wallets: ${error.message}`)
     }
   }
 

@@ -279,15 +279,34 @@ export default function ConnectWalletTurnkeyPage() {
         throw new Error(initData?.error || 'Failed to initialize import')
       }
 
-      // Simplified: Just confirm they imported with the wallet name
+      // Show wallet name prominently and give clear instructions
+      alert(
+        `🔑 IMPORTANT: Copy this wallet name!\n\n` +
+        `Wallet Name:\n${initData.walletName}\n\n` +
+        `Next steps:\n` +
+        `1. Copy the wallet name above\n` +
+        `2. Go to https://app.turnkey.com\n` +
+        `3. Click "Import Wallet"\n` +
+        `4. Paste your private key\n` +
+        `5. PASTE THE WALLET NAME EXACTLY when prompted\n` +
+        `6. After import completes, come back here\n\n` +
+        `Click OK to copy wallet name to clipboard...`
+      )
+
+      // Try to copy wallet name to clipboard
+      try {
+        await navigator.clipboard.writeText(initData.walletName)
+        alert('✅ Wallet name copied to clipboard!\n\nNow go to Turnkey and paste it when creating the wallet.')
+      } catch (e) {
+        alert('⚠️ Could not copy to clipboard.\n\nPlease manually copy this name:\n' + initData.walletName)
+      }
+
+      // Final confirmation
       const confirmed = confirm(
-        `✅ Ready to complete import!\n\n` +
-        `Please confirm:\n` +
-        `1. You went to Turnkey dashboard (https://app.turnkey.com)\n` +
-        `2. You imported your private key\n` +
-        `3. You used this exact wallet name: ${initData.walletName}\n\n` +
+        `Did you import the wallet in Turnkey?\n\n` +
+        `Wallet name: ${initData.walletName}\n\n` +
         `Click OK if you completed the import.\n` +
-        `We'll automatically find your wallet by name.`
+        `(We'll search for it by that exact name)`
       )
 
       if (!confirmed) {
