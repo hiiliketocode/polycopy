@@ -66,14 +66,50 @@ export async function initTurnkeyImport(
   console.log('[TURNKEY-IMPORT] Private key name:', privateKeyName)
 
   try {
+    // First, try to get or create a Turnkey user
+    // Turnkey requires users to exist before import
+    let turnkeyUserId = userId
+
+    try {
+      // Try to get the user
+      await client.turnkeyClient.getUser({
+        organizationId: client.config.organizationId,
+        userId: turnkeyUserId,
+      })
+      console.log('[TURNKEY-IMPORT] Turnkey user exists:', turnkeyUserId)
+    } catch (getUserError: any) {
+      // User doesn't exist, create it
+      console.log('[TURNKEY-IMPORT] Creating Turnkey user...')
+      
+      const createUserResult = await client.turnkeyClient.createUsers({
+        type: 'ACTIVITY_TYPE_CREATE_USERS',
+        timestampMs: String(Date.now()),
+        organizationId: client.config.organizationId,
+        parameters: {
+          users: [
+            {
+              userName: `user-${userId}`,
+              userId: turnkeyUserId,
+              userEmail: `${userId}@polycopy.local`, // Dummy email
+              apiKeys: [], // No API keys needed for this user
+              authenticators: [], // No authenticators needed
+              oauthProviders: [], // No OAuth providers
+            },
+          ],
+        },
+      })
+
+      console.log('[TURNKEY-IMPORT] Turnkey user created')
+    }
+
     // Call Turnkey API to initialize the import and get the import bundle
-    // Note: We don't pass userId here because we're using organization-level import,
-    // not user-specific import within Turnkey's user system
     const initResult = await client.turnkeyClient.initImportPrivateKey({
       type: 'ACTIVITY_TYPE_INIT_IMPORT_PRIVATE_KEY',
       timestampMs: String(Date.now()),
       organizationId: client.config.organizationId,
-      parameters: {},
+      parameters: {
+        userId: turnkeyUserId,
+      },
     })
 
     console.log('[TURNKEY-IMPORT] Init activity status:', initResult.activity.status)
