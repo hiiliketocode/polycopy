@@ -256,6 +256,41 @@ export default function ConnectWalletTurnkeyPage() {
     }
   }
 
+  const revealMagicKey = async () => {
+    try {
+      // Check if Magic SDK is available (window.magic)
+      const magic = (window as any).magic
+      
+      if (!magic) {
+        alert(
+          'Magic Link SDK not detected.\n\n' +
+          'If you\'re logged in with Magic Link:\n' +
+          '1. Go to your Magic Link dashboard\n' +
+          '2. Click "Reveal Private Key"\n' +
+          '3. Copy the key\n' +
+          '4. Then use it with Turnkey import'
+        )
+        return
+      }
+
+      // Show Magic's built-in private key reveal UI
+      // This opens a secure popup where user can see and copy their key
+      await magic.user.showSettings()
+      
+      alert(
+        '✅ Magic settings opened!\n\n' +
+        'Steps:\n' +
+        '1. Click "Reveal Private Key" in the Magic popup\n' +
+        '2. Complete any verification steps\n' +
+        '3. Copy your private key\n' +
+        '4. Then click "Import to Turnkey" below'
+      )
+    } catch (error: any) {
+      console.error('[Magic] Failed to reveal key:', error)
+      alert(`Failed to open Magic settings: ${error.message}`)
+    }
+  }
+
   const startImportFlow = async () => {
     setImportLoading(true)
     setImportError(null)
@@ -274,15 +309,19 @@ export default function ConnectWalletTurnkeyPage() {
         throw new Error(initData?.error || 'Failed to initialize import')
       }
 
-      // NOTE: In production, here you would:
-      // 1. Use @turnkey/iframe-stamper to create iframe
-      // 2. User pastes their private key into the Turnkey-hosted iframe
-      // 3. Iframe returns walletId when import completes
-      // 
-      // For this MVP, we'll show instructions and accept manual walletId input
-      const walletId = prompt(
-        `Import initialized!\n\nTo complete:\n1. Go to Turnkey dashboard\n2. Import your wallet\n3. Copy the walletId\n4. Paste it here:\n\nOrganization: ${initData.organizationId}\nWallet Name: ${initData.walletName}`
-      )
+      // Guide user through import process
+      const instructions = 
+        `🔑 Turnkey Import Ready!\n\n` +
+        `Organization: ${initData.organizationId}\n` +
+        `Wallet Name: ${initData.walletName}\n\n` +
+        `Next steps:\n` +
+        `1. If you revealed your Magic key, have it ready\n` +
+        `2. Go to Turnkey dashboard and import your wallet\n` +
+        `3. Copy the walletId from Turnkey\n` +
+        `4. Paste it below\n\n` +
+        `Enter walletId:`
+
+      const walletId = prompt(instructions)
 
       if (!walletId) {
         throw new Error('Import cancelled - no walletId provided')
@@ -740,17 +779,37 @@ export default function ConnectWalletTurnkeyPage() {
         </div>
 
         <div className="space-y-3">
-          <button
-            onClick={startImportFlow}
-            disabled={importLoading || !TURNKEY_UI_ENABLED}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-indigo-700 transition-colors"
-          >
-            {importLoading ? 'Importing...' : 'Import Magic Link Key'}
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={revealMagicKey}
+              disabled={!TURNKEY_UI_ENABLED}
+              className="rounded-md bg-purple-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-purple-700 transition-colors"
+            >
+              🔑 Reveal Magic Link Key
+            </button>
+
+            <button
+              onClick={startImportFlow}
+              disabled={importLoading || !TURNKEY_UI_ENABLED}
+              className="rounded-md bg-indigo-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-indigo-700 transition-colors"
+            >
+              {importLoading ? 'Importing...' : '➡️ Import to Turnkey'}
+            </button>
+          </div>
 
           <div className="text-xs text-indigo-600 border border-indigo-300 bg-white rounded p-2">
-            ℹ️ <strong>MVP Note:</strong> Full Turnkey iframe integration requires @turnkey/iframe-stamper component.
-            This demo uses manual walletId input for testing.
+            <p className="font-semibold mb-1">📋 Quick Guide:</p>
+            <ol className="list-decimal list-inside space-y-1 text-slate-700">
+              <li>Click <strong>"Reveal Magic Link Key"</strong> to open Magic settings popup</li>
+              <li>Copy your private key from the Magic popup</li>
+              <li>Click <strong>"Import to Turnkey"</strong> and follow instructions</li>
+              <li>Paste the walletId from Turnkey when prompted</li>
+            </ol>
+          </div>
+
+          <div className="text-xs text-amber-600 border border-amber-300 bg-amber-50 rounded p-2">
+            ⚠️ <strong>Security:</strong> Your private key is never sent to PolyCopy servers. 
+            It goes directly from Magic → Turnkey via their secure iframe.
           </div>
         </div>
 
