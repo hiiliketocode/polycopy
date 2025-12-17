@@ -114,7 +114,13 @@ export async function completeTurnkeyImport(
 
     const wallet = walletResponse.wallet
     if (!wallet || !wallet.accounts || wallet.accounts.length === 0) {
-      throw new Error('Wallet not found or has no accounts')
+      throw new Error(
+        'Wallet not found or has no accounts.\n\n' +
+        'Please verify:\n' +
+        '1. The wallet was imported in Turnkey dashboard\n' +
+        '2. You copied the correct Wallet ID (UUID format)\n' +
+        '3. The wallet exists in your Turnkey organization'
+      )
     }
 
     const address = wallet.accounts[0].address
