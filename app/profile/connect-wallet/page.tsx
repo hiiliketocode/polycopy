@@ -256,39 +256,9 @@ export default function ConnectWalletTurnkeyPage() {
     }
   }
 
-  const revealMagicKey = async () => {
-    try {
-      // Check if Magic SDK is available (window.magic)
-      const magic = (window as any).magic
-      
-      if (!magic) {
-        alert(
-          'Magic Link SDK not detected.\n\n' +
-          'If you\'re logged in with Magic Link:\n' +
-          '1. Go to your Magic Link dashboard\n' +
-          '2. Click "Reveal Private Key"\n' +
-          '3. Copy the key\n' +
-          '4. Then use it with Turnkey import'
-        )
-        return
-      }
-
-      // Show Magic's built-in private key reveal UI
-      // This opens a secure popup where user can see and copy their key
-      await magic.user.showSettings()
-      
-      alert(
-        '✅ Magic settings opened!\n\n' +
-        'Steps:\n' +
-        '1. Click "Reveal Private Key" in the Magic popup\n' +
-        '2. Complete any verification steps\n' +
-        '3. Copy your private key\n' +
-        '4. Then click "Import to Turnkey" below'
-      )
-    } catch (error: any) {
-      console.error('[Magic] Failed to reveal key:', error)
-      alert(`Failed to open Magic settings: ${error.message}`)
-    }
+  const openPolymarketExport = () => {
+    // Open Polymarket's Magic Link key export page in a new tab
+    window.open('https://reveal.magic.link/polymarket', '_blank', 'noreferrer')
   }
 
   const startImportFlow = async () => {
@@ -781,11 +751,11 @@ export default function ConnectWalletTurnkeyPage() {
         <div className="space-y-3">
           <div className="flex gap-3">
             <button
-              onClick={revealMagicKey}
+              onClick={openPolymarketExport}
               disabled={!TURNKEY_UI_ENABLED}
               className="rounded-md bg-purple-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-purple-700 transition-colors"
             >
-              🔑 Reveal Magic Link Key
+              🔑 Open Polymarket Key Export (Magic)
             </button>
 
             <button
@@ -798,18 +768,17 @@ export default function ConnectWalletTurnkeyPage() {
           </div>
 
           <div className="text-xs text-indigo-600 border border-indigo-300 bg-white rounded p-2">
-            <p className="font-semibold mb-1">📋 Quick Guide:</p>
+            <p className="font-semibold mb-1">📋 Instructions:</p>
             <ol className="list-decimal list-inside space-y-1 text-slate-700">
-              <li>Click <strong>"Reveal Magic Link Key"</strong> to open Magic settings popup</li>
-              <li>Copy your private key from the Magic popup</li>
-              <li>Click <strong>"Import to Turnkey"</strong> and follow instructions</li>
-              <li>Paste the walletId from Turnkey when prompted</li>
+              <li>Click <strong>"Open Polymarket Key Export (Magic)"</strong> to open the Polymarket page in a new tab</li>
+              <li>Copy the private key from the Polymarket page</li>
+              <li>Return here and click <strong>"Import to Turnkey"</strong></li>
+              <li>Follow the prompts to complete the secure import</li>
             </ol>
           </div>
 
           <div className="text-xs text-amber-600 border border-amber-300 bg-amber-50 rounded p-2">
-            ⚠️ <strong>Security:</strong> Your private key is never sent to PolyCopy servers. 
-            It goes directly from Magic → Turnkey via their secure iframe.
+            🔒 <strong>Security:</strong> Copy the private key from the Polymarket page and return here to import securely into Turnkey. Your key never touches PolyCopy servers.
           </div>
         </div>
 
