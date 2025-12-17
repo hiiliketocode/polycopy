@@ -269,7 +269,7 @@ export default function ConnectWalletTurnkeyPage() {
     let iframeContainer: HTMLDivElement | null = null
 
     try {
-      // Step 1: Initialize import - get iframe URL
+      // Step 1: Initialize import - get org ID and wallet name
       const initRes = await fetch('/api/turnkey/import/init', {
         method: 'POST',
         credentials: 'include',
@@ -281,12 +281,34 @@ export default function ConnectWalletTurnkeyPage() {
         throw new Error(initData?.error || 'Failed to initialize import')
       }
 
-      const { iframeUrl, activityId, walletName } = initData
+      const { organizationId, walletName, iframeUrl } = initData
 
+      console.log('[Import] Organization ID:', organizationId)
+      console.log('[Import] Wallet Name:', walletName)
       console.log('[Import] Iframe URL:', iframeUrl)
-      console.log('[Import] Activity ID:', activityId)
 
-      // Step 2: Show Turnkey iframe in a modal where user pastes private key
+      // Step 2: Load Turnkey iframe stamper dynamically
+      const { IframeStamper } = await import('@turnkey/iframe-stamper')
+
+      // Step 3: Create iframe stamper instance
+      const iframeStamper = new IframeStamper({
+        iframeUrl: iframeUrl,
+        iframeContainer: document.body,
+        iframeElementId: 'turnkey-import-iframe',
+      })
+
+      // Step 4: Inject iframe and wait for it to be ready
+      await iframeStamper.init()
+
+      console.log('[Import] Iframe stamper initialized')
+
+      // Step 5: Show modal UI around the iframe
+      const iframeElement = document.getElementById('turnkey-import-iframe') as HTMLIFrameElement
+      if (!iframeElement) {
+        throw new Error('Turnkey iframe not found after initialization')
+      }
+
+      // Create modal wrapper
       iframeContainer = document.createElement('div')
       iframeContainer.style.cssText = `
         position: fixed;
@@ -319,19 +341,13 @@ export default function ConnectWalletTurnkeyPage() {
       const instructions = document.createElement('p')
       instructions.innerHTML = `
         <strong style="color: #059669;">✅ Secure Import via Turnkey</strong><br>
-        Paste your Magic Link private key below.<br>
+        Paste your Magic Link private key (from https://reveal.magic.link/polymarket) below.<br>
         <span style="color: #666; font-size: 13px;">Your key is encrypted by Turnkey and never sent to PolyCopy servers.</span>
       `
       instructions.style.cssText = 'margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #333;'
 
-      const iframe = document.createElement('iframe')
-      iframe.src = iframeUrl
-      iframe.style.cssText = 'width: 100%; height: 450px; border: 2px solid #e5e7eb; border-radius: 12px; background: #f9fafb;'
-      
-      // Add loading state to iframe
-      iframe.onload = () => {
-        console.log('[Import] Turnkey iframe loaded')
-      }
+      // Style the iframe
+      iframeElement.style.cssText = 'width: 100%; height: 450px; border: 2px solid #e5e7eb; border-radius: 12px; background: #f9fafb;'
 
       const buttonContainer = document.createElement('div')
       buttonContainer.style.cssText = 'display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end;'
@@ -353,6 +369,7 @@ export default function ConnectWalletTurnkeyPage() {
       cancelBtn.onmouseout = () => { cancelBtn.style.background = '#ef4444' }
       cancelBtn.onclick = () => {
         if (iframeContainer) document.body.removeChild(iframeContainer)
+        iframeStamper.clear()
         setImportLoading(false)
         setImportError('Import cancelled by user')
       }
@@ -379,12 +396,15 @@ export default function ConnectWalletTurnkeyPage() {
         completeBtn.style.cursor = 'wait'
 
         try {
-          // Step 3: Complete import - poll for activity completion
+          // Wait a bit for Turnkey to finish processing
+          await new Promise(resolve => setTimeout(resolve, 2000))
+
+          // Step 6: Complete import - search for wallet and store it
           const completeRes = await fetch('/api/turnkey/import/complete', {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ activityId, walletName }),
+            body: JSON.stringify({ walletName }),
           })
 
           const completeData = await completeRes.json()
@@ -395,6 +415,7 @@ export default function ConnectWalletTurnkeyPage() {
 
           // Success!
           if (iframeContainer) document.body.removeChild(iframeContainer)
+          iframeStamper.clear()
           setImportData(completeData)
           setImportLoading(false)
         } catch (err: any) {
@@ -402,7 +423,7 @@ export default function ConnectWalletTurnkeyPage() {
           completeBtn.disabled = false
           completeBtn.style.opacity = '1'
           completeBtn.style.cursor = 'pointer'
-          alert(`❌ ${err.message}`)
+          alert(`❌ ${err.message}\n\nMake sure you pasted your private key and waited for it to finish importing.`)
         }
       }
 
@@ -411,7 +432,8 @@ export default function ConnectWalletTurnkeyPage() {
 
       iframeWrapper.appendChild(title)
       iframeWrapper.appendChild(instructions)
-      iframeWrapper.appendChild(iframe)
+      // Move iframe into wrapper
+      iframeWrapper.appendChild(iframeElement)
       iframeWrapper.appendChild(buttonContainer)
       iframeContainer.appendChild(iframeWrapper)
       document.body.appendChild(iframeContainer)

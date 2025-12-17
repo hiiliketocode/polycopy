@@ -17,7 +17,6 @@ export interface TurnkeyImportInitResult {
   organizationId: string
   walletName: string
   iframeUrl: string
-  activityId: string
 }
 
 export interface TurnkeyImportCompleteResult {
@@ -29,8 +28,8 @@ export interface TurnkeyImportCompleteResult {
 /**
  * Initialize Turnkey import ceremony for private key import
  * 
- * Creates an ACTIVITY_TYPE_IMPORT_WALLET activity and returns iframe URL
- * The user will paste their private key into the Turnkey iframe (not our app)
+ * Returns configuration for the frontend @turnkey/iframe-stamper
+ * The iframe stamper will handle activity creation and private key collection
  * 
  * The private key is collected by Turnkey's iframe and NEVER sent to our backend
  */
@@ -60,58 +59,31 @@ export async function initTurnkeyImport(
   // Create unique wallet name for this import
   const walletName = `imported-${userId}-${Date.now()}`
 
-  console.log('[POLY-AUTH] Creating import wallet activity...')
+  console.log('[POLY-AUTH] Import initialized')
   console.log('[POLY-AUTH] Wallet name:', walletName)
   console.log('[POLY-AUTH] Organization ID:', client.config.organizationId)
 
-  try {
-    // Create the import wallet activity
-    const importActivityResponse = await client.turnkeyClient.importWallet({
-      organizationId: client.config.organizationId,
-      timestampMs: String(Date.now()),
-      type: 'ACTIVITY_TYPE_IMPORT_WALLET',
-      parameters: {
-        walletName,
-        accounts: [
-          {
-            curve: 'CURVE_SECP256K1',
-            addressFormat: 'ADDRESS_FORMAT_ETHEREUM',
-            pathFormat: 'PATH_FORMAT_BIP32',
-            path: "m/44'/60'/0'/0/0",
-          },
-        ],
-      },
-    })
-
-    const activityId = importActivityResponse.activity.id
-    console.log('[POLY-AUTH] Import activity created:', activityId)
-
-    // Generate iframe URL for this import activity
-    // The Turnkey iframe URL follows the pattern:
-    // https://auth.turnkey.com/turnkey/{orgId}/{activityType}/{activityId}
-    const iframeUrl = `https://auth.turnkey.com/turnkey/${client.config.organizationId}/import/${activityId}`
-
-    return {
-      organizationId: client.config.organizationId,
-      walletName,
-      iframeUrl,
-      activityId,
-    }
-  } catch (error: any) {
-    console.error('[POLY-AUTH] Failed to create import activity:', error)
-    throw new Error(`Failed to initialize import: ${error.message}`)
+  // Return configuration for iframe stamper
+  // The frontend will use @turnkey/iframe-stamper to:
+  // 1. Create the iframe
+  // 2. User enters private key
+  // 3. Iframe creates the import activity
+  // 4. Returns wallet ID when complete
+  return {
+    organizationId: client.config.organizationId,
+    walletName,
+    iframeUrl: 'https://auth.turnkey.com', // Base URL, iframe stamper will handle the rest
   }
 }
 
 /**
- * Complete Turnkey import by polling for activity completion
+ * Complete Turnkey import by searching for wallet by name
  * 
- * Polls the import activity until it completes (or fails/times out)
- * Then stores the wallet reference in our database
+ * After the frontend iframe stamper completes the import,
+ * we search for the wallet by name and store it in our database
  */
 export async function completeTurnkeyImport(
   userId: string,
-  activityId: string,
   walletName: string
 ): Promise<TurnkeyImportCompleteResult> {
   const client = getTurnkeyClient()
@@ -120,7 +92,7 @@ export async function completeTurnkeyImport(
   }
 
   console.log('[POLY-AUTH] Completing import for user:', userId)
-  console.log('[POLY-AUTH] Activity ID:', activityId)
+  console.log('[POLY-AUTH] Searching for wallet:', walletName)
 
   // Check if already stored (idempotency)
   const { data: existing } = await supabaseServiceRole
@@ -140,35 +112,43 @@ export async function completeTurnkeyImport(
   }
 
   try {
-    // Poll for activity completion
-    console.log('[POLY-AUTH] Polling for activity completion...')
-    const poller = createActivityPoller({
-      client: client.turnkeyClient,
-      requestFn: (input: { organizationId: string; activityId: string }) =>
-        client.turnkeyClient.getActivity(input),
-    })
-
-    const completedActivity = await poller({
+    // Search for the wallet by name in Turnkey
+    console.log('[POLY-AUTH] Fetching wallets from Turnkey...')
+    const walletsResponse = await client.turnkeyClient.getWallets({
       organizationId: client.config.organizationId,
-      activityId,
     })
 
-    if (completedActivity.status !== 'ACTIVITY_STATUS_COMPLETED') {
+    console.log(`[POLY-AUTH] Found ${walletsResponse.wallets.length} wallets in org`)
+
+    // Find the wallet with matching name
+    const matchingWallet = walletsResponse.wallets.find(
+      (w: any) => w.walletName === walletName
+    )
+
+    if (!matchingWallet) {
+      // Log available wallets for debugging
+      if (walletsResponse.wallets.length > 0) {
+        console.log('[POLY-AUTH] Available wallets:')
+        walletsResponse.wallets.forEach((w: any) => {
+          console.log(`  - ${w.walletName} (ID: ${w.walletId})`)
+        })
+      }
+
       throw new Error(
-        `Import activity failed with status: ${completedActivity.status}`
+        `Wallet not found: "${walletName}"\n\n` +
+        `Please ensure the wallet was successfully imported in the Turnkey iframe.\n` +
+        `If you just imported, wait 10-30 seconds and try again.`
       )
     }
 
-    const walletId = completedActivity.result?.importWalletResult?.walletId
-    const addresses = completedActivity.result?.importWalletResult?.walletAddresses
+    const walletId = matchingWallet.walletId
+    const address = matchingWallet.accounts?.[0]?.address
 
-    if (!walletId || !addresses || addresses.length === 0) {
-      throw new Error('Import completed but wallet ID or address not found in result')
+    if (!address) {
+      throw new Error('Wallet found but has no accounts')
     }
 
-    const address = addresses[0].address
-
-    console.log('[POLY-AUTH] Import completed successfully')
+    console.log('[POLY-AUTH] Wallet found successfully')
     console.log('[POLY-AUTH] Wallet ID:', walletId)
     console.log('[POLY-AUTH] Address:', address)
 
