@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { TURNKEY_ENABLED, TURNKEY_IMPORT_USER_ID } from '@/lib/turnkey/config'
-import { importEncryptedPrivateKey } from '@/lib/turnkey/import'
+import { TURNKEY_ENABLED } from '@/lib/turnkey/config'
+import { ApiKeyStamper } from '@turnkey/api-key-stamper'
+import { TurnkeyClient } from '@turnkey/http'
+import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
 
 // Dev bypass
 const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development' && process.env.TURNKEY_DEV_BYPASS_USER_ID
@@ -14,9 +16,116 @@ const RAW_KEY_PATTERNS = [
   /\b0x[0-9a-fA-F]{64}\b/, // 64 hex chars (with 0x)
 ]
 
+const TURNKEY_IMPORT_USER_ID = process.env.TURNKEY_IMPORT_USER_ID
+const TURNKEY_IMPORT_API_PUBLIC_KEY = process.env.TURNKEY_IMPORT_API_PUBLIC_KEY
+const TURNKEY_IMPORT_API_PRIVATE_KEY = process.env.TURNKEY_IMPORT_API_PRIVATE_KEY
+const TURNKEY_ORGANIZATION_ID = process.env.TURNKEY_ORGANIZATION_ID
+const TURNKEY_BASE_URL = process.env.TURNKEY_BASE_URL || 'https://api.turnkey.com'
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+class StageError extends Error {
+  stage: string
+  status: number
+  constructor(stage: string, message: string, status = 500) {
+    super(message)
+    this.stage = stage
+    this.status = status
+  }
+}
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error('SUPABASE env vars missing for admin client')
+}
+
+const supabaseAdmin = createSupabaseAdminClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+})
+
 function containsRawPrivateKey(body: any): boolean {
   const bodyStr = JSON.stringify(body)
   return RAW_KEY_PATTERNS.some(pattern => pattern.test(bodyStr))
+}
+
+function getImportClient() {
+  const missing: string[] = []
+  if (!TURNKEY_IMPORT_USER_ID) missing.push('TURNKEY_IMPORT_USER_ID')
+  if (!TURNKEY_IMPORT_API_PUBLIC_KEY) missing.push('TURNKEY_IMPORT_API_PUBLIC_KEY')
+  if (!TURNKEY_IMPORT_API_PRIVATE_KEY) missing.push('TURNKEY_IMPORT_API_PRIVATE_KEY')
+  if (!TURNKEY_ORGANIZATION_ID) missing.push('TURNKEY_ORGANIZATION_ID')
+
+  if (missing.length > 0) {
+    throw new Error('Missing environment variables: ' + missing.join(', '))
+  }
+
+  const stamper = new ApiKeyStamper({
+    apiPublicKey: TURNKEY_IMPORT_API_PUBLIC_KEY!,
+    apiPrivateKey: TURNKEY_IMPORT_API_PRIVATE_KEY!,
+  })
+
+  return new TurnkeyClient(
+    {
+      baseUrl: TURNKEY_BASE_URL,
+    },
+    stamper
+  )
+}
+
+/**
+ * GET /api/turnkey/import-private-key
+ *
+ * Returns the import bundle for client-side encryption (no plaintext keys).
+ */
+export async function GET() {
+  if (!TURNKEY_ENABLED) {
+    return NextResponse.json(
+      { error: 'Turnkey is not enabled', stage: 'env' },
+      { status: 503 }
+    )
+  }
+
+  try {
+    const client = getImportClient()
+    const initResult = await client.initImportPrivateKey({
+      type: 'ACTIVITY_TYPE_INIT_IMPORT_PRIVATE_KEY',
+      timestampMs: String(Date.now()),
+      organizationId: TURNKEY_ORGANIZATION_ID!,
+      parameters: {
+        userId: TURNKEY_IMPORT_USER_ID!,
+      },
+    })
+
+    const importBundle =
+      (initResult as any)?.activity?.result?.initImportPrivateKeyResult?.importBundle
+
+    if (!importBundle) {
+      return NextResponse.json(
+        { error: 'Failed to obtain import bundle from Turnkey' },
+        { status: 500 }
+      )
+    }
+
+    console.log(
+      `[TURNKEY-IMPORT-API] Import bundle ready (len=${importBundle.length})`
+    )
+
+    return NextResponse.json({
+      ok: true,
+      importBundle,
+      organizationId: TURNKEY_ORGANIZATION_ID,
+      userId: TURNKEY_IMPORT_USER_ID,
+      bundleLength: importBundle.length,
+    })
+  } catch (error: any) {
+    console.error('[TURNKEY-IMPORT-API] Init bundle error:', error.message)
+    return NextResponse.json(
+      { error: error.message || 'Failed to load import bundle' },
+      { status: 500 }
+    )
+  }
 }
 
 /**
@@ -52,12 +161,27 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  const missingEnv: string[] = []
+  if (!TURNKEY_IMPORT_API_PUBLIC_KEY) missingEnv.push('TURNKEY_IMPORT_API_PUBLIC_KEY')
+  if (!TURNKEY_IMPORT_API_PRIVATE_KEY) missingEnv.push('TURNKEY_IMPORT_API_PRIVATE_KEY')
+  if (!TURNKEY_ORGANIZATION_ID) missingEnv.push('TURNKEY_ORGANIZATION_ID')
+
+  if (missingEnv.length > 0) {
+    console.error('[TURNKEY-IMPORT-API] Missing env:', missingEnv.join(', '))
+    return NextResponse.json(
+      { ok: false, error: 'Missing env: ' + missingEnv.join(', ') },
+      { status: 500 }
+    )
+  }
+
   try {
+    const importClient = getImportClient()
+
     // Authenticate user
     const supabase = await createClient()
     const {
       data: { user },
-      error: authError,
+      error: _authError,
     } = await supabase.auth.getUser()
 
     let userId: string | null = null
@@ -71,7 +195,7 @@ export async function POST(request: NextRequest) {
 
     if (!userId) {
       return NextResponse.json(
-        { error: 'Unauthorized - please log in' },
+        { error: 'Unauthorized - please log in', stage: 'auth' },
         { status: 401 }
       )
     }
@@ -106,14 +230,14 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!polymarket_account_address) {
       return NextResponse.json(
-        { error: 'polymarket_account_address is required' },
+        { error: 'polymarket_account_address is required', stage: 'parse' },
         { status: 400 }
       )
     }
 
     if (!encryptedBundle) {
       return NextResponse.json(
-        { error: 'encryptedBundle is required' },
+        { error: 'encryptedBundle is required', stage: 'parse' },
         { status: 400 }
       )
     }
@@ -129,7 +253,7 @@ export async function POST(request: NextRequest) {
       // Could be JSON string or hex string
       if (encryptedBundle.length < 50) {
         return NextResponse.json(
-          { ok: false, error: 'Invalid encryptedBundle format: too short' },
+          { ok: false, error: 'Invalid encryptedBundle format: too short', stage: 'parse' },
           { status: 400 }
         )
       }
@@ -140,7 +264,7 @@ export async function POST(request: NextRequest) {
       console.log('[TURNKEY-IMPORT] Received object, stringified to JSON')
     } else {
       return NextResponse.json(
-        { ok: false, error: 'Invalid encryptedBundle format: must be string or object' },
+        { ok: false, error: 'Invalid encryptedBundle format: must be string or object', stage: 'parse' },
         { status: 400 }
       )
     }
@@ -150,15 +274,13 @@ export async function POST(request: NextRequest) {
 
     // Idempotency: Check if already imported in DB before calling Turnkey
     // Reuse the supabase client created above for auth
-    const { data: existingWallet } = await supabase
+    const { data: existingWallet } = await supabaseAdmin
       .from('turnkey_wallets')
-      .select('*')
+      .select('user_id, turnkey_private_key_id, eoa_address, wallet_type')
       .eq('user_id', userId)
-      .eq('polymarket_account_address', polymarket_account_address)
-      .eq('wallet_type', 'imported_magic')
-      .single()
+      .maybeSingle()
 
-    if (existingWallet) {
+    if (existingWallet?.wallet_type === 'imported_magic') {
       console.log('[TURNKEY-IMPORT-API] Wallet already imported (DB), returning existing')
       return NextResponse.json({
         ok: true,
@@ -170,28 +292,82 @@ export async function POST(request: NextRequest) {
     }
 
     // Import the encrypted private key
-    const result = await importEncryptedPrivateKey(
-      userId,
-      polymarket_account_address,
-      normalizedBundle
+    const privateKeyName = `imported-magic-${userId}-${Date.now()}`
+    console.log(
+      `[TURNKEY-IMPORT-API] Importing encrypted bundle (len=${normalizedBundle.length})`
     )
 
-    console.log('[TURNKEY-IMPORT-API] Import successful, status:', result.status || 'new')
+    const importResponse = await importClient.importPrivateKey({
+      type: 'ACTIVITY_TYPE_IMPORT_PRIVATE_KEY',
+      timestampMs: String(Date.now()),
+      organizationId: TURNKEY_ORGANIZATION_ID!,
+      parameters: {
+        userId: TURNKEY_IMPORT_USER_ID!,
+        privateKeyName,
+        encryptedBundle: normalizedBundle,
+        curve: 'CURVE_SECP256K1',
+        addressFormats: ['ADDRESS_FORMAT_ETHEREUM'],
+      },
+    })
+
+    const activity = (importResponse as any)?.activity
+    const importResult =
+      activity?.result?.importPrivateKeyResult ||
+      activity?.result?.importPrivateKeyResultV2
+
+    if (!activity || activity.status !== 'ACTIVITY_STATUS_COMPLETED') {
+      throw new Error(
+        `Turnkey import activity not completed (status=${activity?.status || 'unknown'})`
+      )
+    }
+
+    const privateKeyId = importResult?.privateKeyId
+    const addresses = importResult?.addresses || []
+    const address = addresses[0]?.address
+
+    if (!privateKeyId || !address) {
+      throw new Error('Import result missing privateKeyId or address')
+    }
+
+    const { data: upsertedWallet, error: upsertError } = await supabaseAdmin
+      .from('turnkey_wallets')
+      .upsert(
+        {
+          user_id: userId,
+          turnkey_wallet_id: privateKeyId,
+          turnkey_sub_org_id: TURNKEY_ORGANIZATION_ID!,
+          turnkey_private_key_id: privateKeyId,
+          eoa_address: address,
+          polymarket_account_address,
+          wallet_type: 'imported_magic',
+        },
+        { onConflict: 'user_id' }
+      )
+      .select('turnkey_private_key_id, eoa_address')
+      .single()
+
+    if (upsertError) {
+      console.error('[TURNKEY-IMPORT-API] Failed to store wallet row:', upsertError)
+      throw new StageError('db_upsert', upsertError.message || 'Failed to store wallet reference')
+    }
+
+    console.log('[TURNKEY-IMPORT-API] Import successful and stored')
 
     return NextResponse.json({
       ok: true,
-      status: result.status || 'imported',
-      walletId: result.walletId,
-      address: result.address,
-      alreadyImported: result.alreadyImported,
+      status: 'imported',
+      walletId: upsertedWallet.turnkey_private_key_id,
+      address: upsertedWallet.eoa_address,
+      alreadyImported: false,
     })
   } catch (error: any) {
-    console.error('[TURNKEY-IMPORT-API] Import error:', error.message)
+    const stage = error?.stage || 'turnkey_import'
+    const status = error?.status || 500
+    console.error(`[TURNKEY-IMPORT-API] Import error (${stage}):`, error.message || error)
     // DO NOT log error.stack as it might contain sensitive data
     return NextResponse.json(
-      { error: error.message || 'Failed to import private key' },
-      { status: 500 }
+      { error: error.message || 'Failed to import private key', stage },
+      { status }
     )
   }
 }
-

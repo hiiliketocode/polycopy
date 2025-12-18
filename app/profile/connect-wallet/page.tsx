@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { verifyMessage } from 'ethers'
 
 const TURNKEY_UI_ENABLED = process.env.NEXT_PUBLIC_TURNKEY_ENABLED === 'true'
@@ -79,6 +79,49 @@ export default function ConnectWalletTurnkeyPage() {
     address: string
     alreadyImported?: boolean
   } | null>(null)
+  const [magicPrivateKey, setMagicPrivateKey] = useState('')
+  const [importBundle, setImportBundle] = useState<string | null>(null)
+  const [importOrgId, setImportOrgId] = useState<string | null>(null)
+  const [importUserId, setImportUserId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchImportBundle = async () => {
+      try {
+        const res = await fetch('/api/turnkey/import-private-key', {
+          method: 'GET',
+          credentials: 'include',
+        })
+        const data = await res.json()
+
+        if (!res.ok) {
+          throw new Error(data?.error || 'Failed to load import configuration')
+        }
+
+        if (!cancelled) {
+          setImportBundle(data.importBundle || null)
+          setImportOrgId(data.organizationId || null)
+          setImportUserId(data.userId || null)
+          console.log(
+            `[Import] Loaded import bundle len=${(data.importBundle || '').length}`
+          )
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setImportError(err?.message || 'Failed to load import configuration')
+        }
+      }
+    }
+
+    if (TURNKEY_UI_ENABLED) {
+      fetchImportBundle()
+    }
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const createWallet = async () => {
     setCreateLoading(true)
@@ -262,260 +305,77 @@ export default function ConnectWalletTurnkeyPage() {
   }
 
   const startImportFlow = async () => {
+    const trimmedKey = magicPrivateKey.trim()
+    if (!trimmedKey) {
+      setImportError('Paste your Magic private key (0x...) before importing')
+      setImportData(null)
+      return
+    }
+    if (!trimmedKey.startsWith('0x') || trimmedKey.length !== 66) {
+      setImportError('Private key must start with 0x and be 66 chars long')
+      setImportData(null)
+      return
+    }
+    if (!polymarketAddress.trim()) {
+      setImportError('Enter your Polymarket wallet address before importing')
+      setImportData(null)
+      return
+    }
+    if (!importBundle || !importOrgId || !importUserId) {
+      setImportError('Import bundle not loaded. Please refresh and try again.')
+      setImportData(null)
+      return
+    }
+
     setImportLoading(true)
     setImportError(null)
     setImportData(null)
 
-    let iframeContainer: HTMLDivElement | null = null
-    let tempContainer: HTMLDivElement | null = null
-    let iframeStamper: any = null
-
     try {
-      // Step 1: Initialize import - get import bundle from backend
-      console.log('[Import] Step 1: Initializing import...')
-      
-      const initRes = await fetch('/api/turnkey/import/init', {
+      const { encryptPrivateKeyToBundle } = await import('@turnkey/crypto')
+
+      const encryptedBundleString = await encryptPrivateKeyToBundle({
+        privateKey: trimmedKey,
+        keyFormat: 'HEXADECIMAL',
+        importBundle,
+        userId: importUserId,
+        organizationId: importOrgId,
+      })
+
+      console.log(
+        `[Import] Encrypted bundle created (len=${encryptedBundleString.length})`
+      )
+
+      let encryptedBundle: Record<string, any>
+      try {
+        encryptedBundle = JSON.parse(encryptedBundleString)
+      } catch (parseErr) {
+        throw new Error('Failed to parse encrypted bundle JSON from Turnkey SDK')
+      }
+
+      const res = await fetch('/api/turnkey/import-private-key', {
         method: 'POST',
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          polymarket_account_address: polymarketAddress.trim(),
+          encryptedBundle,
+        }),
       })
 
-      const initData = await initRes.json()
-
-      if (!initRes.ok) {
-        throw new Error(initData?.error || 'Failed to initialize import')
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to import wallet')
       }
 
-      const { organizationId, privateKeyName, userId, importBundle } = initData
-
-      console.log('[Import] Organization ID:', organizationId)
-      console.log('[Import] Private key name:', privateKeyName)
-      console.log('[Import] Import bundle obtained')
-
-      // Step 2: Create Turnkey iframe with import UI
-      // https://docs.turnkey.com/embedded-wallets/code-examples/import
-      console.log('[Import] Step 2: Creating Turnkey import iframe...')
-      
-      const { IframeStamper } = await import('@turnkey/iframe-stamper')
-
-      // Create container for iframe
-      tempContainer = document.createElement('div')
-      tempContainer.id = 'turnkey-iframe-container'
-      document.body.appendChild(tempContainer)
-
-      // Create iframe stamper pointing to official Turnkey import UI
-      iframeStamper = new IframeStamper({
-        iframeUrl: 'https://import.turnkey.com',
-        iframeContainer: tempContainer,
-        iframeElementId: 'turnkey-import-iframe',
+      setImportData({
+        walletId: data.walletId,
+        address: data.address,
+        alreadyImported: data.alreadyImported,
       })
-
-      // Initialize the iframe (inserts it in the DOM)
-      await iframeStamper.init()
-      
-      console.log('[Import] Iframe initialized - Turnkey import UI loaded')
-
-      // Inject the import bundle into the iframe
-      // This configures the iframe with the encryption keys
-      console.log('[Import] Injecting import bundle...')
-      const injected = await iframeStamper.injectImportBundle(importBundle, organizationId)
-
-      if (!injected) {
-        throw new Error('Failed to inject import bundle into iframe')
-      }
-
-      console.log('[Import] Import bundle injected successfully')
-      console.log('[Import] User can now enter their private key in the iframe')
-
-      // Step 3: Get the iframe element to display in modal
-      const iframeElement = document.getElementById('turnkey-import-iframe') as HTMLIFrameElement
-      if (!iframeElement) {
-        throw new Error('Turnkey iframe not found after initialization')
-      }
-
-      // Create modal UI
-      iframeContainer = document.createElement('div')
-      iframeContainer.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.9);
-        z-index: 10000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        backdrop-filter: blur(4px);
-      `
-
-      const modal = document.createElement('div')
-      modal.style.cssText = `
-        background: white;
-        border-radius: 16px;
-        padding: 32px;
-        max-width: 700px;
-        width: 90%;
-        max-height: 90vh;
-        overflow-y: auto;
-        box-shadow: 0 25px 100px rgba(0,0,0,0.5);
-      `
-
-      const title = document.createElement('h2')
-      title.textContent = '🔑 Import Private Key Securely'
-      title.style.cssText = 'margin: 0 0 12px 0; font-size: 24px; font-weight: 700; color: #1a1a1a;'
-
-      const subtitle = document.createElement('p')
-      subtitle.innerHTML = `
-        <strong style="color: #059669;">✅ Secure Turnkey Import</strong><br>
-        Paste your Magic Link private key below.<br>
-        <span style="color: #666; font-size: 13px;">Get it from: <a href="https://reveal.magic.link/polymarket" target="_blank">reveal.magic.link/polymarket</a></span>
-      `
-      subtitle.style.cssText = 'margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #333;'
-
-      const securityNote = document.createElement('div')
-      securityNote.innerHTML = `
-        <strong>🔒 Security:</strong><br>
-        • Your key is encrypted in this Turnkey iframe<br>
-        • PolyCopy backend NEVER sees your plaintext key<br>
-        • Key is transmitted directly to Turnkey's secure enclave
-      `
-      securityNote.style.cssText = 'margin: 0 0 20px 0; padding: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; font-size: 13px; color: #166534; line-height: 1.6;'
-
-      // Style the iframe
-      iframeElement.style.cssText = 'width: 100%; height: 400px; border: 2px solid #e5e7eb; border-radius: 12px; background: #f9fafb; margin-bottom: 20px;'
-
-      const buttonContainer = document.createElement('div')
-      buttonContainer.style.cssText = 'display: flex; gap: 12px; justify-content: flex-end;'
-
-      const cancelBtn = document.createElement('button')
-      cancelBtn.textContent = 'Cancel'
-      cancelBtn.style.cssText = `
-        padding: 12px 24px;
-        background: #ef4444;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: 600;
-        font-size: 14px;
-      `
-      cancelBtn.onclick = () => {
-        if (iframeContainer) document.body.removeChild(iframeContainer)
-        iframeStamper.clear()
-        setImportLoading(false)
-        setImportError('Import cancelled by user')
-      }
-
-      const completeBtn = document.createElement('button')
-      completeBtn.textContent = 'I\'ve Entered My Key - Complete Import'
-      completeBtn.style.cssText = `
-        padding: 12px 24px;
-        background: #10b981;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: 600;
-        font-size: 14px;
-      `
-      completeBtn.onclick = async () => {
-        completeBtn.textContent = 'Extracting & Importing...'
-        completeBtn.disabled = true
-        completeBtn.style.opacity = '0.6'
-
-        try {
-          // Step 4: Extract the encrypted bundle from the iframe
-          // https://docs.turnkey.com/embedded-wallets/code-examples/import
-          console.log('[Import] Extracting encrypted bundle from iframe...')
-          
-          // Use 'HEXADECIMAL' format for Ethereum keys (default for MetaMask, etc.)
-          const encryptedBundle = await iframeStamper.extractKeyEncryptedBundle('HEXADECIMAL')
-          
-          if (!encryptedBundle) {
-            throw new Error('Failed to extract encrypted bundle. Please make sure you entered your private key in the form above.')
-          }
-
-          console.log('[Import] Encrypted bundle extracted successfully')
-          console.log('[Import] Private key was encrypted client-side by Turnkey iframe')
-
-          // Step 5: Import the encrypted private key via Turnkey API
-          console.log('[Import] Importing encrypted private key to Turnkey...')
-          
-          // We need to call the Turnkey API directly here with the encrypted bundle
-          // This happens client-side but the encrypted bundle is sent to Turnkey, not PolyCopy
-          const { Turnkey } = await import('@turnkey/sdk-browser')
-          
-          const turnkey = new Turnkey({
-            apiBaseUrl: 'https://api.turnkey.com',
-            defaultOrganizationId: organizationId,
-            stamper: iframeStamper,
-          })
-
-          const importResult = await turnkey.importPrivateKey({
-            type: 'ACTIVITY_TYPE_IMPORT_PRIVATE_KEY',
-            timestampMs: String(Date.now()),
-            organizationId,
-            parameters: {
-              privateKeyName,
-              encryptedBundle,
-              curve: 'CURVE_SECP256K1',
-              addressFormats: ['ADDRESS_FORMAT_ETHEREUM'],
-            },
-          })
-
-          console.log('[Import] Private key imported to Turnkey successfully')
-
-          // Step 6: Store wallet reference in our database
-          console.log('[Import] Storing wallet reference...')
-
-          const completeRes = await fetch('/api/turnkey/import/complete', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ privateKeyName }),
-          })
-
-          const completeData = await completeRes.json()
-
-          if (!completeRes.ok) {
-            throw new Error(completeData?.error || 'Failed to store wallet reference')
-          }
-
-          // Success!
-          if (iframeContainer) document.body.removeChild(iframeContainer)
-          if (tempContainer) document.body.removeChild(tempContainer)
-          iframeStamper.clear()
-          setImportData(completeData)
-          setImportLoading(false)
-        } catch (err: any) {
-          completeBtn.textContent = 'Retry'
-          completeBtn.disabled = false
-          completeBtn.style.opacity = '1'
-          alert(`❌ ${err.message}\n\nMake sure you entered your private key in the Turnkey form above.`)
-        }
-      }
-
-      buttonContainer.appendChild(cancelBtn)
-      buttonContainer.appendChild(completeBtn)
-
-      modal.appendChild(title)
-      modal.appendChild(subtitle)
-      modal.appendChild(securityNote)
-      modal.appendChild(iframeElement)
-      modal.appendChild(buttonContainer)
-      iframeContainer.appendChild(modal)
-      document.body.appendChild(iframeContainer)
-
-      console.log('[Import] Import iframe UI ready - waiting for user to paste key...')
     } catch (err: any) {
-      if (iframeContainer) {
-        try {
-          document.body.removeChild(iframeContainer)
-        } catch (e) {
-          // Iframe already removed
-        }
-      }
       setImportError(err?.message || 'Failed to import wallet')
+    } finally {
       setImportLoading(false)
     }
   }
@@ -807,13 +667,31 @@ export default function ConnectWalletTurnkeyPage() {
         <div>
           <h2 className="text-xl font-semibold text-indigo-900">Import Wallet (Magic Link Private Key)</h2>
           <p className="text-sm text-indigo-700">
-            Securely import your Magic Link private key via Turnkey iframe.
+            Paste your Magic Link private key, encrypt locally, and send directly to Turnkey (no iframe).
             <br />
-            <strong>Note:</strong> Your private key never touches PolyCopy servers - it goes directly to Turnkey.
+            <strong>Note:</strong> PolyCopy never sees your plaintext key; only the encrypted bundle is posted.
           </p>
         </div>
 
         <div className="space-y-3">
+          {TURNKEY_UI_ENABLED && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Paste Magic private key (0x...)
+              </label>
+              <textarea
+                value={magicPrivateKey}
+                onChange={(e) => setMagicPrivateKey(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono text-sm"
+              placeholder="0x..."
+              rows={3}
+            />
+            <p className="text-xs text-slate-600 mt-1">
+                Keep the key here. It will be encrypted in the browser and sent directly to Turnkey.
+            </p>
+          </div>
+        )}
+
           <button
             onClick={startImportFlow}
             disabled={importLoading || !TURNKEY_UI_ENABLED}
@@ -823,8 +701,7 @@ export default function ConnectWalletTurnkeyPage() {
           </button>
 
           <div className="text-xs text-indigo-600 border border-indigo-300 bg-white rounded p-2">
-            ℹ️ <strong>MVP Note:</strong> Full Turnkey iframe integration requires @turnkey/iframe-stamper component.
-            This demo uses manual walletId input for testing.
+            ℹ️ <strong>Security:</strong> Key is encrypted client-side with Turnkey HPKE bundle; backend never sees plaintext.
           </div>
         </div>
 
@@ -946,10 +823,28 @@ export default function ConnectWalletTurnkeyPage() {
       <section className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 space-y-3">
         <div>
           <h2 className="text-xl font-semibold text-indigo-900">Import Magic Link Wallet</h2>
-          <p className="text-sm text-indigo-700">Securely import your Magic Link private key via Turnkey iframe</p>
+          <p className="text-sm text-indigo-700">Paste your Magic private key, encrypt in-browser, and import to Turnkey (no iframe).</p>
         </div>
 
         <div className="space-y-3">
+          {TURNKEY_UI_ENABLED && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Paste Magic private key (0x...)
+              </label>
+              <textarea
+                value={magicPrivateKey}
+                onChange={(e) => setMagicPrivateKey(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono text-sm"
+                placeholder="0x..."
+                rows={3}
+              />
+              <p className="text-xs text-slate-600 mt-1">
+                Key stays in the browser; encrypted bundle only is sent to Turnkey.
+              </p>
+            </div>
+          )}
+
           <div className="flex gap-3">
             <button
               onClick={openPolymarketExport}
@@ -972,14 +867,14 @@ export default function ConnectWalletTurnkeyPage() {
             <p className="font-semibold mb-1">📋 Instructions:</p>
             <ol className="list-decimal list-inside space-y-1 text-slate-700">
               <li>Click <strong>"Open Polymarket Key Export (Magic)"</strong> to open the Polymarket page in a new tab</li>
-              <li>Copy the private key from the Polymarket page</li>
+              <li>Copy the private key from the Polymarket page and paste it into the textarea above</li>
               <li>Return here and click <strong>"Import to Turnkey"</strong></li>
-              <li>Follow the prompts to complete the secure import</li>
+              <li>Key is encrypted locally and sent directly to Turnkey</li>
             </ol>
           </div>
 
           <div className="text-xs text-amber-600 border border-amber-300 bg-amber-50 rounded p-2">
-            🔒 <strong>Security:</strong> Copy the private key from the Polymarket page and return here to import securely into Turnkey. Your key never touches PolyCopy servers.
+            🔒 <strong>Security:</strong> Private key is encrypted in the browser and never sent to PolyCopy servers. Only the encrypted bundle goes to Turnkey.
           </div>
         </div>
 
@@ -1013,7 +908,7 @@ export default function ConnectWalletTurnkeyPage() {
 
             <div className="border-t border-green-300 pt-2 mt-2">
               <p className="text-xs text-slate-600">
-                🔒 <strong>Security Note:</strong> Your private key was imported securely via Turnkey's iframe. PolyCopy never saw your plaintext key.
+                🔒 <strong>Security Note:</strong> Your private key was encrypted client-side and imported to Turnkey; PolyCopy never saw your plaintext key.
               </p>
             </div>
           </div>
