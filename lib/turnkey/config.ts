@@ -1,4 +1,8 @@
-import type { TurnkeyConfig } from './types'
+export type TurnkeyConfig = {
+  publicKey: string
+  privateKey: string
+  organizationId: string
+}
 
 export const TURNKEY_ENABLED = process.env.TURNKEY_ENABLED === 'true'
 
