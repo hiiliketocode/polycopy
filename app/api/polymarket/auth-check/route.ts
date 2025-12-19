@@ -118,7 +118,7 @@ export async function GET() {
       'api_key, api_secret_encrypted, api_passphrase_encrypted, enc_kid'
     )
 
-    if (!credentialResult.error) {
+    if (!credentialResult.error && credentialResult.data) {
       credential = credentialResult.data
     }
     credentialError = credentialResult.error
