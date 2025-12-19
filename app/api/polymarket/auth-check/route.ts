@@ -118,10 +118,21 @@ export async function GET() {
       'api_key, api_secret_encrypted, api_passphrase_encrypted, enc_kid'
     )
 
-    if (!credentialResult.error && credentialResult.data) {
-      credential = credentialResult.data
+    const credentialData = credentialResult.data as
+      | {
+          api_key: string
+          api_secret_encrypted: string
+          api_passphrase_encrypted: string
+          enc_kid?: string | null
+        }
+      | null
+
+    const credentialErr = credentialResult.error
+
+    if (!credentialErr && credentialData) {
+      credential = credentialData
     }
-    credentialError = credentialResult.error
+    credentialError = credentialErr
 
     if (credentialError?.code === '42703') {
       const legacyResult = await fetchCredential('api_key, api_secret_encrypted, api_passphrase_encrypted')
