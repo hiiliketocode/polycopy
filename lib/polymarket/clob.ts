@@ -77,7 +77,7 @@ export async function createOrDeriveApiCredentials(
     console.log('[CLOB] Has passphrase:', !!creds.passphrase)
     
     return {
-      key: creds.apiKey,
+      key: (creds as any).apiKey ?? creds.key,
       secret: creds.secret,
       passphrase: creds.passphrase,
     }
