@@ -61,8 +61,8 @@ export async function POST(request: NextRequest) {
     )
 
     const order = await client.createOrder(
-      { tokenID: tokenId, price, amount, side: 'SELL' },
-      { signatureType }
+      { tokenID: tokenId, price, size: amount, side: 'SELL' as any },
+      { signatureType } as any
     )
 
     const result = await client.postOrder(order, 'GTC' as any, false)
