@@ -1,9 +1,21 @@
 import { TurnkeyClient, createActivityPoller } from '@turnkey/http'
 import { ApiKeyStamper } from '@turnkey/api-key-stamper'
 import { TURNKEY_ENABLED, loadTurnkeyConfig } from './config'
-import type { TurnkeyClient as TurnkeyClientType, TurnkeyRequestOptions } from './types'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 import { _TypedDataEncoder as TypedDataEncoder } from 'ethers/lib/utils'
+
+type TurnkeyRequestOptions<TBody = unknown> = {
+  endpoint: string
+  method?: string
+  body?: TBody
+}
+
+type TurnkeyClientWrapper = {
+  isEnabled: true
+  config: NonNullable<ReturnType<typeof loadTurnkeyConfig>>
+  call: <TResponse, TBody = unknown>(options: TurnkeyRequestOptions<TBody>) => Promise<TResponse>
+  turnkeyClient: TurnkeyClient
+}
 
 const TURNKEY_BASE_URL =
   process.env.TURNKEY_BASE_URL || 'https://api.turnkey.com'
@@ -13,7 +25,7 @@ const TURNKEY_BASE_URL =
  * - With TURNKEY_ENABLED=false, returns null and does nothing.
  * - With TURNKEY_ENABLED=true, validates required env vars and makes signed API calls.
  */
-export function getTurnkeyClient(): TurnkeyClientType | null {
+export function getTurnkeyClient(): TurnkeyClientWrapper | null {
   if (!TURNKEY_ENABLED) return null
 
   const config = loadTurnkeyConfig()
