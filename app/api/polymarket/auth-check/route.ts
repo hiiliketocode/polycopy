@@ -76,7 +76,7 @@ export async function GET() {
   try {
     const { data: wallet, error: walletError } = await supabaseServiceRole
       .from('turnkey_wallets')
-      .select('id, wallet_type, eoa_address, polymarket_account_address, turnkey_private_key_id')
+      .select('id, wallet_type, eoa_address, polymarket_account_address, turnkey_private_key_id, turnkey_wallet_id')
       .eq('user_id', userId)
       .eq('wallet_type', 'imported_magic')
       .single()
