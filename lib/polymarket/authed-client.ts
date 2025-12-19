@@ -47,7 +47,7 @@ function decryptSecret(ciphertext: string, kid?: string | null): string {
 export async function getAuthedClobClientForUser(userId: string) {
   const { data: wallet, error: walletError } = await supabaseAdmin
     .from('turnkey_wallets')
-    .select('id, wallet_type, eoa_address, polymarket_account_address, turnkey_private_key_id')
+    .select('id, wallet_type, eoa_address, polymarket_account_address, turnkey_private_key_id, turnkey_wallet_id')
     .eq('user_id', userId)
     .eq('wallet_type', 'imported_magic')
     .single()
