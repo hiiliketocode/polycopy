@@ -14,6 +14,8 @@ import { createL1Headers } from '@polymarket/clob-client/dist/headers/index.js'
 import { POLYMARKET_CLOB_BASE_URL } from '@/lib/turnkey/config'
 import { verifyTypedData } from 'ethers/lib/utils'
 
+export const runtime = 'nodejs'
+
 // Dev bypass for local testing
 const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development' && process.env.TURNKEY_DEV_BYPASS_USER_ID
 
@@ -465,11 +467,21 @@ export async function POST(request: NextRequest) {
     }
 
     // 7. Return success (never return secret or passphrase!)
+    if (!storedCreds) {
+      console.error('[POLY-CLOB] Insert returned no data')
+      return NextResponse.json(
+        { error: 'Failed to store credentials' },
+        { status: 500 }
+      )
+    }
+
+    const createdAt = storedCreds.created_at
+
     return NextResponse.json({
       ok: true,
       apiKey,
       validated: validated,
-      createdAt: storedCreds.created_at,
+      createdAt,
       turnkeyAddress: eoaAddress,
       polymarketAccountAddress: proxyAddress,
       signatureType: sigType,
