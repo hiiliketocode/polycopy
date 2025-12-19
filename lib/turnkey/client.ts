@@ -2,7 +2,8 @@ import { TurnkeyClient, createActivityPoller } from '@turnkey/http'
 import { ApiKeyStamper } from '@turnkey/api-key-stamper'
 import { TURNKEY_ENABLED, loadTurnkeyConfig } from './config'
 import type { TurnkeyClient as TurnkeyClientType, TurnkeyRequestOptions } from './types'
-import { TypedDataDomain, TypedDataEncoder, TypedDataField } from 'ethers'
+import { TypedDataDomain, TypedDataField } from 'ethers'
+import { _TypedDataEncoder as TypedDataEncoder } from 'ethers/lib/utils'
 
 const TURNKEY_BASE_URL =
   process.env.TURNKEY_BASE_URL || 'https://api.turnkey.com'

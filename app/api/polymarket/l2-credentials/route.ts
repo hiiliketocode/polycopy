@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { TURNKEY_ENABLED, CLOB_ENCRYPTION_KEY } from '@/lib/turnkey/config'
+import {
+  TURNKEY_ENABLED,
+  CLOB_ENCRYPTION_KEY,
+  CLOB_ENCRYPTION_KEY_V1,
+  CLOB_ENCRYPTION_KEY_V2,
+} from '@/lib/turnkey/config'
 import { createTurnkeySigner } from '@/lib/polymarket/turnkey-signer'
 import { SignatureType } from '@/lib/polymarket/clob'
 import { createHash, createCipheriv, randomBytes } from 'crypto'
 import { createL1Headers } from '@polymarket/clob-client/dist/headers/index.js'
 import { POLYMARKET_CLOB_BASE_URL } from '@/lib/turnkey/config'
-import { verifyTypedData } from 'ethers'
+import { verifyTypedData } from 'ethers/lib/utils'
 
 // Dev bypass for local testing
 const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development' && process.env.TURNKEY_DEV_BYPASS_USER_ID
@@ -24,11 +29,21 @@ const supabaseServiceRole = createServiceClient(
   }
 )
 
+const CURRENT_ENCRYPTION_KID = 'v1'
+const CURRENT_ENCRYPTION_VERSION = 1
+
+function getEncryptionKey(kid?: string | null): string {
+  if (kid === 'v2' && CLOB_ENCRYPTION_KEY_V2) return CLOB_ENCRYPTION_KEY_V2
+  if (kid === 'v1' && CLOB_ENCRYPTION_KEY_V1) return CLOB_ENCRYPTION_KEY_V1
+  return CLOB_ENCRYPTION_KEY
+}
+
 /**
  * Simple encryption for storing secrets (using AES-256-CBC)
  */
-function encryptSecret(text: string): string {
-  const key = createHash('sha256').update(CLOB_ENCRYPTION_KEY).digest()
+function encryptSecret(text: string, kid = CURRENT_ENCRYPTION_KID): string {
+  const keyMaterial = getEncryptionKey(kid)
+  const key = createHash('sha256').update(keyMaterial).digest()
   const iv = randomBytes(16)
   const cipher = createCipheriv('aes-256-cbc', key, iv)
   let encrypted = cipher.update(text, 'utf8', 'hex')
@@ -67,7 +82,6 @@ function buildAuthTypedData(address: string, timestamp: number, nonce: number) {
 
 type L2CredentialsRequestBody = {
   polymarketAccountAddress?: string
-  signatureType?: SignatureType
 }
 
 type PolymarketApiKeyResponse = {
@@ -160,15 +174,8 @@ export async function POST(request: NextRequest) {
       typeof requestBody?.polymarketAccountAddress === 'string'
         ? requestBody.polymarketAccountAddress.trim()
         : null
-    const signatureTypeInput =
-      typeof requestBody?.signatureType === 'number' ? requestBody.signatureType : undefined
-
-    // Polymarket docs specify signature type 2 (GNOSIS_SAFE) for proxy/Safe wallets.
-    // Signature type 1 is reserved for Polymarket-exported Magic keys.
+    // Signature type is derived server-side based on wallet characteristics.
     const sigType: SignatureType = 2
-    if (signatureTypeInput && signatureTypeInput !== 2) {
-      console.warn('[POLY-CLOB] Ignoring provided signatureType. Using 2 (GNOSIS_SAFE) per docs.')
-    }
     const { data: wallet, error: walletError } = await supabaseServiceRole
       .from('turnkey_wallets')
       .select('id, user_id, wallet_type, eoa_address, polymarket_account_address, turnkey_private_key_id, turnkey_wallet_id')
@@ -368,15 +375,24 @@ export async function POST(request: NextRequest) {
     const secret = createData.secret
     const passphrase = createData.passphrase
     // 4. Encrypt sensitive data (never expose to client)
-    const secretEncrypted = encryptSecret(secret)
-    const passphraseEncrypted = encryptSecret(passphrase)
+    const secretEncrypted = encryptSecret(secret, CURRENT_ENCRYPTION_KID)
+    const passphraseEncrypted = encryptSecret(passphrase, CURRENT_ENCRYPTION_KID)
 
     // 5. Validate credentials by checking if they were successfully created
     // The createOrDeriveApiKey() call succeeding means they're valid
     const validated = true
 
     // 6. Store in database
-    const { data: storedCreds, error: insertError } = await supabaseServiceRole
+    let insertError: any = null
+    let storedCreds:
+      | {
+          created_at: string
+          api_key: string
+          validated: boolean
+        }
+      | null = null
+
+    const insertResult = await supabaseServiceRole
       .from('clob_credentials')
       .insert({
         user_id: userId,
@@ -387,9 +403,33 @@ export async function POST(request: NextRequest) {
         api_passphrase_encrypted: passphraseEncrypted,
         validated,
         last_validated_at: new Date().toISOString(),
+        enc_kid: CURRENT_ENCRYPTION_KID,
+        enc_version: CURRENT_ENCRYPTION_VERSION,
       })
       .select()
       .single()
+
+    storedCreds = insertResult.data
+    insertError = insertResult.error
+
+    if (insertError?.code === '42703') {
+      const legacyInsert = await supabaseServiceRole
+        .from('clob_credentials')
+        .insert({
+          user_id: userId,
+          polymarket_account_address: proxyAddress,
+          turnkey_address: eoaAddress,
+          api_key: apiKey,
+          api_secret_encrypted: secretEncrypted,
+          api_passphrase_encrypted: passphraseEncrypted,
+          validated,
+          last_validated_at: new Date().toISOString(),
+        })
+        .select()
+        .single()
+      storedCreds = legacyInsert.data
+      insertError = legacyInsert.error
+    }
 
     if (insertError) {
       // Handle race condition
@@ -412,7 +452,12 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      console.error('[POLY-CLOB] Failed to store credentials')
+      console.error('[POLY-CLOB] Failed to store credentials', {
+        code: insertError.code,
+        message: insertError.message,
+        details: insertError.details,
+        hint: insertError.hint,
+      })
       return NextResponse.json(
         { error: 'Failed to store credentials' },
         { status: 500 }
