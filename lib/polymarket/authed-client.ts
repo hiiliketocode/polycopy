@@ -83,16 +83,26 @@ export async function getAuthedClobClientForUser(userId: string) {
     'api_key, api_secret_encrypted, api_passphrase_encrypted, enc_kid'
   )
 
-  credential = credentialResult.data
+  if (!credentialResult.error && credentialResult.data) {
+    credential = credentialResult.data
+  }
   credentialError = credentialResult.error
 
   if (credentialError?.code === '42703') {
     const legacyResult = await fetchCredential('api_key, api_secret_encrypted, api_passphrase_encrypted')
-    credential = legacyResult.data
-    credentialError = legacyResult.error
-    if (credential) {
-      credential.enc_kid = 'legacy'
+    const legacyData = legacyResult.data as
+      | {
+          api_key: string
+          api_secret_encrypted: string
+          api_passphrase_encrypted: string
+          enc_kid?: string | null
+        }
+      | null
+    const legacyErr = legacyResult.error
+    if (!legacyErr && legacyData) {
+      credential = { ...legacyData, enc_kid: 'legacy' }
     }
+    credentialError = legacyErr
   }
 
   if (credentialError || !credential) {
