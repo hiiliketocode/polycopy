@@ -74,6 +74,40 @@ function getImportClient() {
   )
 }
 
+function isAlreadyImportedTurnkeyError(error: any): boolean {
+  const message = error?.message || ''
+  return message.includes('Turnkey error 6')
+}
+
+function extractPrivateKeyIdFromError(error: any): string | null {
+  const message = error?.message || ''
+  const match = message.match(/private key with ID ([0-9a-f-]{36})/i)
+  return match ? match[1] : null
+}
+
+async function fetchExistingPrivateKey(
+  importClient: TurnkeyClient,
+  userId: string,
+  privateKeyIdHint: string | null
+) {
+  if (privateKeyIdHint) {
+    const response = await importClient.getPrivateKey({
+      organizationId: TURNKEY_ORGANIZATION_ID!,
+      privateKeyId: privateKeyIdHint,
+    })
+    return response.privateKey
+  }
+
+  const response = await importClient.getPrivateKeys({
+    organizationId: TURNKEY_ORGANIZATION_ID!,
+  })
+
+  const prefix = `imported-magic-${userId}-`
+  return response.privateKeys.find(
+    (pk: any) => typeof pk.privateKeyName === 'string' && pk.privateKeyName.startsWith(prefix)
+  )
+}
+
 /**
  * GET /api/turnkey/import-private-key
  *
@@ -291,38 +325,67 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Import the encrypted private key
     const privateKeyName = `imported-magic-${userId}-${Date.now()}`
     console.log(
       `[TURNKEY-IMPORT-API] Importing encrypted bundle (len=${normalizedBundle.length})`
     )
 
-    const importResponse = await importClient.importPrivateKey({
-      type: 'ACTIVITY_TYPE_IMPORT_PRIVATE_KEY',
-      timestampMs: String(Date.now()),
-      organizationId: TURNKEY_ORGANIZATION_ID!,
-      parameters: {
-        userId: TURNKEY_IMPORT_USER_ID!,
-        privateKeyName,
-        encryptedBundle: normalizedBundle,
-        curve: 'CURVE_SECP256K1',
-        addressFormats: ['ADDRESS_FORMAT_ETHEREUM'],
-      },
-    })
+    let privateKeyId: string | undefined
+    let addresses: Array<{ address?: string }> = []
+    let importStatus: 'imported' | 'already_imported' = 'imported'
 
-    const activity = (importResponse as any)?.activity
-    const importResult =
-      activity?.result?.importPrivateKeyResult ||
-      activity?.result?.importPrivateKeyResultV2
+    try {
+      const importResponse = await importClient.importPrivateKey({
+        type: 'ACTIVITY_TYPE_IMPORT_PRIVATE_KEY',
+        timestampMs: String(Date.now()),
+        organizationId: TURNKEY_ORGANIZATION_ID!,
+        parameters: {
+          userId: TURNKEY_IMPORT_USER_ID!,
+          privateKeyName,
+          encryptedBundle: normalizedBundle,
+          curve: 'CURVE_SECP256K1',
+          addressFormats: ['ADDRESS_FORMAT_ETHEREUM'],
+        },
+      })
 
-    if (!activity || activity.status !== 'ACTIVITY_STATUS_COMPLETED') {
-      throw new Error(
-        `Turnkey import activity not completed (status=${activity?.status || 'unknown'})`
+      const activity = (importResponse as any)?.activity
+      const importResult =
+        activity?.result?.importPrivateKeyResult ||
+        activity?.result?.importPrivateKeyResultV2
+
+      if (!activity || activity.status !== 'ACTIVITY_STATUS_COMPLETED') {
+        throw new Error(
+          `Turnkey import activity not completed (status=${activity?.status || 'unknown'})`
+        )
+      }
+
+      privateKeyId = importResult?.privateKeyId
+      addresses = importResult?.addresses || []
+    } catch (turnkeyErr: any) {
+      if (!isAlreadyImportedTurnkeyError(turnkeyErr)) {
+        throw turnkeyErr
+      }
+
+      importStatus = 'already_imported'
+      const privateKeyIdFromError = extractPrivateKeyIdFromError(turnkeyErr)
+      console.warn(
+        '[TURNKEY-IMPORT-API] Turnkey reports key already imported, reconciling with existing record'
       )
+      const existingKey = await fetchExistingPrivateKey(
+        importClient,
+        userId,
+        privateKeyIdFromError
+      )
+      if (!existingKey) {
+        throw new StageError(
+          'turnkey_import',
+          'Turnkey indicates key exists but metadata could not be retrieved'
+        )
+      }
+      privateKeyId = existingKey.privateKeyId
+      addresses = existingKey.addresses || []
     }
 
-    const privateKeyId = importResult?.privateKeyId
-    const addresses = importResult?.addresses || []
     const address = addresses[0]?.address
 
     if (!privateKeyId || !address) {
@@ -353,12 +416,14 @@ export async function POST(request: NextRequest) {
 
     console.log('[TURNKEY-IMPORT-API] Import successful and stored')
 
+    const alreadyImported = importStatus === 'already_imported'
+
     return NextResponse.json({
       ok: true,
-      status: 'imported',
+      status: importStatus,
       walletId: upsertedWallet.turnkey_private_key_id,
       address: upsertedWallet.eoa_address,
-      alreadyImported: false,
+      alreadyImported,
     })
   } catch (error: any) {
     const stage = error?.stage || 'turnkey_import'

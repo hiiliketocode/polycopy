@@ -3,8 +3,11 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { TURNKEY_ENABLED, CLOB_ENCRYPTION_KEY } from '@/lib/turnkey/config'
 import { createTurnkeySigner } from '@/lib/polymarket/turnkey-signer'
-import { createOrDeriveApiCredentials, SignatureType } from '@/lib/polymarket/clob'
+import { SignatureType } from '@/lib/polymarket/clob'
 import { createHash, createCipheriv, randomBytes } from 'crypto'
+import { createL1Headers } from '@polymarket/clob-client/dist/headers/index.js'
+import { POLYMARKET_CLOB_BASE_URL } from '@/lib/turnkey/config'
+import { verifyTypedData } from 'ethers'
 
 // Dev bypass for local testing
 const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development' && process.env.TURNKEY_DEV_BYPASS_USER_ID
@@ -33,6 +36,73 @@ function encryptSecret(text: string): string {
   return iv.toString('hex') + ':' + encrypted
 }
 
+const POLYGON_CHAIN_ID = 137
+const AUTH_MESSAGE = 'This message attests that I control the given wallet'
+
+function buildAuthTypedData(address: string, timestamp: number, nonce: number) {
+  // Polymarket expects the EOA (POLY_ADDRESS) inside the typed data even if the
+  // user ultimately trades through a proxy (see POLYMARKET_L2_AUTH_SOLUTION.md).
+  return {
+    domain: {
+      name: 'ClobAuthDomain',
+      version: '1',
+      chainId: POLYGON_CHAIN_ID,
+    },
+    types: {
+      ClobAuth: [
+        { name: 'address', type: 'address' },
+        { name: 'timestamp', type: 'string' },
+        { name: 'nonce', type: 'uint256' },
+        { name: 'message', type: 'string' },
+      ],
+    },
+    message: {
+      address,
+      timestamp: `${timestamp}`,
+      nonce,
+      message: AUTH_MESSAGE,
+    },
+  }
+}
+
+type L2CredentialsRequestBody = {
+  polymarketAccountAddress?: string
+  signatureType?: SignatureType
+}
+
+type PolymarketApiKeyResponse = {
+  apiKey?: string
+  secret?: string
+  passphrase?: string
+  [key: string]: unknown
+}
+
+async function callPolymarketAuthEndpoint(
+  endpoint: 'create' | 'derive',
+  headers: Record<string, string>,
+  body?: Record<string, unknown>
+): Promise<{ response: Response; data: PolymarketApiKeyResponse | null }> {
+  const url =
+    endpoint === 'create'
+      ? `${POLYMARKET_CLOB_BASE_URL}/auth/api-key`
+      : `${POLYMARKET_CLOB_BASE_URL}/auth/derive-api-key`
+
+  const response = await fetch(url, {
+    method: endpoint === 'create' ? 'POST' : 'GET',
+    headers,
+    body: endpoint === 'create' ? JSON.stringify(body ?? {}) : undefined,
+  })
+
+  let data: PolymarketApiKeyResponse | null = null
+  try {
+    data = await response.json()
+  } catch {
+    data = null
+  }
+
+  return { response, data }
+}
+
 /**
  * POST /api/polymarket/l2-credentials
  * 
@@ -43,8 +113,6 @@ function encryptSecret(text: string): string {
  * - Fully idempotent
  */
 export async function POST(request: NextRequest) {
-  console.log('[POLY-CLOB] L2 credentials generation request started')
-
   if (!TURNKEY_ENABLED) {
     return NextResponse.json(
       { error: 'Turnkey is not enabled' },
@@ -54,24 +122,19 @@ export async function POST(request: NextRequest) {
 
   try {
     // Authenticate user
-    console.log('[POLY-CLOB] Checking authentication...')
     const supabase = await createClient()
     const {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser()
 
-    console.log('[POLY-CLOB] User:', user?.id, 'Error:', authError?.message)
-
     // Allow dev bypass
     let userId: string | null = null
 
     if (user?.id) {
       userId = user.id
-      console.log('[POLY-CLOB] Using authenticated user:', userId)
     } else if (DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
       userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
-      console.log('[POLY-CLOB] DEV BYPASS: Using env user:', userId)
     }
 
     if (!userId) {
@@ -82,30 +145,93 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { polymarketAccountAddress, signatureType } = await request.json()
+    const url = new URL(request.url)
+    const dryRun = url.searchParams.get('dryRun') === '1'
+    const force = url.searchParams.get('force') === '1'
 
-    if (!polymarketAccountAddress) {
+    let requestBody: L2CredentialsRequestBody = {}
+    try {
+      requestBody = await request.json()
+    } catch {
+      requestBody = {}
+    }
+
+    const polymarketAccountAddressInput =
+      typeof requestBody?.polymarketAccountAddress === 'string'
+        ? requestBody.polymarketAccountAddress.trim()
+        : null
+    const signatureTypeInput =
+      typeof requestBody?.signatureType === 'number' ? requestBody.signatureType : undefined
+
+    // Polymarket docs specify signature type 2 (GNOSIS_SAFE) for proxy/Safe wallets.
+    // Signature type 1 is reserved for Polymarket-exported Magic keys.
+    const sigType: SignatureType = 2
+    if (signatureTypeInput && signatureTypeInput !== 2) {
+      console.warn('[POLY-CLOB] Ignoring provided signatureType. Using 2 (GNOSIS_SAFE) per docs.')
+    }
+    const { data: wallet, error: walletError } = await supabaseServiceRole
+      .from('turnkey_wallets')
+      .select('id, user_id, wallet_type, eoa_address, polymarket_account_address, turnkey_private_key_id, turnkey_wallet_id')
+      .eq('user_id', userId)
+      .eq('wallet_type', 'imported_magic')
+      .single()
+
+    if (walletError || !wallet) {
       return NextResponse.json(
-        { error: 'polymarketAccountAddress is required' },
+        { error: 'Imported wallet not found. Complete Stage 1-3 first.' },
         { status: 400 }
       )
     }
 
-    // Parse signature type (default to 0 = EOA)
-    const sigType: SignatureType = signatureType !== undefined ? signatureType : 0
-    console.log('[POLY-CLOB] Signature type:', sigType, '(0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE)')
-    console.log('[POLY-CLOB] User:', userId, 'Account:', polymarketAccountAddress)
+    const accountLower = polymarketAccountAddressInput
+      ? polymarketAccountAddressInput.toLowerCase()
+      : null
+    const storedPolyAddr = wallet.polymarket_account_address?.toLowerCase() || null
+    const fallbackAddress = wallet.eoa_address?.toLowerCase() || null
+    const proxyAddress = (accountLower || storedPolyAddr || fallbackAddress)?.toLowerCase()
+
+    if (!proxyAddress) {
+      return NextResponse.json(
+        { error: 'Unable to determine Polymarket proxy address' },
+        { status: 400 }
+      )
+    }
+
+    if (storedPolyAddr !== proxyAddress) {
+      const { error: updateError } = await supabaseServiceRole
+        .from('turnkey_wallets')
+        .update({ polymarket_account_address: proxyAddress })
+        .eq('id', wallet.id)
+
+      if (updateError) {
+        console.warn('[POLY-CLOB] Failed to persist proxy address update')
+      }
+    }
+
+    const nonce = Math.floor(Math.random() * 1_000_000_000)
+    const timestamp = Math.floor(Date.now() / 1000)
+
+    if (dryRun) {
+      const typedData = buildAuthTypedData(wallet.eoa_address, timestamp, nonce)
+      return NextResponse.json({
+        ok: true,
+        dryRun: true,
+        typedData,
+        proxyAddress,
+        eoaAddress: wallet.eoa_address,
+        signatureType: sigType,
+      })
+    }
 
     // 1. Check if credentials already exist (idempotency)
-    const { data: existingCreds, error: fetchError } = await supabaseServiceRole
+    const { data: existingCreds } = await supabaseServiceRole
       .from('clob_credentials')
       .select('*')
       .eq('user_id', userId)
-      .eq('polymarket_account_address', polymarketAccountAddress)
+      .eq('polymarket_account_address', proxyAddress)
       .single()
 
-    if (existingCreds) {
-      console.log('[POLY-CLOB] Found existing credentials, returning without creating new ones')
+    if (existingCreds && !force) {
       return NextResponse.json({
         ok: true,
         apiKey: existingCreds.api_key,
@@ -116,48 +242,131 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Create Turnkey signer with EIP-712 support
-    console.log('[POLY-CLOB] Creating Turnkey signer for user:', userId)
     let signer
     try {
-      signer = await createTurnkeySigner(userId, supabaseServiceRole)
-    } catch (signerError: any) {
-      console.error('[POLY-CLOB] Failed to create signer:', signerError.message)
+      signer = await createTurnkeySigner(userId, supabaseServiceRole, wallet)
+    } catch (signerError: unknown) {
+      const errorMessage =
+        signerError instanceof Error ? signerError.message : 'Failed to create signer'
       return NextResponse.json(
         { 
-          error: signerError.message,
+          error: errorMessage,
           hint: 'Make sure you have created a Turnkey wallet first (Stage 1)'
         },
         { status: 400 }
       )
     }
 
-    const turnkeyAddress = signer.address
-    console.log('[POLY-CLOB] Using Turnkey EOA address:', turnkeyAddress)
+    const eoaAddress = wallet.eoa_address
+    const headers = (await createL1Headers(
+      signer as any,
+      POLYGON_CHAIN_ID,
+      nonce,
+      timestamp
+    )) as unknown as Record<string, string>
+    // Docs: https://docs.polymarket.com/developers/CLOB/authentication
+    // specify that the signing address (EOA) must appear in both POLY_ADDRESS and the EIP-712 payload.
+    headers.POLY_ADDRESS = eoaAddress
+    headers['Content-Type'] = 'application/json'
+    const signatureLength = headers.POLY_SIGNATURE?.length ?? 0
 
-    // 3. Call official Polymarket CLOB client to create/derive API key
-    console.log('[POLY-CLOB] Calling Polymarket createOrDeriveApiKey()...')
-    let apiCreds
-    try {
-      apiCreds = await createOrDeriveApiCredentials(signer, sigType)
-    } catch (clobError: any) {
-      console.error('[POLY-CLOB] CLOB API call failed:', clobError.message)
+    const typedDataSnapshot =
+      signer.getLastTypedData() || buildAuthTypedData(eoaAddress, timestamp, nonce)
+
+    if (!headers.POLY_SIGNATURE || !typedDataSnapshot) {
       return NextResponse.json(
-        { 
-          error: 'Failed to create CLOB API key',
-          details: clobError.message,
-          debugInfo: {
-            turnkeyAddress,
-            signatureType: sigType,
-            polymarketAccountAddress,
-          }
-        },
+        { error: 'Missing signature data for verification' },
         { status: 500 }
       )
     }
 
-    const { apiKey, secret, passphrase } = apiCreds
-    console.log('[POLY-CLOB] API key created successfully:', apiKey.substring(0, 10) + '...')
+    let recoveredAddress: string
+    try {
+      recoveredAddress = verifyTypedData(
+        typedDataSnapshot.domain,
+        typedDataSnapshot.types,
+        typedDataSnapshot.message,
+        headers.POLY_SIGNATURE
+      )
+    } catch (verifyErr: any) {
+      console.error('[POLY-CLOB] Failed to recover signer locally', verifyErr?.message)
+      return NextResponse.json(
+        { error: 'Unable to verify signature locally', details: verifyErr?.message },
+        { status: 400 }
+      )
+    }
 
+    if (recoveredAddress.toLowerCase() !== eoaAddress.toLowerCase()) {
+      return NextResponse.json(
+        {
+          error: 'Signature does not match expected EOA',
+          recoveredAddress,
+          expectedAddress: eoaAddress,
+        },
+        { status: 400 }
+      )
+    }
+
+    const logContext = {
+      proxyAddress,
+      eoaAddress,
+      chainId: POLYGON_CHAIN_ID,
+      signatureType: sigType,
+      nonce,
+      timestamp,
+      signatureLength,
+    }
+
+    console.log('[POLY-CLOB] Headers ready', logContext)
+    console.log('[POLY-CLOB] Calling Polymarket create API key endpoint', logContext)
+    let { response: createResp, data: createData } = await callPolymarketAuthEndpoint('create', headers)
+
+    if (!createResp.ok || !createData?.apiKey) {
+      console.warn('[POLY-CLOB] Create API key failed, attempting derive', {
+        ...logContext,
+        status: createResp.status,
+      })
+      const deriveResult = await callPolymarketAuthEndpoint('derive', headers)
+      createResp = deriveResult.response
+      createData = deriveResult.data
+    }
+
+    if (!createResp.ok || !createData?.apiKey || !createData?.secret || !createData?.passphrase) {
+      const endpoint = createResp.url?.includes('derive') ? 'derive' : 'create'
+      const logPayload = {
+        ...logContext,
+        endpoint,
+        status: createResp.status,
+      }
+      const responseDebugPayload = {
+        ...logPayload,
+        typedData: typedDataSnapshot,
+      }
+
+      if (createResp.status === 401) {
+        console.error('[POLY-CLOB] Polymarket L1 auth failed', logPayload)
+        return NextResponse.json(
+          {
+            error: 'Polymarket L1 authentication failed',
+            debugInfo: responseDebugPayload,
+          },
+          { status: 401 }
+        )
+      }
+
+      console.error('[POLY-CLOB] Unexpected Polymarket response', logPayload)
+      return NextResponse.json(
+        {
+          error: 'Failed to create/derive Polymarket API credentials',
+          debugInfo: responseDebugPayload,
+        },
+        { status: 502 }
+      )
+    }
+
+    const apiKey = createData.apiKey
+    const secret = createData.secret
+    const passphrase = createData.passphrase
     // 4. Encrypt sensitive data (never expose to client)
     const secretEncrypted = encryptSecret(secret)
     const passphraseEncrypted = encryptSecret(passphrase)
@@ -171,8 +380,8 @@ export async function POST(request: NextRequest) {
       .from('clob_credentials')
       .insert({
         user_id: userId,
-        polymarket_account_address: polymarketAccountAddress,
-        turnkey_address: turnkeyAddress,
+        polymarket_account_address: proxyAddress,
+        turnkey_address: eoaAddress,
         api_key: apiKey,
         api_secret_encrypted: secretEncrypted,
         api_passphrase_encrypted: passphraseEncrypted,
@@ -185,12 +394,11 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       // Handle race condition
       if (insertError.code === '23505') {
-        console.log('[POLY-CLOB] Unique conflict, returning existing credentials')
         const { data: existingAfterRace } = await supabaseServiceRole
           .from('clob_credentials')
           .select('*')
           .eq('user_id', userId)
-          .eq('polymarket_account_address', polymarketAccountAddress)
+          .eq('polymarket_account_address', proxyAddress)
           .single()
 
         if (existingAfterRace) {
@@ -204,31 +412,29 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      console.error('[POLY-CLOB] Failed to store credentials:', insertError)
+      console.error('[POLY-CLOB] Failed to store credentials')
       return NextResponse.json(
         { error: 'Failed to store credentials' },
         { status: 500 }
       )
     }
 
-    console.log('[POLY-CLOB] Credentials stored successfully')
-    console.log('[POLY-CLOB] L2 credentials generation request finished')
-
     // 7. Return success (never return secret or passphrase!)
     return NextResponse.json({
       ok: true,
-      apiKey: apiKey,
+      apiKey,
       validated: validated,
       createdAt: storedCreds.created_at,
-      turnkeyAddress: turnkeyAddress,
-      polymarketAccountAddress: polymarketAccountAddress,
+      turnkeyAddress: eoaAddress,
+      polymarketAccountAddress: proxyAddress,
       signatureType: sigType,
       isExisting: false,
     })
-  } catch (error: any) {
-    console.error('[POLY-CLOB] Error:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    console.error('[POLY-CLOB] Error:', message)
     return NextResponse.json(
-      { error: error.message || 'Failed to generate L2 credentials' },
+      { error: message || 'Failed to generate L2 credentials' },
       { status: 500 }
     )
   }
