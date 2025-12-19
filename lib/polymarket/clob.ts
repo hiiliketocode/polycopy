@@ -72,7 +72,7 @@ export async function createOrDeriveApiCredentials(
     const creds = await client.createOrDeriveApiKey()
     
     console.log('[CLOB] API credentials obtained')
-    console.log('[CLOB] API Key:', creds.apiKey)
+    console.log('[CLOB] API Key:', (creds as any).apiKey ?? creds.key)
     console.log('[CLOB] Has secret:', !!creds.secret)
     console.log('[CLOB] Has passphrase:', !!creds.passphrase)
     
