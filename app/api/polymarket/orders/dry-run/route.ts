@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       userId
     )
     const order = await client.createOrder(
-      { tokenID: tokenId, price, amount, size: amount, side: side as any },
+      { tokenID: tokenId, price, size: amount, side: side as any },
       { signatureType }
     )
 
