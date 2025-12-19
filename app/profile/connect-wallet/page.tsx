@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { verifyMessage } from 'ethers'
+import { verifyMessage } from 'ethers/lib/utils'
 
 const TURNKEY_UI_ENABLED = process.env.NEXT_PUBLIC_TURNKEY_ENABLED === 'true'
 
@@ -41,20 +41,6 @@ type LinkStatus = {
   last_error?: string | null
 }
 
-type StepStatus = 'done' | 'needs_attention' | 'not_started'
-
-const STEP_BADGE_STYLES: Record<StepStatus, string> = {
-  done: 'bg-emerald-50 text-emerald-800 border border-emerald-200',
-  needs_attention: 'bg-amber-50 text-amber-800 border border-amber-200',
-  not_started: 'bg-slate-100 text-slate-600 border border-slate-200',
-}
-
-const STEP_BADGE_LABELS: Record<StepStatus, string> = {
-  done: 'Done',
-  needs_attention: 'Needs attention',
-  not_started: 'Not started',
-}
-
 export default function ConnectWalletTurnkeyPage() {
   const [createLoading, setCreateLoading] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -76,40 +62,32 @@ export default function ConnectWalletTurnkeyPage() {
   const [validateLoading, setValidateLoading] = useState(false)
   const [validateError, setValidateError] = useState<string | null>(null)
   const [validateData, setValidateData] = useState<ValidateResponse | null>(null)
-
-  // USDC balance state
   const [balanceLoading, setBalanceLoading] = useState(false)
   const [balanceError, setBalanceError] = useState<string | null>(null)
   const [balanceData, setBalanceData] = useState<BalanceResponse | null>(null)
 
-  // L2 credentials state
+// L2 credentials state
   const [l2Loading, setL2Loading] = useState(false)
   const [l2Error, setL2Error] = useState<string | null>(null)
-  const [l2Data, setL2Data] = useState<{
-    ok: boolean
-    apiKey: string
-    validated: boolean
-    createdAt: string
-    isExisting?: boolean
-  } | null>(null)
-
   // Import wallet state
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
-  const [importData, setImportData] = useState<{
-    walletId: string
-    address: string
-    alreadyImported?: boolean
-  } | null>(null)
   const [magicPrivateKey, setMagicPrivateKey] = useState('')
   const [importBundle, setImportBundle] = useState<string | null>(null)
   const [importOrgId, setImportOrgId] = useState<string | null>(null)
   const [importUserId, setImportUserId] = useState<string | null>(null)
 
   const [linkStatus, setLinkStatus] = useState<LinkStatus | null>(null)
-  const [linkStatusLoading, setLinkStatusLoading] = useState(true)
   const [linkStatusError, setLinkStatusError] = useState<string | null>(null)
-  const [expandedStep, setExpandedStep] = useState<'account' | 'import' | 'credentials' | null>(null)
+  const [accountChecked, setAccountChecked] = useState(false)
+  const [activeStage, setActiveStage] = useState<'profile' | 'key'>('profile')
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [openPositionsCount, setOpenPositionsCount] = useState<number | null>(null)
+  const [positionsLoading, setPositionsLoading] = useState(false)
+  const [positionsError, setPositionsError] = useState<string | null>(null)
+  const [autoCheckedAddress, setAutoCheckedAddress] = useState(false)
+  const [linkingMessage, setLinkingMessage] = useState<string | null>(null)
+  const [linkingError, setLinkingError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -151,7 +129,6 @@ export default function ConnectWalletTurnkeyPage() {
   }, [])
 
   const loadLinkStatus = useCallback(async () => {
-    setLinkStatusLoading(true)
     setLinkStatusError(null)
 
     try {
@@ -171,7 +148,7 @@ export default function ConnectWalletTurnkeyPage() {
       setLinkStatusError(err?.message || 'Failed to fetch link status')
       setLinkStatus(null)
     } finally {
-      setLinkStatusLoading(false)
+      // no-op
     }
   }, [])
 
@@ -253,22 +230,22 @@ export default function ConnectWalletTurnkeyPage() {
     }
   }
 
-  const validateAccount = async () => {
-    if (!polymarketAddress.trim()) {
+  const validateAccount = useCallback(async (addressOverride?: string) => {
+    const targetAddress = (addressOverride ?? polymarketAddress).trim()
+    if (!targetAddress) {
       setValidateError('Please enter a Polymarket wallet address')
-      return
+      return null
     }
 
     setValidateLoading(true)
     setValidateError(null)
     setValidateData(null)
-    setBalanceData(null)
 
     try {
       const res = await fetch('/api/turnkey/polymarket/validate-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountAddress: polymarketAddress }),
+        body: JSON.stringify({ accountAddress: targetAddress }),
       })
 
       const data = (await res.json()) as ValidateResponse
@@ -278,17 +255,21 @@ export default function ConnectWalletTurnkeyPage() {
       }
 
       setValidateData(data)
+      return data
     } catch (err: any) {
       setValidateError(err?.message || 'Failed to validate account')
+      return null
     } finally {
       setValidateLoading(false)
     }
-  }
+  }, [polymarketAddress])
 
-  const fetchBalance = async () => {
-    if (!polymarketAddress.trim()) {
-      setBalanceError('Please enter a Polymarket wallet address')
-      return
+  const fetchBalance = useCallback(async (addressOverride?: string) => {
+    const targetAddress = (addressOverride ?? polymarketAddress).trim()
+    if (!targetAddress) {
+      setBalanceError('Enter a Polymarket wallet address first')
+      setBalanceData(null)
+      return null
     }
 
     setBalanceLoading(true)
@@ -299,46 +280,73 @@ export default function ConnectWalletTurnkeyPage() {
       const res = await fetch('/api/turnkey/polymarket/usdc-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountAddress: polymarketAddress }),
+        body: JSON.stringify({ accountAddress: targetAddress }),
       })
-
       const data = (await res.json()) as BalanceResponse
-
       if (!res.ok) {
-        throw new Error(data?.error || 'Failed to fetch balance')
+        throw new Error(data?.error || 'Failed to fetch account value')
       }
-
       setBalanceData(data)
+      return data
     } catch (err: any) {
-      setBalanceError(err?.message || 'Failed to fetch balance')
+      setBalanceError(err?.message || 'Failed to fetch account value')
+      return null
     } finally {
       setBalanceLoading(false)
     }
-  }
+  }, [polymarketAddress])
 
-  const generateL2Credentials = async () => {
-    if (!polymarketAddress.trim()) {
-      setL2Error('Please enter and validate a Polymarket wallet address first')
-      return
+  const fetchOpenPositions = useCallback(async (addressOverride?: string) => {
+    const targetAddress = (addressOverride ?? polymarketAddress).trim()
+    if (!targetAddress) {
+      setPositionsError('Enter a Polymarket wallet address first')
+      setOpenPositionsCount(null)
+      return null
     }
 
-    if (!validateData?.isContract && !linkStatus?.has_imported_key) {
+    setPositionsLoading(true)
+    setPositionsError(null)
+    setOpenPositionsCount(null)
+
+    try {
+      const res = await fetch(`/api/polymarket/open-positions?wallet=${targetAddress}`)
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to fetch open positions')
+      }
+      const count = typeof data?.open_positions === 'number' ? data.open_positions : 0
+      setOpenPositionsCount(count)
+      return count
+    } catch (err: any) {
+      setPositionsError(err?.message || 'Failed to fetch open positions')
+      setOpenPositionsCount(null)
+      return null
+    } finally {
+      setPositionsLoading(false)
+    }
+  }, [polymarketAddress])
+
+  const generateL2Credentials = async (options?: { skipValidationCheck?: boolean }) => {
+    if (!polymarketAddress.trim()) {
+      setL2Error('Please enter and validate a Polymarket wallet address first')
+      return null
+    }
+
+    if (!options?.skipValidationCheck && !validateData?.isContract && !linkStatus?.has_imported_key) {
       setL2Error('Please validate that the address is a contract wallet first')
-      return
+      return null
     }
 
     setL2Loading(true)
     setL2Error(null)
-    setL2Data(null)
 
     try {
       const res = await fetch('/api/polymarket/l2-credentials', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           polymarketAccountAddress: polymarketAddress,
-          signatureType: 0 // 0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE
         }),
       })
 
@@ -348,10 +356,11 @@ export default function ConnectWalletTurnkeyPage() {
         throw new Error(data?.error || 'Failed to generate L2 credentials')
       }
 
-      setL2Data(data)
       await loadLinkStatus()
+      return data
     } catch (err: any) {
       setL2Error(err?.message || 'Failed to generate L2 credentials')
+      return null
     } finally {
       setL2Loading(false)
     }
@@ -362,32 +371,47 @@ export default function ConnectWalletTurnkeyPage() {
     window.open('https://reveal.magic.link/polymarket', '_blank', 'noreferrer')
   }
 
-  const startImportFlow = async () => {
+  const openPolymarketSite = () => {
+    window.open('https://polymarket.com/', '_blank', 'noreferrer')
+  }
+
+  const resetProfileReview = () => {
+    setEditingProfile(true)
+    setAccountChecked(false)
+    setValidateData(null)
+    setBalanceData(null)
+    setOpenPositionsCount(null)
+    setValidateError(null)
+    setBalanceError(null)
+    setPositionsError(null)
+    setActiveStage('profile')
+  }
+
+  const startImportFlow = async (): Promise<{
+    walletId: string
+    address: string
+    alreadyImported?: boolean
+  } | null> => {
     const trimmedKey = magicPrivateKey.trim()
     if (!trimmedKey) {
       setImportError('Paste your Magic private key (0x...) before importing')
-      setImportData(null)
-      return
+      return null
     }
     if (!trimmedKey.startsWith('0x') || trimmedKey.length !== 66) {
       setImportError('Private key must start with 0x and be 66 chars long')
-      setImportData(null)
-      return
+      return null
     }
     if (!polymarketAddress.trim()) {
       setImportError('Enter your Polymarket wallet address before importing')
-      setImportData(null)
-      return
+      return null
     }
     if (!importBundle || !importOrgId || !importUserId) {
       setImportError('Import bundle not loaded. Please refresh and try again.')
-      setImportData(null)
-      return
+      return null
     }
 
     setImportLoading(true)
     setImportError(null)
-    setImportData(null)
 
     try {
       const { encryptPrivateKeyToBundle } = await import('@turnkey/crypto')
@@ -407,7 +431,7 @@ export default function ConnectWalletTurnkeyPage() {
       let encryptedBundle: Record<string, any>
       try {
         encryptedBundle = JSON.parse(encryptedBundleString)
-      } catch (parseErr) {
+      } catch {
         throw new Error('Failed to parse encrypted bundle JSON from Turnkey SDK')
       }
 
@@ -426,465 +450,285 @@ export default function ConnectWalletTurnkeyPage() {
         throw new Error(data?.error || 'Failed to import wallet')
       }
 
-      setImportData({
+      await loadLinkStatus()
+      return {
         walletId: data.walletId,
         address: data.address,
         alreadyImported: data.alreadyImported,
-      })
-      await loadLinkStatus()
+      }
     } catch (err: any) {
       setImportError(err?.message || 'Failed to import wallet')
+      return null
     } finally {
       setImportLoading(false)
     }
   }
 
+  const handleAccountCheck = useCallback(async (addressOverride?: string) => {
+    const targetAddress = (addressOverride ?? polymarketAddress).trim()
+    if (!targetAddress) {
+      setValidateError('Please enter a Polymarket wallet address')
+      setAccountChecked(false)
+      return
+    }
+
+    setAccountChecked(false)
+    setLinkingMessage(null)
+    setLinkingError(null)
+
+    const validation = await validateAccount(targetAddress)
+    await fetchBalance(targetAddress)
+    await fetchOpenPositions(targetAddress)
+
+    if (validation?.isContract) {
+      setAccountChecked(true)
+      setEditingProfile(false)
+    }
+  }, [fetchBalance, fetchOpenPositions, polymarketAddress, validateAccount])
+
   const hasPolymarketAddress = Boolean(linkStatus?.polymarket_account_address)
-  const hasImportedKey = Boolean(linkStatus?.has_imported_key)
   const hasL2Credentials = Boolean(linkStatus?.has_l2_credentials)
+  const profileLinked = hasPolymarketAddress || accountChecked
+  const profileReady = profileLinked && !editingProfile
+  const tradingReady = hasL2Credentials
+  const linkingInProgress = importLoading || l2Loading
+  const checkingProfile = validateLoading || balanceLoading || positionsLoading
   const localAddressEntered = Boolean(polymarketAddress.trim())
-  const canUseStep2 = localAddressEntered && TURNKEY_UI_ENABLED
-  const canUseStep3 = hasImportedKey && TURNKEY_UI_ENABLED
+  useEffect(() => {
+    if (!profileReady && activeStage !== 'profile') {
+      setActiveStage('profile')
+    }
+  }, [activeStage, profileReady])
 
-  const step1Status: StepStatus = hasPolymarketAddress
-    ? 'done'
-    : linkStatusError
-      ? 'needs_attention'
-      : 'not_started'
 
-  const step2Status: StepStatus = hasImportedKey
-    ? 'done'
-    : hasPolymarketAddress
-      ? 'needs_attention'
-      : 'not_started'
+  const handleLinkAccount = async () => {
+    if (!TURNKEY_UI_ENABLED) {
+      setImportError('Turnkey is disabled in this environment')
+      return
+    }
 
-  const step3Status: StepStatus = hasL2Credentials
-    ? 'done'
-    : hasImportedKey
-      ? 'needs_attention'
-      : 'not_started'
+    if (!profileReady) {
+      setImportError('Link your public profile before continuing')
+      return
+    }
 
-  const shouldShowStep = (key: 'account' | 'import' | 'credentials') => {
-    if (expandedStep === key) return true
-    if (key === 'account' && !hasPolymarketAddress) return true
-    if (key === 'import' && hasPolymarketAddress && !hasImportedKey) return true
-    if (key === 'credentials' && hasImportedKey && !hasL2Credentials) return true
-    return false
+    if (!polymarketAddress.trim()) {
+      setImportError('Enter your Polymarket wallet address before linking')
+      return
+    }
+
+    if (!magicPrivateKey.trim()) {
+      setImportError('Paste your Magic private key before linking')
+      return
+    }
+
+    setLinkingError(null)
+    setLinkingMessage(null)
+
+    const importResult = await startImportFlow()
+    if (!importResult) {
+      return
+    }
+
+    setLinkingMessage(
+      importResult.alreadyImported
+        ? 'Wallet already imported. Refreshing credentials...'
+        : 'Magic key imported. Creating credentials...'
+    )
+
+    const credentials = await generateL2Credentials({ skipValidationCheck: true })
+    if (!credentials) {
+      setLinkingError('Failed to create Polymarket credentials')
+      return
+    }
+
+    setLinkingMessage(
+      credentials.isExisting
+        ? 'Existing Polymarket credentials found and ready.'
+      : 'Polymarket credentials generated successfully.'
+    )
   }
 
-  const toggleStep = (key: 'account' | 'import' | 'credentials') => {
-    setExpandedStep((prev) => (prev === key ? null : key))
-  }
+  useEffect(() => {
+    if (linkStatus?.polymarket_account_address && !autoCheckedAddress) {
+      const address = linkStatus.polymarket_account_address
+      setPolymarketAddress(address)
+      handleAccountCheck(address)
+      setAutoCheckedAddress(true)
+      if (linkStatus.has_imported_key || linkStatus.has_l2_credentials) {
+        setAccountChecked(true)
+      }
+    }
+  }, [autoCheckedAddress, handleAccountCheck, linkStatus])
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Link my Polymarket account</h1>
-        <p className="text-slate-600 mt-2">
-          Validate your Polymarket proxy wallet, import your Magic Link key, and enable Polymarket L2 trading credentials.
-        </p>
-      </div>
-
-      {!TURNKEY_UI_ENABLED && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
-          Set <code className="bg-amber-100 px-2 py-1 rounded">NEXT_PUBLIC_TURNKEY_ENABLED=true</code> in <code className="bg-amber-100 px-2 py-1 rounded">.env.local</code> to
-          interact with this page. Backend also requires <code className="bg-amber-100 px-2 py-1 rounded">TURNKEY_ENABLED=true</code>.
-        </div>
-      )}
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Link status</p>
-            <p className="text-xs text-slate-500">Status updates automatically after each step.</p>
-          </div>
-          <button
-            onClick={() => loadLinkStatus()}
-            disabled={linkStatusLoading}
-            className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 disabled:opacity-50 hover:bg-slate-50"
-          >
-            {linkStatusLoading ? 'Refreshing…' : 'Refresh status'}
-          </button>
-        </div>
-
+    <div className="max-w-xl mx-auto p-6 space-y-6">
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
         {linkStatusError && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             ❌ {linkStatusError}
           </div>
         )}
 
-        {/* Step 1 */}
-        <div className="rounded-xl border border-slate-200 p-5 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Step 1</p>
-              <h3 className="text-lg font-semibold text-slate-900">Confirm Polymarket account</h3>
-              <p className="text-sm text-slate-600">
-                Validate your Polymarket proxy wallet and confirm it is ready for copying trades.
-              </p>
-            </div>
-            <span
-              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${STEP_BADGE_STYLES[step1Status]}`}
-            >
-              {STEP_BADGE_LABELS[step1Status]}
-            </span>
+        {!TURNKEY_UI_ENABLED && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            Turnkey is disabled in this environment. Set the env vars to enable linking.
           </div>
+        )}
 
-          {shouldShowStep('account') ? (
-            <>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Polymarket Profile Wallet Address
-                  </label>
-                  <input
-                    type="text"
-                    value={polymarketAddress}
-                    onChange={(e) => setPolymarketAddress(e.target.value)}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 font-mono text-sm"
-                    placeholder="0x..."
-                    disabled={!TURNKEY_UI_ENABLED}
-                  />
+        {activeStage === 'profile' ? (
+          profileReady ? (
+            <div className="space-y-4">
+              <h1 className="text-2xl font-bold text-slate-900">Account linked</h1>
+              <p className="text-sm text-slate-600">
+                Your public Polymarket ID is saved. Continue to connect your private key or go back to change the address.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Account value</p>
+                  <p className="text-2xl font-semibold text-slate-900 mt-2">
+                    {balanceLoading ? 'Loading…' : balanceData?.usdcBalanceFormatted || '—'}
+                  </p>
+                  {balanceError && <p className="text-xs text-red-600 mt-1">{balanceError}</p>}
                 </div>
-
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={validateAccount}
-                    disabled={validateLoading || !TURNKEY_UI_ENABLED || !polymarketAddress.trim()}
-                    className="rounded-md bg-purple-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-purple-700 transition-colors"
-                  >
-                    {validateLoading ? 'Validating...' : 'Validate address'}
-                  </button>
-
-                  {validateData?.isContract && (
-                    <button
-                      onClick={fetchBalance}
-                      disabled={balanceLoading || !TURNKEY_UI_ENABLED}
-                      className="rounded-md bg-emerald-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-emerald-700 transition-colors"
-                    >
-                      {balanceLoading ? 'Fetching...' : 'Fetch USDC balance'}
-                    </button>
-                  )}
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Open positions</p>
+                  <p className="text-2xl font-semibold text-slate-900 mt-2">
+                    {positionsLoading
+                      ? 'Loading…'
+                      : typeof openPositionsCount === 'number'
+                        ? openPositionsCount
+                        : '—'}
+                  </p>
+                  {positionsError && <p className="text-xs text-red-600 mt-1">{positionsError}</p>}
                 </div>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={resetProfileReview}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => setActiveStage('key')}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <h1 className="text-3xl font-bold text-slate-900">Link your Polymarket account</h1>
+                <p className="text-sm text-slate-600 mt-2">Step one: Connect your public profile.</p>
+                <p className="text-sm text-slate-500">Visit Polymarket and enter the code.</p>
+              </div>
+
+              <button
+                onClick={openPolymarketSite}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
+              >
+                Get my ID
+              </button>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-slate-700">Polymarket address</label>
+                <input
+                  type="text"
+                  value={polymarketAddress}
+                  onChange={(e) => {
+                    setPolymarketAddress(e.target.value)
+                    setAccountChecked(false)
+                  }}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 font-mono text-sm"
+                  placeholder="0x..."
+                />
               </div>
 
               {validateError && (
-                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-                  ❌ {validateError}
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {validateError}
                 </div>
               )}
 
-              {validateData && (
-                <div
-                  className={`rounded-md border p-4 ${
-                    validateData.isContract ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'
-                  }`}
-                >
-                  <div
-                    className={`flex items-center gap-2 font-semibold ${
-                      validateData.isContract ? 'text-emerald-800' : 'text-red-800'
-                    }`}
-                  >
-                    {validateData.isContract
-                      ? '✅ Contract wallet detected (Safe/proxy)'
-                      : '❌ Not a contract. Double-check the address.'}
-                  </div>
-                  <div className="space-y-1 text-sm mt-2">
-                    <div className="flex justify-between">
-                      <span className="font-semibold text-slate-700">Chain ID:</span>
-                      <span>{validateData.chainId} (Polygon)</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="font-semibold text-slate-700">Valid Address:</span>
-                      <span>{validateData.isValidAddress ? 'Yes' : 'No'}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {balanceError && (
-                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-                  ❌ {balanceError}
-                </div>
-              )}
-
-              {balanceData && (
-                <div className="space-y-2 rounded-md border border-blue-200 bg-blue-50 p-4">
-                  <div className="flex items-center gap-2 text-blue-800 font-semibold">
-                    💰 USDC Balance Fetched
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex flex-col gap-1">
-                      <span className="font-semibold text-slate-700">Address:</span>
-                      <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs">
-                        {balanceData.accountAddress}
-                      </code>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="font-semibold text-slate-700">Balance:</span>
-                      <span className="text-2xl font-bold text-blue-900">{balanceData.usdcBalanceFormatted}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs text-slate-600">
-                      <span>Raw Value:</span>
-                      <code>{balanceData.usdcBalanceRaw}</code>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : hasPolymarketAddress ? (
-            <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
-              <div className="text-sm text-slate-700">
-                <p className="font-semibold text-slate-900">Linked Polymarket account</p>
-                <code className="mt-1 block rounded bg-white px-2 py-1 font-mono text-xs text-slate-900">
-                  {linkStatus?.polymarket_account_address}
-                </code>
-                {linkStatus?.eoa_address && (
-                  <p className="mt-2 text-xs text-slate-500">
-                    Magic EOA: <code className="font-mono">{linkStatus.eoa_address}</code>
-                  </p>
-                )}
-              </div>
               <button
-                onClick={() => toggleStep('account')}
-                className="self-start rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-white"
+                onClick={() => handleAccountCheck()}
+                disabled={checkingProfile || !localAddressEntered}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 hover:bg-indigo-500"
               >
-                Change
+                {checkingProfile ? 'Linking…' : 'Link'}
               </button>
             </div>
-          ) : null}
-        </div>
-
-        {/* Step 2 */}
-        <div className="rounded-xl border border-slate-200 p-5 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Step 2</p>
-              <h3 className="text-lg font-semibold text-slate-900">Import Magic Link key</h3>
-              <p className="text-sm text-slate-600">
-                Encrypt your Magic Link private key in-browser and store it securely in Turnkey.
-              </p>
-            </div>
-            <span
-              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${STEP_BADGE_STYLES[step2Status]}`}
+          )
+        ) : tradingReady ? (
+          <div className="space-y-4">
+            <h1 className="text-2xl font-bold text-slate-900">Account linked</h1>
+            <p className="text-sm text-slate-600">Private key connected. You’re ready to trade.</p>
+            <button
+              onClick={() => setActiveStage('profile')}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
             >
-              {STEP_BADGE_LABELS[step2Status]}
-            </span>
+              Back
+            </button>
           </div>
-
-          {shouldShowStep('import') ? (
-            <>
-              {(!localAddressEntered || !TURNKEY_UI_ENABLED) && (
-                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  Enter and validate your Polymarket address above to enable importing.
-                </div>
-              )}
-
-              {TURNKEY_UI_ENABLED && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Paste Magic private key (0x…)
-                  </label>
-                  <textarea
-                    value={magicPrivateKey}
-                    onChange={(e) => setMagicPrivateKey(e.target.value)}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono text-sm"
-                    placeholder="0x..."
-                    rows={3}
-                  />
-                  <p className="text-xs text-slate-600 mt-1">
-                    Key stays in the browser; only the encrypted bundle is sent to Turnkey.
-                  </p>
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={openPolymarketExport}
-                  disabled={!TURNKEY_UI_ENABLED}
-                  className="rounded-md bg-purple-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-purple-700 transition-colors"
-                >
-                  🔑 Open Polymarket Key Export
-                </button>
-
-                <button
-                  onClick={startImportFlow}
-                  disabled={importLoading || !canUseStep2}
-                  className="rounded-md bg-indigo-600 px-4 py-2 text-white font-semibold disabled:opacity-50 hover:bg-indigo-700 transition-colors"
-                >
-                  {importLoading ? 'Importing...' : 'Import Magic Link Key'}
-                </button>
-              </div>
-
-              <div className="text-xs text-indigo-600 border border-indigo-200 bg-white rounded p-2">
-                ℹ️ <strong>Security:</strong> Keys are encrypted locally with the Turnkey HPKE bundle before leaving your browser.
-              </div>
-
-              <div className="text-xs text-slate-600 border border-slate-200 bg-slate-50 rounded p-2">
-                <p className="font-semibold mb-1">📋 Instructions</p>
-                <ol className="list-decimal list-inside space-y-1">
-                  <li>Open the Polymarket export page in a new tab.</li>
-                  <li>Copy the Magic private key and paste it above.</li>
-                  <li>Click “Import Magic Link Key” to encrypt and store it in Turnkey.</li>
-                </ol>
-              </div>
-            </>
-          ) : hasImportedKey ? (
-            <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
-              <div className="text-sm text-slate-700">
-                <p className="font-semibold text-slate-900">Magic Link key imported</p>
-                {linkStatus?.eoa_address && (
-                  <p className="mt-1 text-xs text-slate-500">
-                    EOA: <code className="font-mono">{linkStatus.eoa_address}</code>
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => toggleStep('import')}
-                className="self-start rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-white"
-              >
-                Re-import
-              </button>
-            </div>
-          ) : null}
-
-          {importError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-              ❌ {importError}
-            </div>
-          )}
-
-          {importData && (
-            <div className="space-y-2 rounded-md border border-green-200 bg-green-50 p-4">
-              <div className="flex items-center gap-2 text-green-800 font-semibold text-lg">
-                {importData.alreadyImported ? '✅ Existing Wallet Retrieved' : '🔑 Wallet Imported Successfully'}
-              </div>
-              
-              <div className="space-y-2 text-sm">
-                <div className="flex flex-col gap-1">
-                  <span className="font-semibold text-slate-700">Wallet ID:</span>
-                  <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
-                    {importData.walletId}
-                  </code>
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <span className="font-semibold text-slate-700">Address (EOA):</span>
-                  <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
-                    {importData.address}
-                  </code>
-                </div>
-
-                {importData.alreadyImported && (
-                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
-                    ℹ️ This wallet was already imported (idempotent - no duplicate created)
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Step 3 */}
-        <div className="rounded-xl border border-slate-200 p-5 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Step 3</p>
-              <h3 className="text-lg font-semibold text-slate-900">Generate Polymarket L2 credentials</h3>
-              <p className="text-sm text-slate-600">
-                Create API credentials so Polycopy can submit CLOB orders on your behalf.
-              </p>
-            </div>
-            <span
-              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${STEP_BADGE_STYLES[step3Status]}`}
+        ) : (
+          <div className="space-y-4">
+            <button
+              onClick={() => setActiveStage('profile')}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white w-fit"
             >
-              {STEP_BADGE_LABELS[step3Status]}
-            </span>
+              Back
+            </button>
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900">Enter your private key</h1>
+              <p className="text-sm text-slate-600 mt-2">Enter your private key in order to execute trading.</p>
+            </div>
+
+            <button
+              onClick={openPolymarketExport}
+              disabled={!TURNKEY_UI_ENABLED}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60 hover:bg-white"
+            >
+              Open Magic Link process
+            </button>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-slate-700">Magic private key (0x…)</label>
+              <textarea
+                value={magicPrivateKey}
+                onChange={(e) => setMagicPrivateKey(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono text-sm"
+                placeholder="Paste the key you copied"
+                rows={3}
+                disabled={!TURNKEY_UI_ENABLED}
+              />
+            </div>
+
+            <button
+              onClick={handleLinkAccount}
+              disabled={!TURNKEY_UI_ENABLED || !magicPrivateKey.trim() || linkingInProgress}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 hover:bg-indigo-500"
+            >
+              {linkingInProgress ? 'Linking…' : 'Link'}
+            </button>
+
+            {(linkingError || importError || l2Error) && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 space-y-1">
+                {linkingError && <p>❌ {linkingError}</p>}
+                {!linkingError && importError && <p>❌ {importError}</p>}
+                {!linkingError && l2Error && <p>❌ {l2Error}</p>}
+              </div>
+            )}
+
+            {linkingMessage && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                ℹ️ {linkingMessage}
+              </div>
+            )}
           </div>
-
-          {shouldShowStep('credentials') ? (
-            <>
-              <div className="space-y-3">
-                <button
-                  onClick={generateL2Credentials}
-                  disabled={l2Loading || !canUseStep3}
-                  className="rounded-md bg-orange-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-orange-700 transition-colors"
-                >
-                  {l2Loading ? 'Generating...' : 'Generate L2 credentials'}
-                </button>
-                {!canUseStep3 && (
-                  <p className="text-sm text-orange-700">
-                    Import your Magic Link key in Step 2 before generating credentials.
-                  </p>
-                )}
-              </div>
-
-              {l2Error && (
-                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-                  ❌ {l2Error}
-                </div>
-              )}
-
-              {l2Data && (
-                <div className="space-y-3 rounded-md border border-green-200 bg-green-50 p-4">
-                  <div className="flex items-center gap-2 text-green-800 font-semibold text-lg">
-                    {l2Data.isExisting ? '✅ Existing Credentials Retrieved' : '🔑 L2 Credentials Generated'}
-                  </div>
-                  
-                  <div className="space-y-2 text-sm">
-                    <div className="flex flex-col gap-1">
-                      <span className="font-semibold text-slate-700">API Key:</span>
-                      <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
-                        {l2Data.apiKey}
-                      </code>
-                    </div>
-
-                    <div className="flex justify-between items-center">
-                      <span className="font-semibold text-slate-700">Validated:</span>
-                      <span className={`font-bold ${l2Data.validated ? 'text-green-700' : 'text-red-700'}`}>
-                        {l2Data.validated ? '✅ Yes' : '❌ No'}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center text-xs text-slate-600">
-                      <span>Created:</span>
-                      <span>{new Date(l2Data.createdAt).toLocaleString()}</span>
-                    </div>
-
-                    {l2Data.isExisting && (
-                      <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
-                        ℹ️ Using existing credentials (idempotent - no new key created)
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="border-t border-green-300 pt-2 mt-2">
-                    <p className="text-xs text-slate-600">
-                      🔒 <strong>Security:</strong> Secrets stay encrypted in the database and are never exposed to the client.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : hasL2Credentials ? (
-            <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
-              <div className="text-sm text-slate-700">
-                <p className="font-semibold text-slate-900">Active L2 credentials</p>
-                <p className="text-xs text-slate-500">Ready to submit orders through Polymarket's CLOB.</p>
-              </div>
-              <button
-                onClick={() => toggleStep('credentials')}
-                className="self-start rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-white"
-              >
-                Retry
-              </button>
-            </div>
-          ) : !hasImportedKey ? (
-            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-              Complete Step 2 to unlock L2 credentials.
-            </div>
-          ) : null}
-        </div>
+        )}
       </section>
 
       <details className="rounded-2xl border border-slate-200 bg-white shadow-sm">

@@ -18,7 +18,10 @@ export const POLYMARKET_CLOB_BASE_URL =
   'https://clob.polymarket.com'
 
 // Encryption key for storing CLOB credentials (must be set in production)
-export const CLOB_ENCRYPTION_KEY = process.env.CLOB_ENCRYPTION_KEY || 'dev-key-change-in-production'
+export const CLOB_ENCRYPTION_KEY =
+  process.env.CLOB_ENCRYPTION_KEY || 'dev-key-change-in-production'
+export const CLOB_ENCRYPTION_KEY_V1 = process.env.CLOB_ENCRYPTION_KEY_V1 || null
+export const CLOB_ENCRYPTION_KEY_V2 = process.env.CLOB_ENCRYPTION_KEY_V2 || null
 
 export function loadTurnkeyConfig(): TurnkeyConfig | null {
   if (!TURNKEY_ENABLED) return null
@@ -47,4 +50,3 @@ export function loadTurnkeyConfig(): TurnkeyConfig | null {
     organizationId: organizationId!,
   }
 }
-
