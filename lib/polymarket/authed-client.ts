@@ -83,8 +83,17 @@ export async function getAuthedClobClientForUser(userId: string) {
     'api_key, api_secret_encrypted, api_passphrase_encrypted, enc_kid'
   )
 
-  if (!credentialResult.error && credentialResult.data) {
-    credential = credentialResult.data
+  const credentialData = credentialResult.data as
+    | {
+        api_key: string
+        api_secret_encrypted: string
+        api_passphrase_encrypted: string
+        enc_kid?: string | null
+      }
+    | null
+
+  if (!credentialResult.error && credentialData) {
+    credential = credentialData
   }
   credentialError = credentialResult.error
 
