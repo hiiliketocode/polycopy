@@ -64,6 +64,8 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<any>(null);
   const [showWalletSetup, setShowWalletSetup] = useState(false);
   const [disconnectingWallet, setDisconnectingWallet] = useState(false);
+  const forcePremium = process.env.NEXT_PUBLIC_FORCE_PREMIUM === 'true';
+  const isPremium = Boolean(profile?.is_premium) || forcePremium;
   
   // Display name state
   const [displayName, setDisplayName] = useState<string>('You');
@@ -930,8 +932,8 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Polymarket Wallet Section - Only show for premium users */}
-        {profile?.is_premium && (
+          {/* Polymarket Wallet Section - Only show for premium users */}
+          {isPremium && (
           <div className="mb-6">
             <h2 className="text-label text-slate-400 mb-4">POLYMARKET WALLET</h2>
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
@@ -1603,7 +1605,7 @@ export default function ProfilePage() {
           </div>
 
           {/* Polymarket Wallet - Only show for premium users */}
-          {profile?.is_premium && (
+          {isPremium && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-4">
               <div className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">
