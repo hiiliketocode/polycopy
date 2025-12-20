@@ -4,92 +4,22 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
 function LoginForm() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [isSignupMode, setIsSignupMode] = useState(false);
   const [password, setPassword] = useState('');
-  const [devAccessCode, setDevAccessCode] = useState('');
-
-  const devPasswordLoginEnabled = process.env.NEXT_PUBLIC_DEV_PASSWORD_LOGIN === 'true';
 
   // Check if we're in signup mode
   useEffect(() => {
     setIsSignupMode(searchParams.get('mode') === 'signup');
   }, [searchParams]);
-
-  // Build a redirect URL that works for preview deployments by bouncing through
-  // a stable base domain while keeping track of the current origin.
-  const buildMagicLinkRedirect = () => {
-    if (typeof window === 'undefined') return undefined;
-
-    const currentOrigin = window.location.origin;
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-    const preferredBase =
-      !isLocalhost
-        ? (process.env.NEXT_PUBLIC_MAGIC_LINK_BASE_URL || process.env.NEXT_PUBLIC_APP_URL)
-        : null;
-
-    let baseOrigin = currentOrigin;
-
-    if (preferredBase) {
-      try {
-        baseOrigin = new URL(preferredBase).origin;
-      } catch (error) {
-        console.error('Invalid magic link base URL, falling back to current origin', error);
-      }
-    }
-
-    const redirectUrl = new URL('/auth/callback', baseOrigin);
-
-    if (baseOrigin !== currentOrigin) {
-      redirectUrl.searchParams.set('next', currentOrigin);
-    }
-
-    return redirectUrl.toString();
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    setSuccess(false);
-
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      setError('Please enter a valid email address');
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const emailRedirectTo = buildMagicLinkRedirect();
-
-      const { error: signInError } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo,
-        },
-      });
-
-      if (signInError) {
-        setError(signInError.message);
-      } else {
-        setSuccess(true);
-        setEmail(''); // Clear email input after success
-      }
-    } catch (err) {
-      setError('An unexpected error occurred. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handlePasswordAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,46 +46,10 @@ function LoginForm() {
         setSuccess(true);
         setEmail('');
         setPassword('');
+        if (!isSignupMode) {
+          router.push('/');
+        }
       }
-    } catch (err) {
-      setError('An unexpected error occurred. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDevSetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    setSuccess(false);
-
-    if (!email || !password || !devAccessCode) {
-      setError('Email, password, and access code are required');
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/dev/set-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          password,
-          code: devAccessCode,
-        }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        setError(payload.error || 'Failed to set password');
-        return;
-      }
-
-      setSuccess(true);
-      setPassword('');
-      setDevAccessCode('');
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
     } finally {
@@ -198,11 +92,11 @@ function LoginForm() {
               <div className="flex items-start gap-2">
                 <span className="text-xl">✓</span>
                 <div>
-                  <p className="font-semibold text-green-800">Check your email!</p>
+                  <p className="font-semibold text-green-800">Success!</p>
                   <p className="text-sm text-green-700">
                     {isSignupMode 
-                      ? "We've sent you a magic link to create your account. Click the link in your email to get started."
-                      : "We've sent you a magic link to sign in. Click the link in your email to continue."
+                      ? 'Your account is ready. You can sign in now.'
+                      : 'You are signed in.'
                     }
                   </p>
                 </div>
@@ -227,14 +121,14 @@ function LoginForm() {
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
             <p className="text-sm text-blue-800">
               💡 {isSignupMode 
-                ? "We'll send you a magic link to create your account. No password needed!"
-                : "We'll send you a magic link to sign in. No password needed!"
+                ? 'Create an account with your email and a password.'
+                : 'Sign in with your email and password.'
               }
             </p>
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handlePasswordAuth}>
             <div className="mb-6">
               <label htmlFor="email" className="block text-sm font-medium text-[#0F0F0F] mb-2">
                 Email address
@@ -245,6 +139,22 @@ function LoginForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="your@email.com"
+                required
+                disabled={loading || success}
+                className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022] transition-all duration-200 disabled:bg-slate-100 disabled:cursor-not-allowed text-[#0F0F0F]"
+              />
+            </div>
+
+            <div className="mb-6">
+              <label htmlFor="password" className="block text-sm font-medium text-[#0F0F0F] mb-2">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Your password"
                 required
                 disabled={loading || success}
                 className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022] transition-all duration-200 disabled:bg-slate-100 disabled:cursor-not-allowed text-[#0F0F0F]"
@@ -274,73 +184,15 @@ function LoginForm() {
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                     />
                   </svg>
-                  Sending...
+                  {isSignupMode ? 'Creating...' : 'Signing in...'}
                 </span>
               ) : success ? (
-                '✓ Email Sent'
+                '✓ Success'
               ) : (
-                '🔗 Send Magic Link'
+                isSignupMode ? 'Create Account' : 'Sign In'
               )}
             </button>
           </form>
-
-          {devPasswordLoginEnabled && (
-            <>
-              <div className="my-6 flex items-center gap-3 text-slate-400 text-xs uppercase tracking-wide">
-                <div className="h-px flex-1 bg-slate-200"></div>
-                Dev Password Login
-                <div className="h-px flex-1 bg-slate-200"></div>
-              </div>
-
-              <form onSubmit={handlePasswordAuth}>
-                <div className="mb-4">
-                  <label htmlFor="password" className="block text-sm font-medium text-[#0F0F0F] mb-2">
-                    Password
-                  </label>
-                  <input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Your password"
-                    required
-                    disabled={loading || success}
-                    className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022] transition-all duration-200 disabled:bg-slate-100 disabled:cursor-not-allowed text-[#0F0F0F]"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading || success}
-                  className="w-full bg-slate-900 text-white font-bold py-3 px-4 rounded-xl hover:bg-slate-800 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md border-b-4 border-slate-950 active:border-b-0 active:translate-y-1"
-                >
-                  {loading ? 'Signing in...' : isSignupMode ? 'Create Account' : 'Sign In with Password'}
-                </button>
-              </form>
-
-              <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs uppercase tracking-wide text-slate-400 mb-3">Dev Set Password</p>
-                <form onSubmit={handleDevSetPassword} className="grid gap-3">
-                  <input
-                    type="password"
-                    value={devAccessCode}
-                    onChange={(e) => setDevAccessCode(e.target.value)}
-                    placeholder="Access code"
-                    required
-                    disabled={loading || success}
-                    className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022] transition-all duration-200 disabled:bg-slate-100 disabled:cursor-not-allowed text-[#0F0F0F]"
-                  />
-                  <button
-                    type="submit"
-                    disabled={loading || success}
-                    className="w-full bg-slate-700 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-slate-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {loading ? 'Setting...' : 'Set / Reset Password'}
-                  </button>
-                </form>
-              </div>
-            </>
-          )}
 
           {/* Toggle between Sign Up and Log In */}
           <div className="mt-6 text-center">
