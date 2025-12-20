@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { TURNKEY_ENABLED } from '@/lib/turnkey/config'
 import { ApiKeyStamper } from '@turnkey/api-key-stamper'
 import { TurnkeyClient } from '@turnkey/http'
-import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseAdminClient, createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 // Dev bypass
 const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development' && process.env.TURNKEY_DEV_BYPASS_USER_ID
@@ -212,17 +212,25 @@ export async function POST(request: NextRequest) {
     const importClient = getImportClient()
 
     // Authenticate user
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: _authError,
-    } = await supabase.auth.getUser()
-
+    const authHeader = request.headers.get('authorization')
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
     let userId: string | null = null
 
-    if (user?.id) {
-      userId = user.id
-    } else if (DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
+    if (bearerToken) {
+      const supabaseAuth = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      )
+      const { data: { user } } = await supabaseAuth.auth.getUser(bearerToken)
+      userId = user?.id ?? null
+    } else {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      userId = user?.id ?? null
+    }
+
+    if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
       userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
       console.log('[TURNKEY-IMPORT-API] DEV BYPASS: Using env user:', userId)
     }
