@@ -4,51 +4,47 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { useRouter } from 'next/navigation';
 
 function LoginForm() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [isSignupMode, setIsSignupMode] = useState(false);
-  const [password, setPassword] = useState('');
 
   // Check if we're in signup mode
   useEffect(() => {
     setIsSignupMode(searchParams.get('mode') === 'signup');
   }, [searchParams]);
 
-  const handlePasswordAuth = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     setSuccess(false);
 
-    if (!email || !password) {
-      setError('Email and password are required');
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError('Please enter a valid email address');
       setLoading(false);
       return;
     }
 
     try {
-      const authAction = isSignupMode
-        ? supabase.auth.signUp({ email, password })
-        : supabase.auth.signInWithPassword({ email, password });
+      const { error: signInError } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
+        },
+      });
 
-      const { error: authError } = await authAction;
-
-      if (authError) {
-        setError(authError.message);
+      if (signInError) {
+        setError(signInError.message);
       } else {
         setSuccess(true);
-        setEmail('');
-        setPassword('');
-        if (!isSignupMode) {
-          router.push('/');
-        }
+        setEmail(''); // Clear email input after success
       }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
@@ -92,11 +88,11 @@ function LoginForm() {
               <div className="flex items-start gap-2">
                 <span className="text-xl">✓</span>
                 <div>
-                  <p className="font-semibold text-green-800">Success!</p>
+                  <p className="font-semibold text-green-800">Check your email!</p>
                   <p className="text-sm text-green-700">
                     {isSignupMode 
-                      ? 'Your account is ready. You can sign in now.'
-                      : 'You are signed in.'
+                      ? "We've sent you a magic link to create your account. Click the link in your email to get started."
+                      : "We've sent you a magic link to sign in. Click the link in your email to continue."
                     }
                   </p>
                 </div>
@@ -121,14 +117,14 @@ function LoginForm() {
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
             <p className="text-sm text-blue-800">
               💡 {isSignupMode 
-                ? 'Create an account with your email and a password.'
-                : 'Sign in with your email and password.'
+                ? "We'll send you a magic link to create your account. No password needed!"
+                : "We'll send you a magic link to sign in. No password needed!"
               }
             </p>
           </div>
 
           {/* Form */}
-          <form onSubmit={handlePasswordAuth}>
+          <form onSubmit={handleSubmit}>
             <div className="mb-6">
               <label htmlFor="email" className="block text-sm font-medium text-[#0F0F0F] mb-2">
                 Email address
@@ -139,22 +135,6 @@ function LoginForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="your@email.com"
-                required
-                disabled={loading || success}
-                className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022] transition-all duration-200 disabled:bg-slate-100 disabled:cursor-not-allowed text-[#0F0F0F]"
-              />
-            </div>
-
-            <div className="mb-6">
-              <label htmlFor="password" className="block text-sm font-medium text-[#0F0F0F] mb-2">
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Your password"
                 required
                 disabled={loading || success}
                 className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022] transition-all duration-200 disabled:bg-slate-100 disabled:cursor-not-allowed text-[#0F0F0F]"
@@ -184,12 +164,12 @@ function LoginForm() {
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                     />
                   </svg>
-                  {isSignupMode ? 'Creating...' : 'Signing in...'}
+                  Sending...
                 </span>
               ) : success ? (
-                '✓ Success'
+                '✓ Email Sent'
               ) : (
-                isSignupMode ? 'Create Account' : 'Sign In'
+                '🔗 Send Magic Link'
               )}
             </button>
           </form>
