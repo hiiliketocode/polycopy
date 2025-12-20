@@ -88,11 +88,6 @@ export default function ProfilePage() {
   // Notification preferences state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loadingNotificationPrefs, setLoadingNotificationPrefs] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [updatingPassword, setUpdatingPassword] = useState(false);
-
-  const devPasswordLoginEnabled = process.env.NEXT_PUBLIC_DEV_PASSWORD_LOGIN === 'true';
   
   // Refs to prevent re-fetching on tab focus
   const hasLoadedStatsRef = useRef(false);
@@ -527,38 +522,6 @@ export default function ProfilePage() {
     setTimeout(() => setShowToast(false), 3000);
   };
 
-  const handleUpdatePassword = async (event: React.FormEvent) => {
-    event.preventDefault();
-
-    if (!newPassword || !confirmPassword) {
-      showToastMessage('Enter and confirm a new password', 'error');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      showToastMessage('Passwords do not match', 'error');
-      return;
-    }
-
-    setUpdatingPassword(true);
-
-    try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) {
-        showToastMessage(error.message || 'Failed to update password', 'error');
-        return;
-      }
-
-      showToastMessage('Password updated successfully', 'success');
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (err) {
-      console.error('Error updating password:', err);
-      showToastMessage('Failed to update password', 'error');
-    } finally {
-      setUpdatingPassword(false);
-    }
-  };
 
   // Refresh status for all copied trades - fetches directly from Polymarket (no auth needed)
   const handleRefreshStatus = async () => {
@@ -1673,50 +1636,6 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {devPasswordLoginEnabled && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-4">
-              <div className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
-                    <svg className="w-5 h-5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11V7a4 4 0 00-8 0v4m-1 0h10a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-900">Dev Password Login</p>
-                    <p className="text-small text-slate-500">Set a password for this account (dev only).</p>
-                  </div>
-                </div>
-
-                <form onSubmit={handleUpdatePassword} className="mt-4 grid gap-3">
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="New password"
-                    disabled={updatingPassword}
-                    className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022] disabled:bg-slate-100 disabled:cursor-not-allowed text-[#0F0F0F]"
-                  />
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Confirm password"
-                    disabled={updatingPassword}
-                    className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022] disabled:bg-slate-100 disabled:cursor-not-allowed text-[#0F0F0F]"
-                  />
-                  <button
-                    type="submit"
-                    disabled={updatingPassword}
-                    className="w-full bg-slate-900 text-white py-2 px-4 rounded-lg font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50"
-                  >
-                    {updatingPassword ? 'Updating...' : 'Set Password'}
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
-          
           {/* Help & Support */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <a
