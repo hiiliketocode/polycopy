@@ -18,6 +18,38 @@ function LoginForm() {
     setIsSignupMode(searchParams.get('mode') === 'signup');
   }, [searchParams]);
 
+  // Build a redirect URL that works for preview deployments by bouncing through
+  // a stable base domain while keeping track of the current origin.
+  const buildMagicLinkRedirect = () => {
+    if (typeof window === 'undefined') return undefined;
+
+    const currentOrigin = window.location.origin;
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+    const preferredBase =
+      !isLocalhost
+        ? (process.env.NEXT_PUBLIC_MAGIC_LINK_BASE_URL || process.env.NEXT_PUBLIC_APP_URL)
+        : null;
+
+    let baseOrigin = currentOrigin;
+
+    if (preferredBase) {
+      try {
+        baseOrigin = new URL(preferredBase).origin;
+      } catch (error) {
+        console.error('Invalid magic link base URL, falling back to current origin', error);
+      }
+    }
+
+    const redirectUrl = new URL('/auth/callback', baseOrigin);
+
+    if (baseOrigin !== currentOrigin) {
+      redirectUrl.searchParams.set('next', currentOrigin);
+    }
+
+    return redirectUrl.toString();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -33,10 +65,12 @@ function LoginForm() {
     }
 
     try {
+      const emailRedirectTo = buildMagicLinkRedirect();
+
       const { error: signInError } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
+          emailRedirectTo,
         },
       });
 
@@ -250,4 +284,3 @@ export default function LoginPage() {
     </Suspense>
   );
 }
-
