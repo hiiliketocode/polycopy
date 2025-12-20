@@ -109,7 +109,30 @@ export default function ConnectWalletTurnkeyPage() {
     })
 
     return () => subscription.unsubscribe()
-  }, [authHeaders])
+  }, [])
+
+  useEffect(() => {
+    if (accessToken) {
+      return
+    }
+
+    const hydrateAccessToken = async () => {
+      try {
+        const res = await fetch('/api/auth/session', { credentials: 'include' })
+        if (!res.ok) {
+          return
+        }
+        const data = await res.json()
+        if (data?.access_token) {
+          setAccessToken(data.access_token)
+        }
+      } catch {
+        // no-op
+      }
+    }
+
+    hydrateAccessToken()
+  }, [accessToken])
 
   useEffect(() => {
     let cancelled = false
@@ -174,7 +197,7 @@ export default function ConnectWalletTurnkeyPage() {
     } finally {
       // no-op
     }
-  }, [])
+  }, [authHeaders])
 
   useEffect(() => {
     loadLinkStatus()
