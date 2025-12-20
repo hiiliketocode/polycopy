@@ -64,8 +64,7 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<any>(null);
   const [showWalletSetup, setShowWalletSetup] = useState(false);
   const [disconnectingWallet, setDisconnectingWallet] = useState(false);
-  const forcePremium = process.env.NEXT_PUBLIC_FORCE_PREMIUM === 'true';
-  const isPremium = Boolean(profile?.is_premium) || forcePremium;
+  const isPremium = Boolean(profile?.is_premium);
   
   // Display name state
   const [displayName, setDisplayName] = useState<string>('You');
