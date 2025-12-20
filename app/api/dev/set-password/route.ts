@@ -29,14 +29,20 @@ export async function POST(request: NextRequest) {
     auth: { persistSession: false },
   })
 
-  const { data: userLookup, error: lookupError } = await admin.auth.admin.getUserByEmail(email)
+  const { data: userLookup, error: lookupError } = await admin.auth.admin.listUsers({
+    page: 1,
+    perPage: 1,
+    filter: `email.eq.${email}`,
+  })
 
   if (lookupError) {
     return NextResponse.json({ error: lookupError.message }, { status: 400 })
   }
 
-  if (userLookup?.user) {
-    const { error: updateError } = await admin.auth.admin.updateUserById(userLookup.user.id, {
+  const existingUser = userLookup?.users?.[0]
+
+  if (existingUser) {
+    const { error: updateError } = await admin.auth.admin.updateUserById(existingUser.id, {
       password,
       email_confirm: true,
     })
