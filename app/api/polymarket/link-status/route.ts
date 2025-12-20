@@ -1,6 +1,6 @@
-import { NextResponse, type NextRequest } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createSupabaseAdminClient, createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -19,6 +19,8 @@ const supabaseAdmin = createSupabaseAdminClient(SUPABASE_URL, SUPABASE_SERVICE_R
 const DEV_BYPASS_AUTH =
   process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
   Boolean(process.env.TURNKEY_DEV_BYPASS_USER_ID)
+
+export const dynamic = 'force-dynamic'
 
 type TurnkeyWalletRow = {
   id: string
@@ -41,29 +43,14 @@ const normalizeAddress = (value: string | null | undefined) => {
   return trimmed.length > 0 ? trimmed : null
 }
 
-export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+export async function GET() {
   let authError: Error | null = null
   let userId: string | null = null
 
-  if (bearerToken) {
-    const supabaseAuth = createSupabaseClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        auth: { autoRefreshToken: false, persistSession: false },
-      }
-    )
-    const { data: { user }, error } = await supabaseAuth.auth.getUser(bearerToken)
-    authError = error ?? null
-    userId = user?.id ?? null
-  } else {
-    const supabase = await createClient()
-    const { data: { user }, error } = await supabase.auth.getUser()
-    authError = error ?? null
-    userId = user?.id ?? null
-  }
+  const supabase = await createClient()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  authError = error ?? null
+  userId = user?.id ?? null
 
   if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
     userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
@@ -73,7 +60,7 @@ export async function GET(request: NextRequest) {
   if (!userId) {
     return NextResponse.json(
       { error: 'Unauthorized - please log in', details: authError?.message },
-      { status: 401 }
+      { status: 401, headers: { 'Cache-Control': 'no-store' } }
     )
   }
 
@@ -126,10 +113,15 @@ export async function GET(request: NextRequest) {
       has_l2_credentials: hasL2Credentials,
     }
 
-    return NextResponse.json(response)
+    return NextResponse.json(response, {
+      headers: { 'Cache-Control': 'no-store' },
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to load link status'
     console.error('[POLY-LINK-STATUS] Unexpected error:', message)
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json(
+      { error: message },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } }
+    )
   }
 }
