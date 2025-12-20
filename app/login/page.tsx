@@ -13,6 +13,7 @@ function LoginForm() {
   const [error, setError] = useState('');
   const [isSignupMode, setIsSignupMode] = useState(false);
   const [password, setPassword] = useState('');
+  const [devAccessCode, setDevAccessCode] = useState('');
 
   const devPasswordLoginEnabled = process.env.NEXT_PUBLIC_DEV_PASSWORD_LOGIN === 'true';
 
@@ -116,6 +117,45 @@ function LoginForm() {
         setEmail('');
         setPassword('');
       }
+    } catch (err) {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDevSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccess(false);
+
+    if (!email || !password || !devAccessCode) {
+      setError('Email, password, and access code are required');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/dev/set-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          password,
+          code: devAccessCode,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        setError(payload.error || 'Failed to set password');
+        return;
+      }
+
+      setSuccess(true);
+      setPassword('');
+      setDevAccessCode('');
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
     } finally {
@@ -277,6 +317,28 @@ function LoginForm() {
                   {loading ? 'Signing in...' : isSignupMode ? 'Create Account' : 'Sign In with Password'}
                 </button>
               </form>
+
+              <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs uppercase tracking-wide text-slate-400 mb-3">Dev Set Password</p>
+                <form onSubmit={handleDevSetPassword} className="grid gap-3">
+                  <input
+                    type="password"
+                    value={devAccessCode}
+                    onChange={(e) => setDevAccessCode(e.target.value)}
+                    placeholder="Access code"
+                    required
+                    disabled={loading || success}
+                    className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022] transition-all duration-200 disabled:bg-slate-100 disabled:cursor-not-allowed text-[#0F0F0F]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={loading || success}
+                    className="w-full bg-slate-700 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-slate-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? 'Setting...' : 'Set / Reset Password'}
+                  </button>
+                </form>
+              </div>
             </>
           )}
 
