@@ -41,7 +41,6 @@ const normalizeAddress = (value: string | null | undefined) => {
   return trimmed.length > 0 ? trimmed : null
 }
 
-export async function GET() {
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
