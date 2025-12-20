@@ -1,8 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { verifyMessage } from 'ethers/lib/utils'
-import { supabase } from '@/lib/supabase'
 import Header from '../../components/Header'
 
 const TURNKEY_UI_ENABLED = process.env.NEXT_PUBLIC_TURNKEY_ENABLED === 'true'
@@ -90,49 +89,6 @@ export default function ConnectWalletTurnkeyPage() {
   const [autoCheckedAddress, setAutoCheckedAddress] = useState(false)
   const [linkingMessage, setLinkingMessage] = useState<string | null>(null)
   const [linkingError, setLinkingError] = useState<string | null>(null)
-  const [accessToken, setAccessToken] = useState<string | null>(null)
-
-  const authHeaders = useMemo(() => {
-    if (!accessToken) {
-      return undefined
-    }
-    return { Authorization: `Bearer ${accessToken}` }
-  }, [accessToken])
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setAccessToken(session?.access_token ?? null)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAccessToken(session?.access_token ?? null)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    if (accessToken) {
-      return
-    }
-
-    const hydrateAccessToken = async () => {
-      try {
-        const res = await fetch('/api/auth/session', { credentials: 'include' })
-        if (!res.ok) {
-          return
-        }
-        const data = await res.json()
-        if (data?.access_token) {
-          setAccessToken(data.access_token)
-        }
-      } catch {
-        // no-op
-      }
-    }
-
-    hydrateAccessToken()
-  }, [accessToken])
 
   useEffect(() => {
     let cancelled = false
@@ -142,7 +98,7 @@ export default function ConnectWalletTurnkeyPage() {
         const res = await fetch('/api/turnkey/import-private-key', {
           method: 'GET',
           credentials: 'include',
-          headers: authHeaders,
+          cache: 'no-store',
         })
         const data = await res.json()
 
@@ -172,7 +128,7 @@ export default function ConnectWalletTurnkeyPage() {
     return () => {
       cancelled = true
     }
-  }, [authHeaders])
+  }, [])
 
   const loadLinkStatus = useCallback(async () => {
     setLinkStatusError(null)
@@ -181,7 +137,7 @@ export default function ConnectWalletTurnkeyPage() {
       const res = await fetch('/api/polymarket/link-status', {
         method: 'GET',
         credentials: 'include',
-        headers: authHeaders,
+        cache: 'no-store',
       })
       const data = await res.json()
 
@@ -197,7 +153,7 @@ export default function ConnectWalletTurnkeyPage() {
     } finally {
       // no-op
     }
-  }, [authHeaders])
+  }, [])
 
   useEffect(() => {
     loadLinkStatus()
@@ -215,7 +171,7 @@ export default function ConnectWalletTurnkeyPage() {
       const res = await fetch('/api/turnkey/wallet/create', {
         method: 'POST',
         credentials: 'include', // Include cookies for auth
-        headers: authHeaders,
+        cache: 'no-store',
       })
       const data = (await res.json()) as WalletCreateResponse
 
@@ -246,7 +202,8 @@ export default function ConnectWalletTurnkeyPage() {
       const res = await fetch('/api/turnkey/sign-test', {
         method: 'POST',
         credentials: 'include', // Include cookies for auth
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({ message }),
       })
 
@@ -292,7 +249,9 @@ export default function ConnectWalletTurnkeyPage() {
     try {
       const res = await fetch('/api/turnkey/polymarket/validate-account', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({ accountAddress: targetAddress }),
       })
 
@@ -327,7 +286,9 @@ export default function ConnectWalletTurnkeyPage() {
     try {
       const res = await fetch('/api/turnkey/polymarket/usdc-balance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({ accountAddress: targetAddress }),
       })
       const data = (await res.json()) as BalanceResponse
@@ -359,7 +320,7 @@ export default function ConnectWalletTurnkeyPage() {
     try {
       const res = await fetch(`/api/polymarket/open-positions?wallet=${targetAddress}`, {
         credentials: 'include',
-        headers: authHeaders,
+        cache: 'no-store',
       })
       const data = await res.json()
       if (!res.ok) {
@@ -395,7 +356,8 @@ export default function ConnectWalletTurnkeyPage() {
       const res = await fetch('/api/polymarket/l2-credentials', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({
           polymarketAccountAddress: polymarketAddress,
         }),
@@ -489,7 +451,8 @@ export default function ConnectWalletTurnkeyPage() {
       const res = await fetch('/api/turnkey/import-private-key', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({
           polymarket_account_address: polymarketAddress.trim(),
           encryptedBundle,

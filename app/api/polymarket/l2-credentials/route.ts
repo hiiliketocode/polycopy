@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createServiceClient, createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import {
   TURNKEY_ENABLED,
   CLOB_ENCRYPTION_KEY,
@@ -15,6 +15,7 @@ import { POLYMARKET_CLOB_BASE_URL } from '@/lib/turnkey/config'
 import { verifyTypedData } from 'ethers/lib/utils'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 // Dev bypass for local testing
 const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development' && process.env.TURNKEY_DEV_BYPASS_USER_ID
@@ -138,26 +139,13 @@ export async function POST(request: NextRequest) {
 
   try {
     // Authenticate user
-    const authHeader = request.headers.get('authorization')
-    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
     let userId: string | null = null
     let authError: Error | null = null
 
-    if (bearerToken) {
-      const supabaseAuth = createSupabaseClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        { auth: { autoRefreshToken: false, persistSession: false } }
-      )
-      const { data: { user }, error } = await supabaseAuth.auth.getUser(bearerToken)
-      authError = error ?? null
-      userId = user?.id ?? null
-    } else {
-      const supabase = await createClient()
-      const { data: { user }, error } = await supabase.auth.getUser()
-      authError = error ?? null
-      userId = user?.id ?? null
-    }
+    const supabase = await createClient()
+    const { data: { user }, error } = await supabase.auth.getUser()
+    authError = error ?? null
+    userId = user?.id ?? null
 
     // Allow dev bypass
     if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
