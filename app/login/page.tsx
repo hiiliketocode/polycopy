@@ -12,6 +12,9 @@ function LoginForm() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [isSignupMode, setIsSignupMode] = useState(false);
+  const [password, setPassword] = useState('');
+
+  const devPasswordLoginEnabled = process.env.NEXT_PUBLIC_DEV_PASSWORD_LOGIN === 'true';
 
   // Check if we're in signup mode
   useEffect(() => {
@@ -79,6 +82,39 @@ function LoginForm() {
       } else {
         setSuccess(true);
         setEmail(''); // Clear email input after success
+      }
+    } catch (err) {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccess(false);
+
+    if (!email || !password) {
+      setError('Email and password are required');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const authAction = isSignupMode
+        ? supabase.auth.signUp({ email, password })
+        : supabase.auth.signInWithPassword({ email, password });
+
+      const { error: authError } = await authAction;
+
+      if (authError) {
+        setError(authError.message);
+      } else {
+        setSuccess(true);
+        setEmail('');
+        setPassword('');
       }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
@@ -207,6 +243,42 @@ function LoginForm() {
               )}
             </button>
           </form>
+
+          {devPasswordLoginEnabled && (
+            <>
+              <div className="my-6 flex items-center gap-3 text-slate-400 text-xs uppercase tracking-wide">
+                <div className="h-px flex-1 bg-slate-200"></div>
+                Dev Password Login
+                <div className="h-px flex-1 bg-slate-200"></div>
+              </div>
+
+              <form onSubmit={handlePasswordAuth}>
+                <div className="mb-4">
+                  <label htmlFor="password" className="block text-sm font-medium text-[#0F0F0F] mb-2">
+                    Password
+                  </label>
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Your password"
+                    required
+                    disabled={loading || success}
+                    className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022] transition-all duration-200 disabled:bg-slate-100 disabled:cursor-not-allowed text-[#0F0F0F]"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || success}
+                  className="w-full bg-slate-900 text-white font-bold py-3 px-4 rounded-xl hover:bg-slate-800 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md border-b-4 border-slate-950 active:border-b-0 active:translate-y-1"
+                >
+                  {loading ? 'Signing in...' : isSignupMode ? 'Create Account' : 'Sign In with Password'}
+                </button>
+              </form>
+            </>
+          )}
 
           {/* Toggle between Sign Up and Log In */}
           <div className="mt-6 text-center">
