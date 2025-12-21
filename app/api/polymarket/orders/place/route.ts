@@ -106,14 +106,14 @@ export async function POST(request: NextRequest) {
 
     const rawResult = await client.postOrder(order, orderType as any, false)
     const evaluation = interpretClobOrderResult(rawResult)
-    const isHtmlResponse = evaluation.errorType === 'blocked_by_cloudflare'
+    const failedResult = !evaluation.success
+    const isHtmlResponse = failedResult && evaluation.errorType === 'blocked_by_cloudflare'
     const upstreamContentType = isHtmlResponse ? 'text/html' : 'application/json'
-    const upstreamStatus =
-      isHtmlResponse && !evaluation.status
+    const upstreamStatus = failedResult
+      ? evaluation.errorType === 'blocked_by_cloudflare'
         ? 502
-        : evaluation.errorType === 'blocked_by_cloudflare'
-        ? 502
-        : evaluation.status ?? (evaluation.success ? 200 : 502)
+        : evaluation.status ?? 502
+      : 200
     const snippet = getBodySnippet(evaluation.raw ?? '')
 
     console.log('[POLY-ORDER-PLACE] Upstream response', {
