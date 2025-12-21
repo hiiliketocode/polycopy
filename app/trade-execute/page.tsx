@@ -284,7 +284,7 @@ function extractContractType(record: Record<string, any>) {
   return nested ? String(nested) : ''
 }
 
-export default function TradeExecutePage() {
+function TradeExecutePageInner() {
   const searchParams = useSearchParams()
   const [tradeId, setTradeId] = useState('')
   const [result, setResult] = useState<LookupResult | null>(null)
@@ -830,8 +830,7 @@ export default function TradeExecutePage() {
   ])
 
   return (
-    <Suspense fallback={null}>
-      <div>
+    <div>
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-10">
         <h1 className="text-2xl font-semibold text-slate-900">Trade Details</h1>
@@ -1313,6 +1312,13 @@ export default function TradeExecutePage() {
       </div>
       </main>
     </div>
+  )
+}
+
+export default function TradeExecutePage() {
+  return (
+    <Suspense fallback={null}>
+      <TradeExecutePageInner />
     </Suspense>
   )
 }
