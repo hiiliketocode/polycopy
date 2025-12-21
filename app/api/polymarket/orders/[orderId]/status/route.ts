@@ -105,7 +105,7 @@ function normalizeOrder(order: any) {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { orderId: string } }
+  { params }: { params: { orderId: string | string[] } }
 ) {
   const orderIdFromParams =
     typeof params?.orderId === 'string'
