@@ -869,7 +869,9 @@ export default function TradeExecutePage() {
             <h2 className="text-sm font-semibold text-slate-800">Trade Details</h2>
             {!record && (
               <p className="mt-2 text-sm text-slate-600">
-                {result?.message || result?.error || 'Trade not found.'}
+              {result?.found === false
+                ? result.message || result.error || 'Trade not found.'
+                : 'Trade not found.'}
               </p>
             )}
             {record && (
