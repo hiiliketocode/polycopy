@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
         ? 502
         : evaluation.status ?? 502
       : 200
-    const logPayload = {
+    const logPayload: Record<string, unknown> = {
       requestUrl,
       upstreamHost,
       status: upstreamStatus,
