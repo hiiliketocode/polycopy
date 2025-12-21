@@ -103,19 +103,9 @@ function normalizeOrder(order: any) {
   }
 }
 
-export async function GET(
-  request: NextRequest,
-  context: { params: { orderId: string } }
-) {
-  const { params } = context
-  const orderIdFromParams =
-    typeof params?.orderId === 'string'
-      ? params.orderId
-      : Array.isArray(params?.orderId)
-        ? params.orderId[0]
-        : null
-  let orderId =
-    (orderIdFromParams || request.nextUrl.searchParams.get('orderId') || '').trim()
+export async function GET(request: NextRequest) {
+  const orderIdFromParams = request.nextUrl.searchParams.get('orderId')
+  let orderId = (orderIdFromParams || '').trim()
   if (!orderId) {
     const parts = request.nextUrl.pathname.split('/').filter(Boolean)
     const index = parts.indexOf('orders')
