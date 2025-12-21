@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { ClobClient } from '@polymarket/clob-client'
-import type { Trade } from '@polymarket/clob-client/dist/types'
+import type { Trade, TradeParams } from '@polymarket/clob-client/dist/types'
 import { ApiCredentials } from '@/lib/polymarket/clob'
 import {
   CLOB_ENCRYPTION_KEY,
@@ -209,12 +209,16 @@ async function refreshOrders(userId: string, limit: number): Promise<RefreshResu
   const openOrders = await client.getOpenOrders({}, true)
 
   let trades: Trade[] = []
+  type TradeQuery = TradeParams & { limit?: number }
+
   try {
-    const tradesResp = await client.getTradesPaginated({ limit })
+    const tradesResp = await client.getTradesPaginated({ limit } as TradeQuery)
     trades = Array.isArray(tradesResp?.trades) ? tradesResp.trades : []
   } catch (error) {
     console.warn('[POLY-ORDERS-REFRESH] trades fetch without filter failed, falling back', error)
-    const tradesResp = await client.getTradesPaginated({ maker_address: proxyAddress, limit })
+    const tradesResp = await client.getTradesPaginated(
+      { maker_address: proxyAddress, limit } as TradeQuery
+    )
     trades = Array.isArray(tradesResp?.trades) ? tradesResp.trades : []
   }
   const orderIds = new Set<string>(openOrders.map((o: any) => o?.id).filter(Boolean))
