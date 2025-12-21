@@ -209,10 +209,15 @@ export async function GET(request: NextRequest) {
 
     const openOrders = await client.getOpenOrders(openOrdersParams, true)
 
+    type TradeQuery = {
+      maker_address: string
+      limit?: number
+    }
+
     const tradesResp = await client.getTradesPaginated({
       maker_address: proxyAddress,
       limit,
-    })
+    } as TradeQuery)
     const trades = Array.isArray(tradesResp?.trades) ? tradesResp.trades : []
     const orderIds = new Set<string>(openOrders.map((o: any) => o?.id).filter(Boolean))
     for (const id of extractOrderIds(trades)) orderIds.add(id)
