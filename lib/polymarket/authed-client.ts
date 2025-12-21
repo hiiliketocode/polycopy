@@ -61,6 +61,10 @@ type TurnkeyWalletRow = {
   turnkey_wallet_id: string
 }
 
+type ClobCredentialRecord = {
+  polymarket_account_address?: string | null
+}
+
 async function buildAuthedClient(
   userId: string,
   wallet: TurnkeyWalletRow,
@@ -213,22 +217,26 @@ export async function getAuthedClobClientForUserAnyWallet(userId: string, proxyO
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
-    .maybeSingle()) as PostgrestSingleResponse<Record<string, any>>
+    .maybeSingle()) as PostgrestSingleResponse<ClobCredentialRecord>
 
-  let { data: wallet, error: walletError } = await supabaseAdmin
+  let walletResponse = (await supabaseAdmin
     .from('turnkey_wallets')
     .select('id, user_id, wallet_type, eoa_address, polymarket_account_address, turnkey_private_key_id, turnkey_wallet_id')
     .eq('user_id', userId)
     .limit(1)
-    .maybeSingle()
+    .maybeSingle()) as PostgrestSingleResponse<TurnkeyWalletRow>
+  let wallet = walletResponse.data
+  let walletError = walletResponse.error
 
   if ((!wallet || walletError) && proxyOverride) {
-    const { data: walletByProxy, error: walletByProxyError } = await supabaseAdmin
+    const walletByProxyResponse = (await supabaseAdmin
       .from('turnkey_wallets')
       .select('id, user_id, wallet_type, eoa_address, polymarket_account_address, turnkey_private_key_id, turnkey_wallet_id')
       .ilike('polymarket_account_address', proxyOverride.toLowerCase())
       .limit(1)
-      .maybeSingle()
+      .maybeSingle()) as PostgrestSingleResponse<TurnkeyWalletRow>
+    const walletByProxy = walletByProxyResponse.data
+    const walletByProxyError = walletByProxyResponse.error
 
     if (!walletByProxyError && walletByProxy) {
       wallet = walletByProxy
