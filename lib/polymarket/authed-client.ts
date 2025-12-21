@@ -213,7 +213,7 @@ export async function getAuthedClobClientForUserAnyWallet(userId: string, proxyO
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
-    .maybeSingle()) as PostgrestSingleResponse<ClobCredentialRecord>
+    .maybeSingle()) as PostgrestSingleResponse<Record<string, any>>
 
   let { data: wallet, error: walletError } = await supabaseAdmin
     .from('turnkey_wallets')
