@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 import { createClient } from '@supabase/supabase-js'
 import { getAuthedClobClientForUserAnyWallet } from '../lib/polymarket/authed-client'
-import type { TradeParams } from '@polymarket/clob-client/dist/types'
+import type { OpenOrderParams, TradeParams } from '@polymarket/clob-client/dist/types'
 
 type CliOptions = {
   email?: string
@@ -22,7 +22,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 })
 
 type TradeQuery = TradeParams & { limit?: number }
-type OpenOrdersQuery = { owner?: string; maker_address?: string; limit?: number }
+type OpenOrdersQuery = OpenOrderParams & { owner?: string; maker_address?: string; limit?: number }
 
 function parseArgs(): CliOptions {
   const args = process.argv.slice(2)
