@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
 import { POST_ORDER } from '@polymarket/clob-client/dist/endpoints.js'
 import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
+import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
 import {
   buildLocalGuardResponse,
   getBodySnippet,
@@ -45,6 +46,8 @@ export async function POST(request: NextRequest) {
   const body: Body = await request.json()
   const { tokenId, price, amount, side, orderType = 'GTC', confirm } = body
 
+  const requestId = request.headers.get('x-request-id') ?? null
+
   if (!confirm) {
     return buildLocalGuardResponse(
       { error: 'confirm=true required to place order' },
@@ -71,64 +74,33 @@ export async function POST(request: NextRequest) {
       userId
     )
 
-    console.log('[POLY-ORDER-PLACE] Incoming request', {
-      url: request.url,
-      method: request.method,
-      authenticated: Boolean(userId),
-    })
-
-    console.log('[POLY-ORDER-PLACE] Order params:', {
-      tokenID: tokenId,
-      price,
-      amount,
-      side,
-      signatureType,
-      types: {
-        tokenID: typeof tokenId,
-        price: typeof price,
-        amount: typeof amount,
-        side: typeof side,
-      },
-    })
+    const clobBaseUrl = getValidatedPolymarketClobBaseUrl()
+    const requestUrl = new URL(POST_ORDER, clobBaseUrl).toString()
+    const upstreamHost = new URL(clobBaseUrl).hostname
 
     const order = await client.createOrder(
       { tokenID: tokenId, price, size: amount, side: side as any },
       { signatureType } as any
     )
 
-    const requestUrl = `${client.host}${POST_ORDER}`
-    const upstreamHost = new URL(requestUrl).hostname
-    console.log('[POLY-ORDER-PLACE] Executing trade against Polymarket CLOB', {
-      requestUrl,
-      host: client.host,
-      proxyAddress,
-    })
-
     const rawResult = await client.postOrder(order, orderType as any, false)
     const evaluation = interpretClobOrderResult(rawResult)
-    const failedResult = !evaluation.success
-    const isHtmlResponse = failedResult && evaluation.errorType === 'blocked_by_cloudflare'
-    const upstreamContentType = isHtmlResponse ? 'text/html' : 'application/json'
-    const upstreamStatus = failedResult
-      ? evaluation.errorType === 'blocked_by_cloudflare'
-        ? 502
-        : evaluation.status ?? 502
-      : 200
+    const failedEvaluation = !evaluation.success
+    const upstreamStatus = failedEvaluation ? evaluation.status ?? 502 : 200
+    const upstreamContentType = evaluation.contentType
     const logPayload: Record<string, unknown> = {
-      requestUrl,
+      requestId,
       upstreamHost,
-      status: upstreamStatus,
+      upstreamStatus,
       contentType: upstreamContentType,
-      isHtml: isHtmlResponse,
+      orderId: evaluation.success ? evaluation.orderId : null,
     }
-
-    if (!evaluation.success) {
+    if (failedEvaluation) {
       logPayload.rayId = evaluation.rayId
     }
-
     console.log('[POLY-ORDER-PLACE] Upstream response', logPayload)
 
-    if (!evaluation.success) {
+    if (failedEvaluation) {
       const snippet = getBodySnippet(evaluation.raw ?? '')
       return NextResponse.json(
         {
@@ -140,7 +112,8 @@ export async function POST(request: NextRequest) {
           source: 'upstream',
           upstreamHost,
           upstreamStatus,
-          isHtml: isHtmlResponse,
+          isHtml: evaluation.contentType === 'text/html',
+          contentType: evaluation.contentType,
           raw: evaluation.raw,
           snippet,
         },
@@ -162,6 +135,7 @@ export async function POST(request: NextRequest) {
       upstreamStatus,
       isHtml: false,
       raw: evaluation.raw,
+      contentType: evaluation.contentType,
     })
   } catch (error: any) {
     console.error('[POLY-ORDER-PLACE] Error:', error?.message || error)
