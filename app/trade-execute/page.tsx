@@ -147,7 +147,7 @@ function resolveOutcomePrice(
   outcomes: any,
   outcomeName: string,
   outcomeIndex: number | null
-) {
+): number | null {
   if (!Array.isArray(outcomePrices) || outcomePrices.length === 0) return null
   const prices = outcomePrices.map((price: any) => Number(price))
   const normalized = outcomeName ? normalizeOutcome(outcomeName) : ''
