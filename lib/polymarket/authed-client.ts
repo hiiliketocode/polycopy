@@ -211,8 +211,8 @@ export async function getAuthedClobClientForUser(userId: string) {
 export async function getAuthedClobClientForUserAnyWallet(userId: string, proxyOverride?: string) {
   const supabaseAdmin = getSupabaseAdmin()
   const { data: credential, error: credentialError } = await supabaseAdmin
-    .from('clob_credentials')
-    .select<ClobCredentialRecord>('polymarket_account_address')
+    .from<ClobCredentialRecord>('clob_credentials')
+    .select('polymarket_account_address')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
