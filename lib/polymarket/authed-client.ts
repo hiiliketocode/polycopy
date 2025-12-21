@@ -1,3 +1,4 @@
+import type { PostgrestSingleResponse } from '@supabase/supabase-js'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createTurnkeySigner } from '@/lib/polymarket/turnkey-signer'
 import { createClobClient, SignatureType, ApiCredentials } from '@/lib/polymarket/clob'
@@ -210,13 +211,13 @@ export async function getAuthedClobClientForUser(userId: string) {
 
 export async function getAuthedClobClientForUserAnyWallet(userId: string, proxyOverride?: string) {
   const supabaseAdmin = getSupabaseAdmin()
-  const { data: credential, error: credentialError } = await supabaseAdmin
+  const { data: credential, error: credentialError } = (await supabaseAdmin
     .from('clob_credentials')
     .select('polymarket_account_address')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
-    .maybeSingle()
+    .maybeSingle()) as PostgrestSingleResponse<ClobCredentialRecord>
 
   let { data: wallet, error: walletError } = await supabaseAdmin
     .from('turnkey_wallets')
@@ -243,9 +244,8 @@ export async function getAuthedClobClientForUserAnyWallet(userId: string, proxyO
     throw new Error('No turnkey wallet found for user')
   }
 
-  const credentialRecord = credential as ClobCredentialRecord | null
   const resolvedProxy =
-    proxyOverride || credentialRecord?.polymarket_account_address || wallet.polymarket_account_address
+    proxyOverride || credential?.polymarket_account_address || wallet.polymarket_account_address
   const effectiveUserId = wallet.user_id || userId
   return buildAuthedClient(effectiveUserId, wallet as TurnkeyWalletRow, resolvedProxy || undefined, true)
 }
