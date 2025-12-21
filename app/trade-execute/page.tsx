@@ -166,7 +166,10 @@ function resolveOutcomePrice(
   }
 
   const firstValid = prices.find((price) => Number.isFinite(price))
-  return Number.isFinite(firstValid) ? firstValid : null
+  if (typeof firstValid === 'number' && Number.isFinite(firstValid)) {
+    return firstValid
+  }
+  return null
 }
 
 function getNestedValue(record: Record<string, any>, path: string[]) {
