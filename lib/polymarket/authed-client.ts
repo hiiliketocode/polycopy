@@ -60,6 +60,10 @@ type TurnkeyWalletRow = {
   turnkey_wallet_id: string
 }
 
+type ClobCredentialRecord = {
+  polymarket_account_address?: string | null
+}
+
 async function buildAuthedClient(
   userId: string,
   wallet: TurnkeyWalletRow,
@@ -208,7 +212,7 @@ export async function getAuthedClobClientForUserAnyWallet(userId: string, proxyO
   const supabaseAdmin = getSupabaseAdmin()
   const { data: credential, error: credentialError } = await supabaseAdmin
     .from('clob_credentials')
-    .select('polymarket_account_address')
+    .select<ClobCredentialRecord>('polymarket_account_address')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
