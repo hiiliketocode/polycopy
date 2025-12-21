@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
+import { POST_ORDER } from '@polymarket/clob-client/dist/endpoints.js'
+import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
+import {
+  buildLocalGuardResponse,
+  getBodySnippet,
+} from '@/lib/polymarket/order-route-helpers'
 
 const DEV_BYPASS_AUTH =
   process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
@@ -30,9 +36,9 @@ export async function POST(request: NextRequest) {
   }
 
   if (!userId) {
-    return NextResponse.json(
+    return buildLocalGuardResponse(
       { error: 'Unauthorized - please log in', details: authError?.message },
-      { status: 401 }
+      401
     )
   }
 
@@ -40,20 +46,23 @@ export async function POST(request: NextRequest) {
   const { tokenId, price, amount, side, orderType = 'GTC', confirm } = body
 
   if (!confirm) {
-    return NextResponse.json({ error: 'confirm=true required to place order' }, { status: 400 })
+    return buildLocalGuardResponse(
+      { error: 'confirm=true required to place order' },
+      400
+    )
   }
 
   if (!tokenId || !price || !amount || !side) {
-    return NextResponse.json(
+    return buildLocalGuardResponse(
       { error: 'tokenId, price, amount, and side are required' },
-      { status: 400 }
+      400
     )
   }
 
   if (amount > MAX_TEST_AMOUNT) {
-    return NextResponse.json(
+    return buildLocalGuardResponse(
       { error: `amount too large for test endpoint (>${MAX_TEST_AMOUNT})` },
-      { status: 400 }
+      400
     )
   }
 
@@ -61,6 +70,12 @@ export async function POST(request: NextRequest) {
     const { client, proxyAddress, signerAddress, signatureType } = await getAuthedClobClientForUser(
       userId
     )
+
+    console.log('[POLY-ORDER-PLACE] Incoming request', {
+      url: request.url,
+      method: request.method,
+      authenticated: Boolean(userId),
+    })
 
     console.log('[POLY-ORDER-PLACE] Order params:', {
       tokenID: tokenId,
@@ -73,7 +88,7 @@ export async function POST(request: NextRequest) {
         price: typeof price,
         amount: typeof amount,
         side: typeof side,
-      }
+      },
     })
 
     const order = await client.createOrder(
@@ -81,21 +96,74 @@ export async function POST(request: NextRequest) {
       { signatureType } as any
     )
 
-    const result = await client.postOrder(order, orderType as any, false)
+    const requestUrl = `${client.host}${POST_ORDER}`
+    const upstreamHost = new URL(requestUrl).hostname
+    console.log('[POLY-ORDER-PLACE] Executing trade against Polymarket CLOB', {
+      requestUrl,
+      host: client.host,
+      proxyAddress,
+    })
+
+    const rawResult = await client.postOrder(order, orderType as any, false)
+    const evaluation = interpretClobOrderResult(rawResult)
+    const isHtmlResponse = evaluation.errorType === 'blocked_by_cloudflare'
+    const upstreamContentType = isHtmlResponse ? 'text/html' : 'application/json'
+    const upstreamStatus =
+      isHtmlResponse && !evaluation.status
+        ? 502
+        : evaluation.errorType === 'blocked_by_cloudflare'
+        ? 502
+        : evaluation.status ?? (evaluation.success ? 200 : 502)
+    const snippet = getBodySnippet(evaluation.raw ?? '')
+
+    console.log('[POLY-ORDER-PLACE] Upstream response', {
+      requestUrl,
+      upstreamHost,
+      status: upstreamStatus,
+      contentType: upstreamContentType,
+      isHtml: isHtmlResponse,
+      rayId: evaluation.rayId,
+      snippet,
+    })
+
+    if (!evaluation.success) {
+      return NextResponse.json(
+        {
+          error: evaluation.message,
+          errorType: evaluation.errorType,
+          rayId: evaluation.rayId,
+          blockedByCloudflare: evaluation.errorType === 'blocked_by_cloudflare',
+          requestUrl,
+          source: 'upstream',
+          upstreamHost,
+          upstreamStatus,
+          isHtml: isHtmlResponse,
+          raw: evaluation.raw,
+        },
+        { status: upstreamStatus }
+      )
+    }
+
+    const { orderId } = evaluation
 
     return NextResponse.json({
       ok: true,
       proxy: proxyAddress,
       signer: signerAddress,
       signatureType,
-      orderId: result?.order_hash || result?.orderHash || null,
-      raw: result,
+      orderId,
+      submittedAt: new Date().toISOString(),
+      source: 'upstream',
+      upstreamHost,
+      upstreamStatus,
+      isHtml: false,
+      raw: evaluation.raw,
     })
   } catch (error: any) {
     console.error('[POLY-ORDER-PLACE] Error:', error?.message || error)
-    return NextResponse.json(
+    return buildLocalGuardResponse(
       { error: error?.message || 'Failed to place order' },
-      { status: 500 }
+      500
     )
   }
 }

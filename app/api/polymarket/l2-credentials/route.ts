@@ -148,6 +148,11 @@ export async function POST(request: NextRequest) {
     userId = user?.id ?? null
 
     // Allow dev bypass
+    const devOverrideUserId =
+      DEV_BYPASS_AUTH ? request.headers.get('x-dev-user-id')?.trim() : null
+    if (!userId && devOverrideUserId) {
+      userId = devOverrideUserId
+    }
     if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
       userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
     }
@@ -162,13 +167,21 @@ export async function POST(request: NextRequest) {
 
     const url = new URL(request.url)
     const dryRun = url.searchParams.get('dryRun') === '1'
-    const force = url.searchParams.get('force') === '1'
+    let force = url.searchParams.get('force') === '1'
+    const devForceHeader =
+      DEV_BYPASS_AUTH && request.headers.get('x-dev-force')?.toLowerCase() === 'true'
 
-    let requestBody: L2CredentialsRequestBody = {}
+    let requestBody: L2CredentialsRequestBody & { force?: boolean } = {}
     try {
       requestBody = await request.json()
     } catch {
       requestBody = {}
+    }
+    if (!force && requestBody?.force) {
+      force = true
+    }
+    if (!force && devForceHeader) {
+      force = true
     }
 
     const polymarketAccountAddressInput =

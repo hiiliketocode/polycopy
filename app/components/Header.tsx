@@ -34,6 +34,7 @@ export default function Header() {
   const navItems = [
     { href: '/feed', label: 'Feed' },
     { href: '/discover', label: 'Discover' },
+    { href: '/orders', label: 'Orders' },
     { href: '/profile', label: 'Profile' },
   ];
 
@@ -126,4 +127,3 @@ export default function Header() {
     </header>
   );
 }
-

@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     console.log('✅ User authenticated:', user.id);
 
     // Get the wallet address from request body
-    // NOTE: Privy handles private key import client-side via their UI
+    // NOTE: Turnkey handles private key import client-side via their UI
     // We only receive and store the public wallet address
     const { walletAddress } = await request.json();
 
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     console.log(`📝 Saving wallet address for user: ${user.id}`);
 
     // Save only the wallet address to our database
-    // Privy stores the private key securely on their infrastructure
+    // Turnkey stores the private key securely on their infrastructure
     // Use service role client to bypass RLS
     const timestamp = new Date().toISOString();
     const { error: updateError } = await supabaseServiceRole
