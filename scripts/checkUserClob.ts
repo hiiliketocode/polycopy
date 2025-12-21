@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 import { createClient } from '@supabase/supabase-js'
 import { getAuthedClobClientForUserAnyWallet } from '../lib/polymarket/authed-client'
+import type { TradeParams } from '@polymarket/clob-client/dist/types'
 
 type CliOptions = {
   email?: string
@@ -19,6 +20,9 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false }
 })
+
+type TradeQuery = TradeParams & { limit?: number }
+type OpenOrdersQuery = { owner?: string; maker_address?: string; limit?: number }
 
 function parseArgs(): CliOptions {
   const args = process.argv.slice(2)
@@ -129,9 +133,14 @@ async function run() {
   const { client, proxyAddress } = await getAuthedClobClientForUserAnyWallet(user.id, proxyOverride)
   console.log('CLOB proxy address:', proxyAddress)
 
-  const tradesAll = await client.getTradesPaginated({ limit: 50 })
-  const tradesMaker = await client.getTradesPaginated({ maker_address: proxyAddress, limit: 50 })
-  const openOrders = await client.getOpenOrders({ owner: proxyAddress, maker_address: proxyAddress, limit: 50 }, true)
+  const tradesAll = await client.getTradesPaginated({ limit: 50 } as TradeQuery)
+  const tradesMaker = await client.getTradesPaginated(
+    { maker_address: proxyAddress, limit: 50 } as TradeQuery
+  )
+  const openOrders = await client.getOpenOrders(
+    { owner: proxyAddress, maker_address: proxyAddress, limit: 50 } as OpenOrdersQuery,
+    true
+  )
 
   console.log('Trades (authed, any):', tradesAll.trades?.length ?? 0)
   console.log('Trades (maker_address):', tradesMaker.trades?.length ?? 0)
