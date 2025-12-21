@@ -240,7 +240,7 @@ export async function getAuthedClobClientForUserAnyWallet(userId: string, proxyO
     throw new Error('No turnkey wallet found for user')
   }
 
-  const credentialRecord = credentialResponse.data as Record<string, any> | null
+  const credentialRecord = (credentialResponse as any).data as Record<string, any> | null
   const resolvedProxy =
     proxyOverride || credentialRecord?.polymarket_account_address || wallet.polymarket_account_address
   const effectiveUserId = wallet.user_id || userId
