@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Header from '@/app/components/Header'
 
@@ -830,7 +830,8 @@ export default function TradeExecutePage() {
   ])
 
   return (
-    <div>
+    <Suspense fallback={null}>
+      <div>
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-10">
         <h1 className="text-2xl font-semibold text-slate-900">Trade Details</h1>
@@ -1312,5 +1313,6 @@ export default function TradeExecutePage() {
       </div>
       </main>
     </div>
+    </Suspense>
   )
 }
