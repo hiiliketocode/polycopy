@@ -220,7 +220,7 @@ export async function syncTrader(input: { traderId?: string; wallet?: string; cl
     const tradesPage = input.client
       ? await fetchTradesForAuthedClient(input.client, watermark || undefined)
       : await fetchTradesForWallet(wallet, watermark || undefined)
-    const trades = tradesPage.trades || tradesPage.data || []
+    const trades = tradesPage.trades || []
     const { fills, orderIds, lastMatchAt } = normalizeTradesToFills(trades, wallet)
 
     // Try to enrich orders from trades while we fetch order details
