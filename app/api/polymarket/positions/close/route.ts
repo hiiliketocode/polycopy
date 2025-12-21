@@ -87,27 +87,31 @@ export async function POST(request: NextRequest) {
 
     const rawResult = await client.postOrder(order, 'GTC' as any, false)
     const evaluation = interpretClobOrderResult(rawResult)
-    const isHtmlResponse = evaluation.errorType === 'blocked_by_cloudflare'
+    const failedEvaluation = !evaluation.success
+    const isHtmlResponse = failedEvaluation && evaluation.errorType === 'blocked_by_cloudflare'
     const upstreamContentType = isHtmlResponse ? 'text/html' : 'application/json'
-    const upstreamStatus =
-      isHtmlResponse && !evaluation.status
+    const upstreamStatus = failedEvaluation
+      ? evaluation.errorType === 'blocked_by_cloudflare'
         ? 502
-        : evaluation.errorType === 'blocked_by_cloudflare'
-        ? 502
-        : evaluation.status ?? (evaluation.success ? 200 : 502)
-    const snippet = getBodySnippet(evaluation.raw ?? '')
-
-    console.log('[POLY-POSITION-CLOSE] Upstream response', {
+        : evaluation.status ?? 502
+      : 200
+    const snippet = failedEvaluation ? getBodySnippet(evaluation.raw ?? '') : undefined
+    const logPayload: Record<string, unknown> = {
       requestUrl,
       upstreamHost,
       status: upstreamStatus,
       contentType: upstreamContentType,
-      isHtml: isHtmlResponse,
-      rayId: evaluation.rayId,
-      snippet,
-    })
+      orderId: evaluation.success ? evaluation.orderId : null,
+    }
+    if (failedEvaluation) {
+      logPayload.rayId = evaluation.rayId
+      if (snippet) {
+        logPayload.snippet = snippet
+      }
+    }
+    console.log('[POLY-POSITION-CLOSE] Upstream response', logPayload)
 
-    if (!evaluation.success) {
+    if (failedEvaluation) {
       return NextResponse.json(
         {
           error: evaluation.message,
@@ -120,6 +124,7 @@ export async function POST(request: NextRequest) {
           upstreamStatus,
           isHtml: isHtmlResponse,
           raw: evaluation.raw,
+          snippet,
         },
         { status: upstreamStatus }
       )
