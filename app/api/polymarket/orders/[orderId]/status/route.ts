@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse, type AppRouteHandlerContext } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { ClobClient } from '@polymarket/clob-client'
@@ -105,7 +105,7 @@ function normalizeOrder(order: any) {
 
 export async function GET(
   request: NextRequest,
-  context: AppRouteHandlerContext<{ orderId: string }>
+  context: { params: { orderId: string } }
 ) {
   const { params } = context
   const orderIdFromParams =
