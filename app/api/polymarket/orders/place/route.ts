@@ -114,19 +114,22 @@ export async function POST(request: NextRequest) {
         ? 502
         : evaluation.status ?? 502
       : 200
-    const snippet = getBodySnippet(evaluation.raw ?? '')
-
-    console.log('[POLY-ORDER-PLACE] Upstream response', {
+    const logPayload = {
       requestUrl,
       upstreamHost,
       status: upstreamStatus,
       contentType: upstreamContentType,
       isHtml: isHtmlResponse,
-      rayId: evaluation.rayId,
-      snippet,
-    })
+    }
 
     if (!evaluation.success) {
+      logPayload.rayId = evaluation.rayId
+    }
+
+    console.log('[POLY-ORDER-PLACE] Upstream response', logPayload)
+
+    if (!evaluation.success) {
+      const snippet = getBodySnippet(evaluation.raw ?? '')
       return NextResponse.json(
         {
           error: evaluation.message,
@@ -139,6 +142,7 @@ export async function POST(request: NextRequest) {
           upstreamStatus,
           isHtml: isHtmlResponse,
           raw: evaluation.raw,
+          snippet,
         },
         { status: upstreamStatus }
       )
