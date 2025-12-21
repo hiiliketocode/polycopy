@@ -41,8 +41,8 @@ export async function GET(
   let fillsByOrder: Record<string, number> = {}
 
   if (orderIds.length > 0) {
-    const { data: fills } = await supabase
-      .from('fills')
+    const fillsBuilder = supabase.from('fills') as any
+    const { data: fills } = await fillsBuilder
       .select('order_id, count:fill_id')
       .in('order_id', orderIds)
       .group('order_id')
