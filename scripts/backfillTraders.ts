@@ -120,14 +120,6 @@ async function resolveWalletForEmail(email: string): Promise<{ wallet: string; s
 }
 
 async function resolveAuthUserByEmail(email: string): Promise<{ id: string }> {
-  if (supabase.auth?.admin?.getUserByEmail) {
-    const { data, error } = await supabase.auth.admin.getUserByEmail(email)
-    if (error) throw error
-    const user = data?.user
-    if (!user) throw new Error(`No auth user found for email: ${email}`)
-    return user
-  }
-
   const url = `${SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(email)}`
   const res = await fetch(url, {
     headers: {
