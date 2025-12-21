@@ -211,7 +211,7 @@ export async function getAuthedClobClientForUser(userId: string) {
 export async function getAuthedClobClientForUserAnyWallet(userId: string, proxyOverride?: string) {
   const supabaseAdmin = getSupabaseAdmin()
   const { data: credential, error: credentialError } = await supabaseAdmin
-    .from<ClobCredentialRecord>('clob_credentials')
+    .from('clob_credentials')
     .select('polymarket_account_address')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
@@ -243,7 +243,9 @@ export async function getAuthedClobClientForUserAnyWallet(userId: string, proxyO
     throw new Error('No turnkey wallet found for user')
   }
 
-  const resolvedProxy = proxyOverride || credential?.polymarket_account_address || wallet.polymarket_account_address
+  const credentialRecord = credential as ClobCredentialRecord | null
+  const resolvedProxy =
+    proxyOverride || credentialRecord?.polymarket_account_address || wallet.polymarket_account_address
   const effectiveUserId = wallet.user_id || userId
   return buildAuthedClient(effectiveUserId, wallet as TurnkeyWalletRow, resolvedProxy || undefined, true)
 }
