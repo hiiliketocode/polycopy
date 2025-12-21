@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { ClobClient } from '@polymarket/clob-client'
-import type { Trade } from '@polymarket/clob-client/dist/types'
+import type { Trade, OpenOrderParams } from '@polymarket/clob-client/dist/types'
 import { ApiCredentials } from '@/lib/polymarket/clob'
 import { CLOB_ENCRYPTION_KEY_V1, POLYMARKET_CLOB_BASE_URL } from '@/lib/turnkey/config'
 import { createHash, createDecipheriv } from 'crypto'
@@ -195,10 +195,19 @@ export async function GET(request: NextRequest) {
 
     const client = createReadOnlyClient(signerAddress, apiCreds)
 
-    const openOrders = await client.getOpenOrders(
-      { owner: proxyAddress, maker_address: proxyAddress, limit },
-      true
-    )
+    type OpenOrdersQuery = OpenOrderParams & {
+      owner?: string
+      maker_address?: string
+      limit?: number
+    }
+
+    const openOrdersParams: OpenOrdersQuery = {
+      owner: proxyAddress,
+      maker_address: proxyAddress,
+      limit,
+    }
+
+    const openOrders = await client.getOpenOrders(openOrdersParams, true)
 
     const tradesResp = await client.getTradesPaginated({
       maker_address: proxyAddress,
