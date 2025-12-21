@@ -10,6 +10,7 @@ export type ClobOrderEvaluation =
       success: true
       orderId: string
       raw: OrderResponseData
+      contentType: 'application/json'
     }
   | {
       success: false
@@ -19,6 +20,7 @@ export type ClobOrderEvaluation =
       rayId?: string
       htmlBody?: string
       raw: unknown
+      contentType: 'text/html' | 'application/json' | 'text/plain'
     }
 
 function asRecord(value: unknown): OrderResponseData | null {
@@ -98,7 +100,8 @@ export function interpretClobOrderResult(raw: unknown): ClobOrderEvaluation {
       rayId: extractCloudflareRayId(htmlBody),
       htmlBody,
       raw,
-      status: 403,
+      status: 502,
+      contentType: 'text/html',
     }
   }
 
@@ -111,15 +114,18 @@ export function interpretClobOrderResult(raw: unknown): ClobOrderEvaluation {
       status,
       errorType: 'api_error',
       raw,
+      contentType: 'application/json',
     }
   }
 
   if (!record) {
     return {
       success: false,
-      message: 'Unexpected empty response from Polymarket',
+      message: 'Non-JSON response from Polymarket',
       errorType: 'api_error',
       raw,
+      status: 502,
+      contentType: 'text/plain',
     }
   }
 
@@ -131,6 +137,7 @@ export function interpretClobOrderResult(raw: unknown): ClobOrderEvaluation {
       status,
       errorType: 'missing_order_id',
       raw,
+      contentType: 'application/json',
     }
   }
 
@@ -138,5 +145,6 @@ export function interpretClobOrderResult(raw: unknown): ClobOrderEvaluation {
     success: true,
     orderId,
     raw: record,
+    contentType: 'application/json',
   }
 }

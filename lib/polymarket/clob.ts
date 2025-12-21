@@ -1,22 +1,8 @@
 import { ClobClient } from '@polymarket/clob-client'
 import { TurnkeySigner } from './turnkey-signer'
-import { POLYMARKET_CLOB_BASE_URL } from '@/lib/turnkey/config'
+import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
 
 const POLYGON_CHAIN_ID = 137
-const DISALLOWED_HOSTNAMES = new Set(['polymarket.com', 'www.polymarket.com'])
-
-function validatePolymarketClobBaseUrl(url: string) {
-  try {
-    const parsed = new URL(url)
-    if (DISALLOWED_HOSTNAMES.has(parsed.hostname.toLowerCase())) {
-      throw new Error('Polymarket CLOB requests must not target polymarket.com (use the CLOB API host)')
-    }
-  } catch (error: any) {
-    throw new Error(
-      `Invalid Polymarket CLOB base URL (${url}): ${error?.message ?? 'failed to parse URL'}`
-    )
-  }
-}
 
 export type SignatureType = 0 | 1 | 2
 // 0 = EOA (standard wallet)
@@ -44,9 +30,9 @@ export function createClobClient(
   apiCreds?: ApiCredentials,
   funder?: string
 ): ClobClient {
-  validatePolymarketClobBaseUrl(POLYMARKET_CLOB_BASE_URL)
+  const clobBaseUrl = getValidatedPolymarketClobBaseUrl()
   console.log('[CLOB] Creating CLOB client')
-  console.log('[CLOB] Host:', POLYMARKET_CLOB_BASE_URL)
+  console.log('[CLOB] Host:', clobBaseUrl)
   console.log('[CLOB] Chain ID:', POLYGON_CHAIN_ID)
   console.log('[CLOB] Signer address:', signer.address)
   console.log('[CLOB] Signature type:', signatureType)
@@ -54,7 +40,7 @@ export function createClobClient(
   console.log('[CLOB] Funder:', funder || 'none')
 
   return new ClobClient(
-    POLYMARKET_CLOB_BASE_URL,
+    clobBaseUrl,
     POLYGON_CHAIN_ID,
     signer as any, // Cast to any to satisfy type requirements
     apiCreds,
