@@ -448,14 +448,15 @@ export default function TradeExecutePage() {
         const tokenData = await tokenRes.json()
         if (tokenRes.ok && tokenData?.tokens?.length) {
           const tokens = tokenData.tokens as Array<{ outcome?: string; token_id?: string }>
-          let match =
-            outcome &&
-            tokens.find(
+          let match: { outcome?: string; token_id?: string } | null = null
+          if (outcome) {
+            match = tokens.find(
               (token) =>
                 token.outcome &&
                 token.outcome.toLowerCase() === outcome.toLowerCase() &&
                 token.token_id
-            )
+            ) ?? null
+          }
           if (!match && Number.isFinite(outcomeIndex) && outcomeIndex! >= 0) {
             match = tokens[outcomeIndex!] || null
           }
