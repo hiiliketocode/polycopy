@@ -351,15 +351,15 @@ function TradeExecutePageInner() {
       total >= 1
     )
   }, [estimatedTotal, form.tokenId, limitPriceValue, contractsValue])
-  const elapsed = currentRecord ? formatElapsedDetailed(currentRecord.trade_timestamp, nowMs) : '—'
+  const elapsed = record ? formatElapsedDetailed(record.trade_timestamp, nowMs) : '—'
   const tradeSize =
-    currentRecord && Number.isFinite(Number(currentRecord.size))
-      ? Number(currentRecord.size)
+    record && Number.isFinite(Number(record.size))
+      ? Number(record.size)
       : null
   const totalCost =
     tradePrice !== null && tradeSize !== null ? tradePrice * tradeSize : null
   const payoutIfWins = tradeSize
-  const filledLabel = currentRecord ? formatFilledDateTime(currentRecord.trade_timestamp) : '—'
+  const filledLabel = record ? formatFilledDateTime(record.trade_timestamp) : '—'
   const priceDelta =
     currentPrice !== null && tradePrice !== null ? currentPrice - tradePrice : null
   const priceDeltaPct =
@@ -688,23 +688,23 @@ function TradeExecutePageInner() {
   }, [orderId])
 
   useEffect(() => {
-    if (!currentRecord?.trade_timestamp) return
+    if (!record?.trade_timestamp) return
     setNowMs(Date.now())
     const timer = setInterval(() => {
       setNowMs(Date.now())
     }, 1000)
     return () => clearInterval(timer)
-  }, [currentRecord?.trade_timestamp])
+  }, [record?.trade_timestamp])
 
   useEffect(() => {
-    if (!currentRecord) return
-    const conditionId = currentRecord.condition_id || currentRecord.conditionId
-    const slug = currentRecord.market_slug || currentRecord.marketSlug
-    const title = currentRecord.market_title || currentRecord.marketTitle
+    if (!record) return
+    const conditionId = record.condition_id || record.conditionId
+    const slug = record.market_slug || record.marketSlug
+    const title = record.market_title || record.marketTitle
     const outcome =
-      firstStringValue(currentRecord, OUTCOME_KEYS) || String(currentRecord.outcome || '')
+      firstStringValue(record, OUTCOME_KEYS) || String(record.outcome || '')
     const outcomeIndex =
-      currentRecord.outcome_index !== undefined ? Number(currentRecord.outcome_index) : null
+      record.outcome_index !== undefined ? Number(record.outcome_index) : null
 
     if (!conditionId && !slug && !title) {
       setLatestPriceError('No market identifiers available for price lookup.')
@@ -768,14 +768,14 @@ function TradeExecutePageInner() {
       clearInterval(intervalId)
     }
   }, [
-    currentRecord?.condition_id,
-    currentRecord?.conditionId,
-    currentRecord?.market_slug,
-    currentRecord?.marketSlug,
-    currentRecord?.market_title,
-    currentRecord?.marketTitle,
-    currentRecord?.outcome,
-    currentRecord?.outcome_index,
+    record?.condition_id,
+    record?.conditionId,
+    record?.market_slug,
+    record?.marketSlug,
+    record?.market_title,
+    record?.marketTitle,
+    record?.outcome,
+    record?.outcome_index,
   ])
 
   return (
