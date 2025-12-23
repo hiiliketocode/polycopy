@@ -1,6 +1,6 @@
 import { ClobClient } from '@polymarket/clob-client'
 import { TurnkeySigner } from './turnkey-signer'
-import { POLYMARKET_CLOB_BASE_URL } from '@/lib/turnkey/config'
+import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
 
 const POLYGON_CHAIN_ID = 137
 
@@ -30,8 +30,9 @@ export function createClobClient(
   apiCreds?: ApiCredentials,
   funder?: string
 ): ClobClient {
+  const clobBaseUrl = getValidatedPolymarketClobBaseUrl()
   console.log('[CLOB] Creating CLOB client')
-  console.log('[CLOB] Host:', POLYMARKET_CLOB_BASE_URL)
+  console.log('[CLOB] Host:', clobBaseUrl)
   console.log('[CLOB] Chain ID:', POLYGON_CHAIN_ID)
   console.log('[CLOB] Signer address:', signer.address)
   console.log('[CLOB] Signature type:', signatureType)
@@ -39,7 +40,7 @@ export function createClobClient(
   console.log('[CLOB] Funder:', funder || 'none')
 
   return new ClobClient(
-    POLYMARKET_CLOB_BASE_URL,
+    clobBaseUrl,
     POLYGON_CHAIN_ID,
     signer as any, // Cast to any to satisfy type requirements
     apiCreds,

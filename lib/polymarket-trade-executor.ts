@@ -1,7 +1,7 @@
 import { ClobClient } from '@dschz/polymarket-clob-client';
 
 /**
- * Execute a trade on Polymarket on behalf of a user using Privy-managed wallet
+ * Execute a trade on Polymarket on behalf of a user using Turnkey-managed wallet
  * 
  * @param userId - User's Supabase ID
  * @param marketId - Polymarket market/token ID
@@ -22,24 +22,14 @@ export async function executeTradeForUser(params: {
     // Get user's wallet address from database
     const walletAddress = await getUserWalletAddress(userId);
     
-    // TODO: Implement trade execution using Privy's REST API
+    // TODO: Implement trade execution using Turnkey signing + Polymarket CLOB
     // Flow:
-    // 1. Get user's wallets from Privy:
-    //    GET https://auth.privy.io/api/v1/users/${userId}/wallets
-    //    Headers: privy-app-id, privy-app-secret
+    // 1. Load Turnkey wallet + CLOB credentials for user
+    // 2. Create Polymarket order payload
+    // 3. Sign with Turnkey (EIP-712)
+    // 4. Submit signed order to Polymarket CLOB
     //
-    // 2. Find the imported wallet matching walletAddress
-    //
-    // 3. Create Polymarket order payload
-    //
-    // 4. Sign using Privy's signing endpoint:
-    //    POST https://auth.privy.io/api/v1/wallets/${walletId}/sign
-    //    Body: { message: orderPayload }
-    //    (Privy handles private key decryption + signing securely)
-    //
-    // 5. Submit signed order to Polymarket CLOB
-    //
-    // 6. Return transaction result
+    // 5. Return transaction result
     
     console.log('Trade execution params:', {
       userId,
@@ -52,7 +42,7 @@ export async function executeTradeForUser(params: {
     
     return {
       success: true,
-      message: 'Trade execution logic to be implemented with Privy REST API'
+      message: 'Trade execution logic to be implemented with Turnkey + CLOB'
     };
     
   } catch (error: any) {
@@ -65,8 +55,7 @@ export async function executeTradeForUser(params: {
  * Get user's wallet address from database
  * 
  * NOTE: Private keys are NEVER stored in our database!
- * They are managed securely by Privy on their infrastructure.
- * For signing, we'll use Privy's REST API with the user's ID.
+ * They are managed by Turnkey and used only for signing via API.
  */
 export async function getUserWalletAddress(userId: string): Promise<string> {
   const { createClient } = await import('@supabase/supabase-js');

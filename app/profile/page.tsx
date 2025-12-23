@@ -7,7 +7,6 @@ import { supabase, ensureProfile } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import Header from '../components/Header';
 import ImportWalletModal from '@/components/ImportWalletModal';
-import PrivyWrapper from '@/components/PrivyWrapper';
 
 // Types for copied trades
 interface CopiedTrade {
@@ -828,9 +827,8 @@ export default function ProfilePage() {
   }
 
   return (
-    <PrivyWrapper>
-      <div className="min-h-screen bg-slate-50 pb-20">
-        <Header />
+    <div className="min-h-screen bg-slate-50 pb-20">
+      <Header />
 
       {/* Main Content */}
       <div className="max-w-4xl mx-auto px-4 md:px-8 py-6 md:py-8">
@@ -1839,7 +1837,7 @@ export default function ProfilePage() {
           onClose={() => setShowWalletSetup(false)}
           onSuccess={(address) => {
             // Wallet is already saved by the API endpoint
-            // Privy stores the private key securely on their infrastructure
+            // Turnkey stores the private key securely on their infrastructure
             // We only store the public wallet address (not the private key!)
             console.log('Wallet imported successfully:', address);
             setShowWalletSetup(false);
@@ -1849,6 +1847,5 @@ export default function ProfilePage() {
           }}
         />
       </div>
-    </PrivyWrapper>
   );
 }

@@ -16,6 +16,7 @@ interface FeedTrade {
   };
   market: {
     id?: string;
+    conditionId?: string;
     title: string;
     slug: string;
     eventSlug?: string;
@@ -27,6 +28,7 @@ interface FeedTrade {
     size: number;
     price: number;
     timestamp: number;
+    tradeId?: string;
   };
 }
 
@@ -41,7 +43,9 @@ interface TradeCardProps {
   size: number;
   timestamp: number;
   isCopied: boolean;
+  showRealCopy: boolean;
   onCopyTrade: () => void;
+  onRealCopy: () => void;
   onMarkAsCopied: () => void;
 }
 
@@ -84,7 +88,9 @@ function TradeCard({
   size,
   timestamp,
   isCopied,
+  showRealCopy,
   onCopyTrade,
+  onRealCopy,
   onMarkAsCopied,
 }: TradeCardProps) {
   const timeAgo = getRelativeTime(timestamp);
@@ -188,20 +194,30 @@ function TradeCard({
         </div>
         
         {/* Buttons */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {/* Copy Trade button - opens Polymarket */}
           <button
             onClick={onCopyTrade}
-            className="flex-1 bg-[#FDB022] hover:bg-[#E69E1A] text-neutral-900 font-semibold py-2.5 rounded-lg transition-colors"
+            className="flex-1 min-w-[140px] bg-[#FDB022] hover:bg-[#E69E1A] text-neutral-900 font-semibold py-2.5 rounded-lg transition-colors"
           >
             Copy Trade
           </button>
-          
+
+          {/* Real Copy button - premium only */}
+          {showRealCopy && (
+            <button
+              onClick={onRealCopy}
+              className="flex-1 min-w-[140px] bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg transition-colors"
+            >
+              Real Copy
+            </button>
+          )}
+
           {/* Mark as Copied button */}
           <button
             onClick={onMarkAsCopied}
             disabled={isCopied}
-            className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 min-w-[140px] py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
               isCopied
                 ? 'bg-[#10B981] text-white font-bold cursor-not-allowed shadow-[0_0_12px_rgba(16,185,129,0.4)]'
                 : 'bg-[#FDB022] hover:bg-[#E69E1A] text-black font-semibold'
@@ -403,6 +419,7 @@ export default function FeedPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isPremium, setIsPremium] = useState(false);
   const [filter, setFilter] = useState<'all' | 'buys' | 'sells'>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   
@@ -413,6 +430,8 @@ export default function FeedPage() {
   const [followingCount, setFollowingCount] = useState(0);
   const [loadingFeed, setLoadingFeed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastFeedFetchAt, setLastFeedFetchAt] = useState<number | null>(null);
+  const [latestTradeTimestamp, setLatestTradeTimestamp] = useState<number | null>(null);
   
   // Stats
   const [todayVolume, setTodayVolume] = useState(0);
@@ -528,6 +547,40 @@ export default function FeedPage() {
     fetchCopiedTrades();
   }, [user]);
 
+  // Fetch premium status
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+
+    const fetchProfile = async () => {
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('is_premium')
+          .eq('id', user.id)
+          .single();
+
+        if (profileError) {
+          console.error('Error fetching profile:', profileError);
+        }
+
+        if (!cancelled) {
+          setIsPremium(Boolean(profileData?.is_premium));
+        }
+      } catch (err) {
+        console.error('Error fetching profile:', err);
+        if (!cancelled) setIsPremium(false);
+      }
+    };
+
+    fetchProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   // Extract fetchFeed as a stable function using useCallback
   // This prevents unnecessary re-renders and ensures it only changes when user changes
   // 
@@ -565,7 +618,7 @@ export default function FeedPage() {
 
         setFollowingCount(follows.length);
 
-        // 2. Fetch trades IMMEDIATELY (don't wait for names)
+        // 2. Fetch trades IMMEDIATELY (don't wait for names) - OPTIMIZED
         // Reduced from 50 to 15 trades per trader for faster loading
         const tradePromises = follows.map(async (follow) => {
           const wallet = follow.trader_wallet;
@@ -589,7 +642,7 @@ export default function FeedPage() {
           }
         });
         
-        // 3. Fetch trader names in parallel (non-blocking)
+        // 3. Fetch trader names in parallel (non-blocking) - OPTIMIZED
         const traderNames: Record<string, string> = {};
         const namePromise = (async () => {
           try {
@@ -687,6 +740,7 @@ export default function FeedPage() {
             market: {
               // IMPORTANT: Prioritize conditionId for Gamma API price lookups
               id: trade.conditionId || trade.market_slug || trade.asset_id || trade.id || '',
+              conditionId: trade.conditionId || trade.condition_id || '',
               title: trade.market || trade.title || 'Unknown Market',
               slug: trade.market_slug || trade.slug || '',
               eventSlug: trade.eventSlug || trade.event_slug || '',
@@ -698,6 +752,7 @@ export default function FeedPage() {
               size: parseFloat(trade.size || trade.amount || 0),
               price: parseFloat(trade.price || 0),
               timestamp: (trade.timestamp || Date.now() / 1000) * 1000,
+              tradeId: trade.trade_id || trade.id || trade.tx_hash || trade.transactionHash || '',
             },
           };
         });
@@ -846,10 +901,16 @@ export default function FeedPage() {
           }
         });
 
+        const latestTimestamp = formattedTrades.length > 0
+          ? Math.max(...formattedTrades.map(t => t.trade.timestamp))
+          : null;
+
         // Store all trades and reset display count
         setAllTrades(formattedTrades);
         setDisplayedTradesCount(35);
         setTrades(formattedTrades.slice(0, 35));
+        setLatestTradeTimestamp(latestTimestamp);
+        setLastFeedFetchAt(Date.now());
 
         // Calculate today's volume and trade count
         const today = new Date();
@@ -869,6 +930,7 @@ export default function FeedPage() {
     } catch (err: any) {
       console.error('Error fetching feed:', err);
       setError(err.message || 'Failed to load feed');
+      setLastFeedFetchAt(Date.now());
     } finally {
       setLoadingFeed(false);
     }
@@ -956,6 +1018,18 @@ export default function FeedPage() {
     setDisplayedTradesCount(newCount);
   };
 
+  // Removed auto-refresh mechanisms (window focus + periodic) 
+  // Feed now ONLY refreshes on:
+  // 1. Initial page load
+  // 2. Manual "Refresh Feed" button click
+  // 3. Browser refresh (F5)
+
+  // REMOVED old code that caused unwanted refreshes:
+  // - Window focus listener
+  // - Periodic interval refresh
+  // These caused the feed to reload when switching tabs/windows
+
+
   // Filter trades by buy/sell AND category
   const filteredAllTrades = allTrades.filter(trade => {
     // Filter by buy/sell
@@ -1009,6 +1083,25 @@ export default function FeedPage() {
   const handleMarkAsCopied = (trade: FeedTrade) => {
     setSelectedTrade(trade);
     setModalOpen(true);
+  };
+
+  const handleRealCopy = (trade: FeedTrade) => {
+    const params = new URLSearchParams();
+    params.set('prefill', '1');
+    if (trade.trade.tradeId) params.set('tradeId', trade.trade.tradeId);
+    if (trade.market.conditionId) params.set('conditionId', trade.market.conditionId);
+    if (trade.market.slug) params.set('marketSlug', trade.market.slug);
+    if (trade.market.eventSlug) params.set('eventSlug', trade.market.eventSlug);
+    if (trade.market.title) params.set('marketTitle', trade.market.title);
+    if (trade.trade.outcome) params.set('outcome', trade.trade.outcome);
+    if (trade.trade.side) params.set('side', trade.trade.side);
+    if (Number.isFinite(trade.trade.price)) params.set('price', String(trade.trade.price));
+    if (Number.isFinite(trade.trade.size)) params.set('size', String(trade.trade.size));
+    if (Number.isFinite(trade.trade.timestamp)) params.set('timestamp', String(trade.trade.timestamp));
+    if (trade.trader.displayName) params.set('traderName', trade.trader.displayName);
+    if (trade.trader.wallet) params.set('traderWallet', trade.trader.wallet);
+
+    router.push(`/trade-execute?${params.toString()}`);
   };
 
   // Confirm mark as copied - using Supabase directly (like follow/unfollow)
@@ -1149,6 +1242,12 @@ export default function FeedPage() {
               )}
             </button>
           </div>
+          {(lastFeedFetchAt || latestTradeTimestamp) && (
+            <div className="mt-1 text-xs text-neutral-500">
+              {lastFeedFetchAt ? `Last updated ${getRelativeTime(lastFeedFetchAt)}` : 'Last updated: —'}
+              {latestTradeTimestamp ? ` • Latest trade ${getRelativeTime(latestTradeTimestamp)}` : ''}
+            </div>
+          )}
         </div>
 
         {/* Stats Banner - Desktop Only - Reordered to match Figma */}
@@ -1328,7 +1427,9 @@ export default function FeedPage() {
                 size={trade.trade.size}
                 timestamp={trade.trade.timestamp}
                 isCopied={isTradecopied(trade)}
+                showRealCopy={isPremium}
                 onCopyTrade={() => handleCopyTrade(trade)}
+                onRealCopy={() => handleRealCopy(trade)}
                 onMarkAsCopied={() => handleMarkAsCopied(trade)}
               />
             ))}

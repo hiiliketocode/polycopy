@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     // Remove wallet data from user's profile
     // NOTE: We only store the wallet address, not private keys
-    // Private keys are managed by Privy on their infrastructure
+    // Private keys are managed by Turnkey on their infrastructure
     const { error: updateError } = await supabase
       .from('profiles')
       .update({

@@ -43,11 +43,11 @@ export default function FAQPage() {
                     </p>
                     <p className="flex items-start gap-2">
                       <span className="text-green-600 font-bold">✓</span>
-                      <span><strong>Privy Handles Encryption:</strong> Your key is encrypted by Privy using military-grade security (TEE/HSM).</span>
+                      <span><strong>Turnkey Handles Encryption:</strong> Your key is encrypted by Turnkey using military-grade security (TEE/HSM).</span>
                     </p>
                     <p className="flex items-start gap-2">
                       <span className="text-green-600 font-bold">✓</span>
-                      <span><strong>Temporary Transit Only:</strong> Your key passes through our server for ~100 milliseconds to reach Privy, then it's deleted.</span>
+                      <span><strong>Temporary Transit Only:</strong> Your key passes through our server for a moment to reach Turnkey, then it's deleted.</span>
                     </p>
                     <p className="flex items-start gap-2">
                       <span className="text-green-600 font-bold">✓</span>
@@ -64,20 +64,20 @@ export default function FAQPage() {
               {/* Q2 */}
               <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow">
                 <h3 className="text-lg font-bold text-slate-900 mb-3">
-                  What is Privy and why do you use it?
+                  What is Turnkey and why do you use it?
                 </h3>
                 <div className="text-slate-700 space-y-3">
                   <p>
-                    <strong>Privy</strong> is a professional Web3 infrastructure company that specializes in secure wallet management. They're trusted by thousands of apps to handle private keys safely.
+                    <strong>Turnkey</strong> is a professional Web3 infrastructure company that specializes in secure wallet management. They're trusted by thousands of apps to handle private keys safely.
                   </p>
                   
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <p className="font-semibold mb-2">Why we use Privy instead of building our own:</p>
+                    <p className="font-semibold mb-2">Why we use Turnkey instead of building our own:</p>
                     <ul className="list-disc list-inside space-y-1 text-sm">
                       <li><strong>Security Experts:</strong> They focus 100% on wallet security (we focus on copy trading)</li>
                       <li><strong>SOC 2 Type II Certified:</strong> Independently audited for security compliance</li>
                       <li><strong>Bank-Level Encryption:</strong> Uses TEE (Trusted Execution Environment) and HSM hardware</li>
-                      <li><strong>Zero-Knowledge Architecture:</strong> Even Privy can't see your unencrypted private key</li>
+                      <li><strong>Zero-Knowledge Architecture:</strong> Even Turnkey can't see your unencrypted private key</li>
                       <li><strong>Insurance Coverage:</strong> Protected by professional liability insurance</li>
                     </ul>
                   </div>
@@ -85,12 +85,12 @@ export default function FAQPage() {
                   <p className="text-sm">
                     Learn more at{' '}
                     <a 
-                      href="https://www.privy.io/security" 
+                      href="https://www.turnkey.com/security" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-blue-600 underline hover:text-blue-700"
                     >
-                      Privy's Security Page
+                      Turnkey's Security Page
                     </a>
                   </p>
                 </div>
@@ -121,8 +121,8 @@ export default function FAQPage() {
                       <strong>What a hacker CANNOT access:</strong>
                     </p>
                     <ul className="list-disc list-inside space-y-1 ml-4 text-slate-600">
-                      <li><strong>Your private key</strong> (it's on Privy's servers, not ours)</li>
-                      <li><strong>Your funds</strong> (they're in your Polymarket wallet, secured by Privy)</li>
+                      <li><strong>Your private key</strong> (it's on Turnkey's secure infrastructure, not ours)</li>
+                      <li><strong>Your funds</strong> (they're in your Polymarket wallet, secured by Turnkey)</li>
                     </ul>
                   </div>
 
@@ -153,7 +153,7 @@ export default function FAQPage() {
                         <strong>Blockchain transparency</strong> - every trade is publicly visible on Polygon. If we did something unauthorized, it would be immediately visible.
                       </li>
                       <li>
-                        <strong>Privy's security</strong> - even we have to request Privy to sign transactions. Privy monitors for suspicious activity.
+                        <strong>Turnkey's security</strong> - even we have to request Turnkey to sign transactions. Turnkey monitors for suspicious activity.
                       </li>
                       <li>
                         <strong>You can disconnect anytime</strong> - go to your profile and click "Disconnect Wallet" to revoke our access.
