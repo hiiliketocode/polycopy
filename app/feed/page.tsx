@@ -547,20 +547,28 @@ export default function FeedPage() {
   // - Removed debug logging overhead
   // Result: ~10s → <2s load time
   const fetchFeed = useCallback(async () => {
-    if (!user) return;
+    console.log('📡 fetchFeed called, user:', user?.id);
+    if (!user) {
+      console.log('❌ No user, returning early');
+      return;
+    }
     
     setLoadingFeed(true);
     setError(null);
 
     try {
         // 1. Fetch followed traders
+        console.log('👥 Fetching follows...');
         const { data: follows, error: followsError } = await supabase
           .from('follows')
           .select('trader_wallet')
           .eq('user_id', user.id);
 
+        console.log('👥 Follows result:', { count: follows?.length, error: followsError });
+
         if (followsError) throw new Error('Failed to fetch follows');
         if (!follows || follows.length === 0) {
+          console.log('⚠️ No follows found');
           setTrades([]);
           setFollowingCount(0);
           setLoadingFeed(false);
@@ -568,6 +576,7 @@ export default function FeedPage() {
         }
 
         setFollowingCount(follows.length);
+        console.log('✅ Following count set:', follows.length);
 
         // 2. Fetch trades IMMEDIATELY (don't wait for names)
         // Reduced from 50 to 15 trades per trader for faster loading
@@ -659,14 +668,18 @@ export default function FeedPage() {
         })();
         
         // Wait for trades (priority) and names (parallel)
+        console.log('⏳ Waiting for trade promises...');
         const [allTradesArrays] = await Promise.all([
           Promise.all(tradePromises),
           namePromise
         ]);
+        console.log('✅ Trade promises complete, arrays count:', allTradesArrays.length);
         
         const allTradesRaw = allTradesArrays.flat();
+        console.log('📦 Raw trades flattened:', allTradesRaw.length);
         
         if (allTradesRaw.length === 0) {
+          console.log('⚠️ No trades found, setting empty array');
           setTrades([]);
           setLoadingFeed(false);
           return;
@@ -674,6 +687,7 @@ export default function FeedPage() {
 
         // Sort by timestamp
         allTradesRaw.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
+        console.log('🔄 Trades sorted by timestamp');
 
         // 4. Format trades (optimized - removed debug logging)
         const formattedTrades: FeedTrade[] = allTradesRaw.map((trade: any) => {
@@ -851,9 +865,11 @@ export default function FeedPage() {
         });
 
         // Store all trades and reset display count
+        console.log('💾 Setting state with trades:', { total: formattedTrades.length, displaying: 35 });
         setAllTrades(formattedTrades);
         setDisplayedTradesCount(35);
         setTrades(formattedTrades.slice(0, 35));
+        console.log('✅ State updated with trades');
 
         // Calculate today's volume and trade count
         const today = new Date();
@@ -868,6 +884,7 @@ export default function FeedPage() {
         
         const volumeToday = todaysTrades.reduce((sum, t) => sum + (t.trade.price * t.trade.size), 0);
         setTodayVolume(volumeToday);
+        console.log('📊 Today stats:', { trades: todaysTrades.length, volume: volumeToday });
         setTodaysTradeCount(todaysTrades.length);
 
     } catch (err: any) {
