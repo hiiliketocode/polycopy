@@ -942,25 +942,12 @@ export default function FeedPage() {
         return;
       }
 
+      // TEMPORARY: Clear any old sessionStorage
       const sessionKey = `feed-fetched-${currentUser.id}`;
-      const alreadyFetched = sessionStorage.getItem(sessionKey);
-      console.log('💾 SessionStorage check:', { 
-        sessionKey, 
-        alreadyFetched, 
-        hasFetchedRef: hasFetchedRef.current,
-        hasDataInState: allTrades.length > 0
-      });
-
-      // Only skip fetch if BOTH:
-      // 1. SessionStorage says we fetched AND
-      // 2. We have ref flag set AND
-      // 3. We actually have data in component state
-      if (alreadyFetched === 'true' && hasFetchedRef.current && allTrades.length > 0) {
-        console.log('✅ Feed already fetched this session with data in state, SKIPPING FETCH');
-        return;
-      }
-
-      console.log('🚀 Starting initial feed fetch (no data in state or first time)');
+      console.log('🗑️ Clearing old sessionStorage for fresh start');
+      sessionStorage.removeItem(sessionKey);
+      
+      console.log('🚀 Starting feed fetch');
       await fetchFeed();
       hasFetchedRef.current = true;
       sessionStorage.setItem(sessionKey, 'true');
