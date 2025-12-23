@@ -546,9 +546,11 @@ export default function FeedPage() {
   // - Increased batch size: 5 → 10 for name lookups
   // - Removed debug logging overhead
   // Result: ~10s → <2s load time
-  const fetchFeed = useCallback(async () => {
-    console.log('📡 fetchFeed called, user:', user?.id);
-    if (!user) {
+  const fetchFeed = useCallback(async (userOverride?: User) => {
+    const currentUser = userOverride || user;
+    console.log('📡 fetchFeed called, user:', currentUser?.id, 'override:', !!userOverride);
+    
+    if (!currentUser) {
       console.log('❌ No user, returning early');
       return;
     }
@@ -562,7 +564,7 @@ export default function FeedPage() {
         const { data: follows, error: followsError } = await supabase
           .from('follows')
           .select('trader_wallet')
-          .eq('user_id', user.id);
+          .eq('user_id', currentUser.id);
 
         console.log('👥 Follows result:', { count: follows?.length, error: followsError });
 
@@ -964,8 +966,8 @@ export default function FeedPage() {
       console.log('🗑️ Clearing old sessionStorage for fresh start');
       sessionStorage.removeItem(sessionKey);
       
-      console.log('🚀 Starting feed fetch');
-      await fetchFeed();
+      console.log('🚀 Starting feed fetch with user:', currentUser.id);
+      await fetchFeed(currentUser); // Pass the user we just fetched
       hasFetchedRef.current = true;
       sessionStorage.setItem(sessionKey, 'true');
       console.log('✅ Feed fetch complete, flags set');
