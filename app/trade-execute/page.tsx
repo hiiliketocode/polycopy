@@ -284,7 +284,7 @@ function extractContractType(record: Record<string, any>) {
 function TradeExecutePageInner() {
   const searchParams = useSearchParams()
   const prefillAppliedRef = useRef(false)
-  const [record, setRecord] = useState<Record<string, any> | null>(null)
+  const [tradeRecord, setTradeRecord] = useState<Record<string, any> | null>(null)
 
   const [form, setForm] = useState<ExecuteForm>(EMPTY_FORM)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -309,27 +309,28 @@ function TradeExecutePageInner() {
   const [balanceError, setBalanceError] = useState<string | null>(null)
   const [balanceData, setBalanceData] = useState<BalanceResponse | null>(null)
 
-  const record = result && 'found' in result && result.found ? result.record : null
-  const displayTokenId = record ? extractTokenId(record) : ''
-  const marketIcon = record ? extractMarketIcon(record) : ''
-  const traderName = record ? extractTraderName(record) : ''
-  const traderIcon = record ? extractTraderIcon(record) : ''
-  const traderWallet = record?.trader_wallet ? String(record.trader_wallet) : ''
+  const currentRecord = tradeRecord
+  const displayTokenId = currentRecord ? extractTokenId(currentRecord) : ''
+  const marketIcon = currentRecord ? extractMarketIcon(currentRecord) : ''
+  const traderName = currentRecord ? extractTraderName(currentRecord) : ''
+  const traderIcon = currentRecord ? extractTraderIcon(currentRecord) : ''
+  const traderWallet = currentRecord?.trader_wallet ? String(currentRecord.trader_wallet) : ''
   const traderLabel =
     traderName || (traderWallet ? `${traderWallet.slice(0, 6)}...${traderWallet.slice(-4)}` : '')
   const traderInitials = traderLabel ? getInitials(traderLabel) : '??'
   const traderAvatarColor = getAvatarColor(traderWallet || traderLabel || 'trader')
-  const marketTitle = record ? formatValue(record.market_title || record.market_slug) : '—'
-  const contractTypeRaw = record ? extractContractType(record) : ''
+  const marketTitle = currentRecord ? formatValue(currentRecord.market_title || currentRecord.market_slug) : '—'
+  const contractTypeRaw = currentRecord ? extractContractType(currentRecord) : ''
   const contractType = contractTypeRaw ? formatValue(contractTypeRaw) : ''
-  const tradePrice = record && Number.isFinite(Number(record.price)) ? Number(record.price) : null
+  const tradePrice = currentRecord && Number.isFinite(Number(currentRecord.price))
+    ? Number(currentRecord.price)
+    : null
   const currentPrice = latestPrice ?? tradePrice
   const slippagePercent =
     slippagePreset === 'custom' ? Number(customSlippage) : Number(slippagePreset)
   const slippageValue = Number.isFinite(slippagePercent) ? slippagePercent : 0
   const maxPrice = currentPrice ? currentPrice * (1 + slippageValue / 100) : null
-  const limitPrice = showAdvanced ? Number(limitPriceInput) : maxPrice
-  const limitPriceValue = Number.isFinite(limitPrice) ? limitPrice : null
+  const limitPriceValue = Number.isFinite(maxPrice) ? maxPrice : null
   const amountValue = Number(amountInput)
   const hasAmount = Number.isFinite(amountValue) && amountValue > 0
   const contractsValue =
@@ -373,10 +374,14 @@ function TradeExecutePageInner() {
     amountMode === 'usd'
       ? `Estimated contracts: ${formatNumber(contractsValue)}`
       : `Estimated total: ${formatMoney(estimatedTotal)}`
-  const slippageHelper =
-    slippageValue === 0
-      ? 'Your order will only fill at the current price and may not fill.'
-      : `Allows fills up to ${slippageValue}% worse than the current price to improve execution.`
+  const limitPriceLabel = limitPriceValue ? formatPrice(limitPriceValue) : '—'
+
+  const availableBalance =
+    balanceData?.balance && !Number.isNaN(Number(balanceData.balance))
+      ? Number(balanceData.balance) / Math.pow(10, USDC_DECIMALS)
+      : null
+  const notEnoughFunds =
+    estimatedTotal !== null && availableBalance !== null && estimatedTotal > availableBalance
 
   const orderStatus = statusData?.status ? String(statusData.status).toLowerCase() : null
   const isTerminal = orderStatus ? TERMINAL_STATUSES.has(orderStatus) : false
@@ -388,7 +393,7 @@ function TradeExecutePageInner() {
       : null
 
   const resetRecordState = () => {
-    setRecord(null)
+    setTradeRecord(null)
     setSubmitResult(null)
     setSubmitError(null)
     setOrderId(null)
@@ -403,10 +408,11 @@ function TradeExecutePageInner() {
     setAmountInput('')
     setSlippagePreset(1)
     setCustomSlippage('')
+    setForm(EMPTY_FORM)
   }
 
-  const applyRecord = async (record: Record<string, any>, tableLabel = 'prefill') => {
-    setResult({ found: true, table: tableLabel, record })
+  const applyRecord = async (record: Record<string, any>) => {
+    setTradeRecord(record)
 
     const tokenFromRecord = extractTokenId(record)
     const recordPrice = Number(record.price)
@@ -426,6 +432,8 @@ function TradeExecutePageInner() {
     if (recordTotal !== null && Number.isFinite(recordTotal)) {
       setAmountInput(recordTotal.toFixed(2))
       setAmountMode('usd')
+    } else {
+      setAmountInput('')
     }
 
     if (!tokenFromRecord && (record.condition_id || record.conditionId)) {
@@ -487,12 +495,13 @@ function TradeExecutePageInner() {
       price: priceRaw && Number.isFinite(Number(priceRaw)) ? Number(priceRaw) : undefined,
       size: sizeRaw && Number.isFinite(Number(sizeRaw)) ? Number(sizeRaw) : undefined,
       trade_timestamp:
-        timestampRaw && Number.isFinite(Number(timestampRaw)) ? Number(timestampRaw) : timestampRaw || undefined,
+        timestampRaw && Number.isFinite(Number(timestampRaw))
+          ? Number(timestampRaw)
+          : timestampRaw || undefined,
     }
 
-    setTradeId(tradeIdParam || '')
-    resetLookupState()
-    applyRecord(record, 'prefill')
+    resetRecordState()
+    applyRecord(record)
     prefillAppliedRef.current = true
   }, [searchParams])
 
@@ -559,39 +568,6 @@ function TradeExecutePageInner() {
     }
     fetchBalance()
   }, [fetchBalance])
-
-  const handleLookup = async (e: React.FormEvent) => {
-    e.preventDefault()
-    resetLookupState()
-
-    const trimmed = tradeId.trim()
-    if (!trimmed) {
-      setLookupError('Please enter a trade id.')
-      return
-    }
-
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/trade-lookup?tradeId=${encodeURIComponent(trimmed)}`)
-      const data = await res.json()
-      if (!res.ok) {
-        setLookupError(data?.error || data?.message || 'Lookup failed')
-        return
-      }
-
-      setResult(data)
-
-      if (data?.found && data?.record) {
-        await applyRecord(data.record, data.table || 'lookup')
-      } else {
-        setForm(EMPTY_FORM)
-      }
-    } catch (err: any) {
-      setLookupError(err?.message || 'Network error')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const handleExecute = async () => {
     setSubmitError(null)
