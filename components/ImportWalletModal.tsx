@@ -80,7 +80,7 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-900 rounded-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
         
-        {/* Privy Branding Header */}
+        {/* Turnkey Branding Header */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
             Import Wallet
@@ -88,7 +88,7 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <span>Secured by</span>
             <div className="bg-slate-900 text-white px-3 py-1 rounded-full font-semibold">
-              Privy
+              Turnkey
             </div>
           </div>
         </div>
@@ -116,7 +116,7 @@ export default function ImportWalletModal({ isOpen, onClose, onSuccess }: Import
           </ol>
         </div>
 
-        {/* Security Assurance - Prominently display Privy's role */}
+        {/* Security Assurance - Prominently display Turnkey's role */}
         <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 border-2 border-purple-200 dark:border-purple-800 rounded-xl p-5 mb-4">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center flex-shrink-0">

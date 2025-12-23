@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
+import { POST_ORDER } from '@polymarket/clob-client/dist/endpoints.js'
+import { buildLocalGuardResponse, getBodySnippet } from '@/lib/polymarket/order-route-helpers'
+import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
 
 const DEV_BYPASS_AUTH =
   process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
@@ -28,9 +31,9 @@ export async function POST(request: NextRequest) {
   }
 
   if (!userId) {
-    return NextResponse.json(
+    return buildLocalGuardResponse(
       { error: 'Unauthorized - please log in', details: authError?.message },
-      { status: 401 }
+      401
     )
   }
 
@@ -38,22 +41,31 @@ export async function POST(request: NextRequest) {
   const { tokenId, amount, price, confirm } = body
 
   if (!confirm) {
-    return NextResponse.json({ error: 'confirm=true required to close position' }, { status: 400 })
+    return buildLocalGuardResponse(
+      { error: 'confirm=true required to close position' },
+      400
+    )
   }
 
   if (!tokenId || !amount || !price) {
-    return NextResponse.json(
+    return buildLocalGuardResponse(
       { error: 'tokenId, amount, and price are required' },
-      { status: 400 }
+      400
     )
   }
 
   if (amount > MAX_TEST_AMOUNT) {
-    return NextResponse.json(
+    return buildLocalGuardResponse(
       { error: `amount too large for test endpoint (>${MAX_TEST_AMOUNT})` },
-      { status: 400 }
+      400
     )
   }
+
+  console.log('[POLY-POSITION-CLOSE] Incoming request', {
+    url: request.url,
+    method: request.method,
+    authenticated: Boolean(userId),
+  })
 
   try {
     const { client, proxyAddress, signerAddress, signatureType } = await getAuthedClobClientForUser(
@@ -65,20 +77,77 @@ export async function POST(request: NextRequest) {
       { signatureType } as any
     )
 
-    const result = await client.postOrder(order, 'GTC' as any, false)
+    const requestUrl = `${client.host}${POST_ORDER}`
+    const upstreamHost = new URL(requestUrl).hostname
+    console.log('[POLY-POSITION-CLOSE] Closing position via CLOB', {
+      requestUrl,
+      host: client.host,
+      proxyAddress,
+    })
+
+    const rawResult = await client.postOrder(order, 'GTC' as any, false)
+    const evaluation = interpretClobOrderResult(rawResult)
+    const failedEvaluation = !evaluation.success
+    const isHtmlResponse = failedEvaluation && evaluation.errorType === 'blocked_by_cloudflare'
+    const upstreamContentType = isHtmlResponse ? 'text/html' : 'application/json'
+    const upstreamStatus = failedEvaluation
+      ? evaluation.errorType === 'blocked_by_cloudflare'
+        ? 502
+        : evaluation.status ?? 502
+      : 200
+    const snippet = failedEvaluation ? getBodySnippet(evaluation.raw ?? '') : undefined
+    const logPayload: Record<string, unknown> = {
+      requestUrl,
+      upstreamHost,
+      status: upstreamStatus,
+      contentType: upstreamContentType,
+      orderId: evaluation.success ? evaluation.orderId : null,
+    }
+    if (failedEvaluation) {
+      logPayload.rayId = evaluation.rayId
+      if (snippet) {
+        logPayload.snippet = snippet
+      }
+    }
+    console.log('[POLY-POSITION-CLOSE] Upstream response', logPayload)
+
+    if (failedEvaluation) {
+      return NextResponse.json(
+        {
+          error: evaluation.message,
+          errorType: evaluation.errorType,
+          rayId: evaluation.rayId,
+          blockedByCloudflare: evaluation.errorType === 'blocked_by_cloudflare',
+          requestUrl,
+          source: 'upstream',
+          upstreamHost,
+          upstreamStatus,
+          isHtml: isHtmlResponse,
+          raw: evaluation.raw,
+          snippet,
+        },
+        { status: upstreamStatus }
+      )
+    }
+
+    const { orderId } = evaluation
 
     return NextResponse.json({
       ok: true,
       proxy: proxyAddress,
       signer: signerAddress,
-      orderId: result?.order_hash || result?.orderHash || null,
-      raw: result,
+      orderId,
+      source: 'upstream',
+      upstreamHost,
+      upstreamStatus,
+      isHtml: false,
+      raw: evaluation.raw,
     })
   } catch (error: any) {
     console.error('[POLY-POSITION-CLOSE] Error:', error?.message || error)
-    return NextResponse.json(
+    return buildLocalGuardResponse(
       { error: error?.message || 'Failed to close position' },
-      { status: 500 }
+      500
     )
   }
 }
