@@ -115,12 +115,6 @@ function formatPrice(value: number | null | undefined) {
   return `$${trimmed}`
 }
 
-function formatPriceInput(value: number | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return ''
-  const fixed = value.toFixed(6)
-  return fixed.replace(/\.?0+$/, '')
-}
-
 function formatMoney(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—'
   return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -309,22 +303,19 @@ function TradeExecutePageInner() {
   const [balanceError, setBalanceError] = useState<string | null>(null)
   const [balanceData, setBalanceData] = useState<BalanceResponse | null>(null)
 
-  const currentRecord = tradeRecord
-  const displayTokenId = currentRecord ? extractTokenId(currentRecord) : ''
-  const marketIcon = currentRecord ? extractMarketIcon(currentRecord) : ''
-  const traderName = currentRecord ? extractTraderName(currentRecord) : ''
-  const traderIcon = currentRecord ? extractTraderIcon(currentRecord) : ''
-  const traderWallet = currentRecord?.trader_wallet ? String(currentRecord.trader_wallet) : ''
+  const record = tradeRecord
+  const marketIcon = record ? extractMarketIcon(record) : ''
+  const traderName = record ? extractTraderName(record) : ''
+  const traderIcon = record ? extractTraderIcon(record) : ''
+  const traderWallet = record?.trader_wallet ? String(record.trader_wallet) : ''
   const traderLabel =
     traderName || (traderWallet ? `${traderWallet.slice(0, 6)}...${traderWallet.slice(-4)}` : '')
   const traderInitials = traderLabel ? getInitials(traderLabel) : '??'
   const traderAvatarColor = getAvatarColor(traderWallet || traderLabel || 'trader')
-  const marketTitle = currentRecord ? formatValue(currentRecord.market_title || currentRecord.market_slug) : '—'
-  const contractTypeRaw = currentRecord ? extractContractType(currentRecord) : ''
+  const marketTitle = record ? formatValue(record.market_title || record.market_slug) : '—'
+  const contractTypeRaw = record ? extractContractType(record) : ''
   const contractType = contractTypeRaw ? formatValue(contractTypeRaw) : ''
-  const tradePrice = currentRecord && Number.isFinite(Number(currentRecord.price))
-    ? Number(currentRecord.price)
-    : null
+  const tradePrice = record && Number.isFinite(Number(record.price)) ? Number(record.price) : null
   const currentPrice = latestPrice ?? tradePrice
   const slippagePercent =
     slippagePreset === 'custom' ? Number(customSlippage) : Number(slippagePreset)
@@ -360,20 +351,19 @@ function TradeExecutePageInner() {
       total >= 1
     )
   }, [estimatedTotal, form.tokenId, limitPriceValue, contractsValue])
-  const elapsed = record ? formatElapsedDetailed(record.trade_timestamp, nowMs) : '—'
-  const tradeSize = record && Number.isFinite(Number(record.size)) ? Number(record.size) : null
+  const elapsed = currentRecord ? formatElapsedDetailed(currentRecord.trade_timestamp, nowMs) : '—'
+  const tradeSize =
+    currentRecord && Number.isFinite(Number(currentRecord.size))
+      ? Number(currentRecord.size)
+      : null
   const totalCost =
     tradePrice !== null && tradeSize !== null ? tradePrice * tradeSize : null
   const payoutIfWins = tradeSize
-  const filledLabel = record ? formatFilledDateTime(record.trade_timestamp) : '—'
+  const filledLabel = currentRecord ? formatFilledDateTime(currentRecord.trade_timestamp) : '—'
   const priceDelta =
     currentPrice !== null && tradePrice !== null ? currentPrice - tradePrice : null
   const priceDeltaPct =
     priceDelta !== null && tradePrice ? (priceDelta / tradePrice) * 100 : null
-  const amountHelper =
-    amountMode === 'usd'
-      ? `Estimated contracts: ${formatNumber(contractsValue)}`
-      : `Estimated total: ${formatMoney(estimatedTotal)}`
   const limitPriceLabel = limitPriceValue ? formatPrice(limitPriceValue) : '—'
 
   const availableBalance =
@@ -698,29 +688,23 @@ function TradeExecutePageInner() {
   }, [orderId])
 
   useEffect(() => {
-    if (!record?.trade_timestamp) return
+    if (!currentRecord?.trade_timestamp) return
     setNowMs(Date.now())
     const timer = setInterval(() => {
       setNowMs(Date.now())
     }, 1000)
     return () => clearInterval(timer)
-  }, [record?.trade_timestamp])
+  }, [currentRecord?.trade_timestamp])
 
   useEffect(() => {
-    if (showAdvanced) return
-    if (!Number.isFinite(maxPrice)) return
-    setLimitPriceInput(formatPriceInput(maxPrice))
-  }, [maxPrice, showAdvanced])
-
-  useEffect(() => {
-    if (!record) return
-    const conditionId = record.condition_id || record.conditionId
-    const slug = record.market_slug || record.marketSlug
-    const title = record.market_title || record.marketTitle
+    if (!currentRecord) return
+    const conditionId = currentRecord.condition_id || currentRecord.conditionId
+    const slug = currentRecord.market_slug || currentRecord.marketSlug
+    const title = currentRecord.market_title || currentRecord.marketTitle
     const outcome =
-      firstStringValue(record, OUTCOME_KEYS) || String(record.outcome || '')
+      firstStringValue(currentRecord, OUTCOME_KEYS) || String(currentRecord.outcome || '')
     const outcomeIndex =
-      record.outcome_index !== undefined ? Number(record.outcome_index) : null
+      currentRecord.outcome_index !== undefined ? Number(currentRecord.outcome_index) : null
 
     if (!conditionId && !slug && !title) {
       setLatestPriceError('No market identifiers available for price lookup.')
@@ -784,219 +768,155 @@ function TradeExecutePageInner() {
       clearInterval(intervalId)
     }
   }, [
-    record?.condition_id,
-    record?.conditionId,
-    record?.market_slug,
-    record?.marketSlug,
-    record?.market_title,
-    record?.marketTitle,
-    record?.outcome,
-    record?.outcome_index,
+    currentRecord?.condition_id,
+    currentRecord?.conditionId,
+    currentRecord?.market_slug,
+    currentRecord?.marketSlug,
+    currentRecord?.market_title,
+    currentRecord?.marketTitle,
+    currentRecord?.outcome,
+    currentRecord?.outcome_index,
   ])
 
   return (
     <div>
       <Header />
-      <main className="mx-auto max-w-3xl px-4 py-10">
-        <h1 className="text-2xl font-semibold text-slate-900">Trade Details</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Look up a trade id to review what the trader filled and send a new order.
-        </p>
-
-      <form onSubmit={handleLookup} className="mt-6 space-y-3">
-        <label className="block text-sm font-medium text-slate-700">
-          Trade Id
-          <input
-            type="text"
-            value={tradeId}
-            onChange={(e) => setTradeId(e.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            placeholder="0xabc123..."
-          />
-        </label>
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-        >
-          {loading ? 'Looking up…' : 'Lookup Trade'}
-        </button>
-      </form>
-
-      {lookupError && (
-        <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          {lookupError}
-        </div>
-      )}
-
-      {result && (
-        <div className="mt-6 space-y-6">
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-4">
-            <h2 className="text-sm font-semibold text-slate-800">Trade Details</h2>
-            {!record && (
-              <p className="mt-2 text-sm text-slate-600">
-              {result?.found === false
-                ? result.message || result.error || 'Trade not found.'
-                : 'Trade not found.'}
-              </p>
-            )}
-            {record && (
-              <div className="mt-3 space-y-4 text-sm text-slate-700">
-                <div className="flex items-center gap-3">
-                  {traderIcon ? (
-                    <img
-                      src={traderIcon}
-                      alt=""
-                      className="h-8 w-8 rounded-full border border-slate-200 object-cover"
-                    />
-                  ) : (
-                    <div
-                      className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
-                      style={{ backgroundColor: traderAvatarColor }}
-                    >
-                      {traderInitials}
-                    </div>
-                  )}
-                  <div>
-                    <div className="text-xs font-medium text-slate-500">Trader</div>
-                    <div className="text-sm font-semibold text-slate-800">
-                      {traderName || 'Anonymous'}
-                    </div>
-                    <div className="break-words font-mono text-xs text-slate-500">
-                      {traderWallet ? `${traderWallet.slice(0, 6)}...${traderWallet.slice(-4)}` : '—'}
-                    </div>
-                  </div>
+      <main className="mx-auto max-w-3xl px-4 py-10 space-y-6">
+        <section className="rounded-md border border-slate-200 bg-white px-4 py-5 shadow-sm space-y-5">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">Copy This Trade</h1>
+            <p className="mt-1 text-sm text-slate-500">Review the filled order before placing a new copy.</p>
+          </div>
+          <div className="space-y-4 text-sm text-slate-700">
+            <div className="flex items-center gap-3">
+              {traderIcon ? (
+                <img
+                  src={traderIcon}
+                  alt=""
+                  className="h-10 w-10 rounded-full border border-slate-200 object-cover"
+                />
+              ) : (
+                <div
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white"
+                  style={{ backgroundColor: traderAvatarColor }}
+                >
+                  {traderInitials}
                 </div>
-
-                <div className="flex items-center gap-3">
-                  {marketIcon ? (
-                    <img
-                      src={marketIcon}
-                      alt=""
-                      className="h-8 w-8 rounded-full border border-slate-200 object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-                      {getInitials(String(marketTitle || 'M'))}
-                    </div>
-                  )}
-                  <div>
-                    <div className="text-xs font-medium text-slate-500">Market</div>
-                    <div className="text-sm font-semibold text-slate-800">{marketTitle}</div>
-                    {contractType && <div className="text-xs text-slate-500">{contractType}</div>}
-                  </div>
+              )}
+              <div>
+                <div className="text-xs font-medium text-slate-500">Trader</div>
+                <div className="text-sm font-semibold text-slate-900">
+                  {traderName || 'Anonymous'}
                 </div>
-
-                <div>
-                  <div className="text-xs font-medium text-slate-500">Direction</div>
-                  <div className="mt-1 flex items-center gap-2">
-                    <span className="rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
-                      {(record.side || form.side || 'BUY').toUpperCase()}
-                    </span>
-                    <span className="text-sm font-semibold text-slate-800">
-                      {record.outcome || '—'}
-                    </span>
-                  </div>
+                {traderWallet && (
+                  <div className="text-xs text-slate-500">{abbreviateWallet(traderWallet)}</div>
+                )}
+              </div>
+              {contractType && (
+                <div className="ml-auto text-xs text-slate-500">{contractType}</div>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {marketIcon ? (
+                <img
+                  src={marketIcon}
+                  alt=""
+                  className="h-10 w-10 rounded-full border border-slate-200 object-cover"
+                />
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+                  {getInitials(String(marketTitle || 'M'))}
+                </div>
+              )}
+              <div className="flex-1">
+                <div className="text-xs font-medium text-slate-500">Market</div>
+                <div className="text-sm font-semibold text-slate-900">{marketTitle}</div>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
+                    {(record?.side || form.side || 'BUY').toUpperCase()}
+                  </span>
+                  <span className="text-xs text-slate-500">{record?.outcome || '—'}</span>
                 </div>
               </div>
-            )}
+            </div>
+            <div className="grid gap-4 text-xs text-slate-500 sm:grid-cols-3">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Filled Price
+                </div>
+                <div className="text-sm font-semibold text-slate-900">{formatPrice(tradePrice)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Contracts
+                </div>
+                <div className="text-sm font-semibold text-slate-900">{formatNumber(tradeSize)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Total
+                </div>
+                <div className="text-sm font-semibold text-slate-900">{formatMoney(totalCost)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Payout If Wins
+                </div>
+                <div className="text-sm font-semibold text-slate-900">{formatMoney(payoutIfWins)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Date / Time
+                </div>
+                <div className="text-sm font-semibold text-slate-900">{filledLabel}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Time Since Filled
+                </div>
+                <div className="text-sm font-semibold text-slate-900">{elapsed}</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-md border border-slate-200 bg-slate-50 px-4 py-5 shadow-sm space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Your Order</h2>
+            <p className="text-xs text-slate-500">Preview your limit order before submitting.</p>
+          </div>
+          <div className="grid gap-4 text-sm text-slate-700 sm:grid-cols-2">
+            <div>
+              <div className="text-xs font-medium text-slate-500">Market status</div>
+              <div
+                className={
+                  marketStatus === 'Open'
+                    ? 'text-sm font-semibold text-emerald-600'
+                    : marketStatus === 'Closed'
+                      ? 'text-sm font-semibold text-rose-600'
+                      : 'text-sm font-semibold text-slate-900'
+                }
+              >
+                {marketStatus || '—'}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs font-medium text-slate-500">Live price / Δ</div>
+              <div className="text-sm font-semibold text-slate-900">
+                {latestPriceLoading ? 'Loading…' : formatPrice(currentPrice)}
+              </div>
+              {priceDeltaPct !== null && (
+                <div className="text-xs text-slate-500">
+                  {`${priceDeltaPct > 0 ? '+' : ''}${priceDeltaPct.toFixed(2)}% since filled`}
+                </div>
+              )}
+              {latestPriceError && (
+                <div className="text-xs text-rose-600">{latestPriceError}</div>
+              )}
+            </div>
           </div>
 
-          {record && (
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-4">
-              <h2 className="text-sm font-semibold text-slate-800">Order Summary</h2>
-              <p className="mt-1 text-xs text-slate-500">What the trader filled</p>
-              <div className="mt-3 rounded-md bg-slate-100 px-3 py-3">
-                <div className="grid gap-3 text-sm text-slate-700 sm:grid-cols-2">
-                  <div>
-                    <div className="text-xs font-medium text-slate-500">Trader Fill Price</div>
-                    <div>{formatPrice(tradePrice)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-slate-500">Contracts</div>
-                    <div>{formatNumber(tradeSize)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-slate-500">Total Cost</div>
-                    <div>{formatMoney(totalCost)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-slate-500">Payout If Wins</div>
-                    <div>{formatMoney(payoutIfWins)}</div>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <div className="text-xs font-medium text-slate-500">Filled</div>
-                    <div>{filledLabel}</div>
-                  </div>
-                </div>
-              </div>
-
-              <details className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2">
-                <summary className="cursor-pointer text-xs font-medium text-slate-600">
-                  View technical details
-                </summary>
-                <div className="mt-2 grid gap-3 text-xs text-slate-700 sm:grid-cols-2">
-                  <div>
-                    <div className="text-xs font-medium text-slate-500">Trade Id</div>
-                    <div className="break-words font-mono">{formatValue(record.trade_id)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-slate-500">Token Id</div>
-                    <div className="break-words font-mono">{formatValue(displayTokenId)}</div>
-                  </div>
-                </div>
-              </details>
-            </div>
-          )}
-
-          {record && (
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-4">
-              <h2 className="text-sm font-semibold text-slate-800">Live Snapshot</h2>
-              <p className="mt-1 text-xs text-slate-500">Current market conditions</p>
-              <div className="mt-3 rounded-md bg-slate-100 px-3 py-3">
-                <div className="grid gap-3 text-sm text-slate-700 sm:grid-cols-3">
-                  <div>
-                    <div className="text-xs font-medium text-slate-500">Time Since Trader Filled</div>
-                    <div>{elapsed}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-slate-500">Market Status</div>
-                    <div
-                      className={
-                        marketStatus === 'Open'
-                          ? 'font-medium text-emerald-600'
-                          : marketStatus === 'Closed'
-                            ? 'font-medium text-rose-600'
-                            : ''
-                      }
-                    >
-                      {marketStatus || '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-slate-500">Current Price</div>
-                    <div>{latestPriceLoading ? 'Loading…' : formatPrice(currentPrice)}</div>
-                    {priceDeltaPct !== null && (
-                      <div className="text-xs text-slate-500">
-                        {`${priceDeltaPct > 0 ? '+' : ''}${priceDeltaPct.toFixed(2)}% since trader filled`}
-                      </div>
-                    )}
-                    {latestPriceError && (
-                      <div className="mt-1 text-xs text-rose-600">{latestPriceError}</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="mt-8 rounded-md border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-800">Send Order</h2>
-        <div className="mt-4 space-y-6">
-          <div className="rounded-md bg-slate-100 px-3 py-3">
+          <div className="rounded-md border border-slate-200 bg-white px-3 py-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-xs font-medium text-slate-500">Available Cash</div>
@@ -1022,10 +942,24 @@ function TradeExecutePageInner() {
             </div>
           </div>
 
-          <div>
-            <div className="text-xs font-medium text-slate-500">Amount</div>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <div className="inline-flex rounded-md border border-slate-200 bg-white p-1 text-xs">
+          <div className="rounded-md border border-slate-200 bg-white px-4 py-4 space-y-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-medium text-slate-500">Amount</div>
+                <div className="text-sm font-semibold text-slate-900">
+                  {amountMode === 'usd' ? 'USD entry' : 'Contracts entry'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAmountMode(amountMode === 'usd' ? 'contracts' : 'usd')}
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600"
+              >
+                ⇄
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="inline-flex overflow-hidden rounded-md border border-slate-200 text-xs shadow-sm">
                 <button
                   type="button"
                   onClick={() => setAmountMode('usd')}
@@ -1051,59 +985,74 @@ function TradeExecutePageInner() {
                 step="0.0001"
                 value={amountInput}
                 onChange={(e) => setAmountInput(e.target.value)}
-                className="w-40 rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-44 rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 placeholder={amountMode === 'usd' ? '1.20' : '10'}
               />
             </div>
-            <div className="mt-2 text-xs text-slate-500">{amountHelper}</div>
-            {estimatedTotal !== null && estimatedTotal < 1 && (
-              <div className="mt-1 text-xs text-rose-600">Minimum total is $1.</div>
-            )}
-          </div>
-
-          <div>
-            <div className="text-xs font-medium text-slate-500">Slippage Tolerance</div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {[0, 1, 3, 5].map((value) => (
+            <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+              <span>
+                {amountMode === 'usd'
+                  ? `${amountInput || '0'} USD`
+                  : `${amountInput || '0'} contracts`}
+              </span>
+              <span>
+                {amountMode === 'usd'
+                  ? `≈ ${formatNumber(contractsValue)} contracts`
+                  : `≈ ${formatMoney(estimatedTotal)} USD`}
+              </span>
+            </div>
+            {(estimatedTotal !== null && estimatedTotal < 1) || notEnoughFunds ? (
+              <div className="flex flex-wrap gap-3 text-xs text-rose-600">
+                {estimatedTotal !== null && estimatedTotal < 1 && <span>Minimum total is $1.</span>}
+                {notEnoughFunds && <span>Not enough funds available.</span>}
+              </div>
+            ) : null}
+            <div>
+              <div className="text-xs font-medium text-slate-500">Slippage Tolerance</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {[0, 1, 3, 5].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setSlippagePreset(value)}
+                    className={`rounded-md border px-2 py-1 text-xs ${
+                      slippagePreset === value
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-200 bg-white text-slate-600'
+                    }`}
+                  >
+                    {value}%
+                  </button>
+                ))}
                 <button
-                  key={value}
                   type="button"
-                  onClick={() => setSlippagePreset(value)}
+                  onClick={() => setSlippagePreset('custom')}
                   className={`rounded-md border px-2 py-1 text-xs ${
-                    slippagePreset === value
+                    slippagePreset === 'custom'
                       ? 'border-slate-900 bg-slate-900 text-white'
                       : 'border-slate-200 bg-white text-slate-600'
                   }`}
                 >
-                  {value}%
+                  Custom
                 </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setSlippagePreset('custom')}
-                className={`rounded-md border px-2 py-1 text-xs ${
-                  slippagePreset === 'custom'
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-200 bg-white text-slate-600'
-                }`}
-              >
-                Custom
-              </button>
-              {slippagePreset === 'custom' && (
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={customSlippage}
-                  onChange={(e) => setCustomSlippage(e.target.value)}
-                  className="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  placeholder="0.5"
-                />
-              )}
+                {slippagePreset === 'custom' && (
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={customSlippage}
+                    onChange={(e) => setCustomSlippage(e.target.value)}
+                    className="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    placeholder="0.5"
+                  />
+                )}
+              </div>
+              <div className="mt-2 text-xs text-slate-500">
+                {limitPriceValue
+                  ? `This order will only fill at ${limitPriceLabel} per contract or less.`
+                  : 'Set slippage to preview the upper bound.'}
+              </div>
             </div>
-            <div className="mt-2 text-xs text-slate-600">Max Price: {formatPrice(maxPrice)}</div>
-            <div className="mt-1 text-xs text-slate-500">Slippage is measured from the current price.</div>
-            <div className="mt-1 text-xs text-slate-500">{slippageHelper}</div>
           </div>
 
           <div>
@@ -1130,152 +1079,81 @@ function TradeExecutePageInner() {
             </div>
           </div>
 
-          <div className="rounded-md bg-slate-100 px-3 py-3">
-            <div className="text-xs font-semibold text-slate-600">Order Preview</div>
-            <div className="mt-2 grid gap-3 text-sm text-slate-700 sm:grid-cols-2">
-              <div>
-                <div className="text-xs font-medium text-slate-500">Current Price</div>
-                <div>{formatPrice(currentPrice)}</div>
-              </div>
-              <div>
-                <div className="text-xs font-medium text-slate-500">Max Price</div>
-                <div>{formatPrice(maxPrice)}</div>
-              </div>
-              <div>
-                <div className="text-xs font-medium text-slate-500">Estimated Contracts</div>
-                <div>{formatNumber(contractsValue)}</div>
-              </div>
-              <div>
-                <div className="text-xs font-medium text-slate-500">Estimated Total</div>
-                <div>{formatMoney(estimatedTotal)}</div>
-              </div>
-            </div>
-            <div className="mt-2 text-xs text-slate-500">
-              {slippageValue === 0
-                ? 'This order may not fill.'
-                : 'This order may fill at up to your max price.'}
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={handleExecute}
+              disabled={!canSubmit || submitLoading}
+              className="inline-flex items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              {submitLoading ? 'Submitting…' : 'Send Order'}
+            </button>
+            <div className="text-xs text-slate-500">
+              This sends a limit order. It may fill immediately, partially, or not at all.
             </div>
           </div>
-        </div>
 
-        <div className="mt-4 flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={handleExecute}
-            disabled={!canSubmit || submitLoading}
-            className="inline-flex items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-          >
-            {submitLoading ? 'Submitting…' : 'Send Order'}
-          </button>
-          <div className="text-xs text-slate-500">
-            This sends a limit order. It may fill immediately, partially, or not at all.
-          </div>
-        </div>
-
-        <details
-          className="mt-4 rounded-md border border-slate-200 bg-white px-3 py-2"
-          open={showAdvanced}
-          onToggle={(event) => {
-            const open = event.currentTarget.open
-            setShowAdvanced(open)
-            if (open && !limitPriceInput && Number.isFinite(maxPrice)) {
-              setLimitPriceInput(formatPriceInput(maxPrice))
-            }
-          }}
-        >
-          <summary className="cursor-pointer text-xs font-medium text-slate-600">Advanced</summary>
-          <div className="mt-3 grid gap-4 text-sm text-slate-700 sm:grid-cols-2">
-            <label className="block text-sm font-medium text-slate-700">
-              Limit Price
-              <input
-                type="number"
-                min="0"
-                step="0.000001"
-                value={limitPriceInput}
-                onChange={(e) => setLimitPriceInput(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                placeholder="0.20"
-              />
-            </label>
-            <label className="block text-sm font-medium text-slate-700">
-              Time in Force
-              <select
-                value={form.orderType}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, orderType: e.target.value as ExecuteForm['orderType'] }))
-                }
-                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              >
-                <option value="IOC">Immediate or Cancel</option>
-                <option value="GTC">Good 'Til Canceled</option>
-              </select>
-            </label>
-          </div>
-          <div className="mt-2 text-xs text-slate-500">
-            Advanced options are for experienced traders.
-          </div>
-        </details>
-
-        {submitError && (
-          <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            {submitError}
-          </div>
-        )}
-
-        {submitResult && (
-          <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
-            <h3 className="text-sm font-semibold text-slate-800">Order Result</h3>
-            <pre className="mt-2 overflow-auto whitespace-pre-wrap rounded bg-white px-3 py-2 text-xs text-slate-800">
-              {JSON.stringify(submitResult, null, 2)}
-            </pre>
-          </div>
-        )}
-
-        {orderId && (
-          <div className="mt-4 rounded-md border border-slate-200 bg-white px-3 py-3">
-            <h3 className="text-sm font-semibold text-slate-800">Order Status</h3>
-            <p className="mt-1 text-xs text-slate-500">
-              Order status is shown in real time. Polymarket may take longer to reflect updates.
-            </p>
-            <div className="mt-2 text-sm text-slate-700">
-              {isTerminal
-                ? 'Completed'
-                : statusPhase === 'open' || statusPhase === 'partial'
-                  ? 'Open'
-                  : statusPhase === 'processing'
-                    ? 'Processing'
-                    : 'Submitted'}
+          {submitError && (
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {submitError}
             </div>
-            {orderStatus && (
-              <div className="mt-1 text-xs text-slate-500">
-                Status: {orderStatus}
+          )}
+
+          {submitResult && (
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+              <h3 className="text-sm font-semibold text-slate-800">Order Result</h3>
+              <pre className="mt-2 overflow-auto whitespace-pre-wrap rounded bg-white px-3 py-2 text-xs text-slate-800">
+                {JSON.stringify(submitResult, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {orderId && (
+            <div className="rounded-md border border-slate-200 bg-white px-3 py-3">
+              <h3 className="text-sm font-semibold text-slate-800">Order Status</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Order status is shown in real time. Polymarket may take longer to reflect updates.
+              </p>
+              <div className="mt-2 text-sm text-slate-700">
+                {isTerminal
+                  ? 'Completed'
+                  : statusPhase === 'open' || statusPhase === 'partial'
+                    ? 'Open'
+                    : statusPhase === 'processing'
+                      ? 'Processing'
+                      : 'Submitted'}
               </div>
-            )}
-            {fillProgress !== null && (orderStatus === 'open' || orderStatus === 'partial') && (
-              <div className="mt-2">
-                <div className="text-xs text-slate-500">
-                  Filled {formatNumber(filledSize)} / {formatNumber(totalSize)}
+              {orderStatus && (
+                <div className="mt-1 text-xs text-slate-500">
+                  Status: {orderStatus}
                 </div>
-                <div className="mt-1 h-2 w-full rounded-full bg-slate-100">
-                  <div
-                    className="h-2 rounded-full bg-slate-900"
-                    style={{ width: `${fillProgress}%` }}
-                  />
+              )}
+              {fillProgress !== null && (orderStatus === 'open' || orderStatus === 'partial') && (
+                <div className="mt-2">
+                  <div className="text-xs text-slate-500">
+                    Filled {formatNumber(filledSize)} / {formatNumber(totalSize)}
+                  </div>
+                  <div className="mt-1 h-2 w-full rounded-full bg-slate-100">
+                    <div
+                      className="h-2 rounded-full bg-slate-900"
+                      style={{ width: `${fillProgress}%` }}
+                    />
+                  </div>
                 </div>
-              </div>
-            )}
-            {statusData?.updatedAt && (
-              <div className="mt-2 text-xs text-slate-400">
-                Updated {new Date(statusData.updatedAt).toLocaleTimeString()}
-              </div>
-            )}
-            {statusError && (
-              <div className="mt-2 text-xs text-rose-600">{statusError}</div>
-            )}
-          </div>
-        )}
-      </div>
+              )}
+              {statusData?.updatedAt && (
+                <div className="mt-2 text-xs text-slate-400">
+                  Updated {new Date(statusData.updatedAt).toLocaleTimeString()}
+                </div>
+              )}
+              {statusError && (
+                <div className="mt-2 text-xs text-rose-600">{statusError}</div>
+              )}
+            </div>
+          )}
+        </section>
       </main>
+
     </div>
   )
 }
