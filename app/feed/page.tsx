@@ -899,38 +899,53 @@ export default function FeedPage() {
   // Track if we've done the initial fetch
   // Use BOTH ref (for this component lifecycle) AND sessionStorage (persists across remounts)
   const hasFetchedRef = useRef(false);
-  
-  // Check sessionStorage on mount to see if we've already fetched in this browser session
-  useEffect(() => {
-    const sessionKey = `feed-fetched-${user?.id || 'anonymous'}`;
-    const alreadyFetched = sessionStorage.getItem(sessionKey);
-    if (alreadyFetched === 'true') {
-      hasFetchedRef.current = true;
-      console.log('📊 Feed already fetched this session (from sessionStorage)');
-    }
-  }, [user?.id]);
+  const hasAttemptedFetchRef = useRef(false);
 
-  // Fetch feed data ONLY on initial mount or manual refresh
-  // Do NOT refetch when user switches tabs or changes category filter
+  // Fetch feed data ONLY ONCE on initial mount
+  // This effect runs ONCE with empty deps, checks user inside
+  // Do NOT refetch when user switches tabs, auth state changes, or anything else
   useEffect(() => {
-    if (!user) return;
-    
-    const sessionKey = `feed-fetched-${user.id}`;
-    const alreadyFetched = sessionStorage.getItem(sessionKey);
-    
-    // Only fetch if we haven't fetched in this browser session
-    if (!hasFetchedRef.current && alreadyFetched !== 'true') {
+    // Only ever attempt this once per component lifecycle
+    if (hasAttemptedFetchRef.current) {
+      console.log('📊 Already attempted fetch this lifecycle, skipping');
+      return;
+    }
+    hasAttemptedFetchRef.current = true;
+
+    const attemptFetch = async () => {
+      // Wait for user to be available
+      let currentUser = user;
+      if (!currentUser) {
+        console.log('📊 Waiting for user...');
+        // Wait a bit for auth to load
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const { data: { user: freshUser } } = await supabase.auth.getUser();
+        currentUser = freshUser;
+      }
+
+      if (!currentUser) {
+        console.log('📊 No user found, skipping feed fetch');
+        return;
+      }
+
+      const sessionKey = `feed-fetched-${currentUser.id}`;
+      const alreadyFetched = sessionStorage.getItem(sessionKey);
+
+      if (alreadyFetched === 'true' && hasFetchedRef.current) {
+        console.log('📊 Feed already fetched this session (from sessionStorage)');
+        return;
+      }
+
       console.log('📊 Initial feed fetch');
-      fetchFeed();
+      await fetchFeed();
       hasFetchedRef.current = true;
       sessionStorage.setItem(sessionKey, 'true');
-    } else {
-      console.log('📊 Skipping fetch - data already loaded');
-    }
-    // Deliberately only depend on `user` existing, not its value
-    // This prevents refetches when auth state changes but same user
+    };
+
+    attemptFetch();
+    // Empty deps = runs ONCE on mount, never again
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!user]);
+  }, []);
 
   // Load more trades
   const handleLoadMore = () => {
