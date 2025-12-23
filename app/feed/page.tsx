@@ -872,8 +872,22 @@ export default function FeedPage() {
 
   // Manual refresh handler
   const handleManualRefresh = async () => {
+    if (!user) return;
+    
     setIsRefreshing(true);
+    
+    // Clear the session flag to allow refetch
+    const sessionKey = `feed-fetched-${user.id}`;
+    sessionStorage.removeItem(sessionKey);
+    hasFetchedRef.current = false;
+    
+    // Force a fresh fetch
     await fetchFeed();
+    
+    // Set the flags back after fetching
+    hasFetchedRef.current = true;
+    sessionStorage.setItem(sessionKey, 'true');
+    
     setIsRefreshing(false);
     
     // Show success toast
@@ -883,22 +897,40 @@ export default function FeedPage() {
   };
 
   // Track if we've done the initial fetch
+  // Use BOTH ref (for this component lifecycle) AND sessionStorage (persists across remounts)
   const hasFetchedRef = useRef(false);
+  
+  // Check sessionStorage on mount to see if we've already fetched in this browser session
+  useEffect(() => {
+    const sessionKey = `feed-fetched-${user?.id || 'anonymous'}`;
+    const alreadyFetched = sessionStorage.getItem(sessionKey);
+    if (alreadyFetched === 'true') {
+      hasFetchedRef.current = true;
+      console.log('📊 Feed already fetched this session (from sessionStorage)');
+    }
+  }, [user?.id]);
 
-  // Fetch feed data ONLY on initial mount
+  // Fetch feed data ONLY on initial mount or manual refresh
   // Do NOT refetch when user switches tabs or changes category filter
   useEffect(() => {
     if (!user) return;
     
-    // Only fetch if haven't fetched yet (initial load)
-    if (!hasFetchedRef.current) {
+    const sessionKey = `feed-fetched-${user.id}`;
+    const alreadyFetched = sessionStorage.getItem(sessionKey);
+    
+    // Only fetch if we haven't fetched in this browser session
+    if (!hasFetchedRef.current && alreadyFetched !== 'true') {
       console.log('📊 Initial feed fetch');
       fetchFeed();
       hasFetchedRef.current = true;
+      sessionStorage.setItem(sessionKey, 'true');
     } else {
       console.log('📊 Skipping fetch - data already loaded');
     }
-  }, [user, fetchFeed]);
+    // Deliberately only depend on `user` existing, not its value
+    // This prevents refetches when auth state changes but same user
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!user]);
 
   // Load more trades
   const handleLoadMore = () => {
