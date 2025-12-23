@@ -443,6 +443,9 @@ export default function FeedPage() {
     'Weather'
   ];
 
+  // Component mount tracking
+  console.log('🔵 FeedPage component rendering');
+
   // Copied trades state
   const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(false);
@@ -475,16 +478,21 @@ export default function FeedPage() {
     
     checkAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('🔐 Auth state change:', event, 'User ID:', session?.user?.id);
+      
       if (!session?.user) {
+        console.log('❌ No session, redirecting to login');
         router.push('/login');
       } else {
         // Only update user state if it actually changed (compare user IDs)
         // This prevents unnecessary re-renders when tab regains focus
         setUser(prevUser => {
           if (prevUser?.id === session.user.id) {
+            console.log('✅ Same user, not updating state');
             return prevUser; // Same user, don't trigger state update
           }
+          console.log('🔄 Different user, updating state');
           return session.user; // Different user (or first time), update state
         });
       }
@@ -905,22 +913,28 @@ export default function FeedPage() {
   // This effect runs ONCE with empty deps, checks user inside
   // Do NOT refetch when user switches tabs, auth state changes, or anything else
   useEffect(() => {
+    console.log('🔄 Feed useEffect triggered - hasAttemptedFetchRef:', hasAttemptedFetchRef.current);
+    
     // Only ever attempt this once per component lifecycle
     if (hasAttemptedFetchRef.current) {
       console.log('📊 Already attempted fetch this lifecycle, skipping');
       return;
     }
     hasAttemptedFetchRef.current = true;
+    console.log('🎯 First time running this effect, attempting fetch');
 
     const attemptFetch = async () => {
       // Wait for user to be available
       let currentUser = user;
+      console.log('👤 Current user from state:', currentUser?.id);
+      
       if (!currentUser) {
         console.log('📊 Waiting for user...');
         // Wait a bit for auth to load
         await new Promise(resolve => setTimeout(resolve, 100));
         const { data: { user: freshUser } } = await supabase.auth.getUser();
         currentUser = freshUser;
+        console.log('👤 Fresh user fetched:', currentUser?.id);
       }
 
       if (!currentUser) {
@@ -930,16 +944,18 @@ export default function FeedPage() {
 
       const sessionKey = `feed-fetched-${currentUser.id}`;
       const alreadyFetched = sessionStorage.getItem(sessionKey);
+      console.log('💾 SessionStorage check:', { sessionKey, alreadyFetched, hasFetchedRef: hasFetchedRef.current });
 
       if (alreadyFetched === 'true' && hasFetchedRef.current) {
-        console.log('📊 Feed already fetched this session (from sessionStorage)');
+        console.log('✅ Feed already fetched this session (from sessionStorage), SKIPPING FETCH');
         return;
       }
 
-      console.log('📊 Initial feed fetch');
+      console.log('🚀 Starting initial feed fetch');
       await fetchFeed();
       hasFetchedRef.current = true;
       sessionStorage.setItem(sessionKey, 'true');
+      console.log('✅ Feed fetch complete, flags set');
     };
 
     attemptFetch();
