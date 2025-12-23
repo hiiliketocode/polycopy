@@ -443,9 +443,6 @@ export default function FeedPage() {
     'Weather'
   ];
 
-  // Component mount tracking
-  console.log('🔵 FeedPage component rendering');
-
   // Copied trades state
   const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(false);
@@ -478,21 +475,16 @@ export default function FeedPage() {
     
     checkAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('🔐 Auth state change:', event, 'User ID:', session?.user?.id);
-      
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
-        console.log('❌ No session, redirecting to login');
         router.push('/login');
       } else {
         // Only update user state if it actually changed (compare user IDs)
         // This prevents unnecessary re-renders when tab regains focus
         setUser(prevUser => {
           if (prevUser?.id === session.user.id) {
-            console.log('✅ Same user, not updating state');
             return prevUser; // Same user, don't trigger state update
           }
-          console.log('🔄 Different user, updating state');
           return session.user; // Different user (or first time), update state
         });
       }
@@ -548,10 +540,8 @@ export default function FeedPage() {
   // Result: ~10s → <2s load time
   const fetchFeed = useCallback(async (userOverride?: User) => {
     const currentUser = userOverride || user;
-    console.log('📡 fetchFeed called, user:', currentUser?.id, 'override:', !!userOverride);
     
     if (!currentUser) {
-      console.log('❌ No user, returning early');
       return;
     }
     
@@ -560,17 +550,13 @@ export default function FeedPage() {
 
     try {
         // 1. Fetch followed traders
-        console.log('👥 Fetching follows...');
         const { data: follows, error: followsError } = await supabase
           .from('follows')
           .select('trader_wallet')
           .eq('user_id', currentUser.id);
 
-        console.log('👥 Follows result:', { count: follows?.length, error: followsError });
-
         if (followsError) throw new Error('Failed to fetch follows');
         if (!follows || follows.length === 0) {
-          console.log('⚠️ No follows found');
           setTrades([]);
           setFollowingCount(0);
           setLoadingFeed(false);
@@ -578,7 +564,6 @@ export default function FeedPage() {
         }
 
         setFollowingCount(follows.length);
-        console.log('✅ Following count set:', follows.length);
 
         // 2. Fetch trades IMMEDIATELY (don't wait for names)
         // Reduced from 50 to 15 trades per trader for faster loading
@@ -670,18 +655,14 @@ export default function FeedPage() {
         })();
         
         // Wait for trades (priority) and names (parallel)
-        console.log('⏳ Waiting for trade promises...');
         const [allTradesArrays] = await Promise.all([
           Promise.all(tradePromises),
           namePromise
         ]);
-        console.log('✅ Trade promises complete, arrays count:', allTradesArrays.length);
         
         const allTradesRaw = allTradesArrays.flat();
-        console.log('📦 Raw trades flattened:', allTradesRaw.length);
         
         if (allTradesRaw.length === 0) {
-          console.log('⚠️ No trades found, setting empty array');
           setTrades([]);
           setLoadingFeed(false);
           return;
@@ -689,7 +670,6 @@ export default function FeedPage() {
 
         // Sort by timestamp
         allTradesRaw.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
-        console.log('🔄 Trades sorted by timestamp');
 
         // 4. Format trades (optimized - removed debug logging)
         const formattedTrades: FeedTrade[] = allTradesRaw.map((trade: any) => {
@@ -867,11 +847,9 @@ export default function FeedPage() {
         });
 
         // Store all trades and reset display count
-        console.log('💾 Setting state with trades:', { total: formattedTrades.length, displaying: 35 });
         setAllTrades(formattedTrades);
         setDisplayedTradesCount(35);
         setTrades(formattedTrades.slice(0, 35));
-        console.log('✅ State updated with trades');
 
         // Calculate today's volume and trade count
         const today = new Date();
@@ -886,7 +864,6 @@ export default function FeedPage() {
         
         const volumeToday = todaysTrades.reduce((sum, t) => sum + (t.trade.price * t.trade.size), 0);
         setTodayVolume(volumeToday);
-        console.log('📊 Today stats:', { trades: todaysTrades.length, volume: volumeToday });
         setTodaysTradeCount(todaysTrades.length);
 
     } catch (err: any) {
@@ -932,45 +909,40 @@ export default function FeedPage() {
   // This effect runs ONCE with empty deps, checks user inside
   // Do NOT refetch when user switches tabs, auth state changes, or anything else
   useEffect(() => {
-    console.log('🔄 Feed useEffect triggered - hasAttemptedFetchRef:', hasAttemptedFetchRef.current);
-    
     // Only ever attempt this once per component lifecycle
     if (hasAttemptedFetchRef.current) {
-      console.log('📊 Already attempted fetch this lifecycle, skipping');
       return;
     }
     hasAttemptedFetchRef.current = true;
-    console.log('🎯 First time running this effect, attempting fetch');
 
     const attemptFetch = async () => {
       // Wait for user to be available
       let currentUser = user;
-      console.log('👤 Current user from state:', currentUser?.id);
       
       if (!currentUser) {
-        console.log('📊 Waiting for user...');
         // Wait a bit for auth to load
         await new Promise(resolve => setTimeout(resolve, 100));
         const { data: { user: freshUser } } = await supabase.auth.getUser();
         currentUser = freshUser;
-        console.log('👤 Fresh user fetched:', currentUser?.id);
       }
 
       if (!currentUser) {
-        console.log('📊 No user found, skipping feed fetch');
         return;
       }
 
-      // TEMPORARY: Clear any old sessionStorage
+      // Check if we've already fetched in this browser session
       const sessionKey = `feed-fetched-${currentUser.id}`;
-      console.log('🗑️ Clearing old sessionStorage for fresh start');
-      sessionStorage.removeItem(sessionKey);
+      const alreadyFetched = sessionStorage.getItem(sessionKey);
       
-      console.log('🚀 Starting feed fetch with user:', currentUser.id);
-      await fetchFeed(currentUser); // Pass the user we just fetched
+      // Skip fetch if we have both sessionStorage flag AND data in state
+      if (alreadyFetched === 'true' && hasFetchedRef.current) {
+        return;
+      }
+      
+      // Fetch feed with the current user
+      await fetchFeed(currentUser);
       hasFetchedRef.current = true;
       sessionStorage.setItem(sessionKey, 'true');
-      console.log('✅ Feed fetch complete, flags set');
     };
 
     attemptFetch();
