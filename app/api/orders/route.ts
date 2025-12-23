@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolveOrdersTableName } from '@/lib/orders/table'
 
 function createServiceClient() {
   return createClient(
@@ -27,6 +28,7 @@ export async function GET() {
   }
 
   const supabase = createServiceClient()
+  const ordersTable = await resolveOrdersTableName(supabase)
   const { data: credential } = await supabase
     .from('clob_credentials')
     .select('polymarket_account_address')
@@ -51,7 +53,7 @@ export async function GET() {
   }
 
   const { data: orders, error: ordersError } = await supabase
-    .from('orders')
+    .from(ordersTable)
     .select('order_id, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at')
     .eq('trader_id', trader.id)
     .order('created_at', { ascending: false })

@@ -11,6 +11,7 @@ import {
   POLYMARKET_CLOB_BASE_URL,
 } from '@/lib/turnkey/config'
 import { createDecipheriv, createHash } from 'crypto'
+import { resolveOrdersTableName } from '@/lib/orders/table'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -122,7 +123,6 @@ function normalizeOrder(order: any) {
 
   const orderType = order?.order_type || order?.orderType || null
   const timeInForce = order?.time_in_force || order?.timeInForce || orderType || null
-
   return {
     polymarket_order_id: String(order?.id || order?.order_id || ''),
     market_id: String(order?.market || order?.asset_id || order?.market_id || ''),
@@ -179,6 +179,8 @@ async function ensureTraderId(walletAddress: string) {
 }
 
 async function refreshOrders(userId: string, limit: number): Promise<RefreshResult> {
+  const ordersTable = await resolveOrdersTableName(supabaseServiceRole)
+
   const { data: credential, error: credentialError } = await supabaseServiceRole
     .from('clob_credentials')
     .select('api_key, api_secret_encrypted, api_passphrase_encrypted, enc_kid, polymarket_account_address, turnkey_address')
@@ -225,7 +227,7 @@ async function refreshOrders(userId: string, limit: number): Promise<RefreshResu
   for (const id of extractOrderIds(trades)) orderIds.add(id)
 
   const { data: existingOrders } = await supabaseServiceRole
-    .from('orders')
+    .from(ordersTable)
     .select('order_id')
     .eq('trader_id', traderId)
     .order('updated_at', { ascending: false })
@@ -283,7 +285,7 @@ async function refreshOrders(userId: string, limit: number): Promise<RefreshResu
 
   const payloadOrderIds = payload.map((order) => order.order_id)
   const { data: existingOrderRows } = await supabaseServiceRole
-    .from('orders')
+    .from(ordersTable)
     .select('order_id')
     .eq('trader_id', traderId)
     .in('order_id', payloadOrderIds)
@@ -293,7 +295,7 @@ async function refreshOrders(userId: string, limit: number): Promise<RefreshResu
   const updatedCount = payload.length - insertedCount
 
   const { error: upsertError } = await supabaseServiceRole
-    .from('orders')
+    .from(ordersTable)
     .upsert(payload, { onConflict: 'order_id' })
 
   if (upsertError) {

@@ -5,10 +5,7 @@ export const dynamic = 'force-dynamic'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Header from '@/app/components/Header'
-
-type LookupResult =
-  | { found: true; table: string; record: Record<string, any> }
-  | { found: false; message?: string; error?: string }
+import { USDC_DECIMALS } from '@/lib/turnkey/config'
 
 type ExecuteForm = {
   tokenId: string
@@ -286,11 +283,8 @@ function extractContractType(record: Record<string, any>) {
 
 function TradeExecutePageInner() {
   const searchParams = useSearchParams()
-  const [tradeId, setTradeId] = useState('')
-  const [result, setResult] = useState<LookupResult | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [lookupError, setLookupError] = useState<string | null>(null)
   const prefillAppliedRef = useRef(false)
+  const [record, setRecord] = useState<Record<string, any> | null>(null)
 
   const [form, setForm] = useState<ExecuteForm>(EMPTY_FORM)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -310,8 +304,6 @@ function TradeExecutePageInner() {
   const [amountInput, setAmountInput] = useState('')
   const [slippagePreset, setSlippagePreset] = useState<number | 'custom'>(1)
   const [customSlippage, setCustomSlippage] = useState('')
-  const [showAdvanced, setShowAdvanced] = useState(false)
-  const [limitPriceInput, setLimitPriceInput] = useState('')
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [balanceLoading, setBalanceLoading] = useState(false)
   const [balanceError, setBalanceError] = useState<string | null>(null)
@@ -395,9 +387,8 @@ function TradeExecutePageInner() {
       ? Math.min(100, Math.max(0, (filledSize / totalSize) * 100))
       : null
 
-  const resetLookupState = () => {
-    setLookupError(null)
-    setResult(null)
+  const resetRecordState = () => {
+    setRecord(null)
     setSubmitResult(null)
     setSubmitError(null)
     setOrderId(null)
@@ -412,8 +403,6 @@ function TradeExecutePageInner() {
     setAmountInput('')
     setSlippagePreset(1)
     setCustomSlippage('')
-    setShowAdvanced(false)
-    setLimitPriceInput('')
   }
 
   const applyRecord = async (record: Record<string, any>, tableLabel = 'prefill') => {

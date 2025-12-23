@@ -192,8 +192,11 @@ export default function OrdersPage() {
       <main className="max-w-6xl mx-auto px-4 py-8">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Orders</h1>
-            <p className="text-slate-600">Open and recent CLOB orders from Polymarket.</p>
+            <h1 className="text-2xl font-semibold text-slate-900">Polycopy Orders</h1>
+            <p className="text-slate-600">Open and recent CLOB orders submitted via Polycopy.</p>
+            <p className="text-sm text-slate-500">
+              Only orders placed through Polycopy are shown here; orders submitted directly on Polymarket or elsewhere are excluded.
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
