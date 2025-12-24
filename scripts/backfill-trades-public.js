@@ -1,38 +1,25 @@
 'use strict'
 
-/**
- * Backfill public Polymarket trades into trades_public using followed traders.
- *
- * Usage:
- *   node scripts/backfill-trades-public.js [--limit=100] [--offset=0] [--wallet=0x...] [--trade-limit=0] [--sleep=200]
- *
- * Notes:
- * - Uses follows.trader_wallet as source of trader list.
- * - If --wallet is provided, only that wallet is processed.
- * - trade-limit=0 (default) means no limit param is passed (API returns all trades).
- */
-
 const fs = require('fs')
 const path = require('path')
-const dotenv = require('dotenv')
 const { createClient } = require('@supabase/supabase-js')
+const { ClobClient } = require('@polymarket/clob-client')
 
-const envPath = path.resolve(process.cwd(), '.env.local')
-dotenv.config(fs.existsSync(envPath) ? { path: envPath } : {})
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('Missing Supabase env vars: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.')
-  process.exit(1)
-}
-
-const DEFAULT_SLEEP_MS = 200
-const DEFAULT_PAGE_SIZE = 100
-const DEFAULT_PAGE_SLEEP_MS = 150
 const DEFAULT_PROGRESS_FILE = '.backfill-trades-public.json'
-const CHUNK_SIZE = 500
+const BAD_WALLETS_FILE = 'bad_wallets.json'
+const PROGRESS_VERSION = 2
+const DATA_PAGE_SIZE = 100
+const DATA_MAX_OFFSET = 1000
+const CLOB_PAGE_SIZE = 200
+const RATE_TOKENS_PER_SEC = 20
+const RATE_BURST = 40
+const FETCH_MAX_RETRIES = 5
+const FETCH_BASE_DELAY = 500
+const FETCH_MAX_DELAY = 10000
+const MAX_WALLET_SECONDS = 300
+const QUARANTINE_CONSECUTIVE = 8
+const QUARANTINE_WINDOW_MINUTES = 5
+const QUARANTINE_ERRORS_THRESHOLD = 20
 
 function parseArg(name) {
   const prefix = `--${name}=`
@@ -45,268 +32,582 @@ function parseFlag(name) {
   return process.argv.includes(`--${name}`)
 }
 
-function toTimestamp(dateLike) {
-  if (dateLike === null || dateLike === undefined) return null
-  let ts = Number(dateLike)
-  if (!Number.isFinite(ts)) return null
-  if (ts < 10000000000) {
-    ts = ts * 1000
+function coerceInt(value, fallback) {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : fallback
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+class TokenBucket {
+  constructor({ tokensPerInterval, intervalMs, maxTokens }) {
+    this.tokens = maxTokens
+    this.maxTokens = maxTokens
+    this.refillRate = tokensPerInterval / intervalMs
+    this.lastRefill = Date.now()
   }
-  return new Date(ts).toISOString()
-}
 
-function deriveTradeId(trade, fallback) {
-  if (trade.transactionHash) return trade.transactionHash
-  const parts = [
-    fallback,
-    trade.asset || 'asset',
-    trade.conditionId || 'condition',
-    trade.timestamp || Date.now(),
-  ]
-  return parts.join('-')
-}
-
-async function sleep(ms) {
-  if (!ms) return
-  await new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function chunkArray(items, size) {
-  const chunks = []
-  for (let i = 0; i < items.length; i += size) {
-    chunks.push(items.slice(i, i + size))
+  refill() {
+    const now = Date.now()
+    const elapsed = now - this.lastRefill
+    if (elapsed <= 0) return
+    this.tokens = Math.min(this.maxTokens, this.tokens + elapsed * this.refillRate)
+    this.lastRefill = now
   }
-  return chunks
+
+  async removeTokens(requested = 1) {
+    while (true) {
+      this.refill()
+      if (this.tokens >= requested) {
+        this.tokens -= requested
+        return
+      }
+      const deficit = requested - this.tokens
+      const waitMs = Math.max(50, Math.ceil(deficit / this.refillRate))
+      await sleep(waitMs)
+    }
+  }
 }
 
-async function fetchTradesPage(wallet, limit, offset) {
+function hasClobCredentials() {
+  return !!(
+    process.env.POLYMARKET_CLOB_API_KEY &&
+    process.env.POLYMARKET_CLOB_API_SECRET &&
+    process.env.POLYMARKET_CLOB_API_PASSPHRASE &&
+    process.env.POLYMARKET_CLOB_API_ADDRESS
+  )
+}
+
+function createClobClient() {
+  const key = process.env.POLYMARKET_CLOB_API_KEY
+  const secret = process.env.POLYMARKET_CLOB_API_SECRET
+  const passphrase = process.env.POLYMARKET_CLOB_API_PASSPHRASE
+  const address = process.env.POLYMARKET_CLOB_API_ADDRESS
+  const baseUrl =
+    process.env.NEXT_PUBLIC_POLYMARKET_CLOB_BASE_URL ||
+    process.env.POLYMARKET_CLOB_BASE_URL ||
+    'https://clob.polymarket.com'
+
+  if (!key || !secret || !passphrase || !address) {
+    throw new Error(
+      'To use CLOB mode you must set POLYMARKET_CLOB_API_KEY/SECRET/PASSPHRASE/ADDRESS'
+    )
+  }
+
+  const signer = {
+    getAddress: async () => address,
+  }
+
+  return new ClobClient(baseUrl, 137, signer, {
+    key,
+    secret,
+    passphrase,
+  })
+}
+
+function loadJsonFile(filePath, fallback) {
+  if (!fs.existsSync(filePath)) return fallback
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8')
+    return JSON.parse(raw)
+  } catch (err) {
+    console.error(`Failed to parse ${filePath}:`, err.message)
+    return fallback
+  }
+}
+
+function ensureFileDirectory(filePath) {
+  const dir = path.dirname(filePath)
+  if (dir && dir !== '.' && !fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+}
+
+function loadBadWallets(filePath) {
+  const payload = loadJsonFile(filePath, null)
+  if (payload && payload.wallets) return payload
+  return { version: 1, wallets: {} }
+}
+
+function saveBadWallets(filePath, payload) {
+  ensureFileDirectory(filePath)
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2))
+}
+
+function markWalletQuarantined(badWallets, wallet, reason, detail) {
+  badWallets.wallets[wallet] = {
+    quarantinedAt: new Date().toISOString(),
+    reason,
+    detail,
+  }
+}
+
+function walletIsQuarantined(badWallets, wallet) {
+  return Boolean(badWallets.wallets[wallet])
+}
+
+function loadProgress(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return {
+      version: PROGRESS_VERSION,
+      walletList: [],
+      currentIndex: 0,
+      walletStates: {},
+      stats: { totalInserted: 0 },
+      lastUpdate: null,
+    }
+  }
+  const raw = loadJsonFile(filePath, null)
+  if (!raw) {
+    return loadProgress(filePath)
+  }
+  if (raw.version === PROGRESS_VERSION) {
+    return raw
+  }
+  if (raw.index !== undefined) {
+    return {
+      version: PROGRESS_VERSION,
+      walletList: raw.walletList || [],
+      currentIndex: raw.index || 0,
+      walletStates: {},
+      stats: { totalInserted: 0 },
+      lastUpdate: null,
+    }
+  }
+  return {
+    version: PROGRESS_VERSION,
+    walletList: raw.walletList || [],
+    currentIndex: raw.currentIndex || 0,
+    walletStates: raw.walletStates || {},
+    stats: raw.stats || { totalInserted: 0 },
+    lastUpdate: raw.lastUpdate || null,
+  }
+}
+
+function saveProgress(filePath, progress) {
+  ensureFileDirectory(filePath)
+  fs.writeFileSync(filePath, JSON.stringify(progress, null, 2))
+}
+
+function buildWalletList(progress, derivedWallets, offset, limit) {
+  const merged = Array.from(new Set([...(progress.walletList || []), ...derivedWallets]))
+  const start = offset >= 0 ? offset : 0
+  const end = limit > 0 ? Math.min(start + limit, merged.length) : merged.length
+  const slice = merged.slice(start, end)
+  progress.walletList = slice
+  if (progress.currentIndex < 0) {
+    progress.currentIndex = 0
+  }
+  if (progress.currentIndex > slice.length) {
+    progress.currentIndex = slice.length
+  }
+  return slice
+}
+
+function clampDataOffset(offset) {
+  if (offset > DATA_MAX_OFFSET) {
+    return DATA_MAX_OFFSET
+  }
+  return offset
+}
+
+function normalizeWallet(wallet) {
+  return wallet?.toLowerCase().trim()
+}
+
+function parseTimestamp(msOrSeconds) {
+  if (!msOrSeconds) return null
+  const num = Number(msOrSeconds)
+  if (!Number.isFinite(num)) return null
+  if (num > 1000000000000) {
+    return new Date(num)
+  }
+  if (num > 1000000000) {
+    return new Date(num * 1000)
+  }
+  return new Date(num)
+}
+
+function mapClobTrade(trade, wallet, traderId) {
+  const tradeTimestamp = parseTimestamp(trade.match_time || trade.last_update)
+  return {
+    trade_id: trade.transaction_hash || trade.id,
+    trader_wallet: wallet,
+    trader_id: traderId,
+    transaction_hash: trade.transaction_hash || null,
+    asset: trade.asset_id || trade.market || null,
+    condition_id: trade.asset_id || trade.market || null,
+    market_slug: trade.market || null,
+    event_slug: null,
+    side: trade.side || null,
+    outcome: trade.outcome || null,
+    outcome_index: null,
+    size: trade.size !== undefined ? Number(trade.size) : null,
+    price: trade.price !== undefined ? Number(trade.price) : null,
+    trade_timestamp: tradeTimestamp ? tradeTimestamp.toISOString() : null,
+    raw: trade,
+  }
+}
+
+function mapDataTrade(trade, wallet, traderId) {
+  return {
+    trade_id: trade.transactionHash || trade.id || trade.tradeId || `${wallet}-${trade.timestamp}`,
+    trader_wallet: wallet,
+    trader_id: traderId,
+    transaction_hash: trade.transactionHash || null,
+    asset: trade.asset || null,
+    condition_id: trade.conditionId || null,
+    market_slug: trade.slug || null,
+    event_slug: trade.eventSlug || null,
+    side: trade.side || null,
+    outcome: trade.outcome || null,
+    outcome_index: Number.isFinite(trade.outcomeIndex) ? trade.outcomeIndex : null,
+    size: trade.size !== undefined ? Number(trade.size) : null,
+    price: trade.price !== undefined ? Number(trade.price) : null,
+    trade_timestamp: parseTimestamp(trade.timestamp)?.toISOString() || null,
+    raw: trade,
+  }
+}
+
+async function fetchPageWithRateLimit(rateLimiter, fn) {
+  await rateLimiter.removeTokens(1)
+  let attempt = 0
+  while (true) {
+    try {
+      return await fn()
+    } catch (err) {
+      attempt += 1
+      const status = err?.status || err?.response?.status
+      if (attempt >= FETCH_MAX_RETRIES || ![429, 500, 502, 503, 504].includes(status)) {
+        throw err
+      }
+      const backoff = Math.min(FETCH_MAX_DELAY, FETCH_BASE_DELAY * Math.pow(2, attempt - 1))
+      const jitter = Math.random() * 200
+      await sleep(backoff + jitter)
+    }
+  }
+}
+
+async function fetchTradesFromDataApi(wallet, options) {
+  const { rateLimiter, limit, offset } = options
   const url = new URL('https://data-api.polymarket.com/trades')
   url.searchParams.set('user', wallet)
   url.searchParams.set('limit', String(limit))
   url.searchParams.set('offset', String(offset))
-
-  const res = await fetch(url.toString(), {
-    headers: { 'User-Agent': 'Polycopy Trades Public Backfill' },
+  return fetchPageWithRateLimit(rateLimiter, async () => {
+    const res = await fetch(url.toString(), {
+      headers: { 'User-Agent': 'Polycopy Trades Public Backfill' },
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      const error = new Error(`Trades API returned ${res.status}: ${text}`)
+      error.status = res.status
+      throw error
+    }
+    const payload = await res.json()
+    if (!Array.isArray(payload)) {
+      throw new Error('Unexpected trades payload (not an array)')
+    }
+    return payload
   })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Trades API returned ${res.status}: ${text}`)
-  }
-
-  const trades = await res.json()
-  if (!Array.isArray(trades)) {
-    throw new Error('Unexpected trades payload (not an array)')
-  }
-  return trades
 }
 
-async function streamTrades(wallet, tradeLimit, pageSize, pageSleepMs, startOffset, onPage, shouldStop) {
-  let offset = startOffset || 0
-  const maxTrades = tradeLimit && tradeLimit > 0 ? tradeLimit : null
+async function fetchTradesFromClob(wallet, state, options) {
+  const { rateLimiter, clobClient } = options
+  return fetchPageWithRateLimit(rateLimiter, async () => {
+    const params = { maker_address: wallet, limit: CLOB_PAGE_SIZE }
+    if (state.beforeTs) {
+      params.before = Math.floor(state.beforeTs / 1000).toString()
+    }
+    const response = await clobClient.getTradesPaginated(params)
+    return response.trades
+  })
+}
+
+async function upsertRows(supabase, rows) {
+  if (rows.length === 0) return 0
+  const chunks = []
+  for (let i = 0; i < rows.length; i += 500) {
+    chunks.push(rows.slice(i, i + 500))
+  }
   let total = 0
+  for (const chunk of chunks) {
+    const { error, count } = await supabase
+      .from('trades_public')
+      .upsert(chunk, { onConflict: 'trade_id', ignoreDuplicates: false, count: 'exact' })
+    if (error) {
+      throw new Error(`Upsert failed: ${error.message}`)
+    }
+    total += count ?? chunk.length
+  }
+  return total
+}
+
+function updateWalletState(progress, wallet, update) {
+  progress.walletStates[wallet] = {
+    ...(progress.walletStates[wallet] || {}),
+    ...update,
+  }
+}
+
+function walletState(progress, wallet) {
+  return progress.walletStates[wallet] || {}
+}
+
+async function processWallet({
+  wallet,
+  traderId,
+  supabase,
+  rateLimiter,
+  mode,
+  progress,
+  progressFile,
+  options,
+  badWallets,
+  skipBad,
+}) {
+  const state = walletState(progress, wallet)
+  if (skipBad && walletIsQuarantined(badWallets, wallet)) {
+    console.log(`Skipping quarantined wallet ${wallet}`)
+    return true
+  }
+
+  const start = Date.now()
+  let page = 0
+  let consecutiveErrors = state.consecutiveErrors || 0
 
   while (true) {
-    if (shouldStop()) {
-      return { offset, done: false, total }
+    if (options.walletMaxSeconds > 0 && Date.now() - start > options.walletMaxSeconds * 1000) {
+      console.log(`Wallet ${wallet} hit max seconds (${options.walletMaxSeconds}s), saving progress`) 
+      updateWalletState(progress, wallet, state)
+      saveProgress(progressFile, progress)
+      return false
     }
 
-    const page = await fetchTradesPage(wallet, pageSize, offset)
-    if (page.length === 0) {
-      return { offset, done: true, total }
-    }
+    try {
+      let trades
+      if (mode === 'clob') {
+        trades = await fetchTradesFromClob(wallet, state, { rateLimiter, clobClient: options.clobClient })
+      } else {
+        trades = await fetchTradesFromDataApi(wallet, { rateLimiter, limit: DATA_PAGE_SIZE, offset: clampDataOffset(state.offset || 0) })
+      }
 
-    await onPage(page, offset)
-    total += page.length
-    offset += pageSize
+      consecutiveErrors = 0
+      state.consecutiveErrors = 0
 
-    if (page.length < pageSize) {
-      return { offset, done: true, total }
-    }
-    if (maxTrades && total >= maxTrades) {
-      return { offset, done: true, total }
-    }
+      if (trades.length === 0) {
+        console.log(`✅ ${wallet}: no more trades to fetch`)
+        updateWalletState(progress, wallet, {
+          ...state,
+          completed: true,
+        })
+        return true
+      }
 
-    await sleep(pageSleepMs)
+      const mapped = trades.map((trade) => (mode === 'clob' ? mapClobTrade(trade, wallet, traderId) : mapDataTrade(trade, wallet, traderId)))
+      const inserted = await upsertRows(supabase, mapped)
+      state.inserted = (state.inserted || 0) + inserted
+      progress.stats.totalInserted = (progress.stats.totalInserted || 0) + inserted
+      state.lastInsertAt = new Date().toISOString()
+      if (mode === 'clob') {
+        const earliest = trades
+          .map((trade) => parseTimestamp(trade.match_time || trade.last_update))
+          .filter(Boolean)
+          .map((date) => date.getTime())
+          .sort((a, b) => a - b)[0]
+        state.beforeTs = earliest ? Math.max(0, earliest - 1) : state.beforeTs
+      } else {
+        state.offset = (state.offset || 0) + DATA_PAGE_SIZE
+        if (state.offset > DATA_MAX_OFFSET) {
+          console.log(`Reached data API offset cap for ${wallet}, marking as completed`)
+          updateWalletState(progress, wallet, { ...state, completed: true })
+          return true
+        }
+      }
+
+      page += 1
+      console.log(`📦 ${wallet} page ${page} inserted ${inserted} trades (cursor ${state.beforeTs || state.offset || 'start'})`)
+      updateWalletState(progress, wallet, state)
+      progress.lastUpdate = new Date().toISOString()
+      saveProgress(progressFile, progress)
+    } catch (err) {
+      consecutiveErrors += 1
+      state.consecutiveErrors = consecutiveErrors
+      state.lastError = err.message || err
+      console.error(`❌ ${wallet}:`, err.message || err)
+      const now = Date.now()
+      const history = state.errorHistory || []
+      history.push(now)
+      state.errorHistory = history.filter((ts) => now - ts < QUARANTINE_WINDOW_MINUTES * 60 * 1000)
+      if (consecutiveErrors >= QUARANTINE_CONSECUTIVE || state.errorHistory.length >= QUARANTINE_ERRORS_THRESHOLD) {
+        console.log(`⚠️ Quarantining ${wallet} after repeated failures`)
+        markWalletQuarantined(badWallets, wallet, '5xx', err.message || '')
+        saveBadWallets(BAD_WALLETS_FILE, badWallets)
+        updateWalletState(progress, wallet, { ...state, quarantined: true })
+        return true
+      }
+      await sleep(1000 + Math.random() * 1000)
+      updateWalletState(progress, wallet, state)
+      saveProgress(progressFile, progress)
+    }
   }
+}
+
+async function loadWallets(supabase) {
+  const [followsResult, profilesResult] = await Promise.all([
+    supabase.from('follows').select('trader_wallet'),
+    supabase.from('profiles').select('wallet_address'),
+  ])
+  if (followsResult.error) {
+    throw new Error(`Failed to load follows: ${followsResult.error.message}`)
+  }
+  if (profilesResult.error) {
+    throw new Error(`Failed to load profiles: ${profilesResult.error.message}`)
+  }
+  const followWallets = (followsResult.data || [])
+    .map((row) => normalizeWallet(row.trader_wallet))
+    .filter(Boolean)
+  const userWallets = (profilesResult.data || [])
+    .map((row) => normalizeWallet(row.wallet_address))
+    .filter(Boolean)
+  return Array.from(new Set([...followWallets, ...userWallets]))
+}
+
+async function printStatus(options) {
+  const supabase = createClient(options.supabaseUrl, options.serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const wallets = await loadWallets(supabase)
+  const progress = loadProgress(options.progressFile)
+  const badWallets = loadBadWallets(BAD_WALLETS_FILE)
+
+  console.log('Stats')
+  console.log('-----')
+  console.log(`Total wallets discovered: ${wallets.length}`)
+  console.log(`Wallets completed in progress file: ${progress.currentIndex}/${wallets.length}`)
+  console.log(`Quarantined wallets: ${Object.keys(badWallets.wallets).length}`)
+  const entries = Object.entries(progress.walletStates || {}).map(([wallet, state]) => ({
+    wallet,
+    inserted: state.inserted || 0,
+  }))
+  entries.sort((a, b) => b.inserted - a.inserted)
+  console.log('Top inserts')
+  entries.slice(0, 10).forEach((entry) => console.log(`${entry.wallet}: ${entry.inserted}`))
 }
 
 async function main() {
-  const limitArg = parseInt(parseArg('limit') || '0', 10)
-  const offsetArg = parseInt(parseArg('offset') || '0', 10)
-  const tradeLimit = parseInt(parseArg('trade-limit') || '0', 10)
-  const pageSize = parseInt(parseArg('page-size') || String(DEFAULT_PAGE_SIZE), 10)
-  const pageSleepMs = parseInt(parseArg('page-sleep') || String(DEFAULT_PAGE_SLEEP_MS), 10)
-  const sleepMs = parseInt(parseArg('sleep') || String(DEFAULT_SLEEP_MS), 10)
-  const maxSeconds = parseInt(parseArg('max-seconds') || '0', 10)
-  const resume = parseFlag('resume')
-  const auto = parseFlag('auto')
-  const autoSleepMs = parseInt(parseArg('auto-sleep') || '2000', 10)
   const progressFile = parseArg('progress-file') || DEFAULT_PROGRESS_FILE
+  const maxSeconds = coerceInt(parseArg('max-seconds'), 0)
   const walletArg = parseArg('wallet')
+  const limit = coerceInt(parseArg('limit'), 0)
+  const offset = coerceInt(parseArg('offset'), 0)
+  const tradeLimit = coerceInt(parseArg('trade-limit'), 0)
+  const resume = parseFlag('resume')
+  const noResume = parseFlag('no-resume')
+  const auto = parseFlag('auto')
+  const statusOnly = parseFlag('status')
+  const modeArg = (parseArg('mode') || '').toLowerCase()
+  const noSkipBad = parseFlag('no-skip-bad')
+  const skipBadFlag = parseFlag('skip-bad')
+  const walletMaxSeconds = coerceInt(parseArg('wallet-max-seconds'), MAX_WALLET_SECONDS)
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error('Missing Supabase env vars: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.')
+    process.exit(1)
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
-  let wallets = []
-  if (walletArg) {
-    wallets = [walletArg.toLowerCase()]
-  } else {
-    const [followsResult, profilesResult] = await Promise.all([
-      supabase.from('follows').select('trader_wallet'),
-      supabase.from('profiles').select('wallet_address'),
-    ])
+  const badWallets = loadBadWallets(BAD_WALLETS_FILE)
+  const progress = loadProgress(progressFile)
 
-    if (followsResult.error) {
-      throw new Error(`Failed to load follows: ${followsResult.error.message}`)
-    }
-    if (profilesResult.error) {
-      throw new Error(`Failed to load profiles: ${profilesResult.error.message}`)
-    }
-
-    const followWallets = (followsResult.data || [])
-      .map((row) => row.trader_wallet?.toLowerCase())
-      .filter(Boolean)
-    const userWallets = (profilesResult.data || [])
-      .map((row) => row.wallet_address?.toLowerCase())
-      .filter(Boolean)
-
-    const unique = new Set([...followWallets, ...userWallets])
-    wallets = Array.from(unique)
+  let mode = 'data'
+  if (modeArg === 'clob' || (!modeArg && hasClobCredentials())) {
+    mode = 'clob'
+  } else if (modeArg === 'data') {
+    mode = 'data'
+  } else if (!modeArg && !hasClobCredentials()) {
+    mode = 'data'
+  }
+  if (mode === 'clob' && !hasClobCredentials()) {
+    console.warn('CLOB credentials missing, falling back to data mode')
+    mode = 'data'
   }
 
-  if (wallets.length === 0) {
-    console.log('No trader wallets found to backfill.')
+  if (statusOnly) {
+    await printStatus({ supabaseUrl, serviceRoleKey, progressFile })
     return
   }
 
-  const { data: traderRows, error: traderError } = await supabase
-    .from('traders')
-    .select('id, wallet_address')
-    .in('wallet_address', wallets)
-
-  if (traderError) {
-    throw new Error(`Failed to load traders: ${traderError.message}`)
+  let wallets = []
+  if (walletArg) {
+    wallets = [normalizeWallet(walletArg)].filter(Boolean)
+  } else {
+    wallets = await loadWallets(supabase)
   }
 
-  const traderIdByWallet = new Map(
-    (traderRows || []).map((row) => [row.wallet_address?.toLowerCase(), row.id])
-  )
+  const effectiveLimit = limit > 0 ? limit : wallets.length
+  const list = buildWalletList(progress, wallets, offset, effectiveLimit)
 
-  const offset = Number.isFinite(offsetArg) && offsetArg > 0 ? offsetArg : 0
-  const limit = Number.isFinite(limitArg) && limitArg > 0 ? limitArg : wallets.length
-  const slice = wallets.slice(offset, offset + limit)
+  const resumeFromFile = resume || (!noResume && fs.existsSync(progressFile))
+  if (!resumeFromFile) {
+    progress.currentIndex = 0
+    progress.walletStates = {}
+    progress.stats = { totalInserted: 0 }
+    progress.lastUpdate = null
+  }
 
-  async function runOnce() {
-    let startIndex = 0
-    let startTradeOffset = 0
-    if (resume && fs.existsSync(progressFile)) {
-      try {
-        const saved = JSON.parse(fs.readFileSync(progressFile, 'utf8'))
-        if (Number.isFinite(saved.index)) {
-          startIndex = Math.max(0, saved.index)
-        }
-        if (Number.isFinite(saved.tradeOffset)) {
-          startTradeOffset = Math.max(0, saved.tradeOffset)
-        }
-      } catch {
-        // ignore malformed progress file
+  const rateLimiter = new TokenBucket({
+    tokensPerInterval: RATE_TOKENS_PER_SEC,
+    intervalMs: 1000,
+    maxTokens: RATE_BURST,
+  })
+
+  const clobClient = mode === 'clob' ? createClobClient() : null
+  const skipBad = walletArg ? false : auto ? !noSkipBad : skipBadFlag
+
+  async function runBatch() {
+    const startTime = Date.now()
+    for (let i = progress.currentIndex; i < list.length; i += 1) {
+      const wallet = list[i]
+      const state = await supabase
+        .from('traders')
+        .select('id')
+        .eq('wallet_address', wallet)
+        .single()
+      if (state.error) {
+        throw new Error(`Failed to load trader ${wallet}: ${state.error.message}`)
       }
-    }
-
-    const startedAt = Date.now()
-    const shouldStop = () =>
-      maxSeconds > 0 && (Date.now() - startedAt) / 1000 >= maxSeconds
-
-    console.log(`Backfilling ${slice.length} trader wallets (offset ${offset}, startIndex ${startIndex})`)
-
-    let totalRows = 0
-    let totalWallets = 0
-    for (let i = startIndex; i < slice.length; i++) {
-      const wallet = slice[i]
-      if (shouldStop()) {
-        fs.writeFileSync(progressFile, JSON.stringify({ index: i, tradeOffset: 0 }, null, 2))
-        console.log(`Time limit reached, saved progress at index ${i} to ${progressFile}`)
+      const traderId = state.data?.id || null
+      const done = await processWallet({
+        wallet,
+        traderId,
+        supabase,
+        rateLimiter,
+        mode,
+        progress,
+        progressFile,
+        options: { clobClient, walletMaxSeconds },
+        badWallets,
+        skipBad,
+      })
+      if (!done) {
         return false
       }
-
-      try {
-        let traderId = traderIdByWallet.get(wallet) || null
-
-        if (!traderId) {
-          const { data: created, error: createError } = await supabase
-            .from('traders')
-            .upsert({ wallet_address: wallet, is_active: true }, { onConflict: 'wallet_address' })
-            .select('id')
-            .single()
-          if (createError) {
-            throw new Error(`Failed to ensure trader row for ${wallet}: ${createError.message}`)
-          }
-          traderId = created?.id || null
-          traderIdByWallet.set(wallet, traderId)
-        }
-        const initialOffset = i === startIndex ? startTradeOffset : 0
-        let inserted = 0
-
-        const result = await streamTrades(
-          wallet,
-          tradeLimit,
-          pageSize,
-          pageSleepMs,
-          initialOffset,
-          async (page, pageOffset) => {
-            const rows = page.map((trade) => ({
-              trade_id: deriveTradeId(trade, wallet),
-              trader_wallet: wallet,
-              trader_id: traderId,
-              transaction_hash: trade.transactionHash || null,
-              asset: trade.asset || null,
-              condition_id: trade.conditionId || null,
-              market_slug: trade.slug || null,
-              event_slug: trade.eventSlug || null,
-              market_title: trade.title || null,
-              side: trade.side || null,
-              outcome: trade.outcome || null,
-              outcome_index: Number.isFinite(trade.outcomeIndex) ? trade.outcomeIndex : null,
-              size: trade.size !== undefined ? Number(trade.size) : null,
-              price: trade.price !== undefined ? Number(trade.price) : null,
-              trade_timestamp: toTimestamp(trade.timestamp),
-              raw: trade,
-            }))
-
-            const chunks = chunkArray(rows, CHUNK_SIZE)
-            for (const chunk of chunks) {
-              const { error, count } = await supabase
-                .from('trades_public')
-                .upsert(chunk, { onConflict: 'trade_id', ignoreDuplicates: false, count: 'exact' })
-              if (error) {
-                throw new Error(`Upsert failed for ${wallet}: ${error.message}`)
-              }
-              inserted += count ?? chunk.length
-            }
-
-            fs.writeFileSync(progressFile, JSON.stringify({ index: i, tradeOffset: pageOffset + pageSize }, null, 2))
-          },
-          shouldStop
-        )
-
-        totalRows += inserted
-        if (result.done) {
-          totalWallets += 1
-          console.log(`✅ ${wallet}: ${inserted} trades upserted`)
-          fs.writeFileSync(progressFile, JSON.stringify({ index: i + 1, tradeOffset: 0 }, null, 2))
-        } else {
-          console.log(`⏸️ ${wallet}: saved progress at trade offset ${result.offset}`)
-          return false
-        }
-        await sleep(sleepMs)
-      } catch (err) {
-        console.error(`❌ ${wallet}:`, err.message || err)
+      progress.currentIndex = i + 1
+      progress.lastUpdate = new Date().toISOString()
+      saveProgress(progressFile, progress)
+      if (maxSeconds > 0 && Date.now() - startTime > maxSeconds * 1000) {
+        console.log(`Max run time reached (${maxSeconds}s)`)
+        return false
       }
     }
-
-    console.log(`Done. Wallets processed: ${totalWallets}. Rows upserted: ${totalRows}.`)
     if (fs.existsSync(progressFile)) {
       fs.unlinkSync(progressFile)
     }
@@ -314,16 +615,14 @@ async function main() {
   }
 
   if (!auto) {
-    await runOnce()
+    await runBatch()
     return
   }
 
   while (true) {
-    const done = await runOnce()
-    if (done || !fs.existsSync(progressFile)) {
-      break
-    }
-    await sleep(autoSleepMs)
+    const done = await runBatch()
+    if (done || !fs.existsSync(progressFile)) break
+    await sleep(2000)
   }
 }
 

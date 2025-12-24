@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '../components/Header';
 import { supabase } from '@/lib/supabase';
+import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
 
 interface OrderRow {
   order_id: string;
@@ -19,6 +20,8 @@ interface OrderRow {
   status: string;
   created_at: string;
   updated_at: string;
+  raw?: Record<string, any> | null;
+  market_avatar_url?: string | null;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -291,10 +294,20 @@ export default function OrdersPage() {
                 </thead>
                 <tbody>
                   {orders.map((order) => {
-                    const marketLabel = order.market_id || 'Unknown market';
+                    const rawMarket = (order.raw?.market ?? order.raw) as Record<string, any> | null;
+                    const marketLabel =
+                      rawMarket?.title ||
+                      rawMarket?.market_title ||
+                      rawMarket?.name ||
+                      rawMarket?.market ||
+                      order.market_id ||
+                      'Unknown market';
                     const marketLink = order.market_id?.startsWith('0x')
                       ? `https://polymarket.com/market/${order.market_id}`
                       : null;
+                    const marketAvatarUrl =
+                      order.market_avatar_url ?? extractMarketAvatarUrl(order.raw);
+                    const placeholderLetter = marketLabel ? marketLabel.charAt(0).toUpperCase() : 'M';
 
                     return (
                       <tr key={order.order_id} className="border-b border-slate-100">
@@ -308,19 +321,36 @@ export default function OrdersPage() {
                           </span>
                         </td>
                         <td className="py-3 pr-4">
-                          {marketLink ? (
-                            <a
-                              href={marketLink}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-slate-900 font-medium hover:underline"
-                            >
-                              {marketLabel}
-                            </a>
-                          ) : (
-                            <div className="text-slate-900 font-medium">{marketLabel}</div>
-                          )}
-                          <div className="text-xs text-slate-500">{order.market_id}</div>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-9 h-9 rounded-full bg-slate-100 overflow-hidden flex items-center justify-center flex-shrink-0">
+                              {marketAvatarUrl ? (
+                                <img
+                                  src={marketAvatarUrl}
+                                  alt={`Avatar for ${marketLabel}`}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <span className="text-xs font-semibold text-slate-500">
+                                  {placeholderLetter}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              {marketLink ? (
+                                <a
+                                  href={marketLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-slate-900 font-medium hover:underline truncate"
+                                >
+                                  {marketLabel}
+                                </a>
+                              ) : (
+                                <div className="text-slate-900 font-medium truncate">{marketLabel}</div>
+                              )}
+                              <div className="text-xs text-slate-500 truncate">{order.market_id}</div>
+                            </div>
+                          </div>
                         </td>
                         <td className="py-3 pr-4 text-slate-700">
                           {order.side ? order.side.toUpperCase() : '--'}
