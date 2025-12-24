@@ -71,17 +71,10 @@ const TRADER_ICON_KEYS = [
   'profile_image_url',
   'profileImageUrl',
 ]
-const CONTRACT_TYPE_KEYS = [
-  'contract_type',
-  'contractType',
-  'market_type',
-  'marketType',
-  'market_kind',
-  'marketKind',
-  'market_structure',
-  'marketStructure',
-]
-
+const SLIPPAGE_TOOLTIP =
+  'Limits how much higher than your limit price the order can fill; 1% means the execution price may be at most 1% above your quote.'
+const ORDER_BEHAVIOR_TOOLTIP =
+  'IOC cancels any unfilled portion immediately, while GTC keeps the order open until you cancel it or it fills.'
 function firstStringValue(record: Record<string, any>, keys: string[]) {
   for (const key of keys) {
     const value = record?.[key]
@@ -234,6 +227,36 @@ function extractTokenId(record: Record<string, any>) {
   return nested ? String(nested) : ''
 }
 
+type MarketMetadata = {
+  tokens?: Array<{ token_id?: string | null; outcome?: string | null }>
+  icon?: string | null
+  image?: string | null
+}
+
+async function fetchMarketMetadata(conditionId: string): Promise<MarketMetadata | null> {
+  try {
+    const response = await fetch(
+      `/api/polymarket/market?conditionId=${encodeURIComponent(conditionId)}`,
+      { cache: 'no-store' }
+    )
+    if (!response.ok) {
+      return null
+    }
+    const data = await response.json()
+    if (!data) {
+      return null
+    }
+    return {
+      tokens: Array.isArray(data.tokens) ? data.tokens : undefined,
+      icon: typeof data.icon === 'string' && data.icon.trim() ? data.icon : null,
+      image: typeof data.image === 'string' && data.image.trim() ? data.image : null,
+    }
+  } catch (error) {
+    console.error('[trade-execute] fetchMarketMetadata failed', error)
+    return null
+  }
+}
+
 function extractMarketIcon(record: Record<string, any>) {
   const direct = firstStringValue(record, ICON_KEYS)
   if (direct) return direct
@@ -264,17 +287,6 @@ function extractTraderIcon(record: Record<string, any>) {
   return nested ? String(nested) : ''
 }
 
-function extractContractType(record: Record<string, any>) {
-  const direct = firstStringValue(record, CONTRACT_TYPE_KEYS)
-  if (direct) return direct
-  const raw = record?.raw
-  if (!raw || typeof raw !== 'object') return ''
-  const rawDirect = firstStringValue(raw, CONTRACT_TYPE_KEYS)
-  if (rawDirect) return rawDirect
-  const nested = getNestedValue(raw, ['market', 'contractType'])
-  return nested ? String(nested) : ''
-}
-
 function TradeExecutePageInner() {
   const searchParams = useSearchParams()
   const prefillAppliedRef = useRef(false)
@@ -302,19 +314,22 @@ function TradeExecutePageInner() {
   const [balanceLoading, setBalanceLoading] = useState(false)
   const [balanceError, setBalanceError] = useState<string | null>(null)
   const [balanceData, setBalanceData] = useState<BalanceResponse | null>(null)
+  const [showSlippageInfo, setShowSlippageInfo] = useState(false)
+  const [showOrderBehaviorInfo, setShowOrderBehaviorInfo] = useState(false)
 
   const record = tradeRecord
   const marketIcon = record ? extractMarketIcon(record) : ''
   const traderName = record ? extractTraderName(record) : ''
   const traderIcon = record ? extractTraderIcon(record) : ''
   const traderWallet = record?.trader_wallet ? String(record.trader_wallet) : ''
-  const traderLabel =
-    traderName || (traderWallet ? `${traderWallet.slice(0, 6)}...${traderWallet.slice(-4)}` : '')
-  const traderInitials = traderLabel ? getInitials(traderLabel) : '??'
-  const traderAvatarColor = getAvatarColor(traderWallet || traderLabel || 'trader')
   const marketTitle = record ? formatValue(record.market_title || record.market_slug) : '—'
-  const contractTypeRaw = record ? extractContractType(record) : ''
-  const contractType = contractTypeRaw ? formatValue(contractTypeRaw) : ''
+  const fallbackIdentity =
+    traderName || (traderWallet ? abbreviateWallet(traderWallet) : '') || 'Trade'
+  const iconLabel = marketTitle !== '—' ? marketTitle : fallbackIdentity
+  const iconImage = marketIcon || traderIcon
+  const directionValue = normalizeSide(String(record?.side ?? form.side ?? 'BUY'))
+  const directionLabel = directionValue === 'SELL' ? 'Sell' : 'Buy'
+  const outcomeLabel = record?.outcome ? String(record.outcome) : '—'
   const tradePrice = record && Number.isFinite(Number(record.price)) ? Number(record.price) : null
   const currentPrice = latestPrice ?? tradePrice
   const slippagePercent =
@@ -358,6 +373,14 @@ function TradeExecutePageInner() {
       : null
   const totalCost =
     tradePrice !== null && tradeSize !== null ? tradePrice * tradeSize : null
+  const availableCashAmount = balanceData?.balanceFormatted
+    ? balanceData.balanceFormatted.replace(/\s*USDC$/i, '').trim()
+    : ''
+  const availableCashDisplay = balanceLoading
+    ? 'Loading…'
+    : availableCashAmount
+      ? `$${availableCashAmount}`
+      : '—'
   const payoutIfWins = tradeSize
   const filledLabel = record ? formatFilledDateTime(record.trade_timestamp) : '—'
   const priceDelta =
@@ -426,38 +449,48 @@ function TradeExecutePageInner() {
       setAmountInput('')
     }
 
-    if (!tokenFromRecord && (record.condition_id || record.conditionId)) {
-      try {
+    const conditionIdValue = record.condition_id || record.conditionId
+    const marketMeta =
+      conditionIdValue && typeof conditionIdValue === 'string'
+        ? await fetchMarketMetadata(conditionIdValue)
+        : null
+
+    const iconUrl = marketMeta?.icon || marketMeta?.image
+    if (iconUrl) {
+      setTradeRecord((prev) =>
+        prev
+          ? {
+              ...prev,
+              icon: iconUrl,
+              market_icon: iconUrl,
+              market: { ...(prev.market || {}), icon: iconUrl },
+            }
+          : prev
+      )
+    }
+
+    if (!tokenFromRecord) {
+      const tokens = marketMeta?.tokens || []
+      if (tokens.length > 0) {
         const outcome =
           firstStringValue(record, OUTCOME_KEYS) || String(record.outcome || '')
         const outcomeIndex =
           record.outcome_index !== undefined ? Number(record.outcome_index) : null
-        const conditionId = record.condition_id || record.conditionId
-
-        const tokenRes = await fetch(
-          `/api/polymarket/market?conditionId=${encodeURIComponent(String(conditionId))}`
-        )
-        const tokenData = await tokenRes.json()
-        if (tokenRes.ok && tokenData?.tokens?.length) {
-          const tokens = tokenData.tokens as Array<{ outcome?: string; token_id?: string }>
-          let match: { outcome?: string; token_id?: string } | null = null
-          if (outcome) {
-            match = tokens.find(
-              (token) =>
-                token.outcome &&
-                token.outcome.toLowerCase() === outcome.toLowerCase() &&
-                token.token_id
-            ) ?? null
-          }
-          if (!match && Number.isFinite(outcomeIndex) && outcomeIndex! >= 0) {
-            match = tokens[outcomeIndex!] || null
-          }
-          if (match?.token_id) {
-            setForm((prev) => ({ ...prev, tokenId: String(match!.token_id) }))
-          }
+        let match: { outcome?: string | null; token_id?: string | null } | null = null
+        if (outcome) {
+          match = tokens.find(
+            (token) =>
+              token.outcome &&
+              token.outcome.toLowerCase() === outcome.toLowerCase() &&
+              token.token_id
+          ) ?? null
         }
-      } catch {
-        // Ignore token lookup failures; manual entry still allowed.
+        if (!match && Number.isFinite(outcomeIndex) && outcomeIndex! >= 0) {
+          match = tokens[outcomeIndex!] || null
+        }
+        if (match?.token_id) {
+          setForm((prev) => ({ ...prev, tokenId: String(match!.token_id) }))
+        }
       }
     }
   }
@@ -782,165 +815,113 @@ function TradeExecutePageInner() {
     <div>
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-10 space-y-6">
-        <section className="rounded-md border border-slate-200 bg-white px-4 py-5 shadow-sm space-y-5">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Copy This Trade</h1>
-            <p className="mt-1 text-sm text-slate-500">Review the filled order before placing a new copy.</p>
+        <section className="rounded-md border border-slate-200 bg-white px-5 py-6 shadow-sm space-y-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900">Trade You're Copying</h1>
+            </div>
+            <div
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                marketStatus === 'Open'
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : marketStatus === 'Closed'
+                    ? 'bg-rose-100 text-rose-700'
+                    : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              {marketStatus ? `Market ${marketStatus}` : 'Market status pending'}
+            </div>
           </div>
-          <div className="space-y-4 text-sm text-slate-700">
-            <div className="flex items-center gap-3">
-              {traderIcon ? (
-                <img
-                  src={traderIcon}
-                  alt=""
-                  className="h-10 w-10 rounded-full border border-slate-200 object-cover"
-                />
-              ) : (
-                <div
-                  className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white"
-                  style={{ backgroundColor: traderAvatarColor }}
-                >
-                  {traderInitials}
-                </div>
-              )}
-              <div>
-                <div className="text-xs font-medium text-slate-500">Trader</div>
-                <div className="text-sm font-semibold text-slate-900">
-                  {traderName || 'Anonymous'}
-                </div>
-                {traderWallet && (
-                  <div className="text-xs text-slate-500">{abbreviateWallet(traderWallet)}</div>
-                )}
+          <div className="mt-3 flex items-start gap-4">
+            {iconImage ? (
+              <img
+                src={iconImage}
+                alt={`${iconLabel} icon`}
+                className="h-14 w-14 rounded-2xl border border-slate-200 object-cover"
+              />
+            ) : (
+              <div
+                className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700"
+                style={{ backgroundColor: getAvatarColor(iconLabel || 'trade') }}
+              >
+                {getInitials(iconLabel)}
               </div>
-              {contractType && (
-                <div className="ml-auto text-xs text-slate-500">{contractType}</div>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              {marketIcon ? (
-                <img
-                  src={marketIcon}
-                  alt=""
-                  className="h-10 w-10 rounded-full border border-slate-200 object-cover"
-                />
-              ) : (
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-                  {getInitials(String(marketTitle || 'M'))}
-                </div>
-              )}
-              <div className="flex-1">
-                <div className="text-xs font-medium text-slate-500">Market</div>
-                <div className="text-sm font-semibold text-slate-900">{marketTitle}</div>
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
-                    {(record?.side || form.side || 'BUY').toUpperCase()}
-                  </span>
-                  <span className="text-xs text-slate-500">{record?.outcome || '—'}</span>
-                </div>
+            )}
+            <div className="flex-1">
+              <div className="text-lg font-semibold text-slate-900">{marketTitle}</div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
+                  Direction: {directionLabel}
+                </span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
+                  Outcome: {outcomeLabel}
+                </span>
               </div>
             </div>
-            <div className="grid gap-4 text-xs text-slate-500 sm:grid-cols-3">
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  Filled Price
-                </div>
-                <div className="text-sm font-semibold text-slate-900">{formatPrice(tradePrice)}</div>
+          </div>
+          <div className="mt-4 grid gap-4 text-xs text-slate-500 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Filled Price
               </div>
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  Contracts
-                </div>
-                <div className="text-sm font-semibold text-slate-900">{formatNumber(tradeSize)}</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  Total
-                </div>
-                <div className="text-sm font-semibold text-slate-900">{formatMoney(totalCost)}</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  Payout If Wins
-                </div>
-                <div className="text-sm font-semibold text-slate-900">{formatMoney(payoutIfWins)}</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  Date / Time
-                </div>
-                <div className="text-sm font-semibold text-slate-900">{filledLabel}</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  Time Since Filled
-                </div>
-                <div className="text-sm font-semibold text-slate-900">{elapsed}</div>
-              </div>
+              <div className="text-sm font-semibold text-slate-900">{formatPrice(tradePrice)}</div>
             </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Contracts
+              </div>
+              <div className="text-sm font-semibold text-slate-900">{formatNumber(tradeSize)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Total Cost
+              </div>
+              <div className="text-sm font-semibold text-slate-900">{formatMoney(totalCost)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Payout If Wins
+              </div>
+              <div className="text-sm font-semibold text-slate-900">{formatMoney(payoutIfWins)}</div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+            <span>Timestamp {filledLabel}</span>
+            <span>Elapsed {elapsed}</span>
           </div>
         </section>
 
-        <section className="rounded-md border border-slate-200 bg-slate-50 px-4 py-5 shadow-sm space-y-6">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Your Order</h2>
-            <p className="text-xs text-slate-500">Preview your limit order before submitting.</p>
-          </div>
-          <div className="grid gap-4 text-sm text-slate-700 sm:grid-cols-2">
+        <section className="rounded-md border border-slate-200 bg-white px-4 py-5 shadow-sm space-y-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <div className="text-xs font-medium text-slate-500">Market status</div>
-              <div
-                className={
-                  marketStatus === 'Open'
-                    ? 'text-sm font-semibold text-emerald-600'
-                    : marketStatus === 'Closed'
-                      ? 'text-sm font-semibold text-rose-600'
-                      : 'text-sm font-semibold text-slate-900'
-                }
-              >
-                {marketStatus || '—'}
-              </div>
+              <h2 className="text-lg font-semibold text-slate-900">Your Order</h2>
             </div>
             <div className="text-right">
-              <div className="text-xs font-medium text-slate-500">Live price / Δ</div>
-              <div className="text-sm font-semibold text-slate-900">
-                {latestPriceLoading ? 'Loading…' : formatPrice(currentPrice)}
-              </div>
-              {priceDeltaPct !== null && (
-                <div className="text-xs text-slate-500">
-                  {`${priceDeltaPct > 0 ? '+' : ''}${priceDeltaPct.toFixed(2)}% since filled`}
-                </div>
-              )}
-              {latestPriceError && (
-                <div className="text-xs text-rose-600">{latestPriceError}</div>
+              <div className="text-xs font-medium text-slate-500">Cash Available</div>
+              <div className="text-sm font-semibold text-slate-900">{availableCashDisplay}</div>
+              {balanceError && (
+                <div className="text-xs text-rose-600">{balanceError}</div>
               )}
             </div>
           </div>
-
-          <div className="rounded-md border border-slate-200 bg-white px-3 py-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-xs font-medium text-slate-500">Available Cash</div>
-                <div className="text-sm text-slate-800">
-                  {balanceLoading ? 'Loading…' : balanceData?.balanceFormatted || '—'}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {walletAddress ? `Wallet ${abbreviateWallet(walletAddress)}` : '—'}
-                </div>
-                {balanceError && (
-                  <div className="mt-1 text-xs text-rose-600">{balanceError}</div>
-                )}
-              </div>
-              {walletAddress && (
-                <button
-                  type="button"
-                  onClick={() => fetchBalance(walletAddress)}
-                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 hover:border-slate-300"
-                >
-                  Refresh
-                </button>
-              )}
-            </div>
+          <div className="mt-1 text-sm text-slate-700">
+            <span className="text-xs font-medium text-slate-500">Current Price / Contract:</span>{' '}
+            <span className="text-sm font-semibold text-slate-900">
+              {latestPriceLoading ? 'Loading…' : formatPrice(currentPrice)}
+            </span>
+            {priceDeltaPct !== null && (
+              <span
+                className={`ml-3 text-xs font-semibold ${
+                  priceDeltaPct >= 0 ? 'text-emerald-600' : 'text-rose-500'
+                }`}
+              >
+                {`${priceDeltaPct > 0 ? '+' : ''}${priceDeltaPct.toFixed(2)}% since trade`}
+              </span>
+            )}
           </div>
+          {latestPriceError && (
+            <div className="text-xs text-rose-600">{latestPriceError}</div>
+          )}
 
           <div className="rounded-md border border-slate-200 bg-white px-4 py-4 space-y-5">
             <div className="flex items-center justify-between gap-3">
@@ -1007,56 +988,86 @@ function TradeExecutePageInner() {
                 {notEnoughFunds && <span>Not enough funds available.</span>}
               </div>
             ) : null}
-            <div>
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
               <div className="text-xs font-medium text-slate-500">Slippage Tolerance</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {[0, 1, 3, 5].map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setSlippagePreset(value)}
-                    className={`rounded-md border px-2 py-1 text-xs ${
-                      slippagePreset === value
-                        ? 'border-slate-900 bg-slate-900 text-white'
-                        : 'border-slate-200 bg-white text-slate-600'
-                    }`}
-                  >
-                    {value}%
-                  </button>
-                ))}
+              <button
+                type="button"
+                onClick={() => setShowSlippageInfo((prev) => !prev)}
+                className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"
+                aria-expanded={showSlippageInfo}
+                aria-controls="slippage-tooltip"
+              >
+                ?
+              </button>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {[0, 1, 3, 5].map((value) => (
                 <button
+                  key={value}
                   type="button"
-                  onClick={() => setSlippagePreset('custom')}
+                  onClick={() => setSlippagePreset(value)}
                   className={`rounded-md border px-2 py-1 text-xs ${
-                    slippagePreset === 'custom'
+                    slippagePreset === value
                       ? 'border-slate-900 bg-slate-900 text-white'
                       : 'border-slate-200 bg-white text-slate-600'
                   }`}
                 >
-                  Custom
+                  {value}%
                 </button>
-                {slippagePreset === 'custom' && (
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={customSlippage}
-                    onChange={(e) => setCustomSlippage(e.target.value)}
-                    className="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    placeholder="0.5"
-                  />
-                )}
-              </div>
-              <div className="mt-2 text-xs text-slate-500">
-                {limitPriceValue
-                  ? `This order will only fill at ${limitPriceLabel} per contract or less.`
-                  : 'Set slippage to preview the upper bound.'}
-              </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setSlippagePreset('custom')}
+                className={`rounded-md border px-2 py-1 text-xs ${
+                  slippagePreset === 'custom'
+                    ? 'border-slate-900 bg-slate-900 text-white'
+                    : 'border-slate-200 bg-white text-slate-600'
+                }`}
+              >
+                Custom
+              </button>
+              {slippagePreset === 'custom' && (
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={customSlippage}
+                  onChange={(e) => setCustomSlippage(e.target.value)}
+                  className="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  placeholder="0.5"
+                />
+              )}
             </div>
+            <div className="mt-2 text-xs text-slate-500">
+              {limitPriceValue
+                ? `This order will only fill at ${limitPriceLabel} per contract or less.`
+                : 'Set slippage to preview the upper bound.'}
+            </div>
+            {showSlippageInfo && (
+              <div
+                id="slippage-tooltip"
+                className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
+              >
+                {SLIPPAGE_TOOLTIP}
+              </div>
+            )}
           </div>
 
           <div>
-            <div className="text-xs font-medium text-slate-500">Order Behavior</div>
+            <div className="flex items-center gap-2">
+              <div className="text-xs font-medium text-slate-500">Order Behavior</div>
+              <button
+                type="button"
+                onClick={() => setShowOrderBehaviorInfo((prev) => !prev)}
+                className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"
+                aria-expanded={showOrderBehaviorInfo}
+                aria-controls="order-behavior-tooltip"
+              >
+                ?
+              </button>
+            </div>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                 <input
@@ -1077,6 +1088,14 @@ function TradeExecutePageInner() {
                 <span>Good 'Til Canceled</span>
               </label>
             </div>
+            {showOrderBehaviorInfo && (
+              <div
+                id="order-behavior-tooltip"
+                className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
+              >
+                {ORDER_BEHAVIOR_TOOLTIP}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-2">

@@ -35,6 +35,8 @@ export async function GET(request: Request) {
       conditionId: market?.condition_id ?? conditionId,
       question: market?.question ?? null,
       tokens,
+      icon: market?.icon ?? null,
+      image: market?.image ?? null,
     })
   } catch (error: any) {
     return NextResponse.json(
