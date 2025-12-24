@@ -16,7 +16,7 @@ type Body = {
   confirm?: boolean
 }
 
-const MAX_TEST_AMOUNT = 10
+const MAX_TEST_USD = 10 // USD limit for testing ($10 max trade size)
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -54,9 +54,11 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (amount > MAX_TEST_AMOUNT) {
+  // Calculate USD value: amount (contracts) * price ($ per contract)
+  const usdValue = amount * price
+  if (usdValue > MAX_TEST_USD) {
     return buildLocalGuardResponse(
-      { error: `amount too large for test endpoint (>${MAX_TEST_AMOUNT})` },
+      { error: `Trade value too large for test endpoint: $${usdValue.toFixed(2)} (max $${MAX_TEST_USD})` },
       400
     )
   }
