@@ -22,8 +22,6 @@ type Body = {
   confirm?: boolean
 }
 
-const MAX_TEST_AMOUNT = 10 // basic guardrail for test page
-
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const {
@@ -58,13 +56,6 @@ export async function POST(request: NextRequest) {
   if (!tokenId || !price || !amount || !side) {
     return buildLocalGuardResponse(
       { error: 'tokenId, price, amount, and side are required' },
-      400
-    )
-  }
-
-  if (amount > MAX_TEST_AMOUNT) {
-    return buildLocalGuardResponse(
-      { error: `amount too large for test endpoint (>${MAX_TEST_AMOUNT})` },
       400
     )
   }

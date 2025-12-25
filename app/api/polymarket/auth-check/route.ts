@@ -167,7 +167,7 @@ export async function GET() {
 
     const signer = await createTurnkeySigner(userId, supabaseServiceRole, wallet)
     const signatureType: SignatureType = 2
-    const client = createClobClient(signer, signatureType, apiCreds, proxyAddress)
+    const client = await createClobClient(signer, signatureType, apiCreds, proxyAddress)
     const closedOnlyMode = await client.getClosedOnlyMode()
 
     return NextResponse.json({

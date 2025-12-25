@@ -121,13 +121,13 @@ function CopyTradeModal({
         ? parsedUsd / pricePerContract
         : null;
 
-  const secondaryInline =
+  const conversionHint =
     inputMode === 'usd'
       ? derivedContracts
-        ? `≈ ${formatContractsValue(derivedContracts)} Contracts`
-        : '— Contracts'
+        ? `${formatCurrency(derivedUsd ?? parsedUsd)} ≈ ${formatContractsValue(derivedContracts)} contracts`
+        : '—'
       : derivedUsd
-        ? `≈ ${formatCurrency(derivedUsd)}`
+        ? `${formatContractsValue(derivedContracts ?? parsedContracts)} ≈ ${formatCurrency(derivedUsd)}`
         : '—';
 
   const canSubmit = typeof derivedUsd === 'number' && derivedUsd > 0;
@@ -191,7 +191,7 @@ function CopyTradeModal({
             <div className="space-y-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1">
-                  <p className="text-sm font-semibold text-slate-900">Trade you're copying</p>
+                  <p className="text-sm font-semibold text-slate-900">Trade You're Copying</p>
                   <p className="text-xs text-slate-500">
                     This is the original trade you’re about to copy.
                   </p>
@@ -234,8 +234,8 @@ function CopyTradeModal({
                   <p className="text-base font-semibold text-slate-900 break-words">{trade.market}</p>
                   <div className="flex flex-wrap gap-3 text-xs text-slate-500">
                     {[
-                      ['direction', directionDisplay],
-                      ['outcome', outcomeDisplay],
+                      ['Direction', directionDisplay],
+                      ['Outcome', outcomeDisplay],
                     ].map(([label, value]) => (
                       <div key={label} className="flex items-center gap-2">
                         <span className="text-[10px] font-semibold tracking-wide text-slate-400">{label}</span>
@@ -251,10 +251,10 @@ function CopyTradeModal({
               <div className="overflow-x-auto">
                 <div className="flex min-w-[520px] items-center gap-6 text-xs text-slate-500">
                   {[
-                    ['filled price', filledPriceLabel],
-                    ['contracts', contractsLabel],
-                    ['total cost', totalCostLabel],
-                    ['payout if wins', payoutLabel],
+                    ['Filled Price', filledPriceLabel],
+                    ['Contracts', contractsLabel],
+                    ['Total Cost', totalCostLabel],
+                    ['Payout If Wins', payoutLabel],
                   ].map(([label, value]) => (
                     <div key={label} className="flex flex-col gap-1">
                       <span className="text-[10px] font-semibold tracking-wide text-slate-400">
@@ -270,11 +270,11 @@ function CopyTradeModal({
 
               <div className="flex items-center justify-between text-xs text-slate-500">
                 <div className="flex flex-col">
-                  <span className="text-[10px] font-semibold tracking-wide text-slate-400">timestamp</span>
+                  <span className="text-[10px] font-semibold tracking-wide text-slate-400">Timestamp</span>
                   <span className="text-sm text-slate-900">{timestampLabel}</span>
                 </div>
                 <div className="flex flex-col text-right">
-                  <span className="text-[10px] font-semibold tracking-wide text-slate-400">time since filled</span>
+                  <span className="text-[10px] font-semibold tracking-wide text-slate-400">Time Since Filled</span>
                   <span className="text-sm text-slate-900">{relativeLabel}</span>
                 </div>
               </div>
@@ -288,9 +288,9 @@ function CopyTradeModal({
 
             <div className="space-y-5 pt-2">
               <div className="flex items-start justify-between">
-                <p className="text-lg font-semibold text-slate-900">Your order</p>
+                <p className="text-lg font-semibold text-slate-900">Your Order</p>
                 <div className="text-right">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">cash available</p>
+                  <p className="text-[10px] font-semibold tracking-wide text-slate-400">Cash Available</p>
                   <p className="text-sm font-semibold text-slate-900">{availableCashLabel}</p>
                 </div>
               </div>
@@ -298,53 +298,49 @@ function CopyTradeModal({
                 <p className="text-xs text-rose-500">{availableCashError}</p>
               )}
 
-              <div className="flex flex-col gap-2">
-                <div className="flex gap-2">
+              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex gap-2 rounded-full bg-white/80 p-1">
                   <button
                     type="button"
                     onClick={() => handleModeToggle('usd')}
-                    className={`flex-1 rounded-2xl px-3 py-1.5 text-sm font-semibold ${
+                    className={`flex-1 rounded-2xl px-3 py-1.5 text-sm font-semibold transition ${
                       inputMode === 'usd'
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-500'
+                        ? 'bg-slate-900 text-white shadow'
+                        : 'text-slate-500'
                     }`}
                   >
-                    USD
+                    usd
                   </button>
                   <button
                     type="button"
                     onClick={() => handleModeToggle('contracts')}
-                    className={`flex-1 rounded-2xl px-3 py-1.5 text-sm font-semibold ${
+                    className={`flex-1 rounded-2xl px-3 py-1.5 text-sm font-semibold transition ${
                       inputMode === 'contracts'
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-500'
+                        ? 'bg-slate-900 text-white shadow'
+                        : 'text-slate-500'
                     }`}
                   >
                     contracts
                   </button>
                 </div>
-                <div className="relative">
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="0.01"
-                    value={inputMode === 'usd' ? usdInput : contractsInput}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      if (inputMode === 'usd') {
-                        setUsdInput(value);
-                      } else {
-                        setContractsInput(value);
-                      }
-                    }}
-                    placeholder={inputMode === 'usd' ? '0.00' : '0.00'}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 px-4 pr-24 text-2xl font-semibold text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FDB022]"
-                  />
-                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-500">
-                    {secondaryInline}
-                  </span>
-                </div>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  value={inputMode === 'usd' ? usdInput : contractsInput}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (inputMode === 'usd') {
+                      setUsdInput(value);
+                    } else {
+                      setContractsInput(value);
+                    }
+                  }}
+                  placeholder={inputMode === 'usd' ? '0.00' : '0.00'}
+                  className="w-full rounded-2xl border border-slate-200 bg-white py-5 px-5 text-3xl font-semibold text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FDB022]"
+                />
+                <p className="text-sm text-slate-500">{conversionHint}</p>
               </div>
 
               <div className="flex items-center justify-between text-xs text-slate-500">
