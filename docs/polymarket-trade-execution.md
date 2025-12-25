@@ -18,3 +18,12 @@
 - Always confirm your trading route logs the CLOB base URL before dispatching orders—if the logged hostname ever reads `polymarket.com`, the configuration is wrong.
 - Server-side code must never spoof browser cookies or attempt to solve Cloudflare challenges; treat those responses as blocked traffic and escalate to the site owner if needed.
 - When you see `blocked_by_cloudflare`, check whether the IP changed (datacenter rotation) or if the rate/pattern of orders increased, then step through the logs to see the last logged `requestUrl` and Ray ID.
+
+## Evomi residential proxy (optional)
+
+- Set `EVOMI_API_KEY` to the key provided by the Evomi dashboard (`https://api.evomi.com/public`).
+  The server will fetch the configured proxy credentials (endpoint, username/password, ports) and configure `axios` to send CLOB traffic through that residential proxy.
+- `EVOMI_PROXY_PRODUCT` can override the default product code (`rpc`). If it's not set or the specified product is missing, Polycopy falls back to the first product the API returned.
+- `EVOMI_PROXY_PROTOCOL` defaults to `http` but may be set to `https` if the product advertises an HTTPS proxy port.
+- `EVOMI_PROXY_CACHE_SECONDS` controls how long we keep the fetched proxy URL before calling the API again (default 300 seconds). The helper reuses the cached credentials across requests to reduce throttling.
+- Keep the API key confidential (do not check it into git), and rotate it via the Evomi dashboard if it ever gets exposed.
