@@ -274,9 +274,15 @@ async function fetchTraderRecords(
   try {
     const { data } = await client
       .from('traders')
-      .select('id as trader_id, display_name, wallet_address')
+      .select('id, display_name, wallet_address')
       .in('id', traderIds)
-    return data ?? []
+    return (
+      (data ?? []).map((row) => ({
+        trader_id: row?.id ?? null,
+        display_name: row?.display_name ?? null,
+        wallet_address: row?.wallet_address ?? null,
+      })) ?? []
+    )
   } catch (error) {
     console.warn('[orders] trader lookup failed', error)
     return []
