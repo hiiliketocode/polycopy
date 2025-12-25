@@ -96,6 +96,7 @@ export async function GET() {
 
   const marketRows = await fetchMarketCacheRows(supabase, marketIds)
   const traderRows = await fetchTraderProfiles(supabase, traderIds)
+  const traderRecords = await fetchTraderRecords(supabase, traderIds)
   const marketCacheMap = new Map<string, MarketCacheRow>()
   marketRows.forEach((row) => {
     if (row?.market_id) {
@@ -110,6 +111,13 @@ export async function GET() {
     }
   })
 
+  const traderRecordMap = new Map<string, TraderRecordRow>()
+  traderRecords.forEach((row) => {
+    if (row?.trader_id) {
+      traderRecordMap.set(row.trader_id, row)
+    }
+  })
+
   const marketMetadataMap = await fetchMarketMetadataFromClob(
     [...new Set(marketIds)].filter(Boolean)
   )
@@ -121,6 +129,7 @@ export async function GET() {
     const traderId = String(order.trader_id ?? '')
     const cache = marketCacheMap.get(marketId)
     const profile = traderProfileMap.get(traderId)
+    const traderRecord = traderRecordMap.get(traderId)
 
     const metadata = marketMetadataMap[marketId]
     const marketTitle = getMarketTitle(order, marketId, cache, metadata)
@@ -147,19 +156,32 @@ export async function GET() {
       remainingValue
     )
 
-    if (
-      marketId &&
-      metadata &&
-      !cache?.image_url &&
-      (metadata.icon || metadata.image) &&
-      !cacheUpsertMap.has(marketId)
-    ) {
-      cacheUpsertMap.set(marketId, {
-        market_id: marketId,
-        title: cache?.title ?? metadata.question ?? marketTitle,
-        image_url: metadata.icon ?? metadata.image ?? null,
-        metadata: metadata.metadataPayload,
-      })
+    if (marketId && metadata) {
+      const existing = cacheUpsertMap.get(marketId) ?? { market_id: marketId }
+      const metadataTitle = metadata.question ?? null
+      const needsTitleUpdate = metadataTitle && metadataTitle !== cache?.title
+      const needsImageUpdate =
+        !cache?.image_url && (metadata.icon || metadata.image)
+
+      if (needsTitleUpdate || needsImageUpdate || metadata.metadataPayload) {
+        const upsertPayload: MarketCacheUpsertRow = {
+          market_id: marketId,
+        }
+        if (needsTitleUpdate) {
+          upsertPayload.title = metadataTitle
+        }
+        if (needsImageUpdate) {
+          upsertPayload.image_url = metadata.icon ?? metadata.image ?? null
+        }
+        if (metadata.metadataPayload) {
+          upsertPayload.metadata = metadata.metadataPayload
+        }
+
+        cacheUpsertMap.set(marketId, {
+          ...existing,
+          ...upsertPayload,
+        })
+      }
     }
 
     const currentPrice = resolveCurrentPrice(order, metadata)
@@ -176,10 +198,10 @@ export async function GET() {
       marketImageUrl,
       marketIsOpen,
       traderId,
-      traderName: getTraderName(profile, order.raw),
+      traderName: getTraderName(profile, traderRecord, order.raw),
       traderAvatarUrl: profile?.avatar_url ?? extractTraderAvatar(order.raw),
       traderWalletShort:
-        formatWalletShort(profile?.wallet_address)
+        formatWalletShort(profile?.wallet_address ?? traderRecord?.wallet_address)
         ?? formatWalletShort(order.raw?.trader?.wallet)
         ?? formatWalletShort(order.raw?.wallet)
         ?? '--',
@@ -244,10 +266,33 @@ async function fetchTraderProfiles(client: ReturnType<typeof createServiceClient
   }
 }
 
+async function fetchTraderRecords(
+  client: ReturnType<typeof createServiceClient>,
+  traderIds: string[]
+) {
+  if (traderIds.length === 0) return []
+  try {
+    const { data } = await client
+      .from('traders')
+      .select('id as trader_id, display_name, wallet_address')
+      .in('id', traderIds)
+    return data ?? []
+  } catch (error) {
+    console.warn('[orders] trader lookup failed', error)
+    return []
+  }
+}
+
 type TraderProfileRow = {
   trader_id: string | null
   display_name: string | null
   avatar_url: string | null
+  wallet_address: string | null
+}
+
+type TraderRecordRow = {
+  trader_id: string | null
+  display_name: string | null
   wallet_address: string | null
 }
 
@@ -327,14 +372,27 @@ function parseBoolean(value: any): boolean | null {
   return null
 }
 
-function getTraderName(profile?: TraderProfileRow, rawOrder?: any) {
+function getTraderName(
+  profile?: TraderProfileRow,
+  traderRecord?: TraderRecordRow,
+  rawOrder?: any
+) {
   const profileName = profile?.display_name
   if (profileName) return profileName
+
+  const traderRecordName = traderRecord?.display_name
+  if (traderRecordName) return traderRecordName
+
   const rawName =
     rawOrder?.trader?.display_name ??
+    rawOrder?.copied_from?.display_name ??
+    rawOrder?.copied_from_trader?.display_name ??
     rawOrder?.raw_trader_name ??
     rawOrder?.trader_name ??
-    rawOrder?.trader?.name
+    rawOrder?.trader?.name ??
+    rawOrder?.copied_from?.trader_name ??
+    rawOrder?.copied_from_trader?.trader_name ??
+    rawOrder?.copied_from_trader?.name
   return rawName || 'unknown trader'
 }
 
@@ -349,7 +407,7 @@ function parseNumeric(value: any): number | null {
 }
 
 function formatWalletShort(address?: string | null) {
-  if (!address) return null
+  if (typeof address !== 'string') return null
   const normalized = address.trim()
   if (normalized.length <= 10) return normalized
   return `${normalized.slice(0, 6)}…${normalized.slice(-4)}`
