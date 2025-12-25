@@ -122,9 +122,9 @@ export async function GET() {
     const cache = marketCacheMap.get(marketId)
     const profile = traderProfileMap.get(traderId)
 
+    const metadata = marketMetadataMap[marketId]
     const marketTitle = getMarketTitle(order, marketId, cache, metadata)
     const marketSubtitle = getMarketSubtitle(order, cache, metadata)
-    const metadata = marketMetadataMap[marketId]
     const marketImageUrl =
       cache?.image_url ??
       metadata?.icon ??
@@ -383,7 +383,13 @@ async function fetchMarketMetadataFromClob(conditionIds: string[]) {
         cache: 'no-store',
       })
       if (!response.ok) continue
-      const market = await response.json()
+      let market: any
+      try {
+        market = await response.json()
+      } catch (error) {
+        console.warn('[orders] market metadata parse failed', conditionId, error)
+        continue
+      }
       const icon =
         typeof market?.icon === 'string' && market.icon.trim()
           ? market.icon.trim()
