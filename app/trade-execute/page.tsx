@@ -861,25 +861,25 @@ function TradeExecutePageInner() {
           </div>
           <div className="mt-4 grid gap-4 text-xs text-slate-500 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              <div className="text-[11px] font-semibold tracking-wide text-slate-400">
                 Filled Price
               </div>
               <div className="text-sm font-semibold text-slate-900">{formatPrice(tradePrice)}</div>
             </div>
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              <div className="text-[11px] font-semibold tracking-wide text-slate-400">
                 Contracts
               </div>
               <div className="text-sm font-semibold text-slate-900">{formatNumber(tradeSize)}</div>
             </div>
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              <div className="text-[11px] font-semibold tracking-wide text-slate-400">
                 Total Cost
               </div>
               <div className="text-sm font-semibold text-slate-900">{formatMoney(totalCost)}</div>
             </div>
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              <div className="text-[11px] font-semibold tracking-wide text-slate-400">
                 Payout If Wins
               </div>
               <div className="text-sm font-semibold text-slate-900">{formatMoney(payoutIfWins)}</div>
@@ -891,7 +891,7 @@ function TradeExecutePageInner() {
           </div>
         </section>
 
-        <section className="rounded-md border border-slate-200 bg-white px-4 py-5 shadow-sm space-y-6">
+        <section className="rounded-md border border-slate-200 bg-white px-4 py-5 shadow-sm space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Your Order</h2>
@@ -904,7 +904,7 @@ function TradeExecutePageInner() {
               )}
             </div>
           </div>
-          <div className="mt-1 text-sm text-slate-700">
+          <div className="text-sm text-slate-700">
             <span className="text-xs font-medium text-slate-500">Current Price / Contract:</span>{' '}
             <span className="text-sm font-semibold text-slate-900">
               {latestPriceLoading ? 'Loading…' : formatPrice(currentPrice)}
@@ -923,7 +923,7 @@ function TradeExecutePageInner() {
             <div className="text-xs text-rose-600">{latestPriceError}</div>
           )}
 
-          <div className="rounded-md border border-slate-200 bg-white px-4 py-4 space-y-5">
+          <div className="rounded-md border border-slate-200 bg-white px-4 py-4 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-xs font-medium text-slate-500">Amount</div>
@@ -939,36 +939,50 @@ function TradeExecutePageInner() {
                 ⇄
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="inline-flex overflow-hidden rounded-md border border-slate-200 text-xs shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm">
+              <div className="mb-4 flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setAmountMode('usd')}
-                  className={`rounded px-2 py-1 ${
-                    amountMode === 'usd' ? 'bg-slate-900 text-white' : 'text-slate-600'
+                  className={`rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
+                    amountMode === 'usd'
+                      ? 'bg-slate-900 text-white'
+                      : 'border border-slate-200 bg-white text-slate-500'
                   }`}
                 >
-                  $
+                  USD
                 </button>
                 <button
                   type="button"
                   onClick={() => setAmountMode('contracts')}
-                  className={`rounded px-2 py-1 ${
-                    amountMode === 'contracts' ? 'bg-slate-900 text-white' : 'text-slate-600'
+                  className={`rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
+                    amountMode === 'contracts'
+                      ? 'bg-slate-900 text-white'
+                      : 'border border-slate-200 bg-white text-slate-500'
                   }`}
                 >
                   Contracts
                 </button>
               </div>
-              <input
-                type="number"
-                min="0"
-                step="0.0001"
-                value={amountInput}
-                onChange={(e) => setAmountInput(e.target.value)}
-                className="w-44 rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                placeholder={amountMode === 'usd' ? '1.20' : '10'}
-              />
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm sm:w-auto">
+                  <span className="text-sm font-semibold text-slate-900">$</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    value={amountInput}
+                    onChange={(e) => setAmountInput(e.target.value)}
+                    className="w-full flex-1 border-none bg-white px-1 text-lg font-semibold text-slate-900 outline-none focus:outline-none"
+                    placeholder={amountMode === 'usd' ? '1.20' : '10'}
+                  />
+                </div>
+                <div className="text-sm font-medium text-slate-700">
+                  = {amountMode === 'usd'
+                    ? `${formatNumber(contractsValue)} Contracts (est)`
+                    : `${formatMoney(estimatedTotal)} USD (est)`}
+                </div>
+              </div>
             </div>
             <div className="flex flex-wrap gap-4 text-xs text-slate-500">
               <span>

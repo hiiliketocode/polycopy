@@ -1,6 +1,7 @@
 import { ClobClient } from '@polymarket/clob-client'
 import { TurnkeySigner } from './turnkey-signer'
 import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
+import { ensureEvomiProxyAgent } from '@/lib/evomi/proxy'
 
 const POLYGON_CHAIN_ID = 137
 
@@ -17,19 +18,25 @@ export interface ApiCredentials {
 
 /**
  * Create a CLOB client with Turnkey signer for L1 authentication
- * 
- * @param signer - Turnkey signer adapter
+ *
+  * @param signer - Turnkey signer adapter
  * @param signatureType - Wallet signature type (default: 0 for EOA)
  * @param apiCreds - Optional API credentials for L2 authentication
  * @param funder - Optional funder address for L2
  * @returns Configured ClobClient instance
  */
-export function createClobClient(
+export async function createClobClient(
   signer: TurnkeySigner,
   signatureType: SignatureType = 0,
   apiCreds?: ApiCredentials,
   funder?: string
-): ClobClient {
+): Promise<ClobClient> {
+  try {
+    await ensureEvomiProxyAgent()
+  } catch (error: any) {
+    console.error('[EVOMI] Failed to configure proxy agent', error?.message ?? error)
+  }
+
   const clobBaseUrl = getValidatedPolymarketClobBaseUrl()
   console.log('[CLOB] Creating CLOB client')
   console.log('[CLOB] Host:', clobBaseUrl)
@@ -51,12 +58,12 @@ export function createClobClient(
 
 /**
  * Create or derive API credentials using L1 authentication
- * 
- * This calls Polymarket's createOrDeriveApiKey() which:
+ *
+  * This calls Polymarket's createOrDeriveApiKey() which:
  * - Creates new API key if none exists
  * - Derives existing API key if one was previously created
  * - Is fully idempotent
- * 
+ *
  * @param signer - Turnkey signer for EIP-712 signing
  * @param signatureType - Wallet signature type
  * @returns API credentials (apiKey, secret, passphrase)
@@ -66,17 +73,17 @@ export async function createOrDeriveApiCredentials(
   signatureType: SignatureType = 0
 ): Promise<ApiCredentials> {
   console.log('[CLOB] Creating/deriving API credentials')
-  
-  const client = createClobClient(signer, signatureType)
-  
+
+  const client = await createClobClient(signer, signatureType)
+
   try {
     const creds = await client.createOrDeriveApiKey()
-    
+
     console.log('[CLOB] API credentials obtained')
     console.log('[CLOB] API Key:', (creds as any).apiKey ?? creds.key)
     console.log('[CLOB] Has secret:', !!creds.secret)
     console.log('[CLOB] Has passphrase:', !!creds.passphrase)
-    
+
     return {
       key: (creds as any).apiKey ?? creds.key,
       secret: creds.secret,
