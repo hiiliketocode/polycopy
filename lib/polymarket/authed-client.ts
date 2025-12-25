@@ -183,7 +183,7 @@ async function buildAuthedClient(
 
   const signer = await createTurnkeySigner(userId, supabaseAdmin, wallet)
   const signatureType: SignatureType = 1
-  const client = createClobClient(signer, signatureType, apiCreds, proxyAddress)
+  const client = await createClobClient(signer, signatureType, apiCreds, proxyAddress)
 
   return {
     client,
