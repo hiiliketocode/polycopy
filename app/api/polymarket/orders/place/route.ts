@@ -58,6 +58,25 @@ export async function POST(request: NextRequest) {
       400
     )
   }
+  function sanitizeForResponse(value: unknown): unknown {
+    if (value === undefined) return undefined
+    if (typeof value !== 'object' || value === null) return value
+    try {
+      const seen = new WeakSet<any>()
+      return JSON.parse(
+        JSON.stringify(value, (_, replacement) => {
+          if (typeof replacement === 'object' && replacement !== null) {
+            if (seen.has(replacement)) return undefined
+            seen.add(replacement)
+          }
+          return replacement
+        })
+      )
+    } catch {
+      return undefined
+    }
+  }
+
   try {
     const { client, proxyAddress, signerAddress, signatureType } = await getAuthedClobClientForUser(
       userId
@@ -103,7 +122,7 @@ export async function POST(request: NextRequest) {
           upstreamStatus,
           isHtml: evaluation.contentType === 'text/html',
           contentType: evaluation.contentType,
-          raw: evaluation.raw,
+          raw: sanitizeForResponse(evaluation.raw),
           snippet,
         },
         { status: upstreamStatus }
@@ -123,7 +142,7 @@ export async function POST(request: NextRequest) {
       upstreamHost,
       upstreamStatus,
       isHtml: false,
-      raw: evaluation.raw,
+      raw: sanitizeForResponse(evaluation.raw),
       contentType: evaluation.contentType,
     })
   } catch (error: any) {
