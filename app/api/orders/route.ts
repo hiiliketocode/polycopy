@@ -455,7 +455,7 @@ function resolveCurrentPrice(order: any, metadata?: MarketMetadata): number | nu
       )
       const matchedPrice =
         matchedIndex >= 0 ? metadata.outcomePrices[matchedIndex] : undefined
-      if (Number.isFinite(matchedPrice)) {
+      if (typeof matchedPrice === 'number' && Number.isFinite(matchedPrice)) {
         return matchedPrice
       }
     }
