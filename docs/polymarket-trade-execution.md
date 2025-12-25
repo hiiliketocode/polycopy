@@ -26,4 +26,5 @@
 - `EVOMI_PROXY_PRODUCT` can override the default product code (`rpc`). If it's not set or the specified product is missing, Polycopy falls back to the first product the API returned.
 - `EVOMI_PROXY_PROTOCOL` defaults to `http` but may be set to `https` if the product advertises an HTTPS proxy port.
 - `EVOMI_PROXY_CACHE_SECONDS` controls how long we keep the fetched proxy URL before calling the API again (default 300 seconds). The helper reuses the cached credentials across requests to reduce throttling.
+- If you already have a fixed proxy endpoint with credentials (such as the `core-residential.evomi.com` pool), set `EVOMI_PROXY_ENDPOINT`, `EVOMI_PROXY_PORT`, `EVOMI_PROXY_USERNAME`, and `EVOMI_PROXY_PASSWORD`. When these are all present the helper bypasses the public API and applies the provided URL directly so you can control the exact node/pool used.
 - Keep the API key confidential (do not check it into git), and rotate it via the Evomi dashboard if it ever gets exposed.

@@ -17,6 +17,35 @@ type EvomiProduct = {
 
 type EvomiProducts = Record<string, EvomiProduct>
 
+function getManualProxyUrl(): string | null {
+  const manualUrl = process.env.EVOMI_PROXY_URL?.trim()
+  if (manualUrl) {
+    return manualUrl
+  }
+
+  const endpoint = process.env.EVOMI_PROXY_ENDPOINT?.trim()
+  if (!endpoint) {
+    return null
+  }
+  const username = process.env.EVOMI_PROXY_USERNAME?.trim()
+  const password = process.env.EVOMI_PROXY_PASSWORD?.trim()
+  if (!username || !password) {
+    return null
+  }
+
+  const portRaw = process.env.EVOMI_PROXY_PORT?.trim()
+  const port = portRaw ? Number(portRaw) : NaN
+  let host = endpoint
+  if (portRaw) {
+    if (!Number.isFinite(port) || port <= 0) {
+      return null
+    }
+    host = `${endpoint}:${Math.round(port)}`
+  }
+  const protocol = getProtocol()
+  return `${protocol}://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}`
+}
+
 function hasApiKey(): boolean {
   return Boolean(process.env.EVOMI_API_KEY)
 }
@@ -109,6 +138,11 @@ async function fetchProxyUrlFromApi(): Promise<string | null> {
 }
 
 export async function getEvomiProxyUrl(): Promise<string | null> {
+  const manual = getManualProxyUrl()
+  if (manual) {
+    return manual
+  }
+
   if (!hasApiKey()) return null
   const now = Date.now()
   if (proxyCache && proxyCache.expiresAt > now) {
@@ -151,3 +185,4 @@ export async function ensureEvomiProxyAgent(): Promise<string | null> {
   console.log('[EVOMI] Proxy configured via', url.split('@')[1] ?? url)
   return url
 }
+
