@@ -18,8 +18,48 @@ type EvomiProduct = {
 type EvomiProducts = Record<string, EvomiProduct>
 
 function getManualProxyUrl(): string | null {
-  const manualUrl = process.env.EVOMI_PROXY_URL?.trim()
+  let manualUrl = process.env.EVOMI_PROXY_URL?.trim()
   if (manualUrl) {
+    // Check if password already includes country parameter
+    const hasCountryParam = /_country-/.test(manualUrl)
+    const countryCode = process.env.EVOMI_PROXY_COUNTRY?.trim()?.toUpperCase()
+    
+    if (!hasCountryParam && countryCode) {
+      // Parse the URL and add country parameter to password
+      // Format: protocol://username:password@host:port
+      try {
+        // Use URL parsing to handle encoding properly
+        const url = new URL(manualUrl)
+        const username = url.username
+        let password = decodeURIComponent(url.password || '')
+        
+        // Add country parameter if not already present
+        if (password && !password.includes('_country-')) {
+          password = `${password}_country-${countryCode}`
+          url.password = encodeURIComponent(password)
+          manualUrl = url.toString()
+          console.log(`[EVOMI] Added country parameter to proxy URL: _country-${countryCode}`)
+        }
+      } catch (error) {
+        // Fallback to regex parsing if URL constructor fails
+        try {
+          const urlMatch = manualUrl.match(/^(\w+):\/\/([^:]+):([^@]+)@(.+)$/)
+          if (urlMatch) {
+            const [, protocol, username, encodedPassword, host] = urlMatch
+            const password = decodeURIComponent(encodedPassword)
+            if (!password.includes('_country-')) {
+              const updatedPassword = encodeURIComponent(`${password}_country-${countryCode}`)
+              manualUrl = `${protocol}://${username}:${updatedPassword}@${host}`
+              console.log(`[EVOMI] Added country parameter to proxy URL: _country-${countryCode}`)
+            }
+          } else {
+            console.warn('[EVOMI] Could not parse EVOMI_PROXY_URL to add country parameter. Please add _country-FI manually to password.')
+          }
+        } catch (fallbackError) {
+          console.warn('[EVOMI] Error parsing EVOMI_PROXY_URL:', fallbackError)
+        }
+      }
+    }
     return manualUrl
   }
 
@@ -28,9 +68,16 @@ function getManualProxyUrl(): string | null {
     return null
   }
   const username = process.env.EVOMI_PROXY_USERNAME?.trim()
-  const password = process.env.EVOMI_PROXY_PASSWORD?.trim()
+  let password = process.env.EVOMI_PROXY_PASSWORD?.trim()
   if (!username || !password) {
     return null
+  }
+
+  // Add country parameter to password if EVOMI_PROXY_COUNTRY is set and not already present
+  const countryCode = process.env.EVOMI_PROXY_COUNTRY?.trim()?.toUpperCase()
+  if (countryCode && !/_country-/.test(password)) {
+    password = `${password}_country-${countryCode}`
+    console.log(`[EVOMI] Added country parameter: _country-${countryCode}`)
   }
 
   const portRaw = process.env.EVOMI_PROXY_PORT?.trim()
@@ -172,6 +219,7 @@ export async function ensureEvomiProxyAgent(): Promise<string | null> {
   const url = await getEvomiProxyUrl()
   if (!url) {
     configuredProxyUrl = null
+    console.log('[EVOMI] No proxy URL available - requests will go direct')
     return null
   }
   if (configuredProxyUrl === url) {
@@ -182,7 +230,29 @@ export async function ensureEvomiProxyAgent(): Promise<string | null> {
   axios.defaults.httpsAgent = agent
   axios.defaults.proxy = false
   configuredProxyUrl = url
-  console.log('[EVOMI] Proxy configured via', url.split('@')[1] ?? url)
+  
+  // Extract proxy info for logging (without credentials)
+  const proxyInfo = url.split('@')[1] ?? url
+  const protocol = url.startsWith('https://') ? 'https' : 'http'
+  
+  // Check if password contains country parameter
+  const hasCountryParam = /_country-/.test(url)
+  const countryMatch = url.match(/_country-([A-Z]{2})/i)
+  const countryCode = countryMatch ? countryMatch[1] : null
+  
+  console.log('[EVOMI] Proxy configured:', {
+    protocol,
+    endpoint: proxyInfo,
+    hasCountryParam,
+    countryCode: countryCode || 'none',
+    usingAxiosDefaults: true,
+    warning: !hasCountryParam ? '⚠️  No country parameter in proxy URL - may use random location' : null,
+    note: hasCountryParam && countryCode !== 'FI' 
+      ? `⚠️  Proxy country is ${countryCode}, not FI (Finland)` 
+      : hasCountryParam && countryCode === 'FI'
+      ? '✅ Proxy configured for Finland'
+      : 'Ensure endpoint points to Finland IP for Polymarket access'
+  })
+  
   return url
 }
-
