@@ -4,6 +4,7 @@ import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
 import { POST_ORDER } from '@polymarket/clob-client/dist/endpoints.js'
 import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
 import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
+import { ensureEvomiProxyAgent } from '@/lib/evomi/proxy'
 import {
   buildLocalGuardResponse,
   getBodySnippet,
@@ -78,6 +79,22 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Configure Evomi proxy BEFORE creating ClobClient to ensure axios defaults are set
+    let evomiProxyUrl: string | null = null
+    try {
+      evomiProxyUrl = await ensureEvomiProxyAgent()
+      if (!evomiProxyUrl) {
+        console.warn('[POLY-ORDER-PLACE] ⚠️  No Evomi proxy configured - requests will go direct (may be blocked by Cloudflare)')
+      } else {
+        const proxyEndpoint = evomiProxyUrl.split('@')[1] ?? evomiProxyUrl
+        console.log('[POLY-ORDER-PLACE] ✅ Evomi proxy enabled via', proxyEndpoint)
+        console.log('[POLY-ORDER-PLACE] Proxy note: Ensure proxy endpoint uses Finland IP for Polymarket access')
+      }
+    } catch (error: any) {
+      console.error('[POLY-ORDER-PLACE] ❌ Evomi proxy config failed:', error?.message || error)
+      // Continue without proxy if configuration fails (will likely be blocked)
+    }
+
     const { client, proxyAddress, signerAddress, signatureType } = await getAuthedClobClientForUser(
       userId
     )
@@ -91,7 +108,20 @@ export async function POST(request: NextRequest) {
       { signatureType } as any
     )
 
-    const rawResult = await client.postOrder(order, orderType as any, false)
+    let rawResult: unknown
+    try {
+      rawResult = await client.postOrder(order, orderType as any, false)
+    } catch (error: any) {
+      // Catch axios errors and extract response data if available
+      // Axios errors may contain circular references, so we extract just the response data
+      if (error?.response) {
+        rawResult = error.response.data ?? error.response
+      } else if (error?.message) {
+        rawResult = { error: error.message, code: error.code }
+      } else {
+        rawResult = String(error)
+      }
+    }
     const evaluation = interpretClobOrderResult(rawResult)
     const failedEvaluation = !evaluation.success
     const upstreamStatus = failedEvaluation ? evaluation.status ?? 502 : 200
@@ -102,9 +132,13 @@ export async function POST(request: NextRequest) {
       upstreamStatus,
       contentType: upstreamContentType,
       orderId: evaluation.success ? evaluation.orderId : null,
+      evomiProxyUrl,
     }
+    let sanitizedEvaluationRaw: unknown
     if (failedEvaluation) {
       logPayload.rayId = evaluation.rayId
+      sanitizedEvaluationRaw = sanitizeForResponse(evaluation.raw)
+      logPayload.raw = sanitizedEvaluationRaw
     }
     console.log('[POLY-ORDER-PLACE] Upstream response', logPayload)
 
@@ -122,7 +156,11 @@ export async function POST(request: NextRequest) {
           upstreamStatus,
           isHtml: evaluation.contentType === 'text/html',
           contentType: evaluation.contentType,
-          raw: sanitizeForResponse(evaluation.raw),
+          raw: sanitizedEvaluationRaw
+            ? typeof sanitizedEvaluationRaw === 'string'
+              ? sanitizedEvaluationRaw
+              : JSON.stringify(sanitizedEvaluationRaw)
+            : undefined,
           snippet,
         },
         { status: upstreamStatus }
