@@ -133,14 +133,13 @@ export async function GET() {
 
     const metadata = marketMetadataMap[marketId]
     const marketTitle = getMarketTitle(order, marketId, cache, metadata)
-    const marketSubtitle = getMarketSubtitle(order, cache, metadata)
     const marketImageUrl =
       cache?.image_url ??
       metadata?.icon ??
       metadata?.image ??
       extractMarketAvatarUrl(order.raw) ??
       null
-    const marketIsOpen = deriveMarketOpenStatus(cache, order.raw)
+    const marketIsOpen = deriveMarketOpenStatus(cache, order.raw, metadata)
 
     const sizeValue = parseNumeric(order.size)
     const filledValue = parseNumeric(order.filled_size)
@@ -176,6 +175,10 @@ export async function GET() {
         if (metadata.metadataPayload) {
           upsertPayload.metadata = metadata.metadataPayload
         }
+        const parsedMetadataClosed = parseBoolean(metadata.metadataPayload?.closed)
+        if (parsedMetadataClosed !== null) {
+          upsertPayload.is_open = !parsedMetadataClosed
+        }
 
         cacheUpsertMap.set(marketId, {
           ...existing,
@@ -194,17 +197,11 @@ export async function GET() {
       status,
       marketId,
       marketTitle,
-      marketSubtitle,
       marketImageUrl,
       marketIsOpen,
       traderId,
       traderName: getTraderName(profile, traderRecord, order.raw),
       traderAvatarUrl: profile?.avatar_url ?? extractTraderAvatar(order.raw),
-      traderWalletShort:
-        formatWalletShort(profile?.wallet_address ?? traderRecord?.wallet_address)
-        ?? formatWalletShort(order.raw?.trader?.wallet)
-        ?? formatWalletShort(order.raw?.wallet)
-        ?? '--',
       side: String(order.side ?? order.raw?.side ?? '').toLowerCase(),
       outcome: order.outcome ?? null,
       size: sizeValue ?? 0,
@@ -323,43 +320,22 @@ function getMarketTitle(
   return fallbackTitle || 'unknown market'
 }
 
-function getMarketSubtitle(
-  order: any,
-  cache?: MarketCacheRow | undefined,
-  metadata?: MarketMetadata
-) {
-  if (metadata?.slug) return metadata.slug
-  const cachedMetadata = cache?.metadata
-  const cachedSubtitle =
-    cachedMetadata?.subtitle ||
-    cachedMetadata?.description ||
-    cachedMetadata?.question ||
-    cachedMetadata?.text
-  if (cachedSubtitle) {
-    return String(cachedSubtitle)
-  }
-
-  const rawMarket = order.raw?.market ?? order.raw
-  const candidate =
-    rawMarket?.subtitle ||
-    rawMarket?.description ||
-    rawMarket?.question ||
-    rawMarket?.market_description ||
-    rawMarket?.market_question ||
-    rawMarket?.text ||
-    rawMarket?.summary ||
-    rawMarket?.details ||
-    ''
-
-  return candidate ? String(candidate) : ''
-}
-
-function deriveMarketOpenStatus(cache?: MarketCacheRow, rawOrder?: any) {
+function deriveMarketOpenStatus(cache?: MarketCacheRow, rawOrder?: any, metadata?: MarketMetadata) {
   if (cache?.is_open !== undefined && cache.is_open !== null) {
     return cache.is_open
   }
 
-  const rawValue = rawOrder?.market?.is_open ?? rawOrder?.market?.active ?? rawOrder?.is_open
+  const metadataClosed = parseBoolean(metadata?.metadataPayload?.closed)
+  if (metadataClosed !== null) {
+    return !metadataClosed
+  }
+
+  const rawValue =
+    rawOrder?.market?.is_open ??
+    rawOrder?.market?.active ??
+    rawOrder?.market?.status ??
+    rawOrder?.market?.state ??
+    rawOrder?.is_open
   return parseBoolean(rawValue)
 }
 
@@ -369,14 +345,35 @@ function parseBoolean(value: any): boolean | null {
   }
   if (typeof value === 'string') {
     const lower = value.trim().toLowerCase()
-    if (['true', '1', 'open'].includes(lower)) return true
-    if (['false', '0', 'closed'].includes(lower)) return false
+    if (['true', '1', 'open', 'active', 'running', 'live'].includes(lower)) return true
+    if (['false', '0', 'closed', 'resolved', 'settled', 'canceled', 'cancelled', 'ended'].includes(lower)) return false
   }
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value !== 0
   }
   return null
 }
+
+const RAW_TRADER_NAME_KEYS = [
+  'trader_username',
+  'trader_name',
+  'traderName',
+  'display_name',
+  'displayName',
+  'name',
+  'username',
+  'alias',
+  'trader_alias',
+]
+
+const RAW_TRADER_NAME_PATHS = [
+  ['trader'],
+  ['maker'],
+  ['owner'],
+  ['copied_from'],
+  ['copied_from_trader'],
+  ['raw_trader'],
+]
 
 function getTraderName(
   profile?: TraderProfileRow,
@@ -389,17 +386,40 @@ function getTraderName(
   const traderRecordName = traderRecord?.display_name
   if (traderRecordName) return traderRecordName
 
-  const rawName =
-    rawOrder?.trader?.display_name ??
-    rawOrder?.copied_from?.display_name ??
-    rawOrder?.copied_from_trader?.display_name ??
-    rawOrder?.raw_trader_name ??
-    rawOrder?.trader_name ??
-    rawOrder?.trader?.name ??
-    rawOrder?.copied_from?.trader_name ??
-    rawOrder?.copied_from_trader?.trader_name ??
-    rawOrder?.copied_from_trader?.name
+  const rawName = extractRawTraderName(rawOrder)
   return rawName || 'unknown trader'
+}
+
+function extractRawTraderName(rawOrder?: any): string | null {
+  if (!rawOrder || typeof rawOrder !== 'object') return null
+  for (const path of RAW_TRADER_NAME_PATHS) {
+    const nestedTarget = getNestedValue(rawOrder, path)
+    const candidate = getFirstStringValue(nestedTarget, RAW_TRADER_NAME_KEYS)
+    if (candidate) {
+      return candidate
+    }
+  }
+  return getFirstStringValue(rawOrder, RAW_TRADER_NAME_KEYS)
+}
+
+function getFirstStringValue(record: Record<string, any> | undefined | null, keys: string[]) {
+  if (!record || typeof record !== 'object') return null
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+  return null
+}
+
+function getNestedValue(record: Record<string, any> | undefined | null, path: string[]) {
+  let current: any = record
+  for (const key of path) {
+    if (!current || typeof current !== 'object') return undefined
+    current = current[key]
+  }
+  return current
 }
 
 function extractTraderAvatar(rawOrder?: any) {
@@ -412,18 +432,12 @@ function parseNumeric(value: any): number | null {
   return Number.isFinite(numericValue) ? numericValue : null
 }
 
-function formatWalletShort(address?: string | null) {
-  if (typeof address !== 'string') return null
-  const normalized = address.trim()
-  if (normalized.length <= 10) return normalized
-  return `${normalized.slice(0, 6)}…${normalized.slice(-4)}`
-}
-
 type MarketCacheUpsertRow = {
   market_id: string
   title?: string | null
   image_url?: string | null
   metadata?: Record<string, any> | null
+  is_open?: boolean | null
 }
 
 type MarketMetadata = {

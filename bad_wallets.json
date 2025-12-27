@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "wallets": {
+    "0x6e82b93eb57b01a63027bd0c6d2f3f04934a752c": {
+      "quarantinedAt": "2025-12-27T00:33:48.061Z",
+      "reason": "repeated failures",
+      "detail": "RPC upsert failed: cannot extract elements from a scalar"
+    },
+    "0xbddf61af533ff524d27154e589d2d7a81510c684": {
+      "quarantinedAt": "2025-12-27T00:34:04.355Z",
+      "reason": "repeated failures",
+      "detail": "RPC upsert failed: cannot extract elements from a scalar"
+    },
+    "0xd538574dea2cf51f8b0168e95be0e9802ee2cc31": {
+      "quarantinedAt": "2025-12-27T00:50:26.402Z",
+      "reason": "repeated failures",
+      "detail": "RPC upsert failed: cannot extract elements from a scalar"
+    },
+    "0x80584be01a1dee8df189954c7413d0319139d023": {
+      "quarantinedAt": "2025-12-27T00:50:38.241Z",
+      "reason": "repeated failures",
+      "detail": "RPC upsert failed: cannot extract elements from a scalar"
+    },
+    "0x51393c00184b39182f09a8a62b8549642e69a8db": {
+      "quarantinedAt": "2025-12-27T00:50:49.625Z",
+      "reason": "repeated failures",
+      "detail": "RPC upsert failed: cannot extract elements from a scalar"
+    },
+    "0xb2304a93c928e05c13e3b96b07be1f2ea8374193": {
+      "quarantinedAt": "2025-12-27T00:51:00.840Z",
+      "reason": "repeated failures",
+      "detail": "RPC upsert failed: cannot extract elements from a scalar"
+    }
+  }
+}
