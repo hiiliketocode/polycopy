@@ -123,7 +123,7 @@ function formatMoney(value: number | null | undefined) {
 }
 
 function meetsMinimumTradeUsd(value: number | null | undefined) {
-  if (!Number.isFinite(value)) return false
+  if (value == null || !Number.isFinite(value)) return false
   return value + MINIMUM_TRADE_TOLERANCE >= MINIMUM_TRADE_USD
 }
 
