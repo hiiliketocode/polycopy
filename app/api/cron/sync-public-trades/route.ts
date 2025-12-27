@@ -1,3 +1,15 @@
+/**
+ * @deprecated This endpoint is deprecated in favor of Fly.io workers (workers/worker-hot.js and workers/worker-cold.js)
+ * 
+ * The new system provides:
+ * - Hot workers: Near real-time polling (1-3s) for actively followed traders
+ * - Cold workers: Hourly polling for all other traders with job locking
+ * - Position tracking and reconciliation
+ * - Better rate limiting and restart safety
+ * 
+ * See workers/README.md for details.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { syncPublicTrades } from '@/lib/ingestion/syncPublicTrades'

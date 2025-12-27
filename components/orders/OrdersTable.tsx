@@ -26,14 +26,14 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
 
 type MarketStatus = 'open' | 'closed'
 
-const MARKET_STATUS_STYLES: Record<MarketStatus, string> = {
-  open: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  closed: 'bg-slate-100 text-slate-700 ring-slate-200',
-}
-
 const MARKET_STATUS_LABELS: Record<MarketStatus, string> = {
   open: 'Open',
   closed: 'Closed',
+}
+
+const MARKET_STATUS_DOT_STYLES: Record<MarketStatus, string> = {
+  open: 'bg-emerald-500',
+  closed: 'bg-rose-500',
 }
 
 type OrdersTableProps = {
@@ -124,19 +124,23 @@ export default function OrdersTable({ orders, loading, statusSummary }: OrdersTa
                 <th className="py-2 pr-4 font-medium min-w-[120px]">Current price</th>
                 <th className="py-2 pr-4 font-medium min-w-[120px]">P/L</th>
                 <th className="py-2 pr-4 font-medium min-w-[140px]">Date</th>
-                <th className="py-2 pr-4 font-medium min-w-[120px]">Market status</th>
               </tr>
             </thead>
             <tbody>
               {pagedOrders.map((order) => {
-    const contractsValue = order.filledSize > 0 ? order.filledSize : order.size
-    const marketStatus = renderMarketStatus(order.marketIsOpen)
+                const contractsValue = order.filledSize > 0 ? order.filledSize : order.size
+                const marketStatus = renderMarketStatus(order.marketIsOpen)
                 return (
                   <React.Fragment key={order.orderId}>
                     <tr className="cursor-pointer border-b border-slate-100 hover:bg-slate-50" onClick={() => toggleRow(order.orderId)}>
                       <td className="py-3 pr-4 align-top">
                         <div className="flex flex-col gap-1">
                           <div className="inline-flex items-center gap-2">
+                            <span
+                              className={`h-2.5 w-2.5 rounded-full ${MARKET_STATUS_DOT_STYLES[marketStatus]}`}
+                              aria-label={`Market ${MARKET_STATUS_LABELS[marketStatus]}`}
+                              title={`Market ${MARKET_STATUS_LABELS[marketStatus]}`}
+                            />
                             <span
                               className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ring-1 ${STATUS_BADGE_STYLES[order.status]}`}
                             >
@@ -165,9 +169,6 @@ export default function OrdersTable({ orders, loading, statusSummary }: OrdersTa
                           </div>
                           <div className="flex min-w-0 flex-col">
                             <p className="truncate font-medium text-slate-900">{order.marketTitle}</p>
-                            {order.marketSubtitle && (
-                              <p className="truncate text-xs text-slate-500">{order.marketSubtitle}</p>
-                            )}
                           </div>
                         </div>
                       </td>
@@ -188,7 +189,6 @@ export default function OrdersTable({ orders, loading, statusSummary }: OrdersTa
                           </div>
                           <div className="flex min-w-0 flex-col">
                             <p className="truncate font-medium text-slate-900">{order.traderName}</p>
-                            <p className="truncate text-xs text-slate-500">{order.traderWalletShort}</p>
                           </div>
                         </div>
                       </td>
@@ -215,17 +215,10 @@ export default function OrdersTable({ orders, loading, statusSummary }: OrdersTa
                       <td className="py-3 pr-4 align-top text-slate-600">
                         {formatDate(order.createdAt)}
                       </td>
-                      <td className="py-3 pr-4 align-top">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ring-1 ${MARKET_STATUS_STYLES[marketStatus]}`}
-                        >
-                          {MARKET_STATUS_LABELS[marketStatus]}
-                        </span>
-                      </td>
                     </tr>
                     {expandedOrderId === order.orderId && (
                       <tr className="bg-slate-50">
-                        <td colSpan={10} className="px-4 pb-4 pt-2">
+                        <td colSpan={9} className="px-4 pb-4 pt-2">
                           <OrderRowDetails order={order} />
                         </td>
                       </tr>

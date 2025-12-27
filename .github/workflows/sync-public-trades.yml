@@ -1,0 +1,29 @@
+# DEPRECATED: This workflow is deprecated in favor of Fly.io workers
+# See workers/README.md for the new system using workers/worker-hot.js and workers/worker-cold.js
+# This file is kept for reference but should not be used in production
+
+name: Sync Public Trades (DEPRECATED)
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Every 5 minutes
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call sync endpoint
+        run: |
+          curl -X GET \
+            "${{ secrets.APP_URL }}/api/cron/sync-public-trades?limit=50" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -w "\nHTTP Status: %{http_code}\n" \
+            -f || echo "Request completed with errors"
+        
+      - name: Log result
+        if: always()
+        run: |
+          echo "Sync job completed at $(date)"
+

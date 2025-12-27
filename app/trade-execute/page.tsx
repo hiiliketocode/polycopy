@@ -37,14 +37,23 @@ type BalanceResponse = {
 type StatusPhase =
   | 'submitted'
   | 'processing'
+  | 'pending'
   | 'open'
   | 'partial'
   | 'filled'
   | 'canceled'
   | 'expired'
+  | 'rejected'
   | 'unknown'
 
-const TERMINAL_STATUSES = new Set(['filled', 'canceled', 'cancelled', 'expired', 'rejected'])
+const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
+  'filled',
+  'canceled',
+  'expired',
+  'rejected',
+])
+const MINIMUM_TRADE_USD = 1
+const MINIMUM_TRADE_TOLERANCE = 1e-6
 
 const EMPTY_FORM: ExecuteForm = {
   tokenId: '',
@@ -113,19 +122,58 @@ function formatMoney(value: number | null | undefined) {
   return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+function meetsMinimumTradeUsd(value: number | null | undefined) {
+  if (!Number.isFinite(value)) return false
+  return value + MINIMUM_TRADE_TOLERANCE >= MINIMUM_TRADE_USD
+}
+
 function normalizeOutcome(value: string) {
   return value.trim().toLowerCase()
 }
 
 function normalizeStatusPhase(status?: string | null): StatusPhase {
-  if (!status) return 'unknown'
-  const normalized = status.toLowerCase()
+  if (!status) return 'submitted'
+  const normalized = status.trim().toLowerCase()
+  if (normalized === 'matched' || normalized === 'filled') return 'filled'
+  if (normalized === 'accepted' || normalized === 'pending') return 'pending'
+  if (normalized === 'processing') return 'processing'
   if (normalized === 'open') return 'open'
   if (normalized === 'partial') return 'partial'
-  if (normalized === 'filled') return 'filled'
   if (normalized === 'canceled' || normalized === 'cancelled') return 'canceled'
   if (normalized === 'expired') return 'expired'
+  if (normalized.includes('reject') || normalized.includes('error')) return 'rejected'
   return 'unknown'
+}
+
+const STATUS_PHASE_HEADLINES: Record<StatusPhase, string> = {
+  submitted: 'Order submitted',
+  processing: 'Processing on CLOB',
+  pending: 'Pending confirmation',
+  open: 'Order open',
+  partial: 'Order partially filled',
+  filled: 'Order filled',
+  canceled: 'Order canceled',
+  expired: 'Order expired',
+  rejected: 'Order rejected',
+  unknown: 'Status pending',
+}
+
+const STATUS_SIMPLE_LABELS: Record<StatusPhase, string> = {
+  submitted: 'Submitted',
+  processing: 'Processing',
+  pending: 'Pending',
+  open: 'Open',
+  partial: 'Partial',
+  filled: 'Filled',
+  canceled: 'Canceled',
+  expired: 'Expired',
+  rejected: 'Rejected',
+  unknown: 'Unknown',
+}
+
+function getOrderStatusLabel(status?: string | null) {
+  const phase = normalizeStatusPhase(status)
+  return STATUS_SIMPLE_LABELS[phase] || 'Unknown'
 }
 
 function resolveOutcomePrice(
@@ -363,7 +411,7 @@ function TradeExecutePageInner() {
       limitPriceValue > 0 &&
       contractsValue !== null &&
       contractsValue > 0 &&
-      total >= 1
+      meetsMinimumTradeUsd(total)
     )
   }, [estimatedTotal, form.tokenId, limitPriceValue, contractsValue])
   const elapsed = record ? formatElapsedDetailed(record.trade_timestamp, nowMs) : '—'
@@ -396,14 +444,41 @@ function TradeExecutePageInner() {
   const notEnoughFunds =
     estimatedTotal !== null && availableBalance !== null && estimatedTotal > availableBalance
 
-  const orderStatus = statusData?.status ? String(statusData.status).toLowerCase() : null
-  const isTerminal = orderStatus ? TERMINAL_STATUSES.has(orderStatus) : false
+  const minimumTotalNotMet =
+    estimatedTotal !== null && !meetsMinimumTradeUsd(estimatedTotal)
+
+  const isOrderSent = Boolean(orderId)
+  const slippageLabel =
+    slippagePreset === 'custom' ? `${customSlippage || '0'}% (custom)` : `${slippagePreset}%`
+  const orderBehaviorLabel =
+    form.orderType === 'IOC' ? "Immediate or Cancel (IOC)" : "Good 'Til Canceled (GTC)"
+  const amountUsdLabel =
+    estimatedTotal !== null && Number.isFinite(estimatedTotal)
+      ? formatMoney(estimatedTotal)
+      : `${amountInput || '0'} USD`
+  const amountContractsLabel =
+    contractsValue !== null && Number.isFinite(contractsValue)
+      ? `${formatNumber(contractsValue)} contracts`
+      : `${amountInput || '0'} contracts`
+  const confirmationPrimaryLabel =
+    amountMode === 'usd' ? amountUsdLabel : amountContractsLabel
+  const confirmationSecondaryLabel =
+    amountMode === 'usd'
+      ? `${amountContractsLabel} (est)`
+      : `${amountUsdLabel} (est)`
+
+  const reportedOrderStatus = statusData?.status ? String(statusData.status).trim() : null
+  const orderStatusLabel = getOrderStatusLabel(reportedOrderStatus)
+  const statusPhaseHeadline = STATUS_PHASE_HEADLINES[statusPhase] || 'Status pending'
+  const isTerminal = TERMINAL_STATUS_PHASES.has(statusPhase)
   const filledSize = statusData?.filledSize ?? null
   const totalSize = statusData?.size ?? null
   const fillProgress =
     filledSize !== null && totalSize !== null && totalSize > 0
       ? Math.min(100, Math.max(0, (filledSize / totalSize) * 100))
       : null
+  const showFillProgress =
+    fillProgress !== null && (statusPhase === 'open' || statusPhase === 'partial')
 
   const resetRecordState = () => {
     setTradeRecord(null)
@@ -594,7 +669,6 @@ function TradeExecutePageInner() {
 
   const handleExecute = async () => {
     setSubmitError(null)
-    setSubmitResult(null)
 
     if (!canSubmit) {
       const total = estimatedTotal ?? 0
@@ -602,7 +676,7 @@ function TradeExecutePageInner() {
         setSubmitError('Fill in amount and slippage before sending.')
         return
       }
-      if (total < 1) {
+      if (!meetsMinimumTradeUsd(total)) {
         setSubmitError('Total must be at least $1.')
         return
       }
@@ -637,7 +711,6 @@ function TradeExecutePageInner() {
         setSubmitError(data?.error || data?.message || 'Send failed')
         return
       }
-      setSubmitResult(data)
       const resolvedOrderId =
         data?.orderId ||
         data?.orderID ||
@@ -692,15 +765,12 @@ function TradeExecutePageInner() {
           }
           setStatusData(data)
           setStatusError(null)
-          const nextStatus = data?.status ? String(data.status) : ''
-          const phase = normalizeStatusPhase(nextStatus)
-          if (phase === 'open' || phase === 'partial') {
-            setStatusPhase(phase)
-          } else if (TERMINAL_STATUSES.has(nextStatus.toLowerCase())) {
-            setStatusPhase(phase)
-            if (intervalId) clearInterval(intervalId)
-          } else if (nextStatus) {
-            setStatusPhase('unknown')
+          const rawStatus = data?.status ? String(data.status) : ''
+          const phase = normalizeStatusPhase(rawStatus)
+          setStatusPhase(phase)
+          if (TERMINAL_STATUS_PHASES.has(phase) && intervalId) {
+            clearInterval(intervalId)
+            intervalId = null
           }
         }
       } catch (err: any) {
@@ -915,7 +985,7 @@ function TradeExecutePageInner() {
                   priceDeltaPct >= 0 ? 'text-emerald-600' : 'text-rose-500'
                 }`}
               >
-                {`${priceDeltaPct > 0 ? '+' : ''}${priceDeltaPct.toFixed(2)}% since trade`}
+                {`${priceDeltaPct > 0 ? '+' : ''}${priceDeltaPct.toFixed(2)}% since original trade`}
               </span>
             )}
           </div>
@@ -923,221 +993,249 @@ function TradeExecutePageInner() {
             <div className="text-xs text-rose-600">{latestPriceError}</div>
           )}
 
-          <div className="rounded-md border border-slate-200 bg-white px-4 py-4 space-y-4">
-            <div className="flex items-center justify-between gap-3">
+          {isOrderSent ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 shadow-sm space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs font-medium text-slate-500">Order Size</div>
+                  <div className="text-lg font-semibold text-slate-900">
+                    {confirmationPrimaryLabel}
+                  </div>
+                  <div className="text-xs text-slate-500">{confirmationSecondaryLabel}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-slate-500">Limit Price</div>
+                  <div className="text-lg font-semibold text-slate-900">{limitPriceLabel}</div>
+                  <div className="text-xs text-slate-500">Direction: {directionLabel}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-slate-500">Slippage Tolerance</div>
+                  <div className="text-sm font-semibold text-slate-900">{slippageLabel}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-slate-500">Order Behavior</div>
+                  <div className="text-sm font-semibold text-slate-900">{orderBehaviorLabel}</div>
+                </div>
+                <div className="sm:col-span-2">
+                  <div className="text-xs font-medium text-slate-500">Token</div>
+                  <div className="text-sm font-semibold text-slate-900">{form.tokenId || '—'}</div>
+                </div>
+              </div>
+              <div className="text-xs text-slate-500">
+                Tracking order updates via the CLOB every ~0.25s until the order completes or you close{' '}
+                this screen.
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-md border border-slate-200 bg-white px-4 py-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-medium text-slate-500">Amount</div>
+                    <div className="text-sm font-semibold text-slate-900">
+                      {amountMode === 'usd' ? 'USD entry' : 'Contracts entry'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAmountMode(amountMode === 'usd' ? 'contracts' : 'usd')}
+                    className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600"
+                  >
+                    ⇄
+                  </button>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm">
+                  <div className="mb-4 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAmountMode('usd')}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
+                        amountMode === 'usd'
+                          ? 'bg-slate-900 text-white'
+                          : 'border border-slate-200 bg-white text-slate-500'
+                      }`}
+                    >
+                      USD
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAmountMode('contracts')}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
+                        amountMode === 'contracts'
+                          ? 'bg-slate-900 text-white'
+                          : 'border border-slate-200 bg-white text-slate-500'
+                      }`}
+                    >
+                      Contracts
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm sm:w-auto">
+                      <span className="text-sm font-semibold text-slate-900">$</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.0001"
+                        value={amountInput}
+                        onChange={(e) => setAmountInput(e.target.value)}
+                        className="w-full flex-1 border-none bg-white px-1 text-lg font-semibold text-slate-900 outline-none focus:outline-none"
+                        placeholder={amountMode === 'usd' ? '1.20' : '10'}
+                      />
+                    </div>
+                    <div className="text-sm font-medium text-slate-700">
+                      = {amountMode === 'usd'
+                        ? `${formatNumber(contractsValue)} Contracts (est)`
+                        : `${formatMoney(estimatedTotal)} USD (est)`}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+                  <span>
+                    {amountMode === 'usd'
+                      ? `${amountInput || '0'} USD`
+                      : `${amountInput || '0'} contracts`}
+                  </span>
+                  <span>
+                    {amountMode === 'usd'
+                      ? `≈ ${formatNumber(contractsValue)} contracts`
+                      : `≈ ${formatMoney(estimatedTotal)} USD`}
+                  </span>
+                </div>
+                {(minimumTotalNotMet || notEnoughFunds) ? (
+                  <div className="flex flex-wrap gap-3 text-xs text-rose-600">
+                    {minimumTotalNotMet && <span>Minimum total is $1.</span>}
+                    {notEnoughFunds && <span>Not enough funds available.</span>}
+                  </div>
+                ) : null}
+              </div>
               <div>
-                <div className="text-xs font-medium text-slate-500">Amount</div>
-                <div className="text-sm font-semibold text-slate-900">
-                  {amountMode === 'usd' ? 'USD entry' : 'Contracts entry'}
+                <div className="flex items-center gap-2">
+                  <div className="text-xs font-medium text-slate-500">Slippage Tolerance</div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSlippageInfo((prev) => !prev)}
+                    className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"
+                    aria-expanded={showSlippageInfo}
+                    aria-controls="slippage-tooltip"
+                  >
+                    ?
+                  </button>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAmountMode(amountMode === 'usd' ? 'contracts' : 'usd')}
-                className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600"
-              >
-                ⇄
-              </button>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm">
-              <div className="mb-4 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setAmountMode('usd')}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
-                    amountMode === 'usd'
-                      ? 'bg-slate-900 text-white'
-                      : 'border border-slate-200 bg-white text-slate-500'
-                  }`}
-                >
-                  USD
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAmountMode('contracts')}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
-                    amountMode === 'contracts'
-                      ? 'bg-slate-900 text-white'
-                      : 'border border-slate-200 bg-white text-slate-500'
-                  }`}
-                >
-                  Contracts
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm sm:w-auto">
-                  <span className="text-sm font-semibold text-slate-900">$</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.0001"
-                    value={amountInput}
-                    onChange={(e) => setAmountInput(e.target.value)}
-                    className="w-full flex-1 border-none bg-white px-1 text-lg font-semibold text-slate-900 outline-none focus:outline-none"
-                    placeholder={amountMode === 'usd' ? '1.20' : '10'}
-                  />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {[0, 1, 3, 5].map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setSlippagePreset(value)}
+                      className={`rounded-md border px-2 py-1 text-xs ${
+                        slippagePreset === value
+                          ? 'border-slate-900 bg-slate-900 text-white'
+                          : 'border-slate-200 bg-white text-slate-600'
+                      }`}
+                    >
+                      {value}%
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setSlippagePreset('custom')}
+                    className={`rounded-md border px-2 py-1 text-xs ${
+                      slippagePreset === 'custom'
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-200 bg-white text-slate-600'
+                    }`}
+                  >
+                    Custom
+                  </button>
+                  {slippagePreset === 'custom' && (
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={customSlippage}
+                      onChange={(e) => setCustomSlippage(e.target.value)}
+                      className="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      placeholder="0.5"
+                    />
+                  )}
                 </div>
-                <div className="text-sm font-medium text-slate-700">
-                  = {amountMode === 'usd'
-                    ? `${formatNumber(contractsValue)} Contracts (est)`
-                    : `${formatMoney(estimatedTotal)} USD (est)`}
+                <div className="mt-2 text-xs text-slate-500">
+                  {limitPriceValue
+                    ? `This order will only fill at ${limitPriceLabel} per contract or less.`
+                    : 'Set slippage to preview the upper bound.'}
                 </div>
+                {showSlippageInfo && (
+                  <div
+                    id="slippage-tooltip"
+                    className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
+                  >
+                    {SLIPPAGE_TOOLTIP}
+                  </div>
+                )}
               </div>
-            </div>
-            <div className="flex flex-wrap gap-4 text-xs text-slate-500">
-              <span>
-                {amountMode === 'usd'
-                  ? `${amountInput || '0'} USD`
-                  : `${amountInput || '0'} contracts`}
-              </span>
-              <span>
-                {amountMode === 'usd'
-                  ? `≈ ${formatNumber(contractsValue)} contracts`
-                  : `≈ ${formatMoney(estimatedTotal)} USD`}
-              </span>
-            </div>
-            {(estimatedTotal !== null && estimatedTotal < 1) || notEnoughFunds ? (
-              <div className="flex flex-wrap gap-3 text-xs text-rose-600">
-                {estimatedTotal !== null && estimatedTotal < 1 && <span>Minimum total is $1.</span>}
-                {notEnoughFunds && <span>Not enough funds available.</span>}
-              </div>
-            ) : null}
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="text-xs font-medium text-slate-500">Slippage Tolerance</div>
-              <button
-                type="button"
-                onClick={() => setShowSlippageInfo((prev) => !prev)}
-                className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"
-                aria-expanded={showSlippageInfo}
-                aria-controls="slippage-tooltip"
-              >
-                ?
-              </button>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {[0, 1, 3, 5].map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setSlippagePreset(value)}
-                  className={`rounded-md border px-2 py-1 text-xs ${
-                    slippagePreset === value
-                      ? 'border-slate-900 bg-slate-900 text-white'
-                      : 'border-slate-200 bg-white text-slate-600'
-                  }`}
-                >
-                  {value}%
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setSlippagePreset('custom')}
-                className={`rounded-md border px-2 py-1 text-xs ${
-                  slippagePreset === 'custom'
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-200 bg-white text-slate-600'
-                }`}
-              >
-                Custom
-              </button>
-              {slippagePreset === 'custom' && (
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={customSlippage}
-                  onChange={(e) => setCustomSlippage(e.target.value)}
-                  className="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  placeholder="0.5"
-                />
-              )}
-            </div>
-            <div className="mt-2 text-xs text-slate-500">
-              {limitPriceValue
-                ? `This order will only fill at ${limitPriceLabel} per contract or less.`
-                : 'Set slippage to preview the upper bound.'}
-            </div>
-            {showSlippageInfo && (
-              <div
-                id="slippage-tooltip"
-                className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
-              >
-                {SLIPPAGE_TOOLTIP}
-              </div>
-            )}
-          </div>
 
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="text-xs font-medium text-slate-500">Order Behavior</div>
-              <button
-                type="button"
-                onClick={() => setShowOrderBehaviorInfo((prev) => !prev)}
-                className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"
-                aria-expanded={showOrderBehaviorInfo}
-                aria-controls="order-behavior-tooltip"
-              >
-                ?
-              </button>
-            </div>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                <input
-                  type="radio"
-                  name="orderBehavior"
-                  checked={form.orderType === 'IOC'}
-                  onChange={() => setForm((prev) => ({ ...prev, orderType: 'IOC' }))}
-                />
-                <span>Immediate or Cancel (recommended)</span>
-              </label>
-              <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                <input
-                  type="radio"
-                  name="orderBehavior"
-                  checked={form.orderType === 'GTC'}
-                  onChange={() => setForm((prev) => ({ ...prev, orderType: 'GTC' }))}
-                />
-                <span>Good 'Til Canceled</span>
-              </label>
-            </div>
-            {showOrderBehaviorInfo && (
-              <div
-                id="order-behavior-tooltip"
-                className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
-              >
-                {ORDER_BEHAVIOR_TOOLTIP}
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="text-xs font-medium text-slate-500">Order Behavior</div>
+                  <button
+                    type="button"
+                    onClick={() => setShowOrderBehaviorInfo((prev) => !prev)}
+                    className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"
+                    aria-expanded={showOrderBehaviorInfo}
+                    aria-controls="order-behavior-tooltip"
+                  >
+                    ?
+                  </button>
+                </div>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <input
+                      type="radio"
+                      name="orderBehavior"
+                      checked={form.orderType === 'IOC'}
+                      onChange={() => setForm((prev) => ({ ...prev, orderType: 'IOC' }))}
+                    />
+                    <span>Immediate or Cancel (recommended)</span>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <input
+                      type="radio"
+                      name="orderBehavior"
+                      checked={form.orderType === 'GTC'}
+                      onChange={() => setForm((prev) => ({ ...prev, orderType: 'GTC' }))}
+                    />
+                    <span>Good 'Til Canceled</span>
+                  </label>
+                </div>
+                {showOrderBehaviorInfo && (
+                  <div
+                    id="order-behavior-tooltip"
+                    className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
+                  >
+                    {ORDER_BEHAVIOR_TOOLTIP}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={handleExecute}
-              disabled={!canSubmit || submitLoading}
-              className="inline-flex items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-            >
-              {submitLoading ? 'Submitting…' : 'Send Order'}
-            </button>
-            <div className="text-xs text-slate-500">
-              This sends a limit order. It may fill immediately, partially, or not at all.
-            </div>
-          </div>
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={handleExecute}
+                  disabled={!canSubmit || submitLoading}
+                  className="inline-flex items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                >
+                  {submitLoading ? 'Submitting…' : 'Send Order'}
+                </button>
+                <div className="text-xs text-slate-500">
+                  This sends a limit order. It may fill immediately, partially, or not at all.
+                </div>
+              </div>
+            </>
+          )}
 
           {submitError && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
               {submitError}
-            </div>
-          )}
-
-          {submitResult && (
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
-              <h3 className="text-sm font-semibold text-slate-800">Order Result</h3>
-              <pre className="mt-2 overflow-auto whitespace-pre-wrap rounded bg-white px-3 py-2 text-xs text-slate-800">
-                {JSON.stringify(submitResult, null, 2)}
-              </pre>
             </div>
           )}
 
@@ -1147,21 +1245,11 @@ function TradeExecutePageInner() {
               <p className="mt-1 text-xs text-slate-500">
                 Order status is shown in real time. Polymarket may take longer to reflect updates.
               </p>
-              <div className="mt-2 text-sm text-slate-700">
-                {isTerminal
-                  ? 'Completed'
-                  : statusPhase === 'open' || statusPhase === 'partial'
-                    ? 'Open'
-                    : statusPhase === 'processing'
-                      ? 'Processing'
-                      : 'Submitted'}
+              <div className="mt-2 text-sm text-slate-700">{statusPhaseHeadline}</div>
+              <div className="mt-1 text-xs text-slate-500">
+                Status: {orderStatusLabel}
               </div>
-              {orderStatus && (
-                <div className="mt-1 text-xs text-slate-500">
-                  Status: {orderStatus}
-                </div>
-              )}
-              {fillProgress !== null && (orderStatus === 'open' || orderStatus === 'partial') && (
+              {showFillProgress && (
                 <div className="mt-2">
                   <div className="text-xs text-slate-500">
                     Filled {formatNumber(filledSize)} / {formatNumber(totalSize)}

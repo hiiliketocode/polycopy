@@ -7,11 +7,9 @@ export interface OrderRow {
   marketTitle: string
   marketImageUrl: string | null
   marketIsOpen: boolean | null
-  marketSubtitle: string
   traderId: string
   traderName: string
   traderAvatarUrl: string | null
-  traderWalletShort: string
   side: string
   outcome: string | null
   size: number

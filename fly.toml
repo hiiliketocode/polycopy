@@ -1,0 +1,37 @@
+# Fly.io configuration for PolyCopy
+# Generated for Next.js deployment with cron job support
+#
+# To use this file:
+# 1. Install flyctl: brew install flyctl (or see https://fly.io/docs/hands-on/installing-flyctl/)
+# 2. Run: flyctl auth login
+# 3. Run: flyctl launch (this will update the app name below)
+# 4. Set secrets: flyctl secrets set CRON_SECRET=xxx NEXT_PUBLIC_SUPABASE_URL=xxx SUPABASE_SERVICE_ROLE_KEY=xxx
+# 5. Deploy: flyctl deploy
+#
+# For cron setup, see docs/fly-cron-setup.md
+
+app = "polycopy"  # Update this after running 'flyctl launch'
+primary_region = "iad"  # Change to your preferred region (e.g., "lhr", "fra", "sjc")
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
+# Note: Cron jobs should be set up separately
+# See docs/fly-cron-setup.md for options (GitHub Actions recommended)
+
