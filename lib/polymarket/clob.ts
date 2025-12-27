@@ -1,8 +1,6 @@
 import { ClobClient } from '@polymarket/clob-client'
 import { TurnkeySigner } from './turnkey-signer'
 import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
-import { ensureEvomiProxyAgent } from '@/lib/evomi/proxy'
-
 const POLYGON_CHAIN_ID = 137
 
 export type SignatureType = 0 | 1 | 2
@@ -31,12 +29,6 @@ export async function createClobClient(
   apiCreds?: ApiCredentials,
   funder?: string
 ): Promise<ClobClient> {
-  try {
-    await ensureEvomiProxyAgent()
-  } catch (error: any) {
-    console.error('[EVOMI] Failed to configure proxy agent', error?.message ?? error)
-  }
-
   const clobBaseUrl = getValidatedPolymarketClobBaseUrl()
   console.log('[CLOB] Creating CLOB client')
   console.log('[CLOB] Host:', clobBaseUrl)

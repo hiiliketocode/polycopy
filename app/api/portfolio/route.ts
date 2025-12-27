@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client'
+import { resolveFeatureTier, tierHasPremiumAccess } from '@/lib/feature-tier'
 
 function createServiceClient() {
   return createClient(
@@ -77,7 +78,7 @@ export async function GET() {
     const supabase = createServiceClient()
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('is_premium, premium_since, trading_wallet_address')
+      .select('is_premium, is_admin, premium_since, trading_wallet_address')
       .eq('id', user.id)
       .single()
 
@@ -86,19 +87,24 @@ export async function GET() {
       return NextResponse.json({ error: 'Failed to load profile' }, { status: 500 })
     }
 
+    const featureTier = resolveFeatureTier(true, profile)
+    const hasPremiumAccess = tierHasPremiumAccess(featureTier)
+
     const account = {
       id: user.id,
       email: user.email || null,
       is_premium: Boolean(profile?.is_premium),
+      is_admin: Boolean(profile?.is_admin),
+      featureTier,
       premium_since: profile?.premium_since || null,
       trading_wallet_address: profile?.trading_wallet_address || null,
       wallet_source: profile?.trading_wallet_address ? 'profile' : null,
       has_clob_credentials: false
     }
 
-    if (!account.is_premium) {
+    if (!hasPremiumAccess) {
       return NextResponse.json(
-        { account, error: 'Premium required' },
+        { account, error: 'Premium or admin access required' },
         { status: 403 }
       )
     }
