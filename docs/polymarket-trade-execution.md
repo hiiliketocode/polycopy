@@ -19,12 +19,8 @@
 - Server-side code must never spoof browser cookies or attempt to solve Cloudflare challenges; treat those responses as blocked traffic and escalate to the site owner if needed.
 - When you see `blocked_by_cloudflare`, check whether the IP changed (datacenter rotation) or if the rate/pattern of orders increased, then step through the logs to see the last logged `requestUrl` and Ray ID.
 
-## Evomi residential proxy (optional)
+## Evomi residential proxy (trade execution only)
 
-- Set `EVOMI_API_KEY` to the key provided by the Evomi dashboard (`https://api.evomi.com/public`).
-  The server will fetch the configured proxy credentials (endpoint, username/password, ports) and configure `axios` to send CLOB traffic through that residential proxy.
-- `EVOMI_PROXY_PRODUCT` can override the default product code (`rpc`). If it's not set or the specified product is missing, Polycopy falls back to the first product the API returned.
-- `EVOMI_PROXY_PROTOCOL` defaults to `http` but may be set to `https` if the product advertises an HTTPS proxy port.
-- `EVOMI_PROXY_CACHE_SECONDS` controls how long we keep the fetched proxy URL before calling the API again (default 300 seconds). The helper reuses the cached credentials across requests to reduce throttling.
-- If you already have a fixed proxy endpoint with credentials (such as the `core-residential.evomi.com` pool), set `EVOMI_PROXY_ENDPOINT`, `EVOMI_PROXY_PORT`, `EVOMI_PROXY_USERNAME`, and `EVOMI_PROXY_PASSWORD`. When these are all present the helper bypasses the public API and applies the provided URL directly so you can control the exact node/pool used.
-- Keep the API key confidential (do not check it into git), and rotate it via the Evomi dashboard if it ever gets exposed.
+- The order placement route (`/api/polymarket/orders/place`) now calls `ensureEvomiProxyAgent` before dispatching a trade, so it will configure `axios` with the most recently fetched Evomi residential proxy credentials.
+- Provide the same environment variables as before (`EVOMI_API_KEY` for the public API or the fixed `EVOMI_PROXY_*` overrides) to control which node/pool is used, the cache TTL (`EVOMI_PROXY_CACHE_SECONDS`), and the product/protocol (`EVOMI_PROXY_PRODUCT`, `EVOMI_PROXY_PROTOCOL`).
+- All other routes bypass this proxy and talk directly to the configured CLOB host via `POLYMARKET_CLOB_BASE_URL`, so TLS socket information from Evomi only surfaces here while the order call is active.

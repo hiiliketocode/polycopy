@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
+import { resolveFeatureTier, tierHasPremiumAccess } from '@/lib/feature-tier';
 import type { User } from '@supabase/supabase-js';
 import Header from '../components/Header';
 import ImportWalletModal from '@/components/ImportWalletModal';
@@ -63,7 +64,9 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<any>(null);
   const [showWalletSetup, setShowWalletSetup] = useState(false);
   const [disconnectingWallet, setDisconnectingWallet] = useState(false);
-  const isPremium = Boolean(profile?.is_premium);
+  const featureTier = resolveFeatureTier(Boolean(user), profile);
+  const hasPremiumAccess = tierHasPremiumAccess(featureTier);
+  const isAdmin = featureTier === 'admin';
   
   // Display name state
   const [displayName, setDisplayName] = useState<string>('You');
@@ -154,7 +157,7 @@ export default function ProfilePage() {
         // Fetch premium status and trading wallet from profile
         const { data: profileData, error: profileError} = await supabase
           .from('profiles')
-          .select('is_premium, trading_wallet_address, premium_since')
+          .select('is_premium, is_admin, trading_wallet_address, premium_since')
           .eq('id', user.id)
           .single();
 
@@ -844,7 +847,14 @@ export default function ProfilePage() {
               <div>
                 {/* Username */}
                 <h1 className="text-xl font-bold text-slate-900 mb-2">{displayName}</h1>
-                
+                {isAdmin && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-0.5 text-xs font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200 rounded-full uppercase tracking-wide">
+                      Admin
+                    </span>
+                  </div>
+                )}
+               
                 {/* Stats Section Header */}
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Performance</span>
@@ -929,8 +939,8 @@ export default function ProfilePage() {
           </div>
         </div>
 
-          {/* Polymarket Wallet Section - Only show for premium users */}
-          {isPremium && (
+          {/* Polymarket Wallet Section - Only show for premium/admin users */}
+          {hasPremiumAccess && (
           <div className="mb-6">
             <h2 className="text-label text-slate-400 mb-4">POLYMARKET WALLET</h2>
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
@@ -1601,8 +1611,8 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Polymarket Wallet - Only show for premium users */}
-          {isPremium && (
+          {/* Polymarket Wallet - Only show for premium/admin users */}
+          {hasPremiumAccess && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-4">
               <div className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">

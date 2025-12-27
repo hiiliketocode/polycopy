@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from '@/lib/feature-tier';
 import type { User } from '@supabase/supabase-js';
 import Header from '@/app/components/Header';
 
@@ -419,7 +420,7 @@ export default function FeedPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isPremium, setIsPremium] = useState(false);
+  const [userTier, setUserTier] = useState<FeatureTier>('anon');
   const [filter, setFilter] = useState<'all' | 'buys' | 'sells'>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   
@@ -547,9 +548,15 @@ export default function FeedPage() {
     fetchCopiedTrades();
   }, [user]);
 
-  // Fetch premium status
+  // Fetch feature tier for the current user (premium/admin vs. registered)
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setUserTier('anon');
+      return;
+    }
+
+    // Assume registered while we fetch premium/admin status
+    setUserTier('registered');
 
     let cancelled = false;
 
@@ -557,20 +564,26 @@ export default function FeedPage() {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('is_premium')
+          .select('is_premium, is_admin')
           .eq('id', user.id)
           .single();
 
         if (profileError) {
           console.error('Error fetching profile:', profileError);
+          if (!cancelled) {
+            setUserTier(resolveFeatureTier(true, null));
+          }
+          return;
         }
 
         if (!cancelled) {
-          setIsPremium(Boolean(profileData?.is_premium));
+          setUserTier(resolveFeatureTier(true, profileData));
         }
       } catch (err) {
         console.error('Error fetching profile:', err);
-        if (!cancelled) setIsPremium(false);
+        if (!cancelled) {
+          setUserTier('registered');
+        }
       }
     };
 
@@ -1427,7 +1440,7 @@ export default function FeedPage() {
                 size={trade.trade.size}
                 timestamp={trade.trade.timestamp}
                 isCopied={isTradecopied(trade)}
-                showRealCopy={isPremium}
+                showRealCopy={tierHasPremiumAccess(userTier)}
                 onCopyTrade={() => handleCopyTrade(trade)}
                 onRealCopy={() => handleRealCopy(trade)}
                 onMarkAsCopied={() => handleMarkAsCopied(trade)}
