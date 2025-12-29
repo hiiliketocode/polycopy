@@ -141,10 +141,10 @@ export default function TradingTestPage() {
       price: Number(price),
       confirm: true,
     }
-    const res = await fetchJson('/api/polymarket/positions/close', {
+    const res = await fetchJson('/api/polymarket/orders/place', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, side: 'SELL' }),
     })
     setCloseResult(res)
   }

@@ -5,14 +5,14 @@ import { POST_ORDER } from '@polymarket/clob-client/dist/endpoints.js'
 import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
 import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
 import { ensureEvomiProxyAgent } from '@/lib/evomi/proxy'
-import {
-  buildLocalGuardResponse,
-  getBodySnippet,
-} from '@/lib/polymarket/order-route-helpers'
+import { getBodySnippet } from '@/lib/polymarket/order-route-helpers'
+import { sanitizeError } from '@/lib/http/sanitize-error'
 
 const DEV_BYPASS_AUTH =
   process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
   Boolean(process.env.TURNKEY_DEV_BYPASS_USER_ID)
+
+const HANDLER_FINGERPRINT = 'app/api/polymarket/orders/place/route.ts'
 
 type Body = {
   tokenId?: string
@@ -22,6 +22,17 @@ type Body = {
   orderType?: 'GTC' | 'FOK' | 'IOC'
   confirm?: boolean
 }
+
+function respondWithMetadata(body: Record<string, unknown>, status: number) {
+  const payload = {
+    handlerFingerprint: HANDLER_FINGERPRINT,
+    ...body,
+  }
+  const response = NextResponse.json(payload, { status })
+  response.headers.set('x-polycopy-handler', HANDLER_FINGERPRINT)
+  return response
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const {
@@ -35,8 +46,12 @@ export async function POST(request: NextRequest) {
   }
 
   if (!userId) {
-    return buildLocalGuardResponse(
-      { error: 'Unauthorized - please log in', details: authError?.message },
+    return respondWithMetadata(
+      {
+        error: 'Unauthorized - please log in',
+        details: authError?.message,
+        source: 'local_guard',
+      },
       401
     )
   }
@@ -47,15 +62,15 @@ export async function POST(request: NextRequest) {
   const requestId = request.headers.get('x-request-id') ?? null
 
   if (!confirm) {
-    return buildLocalGuardResponse(
-      { error: 'confirm=true required to place order' },
+    return respondWithMetadata(
+      { error: 'confirm=true required to place order', source: 'local_guard' },
       400
     )
   }
 
   if (!tokenId || !price || !amount || !side) {
-    return buildLocalGuardResponse(
-      { error: 'tokenId, price, amount, and side are required' },
+    return respondWithMetadata(
+      { error: 'tokenId, price, amount, and side are required', source: 'local_guard' },
       400
     )
   }
@@ -102,6 +117,13 @@ export async function POST(request: NextRequest) {
     const clobBaseUrl = getValidatedPolymarketClobBaseUrl()
     const requestUrl = new URL(POST_ORDER, clobBaseUrl).toString()
     const upstreamHost = new URL(clobBaseUrl).hostname
+    console.log('[POLY-ORDER-PLACE] CLOB order', {
+      requestId,
+      upstreamHost,
+      side,
+      orderType,
+      keys: Object.keys(body ?? {}),
+    })
 
     const order = await client.createOrder(
       { tokenID: tokenId, price, size: amount, side: side as any },
@@ -112,17 +134,21 @@ export async function POST(request: NextRequest) {
     try {
       rawResult = await client.postOrder(order, orderType as any, false)
     } catch (error: any) {
-      // Catch axios errors and extract response data if available
-      // Axios errors may contain circular references, so we extract just the response data
-      if (error?.response) {
-        rawResult = error.response.data ?? error.response
-      } else if (error?.message) {
-        rawResult = { error: error.message, code: error.code }
-      } else {
-        rawResult = String(error)
-      }
+      // Normalize axios/network errors to avoid circular structures that break JSON serialization
+      const message = typeof error?.message === 'string' ? error.message : null
+      const code = typeof error?.code === 'string' ? error.code : null
+      // Prefer upstream data when safe, but avoid bubbling full axios response (circular)
+      const responseData = error?.response?.data
+      rawResult =
+        responseData && typeof responseData === 'object'
+          ? responseData
+          : {
+              error: message || 'Network error placing order',
+              code,
+            }
     }
-    const evaluation = interpretClobOrderResult(rawResult)
+    const safeRawResult = sanitizeForResponse(rawResult) ?? rawResult
+    const evaluation = interpretClobOrderResult(safeRawResult)
     const failedEvaluation = !evaluation.success
     const upstreamStatus = failedEvaluation ? evaluation.status ?? 502 : 200
     const upstreamContentType = evaluation.contentType
@@ -144,8 +170,9 @@ export async function POST(request: NextRequest) {
 
     if (failedEvaluation) {
       const snippet = getBodySnippet(evaluation.raw ?? '')
-      return NextResponse.json(
+      return respondWithMetadata(
         {
+          ok: false,
           error: evaluation.message,
           errorType: evaluation.errorType,
           rayId: evaluation.rayId,
@@ -163,31 +190,39 @@ export async function POST(request: NextRequest) {
             : undefined,
           snippet,
         },
-        { status: upstreamStatus }
+        upstreamStatus
       )
     }
 
     const { orderId } = evaluation
 
-    return NextResponse.json({
-      ok: true,
-      proxy: proxyAddress,
-      signer: signerAddress,
-      signatureType,
-      orderId,
-      submittedAt: new Date().toISOString(),
-      source: 'upstream',
-      upstreamHost,
-      upstreamStatus,
-      isHtml: false,
-      raw: sanitizeForResponse(evaluation.raw),
-      contentType: evaluation.contentType,
-    })
+    return respondWithMetadata(
+      {
+        ok: true,
+        proxy: proxyAddress,
+        signer: signerAddress,
+        signatureType,
+        orderId,
+        submittedAt: new Date().toISOString(),
+        source: 'upstream',
+        upstreamHost,
+        upstreamStatus,
+        isHtml: false,
+        raw: sanitizeForResponse(evaluation.raw),
+        contentType: evaluation.contentType,
+      },
+      200
+    )
   } catch (error: any) {
-    console.error('[POLY-ORDER-PLACE] Error:', error?.message || error)
-    return buildLocalGuardResponse(
-      { error: error?.message || 'Failed to place order' },
-      500
+    const safeError = sanitizeError(error)
+    console.error('[POLY-ORDER-PLACE] Error (sanitized):', safeError)
+    return respondWithMetadata(
+      {
+        ok: false,
+        source: 'server',
+        error: safeError,
+      },
+      safeError.status && Number.isInteger(safeError.status) ? safeError.status : 500
     )
   }
 }

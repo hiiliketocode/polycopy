@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
-import { resolveOrdersTableName } from '@/lib/orders/table'
+import { resolveOrdersTableName, type OrdersTableName } from '@/lib/orders/table'
 import { normalizeOrderStatus } from '@/lib/orders/normalizeStatus'
 import { OrderRow } from '@/lib/orders/types'
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar'
@@ -25,238 +25,270 @@ function createServiceClient() {
 
 const marketCacheColumns = 'market_id, title, image_url, is_open, metadata'
 const traderProfileColumns = 'trader_id, display_name, avatar_url, wallet_address'
-const MARKET_METADATA_FETCH_LIMIT = 32
+const MARKET_METADATA_FETCH_LIMIT = 16
+const MARKET_METADATA_FETCH_CONCURRENCY = 4
+const MARKET_METADATA_REQUEST_TIMEOUT_MS = 6000
 
 export async function GET() {
-  const supabaseAuth = await createAuthClient()
-  const {
-    data: { user },
-    error: authError,
-  } = await supabaseAuth.auth.getUser()
+  try {
+    const supabaseAuth = await createAuthClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabaseAuth.auth.getUser()
 
-  if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized', details: authError?.message },
-      { status: 401 }
-    )
-  }
-
-  const supabase = createServiceClient()
-  const ordersTable = await resolveOrdersTableName(supabase)
-  const { data: credential } = await supabase
-    .from('clob_credentials')
-    .select('polymarket_account_address')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  const walletAddress = credential?.polymarket_account_address?.toLowerCase() || null
-  if (!walletAddress) {
-    return NextResponse.json({ orders: [] })
-  }
-
-  const { data: trader } = await supabase
-    .from('traders')
-    .select('id')
-    .eq('wallet_address', walletAddress)
-    .maybeSingle()
-
-  if (!trader?.id) {
-    return NextResponse.json({ orders: [] })
-  }
-
-  const { data: accountProfile, error: accountProfileError } = await supabase
-    .from('profiles')
-    .select('polymarket_username')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (accountProfileError) {
-    console.warn('[orders] profile lookup failed', accountProfileError)
-  }
-
-  const userPolymarketUsername = accountProfile?.polymarket_username ?? null
-  const copiedTraderLookup = await fetchCopiedTraderNames(supabase, user.id)
-
-  const { data: orders, error: ordersError } = await supabase
-    .from(ordersTable)
-    .select(
-      'order_id, trader_id, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, raw'
-    )
-    .eq('trader_id', trader.id)
-    .order('created_at', { ascending: false })
-    .limit(200)
-
-  if (ordersError) {
-    console.error('[orders] orders query error', ordersError)
-    return NextResponse.json(
-      { error: 'Failed to load orders', details: ordersError.message },
-      { status: 500 }
-    )
-  }
-
-  const marketIds = Array.from(
-    new Set(
-      (orders || [])
-        .map((order) => order.market_id)
-        .filter(Boolean) as string[]
-    )
-  )
-  const traderIds = Array.from(
-    new Set(
-      (orders || [])
-        .map((order) => order.trader_id)
-        .filter(Boolean) as string[]
-    )
-  )
-
-  const marketRows = await fetchMarketCacheRows(supabase, marketIds)
-  const traderRows = await fetchTraderProfiles(supabase, traderIds)
-  const traderRecords = await fetchTraderRecords(supabase, traderIds)
-  const marketCacheMap = new Map<string, MarketCacheRow>()
-  marketRows.forEach((row) => {
-    if (row?.market_id) {
-      marketCacheMap.set(row.market_id, row)
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized', details: authError?.message },
+        { status: 401 }
+      )
     }
-  })
 
-  const traderProfileMap = new Map<string, TraderProfileRow>()
-  traderRows.forEach((row) => {
-    if (row?.trader_id) {
-      traderProfileMap.set(row.trader_id, row)
+    const supabase = createServiceClient()
+    let ordersTable: OrdersTableName
+    try {
+      ordersTable = await resolveOrdersTableName(supabase)
+    } catch (tableError) {
+      console.error('[orders] failed to resolve table name', tableError)
+      return NextResponse.json(
+        {
+          error: 'Orders service unavailable',
+          details: 'Unable to read order metadata',
+        },
+        { status: 503 }
+      )
     }
-  })
 
-  const traderRecordMap = new Map<string, TraderRecordRow>()
-  traderRecords.forEach((row) => {
-    if (row?.trader_id) {
-      traderRecordMap.set(row.trader_id, row)
+    const { data: credential } = await supabase
+      .from('clob_credentials')
+      .select('polymarket_account_address')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const walletAddress = credential?.polymarket_account_address?.toLowerCase() || null
+    if (!walletAddress) {
+      return NextResponse.json({ orders: [] })
     }
-  })
 
-  const marketMetadataMap = await fetchMarketMetadataFromClob(
-    [...new Set(marketIds)].filter(Boolean)
-  )
+    const { data: trader } = await supabase
+      .from('traders')
+      .select('id')
+      .eq('wallet_address', walletAddress)
+      .maybeSingle()
 
-  const cacheUpsertMap = new Map<string, MarketCacheUpsertRow>()
+    if (!trader?.id) {
+      return NextResponse.json({ orders: [] })
+    }
 
-  const enrichedOrders: OrderRow[] = (orders || []).map((order) => {
-    const marketId = String(order.market_id ?? '')
-    const traderId = String(order.trader_id ?? '')
-    const cache = marketCacheMap.get(marketId)
-    const profile = traderProfileMap.get(traderId)
-    const traderRecord = traderRecordMap.get(traderId)
-    const traderWallet = resolveTraderWallet(traderRecord, order.raw)
-    const metadata = marketMetadataMap[marketId]
-    const copiedTraderNameFromWallet =
-      traderWallet && copiedTraderLookup.wallet
-        ? copiedTraderLookup.wallet.get(traderWallet) ?? null
-        : null
-    const copiedTraderNameFromMarket = copiedTraderLookup.marketOutcome.get(
-      getCopiedTraderKey(marketId, order.outcome)
+    const { data: accountProfile, error: accountProfileError } = await supabase
+      .from('profiles')
+      .select('polymarket_username')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    if (accountProfileError) {
+      console.warn('[orders] profile lookup failed', accountProfileError)
+    }
+
+    const userPolymarketUsername = accountProfile?.polymarket_username ?? null
+    const copiedTraderLookup = await fetchCopiedTraderNames(supabase, user.id)
+
+    const { data: orders, error: ordersError } = await supabase
+      .from(ordersTable)
+      .select(
+        'order_id, trader_id, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, raw'
+      )
+      .eq('trader_id', trader.id)
+      .order('created_at', { ascending: false })
+      .limit(200)
+
+    if (ordersError) {
+      console.error('[orders] orders query error', ordersError)
+      return NextResponse.json(
+        { error: 'Failed to load orders', details: ordersError.message },
+        { status: 500 }
+      )
+    }
+
+    const marketIds = Array.from(
+      new Set(
+        (orders || [])
+          .map((order) => order.market_id)
+          .filter(Boolean) as string[]
+      )
     )
-    const marketTitle = getMarketTitle(order, marketId, cache, metadata)
-    const marketImageUrl =
-      cache?.image_url ??
-      metadata?.icon ??
-      metadata?.image ??
-      extractMarketAvatarUrl(order.raw) ??
-      null
-    const marketIsOpen = deriveMarketOpenStatus(cache, order.raw, metadata)
-
-    const sizeValue = parseNumeric(order.size)
-    const filledValue = parseNumeric(order.filled_size)
-    const remainingValue = parseNumeric(order.remaining_size)
-
-    const priceValue = parseNumeric(order.price ?? order.raw?.price ?? order.raw?.avg_price)
-
-    const status = normalizeOrderStatus(
-      order.raw,
-      order.status,
-      filledValue,
-      sizeValue,
-      remainingValue
+    const traderIds = Array.from(
+      new Set(
+        (orders || [])
+          .map((order) => order.trader_id)
+          .filter(Boolean) as string[]
+      )
     )
 
-    if (marketId && metadata) {
-      const existing = cacheUpsertMap.get(marketId) ?? { market_id: marketId }
-      const metadataTitle = metadata.question ?? null
-      const needsTitleUpdate = metadataTitle && metadataTitle !== cache?.title
-      const needsImageUpdate =
-        !cache?.image_url && (metadata.icon || metadata.image)
-
-      if (needsTitleUpdate || needsImageUpdate || metadata.metadataPayload) {
-        const upsertPayload: MarketCacheUpsertRow = {
-          market_id: marketId,
-        }
-        if (needsTitleUpdate) {
-          upsertPayload.title = metadataTitle
-        }
-        if (needsImageUpdate) {
-          upsertPayload.image_url = metadata.icon ?? metadata.image ?? null
-        }
-        if (metadata.metadataPayload) {
-          upsertPayload.metadata = metadata.metadataPayload
-        }
-        const parsedMetadataClosed = parseBoolean(metadata.metadataPayload?.closed)
-        if (parsedMetadataClosed !== null) {
-          upsertPayload.is_open = !parsedMetadataClosed
-        }
-
-        cacheUpsertMap.set(marketId, {
-          ...existing,
-          ...upsertPayload,
-        })
+    const marketRows = await fetchMarketCacheRows(supabase, marketIds)
+    const traderRows = await fetchTraderProfiles(supabase, traderIds)
+    const traderRecords = await fetchTraderRecords(supabase, traderIds)
+    const marketCacheMap = new Map<string, MarketCacheRow>()
+    marketRows.forEach((row) => {
+      if (row?.market_id) {
+        marketCacheMap.set(row.market_id, row)
       }
-    }
+    })
 
-    const currentPrice = resolveCurrentPrice(order, metadata)
-    const pnlUsd = calculatePnlUsd(order.side, priceValue, currentPrice, filledValue)
-    const positionState = resolvePositionState(order.raw)
-    const positionStateLabel = getPositionStateLabel(positionState)
+    const traderProfileMap = new Map<string, TraderProfileRow>()
+    traderRows.forEach((row) => {
+      if (row?.trader_id) {
+        traderProfileMap.set(row.trader_id, row)
+      }
+    })
 
-    return {
-      orderId: String(order.order_id ?? ''),
-      status,
-      marketId,
-      marketTitle,
-      marketImageUrl,
-      marketIsOpen,
-      traderId,
-      traderWallet: traderWallet ?? null,
-      traderName: getTraderName(
-        profile,
-        traderRecord,
+    const traderRecordMap = new Map<string, TraderRecordRow>()
+    traderRecords.forEach((row) => {
+      if (row?.trader_id) {
+        traderRecordMap.set(row.trader_id, row)
+      }
+    })
+
+    const marketMetadataMap = await fetchMarketMetadataFromClob(
+      [...new Set(marketIds)].filter(Boolean)
+    )
+
+    const cacheUpsertMap = new Map<string, MarketCacheUpsertRow>()
+
+    const enrichedOrders: OrderRow[] = (orders || []).map((order) => {
+      const marketId = String(order.market_id ?? '')
+      const traderId = String(order.trader_id ?? '')
+      const cache = marketCacheMap.get(marketId)
+      const profile = traderProfileMap.get(traderId)
+      const traderRecord = traderRecordMap.get(traderId)
+      const traderWallet = resolveTraderWallet(traderRecord, order.raw)
+      const metadata = marketMetadataMap[marketId]
+      const copiedTraderNameFromWallet =
+        traderWallet && copiedTraderLookup.wallet
+          ? copiedTraderLookup.wallet.get(traderWallet) ?? null
+          : null
+      const copiedTraderNameFromMarket = copiedTraderLookup.marketOutcome.get(
+        getCopiedTraderKey(marketId, order.outcome)
+      )
+      const marketTitle = getMarketTitle(order, marketId, cache, metadata)
+      const copiedTraderNameFromTitle = copiedTraderLookup.marketTitleOutcome.get(
+        getCopiedTraderTitleKey(marketTitle, order.outcome)
+      )
+      const marketImageUrl =
+        cache?.image_url ??
+        metadata?.icon ??
+        metadata?.image ??
+        extractMarketAvatarUrl(order.raw) ??
+        null
+      const marketIsOpen = deriveMarketOpenStatus(cache, order.raw, metadata)
+
+      const sizeValue = parseNumeric(order.size)
+      const filledValue = parseNumeric(order.filled_size)
+      const remainingValue = parseNumeric(order.remaining_size)
+
+      const priceValue = parseNumeric(order.price ?? order.raw?.price ?? order.raw?.avg_price)
+
+      const status = normalizeOrderStatus(
         order.raw,
-        userPolymarketUsername,
-        copiedTraderNameFromWallet,
-        copiedTraderNameFromMarket
-      ),
-      traderAvatarUrl: profile?.avatar_url ?? extractTraderAvatar(order.raw),
-      side: String(order.side ?? order.raw?.side ?? '').toLowerCase(),
-      outcome: order.outcome ?? null,
-      size: sizeValue ?? 0,
-      filledSize: filledValue ?? 0,
-      priceOrAvgPrice: priceValue,
-      currentPrice,
-      pnlUsd,
-      positionState,
-      positionStateLabel,
-      createdAt: order.created_at ?? new Date().toISOString(),
-      updatedAt: order.updated_at ?? order.created_at ?? new Date().toISOString(),
-      raw: order.raw ?? null,
+        order.status,
+        filledValue,
+        sizeValue,
+        remainingValue
+      )
+
+      if (marketId && metadata) {
+        const existing = cacheUpsertMap.get(marketId) ?? { market_id: marketId }
+        const metadataTitle = metadata.question ?? null
+        const needsTitleUpdate = metadataTitle && metadataTitle !== cache?.title
+        const needsImageUpdate =
+          !cache?.image_url && (metadata.icon || metadata.image)
+
+        if (needsTitleUpdate || needsImageUpdate || metadata.metadataPayload) {
+          const upsertPayload: MarketCacheUpsertRow = {
+            market_id: marketId,
+          }
+          if (needsTitleUpdate) {
+            upsertPayload.title = metadataTitle
+          }
+          if (needsImageUpdate) {
+            upsertPayload.image_url = metadata.icon ?? metadata.image ?? null
+          }
+          if (metadata.metadataPayload) {
+            upsertPayload.metadata = metadata.metadataPayload
+          }
+          const parsedMetadataClosed = parseBoolean(metadata.metadataPayload?.closed)
+          if (parsedMetadataClosed !== null) {
+            upsertPayload.is_open = !parsedMetadataClosed
+          }
+
+          cacheUpsertMap.set(marketId, {
+            ...existing,
+            ...upsertPayload,
+          })
+        }
+      }
+
+      const currentPrice = resolveCurrentPrice(order, metadata)
+      const pnlUsd = calculatePnlUsd(order.side, priceValue, currentPrice, filledValue)
+      const positionState = resolvePositionState(order.raw)
+      const positionStateLabel = getPositionStateLabel(positionState)
+
+      return {
+        orderId: String(order.order_id ?? ''),
+        status,
+        marketId,
+        marketTitle,
+        marketImageUrl,
+        marketIsOpen,
+        traderId,
+        traderWallet: traderWallet ?? null,
+        traderName: getTraderName(
+          profile,
+          traderRecord,
+          order.raw,
+          userPolymarketUsername,
+          copiedTraderNameFromWallet,
+          copiedTraderNameFromMarket,
+          copiedTraderNameFromTitle
+        ),
+        traderAvatarUrl: profile?.avatar_url ?? extractTraderAvatar(order.raw),
+        side: String(order.side ?? order.raw?.side ?? '').toLowerCase(),
+        outcome: order.outcome ?? null,
+        size: sizeValue ?? 0,
+        filledSize: filledValue ?? 0,
+        priceOrAvgPrice: priceValue,
+        currentPrice,
+        pnlUsd,
+        positionState,
+        positionStateLabel,
+        createdAt: order.created_at ?? new Date().toISOString(),
+        updatedAt: order.updated_at ?? order.created_at ?? new Date().toISOString(),
+        raw: order.raw ?? null,
+      }
+    })
+
+    const cacheUpserts = Array.from(cacheUpsertMap.values())
+    if (cacheUpserts.length > 0) {
+      await supabase
+        .from('market_cache')
+        .upsert(cacheUpserts, { onConflict: 'market_id' })
     }
-  })
 
-  const cacheUpserts = Array.from(cacheUpsertMap.values())
-  if (cacheUpserts.length > 0) {
-    await supabase
-      .from('market_cache')
-      .upsert(cacheUpserts, { onConflict: 'market_id' })
+    return NextResponse.json({ orders: enrichedOrders, walletAddress })
+  } catch (error: any) {
+    console.error('[orders] fatal error', error)
+    const message =
+      error?.message ||
+      (error?.status === 504
+        ? 'Upstream timeout while loading orders'
+        : 'Failed to load orders')
+    return NextResponse.json(
+      { error: 'Orders service unavailable', details: message },
+      { status: error?.status === 401 ? 401 : 503 }
+    )
   }
-
-  return NextResponse.json({ orders: enrichedOrders, walletAddress })
 }
 
 async function fetchMarketCacheRows(client: ReturnType<typeof createServiceClient>, marketIds: string[]) {
@@ -321,6 +353,7 @@ async function fetchTraderRecords(
 type CopiedTraderLookup = {
   wallet: Map<string, string>
   marketOutcome: Map<string, string>
+  marketTitleOutcome: Map<string, string>
 }
 
 function getCopiedTraderKey(marketId: string | null, outcome?: string | null) {
@@ -329,17 +362,29 @@ function getCopiedTraderKey(marketId: string | null, outcome?: string | null) {
   return `${marketId.trim()}|${outcomePart}`
 }
 
+function getCopiedTraderTitleKey(marketTitle?: string | null, outcome?: string | null) {
+  if (!marketTitle) return ''
+  const titlePart = marketTitle.trim()
+  if (!titlePart) return ''
+  const outcomePart = outcome?.trim().toLowerCase() ?? ''
+  return `${titlePart}|${outcomePart}`
+}
+
 async function fetchCopiedTraderNames(
   client: ReturnType<typeof createServiceClient>,
   userId: string | null
 ): Promise<CopiedTraderLookup> {
   if (!userId) {
-    return { wallet: new Map(), marketOutcome: new Map() }
+    return {
+      wallet: new Map(),
+      marketOutcome: new Map(),
+      marketTitleOutcome: new Map(),
+    }
   }
   try {
     const { data } = await client
       .from('copied_trades')
-      .select('market_id, outcome, trader_username, trader_wallet')
+      .select('market_id, market_title, outcome, trader_username, trader_wallet')
       .eq('user_id', userId)
       .order('copied_at', { ascending: false })
       .limit(1000)
@@ -347,6 +392,7 @@ async function fetchCopiedTraderNames(
     const lookup: CopiedTraderLookup = {
       wallet: new Map<string, string>(),
       marketOutcome: new Map<string, string>(),
+      marketTitleOutcome: new Map<string, string>(),
     }
 
     for (const row of data ?? []) {
@@ -366,6 +412,10 @@ async function fetchCopiedTraderNames(
         typeof row?.trader_wallet === 'string' && row.trader_wallet.trim()
           ? row.trader_wallet.trim().toLowerCase()
           : null
+      const marketTitle =
+        typeof row?.market_title === 'string' && row.market_title.trim()
+          ? row.market_title.trim()
+          : null
 
       if (wallet && username && !lookup.wallet.has(wallet)) {
         lookup.wallet.set(wallet, username)
@@ -377,11 +427,19 @@ async function fetchCopiedTraderNames(
           lookup.marketOutcome.set(key, username)
         }
       }
+      const titleKey = getCopiedTraderTitleKey(marketTitle, outcome)
+      if (titleKey && username && !lookup.marketTitleOutcome.has(titleKey)) {
+        lookup.marketTitleOutcome.set(titleKey, username)
+      }
     }
     return lookup
   } catch (error) {
     console.warn('[orders] copied_trades lookup failed', error)
-    return { wallet: new Map(), marketOutcome: new Map() }
+    return {
+      wallet: new Map(),
+      marketOutcome: new Map(),
+      marketTitleOutcome: new Map(),
+    }
   }
 }
 
@@ -463,19 +521,23 @@ function getTraderName(
   rawOrder?: any,
   userProfileName?: string | null,
   copiedTraderWalletName?: string | null,
-  copiedTraderMarketName?: string | null
+  copiedTraderMarketName?: string | null,
+  copiedTraderMarketTitleName?: string | null
 ) {
-  const profileName = normalizeTraderDisplayName(profile?.display_name ?? null)
-  if (profileName) return profileName
-
-  const traderRecordName = normalizeTraderDisplayName(traderRecord?.display_name ?? null)
-  if (traderRecordName) return traderRecordName
-
   const mappedWalletName = normalizeTraderDisplayName(copiedTraderWalletName)
   if (mappedWalletName) return mappedWalletName
 
   const mappedMarketName = normalizeTraderDisplayName(copiedTraderMarketName)
   if (mappedMarketName) return mappedMarketName
+
+  const mappedMarketTitleName = normalizeTraderDisplayName(copiedTraderMarketTitleName)
+  if (mappedMarketTitleName) return mappedMarketTitleName
+
+  const profileName = normalizeTraderDisplayName(profile?.display_name ?? null)
+  if (profileName) return profileName
+
+  const traderRecordName = normalizeTraderDisplayName(traderRecord?.display_name ?? null)
+  if (traderRecordName) return traderRecordName
 
   const rawName = extractTraderNameFromRecord(rawOrder ?? null)
   if (rawName) return rawName
@@ -538,72 +600,96 @@ type MarketMetadata = {
   metadataPayload: Record<string, any> | null
 }
 
+async function fetchWithTimeout(url: string, timeoutMs = MARKET_METADATA_REQUEST_TIMEOUT_MS, options: RequestInit = {}) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal })
+    return response
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 async function fetchMarketMetadataFromClob(conditionIds: string[]) {
   const metadataMap: Record<string, MarketMetadata> = {}
-  const uniqueIds = Array.from(new Set(conditionIds.filter(Boolean)))
+  const uniqueIds = Array.from(
+    new Set(conditionIds.filter(Boolean))
+  ).filter((id) => typeof id === 'string' && id.startsWith('0x'))
 
-  for (const conditionId of uniqueIds.slice(0, MARKET_METADATA_FETCH_LIMIT)) {
-    if (!conditionId || !conditionId.startsWith('0x')) continue
-    try {
-      const response = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, {
-        cache: 'no-store',
-      })
-      if (!response.ok) continue
-      let market: any
-      try {
-        market = await response.json()
-      } catch (error) {
-        console.warn('[orders] market metadata parse failed', conditionId, error)
-        continue
-      }
-      const icon =
-        typeof market?.icon === 'string' && market.icon.trim()
-          ? market.icon.trim()
-          : typeof market?.image === 'string' && market.image.trim()
-          ? market.image.trim()
-          : null
-      const image =
-        typeof market?.image === 'string' && market.image.trim() ? market.image.trim() : null
+  const limitedIds = uniqueIds.slice(0, MARKET_METADATA_FETCH_LIMIT)
 
-      const tokens = Array.isArray(market?.tokens) ? market.tokens : []
-      const outcomePairs = tokens
-        .map((token: any) => {
-          const outcome =
-            token?.outcome ??
-            token?.name ??
-            token?.label ??
-            token?.market ??
-            token?.token ??
-            null
-          const price = parseNumeric(token?.price ?? token?.execution_price ?? token?.avg_price)
-          return {
-            outcome: outcome ? String(outcome) : null,
-            price: price,
+  for (let i = 0; i < limitedIds.length; i += MARKET_METADATA_FETCH_CONCURRENCY) {
+    const chunk = limitedIds.slice(i, i + MARKET_METADATA_FETCH_CONCURRENCY)
+    await Promise.allSettled(
+      chunk.map(async (conditionId) => {
+        if (!conditionId) return
+        try {
+          const response = await fetchWithTimeout(
+            `https://clob.polymarket.com/markets/${conditionId}`,
+            MARKET_METADATA_REQUEST_TIMEOUT_MS,
+            { cache: 'no-store' }
+          )
+          if (!response.ok) return
+          let market: any
+          try {
+            market = await response.json()
+          } catch (error) {
+            console.warn('[orders] market metadata parse failed', conditionId, error)
+            return
           }
-        })
-        .filter((entry: any) => entry.outcome && entry.price !== null)
 
-      const outcomes = outcomePairs.map((entry: any) => entry.outcome!)
-      const outcomePrices = outcomePairs.map((entry: any) => entry.price!)
+          const icon =
+            typeof market?.icon === 'string' && market.icon.trim()
+              ? market.icon.trim()
+              : typeof market?.image === 'string' && market.image.trim()
+              ? market.image.trim()
+              : null
+          const image =
+            typeof market?.image === 'string' && market.image.trim() ? market.image.trim() : null
 
-      metadataMap[conditionId] = {
-        icon,
-        image,
-        question: market?.question ?? market?.market_title ?? null,
-        slug: market?.market_slug ?? null,
-        outcomes,
-        outcomePrices,
-        metadataPayload: {
-          question: market?.question ?? null,
-          slug: market?.market_slug ?? null,
-          closed: market?.closed ?? null,
-          outcomes,
-          outcomePrices,
-        },
-      }
-    } catch (error) {
-      console.warn('[orders] market metadata fetch failed', conditionId, error)
-    }
+          const tokens = Array.isArray(market?.tokens) ? market.tokens : []
+          const outcomePairs = tokens
+            .map((token: any) => {
+              const outcome =
+                token?.outcome ??
+                token?.name ??
+                token?.label ??
+                token?.market ??
+                token?.token ??
+                null
+              const price = parseNumeric(token?.price ?? token?.execution_price ?? token?.avg_price)
+              return {
+                outcome: outcome ? String(outcome) : null,
+                price: price,
+              }
+            })
+            .filter((entry: any) => entry.outcome && entry.price !== null)
+
+          const outcomes = outcomePairs.map((entry: any) => entry.outcome!)
+          const outcomePrices = outcomePairs.map((entry: any) => entry.price!)
+
+          metadataMap[conditionId] = {
+            icon,
+            image,
+            question: market?.question ?? market?.market_title ?? null,
+            slug: market?.market_slug ?? null,
+            outcomes,
+            outcomePrices,
+            metadataPayload: {
+              question: market?.question ?? null,
+              slug: market?.market_slug ?? null,
+              closed: market?.closed ?? null,
+              outcomes,
+              outcomePrices,
+            },
+          }
+        } catch (error) {
+          console.warn('[orders] market metadata fetch failed', conditionId, error)
+        }
+      })
+    )
   }
 
   return metadataMap

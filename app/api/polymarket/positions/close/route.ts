@@ -1,142 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
-import { POST_ORDER } from '@polymarket/clob-client/dist/endpoints.js'
-import { buildLocalGuardResponse, getBodySnippet } from '@/lib/polymarket/order-route-helpers'
-import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
+import { POST as placeOrder } from '../orders/place/route'
 
-const DEV_BYPASS_AUTH =
-  process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
-  Boolean(process.env.TURNKEY_DEV_BYPASS_USER_ID)
+const HANDLER_FINGERPRINT = 'app/api/polymarket/positions/close/route.ts'
 
-type Body = {
-  tokenId?: string
-  amount?: number
-  price?: number
-  confirm?: boolean
-}
+// Delegate close requests to the shared placement handler; keep this wrapper so
+// we can normalize close-specific payloads later without re-exporting blindly.
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
+  const upstreamResponse = await placeOrder(request)
 
-  let userId: string | null = user?.id ?? null
-  if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
-    userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
-  }
-
-  if (!userId) {
-    return buildLocalGuardResponse(
-      { error: 'Unauthorized - please log in', details: authError?.message },
-      401
-    )
-  }
-
-  const body: Body = await request.json()
-  const { tokenId, amount, price, confirm } = body
-
-  if (!confirm) {
-    return buildLocalGuardResponse(
-      { error: 'confirm=true required to close position' },
-      400
-    )
-  }
-
-  if (!tokenId || !amount || !price) {
-    return buildLocalGuardResponse(
-      { error: 'tokenId, amount, and price are required' },
-      400
-    )
-  }
-  console.log('[POLY-POSITION-CLOSE] Incoming request', {
-    url: request.url,
-    method: request.method,
-    authenticated: Boolean(userId),
-  })
-
+  let parsedBody: any = null
   try {
-    const { client, proxyAddress, signerAddress, signatureType } = await getAuthedClobClientForUser(
-      userId
-    )
-
-    const order = await client.createOrder(
-      { tokenID: tokenId, price, size: amount, side: 'SELL' as any },
-      { signatureType } as any
-    )
-
-    const requestUrl = `${client.host}${POST_ORDER}`
-    const upstreamHost = new URL(requestUrl).hostname
-    console.log('[POLY-POSITION-CLOSE] Closing position via CLOB', {
-      requestUrl,
-      host: client.host,
-      proxyAddress,
-    })
-
-    const rawResult = await client.postOrder(order, 'GTC' as any, false)
-    const evaluation = interpretClobOrderResult(rawResult)
-    const failedEvaluation = !evaluation.success
-    const isHtmlResponse = failedEvaluation && evaluation.errorType === 'blocked_by_cloudflare'
-    const upstreamContentType = isHtmlResponse ? 'text/html' : 'application/json'
-    const upstreamStatus = failedEvaluation
-      ? evaluation.errorType === 'blocked_by_cloudflare'
-        ? 502
-        : evaluation.status ?? 502
-      : 200
-    const snippet = failedEvaluation ? getBodySnippet(evaluation.raw ?? '') : undefined
-    const logPayload: Record<string, unknown> = {
-      requestUrl,
-      upstreamHost,
-      status: upstreamStatus,
-      contentType: upstreamContentType,
-      orderId: evaluation.success ? evaluation.orderId : null,
-    }
-    if (failedEvaluation) {
-      logPayload.rayId = evaluation.rayId
-      if (snippet) {
-        logPayload.snippet = snippet
-      }
-    }
-    console.log('[POLY-POSITION-CLOSE] Upstream response', logPayload)
-
-    if (failedEvaluation) {
-      return NextResponse.json(
-        {
-          error: evaluation.message,
-          errorType: evaluation.errorType,
-          rayId: evaluation.rayId,
-          blockedByCloudflare: evaluation.errorType === 'blocked_by_cloudflare',
-          requestUrl,
-          source: 'upstream',
-          upstreamHost,
-          upstreamStatus,
-          isHtml: isHtmlResponse,
-          raw: evaluation.raw,
-          snippet,
-        },
-        { status: upstreamStatus }
-      )
-    }
-
-    const { orderId } = evaluation
-
-    return NextResponse.json({
-      ok: true,
-      proxy: proxyAddress,
-      signer: signerAddress,
-      orderId,
-      source: 'upstream',
-      upstreamHost,
-      upstreamStatus,
-      isHtml: false,
-      raw: evaluation.raw,
-    })
-  } catch (error: any) {
-    console.error('[POLY-POSITION-CLOSE] Error:', error?.message || error)
-    return buildLocalGuardResponse(
-      { error: error?.message || 'Failed to close position' },
-      500
-    )
+    const text = await upstreamResponse.text()
+    parsedBody = text ? JSON.parse(text) : {}
+  } catch (error) {
+    parsedBody = { raw: 'non-json response from delegated handler' }
   }
+
+  const downstreamHandler =
+    parsedBody && typeof parsedBody.handlerFingerprint === 'string'
+      ? parsedBody.handlerFingerprint
+      : undefined
+
+  const payload = {
+    handlerFingerprint: HANDLER_FINGERPRINT,
+    downstreamHandler,
+    ...parsedBody,
+  }
+
+  const headers = new Headers(upstreamResponse.headers)
+  headers.set('x-polycopy-handler', HANDLER_FINGERPRINT)
+  headers.set('content-type', 'application/json')
+
+  return NextResponse.json(payload, {
+    status: upstreamResponse.status,
+    headers,
+  })
 }

@@ -32,6 +32,19 @@ export default function OrdersPage() {
   const [closeSubmitting, setCloseSubmitting] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
   const [closeSuccess, setCloseSuccess] = useState<string | null>(null)
+  const ordersWithoutFailed = useMemo(
+    () => orders.filter((order) => order.status !== 'failed'),
+    [orders]
+  )
+  const filteredOrders = useMemo(() => (showFailedOrders ? orders : ordersWithoutFailed), [
+    orders,
+    showFailedOrders,
+    ordersWithoutFailed,
+  ])
+  const hiddenFailedOrdersCount = useMemo(
+    () => orders.length - ordersWithoutFailed.length,
+    [orders, ordersWithoutFailed]
+  )
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -269,13 +282,13 @@ export default function OrdersPage() {
       setRefreshError('Failed to refresh orders')
     } finally {
       const fetchedWallet = await fetchOrders()
+      setRefreshing(false)
       const walletForPositions = fetchedWallet ?? walletAddress
       if (walletForPositions) {
-        await fetchOpenPositions(walletForPositions)
+        fetchOpenPositions(walletForPositions)
       }
-      await fetchCashBalance()
+      fetchCashBalance()
       fetchPositions()
-      setRefreshing(false)
     }
   }, [fetchOrders, router, walletAddress, fetchOpenPositions, fetchCashBalance, fetchPositions])
 
@@ -296,23 +309,34 @@ export default function OrdersPage() {
       amount,
       price,
       slippagePercent,
+      orderType,
     }: {
       tokenId: string
       amount: number
       price: number
       slippagePercent: number
+      orderType: 'IOC' | 'GTC'
     }) => {
       setCloseSubmitting(true)
       setCloseError(null)
       try {
-        const response = await fetch('/api/polymarket/positions/close', {
+        const payload = {
+          tokenId,
+          amount,
+          price,
+          side: 'SELL',
+          orderType,
+          confirm: true,
+        }
+        const response = await fetch('/api/polymarket/orders/place', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tokenId, amount, price, confirm: true }),
+          body: JSON.stringify(payload),
         })
         const data = await response.json()
         if (!response.ok) {
-          throw new Error(data?.error || 'Failed to close position')
+          const errorMessage = data?.error || data?.message || 'Failed to close position'
+          throw new Error(errorMessage)
         }
         setCloseSuccess(`Close order submitted (${slippagePercent.toFixed(1)}% slippage)`)
         setCloseTarget(null)
@@ -352,11 +376,11 @@ export default function OrdersPage() {
       expired: 0,
       failed: 0,
     }
-    orders.forEach((order) => {
+    filteredOrders.forEach((order) => {
       summary[order.status] += 1
     })
     return summary
-  }, [orders])
+  }, [filteredOrders])
 
   const performanceSummary = useMemo(() => {
     let realizedPnl = 0
@@ -379,14 +403,14 @@ export default function OrdersPage() {
       return safeContracts * safePrice
     }
 
-    orders.forEach((order) => {
+    ordersWithoutFailed.forEach((order) => {
       const pnl = safeNumber(order.pnlUsd)
       const invested = entryValue(order)
       amountInvested += invested
 
       const isClosed =
         order.positionState === 'closed' ||
-        ['filled', 'canceled', 'expired', 'failed'].includes(order.status)
+        ['filled', 'canceled', 'expired'].includes(order.status)
 
       if (isClosed) {
         realizedPnl += pnl
@@ -409,6 +433,13 @@ export default function OrdersPage() {
     const pct = (pnl: number, base: number) =>
       base !== 0 ? (pnl / base) * 100 : 0
 
+    const resolvedTradesOpen =
+      typeof openPositionsCount === 'number' ? openPositionsCount : tradesOpen
+    const cappedTradesOpen = Math.min(
+      Math.max(0, resolvedTradesOpen),
+      ordersWithoutFailed.length
+    )
+
     return {
       realizedPnl,
       realizedPct: pct(realizedPnl, realizedBase),
@@ -416,16 +447,16 @@ export default function OrdersPage() {
       unrealizedPct: pct(unrealizedPnl, unrealizedBase),
       blendedPnl,
       blendedPct: pct(blendedPnl, blendedBase),
-      tradesTotal: orders.length,
-      tradesOpen,
-      tradesClosed: orders.length - tradesOpen,
+      tradesTotal: ordersWithoutFailed.length,
+      tradesOpen: cappedTradesOpen,
+      tradesClosed: ordersWithoutFailed.length - cappedTradesOpen,
       tradesWon,
       tradesLost,
       amountInvested,
       amountWon: Math.max(realizedPnl, 0),
       amountLost: Math.abs(Math.min(realizedPnl, 0)),
     }
-  }, [orders])
+  }, [ordersWithoutFailed, openPositionsCount])
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -520,8 +551,25 @@ export default function OrdersPage() {
           </div>
         </div>
 
+        <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-slate-600">
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={showFailedOrders}
+              onChange={(event) => setShowFailedOrders(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+            />
+            <span>Show failed orders</span>
+          </label>
+          {!showFailedOrders && hiddenFailedOrdersCount > 0 && (
+            <p className="text-xs text-slate-500">
+              {hiddenFailedOrdersCount} failed order{hiddenFailedOrdersCount === 1 ? '' : 's'} hidden
+            </p>
+          )}
+        </div>
+
         <OrdersTable
-          orders={orders}
+          orders={filteredOrders}
           loading={ordersLoading}
           statusSummary={statusSummary}
           getPositionForOrder={resolvePositionForOrder}
