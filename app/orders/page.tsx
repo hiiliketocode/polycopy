@@ -4,8 +4,10 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Header from '../components/Header'
 import OrdersTable from '@/components/orders/OrdersTable'
+import ClosePositionModal from '@/components/orders/ClosePositionModal'
 import { supabase } from '@/lib/supabase'
 import type { OrderRow, OrderStatus } from '@/lib/orders/types'
+import type { PositionSummary } from '@/lib/orders/position'
 
 export default function OrdersPage() {
   const router = useRouter()
@@ -18,6 +20,18 @@ export default function OrdersPage() {
   const [hasLoaded, setHasLoaded] = useState(false)
   const [cashBalance, setCashBalance] = useState<string | null>(null)
   const [cashLoading, setCashLoading] = useState(false)
+  const [showFailedOrders, setShowFailedOrders] = useState(false)
+  const [walletAddress, setWalletAddress] = useState<string | null>(null)
+  const [openPositionsCount, setOpenPositionsCount] = useState<number | null>(null)
+  const [openPositionsLoading, setOpenPositionsLoading] = useState(false)
+  const [openPositionsError, setOpenPositionsError] = useState<string | null>(null)
+  const [positions, setPositions] = useState<PositionSummary[]>([])
+  const [positionsLoading, setPositionsLoading] = useState(false)
+  const [positionsError, setPositionsError] = useState<string | null>(null)
+  const [closeTarget, setCloseTarget] = useState<{ order: OrderRow; position: PositionSummary } | null>(null)
+  const [closeSubmitting, setCloseSubmitting] = useState(false)
+  const [closeError, setCloseError] = useState<string | null>(null)
+  const [closeSuccess, setCloseSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -41,7 +55,7 @@ export default function OrdersPage() {
     checkAuth()
   }, [router])
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (): Promise<string | null> => {
     setOrdersLoading(true)
     setOrdersError(null)
     try {
@@ -50,22 +64,185 @@ export default function OrdersPage() {
 
       if (response.status === 401) {
         router.push('/login')
-        return
+        return null
       }
 
       if (!response.ok) {
         setOrdersError(data.error || 'Failed to load orders')
-        return
+        return null
       }
 
       setOrders(data.orders || [])
+      const fetchedWallet =
+        typeof data.walletAddress === 'string' && data.walletAddress.trim()
+          ? data.walletAddress.trim().toLowerCase()
+          : null
+      setWalletAddress(fetchedWallet)
+      return fetchedWallet
     } catch (err) {
       console.error('Orders load error:', err)
       setOrdersError('Failed to load orders')
+      return null
     } finally {
       setOrdersLoading(false)
     }
   }, [router])
+
+  const fetchCashBalance = useCallback(async () => {
+    setCashLoading(true)
+    try {
+      const response = await fetch('/api/polymarket/balance', { cache: 'no-store' })
+      if (!response.ok) {
+        throw new Error('Failed to load cash balance')
+      }
+      const data = await response.json()
+      setCashBalance(data.balanceFormatted ?? null)
+    } catch (err) {
+      console.error('Cash balance load error:', err)
+      setCashBalance(null)
+    } finally {
+      setCashLoading(false)
+    }
+  }, [])
+
+  const fetchOpenPositions = useCallback(
+    async (overrideWallet?: string | null): Promise<number | null> => {
+      const targetAddress = (overrideWallet ?? walletAddress ?? '').trim()
+      if (!targetAddress) {
+        setOpenPositionsCount(null)
+        setOpenPositionsError(null)
+        return null
+      }
+
+      const normalizedAddress = targetAddress.toLowerCase()
+      setOpenPositionsLoading(true)
+      setOpenPositionsError(null)
+      try {
+        const response = await fetch(
+          `/api/polymarket/open-positions?wallet=${encodeURIComponent(normalizedAddress)}`,
+          {
+            cache: 'no-store',
+          }
+        )
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data?.error || 'Failed to load open positions')
+        }
+        const count = typeof data?.open_positions === 'number' ? data.open_positions : 0
+        setOpenPositionsCount(count)
+        return count
+      } catch (err: any) {
+        console.error('Open positions load error:', err)
+        setOpenPositionsError(err?.message || 'Failed to fetch open positions')
+        setOpenPositionsCount(null)
+        return null
+      } finally {
+        setOpenPositionsLoading(false)
+      }
+    },
+    [walletAddress]
+  )
+
+  const fetchPositions = useCallback(async () => {
+    setPositionsLoading(true)
+    setPositionsError(null)
+
+    try {
+      const response = await fetch('/api/polymarket/positions', { cache: 'no-store' })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to load positions')
+      }
+
+      const rawPositions = Array.isArray(data.positions) ? data.positions : []
+
+      const normalized: PositionSummary[] = rawPositions
+        .map((entry: any) => {
+          const direction = normalizePositionDirection(entry.direction)
+          const side = normalizePositionSide(entry.side)
+          const tokenId =
+            extractString(entry.tokenId) ??
+            extractString(entry.token_id) ??
+            extractString(entry.asset_id) ??
+            extractString(entry.asset)
+          if (!tokenId || !direction || !side) return null
+
+          const size =
+            typeof entry.size === 'number'
+              ? entry.size
+              : typeof entry.size === 'string'
+                ? parseFloat(entry.size)
+                : 0
+          if (!Number.isFinite(size) || size <= 0) return null
+
+          return {
+            tokenId,
+            marketId: extractString(entry.marketId) ?? extractString(entry.market_id) ?? null,
+            outcome: extractString(entry.outcome),
+            direction,
+            side,
+            size,
+            avgEntryPrice: typeof entry.avgEntryPrice === 'number' ? entry.avgEntryPrice : null,
+            firstTradeAt: extractString(entry.firstTradeAt),
+            lastTradeAt: extractString(entry.lastTradeAt),
+          }
+        })
+        .filter((entry): entry is PositionSummary => Boolean(entry))
+
+      setPositions(normalized)
+    } catch (err: any) {
+      console.error('Positions load error:', err)
+      setPositionsError(err?.message || 'Failed to fetch positions')
+      setPositions([])
+    } finally {
+      setPositionsLoading(false)
+    }
+  }, [])
+
+  const positionMap = useMemo(() => {
+    const map = new Map<string, PositionSummary>()
+    positions.forEach((position) => {
+      const marketKey = position.marketId ? position.marketId.trim().toLowerCase() : ''
+      const outcomeKey = position.outcome ? position.outcome.trim().toLowerCase() : ''
+      if (marketKey) {
+        map.set(`${marketKey}::${outcomeKey}`, position)
+        map.set(marketKey, position)
+      }
+      map.set(position.tokenId.toLowerCase(), position)
+    })
+    return map
+  }, [positions])
+
+  const findPositionForOrder = useCallback(
+    (order: OrderRow): PositionSummary | undefined => {
+      const keys: string[] = []
+      const marketKey = extractString(order.marketId)
+      const outcomeKey = extractString(order.outcome)
+      if (marketKey) {
+        const normalizedMarket = marketKey.toLowerCase()
+        keys.push(`${normalizedMarket}::${outcomeKey ? outcomeKey.toLowerCase() : ''}`)
+        keys.push(normalizedMarket)
+      }
+      const tokenKey = extractTokenIdFromOrder(order)
+      if (tokenKey) {
+        keys.push(tokenKey.toLowerCase())
+      }
+      for (const key of keys) {
+        if (!key) continue
+        const hit = positionMap.get(key)
+        if (hit) return hit
+      }
+      return undefined
+    },
+    [positionMap]
+  )
+
+  const resolvePositionForOrder = useCallback(
+    (order: OrderRow): PositionSummary | null => {
+      return findPositionForOrder(order) ?? buildPositionFromOrder(order)
+    },
+    [findPositionForOrder]
+  )
 
   const refreshOrders = useCallback(async () => {
     setRefreshing(true)
@@ -91,28 +268,64 @@ export default function OrdersPage() {
       console.error('Orders refresh error:', err)
       setRefreshError('Failed to refresh orders')
     } finally {
-      await fetchOrders()
+      const fetchedWallet = await fetchOrders()
+      const walletForPositions = fetchedWallet ?? walletAddress
+      if (walletForPositions) {
+        await fetchOpenPositions(walletForPositions)
+      }
       await fetchCashBalance()
+      fetchPositions()
       setRefreshing(false)
     }
-  }, [fetchOrders, router])
+  }, [fetchOrders, router, walletAddress, fetchOpenPositions, fetchCashBalance, fetchPositions])
 
-  const fetchCashBalance = useCallback(async () => {
-    setCashLoading(true)
-    try {
-      const response = await fetch('/api/polymarket/balance', { cache: 'no-store' })
-      if (!response.ok) {
-        throw new Error('Failed to load cash balance')
+  const handleSellPosition = useCallback(
+    (order: OrderRow) => {
+      const position = resolvePositionForOrder(order)
+      if (!position) return
+      setCloseTarget({ order, position })
+      setCloseError(null)
+      setCloseSuccess(null)
+    },
+    [findPositionForOrder]
+  )
+
+  const handleConfirmClose = useCallback(
+    async ({
+      tokenId,
+      amount,
+      price,
+      slippagePercent,
+    }: {
+      tokenId: string
+      amount: number
+      price: number
+      slippagePercent: number
+    }) => {
+      setCloseSubmitting(true)
+      setCloseError(null)
+      try {
+        const response = await fetch('/api/polymarket/positions/close', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tokenId, amount, price, confirm: true }),
+        })
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data?.error || 'Failed to close position')
+        }
+        setCloseSuccess(`Close order submitted (${slippagePercent.toFixed(1)}% slippage)`)
+        setCloseTarget(null)
+        await refreshOrders()
+      } catch (err: any) {
+        console.error('Close position error:', err)
+        setCloseError(err?.message || 'Failed to close position')
+      } finally {
+        setCloseSubmitting(false)
       }
-      const data = await response.json()
-      setCashBalance(data.balanceFormatted ?? null)
-    } catch (err) {
-      console.error('Cash balance load error:', err)
-      setCashBalance(null)
-    } finally {
-      setCashLoading(false)
-    }
-  }, [])
+    },
+    [refreshOrders]
+  )
 
   useEffect(() => {
     if (loadingAuth || hasLoaded) return
@@ -124,6 +337,11 @@ export default function OrdersPage() {
     if (loadingAuth) return
     fetchCashBalance()
   }, [loadingAuth, fetchCashBalance])
+
+  useEffect(() => {
+    if (!walletAddress) return
+    fetchPositions()
+  }, [walletAddress, fetchPositions])
 
   const statusSummary = useMemo(() => {
     const summary: Record<OrderStatus, number> = {
@@ -225,6 +443,20 @@ export default function OrdersPage() {
           </div>
         )}
 
+        {closeSuccess && (
+          <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 shadow-sm">
+            {closeSuccess}
+          </div>
+        )}
+        {positionsLoading && (
+          <div className="mb-4 text-xs text-slate-500">Refreshing open positions data…</div>
+        )}
+        {positionsError && (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 shadow-sm">
+            {positionsError}
+          </div>
+        )}
+
         {ordersError && (
           <div className="mb-4 rounded-2xl border border-rose-200 bg-white p-4 text-sm text-rose-600 shadow-sm">
             {ordersError}
@@ -288,7 +520,26 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        <OrdersTable orders={orders} loading={ordersLoading} statusSummary={statusSummary} />
+        <OrdersTable
+          orders={orders}
+          loading={ordersLoading}
+          statusSummary={statusSummary}
+          getPositionForOrder={resolvePositionForOrder}
+          onSellPosition={handleSellPosition}
+        />
+        {closeTarget && (
+          <ClosePositionModal
+            key={`${closeTarget.order.orderId}-${closeTarget.position.tokenId}-${closeTarget.position.size}`}
+            target={closeTarget}
+            isSubmitting={closeSubmitting}
+            submitError={closeError}
+            onClose={() => {
+              setCloseTarget(null)
+              setCloseError(null)
+            }}
+            onSubmit={handleConfirmClose}
+          />
+        )}
       </main>
     </div>
   )
@@ -330,4 +581,82 @@ function formatPercent(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
   const formatted = value.toFixed(1)
   return `${formatted}%`
+}
+
+function extractTokenIdFromOrder(order: OrderRow): string | null {
+  const raw = order.raw ?? {}
+  const candidateKeys = [
+    'token_id',
+    'tokenId',
+    'tokenID',
+    'asset_id',
+    'assetId',
+    'asset',
+    'market',
+    'condition_id',
+    'conditionId',
+  ]
+
+  for (const key of candidateKeys) {
+    const value = raw[key]
+    const normalized = extractString(value)
+    if (normalized) return normalized
+  }
+
+  const nestedMarket = typeof raw.market === 'object' && raw.market !== null ? raw.market : null
+  if (nestedMarket) {
+    const nestedKey = extractString(nestedMarket.token_id ?? nestedMarket.asset_id)
+    if (nestedKey) return nestedKey
+  }
+
+  return null
+}
+
+function buildPositionFromOrder(order: OrderRow): PositionSummary | null {
+  const tokenId = extractTokenIdFromOrder(order)
+  if (!tokenId) return null
+
+  const size = order.filledSize > 0 ? order.filledSize : order.size
+  if (!Number.isFinite(size) || size <= 0) return null
+
+  const normalizedSide = order.side?.trim().toLowerCase() ?? ''
+  const direction = normalizedSide === 'sell' ? 'SHORT' : 'LONG'
+  const side = normalizedSide === 'sell' ? 'SELL' : 'BUY'
+
+  return {
+    tokenId,
+    marketId: extractString(order.marketId) ?? null,
+    outcome: order.outcome ?? null,
+    direction,
+    side,
+    size,
+    avgEntryPrice: order.priceOrAvgPrice,
+    firstTradeAt: extractString(order.createdAt),
+    lastTradeAt: extractString(order.updatedAt),
+  }
+}
+
+function normalizePositionDirection(value: unknown): 'LONG' | 'SHORT' | null {
+  if (!value) return null
+  const normalized = String(value).trim().toUpperCase()
+  if (normalized === 'SHORT') return 'SHORT'
+  if (normalized === 'LONG') return 'LONG'
+  return null
+}
+
+function normalizePositionSide(value: unknown): 'BUY' | 'SELL' | null {
+  if (!value) return null
+  const normalized = String(value).trim().toUpperCase()
+  if (normalized === 'SELL') return 'SELL'
+  if (normalized === 'BUY') return 'BUY'
+  return null
+}
+
+function extractString(value: unknown): string | null {
+  if (value === undefined || value === null) return null
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed ? trimmed : null
+  }
+  return String(value)
 }

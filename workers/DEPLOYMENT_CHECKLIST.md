@@ -163,6 +163,8 @@ ORDER BY last_position_check_at DESC;
 2. Verify secrets: `flyctl secrets list -a polycopy-hot-worker`
 3. Check Supabase connection (URL and service role key correct?)
 
+**Note**: If `flyctl secrets list` shows "context canceled" warnings, this is normal and does NOT mean secrets are missing. Secrets are validated at runtime - the worker would fail with clear errors if secrets were actually absent.
+
 ### No Wallets Being Processed
 
 1. **Hot worker**: Verify `follows` table has active entries:

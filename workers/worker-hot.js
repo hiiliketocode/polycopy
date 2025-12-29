@@ -35,6 +35,14 @@ async function getTraderId(wallet) {
   return data?.id || null
 }
 
+function isTimeoutError(err) {
+  const msg = (err.message || err.toString() || '').toLowerCase()
+  return msg.includes('statement timeout') || 
+         msg.includes('canceling statement') ||
+         msg.includes('timeout') ||
+         msg.includes('query timeout')
+}
+
 async function main() {
   console.log('🔥 Hot worker starting...')
   console.log(`Supabase URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL}`)
@@ -44,11 +52,12 @@ async function main() {
 
   let cycleCount = 0
   let errorCount = 0
-  const maxErrors = 10
+  const maxErrors = 50 // Increased threshold - timeouts are common and non-fatal
 
   while (true) {
     try {
       cycleCount++
+      errorCount = 0 // Reset error count at start of each cycle
       const cycleStart = Date.now()
 
       const wallets = await getHotWallets()
@@ -66,16 +75,24 @@ async function main() {
           const traderId = await getTraderId(wallet)
           await processWallet(wallet, traderId, 'hot', rateLimiter, walletCooldown)
         } catch (err) {
-          console.error(`Error processing wallet ${wallet}:`, err.message || err)
-          errorCount++
-          if (errorCount >= maxErrors) {
-            console.error('Too many errors, exiting...')
+          const isTimeout = isTimeoutError(err)
+          if (isTimeout) {
+            // Timeouts are non-fatal - just log and continue
+            console.error(`⏱️  Timeout processing wallet ${wallet}:`, err.message || err)
+          } else {
+            // Other errors count toward the limit
+            console.error(`Error processing wallet ${wallet}:`, err.message || err)
+            errorCount++
+          }
+          
+          // Only exit on non-timeout errors exceeding threshold
+          if (!isTimeout && errorCount >= maxErrors) {
+            console.error(`Too many non-timeout errors (${errorCount}), exiting...`)
             process.exit(1)
           }
         }
       }
 
-      errorCount = 0 // Reset on successful cycle
       const cycleDuration = Date.now() - cycleStart
       const sleepTime = Math.max(0, HOT_POLL_INTERVAL_MS - cycleDuration)
 
@@ -83,11 +100,17 @@ async function main() {
         await new Promise(resolve => setTimeout(resolve, sleepTime))
       }
     } catch (err) {
-      console.error('Fatal error in hot worker:', err)
-      errorCount++
-      if (errorCount >= maxErrors) {
-        console.error('Too many fatal errors, exiting...')
-        process.exit(1)
+      const isTimeout = isTimeoutError(err)
+      if (isTimeout) {
+        console.error('⏱️  Timeout in cycle:', err.message || err)
+        // Don't count timeouts as fatal errors
+      } else {
+        console.error('Fatal error in hot worker:', err)
+        errorCount++
+        if (errorCount >= maxErrors) {
+          console.error('Too many fatal errors, exiting...')
+          process.exit(1)
+        }
       }
       await new Promise(resolve => setTimeout(resolve, 5000))
     }

@@ -8,6 +8,7 @@ export interface OrderRow {
   marketImageUrl: string | null
   marketIsOpen: boolean | null
   traderId: string
+  traderWallet?: string | null
   traderName: string
   traderAvatarUrl: string | null
   side: string

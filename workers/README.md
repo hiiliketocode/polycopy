@@ -190,6 +190,15 @@ When positions change, the system:
 3. Check Supabase connection: Verify URL and service role key
 4. Check `wallet_poll_state` table for wallet entries
 
+### Fly.io Secrets Notes
+
+**Important**: If `flyctl secrets list` shows a "context canceled" warning, this is normal and does NOT indicate missing secrets. 
+
+- Secrets are validated at runtime when the worker starts
+- If secrets were actually missing, the worker would fail immediately with clear error messages
+- The "context canceled" warning is a Fly.io API/metrics token issue, not a secrets problem
+- Deploys would fail hard if required secrets (`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`) were absent
+
 ### Cold worker skipping cycles
 
 - Check `job_locks` table - if lock is stuck, delete it:
@@ -221,8 +230,18 @@ workers/
 
 fly.worker-hot.toml        # Fly.io config for hot worker
 fly.worker-cold.toml       # Fly.io config for cold worker
-Dockerfile                 # Docker image (optional, Fly uses buildpacks by default)
+workers/Dockerfile         # Docker image for workers
 ```
+
+## Docker Build Context
+
+The `.dockerignore` file excludes unnecessary files from the Docker build context:
+- `.git` (~26MB)
+- `node_modules` (~867MB, installed in container)
+- `.next` (~1.3GB, not needed for workers)
+- Other build artifacts and temporary files
+
+This reduces build context from ~2GB+ to <20MB, making deploys much faster.
 
 ## Cost Estimates
 

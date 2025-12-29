@@ -47,6 +47,46 @@ function extractOrderIdFromRecord(record: OrderResponseData): string | null {
       return candidate.trim()
     }
   }
+  const nestedKeys = ['data', 'order', 'result', 'payload']
+  for (const nestedKey of nestedKeys) {
+    const nested = asRecord(record[nestedKey])
+    if (nested) {
+      const nestedId = extractOrderIdFromRecord(nested)
+      if (nestedId) return nestedId
+    }
+  }
+  return null
+}
+
+function extractErrorMessage(record: OrderResponseData): string | null {
+  const candidates = ['error', 'message', 'reason', 'detail']
+  for (const key of candidates) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim()
+    }
+    if (typeof value === 'object' && value !== null) {
+      const innerRecord = asRecord(value)
+      if (innerRecord) {
+        const nested = extractErrorMessage(innerRecord)
+        if (nested) return nested
+      }
+    }
+  }
+  if (Array.isArray(record.errors) && record.errors.length > 0) {
+    const parts = record.errors
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (typeof item === 'object' && item !== null) {
+          return extractErrorMessage(item as OrderResponseData)
+        }
+        return null
+      })
+      .filter((text): text is string => Boolean(text))
+    if (parts.length > 0) {
+      return parts.join('; ')
+    }
+  }
   return null
 }
 
@@ -126,6 +166,18 @@ export function interpretClobOrderResult(raw: unknown): ClobOrderEvaluation {
       raw,
       status: 502,
       contentType: 'text/plain',
+    }
+  }
+
+  const errorMessage = extractErrorMessage(record)
+  if (errorMessage) {
+    return {
+      success: false,
+      message: `Polymarket response: ${errorMessage}`,
+      status,
+      errorType: 'api_error',
+      raw,
+      contentType: 'application/json',
     }
   }
 
