@@ -187,7 +187,7 @@ export default function OrdersPage() {
             lastTradeAt: extractString(entry.lastTradeAt),
           }
         })
-        .filter((entry): entry is PositionSummary => Boolean(entry))
+        .filter((entry: PositionSummary | null): entry is PositionSummary => Boolean(entry))
 
       setPositions(normalized)
     } catch (err: any) {
