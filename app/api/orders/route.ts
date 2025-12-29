@@ -67,7 +67,7 @@ export async function GET() {
   }
 
   const { data: accountProfile, error: accountProfileError } = await supabase
-    .from<UserProfileRow>('profiles')
+    .from('profiles')
     .select('polymarket_username')
     .eq('id', user.id)
     .maybeSingle()
