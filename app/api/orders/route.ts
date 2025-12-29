@@ -5,6 +5,10 @@ import { resolveOrdersTableName } from '@/lib/orders/table'
 import { normalizeOrderStatus } from '@/lib/orders/normalizeStatus'
 import { OrderRow } from '@/lib/orders/types'
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar'
+import {
+  extractTraderNameFromRecord,
+  normalizeTraderDisplayName,
+} from '@/lib/trader-name'
 
 function createServiceClient() {
   return createClient(
@@ -61,6 +65,19 @@ export async function GET() {
   if (!trader?.id) {
     return NextResponse.json({ orders: [] })
   }
+
+  const { data: accountProfile, error: accountProfileError } = await supabase
+    .from<UserProfileRow>('profiles')
+    .select('polymarket_username')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (accountProfileError) {
+    console.warn('[orders] profile lookup failed', accountProfileError)
+  }
+
+  const userPolymarketUsername = accountProfile?.polymarket_username ?? null
+  const copiedTraderLookup = await fetchCopiedTraderNames(supabase, user.id)
 
   const { data: orders, error: ordersError } = await supabase
     .from(ordersTable)
@@ -130,8 +147,15 @@ export async function GET() {
     const cache = marketCacheMap.get(marketId)
     const profile = traderProfileMap.get(traderId)
     const traderRecord = traderRecordMap.get(traderId)
-
+    const traderWallet = resolveTraderWallet(traderRecord, order.raw)
     const metadata = marketMetadataMap[marketId]
+    const copiedTraderNameFromWallet =
+      traderWallet && copiedTraderLookup.wallet
+        ? copiedTraderLookup.wallet.get(traderWallet) ?? null
+        : null
+    const copiedTraderNameFromMarket = copiedTraderLookup.marketOutcome.get(
+      getCopiedTraderKey(marketId, order.outcome)
+    )
     const marketTitle = getMarketTitle(order, marketId, cache, metadata)
     const marketImageUrl =
       cache?.image_url ??
@@ -200,7 +224,15 @@ export async function GET() {
       marketImageUrl,
       marketIsOpen,
       traderId,
-      traderName: getTraderName(profile, traderRecord, order.raw),
+      traderWallet: traderWallet ?? null,
+      traderName: getTraderName(
+        profile,
+        traderRecord,
+        order.raw,
+        userPolymarketUsername,
+        copiedTraderNameFromWallet,
+        copiedTraderNameFromMarket
+      ),
       traderAvatarUrl: profile?.avatar_url ?? extractTraderAvatar(order.raw),
       side: String(order.side ?? order.raw?.side ?? '').toLowerCase(),
       outcome: order.outcome ?? null,
@@ -224,7 +256,7 @@ export async function GET() {
       .upsert(cacheUpserts, { onConflict: 'market_id' })
   }
 
-  return NextResponse.json({ orders: enrichedOrders })
+  return NextResponse.json({ orders: enrichedOrders, walletAddress })
 }
 
 async function fetchMarketCacheRows(client: ReturnType<typeof createServiceClient>, marketIds: string[]) {
@@ -286,6 +318,73 @@ async function fetchTraderRecords(
   }
 }
 
+type CopiedTraderLookup = {
+  wallet: Map<string, string>
+  marketOutcome: Map<string, string>
+}
+
+function getCopiedTraderKey(marketId: string | null, outcome?: string | null) {
+  if (!marketId) return ''
+  const outcomePart = outcome?.trim().toLowerCase() ?? ''
+  return `${marketId.trim()}|${outcomePart}`
+}
+
+async function fetchCopiedTraderNames(
+  client: ReturnType<typeof createServiceClient>,
+  userId: string | null
+): Promise<CopiedTraderLookup> {
+  if (!userId) {
+    return { wallet: new Map(), marketOutcome: new Map() }
+  }
+  try {
+    const { data } = await client
+      .from('copied_trades')
+      .select('market_id, outcome, trader_username, trader_wallet')
+      .eq('user_id', userId)
+      .order('copied_at', { ascending: false })
+      .limit(1000)
+
+    const lookup: CopiedTraderLookup = {
+      wallet: new Map<string, string>(),
+      marketOutcome: new Map<string, string>(),
+    }
+
+    for (const row of data ?? []) {
+      const marketId =
+        typeof row?.market_id === 'string' && row.market_id.trim()
+          ? row.market_id.trim()
+          : null
+      const outcome =
+        typeof row?.outcome === 'string' && row.outcome.trim()
+          ? row.outcome.trim().toLowerCase()
+          : ''
+      const username =
+        typeof row?.trader_username === 'string' && row.trader_username.trim()
+          ? row.trader_username.trim()
+          : null
+      const wallet =
+        typeof row?.trader_wallet === 'string' && row.trader_wallet.trim()
+          ? row.trader_wallet.trim().toLowerCase()
+          : null
+
+      if (wallet && username && !lookup.wallet.has(wallet)) {
+        lookup.wallet.set(wallet, username)
+      }
+
+      if (marketId && username) {
+        const key = `${marketId}|${outcome}`
+        if (!lookup.marketOutcome.has(key)) {
+          lookup.marketOutcome.set(key, username)
+        }
+      }
+    }
+    return lookup
+  } catch (error) {
+    console.warn('[orders] copied_trades lookup failed', error)
+    return { wallet: new Map(), marketOutcome: new Map() }
+  }
+}
+
 type TraderProfileRow = {
   trader_id: string | null
   display_name: string | null
@@ -297,6 +396,10 @@ type TraderRecordRow = {
   trader_id: string | null
   display_name: string | null
   wallet_address: string | null
+}
+
+type UserProfileRow = {
+  polymarket_username: string | null
 }
 
 function getMarketTitle(
@@ -354,72 +457,57 @@ function parseBoolean(value: any): boolean | null {
   return null
 }
 
-const RAW_TRADER_NAME_KEYS = [
-  'trader_username',
-  'trader_name',
-  'traderName',
-  'display_name',
-  'displayName',
-  'name',
-  'username',
-  'alias',
-  'trader_alias',
-]
-
-const RAW_TRADER_NAME_PATHS = [
-  ['trader'],
-  ['maker'],
-  ['owner'],
-  ['copied_from'],
-  ['copied_from_trader'],
-  ['raw_trader'],
-]
-
 function getTraderName(
   profile?: TraderProfileRow,
   traderRecord?: TraderRecordRow,
-  rawOrder?: any
+  rawOrder?: any,
+  userProfileName?: string | null,
+  copiedTraderWalletName?: string | null,
+  copiedTraderMarketName?: string | null
 ) {
-  const profileName = profile?.display_name
+  const profileName = normalizeTraderDisplayName(profile?.display_name ?? null)
   if (profileName) return profileName
 
-  const traderRecordName = traderRecord?.display_name
+  const traderRecordName = normalizeTraderDisplayName(traderRecord?.display_name ?? null)
   if (traderRecordName) return traderRecordName
 
-  const rawName = extractRawTraderName(rawOrder)
-  return rawName || 'unknown trader'
+  const mappedWalletName = normalizeTraderDisplayName(copiedTraderWalletName)
+  if (mappedWalletName) return mappedWalletName
+
+  const mappedMarketName = normalizeTraderDisplayName(copiedTraderMarketName)
+  if (mappedMarketName) return mappedMarketName
+
+  const rawName = extractTraderNameFromRecord(rawOrder ?? null)
+  if (rawName) return rawName
+
+  const userName = normalizeTraderDisplayName(userProfileName)
+  if (userName) return userName
+
+  return 'unknown trader'
 }
 
-function extractRawTraderName(rawOrder?: any): string | null {
-  if (!rawOrder || typeof rawOrder !== 'object') return null
-  for (const path of RAW_TRADER_NAME_PATHS) {
-    const nestedTarget = getNestedValue(rawOrder, path)
-    const candidate = getFirstStringValue(nestedTarget, RAW_TRADER_NAME_KEYS)
-    if (candidate) {
-      return candidate
-    }
-  }
-  return getFirstStringValue(rawOrder, RAW_TRADER_NAME_KEYS)
+function normalizeWalletAddress(value?: string | null) {
+  if (!value) return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed.toLowerCase() : null
 }
 
-function getFirstStringValue(record: Record<string, any> | undefined | null, keys: string[]) {
-  if (!record || typeof record !== 'object') return null
-  for (const key of keys) {
-    const value = record[key]
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim()
-    }
+function resolveTraderWallet(traderRecord?: TraderRecordRow, rawOrder?: any) {
+  const candidates: (string | undefined | null)[] = [
+    traderRecord?.wallet_address,
+    rawOrder?.trader?.wallet_address,
+    rawOrder?.trader?.wallet,
+    rawOrder?.trader?.address,
+    rawOrder?.maker?.wallet_address,
+    rawOrder?.maker?.address,
+    rawOrder?.maker_address,
+    rawOrder?.maker_wallet,
+  ]
+  for (const candidate of candidates) {
+    const normalized = normalizeWalletAddress(candidate ?? undefined)
+    if (normalized) return normalized
   }
   return null
-}
-
-function getNestedValue(record: Record<string, any> | undefined | null, path: string[]) {
-  let current: any = record
-  for (const key of path) {
-    if (!current || typeof current !== 'object') return undefined
-    current = current[key]
-  }
-  return current
 }
 
 function extractTraderAvatar(rawOrder?: any) {

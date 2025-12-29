@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useSearchParams } from 'next/navigation'
 import Header from '@/app/components/Header'
 import { USDC_DECIMALS } from '@/lib/turnkey/config'
+import { extractTraderNameFromRecord } from '@/lib/trader-name'
 
 type ExecuteForm = {
   tokenId: string
@@ -24,6 +25,12 @@ type OrderStatusResponse = {
   marketId?: string | null
   updatedAt?: string | null
   raw?: any
+}
+
+type SubmitFailureDetails = {
+  errorType?: string | null
+  rayId?: string | null
+  blockedByCloudflare?: boolean
 }
 
 type BalanceResponse = {
@@ -122,6 +129,59 @@ function formatMoney(value: number | null | undefined) {
   return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value.constructor === Object || Object.getPrototypeOf(value) === Object.prototype)
+  )
+}
+
+function findStatusReason(value: unknown): string | null {
+  if (!isPlainObject(value)) return null
+  const record = value
+  const candidates = [
+    'reject_reason',
+    'rejectReason',
+    'reject_msg',
+    'rejectMsg',
+    'reason',
+    'message',
+    'details',
+    'status_message',
+    'statusMessage',
+    'error',
+    'errorMessage',
+    'status_reason',
+    'statusReason',
+  ]
+  for (const key of candidates) {
+    const entry = record[key]
+    if (typeof entry === 'string' && entry.trim().length > 0) {
+      return entry.trim()
+    }
+    if (isPlainObject(entry)) {
+      const nested = findStatusReason(entry)
+      if (nested) return nested
+    }
+  }
+  if (Array.isArray(record.errors) && record.errors.length > 0) {
+    const texts = record.errors
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (isPlainObject(item)) {
+          return findStatusReason(item)
+        }
+        return null
+      })
+      .filter((text): text is string => Boolean(text))
+    if (texts.length > 0) {
+      return texts.join('; ')
+    }
+  }
+  return null
+}
+
 function meetsMinimumTradeUsd(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return false
   return value + MINIMUM_TRADE_TOLERANCE >= MINIMUM_TRADE_USD
@@ -132,30 +192,35 @@ function normalizeOutcome(value: string) {
 }
 
 function normalizeStatusPhase(status?: string | null): StatusPhase {
-  if (!status) return 'submitted'
+  if (!status) return 'pending'
   const normalized = status.trim().toLowerCase()
   if (normalized === 'matched' || normalized === 'filled') return 'filled'
-  if (normalized === 'accepted' || normalized === 'pending') return 'pending'
+  if (['accepted', 'pending', 'submitted', 'unknown'].includes(normalized)) return 'pending'
   if (normalized === 'processing') return 'processing'
   if (normalized === 'open') return 'open'
   if (normalized === 'partial') return 'partial'
   if (normalized === 'canceled' || normalized === 'cancelled') return 'canceled'
   if (normalized === 'expired') return 'expired'
-  if (normalized.includes('reject') || normalized.includes('error')) return 'rejected'
-  return 'unknown'
+  if (
+    normalized.includes('reject') ||
+    normalized.includes('error') ||
+    normalized.includes('fail') ||
+    normalized === 'inactive'
+  ) {
+    return 'rejected'
+  }
+  return 'pending'
 }
 
-const STATUS_PHASE_HEADLINES: Record<StatusPhase, string> = {
-  submitted: 'Order submitted',
-  processing: 'Processing on CLOB',
-  pending: 'Pending confirmation',
-  open: 'Order open',
-  partial: 'Order partially filled',
-  filled: 'Order filled',
-  canceled: 'Order canceled',
-  expired: 'Order expired',
-  rejected: 'Order rejected',
-  unknown: 'Status pending',
+const SUBMIT_ERROR_REASON_LABELS: Record<string, string> = {
+  blocked_by_cloudflare: 'Blocked by Cloudflare',
+  missing_order_id: 'Missing order identifier from Polymarket',
+  api_error: 'Polymarket API error',
+}
+
+function formatSubmitErrorReason(code?: string | null) {
+  if (!code) return 'Unknown failure reason'
+  return SUBMIT_ERROR_REASON_LABELS[code] ?? code
 }
 
 const STATUS_SIMPLE_LABELS: Record<StatusPhase, string> = {
@@ -316,14 +381,6 @@ function extractMarketIcon(record: Record<string, any>) {
   return nested ? String(nested) : ''
 }
 
-function extractTraderName(record: Record<string, any>) {
-  const direct = firstStringValue(record, TRADER_NAME_KEYS)
-  if (direct) return direct
-  const raw = record?.raw
-  if (!raw || typeof raw !== 'object') return ''
-  return firstStringValue(raw, TRADER_NAME_KEYS)
-}
-
 function extractTraderIcon(record: Record<string, any>) {
   const direct = firstStringValue(record, TRADER_ICON_KEYS)
   if (direct) return direct
@@ -342,8 +399,8 @@ function TradeExecutePageInner() {
 
   const [form, setForm] = useState<ExecuteForm>(EMPTY_FORM)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitFailureDetails, setSubmitFailureDetails] = useState<SubmitFailureDetails | null>(null)
   const [submitLoading, setSubmitLoading] = useState(false)
-  const [submitResult, setSubmitResult] = useState<any | null>(null)
   const [orderId, setOrderId] = useState<string | null>(null)
   const [submittedAt, setSubmittedAt] = useState<string | null>(null)
   const [statusData, setStatusData] = useState<OrderStatusResponse | null>(null)
@@ -367,7 +424,7 @@ function TradeExecutePageInner() {
 
   const record = tradeRecord
   const marketIcon = record ? extractMarketIcon(record) : ''
-  const traderName = record ? extractTraderName(record) : ''
+  const traderName = record ? extractTraderNameFromRecord(record) ?? '' : ''
   const traderIcon = record ? extractTraderIcon(record) : ''
   const traderWallet = record?.trader_wallet ? String(record.trader_wallet) : ''
   const marketTitle = record ? formatValue(record.market_title || record.market_slug) : '—'
@@ -375,6 +432,8 @@ function TradeExecutePageInner() {
     traderName || (traderWallet ? abbreviateWallet(traderWallet) : '') || 'Trade'
   const iconLabel = marketTitle !== '—' ? marketTitle : fallbackIdentity
   const iconImage = marketIcon || traderIcon
+  const traderDisplayName =
+    traderName || (traderWallet ? abbreviateWallet(traderWallet) : '') || 'Trader'
   const directionValue = normalizeSide(String(record?.side ?? form.side ?? 'BUY'))
   const directionLabel = directionValue === 'SELL' ? 'Sell' : 'Buy'
   const outcomeLabel = record?.outcome ? String(record.outcome) : '—'
@@ -466,10 +525,16 @@ function TradeExecutePageInner() {
     amountMode === 'usd'
       ? `${amountContractsLabel} (est)`
       : `${amountUsdLabel} (est)`
+  const winTotalValue =
+    contractsValue !== null && Number.isFinite(contractsValue)
+      ? formatMoney(contractsValue)
+      : '—'
 
   const reportedOrderStatus = statusData?.status ? String(statusData.status).trim() : null
-  const orderStatusLabel = getOrderStatusLabel(reportedOrderStatus)
-  const statusPhaseHeadline = STATUS_PHASE_HEADLINES[statusPhase] || 'Status pending'
+  const orderStatusLabel = reportedOrderStatus
+    ? getOrderStatusLabel(reportedOrderStatus)
+    : 'Pending'
+  const statusReason = statusData ? findStatusReason(statusData.raw) : null
   const isTerminal = TERMINAL_STATUS_PHASES.has(statusPhase)
   const filledSize = statusData?.filledSize ?? null
   const totalSize = statusData?.size ?? null
@@ -480,10 +545,38 @@ function TradeExecutePageInner() {
   const showFillProgress =
     fillProgress !== null && (statusPhase === 'open' || statusPhase === 'partial')
 
-  const resetRecordState = () => {
+  const fillPriceValue =
+    statusData?.price !== undefined &&
+    statusData?.price !== null &&
+    Number.isFinite(statusData.price)
+      ? Number(statusData.price)
+      : null
+  const fillPriceLabel = fillPriceValue !== null ? formatPrice(fillPriceValue) : 'Pending fill'
+  const fillSlippagePercent =
+    fillPriceValue !== null && limitPriceValue && limitPriceValue > 0
+      ? directionValue === 'SELL'
+        ? ((limitPriceValue - fillPriceValue) / limitPriceValue) * 100
+        : ((fillPriceValue - limitPriceValue) / limitPriceValue) * 100
+      : null
+  const fillSlippageLabel =
+    fillSlippagePercent !== null
+      ? `${fillSlippagePercent > 0 ? '+' : fillSlippagePercent < 0 ? '-' : ''}${Math.abs(
+          fillSlippagePercent
+        ).toFixed(2)}%`
+      : 'Pending fill'
+  const fillSlippageTone =
+    fillSlippagePercent === null
+      ? 'text-slate-500'
+      : fillSlippagePercent > 0
+        ? 'text-rose-500'
+        : fillSlippagePercent < 0
+          ? 'text-emerald-600'
+          : 'text-slate-700'
+
+  const resetRecordState = useCallback(() => {
     setTradeRecord(null)
-    setSubmitResult(null)
     setSubmitError(null)
+    setSubmitFailureDetails(null)
     setOrderId(null)
     setSubmittedAt(null)
     setStatusData(null)
@@ -497,7 +590,7 @@ function TradeExecutePageInner() {
     setSlippagePreset(1)
     setCustomSlippage('')
     setForm(EMPTY_FORM)
-  }
+  }, [])
 
   const applyRecord = async (record: Record<string, any>) => {
     setTradeRecord(record)
@@ -601,7 +694,7 @@ function TradeExecutePageInner() {
     resetRecordState()
     applyRecord(record)
     prefillAppliedRef.current = true
-  }, [searchParams])
+  }, [searchParams, resetRecordState])
 
   const fetchBalance = useCallback(async (address?: string) => {
     setBalanceLoading(true)
@@ -669,6 +762,7 @@ function TradeExecutePageInner() {
 
   const handleExecute = async () => {
     setSubmitError(null)
+    setSubmitFailureDetails(null)
 
     if (!canSubmit) {
       const total = estimatedTotal ?? 0
@@ -709,6 +803,12 @@ function TradeExecutePageInner() {
       const data = await res.json()
       if (!res.ok) {
         setSubmitError(data?.error || data?.message || 'Send failed')
+        setSubmitFailureDetails({
+          errorType: data?.errorType ?? data?.error_type ?? null,
+          rayId: data?.rayId ?? data?.ray_id ?? null,
+          blockedByCloudflare:
+            Boolean(data?.blockedByCloudflare) || Boolean(data?.blocked_by_cloudflare),
+        })
         return
       }
       const resolvedOrderId =
@@ -886,9 +986,24 @@ function TradeExecutePageInner() {
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-10 space-y-6">
         <section className="rounded-md border border-slate-200 bg-white px-5 py-6 shadow-sm space-y-6">
-          <div className="flex items-start justify-between gap-4">
-            <div>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-6">
               <h1 className="text-2xl font-semibold text-slate-900">Trade You're Copying</h1>
+              <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-sm">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-500">
+                  {traderIcon ? (
+                    <img src={traderIcon} alt={traderDisplayName} className="h-9 w-9 rounded-2xl object-cover" />
+                  ) : (
+                    <span className="text-sm font-semibold text-slate-700">
+                      {getInitials(traderDisplayName)}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400">Trader</div>
+                  <div className="text-sm font-semibold text-slate-900">{traderDisplayName}</div>
+                </div>
+              </div>
             </div>
             <div
               className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -902,11 +1017,11 @@ function TradeExecutePageInner() {
               {marketStatus ? `Market ${marketStatus}` : 'Market status pending'}
             </div>
           </div>
-          <div className="mt-3 flex items-start gap-4">
+          <div className="flex items-start gap-4">
             {iconImage ? (
               <img
                 src={iconImage}
-                alt={`${iconLabel} icon`}
+                alt={iconLabel}
                 className="h-14 w-14 rounded-2xl border border-slate-200 object-cover"
               />
             ) : (
@@ -919,13 +1034,31 @@ function TradeExecutePageInner() {
             )}
             <div className="flex-1">
               <div className="text-lg font-semibold text-slate-900">{marketTitle}</div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
-                  Direction: {directionLabel}
-                </span>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
-                  Outcome: {outcomeLabel}
-                </span>
+              <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] font-semibold tracking-wide text-slate-500">
+                    Direction
+                  </span>
+                  <span
+                    className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold shadow-sm ${
+                      directionLabel?.toLowerCase() === 'buy'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : directionLabel?.toLowerCase() === 'sell'
+                          ? 'bg-rose-100 text-rose-700'
+                          : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {directionLabel}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] font-semibold tracking-wide text-slate-500">
+                    Outcome
+                  </span>
+                  <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                    {outcomeLabel}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -956,10 +1089,16 @@ function TradeExecutePageInner() {
             </div>
           </div>
           <div className="flex flex-col gap-1 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span>Timestamp {filledLabel}</span>
+            <span>{filledLabel}</span>
             <span>Elapsed {elapsed}</span>
           </div>
         </section>
+
+        <div className="flex justify-center py-0.5">
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-base text-slate-500">
+            ↓
+          </span>
+        </div>
 
         <section className="rounded-md border border-slate-200 bg-white px-4 py-5 shadow-sm space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1016,35 +1155,26 @@ function TradeExecutePageInner() {
                   <div className="text-xs font-medium text-slate-500">Order Behavior</div>
                   <div className="text-sm font-semibold text-slate-900">{orderBehaviorLabel}</div>
                 </div>
-                <div className="sm:col-span-2">
-                  <div className="text-xs font-medium text-slate-500">Token</div>
-                  <div className="text-sm font-semibold text-slate-900">{form.tokenId || '—'}</div>
-                </div>
               </div>
-              <div className="text-xs text-slate-500">
-                Tracking order updates via the CLOB every ~0.25s until the order completes or you close{' '}
-                this screen.
+              <div className="border-t border-slate-100 pt-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <div className="text-xs font-medium text-slate-500">Filled Price</div>
+                    <div className="text-lg font-semibold text-slate-900">{fillPriceLabel}</div>
+                    <div className="text-xs text-slate-400">Actual execution price</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-slate-500">Slippage vs limit</div>
+                    <div className={`text-sm font-semibold ${fillSlippageTone}`}>{fillSlippageLabel}</div>
+                    <div className="text-xs text-slate-400">Positive worsens the fill</div>
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
             <>
-              <div className="rounded-md border border-slate-200 bg-white px-4 py-4 space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-medium text-slate-500">Amount</div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {amountMode === 'usd' ? 'USD entry' : 'Contracts entry'}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAmountMode(amountMode === 'usd' ? 'contracts' : 'usd')}
-                    className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600"
-                  >
-                    ⇄
-                  </button>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm">
+              <div className="space-y-3">
+                <div className="rounded-2xl bg-slate-50 px-4 py-3 shadow-sm">
                   <div className="mb-4 flex items-center gap-2">
                     <button
                       type="button"
@@ -1071,14 +1201,16 @@ function TradeExecutePageInner() {
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm sm:w-auto">
-                      <span className="text-sm font-semibold text-slate-900">$</span>
+                      {amountMode === 'usd' && (
+                        <span className="text-sm font-semibold text-slate-900">$</span>
+                      )}
                       <input
                         type="number"
                         min="0"
                         step="0.0001"
                         value={amountInput}
                         onChange={(e) => setAmountInput(e.target.value)}
-                        className="w-full flex-1 border-none bg-white px-1 text-lg font-semibold text-slate-900 outline-none focus:outline-none"
+                        className="w-full flex-1 border-none bg-white px-1 text-lg font-semibold text-slate-900 outline-none focus:outline-none appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none  [&::-moz-number-spin-box]:appearance-none"
                         placeholder={amountMode === 'usd' ? '1.20' : '10'}
                       />
                     </div>
@@ -1087,26 +1219,18 @@ function TradeExecutePageInner() {
                         ? `${formatNumber(contractsValue)} Contracts (est)`
                         : `${formatMoney(estimatedTotal)} USD (est)`}
                     </div>
+                    <div className="ml-auto text-sm text-slate-500">
+                      Win Total:{' '}
+                      <span className="text-base font-semibold text-slate-900">{winTotalValue}</span>
+                    </div>
                   </div>
+                  {(minimumTotalNotMet || notEnoughFunds) ? (
+                    <div className="flex flex-wrap gap-2 text-xs text-rose-600 mt-2">
+                      {minimumTotalNotMet && <span>Minimum total is $1.</span>}
+                      {notEnoughFunds && <span>Not enough funds available.</span>}
+                    </div>
+                  ) : null}
                 </div>
-                <div className="flex flex-wrap gap-4 text-xs text-slate-500">
-                  <span>
-                    {amountMode === 'usd'
-                      ? `${amountInput || '0'} USD`
-                      : `${amountInput || '0'} contracts`}
-                  </span>
-                  <span>
-                    {amountMode === 'usd'
-                      ? `≈ ${formatNumber(contractsValue)} contracts`
-                      : `≈ ${formatMoney(estimatedTotal)} USD`}
-                  </span>
-                </div>
-                {(minimumTotalNotMet || notEnoughFunds) ? (
-                  <div className="flex flex-wrap gap-3 text-xs text-rose-600">
-                    {minimumTotalNotMet && <span>Minimum total is $1.</span>}
-                    {notEnoughFunds && <span>Not enough funds available.</span>}
-                  </div>
-                ) : null}
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -1222,7 +1346,7 @@ function TradeExecutePageInner() {
                   type="button"
                   onClick={handleExecute}
                   disabled={!canSubmit || submitLoading}
-                  className="inline-flex items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  className="inline-flex w-full max-w-[320px] justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400 mx-auto sm:max-w-none sm:w-auto"
                 >
                   {submitLoading ? 'Submitting…' : 'Send Order'}
                 </button>
@@ -1234,41 +1358,56 @@ function TradeExecutePageInner() {
           )}
 
           {submitError && (
-            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {submitError}
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 space-y-1">
+              <div>{submitError}</div>
+              {submitFailureDetails?.errorType && (
+                <div className="text-xs text-slate-500">
+                  Reason code:{' '}
+                  <span className="font-semibold text-slate-900">
+                    {formatSubmitErrorReason(submitFailureDetails.errorType)}
+                  </span>
+                </div>
+              )}
+              {submitFailureDetails?.rayId && (
+                <div className="text-xs text-slate-500">Ray ID: {submitFailureDetails.rayId}</div>
+              )}
             </div>
           )}
 
           {orderId && (
-            <div className="rounded-md border border-slate-200 bg-white px-3 py-3">
-              <h3 className="text-sm font-semibold text-slate-800">Order Status</h3>
-              <p className="mt-1 text-xs text-slate-500">
-                Order status is shown in real time. Polymarket may take longer to reflect updates.
-              </p>
-              <div className="mt-2 text-sm text-slate-700">{statusPhaseHeadline}</div>
-              <div className="mt-1 text-xs text-slate-500">
-                Status: {orderStatusLabel}
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm space-y-4 sm:px-5 sm:py-6">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Order sent to Polymarket</h3>
               </div>
+              <div className="text-sm text-slate-600">
+                Status:
+                <span className="ml-1 text-sm font-semibold text-slate-900">{orderStatusLabel}</span>
+              </div>
+              {statusReason && (
+                <div className="text-sm text-slate-500">Reason: {statusReason}</div>
+              )}
               {showFillProgress && (
-                <div className="mt-2">
-                  <div className="text-xs text-slate-500">
+                <div>
+                  <div className="text-sm text-slate-500">
                     Filled {formatNumber(filledSize)} / {formatNumber(totalSize)}
                   </div>
-                  <div className="mt-1 h-2 w-full rounded-full bg-slate-100">
+                  <div className="mt-2 h-2 w-full rounded-full bg-slate-100">
                     <div
-                      className="h-2 rounded-full bg-slate-900"
+                      className="h-2 rounded-full bg-slate-900 transition-all duration-150"
                       style={{ width: `${fillProgress}%` }}
                     />
                   </div>
                 </div>
               )}
               {statusData?.updatedAt && (
-                <div className="mt-2 text-xs text-slate-400">
+                <div className="text-sm text-slate-500">
                   Updated {new Date(statusData.updatedAt).toLocaleTimeString()}
                 </div>
               )}
               {statusError && (
-                <div className="mt-2 text-xs text-rose-600">{statusError}</div>
+                <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {statusError}
+                </div>
               )}
             </div>
           )}

@@ -1,7 +1,9 @@
 'use client'
 
+import Link from 'next/link'
 import React, { useMemo, useState } from 'react'
 import { OrderRow, OrderStatus } from '@/lib/orders/types'
+import { PositionSummary } from '@/lib/orders/position'
 import OrderRowDetails from './OrderRowDetails'
 
 const PAGE_SIZE = 12
@@ -40,9 +42,17 @@ type OrdersTableProps = {
   orders: OrderRow[]
   loading: boolean
   statusSummary: Record<OrderStatus, number>
+  getPositionForOrder: (order: OrderRow) => PositionSummary | null
+  onSellPosition: (order: OrderRow) => void
 }
 
-export default function OrdersTable({ orders, loading, statusSummary }: OrdersTableProps) {
+export default function OrdersTable({
+  orders,
+  loading,
+  statusSummary,
+  getPositionForOrder,
+  onSellPosition,
+}: OrdersTableProps) {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
 
@@ -124,12 +134,16 @@ export default function OrdersTable({ orders, loading, statusSummary }: OrdersTa
                 <th className="py-2 pr-4 font-medium min-w-[120px]">Current price</th>
                 <th className="py-2 pr-4 font-medium min-w-[120px]">P/L</th>
                 <th className="py-2 pr-4 font-medium min-w-[140px]">Date</th>
+                <th className="py-2 pr-4 font-medium min-w-[140px]">Actions</th>
               </tr>
             </thead>
             <tbody>
               {pagedOrders.map((order) => {
                 const contractsValue = order.filledSize > 0 ? order.filledSize : order.size
                 const marketStatus = renderMarketStatus(order.marketIsOpen)
+                const position = getPositionForOrder(order)
+                const hasOpenPosition = Boolean(position && position.size > 0)
+                const canSell = hasOpenPosition
                 return (
                   <React.Fragment key={order.orderId}>
                     <tr className="cursor-pointer border-b border-slate-100 hover:bg-slate-50" onClick={() => toggleRow(order.orderId)}>
@@ -188,7 +202,12 @@ export default function OrdersTable({ orders, loading, statusSummary }: OrdersTa
                             )}
                           </div>
                           <div className="flex min-w-0 flex-col">
-                            <p className="truncate font-medium text-slate-900">{order.traderName}</p>
+                            <Link
+                              href={`/trader/${order.traderWallet ?? order.traderId}`}
+                              className="truncate font-medium text-slate-900 hover:text-slate-800"
+                            >
+                              {order.traderName}
+                            </Link>
                           </div>
                         </div>
                       </td>
@@ -215,10 +234,28 @@ export default function OrdersTable({ orders, loading, statusSummary }: OrdersTa
                       <td className="py-3 pr-4 align-top text-slate-600">
                         {formatDate(order.createdAt)}
                       </td>
+                      <td className="py-3 pr-4 align-top">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            if (!canSell) return
+                            onSellPosition(order)
+                          }}
+                          disabled={!canSell}
+                          className={`rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
+                            canSell
+                              ? 'bg-rose-500 text-white hover:bg-rose-400'
+                              : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          Sell
+                        </button>
+                      </td>
                     </tr>
                     {expandedOrderId === order.orderId && (
                       <tr className="bg-slate-50">
-                        <td colSpan={9} className="px-4 pb-4 pt-2">
+                        <td colSpan={10} className="px-4 pb-4 pt-2">
                           <OrderRowDetails order={order} />
                         </td>
                       </tr>
