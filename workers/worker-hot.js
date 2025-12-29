@@ -40,7 +40,8 @@ function isTimeoutError(err) {
   return msg.includes('statement timeout') || 
          msg.includes('canceling statement') ||
          msg.includes('timeout') ||
-         msg.includes('query timeout')
+         msg.includes('query timeout') ||
+         msg.includes('upstream request timeout')
 }
 
 async function main() {

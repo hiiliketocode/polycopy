@@ -143,7 +143,8 @@ export default function OrdersTable({
                 const marketStatus = renderMarketStatus(order.marketIsOpen)
                 const position = getPositionForOrder(order)
                 const hasOpenPosition = Boolean(position && position.size > 0)
-                const canSell = hasOpenPosition
+                const isMarketOpen = order.marketIsOpen === true || order.status === 'open'
+                const canSell = hasOpenPosition && isMarketOpen
                 return (
                   <React.Fragment key={order.orderId}>
                     <tr className="cursor-pointer border-b border-slate-100 hover:bg-slate-50" onClick={() => toggleRow(order.orderId)}>
@@ -234,23 +235,25 @@ export default function OrdersTable({
                       <td className="py-3 pr-4 align-top text-slate-600">
                         {formatDate(order.createdAt)}
                       </td>
-                      <td className="py-3 pr-4 align-top">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            if (!canSell) return
-                            onSellPosition(order)
-                          }}
-                          disabled={!canSell}
-                          className={`rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
-                            canSell
-                              ? 'bg-rose-500 text-white hover:bg-rose-400'
-                              : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                          }`}
-                        >
-                          Sell
-                        </button>
+                      <td className="py-3 pr-4 align-top text-right">
+                        {isMarketOpen && (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              if (!canSell) return
+                              onSellPosition(order)
+                            }}
+                            disabled={!canSell}
+                            className={`rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
+                              canSell
+                                ? 'bg-rose-500 text-white hover:bg-rose-400'
+                                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                            }`}
+                          >
+                            Sell
+                          </button>
+                        )}
                       </td>
                     </tr>
                     {expandedOrderId === order.orderId && (

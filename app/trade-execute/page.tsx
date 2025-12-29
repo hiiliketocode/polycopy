@@ -7,6 +7,8 @@ import { useSearchParams } from 'next/navigation'
 import Header from '@/app/components/Header'
 import { USDC_DECIMALS } from '@/lib/turnkey/config'
 import { extractTraderNameFromRecord } from '@/lib/trader-name'
+import { CheckCircle2, Clock, XCircle } from 'lucide-react'
+import type { LucideProps } from 'lucide-react'
 
 type ExecuteForm = {
   tokenId: string
@@ -209,6 +211,28 @@ function normalizeStatusPhase(status?: string | null): StatusPhase {
   ) {
     return 'rejected'
   }
+  return 'pending'
+}
+
+type ExecutionStatusVariant = 'success' | 'pending' | 'failed'
+
+const FAILED_EXECUTION_PHASES = new Set<StatusPhase>(['canceled', 'expired', 'rejected'])
+
+const STATUS_VARIANT_ICONS: Record<ExecutionStatusVariant, (props: LucideProps) => JSX.Element> = {
+  success: CheckCircle2,
+  pending: Clock,
+  failed: XCircle,
+}
+
+const STATUS_VARIANT_WRAPPER_CLASSES: Record<ExecutionStatusVariant, string> = {
+  success: 'border-emerald-200 bg-emerald-50 text-emerald-600',
+  pending: 'border-amber-200 bg-amber-50 text-amber-600',
+  failed: 'border-rose-200 bg-rose-50 text-rose-600',
+}
+
+function getExecutionStatusVariant(phase: StatusPhase): ExecutionStatusVariant {
+  if (phase === 'filled') return 'success'
+  if (FAILED_EXECUTION_PHASES.has(phase)) return 'failed'
   return 'pending'
 }
 
@@ -535,6 +559,9 @@ function TradeExecutePageInner() {
     ? getOrderStatusLabel(reportedOrderStatus)
     : 'Pending'
   const statusReason = statusData ? findStatusReason(statusData.raw) : null
+  const orderStatusVariant = getExecutionStatusVariant(statusPhase)
+  const StatusIconComponent = STATUS_VARIANT_ICONS[orderStatusVariant]
+  const orderStatusIconClasses = STATUS_VARIANT_WRAPPER_CLASSES[orderStatusVariant]
   const isTerminal = TERMINAL_STATUS_PHASES.has(statusPhase)
   const filledSize = statusData?.filledSize ?? null
   const totalSize = statusData?.size ?? null
@@ -1381,7 +1408,14 @@ function TradeExecutePageInner() {
               </div>
               <div className="text-sm text-slate-600">
                 Status:
-                <span className="ml-1 text-sm font-semibold text-slate-900">{orderStatusLabel}</span>
+                <span className="ml-2 inline-flex items-center gap-2">
+                  <span
+                    className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${orderStatusIconClasses}`}
+                  >
+                    <StatusIconComponent className="h-3 w-3" aria-hidden />
+                  </span>
+                  <span className="text-sm font-semibold text-slate-900">{orderStatusLabel}</span>
+                </span>
               </div>
               {statusReason && (
                 <div className="text-sm text-slate-500">Reason: {statusReason}</div>

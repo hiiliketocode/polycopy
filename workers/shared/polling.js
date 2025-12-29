@@ -85,12 +85,35 @@ async function withRetry(fn, maxAttempts = 3, baseDelay = 1000) {
   }
 }
 
+// Fetch with timeout
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    })
+    clearTimeout(timeoutId)
+    return res
+  } catch (err) {
+    clearTimeout(timeoutId)
+    if (err.name === 'AbortError') {
+      const timeoutError = new Error('upstream request timeout')
+      timeoutError.status = 408
+      throw timeoutError
+    }
+    throw err
+  }
+}
+
 // Fetch trades from Polymarket public API
 async function fetchTradesPage(wallet, limit = 200, offset = 0) {
   const url = `https://data-api.polymarket.com/trades?user=${wallet.toLowerCase()}&limit=${limit}&offset=${offset}`
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: { 'User-Agent': 'Polycopy Worker' }
-  })
+  }, 15000) // 15 second timeout
 
   if (!res.ok) {
     const error = new Error(`Trades API returned ${res.status}: ${await res.text()}`)
@@ -111,9 +134,9 @@ async function fetchPositions(wallet) {
 
   while (hasMore) {
     const url = `https://data-api.polymarket.com/positions?user=${wallet.toLowerCase()}&limit=${limit}&offset=${offset}`
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: { 'User-Agent': 'Polycopy Worker' }
-    })
+    }, 15000) // 15 second timeout
 
     if (!res.ok) {
       if (res.status === 404 || res.status === 400) {
@@ -187,15 +210,25 @@ function buildTradeRow(trade, wallet, traderId) {
 }
 
 // Upsert trades into trades_public
+// Batch upserts to avoid timeouts on large datasets
 async function upsertTrades(rows) {
   if (rows.length === 0) return 0
   
-  const { error, count } = await supabase
-    .from('trades_public')
-    .upsert(rows, { onConflict: 'trade_id', ignoreDuplicates: false, count: 'exact' })
-
-  if (error) throw error
-  return count ?? rows.length
+  // Reduced batch size to 500 to avoid statement timeouts on large datasets
+  const BATCH_SIZE = 500
+  let totalUpserted = 0
+  
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE)
+    const { error, count } = await supabase
+      .from('trades_public')
+      .upsert(batch, { onConflict: 'trade_id', ignoreDuplicates: false, count: 'exact' })
+    
+    if (error) throw error
+    totalUpserted += count ?? batch.length
+  }
+  
+  return totalUpserted
 }
 
 // Update wallet poll state (tier removed - derived dynamically from follows table)
@@ -245,31 +278,9 @@ async function upsertCurrentPositions(wallet, positions) {
     return 0
   }
 
-  // Delete old positions not in current snapshot
-  // First get existing positions for this wallet
-  const { data: existing } = await supabase
-    .from('positions_current')
-    .select('market_id')
-    .eq('wallet_address', wallet.toLowerCase())
-
-  if (existing && existing.length > 0) {
-    const currentMarketIds = new Set(rows.map(r => r.market_id).filter(Boolean))
-    const toDelete = existing.filter(e => !currentMarketIds.has(e.market_id))
-    
-    if (toDelete.length > 0) {
-      const deleteIds = toDelete.map(d => d.market_id).filter(Boolean)
-      for (const marketId of deleteIds) {
-        await supabase
-          .from('positions_current')
-          .delete()
-          .eq('wallet_address', wallet.toLowerCase())
-          .eq('market_id', marketId)
-      }
-    }
-  }
-
-  // Upsert using composite primary key (wallet_address, market_id)
-  // Note: Supabase client will use the primary key constraint automatically
+  // Optimized: Just use UPSERT - it handles conflicts automatically via onConflict
+  // No need to DELETE first, which was causing timeouts on wallets with many positions
+  // UPSERT will update existing rows and insert new ones in a single operation
   const { error, count } = await supabase
     .from('positions_current')
     .upsert(rows, { onConflict: 'wallet_address,market_id', ignoreDuplicates: false, count: 'exact' })
@@ -282,7 +293,7 @@ async function upsertCurrentPositions(wallet, positions) {
 async function checkMarketClosed(marketId) {
   try {
     const url = `https://clob.polymarket.com/markets/${marketId}`
-    const res = await fetch(url, { headers: { 'User-Agent': 'Polycopy Worker' } })
+    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Polycopy Worker' } }, 10000) // 10 second timeout
     if (!res.ok) return null
     const market = await res.json()
     return market.closed === true || market.resolved === true
@@ -292,44 +303,48 @@ async function checkMarketClosed(marketId) {
 }
 
 // Reconcile positions: detect changes and classify closed positions
-async function reconcilePositions(wallet, currentPositions) {
-  // Get previous snapshot
-  const { data: previous } = await supabase
-    .from('positions_current')
-    .select('*')
-    .eq('wallet_address', wallet.toLowerCase())
-
-  const previousMap = new Map((previous || []).map(p => [p.market_id, p]))
+// Note: previousPositions should be passed in to avoid duplicate query
+async function reconcilePositions(wallet, currentPositions, previousPositions) {
+  const previousMap = new Map((previousPositions || []).map(p => [p.market_id, p]))
   const currentMap = new Map(currentPositions.map(p => [p.conditionId || p.asset, p]))
 
-  const closed = []
+  const disappearedMarkets = []
 
+  // Find all disappeared positions first
   for (const [marketId, prev] of previousMap) {
     if (!currentMap.has(marketId)) {
-      // Position disappeared - need to classify
-      const isMarketClosed = await checkMarketClosed(marketId)
-      const closedReason = isMarketClosed ? 'market_closed' : 'manual_close'
-      
-      closed.push({
-        wallet_address: wallet.toLowerCase(),
-        market_id: marketId,
-        closed_reason: closedReason,
-        closed_at: new Date().toISOString(),
-        raw: prev.raw
-      })
-    } else {
-      // Check if size changed significantly (partial close)
-      const curr = currentMap.get(marketId)
-      const prevSize = prev.size || 0
-      const currSize = Number(curr.size) || 0
-      if (Math.abs(prevSize - currSize) > 0.01) {
-        // Size changed - could be partial close or trade
-        // We'll track this but not mark as closed
-      }
+      disappearedMarkets.push({ marketId, prev })
     }
   }
 
-  // Insert closed positions
+  if (disappearedMarkets.length === 0) {
+    return 0
+  }
+
+  // Optimized: Parallelize API calls to check market status
+  // Instead of sequential calls (10 positions = 100s), do them in parallel
+  const marketChecks = await Promise.allSettled(
+    disappearedMarkets.map(({ marketId }) => checkMarketClosed(marketId))
+  )
+
+  const closed = []
+  for (let i = 0; i < disappearedMarkets.length; i++) {
+    const { marketId, prev } = disappearedMarkets[i]
+    const checkResult = marketChecks[i]
+    // If API call failed or returned null, default to 'manual_close'
+    const isMarketClosed = checkResult.status === 'fulfilled' && checkResult.value === true
+    const closedReason = isMarketClosed ? 'market_closed' : 'manual_close'
+    
+    closed.push({
+      wallet_address: wallet.toLowerCase(),
+      market_id: marketId,
+      closed_reason: closedReason,
+      closed_at: new Date().toISOString(),
+      raw: prev.raw
+    })
+  }
+
+  // Insert closed positions (batch insert)
   if (closed.length > 0) {
     await supabase
       .from('positions_closed')
@@ -402,11 +417,19 @@ async function processWallet(wallet, traderId, tier, rateLimiter, walletCooldown
     await rateLimiter.acquire()
     const positions = await withRetry(() => fetchPositions(wallet))
 
+    // Get previous positions BEFORE upserting (needed for reconciliation)
+    // Optimized: Only select columns we actually need (market_id and raw)
     await rateLimiter.acquire()
-    await upsertCurrentPositions(wallet, positions)
+    const { data: previousPositions } = await supabase
+      .from('positions_current')
+      .select('market_id, raw')
+      .eq('wallet_address', wallet.toLowerCase())
 
     await rateLimiter.acquire()
-    const closedCount = await reconcilePositions(wallet, positions)
+    const closedCount = await reconcilePositions(wallet, positions, previousPositions || [])
+
+    await rateLimiter.acquire()
+    await upsertCurrentPositions(wallet, positions)
 
     // Update poll state
     const now = Date.now()

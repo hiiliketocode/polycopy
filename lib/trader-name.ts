@@ -14,13 +14,34 @@ export function normalizeTraderDisplayName(value?: string | null) {
 }
 
 export function extractTraderNameFromRecord(record?: Record<string, any> | null) {
-  const direct = firstStringValue(record, TRADER_NAME_KEYS)
-  if (direct) return normalizeTraderDisplayName(direct)
+  const candidateScopes = collectNameScopes(record)
+  for (const scope of candidateScopes) {
+    const direct = firstStringValue(scope, TRADER_NAME_KEYS)
+    if (direct) return normalizeTraderDisplayName(direct)
+  }
 
   const raw = record?.raw
   if (!raw || typeof raw !== 'object') return null
-  const nested = firstStringValue(raw, TRADER_NAME_KEYS)
-  return nested ? normalizeTraderDisplayName(nested) : null
+  const rawScopes = collectNameScopes(raw)
+  for (const scope of rawScopes) {
+    const nested = firstStringValue(scope, TRADER_NAME_KEYS)
+    if (nested) return normalizeTraderDisplayName(nested)
+  }
+
+  return null
+}
+
+function collectNameScopes(record?: Record<string, any> | null) {
+  if (!record || typeof record !== 'object') return []
+  const scopes: Record<string, any>[] = [record]
+  const nestedKeys = ['trader', 'maker', 'user', 'owner', 'creator']
+  for (const key of nestedKeys) {
+    const nested = record[key]
+    if (nested && typeof nested === 'object') {
+      scopes.push(nested)
+    }
+  }
+  return scopes
 }
 
 function firstStringValue(record: Record<string, any> | undefined | null, keys: string[]) {

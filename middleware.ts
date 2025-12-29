@@ -54,7 +54,28 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  await supabase.auth.getUser()
+  const hasSupabaseCookies = request.cookies
+    .getAll()
+    .some((cookie) => cookie.name.startsWith('sb-'))
+
+  if (hasSupabaseCookies) {
+    try {
+      // Add timeout to prevent middleware from hanging (2 second max)
+      // This prevents 504 errors when database is slow
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Auth timeout')), 2000)
+      )
+      
+      await Promise.race([
+        supabase.auth.getUser(),
+        timeoutPromise
+      ])
+    } catch (error) {
+      // Silently fail - don't block requests if auth check times out
+      // This allows the site to still load even if database is slow
+      // Auth will be checked again in the actual page/API route if needed
+    }
+  }
 
   return response
 }
@@ -64,4 +85,3 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
-
