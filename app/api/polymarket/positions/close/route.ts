@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { POST as placeOrder } from '../orders/place/route'
+import { POST as placeOrder } from '../../orders/place/route'
 
 const HANDLER_FINGERPRINT = 'app/api/polymarket/positions/close/route.ts'
 
