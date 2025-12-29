@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Header from '@/app/components/Header'
 import { USDC_DECIMALS } from '@/lib/turnkey/config'
@@ -218,7 +218,7 @@ type ExecutionStatusVariant = 'success' | 'pending' | 'failed'
 
 const FAILED_EXECUTION_PHASES = new Set<StatusPhase>(['canceled', 'expired', 'rejected'])
 
-const STATUS_VARIANT_ICONS: Record<ExecutionStatusVariant, (props: LucideProps) => ReactElement> = {
+const STATUS_VARIANT_ICONS: Record<ExecutionStatusVariant, ComponentType<LucideProps>> = {
   success: CheckCircle2,
   pending: Clock,
   failed: XCircle,
