@@ -70,6 +70,7 @@ export default function FeedPage() {
   const [loading, setLoading] = useState(true);
   const [userTier, setUserTier] = useState<FeatureTier>('anon');
   const [isPremium, setIsPremium] = useState(false);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [activeCategory, setActiveCategory] = useState<Category>('all');
   
@@ -197,11 +198,12 @@ export default function FeedPage() {
     fetchCopiedTrades();
   }, [user]);
 
-  // Fetch feature tier
+  // Fetch feature tier and wallet
   useEffect(() => {
     if (!user) {
       setUserTier('anon');
       setIsPremium(false);
+      setWalletAddress(null);
       return;
     }
 
@@ -209,16 +211,23 @@ export default function FeedPage() {
 
     let cancelled = false;
 
-    const fetchProfile = async () => {
+    const fetchProfileAndWallet = async () => {
       try {
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('is_premium, is_admin')
-          .eq('id', user.id)
-          .single();
+        const [profileRes, walletRes] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('is_premium, is_admin')
+            .eq('id', user.id)
+            .single(),
+          supabase
+            .from('turnkey_wallets')
+            .select('polymarket_account_address, eoa_address')
+            .eq('user_id', user.id)
+            .maybeSingle()
+        ]);
 
-        if (profileError) {
-          console.error('Error fetching profile:', profileError);
+        if (profileRes.error) {
+          console.error('Error fetching profile:', profileRes.error);
           if (!cancelled) {
             setUserTier(resolveFeatureTier(true, null));
             setIsPremium(false);
@@ -227,19 +236,25 @@ export default function FeedPage() {
         }
 
         if (!cancelled) {
-          setUserTier(resolveFeatureTier(true, profileData));
-          setIsPremium(profileData?.is_premium || false);
+          setUserTier(resolveFeatureTier(true, profileRes.data));
+          setIsPremium(profileRes.data?.is_premium || false);
+          setWalletAddress(
+            walletRes.data?.polymarket_account_address || 
+            walletRes.data?.eoa_address || 
+            null
+          );
         }
       } catch (err) {
         console.error('Error fetching profile:', err);
         if (!cancelled) {
           setUserTier('registered');
           setIsPremium(false);
+          setWalletAddress(null);
         }
       }
     };
 
-    fetchProfile();
+    fetchProfileAndWallet();
 
     return () => {
       cancelled = true;
@@ -650,7 +665,11 @@ export default function FeedPage() {
   if (loading) {
     return (
       <>
-        <Navigation user={user ? { id: user.id, email: user.email || '' } : null} isPremium={isPremium} />
+        <Navigation 
+        user={user ? { id: user.id, email: user.email || '' } : null} 
+        isPremium={isPremium}
+        walletAddress={walletAddress}
+      />
         <div className="min-h-screen bg-slate-50 pb-24 w-full max-w-full overflow-x-hidden flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
@@ -663,7 +682,11 @@ export default function FeedPage() {
 
   return (
     <>
-      <Navigation user={user ? { id: user.id, email: user.email || '' } : null} isPremium={isPremium} />
+      <Navigation 
+        user={user ? { id: user.id, email: user.email || '' } : null} 
+        isPremium={isPremium}
+        walletAddress={walletAddress}
+      />
       
       <div className="min-h-screen bg-slate-50 pt-4 md:pt-0 pb-20 md:pb-8">
         {/* Page Header */}
