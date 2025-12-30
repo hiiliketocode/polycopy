@@ -18,22 +18,39 @@ interface MarkTradeCopiedModalProps {
     traderPrice: number
   }
   isPremium?: boolean
+  onConfirm?: (entryPrice: number, amountInvested?: number) => Promise<void>
 }
 
-export function MarkTradeCopiedModal({ open, onOpenChange, trade, isPremium = false }: MarkTradeCopiedModalProps) {
+export function MarkTradeCopiedModal({ open, onOpenChange, trade, isPremium = false, onConfirm }: MarkTradeCopiedModalProps) {
   const [entryPrice, setEntryPrice] = useState("")
   const [amountInvested, setAmountInvested] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const router = useRouter()
 
   if (!trade) return null
 
-  const handleConfirm = () => {
-    // Handle confirmation logic
-    console.log("[v0] Trade copied:", { entryPrice, amountInvested })
-    onOpenChange(false)
-    // Reset form
-    setEntryPrice("")
-    setAmountInvested("")
+  const handleConfirm = async () => {
+    if (!entryPrice) return;
+    
+    setIsSubmitting(true);
+    
+    try {
+      const price = parseFloat(entryPrice);
+      const amount = amountInvested ? parseFloat(amountInvested) : undefined;
+      
+      if (onConfirm) {
+        await onConfirm(price, amount);
+      }
+      
+      onOpenChange(false);
+      // Reset form
+      setEntryPrice("");
+      setAmountInvested("");
+    } catch (error) {
+      console.error("Error confirming trade:", error);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   const handleCancel = () => {
@@ -156,10 +173,10 @@ export function MarkTradeCopiedModal({ open, onOpenChange, trade, isPremium = fa
             </Button>
             <Button
               onClick={handleConfirm}
-              disabled={!entryPrice}
+              disabled={!entryPrice || isSubmitting}
               className="flex-1 h-11 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             >
-              Confirm
+              {isSubmitting ? 'Saving...' : 'Confirm'}
             </Button>
           </div>
         </div>
