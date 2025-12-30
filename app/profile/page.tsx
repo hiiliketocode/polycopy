@@ -16,6 +16,14 @@ import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { MarkTradeClosed } from '@/components/polycopy/mark-trade-closed';
 import { EditCopiedTrade } from '@/components/polycopy/edit-copied-trade';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import {
   TrendingUp,
   Percent,
   DollarSign,
@@ -124,6 +132,10 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<'copied-trades' | 'performance' | 'settings'>(initialTab as any);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  
+  // Disconnect wallet confirmation modal state
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+  const [disconnectConfirmText, setDisconnectConfirmText] = useState('');
   
   // Notification preferences state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -432,6 +444,11 @@ export default function ProfilePage() {
   const handleWalletDisconnect = async () => {
     if (!user || !profile?.trading_wallet_address) return;
     
+    // Check if confirmation is correct
+    if (disconnectConfirmText.toUpperCase() !== 'YES') {
+      return;
+    }
+    
     setDisconnectingWallet(true);
     
     try {
@@ -444,6 +461,8 @@ export default function ProfilePage() {
       if (error) throw error;
       
       setProfile({ ...profile, trading_wallet_address: null });
+      setShowDisconnectModal(false);
+      setDisconnectConfirmText('');
       setToastMessage('Wallet disconnected');
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
@@ -705,7 +724,7 @@ export default function ProfilePage() {
                         <Copy className="h-4 w-4" />
                       </Button>
                       <Button
-                        onClick={handleWalletDisconnect}
+                        onClick={() => setShowDisconnectModal(true)}
                         disabled={disconnectingWallet}
                         variant="ghost"
                         size="sm"
@@ -1197,6 +1216,63 @@ export default function ProfilePage() {
         } : null}
         onConfirm={handleCloseTrade}
       />
+
+      {/* Disconnect Wallet Confirmation Modal */}
+      <Dialog open={showDisconnectModal} onOpenChange={setShowDisconnectModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-red-600">Disconnect Wallet?</DialogTitle>
+            <DialogDescription className="text-slate-600 mt-2">
+              This will remove your connected Polymarket wallet from Polycopy. You will need to reconnect it to use Real Copy trading features.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 mt-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm font-semibold text-red-900 mb-2">⚠️ Warning:</p>
+              <ul className="text-sm text-red-800 space-y-1 list-disc list-inside">
+                <li>You will lose access to automated trade execution</li>
+                <li>Your private key will be removed from secure storage</li>
+                <li>This action cannot be undone</li>
+              </ul>
+            </div>
+            
+            <div className="space-y-2">
+              <label htmlFor="confirm-text" className="text-sm font-medium text-slate-900">
+                Type <span className="font-bold">YES</span> to confirm:
+              </label>
+              <Input
+                id="confirm-text"
+                type="text"
+                placeholder="Type YES to confirm"
+                value={disconnectConfirmText}
+                onChange={(e) => setDisconnectConfirmText(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+            
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDisconnectModal(false);
+                  setDisconnectConfirmText('');
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleWalletDisconnect}
+                disabled={disconnectConfirmText.toUpperCase() !== 'YES' || disconnectingWallet}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+              >
+                {disconnectingWallet ? 'Disconnecting...' : 'Disconnect Wallet'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Toast */}
       {showToast && (
