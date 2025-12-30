@@ -227,13 +227,12 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
               <div className="space-y-3">
                 <h3 className="font-semibold text-slate-900 text-sm flex items-center gap-2">
                   <Lock className="h-4 w-4" />
-                  How to get your private key from Polymarket:
+                  How to get your private key:
                 </h3>
                 <ol className="space-y-2 list-decimal list-inside text-sm text-slate-700 ml-1">
-                  <li>Go to <a href="https://polymarket.com/settings" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Polymarket Settings</a></li>
-                  <li>Click on "Wallet" or "Security" section</li>
-                  <li>Look for "Export Private Key" or "Show Private Key" option</li>
-                  <li>Complete any authentication steps required</li>
+                  <li>Click the button below to open Polymarket's Magic Link key export page</li>
+                  <li>Sign in with your Polymarket email</li>
+                  <li>Click "Reveal Private Key" and complete authentication</li>
                   <li>Copy your private key (starts with "0x...")</li>
                   <li>Paste it into the field below</li>
                 </ol>
@@ -241,11 +240,11 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
 
               <Button
                 type="button"
-                onClick={() => window.open("https://polymarket.com/settings", "_blank", "noopener,noreferrer")}
+                onClick={() => window.open("https://reveal.magic.link/polymarket", "_blank", "noopener,noreferrer")}
                 variant="outline"
                 className="w-full gap-2 bg-transparent"
               >
-                Open Polymarket Settings
+                Open Polymarket Key Export
                 <ExternalLink className="h-4 w-4" />
               </Button>
 
