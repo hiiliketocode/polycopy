@@ -29,6 +29,8 @@ import {
   X,
   Bell,
   BellOff,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -294,13 +296,14 @@ export default function ProfilePage() {
           .from('notification_preferences')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle(); // Use maybeSingle() instead of single() to avoid error when no row exists
         
-        if (error && error.code !== 'PGRST116') {
+        if (error) {
           console.error('Error fetching notification preferences:', error);
         } else if (data) {
           setNotificationsEnabled(data.trader_closes_position || false);
         }
+        // If no data and no error, user has no preferences yet - that's fine, use default
       } catch (err) {
         console.error('Error fetching notification preferences:', err);
       } finally {
@@ -508,6 +511,75 @@ export default function ProfilePage() {
     }
   };
 
+  // Unmark trade as closed
+  const handleUnmarkClosed = async (trade: CopiedTrade) => {
+    if (!user) return;
+    
+    if (!confirm('Are you sure you want to reopen this trade? This will clear your exit price and ROI.')) {
+      return;
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('copied_trades')
+        .update({
+          user_closed_at: null,
+          user_exit_price: null,
+        })
+        .eq('id', trade.id)
+        .eq('user_id', user.id);
+      
+      if (error) throw error;
+      
+      // Update local state
+      setCopiedTrades(trades =>
+        trades.map(t =>
+          t.id === trade.id
+            ? {
+                ...t,
+                user_closed_at: null,
+                user_exit_price: null,
+              }
+            : t
+        )
+      );
+      
+      setToastMessage('Trade reopened!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error unmarking trade:', err);
+    }
+  };
+
+  // Delete trade
+  const handleDeleteTrade = async (trade: CopiedTrade) => {
+    if (!user) return;
+    
+    if (!confirm('Are you sure you want to delete this copied trade? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('copied_trades')
+        .delete()
+        .eq('id', trade.id)
+        .eq('user_id', user.id);
+      
+      if (error) throw error;
+      
+      // Remove from local state
+      setCopiedTrades(trades => trades.filter(t => t.id !== trade.id));
+      
+      setToastMessage('Trade deleted!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error deleting trade:', err);
+    }
+  };
+
   // Notification toggle
   const handleToggleNotifications = async () => {
     if (!user) return;
@@ -688,6 +760,17 @@ export default function ProfilePage() {
               Copied Trades
             </button>
             <button
+              onClick={() => setActiveTab('performance')}
+              className={cn(
+                "px-4 py-2 font-medium text-sm transition-colors border-b-2",
+                activeTab === 'performance'
+                  ? "border-[#FDB022] text-slate-900"
+                  : "border-transparent text-slate-600 hover:text-slate-900"
+              )}
+            >
+              Performance
+            </button>
+            <button
               onClick={() => setActiveTab('settings')}
               className={cn(
                 "px-4 py-2 font-medium text-sm transition-colors border-b-2",
@@ -843,7 +926,8 @@ export default function ProfilePage() {
 
                         {/* Expanded Actions */}
                         {expandedTradeId === trade.id && (
-                          <div className="flex gap-2 pt-2 border-t border-slate-200">
+                          <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200">
+                            {/* Open trades: Edit, Close, Delete */}
                             {!trade.user_closed_at && !trade.market_resolved && (
                               <>
                                 <Button
@@ -872,6 +956,44 @@ export default function ProfilePage() {
                                 </Button>
                               </>
                             )}
+                            
+                            {/* Closed trades: Edit, Unmark as Closed, Delete */}
+                            {trade.user_closed_at && (
+                              <>
+                                <Button
+                                  onClick={() => {
+                                    setTradeToEdit(trade);
+                                    setShowEditModal(true);
+                                  }}
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-2"
+                                >
+                                  <Edit2 className="h-4 w-4" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  onClick={() => handleUnmarkClosed(trade)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-2"
+                                >
+                                  <RotateCcw className="h-4 w-4" />
+                                  Unmark as Closed
+                                </Button>
+                              </>
+                            )}
+                            
+                            {/* Delete button always available */}
+                            <Button
+                              onClick={() => handleDeleteTrade(trade)}
+                              variant="outline"
+                              size="sm"
+                              className="gap-2 text-red-600 hover:text-red-700 hover:border-red-300"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </Button>
                           </div>
                         )}
                       </div>
@@ -879,6 +1001,74 @@ export default function ProfilePage() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'performance' && (
+            <div className="space-y-6">
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Performance Over Time</h3>
+                <div className="h-64 bg-slate-50 rounded-lg flex items-center justify-center border border-slate-200">
+                  <p className="text-slate-500">ROI Chart - Coming Soon</p>
+                </div>
+              </Card>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Monthly Performance</h3>
+                  <div className="h-48 bg-slate-50 rounded-lg flex items-center justify-center border border-slate-200">
+                    <p className="text-slate-500">Monthly P&L Chart - Coming Soon</p>
+                  </div>
+                </Card>
+
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Category Breakdown</h3>
+                  <div className="h-48 bg-slate-50 rounded-lg flex items-center justify-center border border-slate-200">
+                    <p className="text-slate-500">Category Distribution - Coming Soon</p>
+                  </div>
+                </Card>
+              </div>
+
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Performing Trades</h3>
+                <div className="space-y-3">
+                  {copiedTrades
+                    .filter(t => t.user_closed_at || t.market_resolved)
+                    .sort((a, b) => (b.roi || 0) - (a.roi || 0))
+                    .slice(0, 5)
+                    .map((trade) => (
+                      <div key={trade.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-slate-900 truncate">{trade.market_title}</p>
+                          <p className="text-sm text-slate-500">{formatRelativeTime(trade.copied_at)}</p>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <Badge
+                            className={cn(
+                              "font-semibold",
+                              trade.outcome === 'YES'
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : "bg-red-50 text-red-700 border-red-200"
+                            )}
+                          >
+                            {trade.outcome}
+                          </Badge>
+                          <p className={cn(
+                            "font-bold text-lg",
+                            (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
+                          )}>
+                            {(trade.roi || 0) >= 0 ? '+' : ''}{(trade.roi || 0).toFixed(1)}%
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  {copiedTrades.filter(t => t.user_closed_at || t.market_resolved).length === 0 && (
+                    <p className="text-center py-8 text-slate-500">
+                      No closed trades yet. Close some positions to see your top performers!
+                    </p>
+                  )}
+                </div>
+              </Card>
             </div>
           )}
 
