@@ -21,6 +21,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
   const [privateKey, setPrivateKey] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showPrivateKey, setShowPrivateKey] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
 
   // Mock account data (replace with real data from API)
   const [accountData, setAccountData] = useState({
@@ -54,12 +55,71 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
   const handleLinkPrivateKey = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
+    setImportError(null)
 
-    // Simulate API call to Turnkey
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    try {
+      // Step 1: Get import bundle from server
+      const bundleRes = await fetch('/api/turnkey/import-private-key', {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      })
 
-    setIsSubmitting(false)
-    setStep("success")
+      if (!bundleRes.ok) {
+        const bundleData = await bundleRes.json()
+        throw new Error(bundleData?.error || 'Failed to get import bundle')
+      }
+
+      const { importBundle, userId: importUserId, organizationId: importOrgId } = await bundleRes.json()
+
+      if (!importBundle) {
+        throw new Error('Import bundle not received from server')
+      }
+
+      // Step 2: Encrypt private key client-side using Turnkey SDK
+      const { encryptPrivateKeyToBundle } = await import('@turnkey/crypto')
+
+      const trimmedKey = privateKey.trim()
+      const encryptedBundleString = await encryptPrivateKeyToBundle({
+        privateKey: trimmedKey,
+        keyFormat: 'HEXADECIMAL',
+        importBundle,
+        userId: importUserId,
+        organizationId: importOrgId,
+      })
+
+      let encryptedBundle: Record<string, any>
+      try {
+        encryptedBundle = JSON.parse(encryptedBundleString)
+      } catch {
+        throw new Error('Failed to parse encrypted bundle')
+      }
+
+      // Step 3: Send encrypted bundle to server
+      const importRes = await fetch('/api/turnkey/import-private-key', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          polymarket_account_address: walletAddress.trim(),
+          encryptedBundle,
+        }),
+      })
+
+      const importData = await importRes.json()
+      if (!importRes.ok) {
+        throw new Error(importData?.error || 'Failed to import wallet')
+      }
+
+      // Success!
+      setIsSubmitting(false)
+      setStep("success")
+    } catch (err: any) {
+      console.error('Wallet import error:', err)
+      setImportError(err?.message || 'Failed to import wallet')
+      setIsSubmitting(false)
+    }
   }
 
   const handleDone = () => {
@@ -72,12 +132,27 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
       setStep("link-account")
       setWalletAddress("")
       setPrivateKey("")
+      setImportError(null)
     }, 300)
+  }
+
+  // Reset error when modal opens/closes
+  const handleOpenChange = (newOpen: boolean) => {
+    onOpenChange(newOpen)
+    if (!newOpen) {
+      // Reset state when closing
+      setTimeout(() => {
+        setStep("link-account")
+        setWalletAddress("")
+        setPrivateKey("")
+        setImportError(null)
+      }, 300)
+    }
   }
 
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[560px] p-0 gap-0 overflow-hidden">
         {/* Step 1: Link Account */}
         {step === "link-account" && (
@@ -278,6 +353,12 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                   )}
                 </div>
               </div>
+
+              {importError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
+                  <strong>Error:</strong> {importError}
+                </div>
+              )}
 
               <Button
                 type="submit"
