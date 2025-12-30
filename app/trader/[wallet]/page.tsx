@@ -3,11 +3,13 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowDown, Copy, Check } from 'lucide-react';
+import { ArrowDown, Copy, Check, ArrowUpRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import Header from '@/app/components/Header';
 import type { User } from '@supabase/supabase-js';
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
+import { Card } from '@/components/ui/card';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 
 // Copy Trade Modal Component
@@ -1561,6 +1563,11 @@ export default function TraderProfilePage({
     })}`;
   };
 
+  // Format percentage with sign
+  const formatPercentage = (value: number) => {
+    return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
+  };
+
   // Calculate ROI - returns "--" string if cannot calculate
   const calculateROI = (pnl: number | null | undefined, volume: number | null | undefined): string => {
     if (pnl === null || pnl === undefined || volume === null || volume === undefined || volume === 0) {
@@ -1680,277 +1687,107 @@ export default function TraderProfilePage({
   const displayName = leaderboardData?.username || traderData.displayName || 'Anonymous Trader';
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="min-h-screen bg-slate-50 pt-4 md:pt-0 pb-20 md:pb-8">
       <Header />
 
-      {/* Back Button */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <button
-            onClick={() => router.back()}
-            className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-            </svg>
-            Back
-          </button>
-        </div>
-      </div>
-
       {/* Profile Header Section */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-4xl mx-auto px-4 py-6">
-          {/* Mobile: Avatar + Name + Follow Button (single row with button right-aligned) */}
-          <div className="md:hidden mb-6">
-            <div className="flex items-start justify-between gap-3 mb-3">
-              {/* Left side: Avatar + Name */}
-              <div className="flex items-start gap-3 min-w-0 flex-1">
-                {/* Avatar */}
-                <div
-                  className="h-12 w-12 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 ring-2 ring-white shadow-sm"
-                  style={{ backgroundColor: avatarColor }}
-                >
-                  {initials}
-                </div>
-                
-                {/* Name and Wallet */}
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-xl font-bold text-slate-900 truncate">
-                    {displayName}
-                  </h1>
-                </div>
-              </div>
-
-              {/* Right side: Follow Button */}
-              <button
-                onClick={handleFollowToggle}
-                disabled={followLoading || checkingFollow}
-                className={`rounded-lg px-4 py-2 text-xs font-bold transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed border-b-4 active:border-b-0 active:translate-y-1 flex-shrink-0 ${
-                  following
-                    ? 'bg-slate-200 text-slate-700 hover:bg-slate-300 border-slate-400'
-                    : 'bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 border-[#D97706]'
-                }`}
-              >
-                {checkingFollow || followLoading ? (
-                  <span className="flex items-center justify-center gap-1">
-                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                  </span>
-                ) : following ? (
-                  '✓ Following'
-                ) : (
-                  '+ Follow'
-                )}
-              </button>
-            </div>
-            
-            {/* Wallet address and copy button (second row) */}
-            <div className="flex items-center gap-2 pl-15 mb-1">
-              <span className="text-sm text-slate-500 font-mono">
-                {abbreviateWallet(wallet)}
-              </span>
-              <button
-                onClick={handleCopy}
-                className="p-1 hover:bg-slate-100 rounded transition-colors"
-                title="Copy wallet address"
-              >
-                {copied ? (
-                  <Check className="w-4 h-4 text-emerald-600" />
-                ) : (
-                  <Copy className="w-4 h-4 text-slate-400 hover:text-slate-600" />
-                )}
-              </button>
-            </div>
-            
-            {/* Follower count (third row) */}
-            <p className="text-sm text-slate-500 pl-15">
-              {traderData.followerCount.toLocaleString()} {traderData.followerCount === 1 ? 'follower' : 'followers'} on Polycopy
-            </p>
-          </div>
-
-          {/* Desktop: Avatar + Name + Follow Button (original layout) */}
-          <div className="hidden md:flex flex-row items-center justify-between gap-6 mb-6">
-            <div className="flex items-center gap-4">
-              {/* Avatar */}
-              <div
-                className="h-16 w-16 rounded-full flex items-center justify-center text-white font-bold text-2xl flex-shrink-0 ring-2 ring-white shadow-sm"
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 sm:py-6 space-y-4 sm:space-y-6">
+        <Card className="bg-white border-slate-200 p-4 sm:p-8">
+          {/* Profile Header with Avatar, Name, and Follow Button */}
+          <div className="flex items-start gap-3 sm:gap-4 mb-4 sm:mb-5">
+            <Avatar className="h-16 w-16 sm:h-20 sm:w-20 border-2 border-white shadow-md flex-shrink-0">
+              <AvatarFallback 
+                className="text-slate-900 text-xl font-semibold"
                 style={{ backgroundColor: avatarColor }}
               >
                 {initials}
-              </div>
-              
-              {/* Name and Wallet */}
-              <div>
-                <h1 className="text-3xl font-bold text-slate-900">
-                  {displayName}
-                </h1>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-sm text-slate-500 font-mono">
-                    {abbreviateWallet(wallet)}
-                  </span>
-                  <button
-                    onClick={handleCopy}
-                    className="p-1 hover:bg-slate-100 rounded transition-colors"
-                    title="Copy wallet address"
-                  >
-                    {copied ? (
-                      <Check className="w-4 h-4 text-emerald-600" />
-                    ) : (
-                      <Copy className="w-4 h-4 text-slate-400 hover:text-slate-600" />
-                    )}
-                  </button>
-                </div>
-                <p className="text-sm text-slate-500 mt-1">
-                  {traderData.followerCount.toLocaleString()} {traderData.followerCount === 1 ? 'follower' : 'followers'} on Polycopy
-                </p>
-              </div>
+              </AvatarFallback>
+            </Avatar>
+
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-1">{displayName}</h1>
+              <p className="text-xs sm:text-sm font-mono text-slate-500 mb-2 sm:mb-3">{abbreviateWallet(wallet)}</p>
+
+              <a
+                href={`https://polymarket.com/profile/${wallet}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden md:inline-flex items-center gap-1 text-sm text-slate-600 hover:text-yellow-600 transition-colors"
+              >
+                View on Polymarket
+                <ArrowUpRight className="h-3 w-3" />
+              </a>
             </div>
 
             {/* Follow Button */}
-            <button
-              onClick={handleFollowToggle}
-              disabled={followLoading || checkingFollow}
-              className={`rounded-lg px-6 py-3 text-sm font-bold transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed border-b-4 active:border-b-0 active:translate-y-1 ${
-                following
-                  ? 'bg-slate-200 text-slate-700 hover:bg-slate-300 border-slate-400'
-                  : 'bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 border-[#D97706]'
-              }`}
-            >
-              {checkingFollow || followLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                  {following ? 'Unfollowing...' : 'Following...'}
-                </span>
-              ) : following ? (
-                '✓ Following'
+            <div className="flex-shrink-0">
+              {following ? (
+                <button
+                  onClick={handleFollowToggle}
+                  disabled={followLoading || checkingFollow}
+                  className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Following</span>
+                </button>
               ) : (
-                '+ Follow'
+                <button
+                  onClick={handleFollowToggle}
+                  disabled={followLoading || checkingFollow}
+                  className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm px-4 py-2 rounded-md text-sm"
+                >
+                  Follow
+                </button>
               )}
-            </button>
+            </div>
           </div>
 
-          {/* Stats Section Header */}
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Performance</span>
-            <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-medium rounded-full">Lifetime</span>
-          </div>
-
-          {/* Stats Grid - Desktop: 5 separate cards, Mobile: Combined card */}
-          <div className="hidden md:grid grid-cols-5 gap-3">
+          {/* Stats Grid - Desktop: 4 column grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
             {/* Desktop Stat Cards */}
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">P&L</div>
-              <div className={`text-xl font-bold ${
+            <div className="text-center p-2 sm:p-4 bg-slate-50 rounded-lg">
+              <div className="text-xs font-medium text-slate-500 mb-1">ROI</div>
+              <div className={`text-lg sm:text-2xl font-bold ${
+                roi !== '--' && parseFloat(String(roi)) > 0 ? 'text-emerald-600' : 
+                roi !== '--' && parseFloat(String(roi)) < 0 ? 'text-red-500' : 'text-slate-900'
+              }`}>
+                {roi !== '--' ? `${formatPercentage(parseFloat(String(roi)))}` : '--'}
+              </div>
+            </div>
+            <div className="text-center p-2 sm:p-4 bg-slate-50 rounded-lg">
+              <div className="text-xs font-medium text-slate-500 mb-1">Profit</div>
+              <div className={`text-lg sm:text-2xl font-bold ${
                 traderData.pnl > 0 ? 'text-emerald-600' : traderData.pnl < 0 ? 'text-red-500' : 'text-slate-900'
               }`}>
                 {formatPnL(traderData.pnl)}
               </div>
             </div>
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">ROI</div>
-              <div className={`text-xl font-bold ${
-                roi !== '--' && parseFloat(String(roi)) > 0 ? 'text-emerald-600' : 
-                roi !== '--' && parseFloat(String(roi)) < 0 ? 'text-red-500' : 'text-slate-900'
-              }`}>
-                {roi !== '--' ? `${roi}%` : '--'}
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">WIN RATE</div>
-              <div className={`text-xl font-bold ${
-                winRate !== '--' && parseFloat(String(winRate)) >= 50 ? 'text-emerald-600' : 
-                winRate !== '--' && parseFloat(String(winRate)) < 50 ? 'text-slate-600' : 'text-slate-900'
-              }`}>
+            <div className="text-center p-2 sm:p-4 bg-slate-50 rounded-lg">
+              <div className="text-xs font-medium text-slate-500 mb-1">Win Rate</div>
+              <div className="text-lg sm:text-2xl font-bold text-slate-900">
                 {winRate !== '--' ? `${winRate}%` : '--'}
               </div>
             </div>
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">VOLUME</div>
-              <div className="text-xl font-bold text-slate-900">
+            <div className="text-center p-2 sm:p-4 bg-slate-50 rounded-lg">
+              <div className="text-xs font-medium text-slate-500 mb-1">Volume</div>
+              <div className="text-lg sm:text-2xl font-bold text-slate-900">
                 {formatVolume(traderData.volume)}
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">TRADES</div>
-              <div className="text-xl font-bold text-slate-900">
-                {formatTradesCount(tradesCount, hasMoreTrades)}
               </div>
             </div>
           </div>
 
-          {/* Mobile: Combined stat card - 5 columns in one card */}
-          <div className="md:hidden bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-            <div className="grid grid-cols-5 gap-1 text-center">
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase mb-1">P&L</div>
-                <div className={`text-xs font-bold ${
-                  traderData.pnl > 0 ? 'text-emerald-600' : traderData.pnl < 0 ? 'text-red-500' : 'text-slate-900'
-                }`}>
-                  {formatPnL(traderData.pnl)}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase mb-1">ROI</div>
-                <div className={`text-xs font-bold ${
-                  roi !== '--' && parseFloat(String(roi)) > 0 ? 'text-emerald-600' : 
-                  roi !== '--' && parseFloat(String(roi)) < 0 ? 'text-red-500' : 'text-slate-900'
-                }`}>
-                  {roi !== '--' ? `${roi}%` : '--'}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase mb-1">Win</div>
-                <div className={`text-xs font-bold ${
-                  winRate !== '--' && parseFloat(String(winRate)) >= 50 ? 'text-emerald-600' : 
-                  winRate !== '--' && parseFloat(String(winRate)) < 50 ? 'text-slate-600' : 'text-slate-900'
-                }`}>
-                  {winRate !== '--' ? `${winRate}%` : '--'}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase mb-1">Vol</div>
-                <div className="text-xs font-bold text-slate-900">
-                  {formatVolume(traderData.volume)}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase mb-1">Trades</div>
-                <div className="text-xs font-bold text-slate-900">
-                  {formatTradesCount(tradesCount, hasMoreTrades)}
-                </div>
-              </div>
-            </div>
-          </div>
+
+
+          {/* View on Polymarket Link */}
+          <a
+            href={`https://polymarket.com/profile/${wallet}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="md:hidden flex items-center justify-center gap-1 text-sm text-slate-600 hover:text-yellow-600 transition-colors pt-4 mt-4 border-t border-slate-200"
+          >
+            View on Polymarket
+            <ArrowUpRight className="h-3 w-3" />
+          </a>
           
           {/* Stats availability explanation */}
           {(traderData.pnl === null || traderData.pnl === undefined || !leaderboardData) && (
@@ -1958,22 +1795,22 @@ export default function TraderProfilePage({
               ℹ️ Stats unavailable - This trader is not on Polymarket's leaderboard
             </p>
           )}
-        </div>
+        </Card>
       </div>
 
       {/* Trade History Section */}
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <h3 className="text-xl font-bold text-slate-900 mb-6">
-          Trade History {trades.length > 0 && <span className="text-slate-400 font-normal">({trades.length})</span>}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
+        <h3 className="text-xl font-bold text-slate-900">
+          Positions {trades.length > 0 && <span className="text-slate-400 font-normal">({trades.length})</span>}
         </h3>
         
         {loadingTrades ? (
           <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-brand-yellow mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
             <p className="text-slate-500">Loading trades...</p>
           </div>
         ) : trades.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
+          <Card className="bg-white border-slate-200 p-12 text-center">
             <div className="text-6xl mb-4">📊</div>
             <p className="text-slate-600 text-lg font-medium mb-2">
               No trade history found
@@ -1981,11 +1818,11 @@ export default function TraderProfilePage({
             <p className="text-slate-500 text-sm">
               This trader hasn't made any trades yet
             </p>
-          </div>
+          </Card>
         ) : (
           <>
             {/* Desktop: Table View */}
-            <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <Card className="hidden md:block bg-white border-slate-200 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[700px]">
                   <thead className="bg-slate-50 border-b-2 border-slate-200">
@@ -2160,7 +1997,7 @@ export default function TraderProfilePage({
                 }
 
                 return (
-                  <div key={`${trade.timestamp}-${index}`} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                  <Card key={`${trade.timestamp}-${index}`} className="bg-white border-slate-200 p-5">
                     {/* Header: Date + Status + Outcome Badge */}
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
