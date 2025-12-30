@@ -10,6 +10,7 @@ import type { User } from '@supabase/supabase-js';
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
 
 
 // Copy Trade Modal Component
@@ -1798,11 +1799,22 @@ export default function TraderProfilePage({
         </Card>
       </div>
 
-      {/* Trade History Section */}
+      {/* Tabs Section */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
-        <h3 className="text-xl font-bold text-slate-900">
-          Positions {trades.length > 0 && <span className="text-slate-400 font-normal">({trades.length})</span>}
-        </h3>
+        <div className="grid grid-cols-2 gap-2 bg-white border border-slate-200 p-2 rounded-lg">
+          <button
+            onClick={() => {/* TODO: Add tab state */}}
+            className="px-3 py-2.5 rounded-md font-medium text-sm transition-all bg-slate-100 text-slate-900"
+          >
+            Positions
+          </button>
+          <button
+            onClick={() => {/* TODO: Add tab state */}}
+            className="px-3 py-2.5 rounded-md font-medium text-sm transition-all text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+          >
+            Performance
+          </button>
+        </div>
         
         {loadingTrades ? (
           <div className="text-center py-12">
@@ -1820,26 +1832,148 @@ export default function TraderProfilePage({
             </p>
           </Card>
         ) : (
-          <>
-            {/* Desktop: Table View */}
-            <Card className="hidden md:block bg-white border-slate-200 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[700px]">
-                  <thead className="bg-slate-50 border-b-2 border-slate-200">
-                    <tr>
-                      <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[90px]">Date</th>
-                      <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
-                      <th className="px-2 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[80px]">Outcome</th>
-                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[85px]">Status</th>
-                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[70px]">Size</th>
-                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[60px]">Price</th>
-                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[65px]">ROI</th>
-                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[100px]">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {trades.map((trade, index) => {
-                      const polymarketUrl = getPolymarketUrl(trade);
+          <div className="space-y-4">
+            {/* Filter Buttons */}
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                size="sm"
+                className="bg-slate-900 text-white hover:bg-slate-800"
+              >
+                All
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-slate-300 text-slate-700 hover:bg-slate-50 transition-all"
+              >
+                Open
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-slate-300 text-slate-700 hover:bg-slate-50 transition-all"
+              >
+                Closed
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-slate-300 text-slate-700 hover:bg-slate-50 transition-all"
+              >
+                Resolved
+              </Button>
+            </div>
+
+            {/* Trade Cards */}
+            {trades.map((trade, index) => {
+              const polymarketUrl = getPolymarketUrl(trade);
+              const isAlreadyCopied = isTradeCopied(trade);
+              
+              // Calculate ROI
+              let roi: number | null = null;
+              const entryPrice = trade.price;
+              const currentPrice = trade.currentPrice;
+              
+              if ((entryPrice !== undefined && entryPrice !== null && entryPrice !== 0) && 
+                  (currentPrice !== undefined && currentPrice !== null)) {
+                roi = ((currentPrice - entryPrice) / entryPrice) * 100;
+              }
+
+              return (
+                <Card key={`${trade.timestamp}-${index}`} className="bg-white border-slate-200 p-5 hover:shadow-lg transition-all">
+                  <h3 className="font-semibold text-slate-900 mb-4 leading-snug text-base">{trade.market}</h3>
+
+                  <div className="bg-slate-50/50 border border-slate-200 rounded-lg p-4 mb-4">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm relative">
+                      {/* Position */}
+                      <div className="text-center">
+                        <div className="text-xs text-slate-500 mb-1.5 font-medium">Position</div>
+                        <div className={`font-semibold ${
+                          ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
+                            ? 'text-emerald-600'
+                            : 'text-red-500'
+                        }`}>
+                          {trade.outcome.toUpperCase()}
+                        </div>
+                      </div>
+
+                      {/* Vertical divider */}
+                      <div className="hidden md:block absolute left-[20%] top-0 bottom-0 w-px bg-slate-200" />
+
+                      {/* Entry */}
+                      <div className="text-center">
+                        <div className="text-xs text-slate-500 mb-1.5 font-medium">Entry</div>
+                        <div className="font-mono font-semibold text-slate-900">{trade.price.toFixed(2)}</div>
+                      </div>
+
+                      {/* Vertical divider */}
+                      <div className="hidden md:block absolute left-[40%] top-0 bottom-0 w-px bg-slate-200" />
+
+                      {/* Size */}
+                      <div className="text-center">
+                        <div className="text-xs text-slate-500 mb-1.5 font-medium">Size</div>
+                        <div className="font-semibold text-slate-900">
+                          ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        </div>
+                      </div>
+
+                      {/* Vertical divider */}
+                      <div className="hidden md:block absolute left-[60%] top-0 bottom-0 w-px bg-slate-200" />
+
+                      {/* Total */}
+                      <div className="text-center">
+                        <div className="text-xs text-slate-500 mb-1.5 font-medium">Total</div>
+                        <div className="font-semibold text-slate-900">
+                          ${(trade.size * trade.price).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        </div>
+                      </div>
+
+                      {/* Vertical divider */}
+                      <div className="hidden md:block absolute left-[80%] top-0 bottom-0 w-px bg-slate-200" />
+
+                      {/* ROI */}
+                      <div className="text-center">
+                        <div className="text-xs text-slate-500 mb-1.5 font-medium">ROI</div>
+                        <div className={`font-semibold tabular-nums ${
+                          roi === null ? 'text-slate-400' :
+                          roi > 0 ? 'text-emerald-600' :
+                          roi < 0 ? 'text-red-500' :
+                          'text-slate-600'
+                        }`}>
+                          {roi === null ? '--' : `${roi > 0 ? '+' : ''}${roi.toFixed(1)}%`}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex gap-2">
+                    <a
+                      href={polymarketUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm rounded-md text-sm transition-colors"
+                    >
+                      Copy Trade
+                    </a>
+                    <button
+                      onClick={() => handleMarkAsCopied(trade)}
+                      disabled={isAlreadyCopied}
+                      className={`flex-1 px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent font-medium rounded-md text-sm transition-colors ${
+                        isAlreadyCopied ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                    >
+                      {isAlreadyCopied ? '✓ Copied' : 'Mark as Copied'}
+                    </button>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      
+      {/* Copy Trade Modal */}
                       const isAlreadyCopied = isTradeCopied(trade);
                       
                       // Calculate ROI
