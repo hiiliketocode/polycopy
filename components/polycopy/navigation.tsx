@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { Compass, User, LogOut, Settings, Home, Crown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import Image from "next/image"
 import { UpgradeModal } from "@/components/polycopy/upgrade-modal"
 import { useState } from "react"
+import { supabase } from "@/lib/supabase"
 
 interface NavigationProps {
   user?: { id: string; email: string } | null
@@ -30,6 +31,7 @@ const FeedIcon = ({ className }: { className?: string }) => (
 
 export function Navigation({ user, isPremium = false }: NavigationProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
 
   const isLoggedIn = user !== null && user !== undefined
@@ -37,6 +39,11 @@ export function Navigation({ user, isPremium = false }: NavigationProps) {
   const isActive = (path: string) => {
     if (path === "/") return pathname === "/"
     return pathname.startsWith(path)
+  }
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
   }
 
   return (
@@ -134,7 +141,7 @@ export function Navigation({ user, isPremium = false }: NavigationProps) {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem className="text-red-600 cursor-pointer">
+                  <DropdownMenuItem onClick={handleLogout} className="text-red-600 cursor-pointer">
                     <LogOut className="w-4 h-4 mr-2" />
                     Log Out
                   </DropdownMenuItem>
