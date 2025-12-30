@@ -153,13 +153,21 @@ export default function DiscoverPage() {
     fetchFeaturedTraders();
   }, []);
 
-  // Fetch traders by category
+  // Fetch traders by category and time period
   useEffect(() => {
     const fetchTraders = async () => {
       setLoadingTraders(true);
       try {
+        // Map sortPeriod to API timePeriod parameter
+        const timePeriodMap = {
+          "30d": "month",
+          "7d": "week",
+          "all": "all"
+        };
+        const timePeriod = timePeriodMap[sortPeriod];
+        
         const response = await fetch(
-          `/api/polymarket/leaderboard?limit=50&orderBy=PNL&category=${selectedCategory}&timePeriod=month`
+          `/api/polymarket/leaderboard?limit=50&orderBy=PNL&category=${selectedCategory}&timePeriod=${timePeriod}`
         );
         
         if (!response.ok) {
@@ -185,7 +193,7 @@ export default function DiscoverPage() {
     };
 
     fetchTraders();
-  }, [selectedCategory]);
+  }, [selectedCategory, sortPeriod]);
 
   // Follow change handler
   const handleFollowChange = (wallet: string, isNowFollowing: boolean) => {
@@ -358,132 +366,48 @@ export default function DiscoverPage() {
                 ))}
               </div>
             ) : featuredTraders.length > 0 ? (
-              <>
-                {/* Mobile horizontal scroll */}
-                <div className="sm:hidden overflow-x-auto -mx-3 px-3 pb-4">
-                  <div className="flex gap-3" style={{ width: "max-content" }}>
-                    {featuredTraders.map((trader) => (
-                      <div
-                        key={trader.wallet}
-                        className="bg-white border border-slate-200 rounded-xl p-5 hover:shadow-lg transition-shadow"
-                        style={{ width: "280px" }}
-                      >
-                        <Link href={`/trader/${trader.wallet}`} className="block">
-                          <div className="flex items-center gap-3 mb-5">
-                            <Avatar className="h-14 w-14 border-2 border-white shadow-sm">
-                              <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 font-medium text-base">
-                                {trader.displayName.slice(0, 2).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1 min-w-0">
-                              <h3 className="font-bold text-slate-900 text-base truncate">{trader.displayName}</h3>
-                              <p className="text-xs text-slate-500 font-mono truncate">
-                                {trader.wallet.slice(0, 6)}...{trader.wallet.slice(-4)}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3 mb-5">
-                            <div>
-                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">
-                                ROI
-                              </span>
-                              <span className={`text-lg font-bold ${(trader.roi || 0) > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                                {(trader.roi || 0) > 0 ? "+" : ""}
-                                {(trader.roi || 0).toFixed(1)}%
-                              </span>
-                            </div>
-
-                            <div>
-                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">
-                                P&L
-                              </span>
-                              <span className={`text-lg font-bold ${trader.pnl > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                                ${(trader.pnl / 1000).toFixed(1)}K
-                              </span>
-                            </div>
-
-                            <div>
-                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">
-                                Win Rate
-                              </span>
-                              <span className="text-lg font-bold text-slate-900">{trader.winRate || 0}%</span>
-                            </div>
-
-                            <div>
-                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">
-                                Volume
-                              </span>
-                              <span className="text-lg font-bold text-slate-900">
-                                ${(trader.volume / 1000).toFixed(0)}K
-                              </span>
-                            </div>
-                          </div>
-                        </Link>
+              <div className="overflow-x-auto pb-4">
+                <div className="flex gap-4" style={{ width: "max-content" }}>
+                  {featuredTraders.map((trader) => {
+                    const isFollowing = followedWallets.has(trader.wallet.toLowerCase());
+                    
+                    return (
+                      <div key={trader.wallet} className="flex-shrink-0 w-[320px]">
+                        <TraderDiscoveryCard
+                          trader={{
+                            id: trader.wallet,
+                            name: trader.displayName,
+                            handle: `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}`,
+                            avatar: '',
+                            roi: trader.roi || 0,
+                            profit: trader.pnl,
+                            volume: trader.volume,
+                            winRate: trader.winRate || 0,
+                            isFollowing: isFollowing,
+                          }}
+                          onFollowToggle={(traderId, isNowFollowing) => {
+                            handleFollowChange(traderId, isNowFollowing);
+                            
+                            // Update Supabase
+                            if (user) {
+                              if (isNowFollowing) {
+                                supabase.from('follows').insert({
+                                  user_id: user.id,
+                                  trader_wallet: traderId
+                                });
+                              } else {
+                                supabase.from('follows').delete()
+                                  .eq('user_id', user.id)
+                                  .eq('trader_wallet', traderId);
+                              }
+                            }
+                          }}
+                        />
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-
-                {/* Desktop grid */}
-                <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-4">
-                  {featuredTraders.map((trader) => (
-                    <div
-                      key={trader.wallet}
-                      className="bg-white border border-slate-200 rounded-xl p-6 hover:shadow-lg transition-shadow"
-                    >
-                      <Link href={`/trader/${trader.wallet}`} className="block">
-                        <div className="flex items-center gap-4 mb-6">
-                          <Avatar className="h-16 w-16 border-2 border-white shadow-sm">
-                            <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 font-medium text-lg">
-                              {trader.displayName.slice(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-bold text-slate-900 text-lg truncate">{trader.displayName}</h3>
-                            <p className="text-sm text-slate-500 font-mono truncate">
-                              {trader.wallet.slice(0, 6)}...{trader.wallet.slice(-4)}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 mb-6">
-                          <div>
-                            <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">ROI</span>
-                            <span className={`text-xl font-bold ${(trader.roi || 0) > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                              {(trader.roi || 0) > 0 ? "+" : ""}
-                              {(trader.roi || 0).toFixed(1)}%
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">P&L</span>
-                            <span className={`text-xl font-bold ${trader.pnl > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                              ${(trader.pnl / 1000).toFixed(1)}K
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">
-                              Win Rate
-                            </span>
-                            <span className="text-xl font-bold text-slate-900">{trader.winRate || 0}%</span>
-                          </div>
-
-                          <div>
-                            <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">
-                              Volume
-                            </span>
-                            <span className="text-xl font-bold text-slate-900">
-                              ${(trader.volume / 1000).toFixed(0)}K
-                            </span>
-                          </div>
-                        </div>
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              </>
+              </div>
             ) : (
               <div className="text-center py-12 text-slate-500">
                 <p className="text-lg">Unable to load featured traders.</p>

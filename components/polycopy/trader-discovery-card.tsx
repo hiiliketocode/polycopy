@@ -3,7 +3,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Check } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 
 interface TraderDiscoveryCardProps {
@@ -23,6 +23,11 @@ interface TraderDiscoveryCardProps {
 
 export function TraderDiscoveryCard({ trader, onFollowToggle }: TraderDiscoveryCardProps) {
   const [isFollowing, setIsFollowing] = useState(trader.isFollowing || false)
+  
+  // Sync internal state with prop changes
+  useEffect(() => {
+    setIsFollowing(trader.isFollowing || false)
+  }, [trader.isFollowing])
 
   const handleFollowClick = () => {
     const newFollowingState = !isFollowing
