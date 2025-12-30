@@ -46,7 +46,7 @@ export function Navigation({ user, isPremium = false }: NavigationProps) {
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <Image src="/polycopy-logo-icon.png" alt="Polycopy" width={32} height={32} className="w-8 h-8" />
+            <Image src="/logos/polycopy-logo-icon.png" alt="Polycopy" width={32} height={32} className="w-8 h-8" />
             <span className="text-xl font-bold text-slate-900">Polycopy</span>
           </Link>
 
@@ -128,7 +128,7 @@ export function Navigation({ user, isPremium = false }: NavigationProps) {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href="/profile" className="cursor-pointer">
+                    <Link href="/profile?tab=settings" className="cursor-pointer">
                       <Settings className="w-4 h-4 mr-2" />
                       Settings
                     </Link>
@@ -157,7 +157,7 @@ export function Navigation({ user, isPremium = false }: NavigationProps) {
         <div className="flex items-center h-14 px-4">
           {/* Logo - Left side, non-clickable branding */}
           <div className="mr-auto">
-            <Image src="/polycopy-logo-lockup.svg" alt="Polycopy" width={120} height={24} className="h-6 w-auto" />
+            <Image src="/logos/polycopy-logo-icon.png" alt="Polycopy" width={32} height={32} className="h-6 w-auto" />
           </div>
 
           {/* Navigation Buttons - Right side with button-like styling */}

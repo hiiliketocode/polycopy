@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
 import { resolveFeatureTier, tierHasPremiumAccess } from '@/lib/feature-tier';
@@ -88,6 +88,7 @@ function formatCompactNumber(value: number) {
 
 export default function ProfilePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
@@ -117,8 +118,10 @@ export default function ProfilePage() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   
-  // UI state
-  const [activeTab, setActiveTab] = useState<'copied-trades' | 'performance' | 'settings'>('copied-trades');
+  // UI state - Check for tab query parameter
+  const tabParam = searchParams?.get('tab');
+  const initialTab = (tabParam === 'settings' || tabParam === 'performance') ? tabParam : 'copied-trades';
+  const [activeTab, setActiveTab] = useState<'copied-trades' | 'performance' | 'settings'>(initialTab as any);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   
