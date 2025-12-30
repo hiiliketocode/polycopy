@@ -2106,7 +2106,7 @@ export default function TraderProfilePage({
                         )}
                       </button>
                     </div>
-                  </div>
+                  </Card>
                 );
               })}
             </div>
