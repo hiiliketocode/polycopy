@@ -106,7 +106,10 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
               <div>
                 <Button
                   type="button"
-                  onClick={() => window.open("https://polymarket.com/", "_blank")}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.open("https://polymarket.com/profile", "_blank", "noopener,noreferrer");
+                  }}
                   variant="outline"
                   className="mb-4 gap-2"
                 >
