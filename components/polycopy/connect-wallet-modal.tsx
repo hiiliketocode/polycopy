@@ -76,8 +76,8 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
   }
 
   const handleOpenMagicLink = () => {
-    // Open magic link in new tab
-    window.open("https://auth.magic.link/", "_blank")
+    // Open Magic Link reveal page to get private key
+    window.open("https://reveal.magic.link/", "_blank", "noopener,noreferrer")
   }
 
   return (
