@@ -242,40 +242,9 @@ export default function ProfilePage() {
           return trade;
         });
         
-        // Auto-refresh status for open trades
-        if (tradesWithCorrectRoi && tradesWithCorrectRoi.length > 0) {
-          const tradesWithFreshStatus = await Promise.all(
-            tradesWithCorrectRoi.map(async (trade) => {
-              if (trade.user_closed_at) {
-                return trade;
-              }
-              
-              try {
-                const statusRes = await fetch(`/api/copied-trades/${trade.id}/status?userId=${user.id}`);
-                if (statusRes.ok) {
-                  const statusData = await statusRes.json();
-                  
-                  return {
-                    ...trade,
-                    trader_still_has_position: statusData.traderStillHasPosition ?? trade.trader_still_has_position,
-                    trader_closed_at: statusData.traderClosedAt ?? trade.trader_closed_at,
-                    market_resolved: statusData.marketResolved ?? trade.market_resolved,
-                    current_price: statusData.currentPrice ?? trade.current_price,
-                    roi: statusData.roi ?? trade.roi,
-                    resolved_outcome: statusData.resolvedOutcome ?? trade.resolved_outcome
-                  };
-                }
-              } catch (e) {
-                console.error('Failed to refresh status for trade:', trade.id, e);
-              }
-              return trade;
-            })
-          );
-          
-          setCopiedTrades(tradesWithFreshStatus);
-        } else {
-          setCopiedTrades(trades || []);
-        }
+        // Skip auto-refresh on initial load for better performance
+        // Users can manually click "Refresh Status" if they want updated prices
+        setCopiedTrades(tradesWithCorrectRoi);
       } catch (err) {
         console.error('Error fetching copied trades:', err);
         setCopiedTrades([]);
