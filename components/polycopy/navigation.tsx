@@ -37,6 +37,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
   const [portfolioValue, setPortfolioValue] = useState<number | null>(null)
   const [cashBalance, setCashBalance] = useState<number | null>(null)
   const [loadingBalance, setLoadingBalance] = useState(false)
+  const [walletCheckComplete, setWalletCheckComplete] = useState(false)
 
   const isLoggedIn = user !== null && user !== undefined
   const hasWalletConnected = Boolean(walletAddress)
@@ -50,6 +51,18 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
     await supabase.auth.signOut()
     router.push('/login')
   }
+
+  // Mark wallet check as complete once we receive the prop
+  useEffect(() => {
+    if (user && isPremium) {
+      // Give a tiny delay to allow parent to pass wallet address
+      const timer = setTimeout(() => setWalletCheckComplete(true), 50)
+      return () => clearTimeout(timer)
+    } else if (user) {
+      // Non-premium users don't need wallet check
+      setWalletCheckComplete(true)
+    }
+  }, [user, isPremium, walletAddress])
 
   // Fetch wallet balance for premium users with connected wallets
   useEffect(() => {
@@ -125,7 +138,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
 
           {/* Right Side - User Menu or Auth Buttons */}
           <div className="flex items-center gap-4">
-            {isLoggedIn && isPremium && hasWalletConnected ? (
+            {isLoggedIn && isPremium && hasWalletConnected && walletCheckComplete ? (
               /* Show wallet balance for premium users with connected wallet */
               <div className="flex items-center gap-4">
                 <div className="text-right">
@@ -145,7 +158,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
                   </div>
                 </div>
               </div>
-            ) : isLoggedIn && isPremium ? (
+            ) : isLoggedIn && isPremium && !hasWalletConnected && walletCheckComplete ? (
               /* Show Premium badge for premium users without wallet */
               <div className="px-4 py-2 rounded-lg border-2 border-yellow-400 bg-white">
                 <div className="flex items-center gap-2">
@@ -153,7 +166,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
                   <span className="font-bold text-yellow-500">Premium</span>
                 </div>
               </div>
-            ) : isLoggedIn ? (
+            ) : isLoggedIn && !isPremium && walletCheckComplete ? (
               /* Show upgrade button for non-premium users */
               <Button
                 onClick={() => setUpgradeModalOpen(true)}
@@ -163,6 +176,9 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
                 <Crown className="w-4 h-4 mr-2 relative z-10" />
                 <span className="relative z-10">Premium</span>
               </Button>
+            ) : isLoggedIn && !walletCheckComplete ? (
+              /* Loading state - reserve space to prevent layout shift */
+              <div className="w-[200px] h-[40px]" />
             ) : null}
 
             {isLoggedIn ? (
