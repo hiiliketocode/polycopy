@@ -192,16 +192,32 @@ export default function ProfilePage() {
 
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('is_premium, is_admin, trading_wallet_address, premium_since')
+          .select('is_premium, is_admin, premium_since')
           .eq('id', user.id)
           .single();
 
         if (profileError) {
           console.error('Error fetching profile:', profileError);
         } else {
-          setProfile(profileData);
           setIsPremium(profileData?.is_premium || false);
         }
+
+        // Fetch wallet from turnkey_wallets table
+        const { data: walletData, error: walletError } = await supabase
+          .from('turnkey_wallets')
+          .select('polymarket_account_address, eoa_address')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (walletError) {
+          console.error('Error fetching wallet:', walletError);
+        }
+
+        // Combine profile and wallet data
+        setProfile({
+          ...profileData,
+          trading_wallet_address: walletData?.polymarket_account_address || walletData?.eoa_address || null
+        });
       } catch (err) {
         console.error('Error fetching stats:', err);
       } finally {
@@ -382,26 +398,32 @@ export default function ProfilePage() {
   const handleWalletConnect = async (address: string) => {
     if (!user) return;
     
+    // The ConnectWalletModal handles the Turnkey import
+    // After successful import, the wallet is already in turnkey_wallets table
+    // We just need to refresh the profile to show the wallet
     try {
-      // Save wallet address to Supabase
-      const { error } = await supabase
-        .from('profiles')
-        .update({ trading_wallet_address: address })
-        .eq('id', user.id);
-      
-      if (error) throw error;
-      
-      // Update local profile state
-      setProfile({ ...profile, trading_wallet_address: address });
+      // Fetch the updated wallet from turnkey_wallets
+      const { data: walletData, error: walletError } = await supabase
+        .from('turnkey_wallets')
+        .select('polymarket_account_address, eoa_address')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (walletError) throw walletError;
+
+      // Update local profile state with the wallet address
+      setProfile({
+        ...profile,
+        trading_wallet_address: walletData?.polymarket_account_address || walletData?.eoa_address || address
+      });
       
       setToastMessage('Wallet connected successfully!');
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
     } catch (err) {
-      console.error('Error connecting wallet:', err);
-      setToastMessage('Failed to connect wallet');
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 2000);
+      console.error('Error fetching wallet after connection:', err);
+      // Still update with the address we received
+      setProfile({ ...profile, trading_wallet_address: address });
     } finally {
       setIsConnectModalOpen(false);
     }
@@ -413,10 +435,11 @@ export default function ProfilePage() {
     setDisconnectingWallet(true);
     
     try {
+      // Delete from turnkey_wallets table
       const { error } = await supabase
-        .from('profiles')
-        .update({ trading_wallet_address: null })
-        .eq('id', user.id);
+        .from('turnkey_wallets')
+        .delete()
+        .eq('user_id', user.id);
       
       if (error) throw error;
       
