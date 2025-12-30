@@ -37,7 +37,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
   const [portfolioValue, setPortfolioValue] = useState<number | null>(null)
   const [cashBalance, setCashBalance] = useState<number | null>(null)
   const [loadingBalance, setLoadingBalance] = useState(false)
-  const [walletCheckComplete, setWalletCheckComplete] = useState(false)
+  const [initialLoad, setInitialLoad] = useState(true)
 
   const isLoggedIn = user !== null && user !== undefined
   const hasWalletConnected = Boolean(walletAddress)
@@ -52,27 +52,16 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
     router.push('/login')
   }
 
-  // Mark wallet check as complete once we know the wallet status
+  // Track initial load - hide premium/wallet UI until data is ready
   useEffect(() => {
-    if (!user) {
-      setWalletCheckComplete(false)
-      return
+    if (user) {
+      // Small delay to ensure parent component has finished initial data fetch
+      const timer = setTimeout(() => {
+        setInitialLoad(false)
+      }, 100)
+      return () => clearTimeout(timer)
     }
-
-    if (!isPremium) {
-      // Non-premium users don't need wallet check
-      setWalletCheckComplete(true)
-      return
-    }
-
-    // For premium users, wait a bit longer to ensure wallet address has been fetched
-    // The walletAddress prop comes from an async database query in parent components
-    const timer = setTimeout(() => {
-      setWalletCheckComplete(true)
-    }, 200)
-    
-    return () => clearTimeout(timer)
-  }, [user, isPremium])
+  }, [user])
 
   // Fetch wallet balance for premium users with connected wallets
   useEffect(() => {
@@ -148,37 +137,35 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
 
           {/* Right Side - User Menu or Auth Buttons */}
           <div className="flex items-center gap-4">
-            {isLoggedIn && isPremium && walletCheckComplete ? (
-              hasWalletConnected ? (
-                /* Show wallet balance for premium users with connected wallet */
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <div className="text-sm font-semibold text-slate-900">
-                      Portfolio
-                    </div>
-                    <div className="text-xs font-medium text-emerald-600">
-                      {loadingBalance ? '...' : portfolioValue !== null ? `$${portfolioValue.toFixed(2)}` : '$0.00'}
-                    </div>
+            {!isLoggedIn || initialLoad ? null : isPremium && hasWalletConnected ? (
+              /* Show wallet balance for premium users with connected wallet */
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-slate-900">
+                    Portfolio
                   </div>
-                  <div className="text-right">
-                    <div className="text-sm font-semibold text-slate-900">
-                      Cash
-                    </div>
-                    <div className="text-xs font-medium text-slate-600">
-                      {loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toFixed(2)}` : '$0.00'}
-                    </div>
+                  <div className="text-xs font-medium text-emerald-600">
+                    {loadingBalance ? '...' : portfolioValue !== null ? `$${portfolioValue.toFixed(2)}` : '$0.00'}
                   </div>
                 </div>
-              ) : (
-                /* Show Premium badge for premium users without wallet */
-                <div className="px-4 py-2 rounded-lg border-2 border-yellow-400 bg-white">
-                  <div className="flex items-center gap-2">
-                    <Crown className="w-4 h-4 text-yellow-500" />
-                    <span className="font-bold text-yellow-500">Premium</span>
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-slate-900">
+                    Cash
+                  </div>
+                  <div className="text-xs font-medium text-slate-600">
+                    {loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toFixed(2)}` : '$0.00'}
                   </div>
                 </div>
-              )
-            ) : isLoggedIn && !isPremium && walletCheckComplete ? (
+              </div>
+            ) : isPremium ? (
+              /* Show Premium badge for premium users without wallet */
+              <div className="px-4 py-2 rounded-lg border-2 border-yellow-400 bg-white">
+                <div className="flex items-center gap-2">
+                  <Crown className="w-4 h-4 text-yellow-500" />
+                  <span className="font-bold text-yellow-500">Premium</span>
+                </div>
+              </div>
+            ) : (
               /* Show upgrade button for non-premium users */
               <Button
                 onClick={() => setUpgradeModalOpen(true)}
@@ -188,22 +175,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
                 <Crown className="w-4 h-4 mr-2 relative z-10" />
                 <span className="relative z-10">Premium</span>
               </Button>
-            ) : isLoggedIn && isPremium && !walletCheckComplete ? (
-              /* Loading skeleton for premium users - matches wallet balance layout */
-              <div className="flex items-center gap-4 opacity-0">
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-slate-900">Portfolio</div>
-                  <div className="text-xs font-medium text-emerald-600">$0.00</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-slate-900">Cash</div>
-                  <div className="text-xs font-medium text-slate-600">$0.00</div>
-                </div>
-              </div>
-            ) : isLoggedIn && !walletCheckComplete ? (
-              /* Loading state for non-premium - matches button size */
-              <div className="w-[130px] h-[40px]" />
-            ) : null}
+            )}
 
             {isLoggedIn ? (
               <DropdownMenu>

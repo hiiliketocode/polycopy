@@ -299,8 +299,8 @@ export default function ProfilePage() {
           .maybeSingle(); // Use maybeSingle() instead of single() to avoid error when no row exists
         
         // Don't log errors from maybeSingle() - it's expected to return no data for new users
-        // Only log if there's a real error message
-        if (error && error.message) {
+        // Only log if there's a real error with a non-empty message
+        if (error && error.message && error.message.trim() !== '') {
           console.error('Error fetching notification preferences:', error);
         }
         
