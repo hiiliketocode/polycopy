@@ -11,40 +11,114 @@ import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { MarkTradeCopiedModal } from '@/components/polycopy/mark-trade-copied-modal';
 
 
-// Copy Trade Modal Component
-function CopyTradeModal({ 
-  isOpen, 
-  trade, 
-  traderWallet,
-  traderName,
-  onClose, 
-  onConfirm, 
-  isSubmitting 
-}: { 
-  isOpen: boolean; 
-  trade: Trade | null;
-  traderWallet: string;
-  traderName: string;
-  onClose: () => void; 
-  onConfirm: (entryPrice: number, amountInvested?: number) => void;
-  isSubmitting: boolean;
-}) {
-  const [inputMode, setInputMode] = useState<'usd' | 'contracts'>('usd');
-  const [usdInput, setUsdInput] = useState('');
-  const [contractsInput, setContractsInput] = useState('');
-  const [slippageOption, setSlippageOption] = useState<number | 'custom'>(1);
-  const [customSlippage, setCustomSlippage] = useState('');
-  const [availableCashValue, setAvailableCashValue] = useState<string | null>(null);
-  const [availableCashLoading, setAvailableCashLoading] = useState(false);
-  const [availableCashError, setAvailableCashError] = useState<string | null>(null);
-  const [avatarFailed, setAvatarFailed] = useState(false);
+// Type definitions
+interface TraderData {
+  wallet: string;
+  displayName: string;
+  pnl: number;
+  volume: number;
+  followerCount: number;
+  roi?: number; // Optional: calculated value
+  roiFormatted?: string; // Optional: pre-formatted ROI
+  tradesCount?: number; // Total number of trades
+}
 
+interface LeaderboardData {
+  username?: string;
+  total_pnl?: number;
+  volume?: number;
+  total_trades?: number;
+  roi?: number;
+}
+
+interface Trade {
+  market: string;
+  outcome: string;
+  price: number;
+  size: number;
+  timestamp: string;
+  conditionId?: string;
+  tokenId?: string;
+  marketSlug?: string;
+  eventSlug?: string;
+  currentPrice?: number;
+  status?: string;
+  side?: string;
+  marketAvatarUrl?: string;
+  formattedDate?: string;
+}
+
+// Constants
+const SLIPPAGE_PRESETS = [0, 1, 3, 5];
+
+// Utility functions
+function formatCurrency(value: number): string {
+  return `$${value.toFixed(2)}`;
+}
+
+function formatContractsValue(value: number): string {
+  return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+function formatAbsoluteTimestamp(timestamp: string): string {
+  return new Date(timestamp).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+function formatRelativeTimestamp(timestamp: string): string {
+  const now = Date.now();
+  const then = new Date(timestamp).getTime();
+  const diffMs = now - then;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffDays > 0) return `${diffDays}d ago`;
+  if (diffHours > 0) return `${diffHours}h ago`;
+  if (diffMins > 0) return `${diffMins}m ago`;
+  return 'Just now';
+}
+
+// Main component
+export default function TraderProfilePage({ params }: { params: { wallet: string } }) {
+  const [isPremium, setIsPremium] = useState<boolean>(false);
+  const [traderData, setTraderData] = useState<TraderData | null>(null);
+  const [loadingTrader, setLoadingTrader] = useState(true);
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [loadingTrades, setLoadingTrades] = useState(true);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
+  const [positions, setPositions] = useState<Position[]>([]);  // Store full position data for URL construction
+  const [positionsLoaded, setPositionsLoaded] = useState(false); // Track if positions have been fetched
+  const router = useRouter();
+  
+  // User state
+  const [user, setUser] = useState<User | null>(null);
+  
+  // Modal state for Mark as Copied
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Toast state
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  
+  // Copied trades tracking
+  const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
+
+  // Unwrap params Promise
   useEffect(() => {
-    if (!isOpen || !trade) return;
-
-    let cancelled = false;
+    params.then((p) => {
     const controller = new AbortController();
 
     setInputMode('usd');
@@ -1973,19 +2047,24 @@ export default function TraderProfilePage({
         )}
       </div>
       
-      {/* Copy Trade Modal */}
-      <CopyTradeModal
-        isOpen={modalOpen}
-        trade={selectedTrade}
-        traderWallet={wallet}
-        traderName={traderData?.displayName || wallet.slice(0, 8)}
-        onClose={() => {
-          setModalOpen(false);
-          setSelectedTrade(null);
-        }}
-        onConfirm={handleConfirmCopy}
-        isSubmitting={isSubmitting}
-      />
+      {/* Mark Trade as Copied Modal */}
+      {selectedTrade && (
+        <MarkTradeCopiedModal
+          open={modalOpen}
+          onOpenChange={(open) => {
+            setModalOpen(open);
+            if (!open) setSelectedTrade(null);
+          }}
+          trade={{
+            market: selectedTrade.market,
+            traderName: traderData?.displayName || wallet.slice(0, 8),
+            position: selectedTrade.outcome.toUpperCase() as "YES" | "NO",
+            traderPrice: selectedTrade.price,
+          }}
+          isPremium={isPremium}
+          onConfirm={handleConfirmCopy}
+        />
+      )}
       
       {/* Success Toast */}
       {showToast && (
