@@ -1977,7 +1977,7 @@ export default function TraderProfilePage({
                   </tbody>
                 </table>
               </div>
-            </div>
+            </Card>
 
             {/* Mobile: Card-Based View */}
             <div className="md:hidden space-y-4">
