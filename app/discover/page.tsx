@@ -29,6 +29,7 @@ export default function DiscoverPage() {
   const [selectedCategory, setSelectedCategory] = useState('overall');
   const [user, setUser] = useState<User | null>(null);
   const [isPremium, setIsPremium] = useState(false);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [traders, setTraders] = useState<Trader[]>([]);
   const [loadingTraders, setLoadingTraders] = useState(true);
@@ -49,15 +50,26 @@ export default function DiscoverPage() {
         setUser(session.user);
         ensureProfile(session.user.id, session.user.email!);
         
-        // Check premium status
-        supabase
-          .from('profiles')
-          .select('is_premium')
-          .eq('id', session.user.id)
-          .single()
-          .then(({ data }) => {
-            setIsPremium(data?.is_premium || false);
-          });
+        // Check premium status and wallet
+        Promise.all([
+          supabase
+            .from('profiles')
+            .select('is_premium')
+            .eq('id', session.user.id)
+            .single(),
+          supabase
+            .from('turnkey_wallets')
+            .select('polymarket_account_address, eoa_address')
+            .eq('user_id', session.user.id)
+            .maybeSingle()
+        ]).then(([profileRes, walletRes]) => {
+          setIsPremium(profileRes.data?.is_premium || false);
+          setWalletAddress(
+            walletRes.data?.polymarket_account_address || 
+            walletRes.data?.eoa_address || 
+            null
+          );
+        });
       } else {
         setUser(null);
       }
@@ -299,7 +311,11 @@ export default function DiscoverPage() {
 
   return (
     <>
-      <Navigation user={user ? { id: user.id, email: user.email || '' } : null} isPremium={isPremium} />
+      <Navigation 
+        user={user ? { id: user.id, email: user.email || '' } : null} 
+        isPremium={isPremium}
+        walletAddress={walletAddress}
+      />
       
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white md:pt-0 pb-20 md:pb-8">
         {/* Hero Section */}
