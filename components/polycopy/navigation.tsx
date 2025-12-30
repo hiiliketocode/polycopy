@@ -14,7 +14,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import Image from "next/image"
 import { UpgradeModal } from "@/components/polycopy/upgrade-modal"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 
 interface NavigationProps {
@@ -37,7 +37,11 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
   const [portfolioValue, setPortfolioValue] = useState<number | null>(null)
   const [cashBalance, setCashBalance] = useState<number | null>(null)
   const [loadingBalance, setLoadingBalance] = useState(false)
-  const [initialLoad, setInitialLoad] = useState(true)
+  const [showUI, setShowUI] = useState(false)
+  
+  // Track previous prop values to detect when they've stabilized
+  const prevPropsRef = useRef({ user, isPremium, walletAddress })
+  const stabilityTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   const isLoggedIn = user !== null && user !== undefined
   const hasWalletConnected = Boolean(walletAddress)
@@ -52,16 +56,46 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
     router.push('/login')
   }
 
-  // Track initial load - hide premium/wallet UI until data is ready
+  // Wait for props to stabilize before showing UI
   useEffect(() => {
-    if (user) {
-      // Small delay to ensure parent component has finished initial data fetch
-      const timer = setTimeout(() => {
-        setInitialLoad(false)
-      }, 100)
-      return () => clearTimeout(timer)
+    if (!user) {
+      setShowUI(false)
+      return
     }
-  }, [user])
+
+    // Check if props have changed
+    const propsChanged = 
+      prevPropsRef.current.user?.id !== user?.id ||
+      prevPropsRef.current.isPremium !== isPremium ||
+      prevPropsRef.current.walletAddress !== walletAddress
+
+    // Update ref with current props
+    prevPropsRef.current = { user, isPremium, walletAddress }
+
+    // Clear any existing timer
+    if (stabilityTimerRef.current) {
+      clearTimeout(stabilityTimerRef.current)
+    }
+
+    // If props changed, hide UI and wait for stability
+    if (propsChanged) {
+      setShowUI(false)
+      
+      // Show UI after props have been stable for 150ms
+      stabilityTimerRef.current = setTimeout(() => {
+        setShowUI(true)
+      }, 150)
+    } else if (!showUI) {
+      // Props are already stable, show immediately
+      setShowUI(true)
+    }
+
+    return () => {
+      if (stabilityTimerRef.current) {
+        clearTimeout(stabilityTimerRef.current)
+      }
+    }
+  }, [user, isPremium, walletAddress, showUI])
 
   // Fetch wallet balance for premium users with connected wallets
   useEffect(() => {
@@ -137,7 +171,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
 
           {/* Right Side - User Menu or Auth Buttons */}
           <div className="flex items-center gap-4">
-            {!isLoggedIn || initialLoad ? null : isPremium && hasWalletConnected ? (
+            {!isLoggedIn || !showUI ? null : isPremium && hasWalletConnected ? (
               /* Show wallet balance for premium users with connected wallet */
               <div className="flex items-center gap-4">
                 <div className="text-right">
