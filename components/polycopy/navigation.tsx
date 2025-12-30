@@ -14,12 +14,13 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import Image from "next/image"
 import { UpgradeModal } from "@/components/polycopy/upgrade-modal"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 
 interface NavigationProps {
   user?: { id: string; email: string } | null
   isPremium?: boolean
+  walletAddress?: string | null
 }
 
 const FeedIcon = ({ className }: { className?: string }) => (
@@ -29,12 +30,16 @@ const FeedIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
-export function Navigation({ user, isPremium = false }: NavigationProps) {
+export function Navigation({ user, isPremium = false, walletAddress = null }: NavigationProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
+  const [portfolioValue, setPortfolioValue] = useState<number | null>(null)
+  const [cashBalance, setCashBalance] = useState<number | null>(null)
+  const [loadingBalance, setLoadingBalance] = useState(false)
 
   const isLoggedIn = user !== null && user !== undefined
+  const hasWalletConnected = Boolean(walletAddress)
 
   const isActive = (path: string) => {
     if (path === "/") return pathname === "/"
@@ -45,6 +50,33 @@ export function Navigation({ user, isPremium = false }: NavigationProps) {
     await supabase.auth.signOut()
     router.push('/login')
   }
+
+  // Fetch wallet balance for premium users with connected wallets
+  useEffect(() => {
+    if (!isPremium || !walletAddress || !user) return
+
+    const fetchBalance = async () => {
+      setLoadingBalance(true)
+      try {
+        // Fetch balance from API
+        const response = await fetch(`/api/polymarket/wallet/${walletAddress}`)
+        if (response.ok) {
+          const data = await response.json()
+          setPortfolioValue(data.portfolioValue || 0)
+          setCashBalance(data.cashBalance || 0)
+        }
+      } catch (error) {
+        console.error('Error fetching wallet balance:', error)
+      } finally {
+        setLoadingBalance(false)
+      }
+    }
+
+    fetchBalance()
+    // Refresh balance every 30 seconds
+    const interval = setInterval(fetchBalance, 30000)
+    return () => clearInterval(interval)
+  }, [isPremium, walletAddress, user])
 
   return (
     <>
@@ -93,7 +125,28 @@ export function Navigation({ user, isPremium = false }: NavigationProps) {
 
           {/* Right Side - User Menu or Auth Buttons */}
           <div className="flex items-center gap-4">
-            {isLoggedIn && isPremium ? (
+            {isLoggedIn && isPremium && hasWalletConnected ? (
+              /* Show wallet balance for premium users with connected wallet */
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-slate-900">
+                    Portfolio
+                  </div>
+                  <div className="text-xs font-medium text-emerald-600">
+                    {loadingBalance ? '...' : portfolioValue !== null ? `$${portfolioValue.toFixed(2)}` : '$0.00'}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-slate-900">
+                    Cash
+                  </div>
+                  <div className="text-xs font-medium text-slate-600">
+                    {loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toFixed(2)}` : '$0.00'}
+                  </div>
+                </div>
+              </div>
+            ) : isLoggedIn && isPremium ? (
+              /* Show Premium badge for premium users without wallet */
               <div className="px-4 py-2 rounded-lg border-2 border-yellow-400 bg-white">
                 <div className="flex items-center gap-2">
                   <Crown className="w-4 h-4 text-yellow-500" />
@@ -101,6 +154,7 @@ export function Navigation({ user, isPremium = false }: NavigationProps) {
                 </div>
               </div>
             ) : isLoggedIn ? (
+              /* Show upgrade button for non-premium users */
               <Button
                 onClick={() => setUpgradeModalOpen(true)}
                 className="bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white font-bold shadow-lg shadow-yellow-400/30 border border-yellow-400/20 relative overflow-hidden group"
@@ -117,7 +171,10 @@ export function Navigation({ user, isPremium = false }: NavigationProps) {
                   <button className="flex items-center gap-2 hover:opacity-80 transition-opacity">
                     <Avatar className="w-9 h-9 ring-2 ring-slate-200">
                       <AvatarImage src="/default-profile.jpg" />
-                      <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 font-semibold">
+                      <AvatarFallback className={`bg-gradient-to-br ${isPremium ? 'from-yellow-400 to-yellow-500' : 'from-yellow-400 to-yellow-500'} text-slate-900 font-semibold relative`}>
+                        {isPremium && (
+                          <Crown className="absolute -top-1 -right-1 w-3 h-3 text-yellow-600" />
+                        )}
                         {user?.email?.charAt(0).toUpperCase() || "U"}
                       </AvatarFallback>
                     </Avatar>

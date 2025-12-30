@@ -380,9 +380,31 @@ export default function ProfilePage() {
 
   // Wallet handlers
   const handleWalletConnect = async (address: string) => {
-    // This would integrate with your Turnkey wallet connection
-    console.log('Connecting wallet:', address);
-    setIsConnectModalOpen(false);
+    if (!user) return;
+    
+    try {
+      // Save wallet address to Supabase
+      const { error } = await supabase
+        .from('profiles')
+        .update({ trading_wallet_address: address })
+        .eq('id', user.id);
+      
+      if (error) throw error;
+      
+      // Update local profile state
+      setProfile({ ...profile, trading_wallet_address: address });
+      
+      setToastMessage('Wallet connected successfully!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error connecting wallet:', err);
+      setToastMessage('Failed to connect wallet');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } finally {
+      setIsConnectModalOpen(false);
+    }
   };
 
   const handleWalletDisconnect = async () => {
@@ -587,7 +609,11 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <>
-        <Navigation user={user ? { id: user.id, email: user.email || '' } : null} isPremium={isPremium} />
+        <Navigation 
+          user={user ? { id: user.id, email: user.email || '' } : null} 
+          isPremium={isPremium}
+          walletAddress={profile?.trading_wallet_address}
+        />
         <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
@@ -604,7 +630,11 @@ export default function ProfilePage() {
 
   return (
     <>
-      <Navigation user={user ? { id: user.id, email: user.email || '' } : null} isPremium={isPremium} />
+      <Navigation 
+        user={user ? { id: user.id, email: user.email || '' } : null} 
+        isPremium={isPremium}
+        walletAddress={profile?.trading_wallet_address}
+      />
       
       <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pt-4 md:pt-0 pb-20 md:pb-8">
         <div className="max-w-[1200px] mx-auto px-4 md:px-6 space-y-6 py-8">
