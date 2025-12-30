@@ -75,10 +75,6 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
     }, 300)
   }
 
-  const handleOpenMagicLink = () => {
-    // Open Magic Link reveal page to get private key
-    window.open("https://reveal.magic.link/", "_blank", "noopener,noreferrer")
-  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -231,11 +227,13 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
               <div className="space-y-3">
                 <h3 className="font-semibold text-slate-900 text-sm flex items-center gap-2">
                   <Lock className="h-4 w-4" />
-                  How to get your private key:
+                  How to get your private key from Polymarket:
                 </h3>
                 <ol className="space-y-2 list-decimal list-inside text-sm text-slate-700 ml-1">
-                  <li>Click the button below to open Magic Link authentication</li>
-                  <li>Complete the authentication process in the new window</li>
+                  <li>Go to <a href="https://polymarket.com/settings" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Polymarket Settings</a></li>
+                  <li>Click on "Wallet" or "Security" section</li>
+                  <li>Look for "Export Private Key" or "Show Private Key" option</li>
+                  <li>Complete any authentication steps required</li>
                   <li>Copy your private key (starts with "0x...")</li>
                   <li>Paste it into the field below</li>
                 </ol>
@@ -243,11 +241,11 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
 
               <Button
                 type="button"
-                onClick={handleOpenMagicLink}
+                onClick={() => window.open("https://polymarket.com/settings", "_blank", "noopener,noreferrer")}
                 variant="outline"
                 className="w-full gap-2 bg-transparent"
               >
-                Get Private Key Using Magic Link
+                Open Polymarket Settings
                 <ExternalLink className="h-4 w-4" />
               </Button>
 
