@@ -301,9 +301,12 @@ export default function ProfilePage() {
           .eq('user_id', user.id)
           .maybeSingle(); // Use maybeSingle() instead of single() to avoid error when no row exists
         
-        if (error) {
+        // Only log errors that have actual content (not empty objects)
+        if (error && Object.keys(error).length > 0) {
           console.error('Error fetching notification preferences:', error);
-        } else if (data) {
+        }
+        
+        if (data) {
           setNotificationsEnabled(data.trader_closes_position || false);
         }
         // If no data and no error, user has no preferences yet - that's fine, use default
