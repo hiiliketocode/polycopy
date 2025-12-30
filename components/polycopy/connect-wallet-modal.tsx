@@ -86,7 +86,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
               <DialogTitle className="text-xl font-bold">Link Your Polymarket Wallet</DialogTitle>
               <div className="text-sm text-black/80 mt-2 space-y-1">
                 <p>
-                  <strong>Step 1:</strong> Go to Polymarket.com and head to your profile
+                  <strong>Step 1:</strong> Go to Polymarket.com, log in, and navigate to your profile.
                 </p>
                 <p>
                   <strong>Step 2:</strong> To the right of your username, click the icon that looks like a head in a box
@@ -104,7 +104,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                   type="button"
                   onClick={(e) => {
                     e.preventDefault();
-                    window.open("https://polymarket.com/profile", "_blank", "noopener,noreferrer");
+                    window.open("https://polymarket.com/", "_blank", "noopener,noreferrer");
                   }}
                   variant="outline"
                   className="mb-4 gap-2"
@@ -146,8 +146,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
             <DialogHeader className="bg-gradient-to-r from-yellow-400 to-amber-500 text-black p-6">
               <DialogTitle className="text-xl font-bold">Account linked</DialogTitle>
               <p className="text-sm text-black/80 mt-2">
-                Your Polymarket profile is now linked. Please confirm the following details and click 'next'. If not,
-                click 'back' and re-enter your wallet address.
+                Your Polymarket profile is now linked. Please confirm the following details and click 'next'. If the details are wrong, click 'back' and re-enter your wallet address.
               </p>
             </DialogHeader>
 
@@ -206,7 +205,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                 <div className="flex items-start gap-2">
                   <Shield className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
                   <div className="space-y-2 text-sm">
-                    <p className="font-semibold text-blue-900">Polycopy can never access your private keys</p>
+                    <p className="font-bold text-blue-900 text-base">Polycopy can never access your private keys</p>
                     <p className="text-blue-800">
                       Polycopy never sees or stores your private key. We use Turnkey, an industry-leading secure wallet
                       infrastructure provider, to handle all key management.{" "}
@@ -230,11 +229,11 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                   How to get your private key:
                 </h3>
                 <ol className="space-y-2 list-decimal list-inside text-sm text-slate-700 ml-1">
-                  <li>Click the button below to open Polymarket's Magic Link key export page</li>
-                  <li>Sign in with your Polymarket email</li>
-                  <li>Click "Reveal Private Key" and complete authentication</li>
-                  <li>Copy your private key (starts with "0x...")</li>
-                  <li>Paste it into the field below</li>
+                  <li>Click the button below to open Polymarket's Magic Link key export page.</li>
+                  <li>Sign in with the email associated with your Polymarket account.</li>
+                  <li>Click "Reveal Private Key" and complete authentication.</li>
+                  <li>Copy your private key (starts with "0x...").</li>
+                  <li>Paste it into the field below.</li>
                 </ol>
               </div>
 
