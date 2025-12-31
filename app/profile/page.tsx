@@ -39,6 +39,7 @@ import {
   BellOff,
   Trash2,
   RotateCcw,
+  Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -63,6 +64,19 @@ interface CopiedTrade {
   user_closed_at: string | null;
   user_exit_price: number | null;
   resolved_outcome?: string | null;
+}
+
+interface MonthlyROI {
+  month: string;
+  roi: number;
+  trades: number;
+}
+
+interface CategoryDistribution {
+  category: string;
+  count: number;
+  percentage: number;
+  color: string;
 }
 
 // Helper: Format relative time
@@ -117,6 +131,12 @@ export default function ProfilePage() {
   const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved'>('all');
   
+  // Performance tab data
+  const [monthlyROI, setMonthlyROI] = useState<MonthlyROI[]>([]);
+  const [categoryDistribution, setCategoryDistribution] = useState<CategoryDistribution[]>([]);
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
+  const [hoveredMonth, setHoveredMonth] = useState<{ month: string; roi: number; x: number; y: number } | null>(null);
+  
   // Edit/Close trade modal state
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -140,6 +160,12 @@ export default function ProfilePage() {
   // Notification preferences state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loadingNotificationPrefs, setLoadingNotificationPrefs] = useState(false);
+  
+  // Polymarket username state
+  const [polymarketUsername, setPolymarketUsername] = useState<string | null>(null);
+  
+  // Pagination state for copied trades
+  const [tradesToShow, setTradesToShow] = useState(15);
   
   // Refs to prevent re-fetching on tab focus
   const hasLoadedStatsRef = useRef(false);
@@ -240,6 +266,33 @@ export default function ProfilePage() {
     fetchStats();
   }, [user]);
 
+  // Fetch Polymarket username when wallet is connected
+  useEffect(() => {
+    if (!profile?.trading_wallet_address) {
+      setPolymarketUsername(null);
+      return;
+    }
+
+    const fetchPolymarketUsername = async () => {
+      try {
+        const response = await fetch(
+          `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${profile.trading_wallet_address}`
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data) && data.length > 0 && data[0].userName) {
+            setPolymarketUsername(data[0].userName);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching Polymarket username:', err);
+      }
+    };
+
+    fetchPolymarketUsername();
+  }, [profile?.trading_wallet_address]);
+
   // Fetch copied trades with auto-refresh status
   useEffect(() => {
     if (!user || hasLoadedTradesRef.current) return;
@@ -283,6 +336,153 @@ export default function ProfilePage() {
 
     fetchCopiedTrades();
   }, [user]);
+
+  // Process copied trades for performance metrics
+  useEffect(() => {
+    if (copiedTrades.length === 0) {
+      setMonthlyROI([]);
+      setCategoryDistribution([]);
+      return;
+    }
+
+    // Calculate Monthly ROI (last 12 months)
+    const monthlyData: { [key: string]: { pnl: number; invested: number; trades: number } } = {};
+    const now = new Date();
+    
+    // Initialize last 12 months
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthKey = date.toISOString().substring(0, 7); // YYYY-MM
+      monthlyData[monthKey] = { pnl: 0, invested: 0, trades: 0 };
+    }
+
+    // Aggregate trades by month
+    copiedTrades.forEach(trade => {
+      const tradeDate = new Date(trade.copied_at);
+      const monthKey = tradeDate.toISOString().substring(0, 7);
+      
+      if (monthlyData[monthKey]) {
+        const invested = trade.amount_invested || 0;
+        monthlyData[monthKey].invested += invested;
+        monthlyData[monthKey].trades += 1;
+        
+        // Calculate P&L from ROI if available
+        if (trade.roi !== null && trade.roi !== 0) {
+          monthlyData[monthKey].pnl += (invested * trade.roi / 100);
+        }
+      }
+    });
+
+    // Convert to array and calculate cumulative ROI month-over-month
+    const monthlyROIData: MonthlyROI[] = [];
+    let cumulativePnL = 0;
+    let cumulativeInvested = 0;
+    
+    // Calculate overall ROI from all trades for proportional distribution
+    const totalPnL = Object.values(monthlyData).reduce((sum, d) => sum + d.pnl, 0);
+    const totalInvested = Object.values(monthlyData).reduce((sum, d) => sum + d.invested, 0);
+    const overallROI = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
+    
+    Object.keys(monthlyData).sort().forEach(monthKey => {
+      const data = monthlyData[monthKey];
+      
+      // Accumulate investment
+      cumulativeInvested += data.invested;
+      
+      // For trades with ROI data, accumulate actual P&L
+      cumulativePnL += data.pnl;
+      
+      // Calculate ROI - if we have actual P&L, use it; otherwise estimate proportionally
+      let roi = 0;
+      if (cumulativePnL !== 0) {
+        // We have actual P&L data
+        roi = cumulativeInvested > 0 ? (cumulativePnL / cumulativeInvested) * 100 : 0;
+      } else if (overallROI !== 0) {
+        // No P&L yet, but we have overall ROI - show proportional growth
+        const portfolioProgress = totalInvested > 0 ? (cumulativeInvested / totalInvested) : 0;
+        roi = overallROI * portfolioProgress;
+      }
+      
+      const date = new Date(monthKey + '-01');
+      const monthName = date.toLocaleDateString('en-US', { month: 'short' });
+      
+      monthlyROIData.push({
+        month: monthName,
+        roi: roi,
+        trades: data.trades
+      });
+    });
+
+    setMonthlyROI(monthlyROIData);
+
+    // Calculate Category Distribution
+    const categoryMap: { [key: string]: number } = {};
+    const categoryColors: { [key: string]: string } = {
+      'Politics': '#3b82f6',
+      'Sports': '#10b981',
+      'Crypto': '#f59e0b',
+      'Culture': '#ec4899',
+      'Finance': '#8b5cf6',
+      'Economics': '#06b6d4',
+      'Tech': '#6366f1',
+      'Weather': '#14b8a6',
+      'Other': '#64748b'
+    };
+
+    copiedTrades.forEach(trade => {
+      // Categorize based on market title keywords with comprehensive patterns
+      const title = trade.market_title.toLowerCase();
+      let category = 'Other';
+      
+      // Politics - elections, government, political figures
+      if (title.match(/trump|biden|harris|election|president|congress|senate|governor|democrat|republican|political|vote|campaign|white house|administration|policy|parliament|prime minister|cabinet|legislation/)) {
+        category = 'Politics';
+      }
+      // Sports - all major sports and events (including "vs", spread betting terms)
+      else if (title.match(/\svs\s|\svs\.|spread:|o\/u\s|over\/under|moneyline|nfl|nba|nhl|mlb|soccer|football|basketball|baseball|hockey|tennis|golf|mma|ufc|boxing|olympics|world cup|super bowl|playoffs|championship|athlete|team|game|match|score|tournament|league|premier league|fifa|celtics|lakers|warriors|bulls|knicks|heat|nets|bucks|raptors|76ers|sixers|pacers|pistons|cavaliers|hornets|magic|hawks|wizards|spurs|mavericks|rockets|grizzlies|pelicans|thunder|jazz|suns|trail blazers|kings|clippers|nuggets|timberwolves|chiefs|bills|bengals|ravens|browns|steelers|texans|colts|jaguars|titans|broncos|raiders|chargers|cowboys|giants|eagles|commanders|packers|bears|lions|vikings|saints|falcons|panthers|buccaneers|rams|49ers|cardinals|seahawks|yankees|red sox|dodgers|astros|mets|braves|cubs|white sox|red wings|maple leafs|canadiens|bruins|rangers|flyers|penguins|capitals|lightning|panthers|hurricanes|islanders|devils|blue jackets|predators|jets|avalanche|stars|blues|wild|blackhawks|ducks|sharks|kraken|flames|oilers|canucks|golden knights/)) {
+        category = 'Sports';
+      }
+      // Crypto - cryptocurrencies and blockchain
+      else if (title.match(/bitcoin|btc|ethereum|eth|crypto|blockchain|defi|nft|solana|sol|dogecoin|doge|cardano|ada|polkadot|dot|binance|bnb|ripple|xrp|litecoin|ltc|satoshi|mining|wallet|token|coin/)) {
+        category = 'Crypto';
+      }
+      // Culture - entertainment, celebrities, media
+      else if (title.match(/movie|film|music|song|album|artist|celebrity|actor|actress|director|oscar|grammy|emmy|tv show|series|netflix|disney|spotify|concert|tour|premiere|box office|streaming|podcast|youtube|tiktok|instagram|social media|influencer|viral|trending|fashion|style|beauty/)) {
+        category = 'Culture';
+      }
+      // Finance - markets, stocks, companies
+      else if (title.match(/stock|s&p|nasdaq|dow|market|ipo|shares|trading|wall street|investor|portfolio|dividend|earnings|revenue|profit|valuation|acquisition|merger|bankruptcy|sec|ftx|robinhood|index|etf|mutual fund|hedge fund|investment|asset/)) {
+        category = 'Finance';
+      }
+      // Economics - macro indicators, central banks
+      else if (title.match(/gdp|inflation|recession|unemployment|interest rate|fed|federal reserve|central bank|cpi|ppi|economy|economic|jobs report|payroll|consumer|spending|debt|deficit|fiscal|monetary|quantitative easing|treasury|bond|yield/)) {
+        category = 'Economics';
+      }
+      // Tech - technology companies and innovations
+      else if (title.match(/ai|artificial intelligence|tech|technology|apple|google|microsoft|amazon|meta|facebook|tesla|spacex|nvidia|amd|intel|chip|semiconductor|software|hardware|startup|silicon valley|ipo|app|platform|cloud|data|cybersecurity|robot|autonomous|electric vehicle|ev|5g|quantum|vr|ar|metaverse|openai|chatgpt|gpt/)) {
+        category = 'Tech';
+      }
+      // Weather - climate and weather events
+      else if (title.match(/temperature|weather|climate|hurricane|storm|tornado|flood|drought|snow|rain|heat wave|cold|frost|wind|forecast|meteorolog|el nino|la nina|global warming|celsius|fahrenheit/)) {
+        category = 'Weather';
+      }
+      
+      categoryMap[category] = (categoryMap[category] || 0) + 1;
+    });
+
+    // Convert to array with percentages
+    const totalTrades = copiedTrades.length;
+    const categoryData: CategoryDistribution[] = Object.entries(categoryMap)
+      .map(([category, count]) => ({
+        category,
+        count,
+        percentage: (count / totalTrades) * 100,
+        color: categoryColors[category] || '#64748b'
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    setCategoryDistribution(categoryData);
+  }, [copiedTrades]);
 
   // Fetch notification preferences
   useEffect(() => {
@@ -705,8 +905,21 @@ export default function ProfilePage() {
                 </Avatar>
 
                 <div className="flex-1 text-center lg:text-left">
-                  <h2 className="text-2xl font-bold text-slate-900 mb-1">{user?.email || 'You'}</h2>
+                  <h2 className="text-2xl font-bold text-slate-900 mb-1">
+                    {profile?.trading_wallet_address && polymarketUsername
+                      ? polymarketUsername.startsWith('0x') && polymarketUsername.length > 20
+                        ? truncateAddress(polymarketUsername)
+                        : polymarketUsername
+                      : 'You'}
+                  </h2>
                   <div className="flex items-center gap-2 text-sm text-slate-600 justify-center lg:justify-start">
+                    <Avatar className="h-9 w-9 ring-2 ring-slate-100">
+                      <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-xs font-semibold">
+                        {polymarketUsername
+                          ? polymarketUsername.charAt(0).toUpperCase()
+                          : user?.email?.charAt(0).toUpperCase() || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
                     <span>Following {followingCount} traders</span>
                   </div>
 
@@ -794,41 +1007,44 @@ export default function ProfilePage() {
             </div>
           </Card>
 
-          {/* Tabs */}
-          <div className="flex gap-2 border-b border-slate-200">
-            <button
+          {/* Tab Navigation */}
+          <div className="flex gap-2 mb-6">
+            <Button
               onClick={() => setActiveTab('copied-trades')}
+              variant="ghost"
               className={cn(
-                "px-4 py-2 font-medium text-sm transition-colors border-b-2",
+                "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
                 activeTab === 'copied-trades'
-                  ? "border-[#FDB022] text-slate-900"
-                  : "border-transparent text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
               )}
             >
               Copied Trades
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => setActiveTab('performance')}
+              variant="ghost"
               className={cn(
-                "px-4 py-2 font-medium text-sm transition-colors border-b-2",
+                "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
                 activeTab === 'performance'
-                  ? "border-[#FDB022] text-slate-900"
-                  : "border-transparent text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
               )}
             >
               Performance
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => setActiveTab('settings')}
+              variant="ghost"
               className={cn(
-                "px-4 py-2 font-medium text-sm transition-colors border-b-2",
+                "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
                 activeTab === 'settings'
-                  ? "border-[#FDB022] text-slate-900"
-                  : "border-transparent text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
               )}
             >
               Settings
-            </button>
+            </Button>
           </div>
 
           {/* Tab Content */}
@@ -885,7 +1101,7 @@ export default function ProfilePage() {
                 </Card>
               ) : (
                 <div className="space-y-3">
-                  {filteredTrades.map((trade) => (
+                  {filteredTrades.slice(0, tradesToShow).map((trade) => (
                     <Card key={trade.id} className="p-4 sm:p-6">
                       <div className="space-y-4">
                         {/* Trade Header */}
@@ -972,81 +1188,163 @@ export default function ProfilePage() {
                           )}
                         </div>
 
-                        {/* Expanded Actions */}
+                        {/* Expanded Details */}
                         {expandedTradeId === trade.id && (
-                          <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200">
-                            {/* Open trades: Edit, Close, Delete */}
-                            {!trade.user_closed_at && !trade.market_resolved && (
-                              <>
-                                <Button
-                                  onClick={() => {
-                                    setTradeToEdit(trade);
-                                    setShowEditModal(true);
-                                  }}
-                                  variant="outline"
-                                  size="sm"
-                                  className="gap-2"
-                                >
-                                  <Edit2 className="h-4 w-4" />
-                                  Edit
-                                </Button>
-                                <Button
-                                  onClick={() => {
-                                    setTradeToEdit(trade);
-                                    setShowCloseModal(true);
-                                  }}
-                                  variant="outline"
-                                  size="sm"
-                                  className="gap-2"
-                                >
-                                  <X className="h-4 w-4" />
-                                  Close Position
-                                </Button>
-                              </>
-                            )}
-                            
-                            {/* Closed trades: Edit, Unmark as Closed, Delete */}
-                            {trade.user_closed_at && (
-                              <>
-                                <Button
-                                  onClick={() => {
-                                    setTradeToEdit(trade);
-                                    setShowEditModal(true);
-                                  }}
-                                  variant="outline"
-                                  size="sm"
-                                  className="gap-2"
-                                >
-                                  <Edit2 className="h-4 w-4" />
-                                  Edit
-                                </Button>
-                                <Button
-                                  onClick={() => handleUnmarkClosed(trade)}
-                                  variant="outline"
-                                  size="sm"
-                                  className="gap-2"
-                                >
-                                  <RotateCcw className="h-4 w-4" />
-                                  Unmark as Closed
-                                </Button>
-                              </>
-                            )}
-                            
-                            {/* Delete button always available */}
-                            <Button
-                              onClick={() => handleDeleteTrade(trade)}
-                              variant="outline"
-                              size="sm"
-                              className="gap-2 text-red-600 hover:text-red-700 hover:border-red-300"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Delete
-                            </Button>
+                          <div className="space-y-4 pt-4 border-t border-slate-200">
+                            {/* Additional Details in 2x2 Grid */}
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">Current Price</p>
+                                <p className="font-semibold text-slate-900">
+                                  ${trade.current_price?.toFixed(2) || trade.price_when_copied.toFixed(2)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">Shares</p>
+                                <p className="font-semibold text-slate-900">
+                                  {trade.amount_invested && trade.price_when_copied 
+                                    ? Math.round(trade.amount_invested / trade.price_when_copied)
+                                    : '—'}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">Amount Invested</p>
+                                <p className="font-semibold text-slate-900">
+                                  ${trade.amount_invested?.toFixed(0) || '—'}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">P&L</p>
+                                <p className={cn(
+                                  "font-semibold",
+                                  (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
+                                )}>
+                                  {trade.amount_invested && trade.roi
+                                    ? `${(trade.roi >= 0 ? '+' : '')}$${((trade.amount_invested * trade.roi) / 100).toFixed(0)}`
+                                    : '—'}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex gap-2">
+                              {/* Open trades: Mark as Closed, Edit, Delete */}
+                              {!trade.user_closed_at && !trade.market_resolved && (
+                                <>
+                                  <Button
+                                    onClick={() => {
+                                      setTradeToEdit(trade);
+                                      setShowCloseModal(true);
+                                    }}
+                                    variant="outline"
+                                    size="default"
+                                    className="flex-1 border-blue-600 text-blue-600 hover:bg-blue-50 gap-2"
+                                  >
+                                    <Check className="h-4 w-4" />
+                                    Mark as Closed
+                                  </Button>
+                                  <Button
+                                    onClick={() => {
+                                      setTradeToEdit(trade);
+                                      setShowEditModal(true);
+                                    }}
+                                    variant="outline"
+                                    size="default"
+                                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                  >
+                                    <Edit2 className="h-4 w-4" />
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleDeleteTrade(trade)}
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                                  >
+                                    <Trash2 className="h-5 w-5" />
+                                  </Button>
+                                </>
+                              )}
+                              
+                              {/* User-closed trades: Edit, Unmark as Closed, Delete */}
+                              {trade.user_closed_at && (
+                                <>
+                                  <Button
+                                    onClick={() => {
+                                      setTradeToEdit(trade);
+                                      setShowEditModal(true);
+                                    }}
+                                    variant="outline"
+                                    size="default"
+                                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                  >
+                                    <Edit2 className="h-4 w-4" />
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleUnmarkClosed(trade)}
+                                    variant="outline"
+                                    size="default"
+                                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                    Unmark as Closed
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleDeleteTrade(trade)}
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                                  >
+                                    <Trash2 className="h-5 w-5" />
+                                  </Button>
+                                </>
+                              )}
+                              
+                              {/* Market-resolved trades: Edit, Delete */}
+                              {trade.market_resolved && !trade.user_closed_at && (
+                                <>
+                                  <Button
+                                    onClick={() => {
+                                      setTradeToEdit(trade);
+                                      setShowEditModal(true);
+                                    }}
+                                    variant="outline"
+                                    size="default"
+                                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                  >
+                                    <Edit2 className="h-4 w-4" />
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleDeleteTrade(trade)}
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                                  >
+                                    <Trash2 className="h-5 w-5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>
                     </Card>
                   ))}
+                  
+                  {/* View More Button */}
+                  {filteredTrades.length > tradesToShow && (
+                    <div className="flex justify-center pt-4">
+                      <Button
+                        onClick={() => setTradesToShow(prev => prev + 15)}
+                        variant="outline"
+                        className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                      >
+                        View More Copied Trades ({filteredTrades.length - tradesToShow} remaining)
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1054,28 +1352,260 @@ export default function ProfilePage() {
 
           {activeTab === 'performance' && (
             <div className="space-y-6">
+              {/* ROI Over Time Chart */}
               <Card className="p-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">Performance Over Time</h3>
-                <div className="h-64 bg-slate-50 rounded-lg flex items-center justify-center border border-slate-200">
-                  <p className="text-slate-500">ROI Chart - Coming Soon</p>
-                </div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-6">ROI Over Time (Last 12 Months)</h3>
+                {monthlyROI.length > 0 ? (
+                  <div className="relative h-64">
+                    {/* Y-axis labels */}
+                    <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-xs text-slate-500">
+                      {(() => {
+                        const maxROI = Math.max(...monthlyROI.map(m => m.roi), 5);
+                        const minROI = Math.min(...monthlyROI.map(m => m.roi), -5);
+                        // Ensure at least a 10% range for visibility
+                        const range = Math.max(maxROI - minROI, 10);
+                        const actualMax = maxROI + (10 - (maxROI - minROI)) / 2;
+                        const actualMin = minROI - (10 - (maxROI - minROI)) / 2;
+                        const step = (actualMax - actualMin) / 4;
+                        return [actualMax, actualMax - step, actualMax - 2 * step, actualMax - 3 * step, actualMin].map((val, i) => (
+                          <span key={i}>{val.toFixed(1)}%</span>
+                        ));
+                      })()}
+                    </div>
+                    
+                    {/* Chart area */}
+                    <div className="ml-12 h-full border-l border-b border-slate-200 relative">
+                      <svg className="w-full h-full" viewBox="0 0 600 200" preserveAspectRatio="xMidYMid meet">
+                        <polyline
+                          points={monthlyROI.map((m, i) => {
+                            const x = (i / (monthlyROI.length - 1)) * 600;
+                            const maxROI = Math.max(...monthlyROI.map(m => m.roi), 5);
+                            const minROI = Math.min(...monthlyROI.map(m => m.roi), -5);
+                            const range = Math.max(maxROI - minROI, 10);
+                            const actualMax = maxROI + (10 - (maxROI - minROI)) / 2;
+                            const actualMin = minROI - (10 - (maxROI - minROI)) / 2;
+                            const y = 200 - ((m.roi - actualMin) / (actualMax - actualMin)) * 200;
+                            return `${x},${y}`;
+                          }).join(' ')}
+                          fill="none"
+                          stroke="#64748b"
+                          strokeWidth="2"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                        {/* Data points */}
+                        {monthlyROI.map((m, i) => {
+                          const x = (i / (monthlyROI.length - 1)) * 600;
+                          const maxROI = Math.max(...monthlyROI.map(m => m.roi), 5);
+                          const minROI = Math.min(...monthlyROI.map(m => m.roi), -5);
+                          const range = Math.max(maxROI - minROI, 10);
+                          const actualMax = maxROI + (10 - (maxROI - minROI)) / 2;
+                          const actualMin = minROI - (10 - (maxROI - minROI)) / 2;
+                          const y = 200 - ((m.roi - actualMin) / (actualMax - actualMin)) * 200;
+                          const isNegative = m.roi < 0;
+                          return (
+                            <circle
+                              key={i}
+                              cx={x}
+                              cy={y}
+                              r="5"
+                              fill={isNegative ? '#ef4444' : '#10b981'}
+                              className="cursor-pointer hover:r-6 transition-all"
+                              onMouseEnter={() => setHoveredMonth({ month: m.month, roi: m.roi, x, y })}
+                              onMouseLeave={() => setHoveredMonth(null)}
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          );
+                        })}
+                      </svg>
+                      
+                      {/* Tooltip for chart points */}
+                      {hoveredMonth && (
+                        <div 
+                          className="absolute bg-slate-900 text-white rounded-lg shadow-lg p-3 pointer-events-none z-10 text-sm"
+                          style={{
+                            left: `${(hoveredMonth.x / 600) * 100}%`,
+                            top: `${(hoveredMonth.y / 200) * 100}%`,
+                            transform: 'translate(-50%, -120%)'
+                          }}
+                        >
+                          <div className="font-semibold">{hoveredMonth.month}</div>
+                          <div className={hoveredMonth.roi >= 0 ? 'text-green-400' : 'text-red-400'}>
+                            {hoveredMonth.roi >= 0 ? '+' : ''}{hoveredMonth.roi.toFixed(2)}%
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* X-axis labels */}
+                      <div className="absolute -bottom-6 left-0 right-0 flex justify-between text-xs text-slate-500">
+                        {monthlyROI.map((m, i) => (
+                          <span key={i}>{m.month}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-64 flex items-center justify-center text-slate-500">
+                    <p>Not enough trade history to display ROI over time</p>
+                  </div>
+                )}
               </Card>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Card className="p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Monthly Performance</h3>
-                  <div className="h-48 bg-slate-50 rounded-lg flex items-center justify-center border border-slate-200">
-                    <p className="text-slate-500">Monthly P&L Chart - Coming Soon</p>
+              {/* Performance Metrics */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-6">Performance Metrics</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Column 1 */}
+                <div className="space-y-4">
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Total Volume</p>
+                    <p className="text-2xl font-bold text-slate-900">
+                      ${((stats.totalInvested + stats.totalProfit) / 1000).toFixed(1)}K
+                    </p>
                   </div>
-                </Card>
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Best Trade ROI</p>
+                    <p className="text-2xl font-bold text-green-600">
+                      {(() => {
+                        const tradesWithROI = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
+                        if (tradesWithROI.length === 0) return 'N/A';
+                        const bestROI = Math.max(...tradesWithROI.map(t => t.roi!));
+                        return `+${bestROI.toFixed(1)}%`;
+                      })()}
+                    </p>
+                    {copiedTrades.filter(t => t.roi !== null && t.roi !== 0).length === 0 && (
+                      <p className="text-xs text-slate-400 mt-1">No closed trades yet</p>
+                    )}
+                  </div>
+                </div>
 
-                <Card className="p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Category Breakdown</h3>
-                  <div className="h-48 bg-slate-50 rounded-lg flex items-center justify-center border border-slate-200">
-                    <p className="text-slate-500">Category Distribution - Coming Soon</p>
+                {/* Column 2 */}
+                <div className="space-y-4">
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Open Markets</p>
+                    <p className="text-2xl font-bold text-slate-900">{stats.openTrades}</p>
                   </div>
-                </Card>
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Closed Trades</p>
+                    <p className="text-2xl font-bold text-slate-900">
+                      {(() => {
+                        const closedTrades = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
+                        const profitableTrades = closedTrades.filter(t => (t.roi || 0) > 0);
+                        return `${profitableTrades.length}/${closedTrades.length}`;
+                      })()}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">Profitable/Total</p>
+                  </div>
+                </div>
+
+                {/* Column 3 */}
+                <div className="space-y-4">
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Avg Trade Size</p>
+                    <p className="text-2xl font-bold text-slate-900">
+                      ${copiedTrades.length > 0 ? ((stats.totalInvested / copiedTrades.length)).toFixed(0) : '0'}
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Total Trades</p>
+                    <p className="text-2xl font-bold text-slate-900">{copiedTrades.length}</p>
+                  </div>
+                </div>
               </div>
+            </Card>
+
+              {/* Category Distribution Pie Chart */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-6">Trading Categories</h3>
+                {categoryDistribution.length > 0 ? (
+                  <div className="flex flex-col md:flex-row gap-8 items-center">
+                    {/* Pie Chart */}
+                    <div className="relative w-64 h-64 flex-shrink-0">
+                      <svg viewBox="0 0 200 200" className="w-full h-full">
+                        {(() => {
+                          let currentAngle = -90; // Start at top
+                          return categoryDistribution.map((cat, i) => {
+                            const angle = (cat.percentage / 100) * 360;
+                            const startAngle = currentAngle;
+                            const endAngle = currentAngle + angle;
+                            currentAngle = endAngle;
+
+                            // Calculate path for pie slice
+                            const startRad = (startAngle * Math.PI) / 180;
+                            const endRad = (endAngle * Math.PI) / 180;
+                            const x1 = 100 + 80 * Math.cos(startRad);
+                            const y1 = 100 + 80 * Math.sin(startRad);
+                            const x2 = 100 + 80 * Math.cos(endRad);
+                            const y2 = 100 + 80 * Math.sin(endRad);
+                            const largeArc = angle > 180 ? 1 : 0;
+
+                            return (
+                              <g
+                                key={i}
+                                onMouseEnter={() => setHoveredCategory(cat.category)}
+                                onMouseLeave={() => setHoveredCategory(null)}
+                                className="cursor-pointer transition-opacity"
+                                style={{ opacity: hoveredCategory === null || hoveredCategory === cat.category ? 1 : 0.3 }}
+                              >
+                                <path
+                                  d={`M 100 100 L ${x1} ${y1} A 80 80 0 ${largeArc} 1 ${x2} ${y2} Z`}
+                                  fill={cat.color}
+                                  stroke="white"
+                                  strokeWidth="2"
+                                />
+                              </g>
+                            );
+                          });
+                        })()}
+                      </svg>
+                      
+                      {/* Tooltip */}
+                      {hoveredCategory && (
+                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-lg p-4 border border-slate-200 pointer-events-none z-10">
+                          <p className="font-semibold text-slate-900">
+                            {hoveredCategory}
+                          </p>
+                          <p className="text-sm text-slate-600">
+                            {categoryDistribution.find(c => c.category === hoveredCategory)?.percentage.toFixed(1)}%
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {categoryDistribution.find(c => c.category === hoveredCategory)?.count} trades
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Legend */}
+                    <div className="flex-1 space-y-2">
+                      {categoryDistribution.map((cat) => (
+                        <div
+                          key={cat.category}
+                          className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
+                          onMouseEnter={() => setHoveredCategory(cat.category)}
+                          onMouseLeave={() => setHoveredCategory(null)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="w-4 h-4 rounded"
+                              style={{ backgroundColor: cat.color }}
+                            />
+                            <span className="text-sm font-medium text-slate-700">{cat.category}</span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <span className="text-sm text-slate-500">{cat.count} trades</span>
+                            <span className="text-sm font-semibold text-slate-900 min-w-[3rem] text-right">
+                              {cat.percentage.toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-64 flex items-center justify-center text-slate-500">
+                    <p>No trade data available</p>
+                  </div>
+                )}
+              </Card>
 
               <Card className="p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Performing Trades</h3>

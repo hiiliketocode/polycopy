@@ -209,7 +209,7 @@ export function TradeCard({
               <div>
                 <h4 className="text-sm font-semibold text-slate-900 mb-4">Quick Copy</h4>
 
-                <div className="bg-white border border-slate-200 rounded-lg p-3 mb-4">
+                <div className="bg-white border border-slate-200 rounded-lg p-2.5 mb-4">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-slate-600">Current Price</span>
                     <div className="text-right">
@@ -248,7 +248,7 @@ export function TradeCard({
                 </div>
 
                 {/* Auto-close Checkbox */}
-                <div className="flex items-start space-x-3 p-3 bg-white rounded-lg border border-slate-200 mb-4">
+                <div className="flex items-start space-x-3 p-2.5 bg-white rounded-lg border border-slate-200 mb-4">
                   <Checkbox
                     id="auto-close"
                     checked={autoClose}

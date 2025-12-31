@@ -32,7 +32,7 @@ interface ExecuteTradeModalProps {
 type ExecutionState = "confirming" | "executing" | "success"
 
 export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeModalProps) {
-  const [autoClose, setAutoClose] = useState(false)
+  const [autoClose, setAutoClose] = useState(true)
   const [executionState, setExecutionState] = useState<ExecutionState>("confirming")
   const [executedPrice, setExecutedPrice] = useState<number>(0)
   const [slippage, setSlippage] = useState<number>(0)
@@ -76,7 +76,7 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
     // Reset state after modal closes
     setTimeout(() => {
       setExecutionState("confirming")
-      setAutoClose(false)
+      setAutoClose(true)
       setExecutedPrice(0)
       setSlippage(0)
       setAmountUSD("100")
@@ -89,16 +89,16 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[580px] p-0 gap-0 overflow-hidden max-h-[90vh] overflow-y-auto">
-        <DialogHeader className="bg-gradient-to-r from-yellow-400 via-amber-400 to-orange-400 text-slate-900 p-6 pb-5 sticky top-0 z-10">
-          <DialogTitle className="text-xl font-semibold">
+        <DialogHeader className="bg-gradient-to-r from-yellow-400 via-amber-400 to-orange-400 text-slate-900 px-6 py-4 sticky top-0 z-10">
+          <DialogTitle className="text-lg font-semibold">
             {executionState === "success" ? "Trade Executed Successfully" : "Copy Trade"}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="p-6 space-y-5">
+        <div className="p-5 space-y-4">
           {executionState === "confirming" && (
             <>
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-900">Trade You're Copying</h3>
                   {trade.marketStatus && (
@@ -111,19 +111,19 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                   )}
                 </div>
 
-                <div className="bg-white border-2 border-slate-200 rounded-xl p-5 space-y-4">
+                <div className="bg-white border-2 border-slate-200 rounded-xl p-4 space-y-3">
                   <Link
                     href={`/trader/${trade.traderId || "1"}`}
-                    className="flex items-center gap-3 hover:opacity-70 transition-opacity"
+                    className="flex items-center gap-2.5 hover:opacity-70 transition-opacity"
                   >
-                    <Avatar className="h-12 w-12 ring-2 ring-yellow-400">
+                    <Avatar className="h-10 w-10 ring-2 ring-yellow-400">
                       <AvatarImage src={trade.traderAvatar || "/placeholder.svg"} alt={trade.traderName} />
-                      <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-amber-500 text-slate-900 font-semibold">
+                      <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-amber-500 text-slate-900 font-semibold text-sm">
                         {trade.traderName.slice(0, 2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-slate-900">{trade.traderName}</p>
+                      <p className="font-semibold text-slate-900 text-sm">{trade.traderName}</p>
                       {trade.traderAddress && (
                         <p className="text-xs text-slate-500 font-mono truncate">{trade.traderAddress}</p>
                       )}
@@ -141,12 +141,8 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                     )}
                   </Link>
 
-                  <div className="h-px bg-slate-200" />
-
                   {/* Market question */}
-                  <p className="text-sm font-medium text-slate-900 leading-relaxed">{trade.market}</p>
-
-                  <div className="h-px bg-slate-200" />
+                  <p className="text-sm font-medium text-slate-900 leading-snug pt-1">{trade.market}</p>
 
                   {/* Trade details grid */}
                   <div className="grid grid-cols-2 gap-3">
@@ -181,7 +177,7 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                 </div>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-900">Your Order</h3>
                   <p className="text-xs text-slate-600">
@@ -189,31 +185,29 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                   </p>
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
                   {/* Current Price */}
-                  <div className="flex items-baseline gap-2">
-                    <p className="text-sm text-slate-600">Current Price / Contract:</p>
-                    <p className="text-base font-bold text-slate-900">${mockCurrentPrice.toFixed(4)}</p>
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <p className="text-xs text-slate-600">Current Price / Contract:</p>
+                    <p className="text-sm font-bold text-slate-900">${mockCurrentPrice.toFixed(4)}</p>
                     <p className="text-xs font-semibold text-emerald-600">+{mockPriceChange}% since trade</p>
                   </div>
 
-                  <div className="h-px bg-slate-200" />
-
                   {/* Amount Input */}
-                  <div className="space-y-2">
-                    <Label htmlFor="amount" className="text-sm font-medium text-slate-900">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="amount" className="text-xs font-medium text-slate-900">
                       Amount
                     </Label>
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 font-semibold">$</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 font-semibold text-sm">$</span>
                         <Input
                           id="amount"
                           type="number"
                           value={amountUSD}
                           onChange={(e) => setAmountUSD(e.target.value)}
                           onWheel={(e) => e.currentTarget.blur()}
-                          className="pl-7 pr-24 h-11 border-slate-300 font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          className="pl-7 pr-24 h-10 border-slate-300 font-semibold text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           placeholder="0.00"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 font-medium">
@@ -234,10 +228,10 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                   </div>
 
                   {/* Slippage Tolerance */}
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <div className="flex items-center gap-1.5">
-                      <Label className="text-sm font-medium text-slate-900">Slippage Tolerance</Label>
-                      <HelpCircle className="h-3.5 w-3.5 text-slate-400" />
+                      <Label className="text-xs font-medium text-slate-900">Slippage Tolerance</Label>
+                      <HelpCircle className="h-3 w-3 text-slate-400" />
                     </div>
                     <div className="flex items-center gap-2">
                       {["0", "1", "3", "5"].map((value) => (
@@ -252,8 +246,8 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                           }}
                           className={
                             slippageTolerance === value
-                              ? "bg-slate-900 text-white hover:bg-slate-800 font-semibold"
-                              : "border-slate-300 text-slate-700 hover:bg-slate-50 font-medium"
+                              ? "bg-slate-900 text-white hover:bg-slate-800 font-semibold h-8 text-xs"
+                              : "border-slate-300 text-slate-700 hover:bg-slate-50 font-medium h-8 text-xs"
                           }
                         >
                           {value}%
@@ -271,7 +265,7 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                         className="w-20 h-8 text-xs border-slate-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                     </div>
-                    <p className="text-xs text-slate-600">
+                    <p className="text-xs text-slate-500 leading-snug">
                       This order will only fill at $
                       {(
                         mockCurrentPrice *
@@ -283,26 +277,26 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                   </div>
 
                   {/* Order Behavior */}
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <div className="flex items-center gap-1.5">
-                      <Label className="text-sm font-medium text-slate-900">Order Behavior</Label>
-                      <HelpCircle className="h-3.5 w-3.5 text-slate-400" />
+                      <Label className="text-xs font-medium text-slate-900">Order Behavior</Label>
+                      <HelpCircle className="h-3 w-3 text-slate-400" />
                     </div>
-                    <RadioGroup value={orderBehavior} onValueChange={setOrderBehavior} className="space-y-2">
+                    <RadioGroup value={orderBehavior} onValueChange={setOrderBehavior} className="space-y-1.5">
                       <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="immediate" id="immediate" />
-                        <Label htmlFor="immediate" className="text-sm font-medium text-slate-700 cursor-pointer">
+                        <RadioGroupItem value="immediate" id="immediate" className="h-4 w-4" />
+                        <Label htmlFor="immediate" className="text-xs font-medium text-slate-700 cursor-pointer">
                           Immediate or Cancel (recommended)
                         </Label>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="good-til-canceled" id="gtc" />
-                        <Label htmlFor="gtc" className="text-sm font-medium text-slate-700 cursor-pointer">
+                        <RadioGroupItem value="good-til-canceled" id="gtc" className="h-4 w-4" />
+                        <Label htmlFor="gtc" className="text-xs font-medium text-slate-700 cursor-pointer">
                           Good 'Til Canceled
                         </Label>
                       </div>
                     </RadioGroup>
-                    <p className="text-xs text-slate-600">
+                    <p className="text-xs text-slate-500 leading-snug">
                       This sends a limit order. It may fill immediately, partially, or not at all.
                     </p>
                   </div>
@@ -310,13 +304,13 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
               </div>
 
               {/* Auto-close checkbox */}
-              <div className="flex items-start space-x-3 bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <Checkbox id="auto-close" checked={autoClose} onCheckedChange={(checked) => setAutoClose(!!checked)} />
+              <div className="flex items-start space-x-2.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <Checkbox id="auto-close" checked={autoClose} onCheckedChange={(checked) => setAutoClose(!!checked)} className="mt-0.5" />
                 <div className="flex-1">
-                  <Label htmlFor="auto-close" className="text-sm font-medium text-slate-900 cursor-pointer">
+                  <Label htmlFor="auto-close" className="text-xs font-medium text-slate-900 cursor-pointer leading-tight">
                     Auto-close when trader closes position
                   </Label>
-                  <p className="text-xs text-slate-600 mt-1">
+                  <p className="text-xs text-slate-600 mt-0.5 leading-snug">
                     Automatically close your position when {trade.traderName} closes theirs
                   </p>
                 </div>
@@ -365,20 +359,20 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
             </>
           )}
 
-          <div className="flex items-center gap-3 pt-1">
+          <div className="flex items-center gap-2.5">
             {executionState === "confirming" && (
               <>
                 <Button
                   variant="outline"
                   onClick={handleClose}
-                  className="flex-1 h-11 border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 bg-white font-semibold"
+                  className="flex-1 h-10 border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 bg-white font-semibold text-sm"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleExecute}
                   disabled={!hasEnoughFunds}
-                  className="flex-1 h-11 bg-gradient-to-r from-yellow-400 via-amber-400 to-orange-400 hover:from-yellow-500 hover:via-amber-500 hover:to-orange-500 text-slate-900 font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 h-10 bg-gradient-to-r from-yellow-400 via-amber-400 to-orange-400 hover:from-yellow-500 hover:via-amber-500 hover:to-orange-500 text-slate-900 font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
                   Send Order
                 </Button>
@@ -387,7 +381,7 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
             {executionState === "success" && (
               <Button
                 onClick={handleClose}
-                className="w-full h-11 bg-slate-900 hover:bg-slate-800 text-white font-semibold"
+                className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm"
               >
                 Done
               </Button>

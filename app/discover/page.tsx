@@ -9,7 +9,7 @@ import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { TraderDiscoveryCard } from '@/components/polycopy/trader-discovery-card';
 import { Button } from '@/components/ui/button';
-import { Search, X } from 'lucide-react';
+import { Search, X, Check } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 
 interface Trader {
@@ -22,6 +22,28 @@ interface Trader {
   rank: number;
   followerCount: number;
   roi?: number;
+}
+
+// Helper function to format large numbers
+function formatLargeNumber(num: number): string {
+  const absNum = Math.abs(num);
+  
+  if (absNum >= 1000000) {
+    return `$${(num / 1000000).toFixed(1)}M`;
+  } else if (absNum >= 1000) {
+    return `$${(num / 1000).toFixed(1)}K`;
+  } else {
+    return `$${num.toFixed(0)}`;
+  }
+}
+
+// Helper function to truncate wallet addresses that are used as display names
+function formatDisplayName(name: string, wallet: string): string {
+  // Check if the display name is actually a wallet address (starts with 0x and is long)
+  if (name.startsWith('0x') && name.length > 20) {
+    return `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
+  }
+  return name;
 }
 
 export default function DiscoverPage() {
@@ -208,19 +230,58 @@ export default function DiscoverPage() {
   }, [selectedCategory, sortPeriod]);
 
   // Follow change handler
-  const handleFollowChange = (wallet: string, isNowFollowing: boolean) => {
-    setFollowedWallets(prev => {
-      const newSet = new Set(prev);
-      const walletLower = wallet.toLowerCase();
-      
+  const handleFollowChange = async (wallet: string, isNowFollowing: boolean) => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    const walletLower = wallet.toLowerCase();
+
+    try {
       if (isNowFollowing) {
-        newSet.add(walletLower);
+        // Follow: INSERT into follows table
+        const { error: insertError } = await supabase
+          .from('follows')
+          .insert({
+            user_id: user.id,
+            trader_wallet: walletLower,
+          });
+
+        if (insertError) {
+          console.error('Error following trader:', insertError);
+          return;
+        }
+
+        // Update UI state after successful database operation
+        setFollowedWallets(prev => {
+          const newSet = new Set(prev);
+          newSet.add(walletLower);
+          return newSet;
+        });
       } else {
-        newSet.delete(walletLower);
+        // Unfollow: DELETE from follows table
+        const { error: deleteError } = await supabase
+          .from('follows')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('trader_wallet', walletLower);
+
+        if (deleteError) {
+          console.error('Error unfollowing trader:', deleteError);
+          return;
+        }
+
+        // Update UI state after successful database operation
+        setFollowedWallets(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(walletLower);
+          return newSet;
+        });
       }
-      
-      return newSet;
-    });
+    } catch (err) {
+      console.error('Error toggling follow:', err);
+    }
   };
 
   // Category mapping
@@ -364,61 +425,102 @@ export default function DiscoverPage() {
         <div className="border-b border-slate-100 bg-white">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-7">
             <div className="mb-6">
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
-                Featured Traders
-                <span className="text-sm font-normal text-slate-500 ml-2">(Top 10 by ROI)</span>
-              </h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Featured Traders</h2>
+              <p className="text-sm text-slate-500 mt-1">Top 10 by ROI (Last 30 Days)</p>
             </div>
 
             {loadingFeatured ? (
-              <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x snap-mandatory">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 animate-pulse flex-shrink-0 w-64 md:w-80 snap-start">
-                    <div className="flex flex-col items-center gap-3 mb-3">
-                      <div className="w-16 h-16 bg-slate-200 rounded-full"></div>
-                      <div className="w-24 h-4 bg-slate-200 rounded"></div>
+              <div className="overflow-x-auto pb-4 -mx-3 px-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+                <div className="flex gap-4" style={{ width: "max-content" }}>
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 animate-pulse flex-shrink-0 w-[300px]">
+                      <div className="flex items-center gap-4 mb-6">
+                        <div className="w-16 h-16 bg-slate-200 rounded-full"></div>
+                        <div className="flex-1 space-y-2">
+                          <div className="h-5 bg-slate-200 rounded w-24"></div>
+                          <div className="h-4 bg-slate-200 rounded w-32"></div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div className="h-16 bg-slate-200 rounded"></div>
+                        <div className="h-16 bg-slate-200 rounded"></div>
+                        <div className="h-16 bg-slate-200 rounded"></div>
+                        <div className="h-16 bg-slate-200 rounded"></div>
+                      </div>
+                      <div className="h-10 bg-slate-200 rounded"></div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             ) : featuredTraders.length > 0 ? (
-              <div className="overflow-x-auto pb-4">
+              <div className="overflow-x-auto pb-4 -mx-3 px-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
                 <div className="flex gap-4" style={{ width: "max-content" }}>
                   {featuredTraders.map((trader) => {
                     const isFollowing = followedWallets.has(trader.wallet.toLowerCase());
+                    const getInitials = (name: string) => name.slice(0, 2).toUpperCase();
                     
                     return (
-                      <div key={trader.wallet} className="flex-shrink-0 w-[320px]">
-                        <TraderDiscoveryCard
-                          trader={{
-                            id: trader.wallet,
-                            name: trader.displayName,
-                            handle: `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}`,
-                            avatar: '',
-                            roi: trader.roi || 0,
-                            profit: trader.pnl,
-                            volume: trader.volume,
-                            winRate: trader.winRate || 0,
-                            isFollowing: isFollowing,
+                      <div
+                        key={trader.wallet}
+                        className="bg-white border border-slate-200 rounded-xl p-6 hover:shadow-lg transition-shadow flex-shrink-0 w-[300px]"
+                      >
+                        <Link href={`/trader/${trader.wallet}`} className="block">
+                          <div className="flex items-center gap-4 mb-6">
+                            <Avatar className="h-16 w-16 border-2 border-white shadow-sm flex-shrink-0">
+                              <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 font-semibold text-xl">
+                                {getInitials(trader.displayName)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-bold text-slate-900 text-lg truncate">{formatDisplayName(trader.displayName, trader.wallet)}</h3>
+                              <p className="text-sm text-slate-500 font-mono truncate">{trader.wallet.slice(0, 6)}...{trader.wallet.slice(-4)}</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4 mb-6">
+                            <div>
+                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">ROI</span>
+                              <span className={`text-xl font-bold ${trader.roi && trader.roi > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                                {trader.roi && trader.roi > 0 ? "+" : ""}{trader.roi?.toFixed(1) || 0}%
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">P&L</span>
+                              <span className={`text-xl font-bold ${trader.pnl > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                                {formatLargeNumber(trader.pnl)}
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">Win Rate</span>
+                              <span className="text-xl font-bold text-slate-900">{trader.winRate || 0}%</span>
+                            </div>
+
+                            <div>
+                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">Volume</span>
+                              <span className="text-xl font-bold text-slate-900">{formatLargeNumber(trader.volume)}</span>
+                            </div>
+                          </div>
+                        </Link>
+
+                        <Button
+                          className="w-full bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleFollowChange(trader.wallet, !isFollowing);
                           }}
-                          onFollowToggle={(traderId, isNowFollowing) => {
-                            handleFollowChange(traderId, isNowFollowing);
-                            
-                            // Update Supabase
-                            if (user) {
-                              if (isNowFollowing) {
-                                supabase.from('follows').insert({
-                                  user_id: user.id,
-                                  trader_wallet: traderId
-                                });
-                              } else {
-                                supabase.from('follows').delete()
-                                  .eq('user_id', user.id)
-                                  .eq('trader_wallet', traderId);
-                              }
-                            }
-                          }}
-                        />
+                        >
+                          {isFollowing ? (
+                            <>
+                              <Check className="h-4 w-4 mr-2" />
+                              Following
+                            </>
+                          ) : (
+                            "Follow"
+                          )}
+                        </Button>
                       </div>
                     );
                   })}
@@ -507,7 +609,7 @@ export default function DiscoverPage() {
                       <TraderDiscoveryCard 
                         trader={{
                           id: trader.wallet,
-                          name: trader.displayName,
+                          name: formatDisplayName(trader.displayName, trader.wallet),
                           handle: `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}`,
                           avatar: '',
                           roi: trader.roi || 0,
@@ -516,23 +618,7 @@ export default function DiscoverPage() {
                           winRate: trader.winRate || 0,
                           isFollowing: followedWallets.has(trader.wallet.toLowerCase()),
                         }}
-                        onFollowToggle={(traderId, isFollowing) => {
-                          handleFollowChange(traderId, isFollowing);
-                          
-                          // Update Supabase
-                          if (user) {
-                            if (isFollowing) {
-                              supabase.from('follows').insert({
-                                user_id: user.id,
-                                trader_wallet: traderId
-                              });
-                            } else {
-                              supabase.from('follows').delete()
-                                .eq('user_id', user.id)
-                                .eq('trader_wallet', traderId);
-                            }
-                          }
-                        }}
+                        onFollowToggle={handleFollowChange}
                       />
                     </div>
                   </div>

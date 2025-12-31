@@ -104,12 +104,19 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
     const fetchBalance = async () => {
       setLoadingBalance(true)
       try {
-        // Fetch balance from API
+        // Use the public Polymarket API endpoint
         const response = await fetch(`/api/polymarket/wallet/${walletAddress}`)
+        
         if (response.ok) {
           const data = await response.json()
-          setPortfolioValue(data.portfolioValue || 0)
+          console.log('Wallet data received:', data)
+          
           setCashBalance(data.cashBalance || 0)
+          setPortfolioValue(data.portfolioValue || 0)
+        } else {
+          console.warn('Failed to fetch wallet balance:', response.status)
+          const errorData = await response.json().catch(() => ({}))
+          console.warn('Error details:', errorData)
         }
       } catch (error) {
         console.error('Error fetching wallet balance:', error)
@@ -216,7 +223,6 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-2 hover:opacity-80 transition-opacity">
                     <Avatar className="w-9 h-9 ring-2 ring-slate-200">
-                      <AvatarImage src="/default-profile.jpg" />
                       <AvatarFallback className={`bg-gradient-to-br ${isPremium ? 'from-yellow-400 to-yellow-500' : 'from-yellow-400 to-yellow-500'} text-slate-900 font-semibold relative`}>
                         {isPremium && (
                           <Crown className="absolute -top-1 -right-1 w-3 h-3 text-yellow-600" />
