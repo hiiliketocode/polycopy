@@ -61,7 +61,7 @@ export function TraderDiscoveryCard({ trader, onFollowToggle }: TraderDiscoveryC
     <Link href={`/trader/${trader.id}`} className="block">
       <div className="group bg-slate-50 hover:bg-white rounded-lg border border-slate-200/60 hover:shadow-md transition-all duration-200 p-4 cursor-pointer">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
-          <div className="flex items-center gap-3 min-w-0 sm:min-w-[200px]">
+          <div className="flex items-center gap-3 min-w-0 sm:w-[240px] sm:flex-shrink-0">
             <Avatar className="h-12 w-12 border-2 border-white shadow-sm flex-shrink-0">
               <AvatarImage src={trader.avatar || "/placeholder.svg"} alt={trader.name} />
               <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 font-semibold">
@@ -97,13 +97,6 @@ export function TraderDiscoveryCard({ trader, onFollowToggle }: TraderDiscoveryC
               </span>
             </div>
 
-            {trader.winRate !== undefined && (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Win Rate</span>
-                <span className="text-sm sm:text-lg font-semibold text-slate-900 tabular-nums">{trader.winRate}%</span>
-              </div>
-            )}
-
             <div className="flex flex-col gap-1">
               <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Volume</span>
               <span className="text-sm sm:text-lg font-semibold text-slate-900 tabular-nums">
@@ -112,13 +105,14 @@ export function TraderDiscoveryCard({ trader, onFollowToggle }: TraderDiscoveryC
             </div>
           </div>
 
-          <div className="flex sm:justify-end sm:ml-auto w-full sm:w-auto">
+          <div className="flex sm:justify-end sm:ml-auto w-full sm:w-auto relative z-10">
             {isFollowing ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={(e) => {
                   e.preventDefault()
+                  e.stopPropagation()
                   handleFollowClick()
                 }}
                 className="border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-400 gap-2 px-4 h-9 bg-transparent w-full sm:w-auto"
@@ -131,6 +125,7 @@ export function TraderDiscoveryCard({ trader, onFollowToggle }: TraderDiscoveryC
                 size="sm"
                 onClick={(e) => {
                   e.preventDefault()
+                  e.stopPropagation()
                   handleFollowClick()
                 }}
                 className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm px-5 h-9 w-full sm:w-auto"

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { POLYGON_RPC_URL, USDC_CONTRACT_ADDRESS, USDC_E_CONTRACT_ADDRESS, USDC_DECIMALS } from '@/lib/turnkey/config'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { address: string } }
+  { params }: { params: Promise<{ address: string }> }
 ) {
-  const { address } = params
+  const { address } = await params
   
   // Validate address format
   const addressRegex = /^0x[a-fA-F0-9]{40}$/
@@ -23,24 +24,62 @@ export async function GET(
   }
   
   try {
-    // 1. Get Cash Balance (Polygon USDC balance)
-    const balanceResponse = await fetch(
-      `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/turnkey/polymarket/usdc-balance`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountAddress: address }),
-        cache: 'no-store'
-      }
-    )
-    
+    // 1. Get Cash Balance directly from Polygon RPC
     let cashBalance = 0
     
-    if (balanceResponse.ok) {
-      const balanceData = await balanceResponse.json()
-      cashBalance = parseFloat(balanceData.usdcBalanceFormatted || '0')
-    } else {
-      console.warn(`Failed to fetch USDC balance for ${address}:`, balanceResponse.status)
+    try {
+      // Encode balanceOf(address) call
+      const paddedAddress = address.slice(2).padStart(64, '0')
+      const data = `0x70a08231${paddedAddress}`
+      
+      // Fetch both USDC and USDC.e balances in parallel
+      const [nativeResponse, bridgedResponse] = await Promise.all([
+        // Native USDC
+        fetch(POLYGON_RPC_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'eth_call',
+            params: [{ to: USDC_CONTRACT_ADDRESS, data }, 'latest'],
+            id: 1,
+          }),
+          signal: AbortSignal.timeout(5000)
+        }),
+        // USDC.e (bridged)
+        fetch(POLYGON_RPC_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'eth_call',
+            params: [{ to: USDC_E_CONTRACT_ADDRESS, data }, 'latest'],
+            id: 2,
+          }),
+          signal: AbortSignal.timeout(5000)
+        }),
+      ])
+      
+      const [nativeData, bridgedData] = await Promise.all([
+        nativeResponse.json(),
+        bridgedResponse.json(),
+      ])
+      
+      if (!nativeData.error && !bridgedData.error) {
+        // Parse balances
+        const nativeBalanceRaw = BigInt(nativeData.result).toString()
+        const bridgedBalanceRaw = BigInt(bridgedData.result).toString()
+        
+        // Calculate total
+        const totalBalanceRaw = (BigInt(nativeBalanceRaw) + BigInt(bridgedBalanceRaw)).toString()
+        cashBalance = Number(totalBalanceRaw) / Math.pow(10, USDC_DECIMALS)
+        
+        console.log(`Cash balance for ${address}: $${cashBalance.toFixed(2)}`)
+      } else {
+        console.warn('RPC error fetching USDC balance:', nativeData.error || bridgedData.error)
+      }
+    } catch (balanceError) {
+      console.warn('Failed to fetch cash balance from Polygon RPC:', balanceError)
     }
     
     // 2. Get Open Positions from Polymarket
@@ -59,6 +98,7 @@ export async function GET(
     
     if (positionsResponse.ok) {
       const positions = await positionsResponse.json()
+      console.log(`Found ${Array.isArray(positions) ? positions.length : 0} positions for ${address}`)
       
       // Calculate total value of open positions
       if (Array.isArray(positions)) {
@@ -67,12 +107,17 @@ export async function GET(
             // size * current_price gives position value in dollars
             const size = parseFloat(position.size)
             const price = parseFloat(position.market_price)
-            positionsValue += size * price
+            const value = size * price
+            positionsValue += value
+            console.log(`Position value: ${value.toFixed(2)} (size: ${size}, price: ${price})`)
           }
         }
+        console.log(`Total positions value: ${positionsValue.toFixed(2)}`)
       }
     } else {
       console.warn(`Failed to fetch positions for ${address}:`, positionsResponse.status)
+      const errorText = await positionsResponse.text()
+      console.warn('Error response:', errorText)
     }
     
     // 3. Calculate Portfolio = Cash + Positions
