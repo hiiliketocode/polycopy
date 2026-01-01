@@ -237,6 +237,7 @@ export default function ActivityFeed() {
             traderAvatar: selectedTrade.trader.avatar,
             traderId: selectedTrade.trader.id || "1",
             position: selectedTrade.position,
+            action: selectedTrade.action,
             traderPrice: selectedTrade.price,
             traderROI: 61.3,
           }}

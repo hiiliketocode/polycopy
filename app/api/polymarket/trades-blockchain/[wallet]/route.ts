@@ -172,17 +172,16 @@ export async function GET(
           Number(makerAmountFilled) / 1e6;
 
         return {
-          id: log.transactionHash + '-' + log.logIndex,
-          market: 'Unknown', // Will be enriched later
-          outcome: 'Unknown', // Will be enriched later
-          tokenId: tokenId.replace(/^0x0+/, '0x'), // Remove leading zeros
-          side,
-          shares,
-          price: shares > 0 ? usdcAmount / shares : 0,
-          amount: usdcAmount,
           timestamp,
           transactionHash: log.transactionHash,
           blockNumber: log.blockNumber ? parseInt(log.blockNumber, 16) : 0,
+          side,
+          price: shares > 0 ? usdcAmount / shares : 0,
+          size: shares,
+          tokenId: tokenId.replace(/^0x0+/, '0x'), // Remove leading zeros
+          conditionId: null, // Will be enriched later
+          market: 'Unknown', // Will be enriched later
+          outcome: 'Unknown', // Will be enriched later
         };
       } catch (error) {
         console.error('❌ Error parsing log:', error, log);

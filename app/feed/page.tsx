@@ -874,6 +874,7 @@ export default function FeedPage() {
               traderAvatar: '',
               traderId: selectedTrade.trader.wallet,
               position: selectedTrade.trade.outcome.toUpperCase() as "YES" | "NO",
+              action: selectedTrade.trade.side === 'BUY' ? 'Buy' as const : 'Sell' as const,
               traderPrice: selectedTrade.trade.price,
               traderROI: 0,
             }}

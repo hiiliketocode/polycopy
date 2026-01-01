@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
@@ -108,7 +108,7 @@ function formatCompactNumber(value: number) {
   return `$${value.toFixed(0)}`;
 }
 
-export default function ProfilePage() {
+function ProfilePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
@@ -1459,7 +1459,7 @@ export default function ProfilePage() {
                   <div className="bg-slate-50 rounded-lg p-4">
                     <p className="text-sm text-slate-500 mb-1">Total Volume</p>
                     <p className="text-2xl font-bold text-slate-900">
-                      ${((stats.totalInvested + stats.totalProfit) / 1000).toFixed(1)}K
+                      ${(copiedTrades.reduce((sum, t) => sum + (t.amount_invested || 0), 0) / 1000).toFixed(1)}K
                     </p>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-4">
@@ -1482,7 +1482,7 @@ export default function ProfilePage() {
                 <div className="space-y-4">
                   <div className="bg-slate-50 rounded-lg p-4">
                     <p className="text-sm text-slate-500 mb-1">Open Markets</p>
-                    <p className="text-2xl font-bold text-slate-900">{stats.openTrades}</p>
+                    <p className="text-2xl font-bold text-slate-900">{copiedTrades.filter(t => !t.market_resolved && !t.user_closed_at).length}</p>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-4">
                     <p className="text-sm text-slate-500 mb-1">Closed Trades</p>
@@ -1502,7 +1502,7 @@ export default function ProfilePage() {
                   <div className="bg-slate-50 rounded-lg p-4">
                     <p className="text-sm text-slate-500 mb-1">Avg Trade Size</p>
                     <p className="text-2xl font-bold text-slate-900">
-                      ${copiedTrades.length > 0 ? ((stats.totalInvested / copiedTrades.length)).toFixed(0) : '0'}
+                      ${copiedTrades.length > 0 ? (copiedTrades.reduce((sum, t) => sum + (t.amount_invested || 0), 0) / copiedTrades.length).toFixed(0) : '0'}
                     </p>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-4">
@@ -1813,5 +1813,13 @@ export default function ProfilePage() {
         </div>
       )}
     </>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>}>
+      <ProfilePageContent />
+    </Suspense>
   );
 }
