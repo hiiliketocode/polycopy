@@ -72,7 +72,7 @@ const mockTrader = {
       profit: -350,
     },
   ],
-  openPositions: [
+  openPositionsList: [
     {
       id: "3",
       market: "Trump wins 2024 Republican nomination?",
@@ -390,7 +390,7 @@ export default function TraderProfilePage({ params }: { params: { id: string } }
                         setSelectedTradeForCopy({
                           market: trade.market,
                           traderName: mockTrader.name,
-                          position: trade.position,
+                          position: trade.position as "YES" | "NO",
                           traderPrice: trade.entryPrice,
                         })
                         if (isPremium) {
@@ -412,7 +412,7 @@ export default function TraderProfilePage({ params }: { params: { id: string } }
                           setSelectedTradeForCopy({
                             market: trade.market,
                             traderName: mockTrader.name,
-                            position: trade.position,
+                            position: trade.position as "YES" | "NO",
                             traderPrice: trade.entryPrice,
                           })
                           setShowCopiedModal(true)
@@ -497,7 +497,7 @@ export default function TraderProfilePage({ params }: { params: { id: string } }
                             setSelectedTradeForCopy({
                               market: trade.market,
                               traderName: mockTrader.name,
-                              position: trade.position,
+                              position: trade.position as "YES" | "NO",
                               traderPrice: trade.entryPrice,
                             })
                             setShowExecuteModal(true)
@@ -577,7 +577,7 @@ export default function TraderProfilePage({ params }: { params: { id: string } }
                   </div>
                   <div className="p-4 bg-slate-50 rounded-lg">
                     <p className="text-xs text-slate-500 mb-1 font-medium">Total Trades</p>
-                    <p className="text-lg sm:text-xl font-bold text-slate-900">{mockTrader.stats.totalTrades}</p>
+                    <p className="text-lg sm:text-xl font-bold text-slate-900">{mockTrader.totalTrades}</p>
                   </div>
                 </div>
               </Card>
@@ -640,6 +640,7 @@ export default function TraderProfilePage({ params }: { params: { id: string } }
             traderAvatar: mockTrader.avatar,
             traderId: "1",
             position: selectedTradeForCopy.position,
+            action: "Buy",
             traderPrice: selectedTradeForCopy.traderPrice,
             traderROI: mockTrader.roi,
           }}

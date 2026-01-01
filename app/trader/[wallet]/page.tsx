@@ -644,7 +644,11 @@ export default function TraderProfilePage({
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50">
-        <Navigation user={user} isPremium={isPremium} walletAddress={walletAddress} />
+        <Navigation 
+          user={user ? { id: user.id, email: user.email || '' } : null} 
+          isPremium={isPremium} 
+          walletAddress={walletAddress} 
+        />
         <div className="flex items-center justify-center pt-20">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
@@ -656,9 +660,13 @@ export default function TraderProfilePage({
   }
 
   if (error || !traderData) {
-    return (
-      <div className="min-h-screen bg-slate-50">
-        <Navigation user={user} isPremium={isPremium} walletAddress={walletAddress} />
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <Navigation 
+        user={user ? { id: user.id, email: user.email || '' } : null} 
+        isPremium={isPremium} 
+        walletAddress={walletAddress} 
+      />
         <div className="max-w-4xl mx-auto px-4 py-8">
           <div className="flex flex-col items-center justify-center py-20 px-4">
             <div className="text-6xl mb-6">😞</div>
@@ -683,7 +691,11 @@ export default function TraderProfilePage({
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
-      <Navigation user={user} isPremium={isPremium} walletAddress={walletAddress} />
+      <Navigation 
+        user={user ? { id: user.id, email: user.email || '' } : null} 
+        isPremium={isPremium} 
+        walletAddress={walletAddress} 
+      />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Profile Header */}
@@ -1350,14 +1362,14 @@ export default function TraderProfilePage({
       <MarkTradeCopiedModal
         open={showCopiedModal}
         onOpenChange={setShowCopiedModal}
-        traderWallet={wallet}
-        marketId={selectedTrade?.conditionId || selectedTrade?.marketSlug || ''}
-        marketTitle={selectedTrade?.market || ''}
-        marketSlug={selectedTrade?.marketSlug || ''}
-        outcome={selectedTrade?.outcome as 'YES' | 'NO' | undefined}
-        traderEntryPrice={selectedTrade?.price || 0}
+        trade={{
+          market: selectedTrade?.market || '',
+          traderName: traderData?.displayName || wallet,
+          position: (selectedTrade?.outcome?.toUpperCase() as 'YES' | 'NO') || 'YES',
+          traderPrice: selectedTrade?.price || 0,
+        }}
+        isPremium={isPremium}
         onConfirm={handleConfirmCopy}
-        isSubmitting={isSubmitting}
       />
     </div>
   );
