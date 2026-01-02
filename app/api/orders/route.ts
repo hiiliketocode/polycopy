@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, NextRequest } from 'next/server'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveOrdersTableName, type OrdersTableName } from '@/lib/orders/table'
@@ -9,6 +9,7 @@ import {
   extractTraderNameFromRecord,
   normalizeTraderDisplayName,
 } from '@/lib/trader-name'
+import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
 
 function createServiceClient() {
   return createClient(
@@ -29,7 +30,7 @@ const MARKET_METADATA_FETCH_LIMIT = 16
 const MARKET_METADATA_FETCH_CONCURRENCY = 4
 const MARKET_METADATA_REQUEST_TIMEOUT_MS = 6000
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabaseAuth = await createAuthClient()
     const {
@@ -72,15 +73,132 @@ export async function GET() {
       return NextResponse.json({ orders: [] })
     }
 
-    const { data: trader } = await supabase
+    // Refresh orders from CLOB first (with timeout to avoid blocking)
+    // This ensures we have the latest orders in the database
+    try {
+      const refreshPromise = (async () => {
+        try {
+          const { client } = await getAuthedClobClientForUser(user.id)
+          const openOrders = await client.getOpenOrders({}, true)
+          
+          // Get trader_id using service client
+          const supabaseService = createServiceClient()
+          const { data: trader } = await supabaseService
+            .from('traders')
+            .select('id')
+            .eq('wallet_address', walletAddress)
+            .maybeSingle()
+
+          if (!trader?.id) return
+
+          const ordersTableForRefresh = await resolveOrdersTableName(supabaseService)
+          
+          // Fetch full order details for open orders
+          const orderDetails = await Promise.allSettled(
+            openOrders.slice(0, 20).map(async (order: any) => {
+              try {
+                const fullOrder = await client.getOrder(order.id)
+                
+                // Extract market_id (condition_id) from tokenId
+                const tokenId = fullOrder.token_id || fullOrder.tokenId || fullOrder.asset_id || ''
+                const marketId = tokenId.length >= 66 ? tokenId.slice(0, 66) : tokenId
+                
+                // Try to get outcome from order response
+                let outcome = fullOrder.outcome || fullOrder.token?.outcome || null
+                
+                // If outcome not in order, fetch from market data
+                if (!outcome && marketId) {
+                  try {
+                    const marketResponse = await fetch(
+                      `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/polymarket/market?conditionId=${marketId}`,
+                      { cache: 'no-store' }
+                    )
+                    if (marketResponse.ok) {
+                      const marketData = await marketResponse.json()
+                      const tokens = marketData.tokens || []
+                      const matchingToken = tokens.find((t: any) => 
+                        t.token_id?.toLowerCase() === tokenId.toLowerCase()
+                      )
+                      if (matchingToken?.outcome) {
+                        outcome = matchingToken.outcome
+                      }
+                    }
+                  } catch (error) {
+                    // Non-fatal - continue without outcome
+                  }
+                }
+                
+                return {
+                  order_id: fullOrder.id,
+                  trader_id: trader.id,
+                  market_id: marketId,
+                  outcome: outcome,
+                  side: (fullOrder.side || '').toLowerCase(),
+                  order_type: fullOrder.order_type || null,
+                  time_in_force: fullOrder.order_type || null,
+                  price: parseFloat(fullOrder.price || 0),
+                  size: parseFloat(fullOrder.original_size || fullOrder.size || 0),
+                  filled_size: parseFloat(fullOrder.size_matched || 0),
+                  remaining_size: parseFloat((fullOrder.original_size || fullOrder.size || 0) - (fullOrder.size_matched || 0)),
+                  status: (fullOrder.status || 'open').toLowerCase(),
+                  created_at: fullOrder.created_at ? new Date(fullOrder.created_at).toISOString() : new Date().toISOString(),
+                  updated_at: fullOrder.last_update ? new Date(fullOrder.last_update).toISOString() : new Date().toISOString(),
+                  raw: fullOrder,
+                }
+              } catch (error) {
+                console.warn('[orders] Failed to fetch order details:', error)
+                return null
+              }
+            })
+          )
+
+          const validOrders = orderDetails
+            .filter((result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled' && result.value !== null)
+            .map(result => result.value)
+
+          if (validOrders.length > 0) {
+            await supabaseService
+              .from(ordersTableForRefresh)
+              .upsert(validOrders, { onConflict: 'order_id' })
+            console.log('[orders] Refreshed', validOrders.length, 'orders from CLOB')
+          }
+        } catch (error) {
+          // Non-fatal - continue with database query even if refresh fails
+          console.warn('[orders] CLOB refresh failed (non-fatal):', error)
+        }
+      })()
+
+      // Wait up to 2 seconds for refresh, then continue
+      await Promise.race([
+        refreshPromise,
+        new Promise(resolve => setTimeout(resolve, 2000))
+      ])
+    } catch (error) {
+      // Ignore refresh errors, continue with database query
+    }
+
+    const { data: trader, error: traderError } = await supabase
       .from('traders')
-      .select('id')
+      .select('id, wallet_address')
       .eq('wallet_address', walletAddress)
       .maybeSingle()
 
-    if (!trader?.id) {
-      return NextResponse.json({ orders: [] })
+    if (traderError) {
+      console.error('[orders] Trader lookup error:', traderError)
     }
+
+    if (!trader?.id) {
+      console.warn('[orders] No trader found for wallet:', walletAddress)
+      // Check if there are any traders with similar addresses
+      const { data: allTraders } = await supabase
+        .from('traders')
+        .select('id, wallet_address')
+        .limit(5)
+      console.log('[orders] Available traders:', allTraders)
+      return NextResponse.json({ orders: [], walletAddress, debug: 'No trader found' })
+    }
+
+    console.log('[orders] Found trader:', { id: trader.id, wallet: trader.wallet_address })
 
     const { data: accountProfile, error: accountProfileError } = await supabase
       .from('profiles')
@@ -103,6 +221,13 @@ export async function GET() {
       .eq('trader_id', trader.id)
       .order('created_at', { ascending: false })
       .limit(200)
+
+    console.log('[orders] Query result:', {
+      traderId: trader.id,
+      ordersCount: orders?.length || 0,
+      orderIds: orders?.map(o => o.order_id).slice(0, 5),
+      table: ordersTable,
+    })
 
     if (ordersError) {
       console.error('[orders] orders query error', ordersError)

@@ -30,6 +30,10 @@ interface TradeCardProps {
   isExpanded?: boolean
   onToggleExpand?: () => void
   isCopied?: boolean
+  // Trade execution data
+  conditionId?: string
+  tokenId?: string
+  marketSlug?: string
 }
 
 export function TradeCard({
@@ -48,12 +52,16 @@ export function TradeCard({
   isExpanded = false,
   onToggleExpand,
   isCopied = false,
+  conditionId,
+  tokenId,
+  marketSlug,
 }: TradeCardProps) {
   const [usdAmount, setUsdAmount] = useState<string>("")
   const [autoClose, setAutoClose] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [localCopied, setLocalCopied] = useState(isCopied)
+  const [refreshStatus, setRefreshStatus] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle')
 
   const currentPrice = price * (0.98 + Math.random() * 0.04) // Within 2% of entry price
 
@@ -76,19 +84,114 @@ export function TradeCard({
     return Math.floor(amount / currentPrice)
   }
 
+  const refreshOrders = async () => {
+    setRefreshStatus('refreshing')
+    try {
+      await fetch('/api/polymarket/orders/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      setRefreshStatus('done')
+    } catch (error) {
+      console.warn('Order refresh failed', error)
+      setRefreshStatus('error')
+    } finally {
+      setTimeout(() => setRefreshStatus('idle'), 3000)
+    }
+  }
+
   const handleQuickCopy = async () => {
+    if (!isPremium) {
+      // Non-premium users: just open Polymarket
+      onCopyTrade?.()
+      return
+    }
+
     setIsSubmitting(true)
-    await new Promise((resolve) => setTimeout(resolve, 1500 + Math.random() * 1000))
-    setIsSubmitting(false)
-    setIsSuccess(true)
-    setLocalCopied(true)
+    
+    try {
+      const amount = Number.parseFloat(usdAmount)
+      if (isNaN(amount) || amount <= 0) {
+        alert('Please enter a valid amount')
+        setIsSubmitting(false)
+        return
+      }
 
-    setTimeout(() => {
-      setIsSuccess(false)
-      onToggleExpand?.() // Collapse the dropdown
-    }, 2000)
+      // Calculate contracts from USD amount
+      const contracts = calculateContracts()
+      if (contracts <= 0) {
+        alert('Amount is too small to purchase any contracts')
+        setIsSubmitting(false)
+        return
+      }
 
-    onCopyTrade?.()
+      // If we don't have tokenId, we need to fetch it from conditionId + outcome
+      let finalTokenId = tokenId
+      if (!finalTokenId && conditionId) {
+        try {
+          // Fetch market data to get tokenId
+          const marketResponse = await fetch(`/api/polymarket/market?conditionId=${conditionId}`)
+          if (marketResponse.ok) {
+            const marketData = await marketResponse.json()
+            // Find the token matching the outcome
+            const tokens = marketData.tokens || []
+            const matchingToken = tokens.find((t: any) => 
+              t.outcome?.toUpperCase() === position.toUpperCase()
+            )
+            if (matchingToken?.token_id) {
+              finalTokenId = matchingToken.token_id
+            }
+          }
+        } catch (error) {
+          console.error('Failed to fetch market data:', error)
+        }
+      }
+
+      if (!finalTokenId) {
+        alert('Unable to determine token ID. Please use Advanced mode.')
+        setIsSubmitting(false)
+        return
+      }
+
+      // Execute the trade via API
+      const response = await fetch('/api/polymarket/orders/place', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tokenId: finalTokenId,
+          price: currentPrice,
+          amount: contracts,
+          side: action === 'Buy' ? 'BUY' : 'SELL',
+          orderType: 'IOC',
+          confirm: true,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || 'Failed to execute trade')
+      }
+
+      // Success!
+      setIsSubmitting(false)
+      setIsSuccess(true)
+      setLocalCopied(true)
+      refreshOrders().catch(() => {
+        /* handled in refreshOrders */
+      })
+
+      setTimeout(() => {
+        setIsSuccess(false)
+        onToggleExpand?.() // Collapse the dropdown
+      }, 3000)
+
+    } catch (error: any) {
+      console.error('Trade execution error:', error)
+      alert(error?.message || 'Failed to execute trade. Please try again.')
+      setIsSubmitting(false)
+    }
   }
 
   const handleCopyTradeClick = () => {
@@ -295,6 +398,17 @@ export function TradeCard({
                     Advanced
                   </Button>
                 </div>
+                {refreshStatus === 'refreshing' && (
+                  <p className="text-xs text-slate-600 mt-2">Refreshing order status…</p>
+                )}
+                {refreshStatus === 'done' && (
+                  <p className="text-xs text-emerald-600 mt-2">Order submitted. Latest status will appear in Orders shortly.</p>
+                )}
+                {refreshStatus === 'error' && (
+                  <p className="text-xs text-rose-600 mt-2">
+                    Order sent, but status refresh failed. Check the Orders page for updates.
+                  </p>
+                )}
               </div>
             </>
           ) : (

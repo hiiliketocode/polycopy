@@ -83,6 +83,7 @@ export default function TraderProfilePage({
   const [expandedTradeIndex, setExpandedTradeIndex] = useState<number | null>(null);
   const [usdAmount, setUsdAmount] = useState<string>('');
   const [autoClose, setAutoClose] = useState(true);
+  const [orderRefreshStatus, setOrderRefreshStatus] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle');
   
   // Performance tab data
   const [monthlyROI, setMonthlyROI] = useState<MonthlyROI[]>([]);
@@ -541,18 +542,101 @@ export default function TraderProfilePage({
   // Handle quick copy for premium users
   const handleQuickCopy = async (trade: Trade) => {
     setIsSubmitting(true);
+    setOrderRefreshStatus('idle');
     
-    // Simulate trade execution
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    
-    // Mark as copied
-    const marketId = trade.conditionId || trade.marketSlug || trade.market;
-    const tradeKey = `${marketId}-${wallet}`;
-    setCopiedTradeIds(prev => new Set([...prev, tradeKey]));
-    
-    setIsSubmitting(false);
-    setExpandedTradeIndex(null);
-    setUsdAmount('');
+    try {
+      const amount = Number.parseFloat(usdAmount);
+      if (isNaN(amount) || amount <= 0) {
+        alert('Please enter a valid amount');
+        return;
+      }
+
+      // Calculate contracts from USD amount
+      const contracts = calculateContracts(usdAmount, trade.price);
+      if (contracts <= 0) {
+        alert('Amount is too small to purchase any contracts');
+        return;
+      }
+
+      // Get tokenId from conditionId + outcome
+      let tokenId: string | null = null;
+      if (trade.conditionId) {
+        try {
+          // Fetch market data to get tokenId
+          const marketResponse = await fetch(`/api/polymarket/market?conditionId=${trade.conditionId}`);
+          if (marketResponse.ok) {
+            const marketData = await marketResponse.json();
+            // Find the token matching the outcome
+            const tokens = marketData.tokens || [];
+            const matchingToken = tokens.find((t: any) => 
+              t.outcome?.toUpperCase() === trade.outcome.toUpperCase()
+            );
+            if (matchingToken?.token_id) {
+              tokenId = matchingToken.token_id;
+            }
+          }
+        } catch (error) {
+          console.error('Failed to fetch market data:', error);
+        }
+      }
+
+      if (!tokenId) {
+        alert('Unable to determine token ID. Please use Advanced mode.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Execute the trade via API
+      const response = await fetch('/api/polymarket/orders/place', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tokenId: tokenId,
+          price: trade.price,
+          amount: contracts,
+          side: trade.side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL',
+          orderType: 'IOC',
+          confirm: true,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || 'Failed to execute trade');
+      }
+
+      // Success! Mark as copied
+      const marketId = trade.conditionId || trade.marketSlug || trade.market;
+      const tradeKey = `${marketId}-${wallet}`;
+      setCopiedTradeIds(prev => new Set([...prev, tradeKey]));
+      setExpandedTradeIndex(null);
+      setUsdAmount('');
+      
+      // Show success message
+      alert(`Trade executed successfully! Order ID: ${data.orderId || 'N/A'}`);
+
+      // Refresh orders to surface the new trade status
+      setOrderRefreshStatus('refreshing');
+      try {
+        await fetch('/api/polymarket/orders/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        setOrderRefreshStatus('done');
+      } catch (refreshErr) {
+        console.warn('Order refresh failed', refreshErr);
+        setOrderRefreshStatus('error');
+      } finally {
+        setTimeout(() => setOrderRefreshStatus('idle'), 4000);
+      }
+    } catch (error: any) {
+      console.error('Trade execution error:', error);
+      alert(error?.message || 'Failed to execute trade. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Calculate contracts for premium quick copy
@@ -1038,6 +1122,19 @@ export default function TraderProfilePage({
                                   'Execute Trade'
                                 )}
                               </Button>
+                              {orderRefreshStatus === 'refreshing' && (
+                                <p className="text-xs text-slate-600 mt-2">Refreshing order status…</p>
+                              )}
+                              {orderRefreshStatus === 'done' && (
+                                <p className="text-xs text-emerald-600 mt-2">
+                                  Order submitted. Latest status will appear in Orders shortly.
+                                </p>
+                              )}
+                              {orderRefreshStatus === 'error' && (
+                                <p className="text-xs text-rose-600 mt-2">
+                                  Order sent, but status refresh failed. Check the Orders page for updates.
+                                </p>
+                              )}
                             </div>
                           )}
                         </>
