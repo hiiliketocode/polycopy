@@ -128,6 +128,10 @@ export async function GET(request: NextRequest) {
                   }
                 }
                 
+                const originalSize = Number(fullOrder.original_size || fullOrder.size || 0)
+                const sizeMatched = Number(fullOrder.size_matched || 0)
+                const remainingSize = originalSize - sizeMatched
+
                 return {
                   order_id: fullOrder.id,
                   trader_id: trader.id,
@@ -136,10 +140,10 @@ export async function GET(request: NextRequest) {
                   side: (fullOrder.side || '').toLowerCase(),
                   order_type: fullOrder.order_type || null,
                   time_in_force: fullOrder.order_type || null,
-                  price: parseFloat(fullOrder.price || 0),
-                  size: parseFloat(fullOrder.original_size || fullOrder.size || 0),
-                  filled_size: parseFloat(fullOrder.size_matched || 0),
-                  remaining_size: parseFloat((fullOrder.original_size || fullOrder.size || 0) - (fullOrder.size_matched || 0)),
+                  price: Number(fullOrder.price || 0),
+                  size: originalSize,
+                  filled_size: sizeMatched,
+                  remaining_size: remainingSize,
                   status: (fullOrder.status || 'open').toLowerCase(),
                   created_at: fullOrder.created_at ? new Date(fullOrder.created_at).toISOString() : new Date().toISOString(),
                   updated_at: fullOrder.last_update ? new Date(fullOrder.last_update).toISOString() : new Date().toISOString(),
