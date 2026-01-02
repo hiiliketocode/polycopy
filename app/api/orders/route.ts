@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
           const orderDetails = await Promise.allSettled(
             openOrders.slice(0, 20).map(async (order: any) => {
               try {
-                const fullOrder = await client.getOrder(order.id)
+                const fullOrder: any = await client.getOrder(order.id)
                 
                 // Extract market_id (condition_id) from tokenId
                 const tokenId = fullOrder.token_id || fullOrder.tokenId || fullOrder.asset_id || ''
