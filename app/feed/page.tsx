@@ -10,6 +10,7 @@ import { TradeCard } from '@/components/polycopy/trade-card';
 import { MarkTradeCopiedModal } from '@/components/polycopy/mark-trade-copied-modal';
 import { ExecuteTradeModal } from '@/components/polycopy/execute-trade-modal';
 import { EmptyState } from '@/components/polycopy/empty-state';
+import { UpgradeSuccessModal } from '@/components/polycopy/upgrade-success-modal';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -849,6 +850,8 @@ export default function FeedPage() {
       </div>
 
       {/* Modals */}
+      <UpgradeSuccessModal />
+      
       {selectedTrade && (
         <>
           <MarkTradeCopiedModal

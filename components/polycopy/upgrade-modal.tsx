@@ -1,10 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { Check, Crown, Sparkles } from "lucide-react"
+import { Check, Crown, Sparkles, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { StripePaymentModal } from "./stripe-payment-modal"
 
 interface UpgradeModalProps {
   open: boolean
@@ -12,12 +11,39 @@ interface UpgradeModalProps {
 }
 
 export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
-  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleUpgrade = () => {
-    console.log("[v0] Opening Stripe payment modal")
-    onOpenChange(false)
-    setShowPaymentModal(true)
+  const handleUpgrade = async () => {
+    console.log("[v0] Redirecting to Stripe hosted checkout")
+    setLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create checkout session')
+      }
+
+      // Redirect to Stripe checkout
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        throw new Error('No checkout URL received')
+      }
+    } catch (err: any) {
+      console.error('❌ Checkout error:', err)
+      setError(err.message || 'Failed to start checkout')
+      setLoading(false)
+    }
   }
 
   const premiumFeatures = [
@@ -76,26 +102,40 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
               </div>
             </div>
 
+            {/* Error message */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
             {/* CTA Button */}
             <Button
               onClick={handleUpgrade}
-              className="w-full h-11 bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white font-bold text-base shadow-lg hover:shadow-xl transition-all"
+              disabled={loading}
+              className="w-full h-11 bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white font-bold text-base shadow-lg hover:shadow-xl transition-all disabled:opacity-50"
             >
-              <Crown className="h-5 w-5 mr-2" />
-              Upgrade Now
+              {loading ? (
+                <>
+                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                  Redirecting to checkout...
+                </>
+              ) : (
+                <>
+                  <Crown className="h-5 w-5 mr-2" />
+                  Upgrade Now
+                </>
+              )}
             </Button>
 
             {/* Trust indicators */}
             <div className="pt-1 text-center space-y-0.5">
-              <p className="text-xs text-slate-500">🔒 Secure payment • Cancel anytime</p>
+              <p className="text-xs text-slate-500">🔒 Secure payment by Stripe • Cancel anytime</p>
               <p className="text-xs text-slate-400">Join 1,000+ premium traders</p>
             </div>
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Stripe payment modal */}
-      <StripePaymentModal open={showPaymentModal} onOpenChange={setShowPaymentModal} />
     </>
   )
 }

@@ -143,8 +143,8 @@ export async function POST(request: NextRequest) {
           quantity: 1,
         },
       ],
-      success_url: `${request.headers.get('origin')}/profile?upgrade=success`,
-      cancel_url: `${request.headers.get('origin')}/profile?upgrade=canceled`,
+      success_url: `${request.headers.get('origin')}/feed?upgrade=success`,
+      cancel_url: `${request.headers.get('origin')}/feed?upgrade=canceled`,
       metadata: {
         supabase_user_id: user.id,
       },

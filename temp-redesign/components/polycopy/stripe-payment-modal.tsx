@@ -2,9 +2,10 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Crown, Loader2 } from "lucide-react"
+import { Check, Crown, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { StripeEmbeddedForm } from "./stripe-embedded-form"
 
 interface StripePaymentModalProps {
   open: boolean
@@ -14,36 +15,53 @@ interface StripePaymentModalProps {
 export function StripePaymentModal({ open, onOpenChange }: StripePaymentModalProps) {
   const router = useRouter()
   const [paymentComplete, setPaymentComplete] = useState(false)
-  const [isProcessing, setIsProcessing] = useState(false)
+  const [paymentError, setPaymentError] = useState<string | null>(null)
 
-  // Simulate payment completion after 3 seconds (for demo purposes)
-  // In production, this would be triggered by Stripe webhook/callback
-  const handlePaymentIframeLoad = () => {
-    console.log("[v0] Stripe iframe loaded")
-    // Simulate payment processing
+  const handlePaymentSuccess = () => {
+    console.log('✅ Payment successful, showing confirmation')
+    setPaymentComplete(true)
+    
+    // Refresh the page to update premium status
     setTimeout(() => {
-      setIsProcessing(true)
-      setTimeout(() => {
-        setPaymentComplete(true)
-        setIsProcessing(false)
-      }, 2000)
-    }, 3000)
+      router.refresh()
+    }, 100)
+  }
+
+  const handlePaymentError = (error: string) => {
+    console.error('❌ Payment error:', error)
+    setPaymentError(error)
   }
 
   const handleGetStarted = () => {
-    console.log("[v0] Redirecting to feed after premium upgrade")
     onOpenChange(false)
-    router.push("/feed")
+    router.push('/feed')
+    
+    // Reset state after navigation
+    setTimeout(() => {
+      setPaymentComplete(false)
+      setPaymentError(null)
+    }, 500)
   }
 
   const handleClose = (open: boolean) => {
-    if (!isProcessing) {
+    if (paymentComplete) {
+      // Allow closing if payment is complete
       onOpenChange(open)
-      // Reset state when modal closes
       if (!open) {
         setTimeout(() => {
           setPaymentComplete(false)
-          setIsProcessing(false)
+          setPaymentError(null)
+        }, 300)
+      }
+    } else {
+      // Show confirmation dialog if payment not complete
+      const shouldClose = window.confirm(
+        'Are you sure you want to cancel? Your payment has not been completed.'
+      )
+      if (shouldClose) {
+        onOpenChange(open)
+        setTimeout(() => {
+          setPaymentError(null)
         }, 300)
       }
     }
@@ -51,45 +69,48 @@ export function StripePaymentModal({ open, onOpenChange }: StripePaymentModalPro
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[600px] p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col">
+      <DialogContent 
+        className="sm:max-w-[500px] p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col"
+        onInteractOutside={(e) => !paymentComplete && e.preventDefault()}
+        onEscapeKeyDown={(e) => !paymentComplete && e.preventDefault()}
+      >
         {!paymentComplete ? (
           <>
             {/* Payment Header */}
-            <div className="bg-gradient-to-br from-yellow-400 via-amber-400 to-yellow-500 p-6 pb-5 text-white flex-shrink-0">
+            <DialogHeader className="bg-gradient-to-br from-yellow-400 via-amber-400 to-yellow-500 p-6 pb-5 text-white flex-shrink-0 relative">
+              <button
+                onClick={() => handleClose(false)}
+                className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              
               <div className="flex items-center gap-3 mb-1.5">
                 <div className="bg-white/20 backdrop-blur-sm rounded-full p-2">
                   <Crown className="h-5 w-5 text-white" />
                 </div>
-                <h2 className="text-xl font-bold text-white">Complete Your Purchase</h2>
+                <DialogTitle className="text-xl font-bold text-white">
+                  Complete Your Purchase
+                </DialogTitle>
               </div>
               <p className="text-yellow-50 text-sm">Secure checkout powered by Stripe</p>
-            </div>
+            </DialogHeader>
 
-            {/* Payment Iframe Container */}
-            <div className="p-6 relative">
-              {isProcessing && (
-                <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center">
-                  <div className="text-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-yellow-500 mx-auto mb-3" />
-                    <p className="text-sm font-medium text-slate-700">Processing payment...</p>
-                  </div>
+            {/* Payment Form */}
+            <div className="p-6 overflow-y-auto">
+              <div className="mb-6">
+                <div className="flex items-baseline gap-2 mb-1">
+                  <span className="text-3xl font-bold text-slate-900">$20</span>
+                  <span className="text-base text-slate-600">/month</span>
                 </div>
-              )}
-
-              {/* Stripe Iframe Placeholder */}
-              <div className="bg-slate-50 rounded-lg border-2 border-slate-200 overflow-hidden">
-                <iframe
-                  src="about:blank"
-                  className="w-full h-[400px] border-0"
-                  title="Stripe Payment"
-                  onLoad={handlePaymentIframeLoad}
-                  sandbox="allow-scripts allow-same-origin allow-forms"
-                />
+                <p className="text-sm text-slate-500">Billed monthly, cancel anytime</p>
               </div>
 
-              <div className="mt-4 text-center">
-                <p className="text-xs text-slate-500">🔒 Your payment information is secure and encrypted</p>
-              </div>
+              <StripeEmbeddedForm 
+                onSuccess={handlePaymentSuccess}
+                onError={handlePaymentError}
+              />
             </div>
           </>
         ) : (
