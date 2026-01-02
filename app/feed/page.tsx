@@ -8,7 +8,6 @@ import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { TradeCard } from '@/components/polycopy/trade-card';
 import { MarkTradeCopiedModal } from '@/components/polycopy/mark-trade-copied-modal';
-import { ExecuteTradeModal } from '@/components/polycopy/execute-trade-modal';
 import { EmptyState } from '@/components/polycopy/empty-state';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Activity } from 'lucide-react';
@@ -93,7 +92,6 @@ export default function FeedPage() {
 
   // Modal state
   const [showCopiedModal, setShowCopiedModal] = useState(false);
-  const [showExecuteModal, setShowExecuteModal] = useState(false);
   const [selectedTrade, setSelectedTrade] = useState<FeedTrade | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [expandedTradeIndex, setExpandedTradeIndex] = useState<number | null>(null);
@@ -818,16 +816,15 @@ export default function FeedPage() {
                   timestamp={getRelativeTime(trade.trade.timestamp)}
                   onCopyTrade={() => handleCopyTrade(trade)}
                   onMarkAsCopied={() => handleMarkAsCopied(trade)}
-                  onAdvancedCopy={() => {
-                    setSelectedTrade(trade);
-                    setShowExecuteModal(true);
-                  }}
+                  onAdvancedCopy={() => handleRealCopy(trade)}
                   isPremium={tierHasPremiumAccess(userTier)}
                   isExpanded={expandedTradeIndex === index}
                   onToggleExpand={() => {
                     setExpandedTradeIndex(expandedTradeIndex === index ? null : index);
                   }}
                   isCopied={isTraceCopied(trade)}
+                  conditionId={trade.market.conditionId}
+                  marketSlug={trade.market.slug}
                 />
               ))}
               
@@ -862,22 +859,6 @@ export default function FeedPage() {
             }}
             isPremium={tierHasPremiumAccess(userTier)}
             onConfirm={handleConfirmCopy}
-          />
-
-          <ExecuteTradeModal
-            open={showExecuteModal}
-            onOpenChange={setShowExecuteModal}
-            trade={{
-              market: selectedTrade.market.title,
-              traderName: selectedTrade.trader.displayName,
-              traderAddress: `${selectedTrade.trader.wallet.slice(0, 6)}...${selectedTrade.trader.wallet.slice(-4)}`,
-              traderAvatar: '',
-              traderId: selectedTrade.trader.wallet,
-              position: selectedTrade.trade.outcome.toUpperCase() as "YES" | "NO",
-              action: selectedTrade.trade.side === 'BUY' ? 'Buy' as const : 'Sell' as const,
-              traderPrice: selectedTrade.trade.price,
-              traderROI: 0,
-            }}
           />
         </>
       )}
