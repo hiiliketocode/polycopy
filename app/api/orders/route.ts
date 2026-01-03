@@ -217,14 +217,11 @@ export async function GET(request: NextRequest) {
     const userPolymarketUsername = accountProfile?.polymarket_username ?? null
     const copiedTraderLookup = await fetchCopiedTraderNames(supabase, user.id)
 
-    const { data: orders, error: ordersError } = await supabase
-      .from(ordersTable)
-      .select(
-        'order_id, trader_id, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, raw'
-      )
-      .eq('trader_id', trader.id)
-      .order('created_at', { ascending: false })
-      .limit(200)
+    const { data: orders, error: ordersError } = await fetchOrdersForTrader(
+      supabase,
+      ordersTable,
+      trader.id
+    )
 
     console.log('[orders] Query result:', {
       traderId: trader.id,
@@ -255,10 +252,37 @@ export async function GET(request: NextRequest) {
           .filter(Boolean) as string[]
       )
     )
+    const copiedTraderIdsFromOrders = Array.from(
+      new Set(
+        (orders || [])
+          .map((order) => order.copied_trader_id)
+          .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+      )
+    )
+    const copiedTraderWalletsFromOrders = Array.from(
+      new Set(
+        (orders || [])
+          .map((order) => order.copied_trader_wallet)
+          .filter((wallet): wallet is string => typeof wallet === 'string' && wallet.trim().length > 0)
+      )
+    )
+    const copiedTraderWallets = Array.from(
+      new Set([...copiedTraderLookup.wallet.keys(), ...copiedTraderWalletsFromOrders.map((w) => w.toLowerCase())])
+    )
 
     const marketRows = await fetchMarketCacheRows(supabase, marketIds)
-    const traderRows = await fetchTraderProfiles(supabase, traderIds)
-    const traderRecords = await fetchTraderRecords(supabase, traderIds)
+    const traderRecords = await fetchTraderRecords(supabase, [
+      ...traderIds,
+      ...copiedTraderIdsFromOrders,
+    ])
+    const copiedTraderRecords = await fetchTraderRecordsByWallets(supabase, copiedTraderWallets)
+    const copiedTraderIds = copiedTraderRecords
+      .map((row) => row.trader_id)
+      .filter((id): id is string => Boolean(id))
+    const traderIdsForProfiles = Array.from(
+      new Set([...traderIds, ...copiedTraderIds, ...copiedTraderIdsFromOrders])
+    )
+    const traderRows = await fetchTraderProfiles(supabase, traderIdsForProfiles)
     const marketCacheMap = new Map<string, MarketCacheRow>()
     marketRows.forEach((row) => {
       if (row?.market_id) {
@@ -274,9 +298,14 @@ export async function GET(request: NextRequest) {
     })
 
     const traderRecordMap = new Map<string, TraderRecordRow>()
-    traderRecords.forEach((row) => {
+    const traderRecordByWallet = new Map<string, TraderRecordRow>()
+    ;[...traderRecords, ...copiedTraderRecords].forEach((row) => {
       if (row?.trader_id) {
         traderRecordMap.set(row.trader_id, row)
+      }
+      const normalizedWallet = normalizeWalletAddress(row?.wallet_address)
+      if (normalizedWallet) {
+        traderRecordByWallet.set(normalizedWallet, row)
       }
     })
 
@@ -289,22 +318,75 @@ export async function GET(request: NextRequest) {
     const enrichedOrders: OrderRow[] = (orders || []).map((order) => {
       const marketId = String(order.market_id ?? '')
       const traderId = String(order.trader_id ?? '')
+      const copiedTraderIdFromRow =
+        typeof order.copied_trader_id === 'string' && order.copied_trader_id.trim()
+          ? order.copied_trader_id.trim()
+          : null
+      const copiedTraderWallet = normalizeWalletAddress(
+        order.copied_trader_wallet ?? order.raw?.copied_trader_wallet ?? null
+      )
       const cache = marketCacheMap.get(marketId)
       const profile = traderProfileMap.get(traderId)
       const traderRecord = traderRecordMap.get(traderId)
       const traderWallet = resolveTraderWallet(traderRecord, order.raw)
       const metadata = marketMetadataMap[marketId]
-      const copiedTraderNameFromWallet =
-        traderWallet && copiedTraderLookup.wallet
-          ? copiedTraderLookup.wallet.get(traderWallet) ?? null
+      const marketTitle = getMarketTitle(order, marketId, cache, metadata)
+      const copiedTrader = resolveCopiedTraderForOrder(
+        copiedTraderLookup,
+        marketId,
+        marketTitle,
+        order.outcome,
+        metadata,
+        order.raw,
+        copiedTraderIdFromRow,
+        copiedTraderWallet
+      )
+      const resolvedTraderWallet = copiedTrader?.wallet ?? copiedTraderWallet ?? traderWallet
+      const resolvedTraderRecord =
+        (resolvedTraderWallet && traderRecordByWallet.get(resolvedTraderWallet)) ??
+        (copiedTraderIdFromRow ? traderRecordMap.get(copiedTraderIdFromRow) : null) ??
+        traderRecord
+      const resolvedProfile = resolvedTraderRecord?.trader_id
+        ? traderProfileMap.get(resolvedTraderRecord.trader_id)
+        : profile
+      const copiedTraderFromWallet =
+        resolvedTraderWallet && copiedTraderLookup.wallet
+          ? copiedTraderLookup.wallet.get(resolvedTraderWallet) ?? null
           : null
-      const copiedTraderNameFromMarket = copiedTraderLookup.marketOutcome.get(
+      const copiedTraderFromMarket = copiedTraderLookup.marketOutcome.get(
         getCopiedTraderKey(marketId, order.outcome)
       )
-      const marketTitle = getMarketTitle(order, marketId, cache, metadata)
-      const copiedTraderNameFromTitle = copiedTraderLookup.marketTitleOutcome.get(
+      const copiedTraderFromTitle = copiedTraderLookup.marketTitleOutcome.get(
         getCopiedTraderTitleKey(marketTitle, order.outcome)
       )
+      const copiedDirectName =
+        copiedTrader?.username ??
+        copiedTraderFromWallet?.username ??
+        copiedTraderFromMarket?.username ??
+        copiedTraderFromTitle?.username ??
+        null
+      const hasCopiedData =
+        Boolean(
+          copiedTraderIdFromRow ||
+            copiedTraderWallet ||
+            copiedTrader ||
+            copiedTraderFromWallet ||
+            copiedTraderFromMarket ||
+            copiedTraderFromTitle ||
+            copiedDirectName
+        )
+      const copiedProfileName = hasCopiedData
+        ? normalizeTraderDisplayName(
+            (resolvedProfile ?? profile)?.display_name ?? resolvedTraderRecord?.display_name ?? null
+          )
+        : null
+      const traderNameForDisplay =
+        copiedDirectName ??
+        copiedProfileName ??
+        formatWalletDisplay(resolvedTraderWallet) ??
+        formatWalletDisplay(copiedTraderWallet) ??
+        formatWalletDisplay(traderWallet) ??
+        ''
       const marketImageUrl =
         cache?.image_url ??
         metadata?.icon ??
@@ -371,18 +453,13 @@ export async function GET(request: NextRequest) {
         marketTitle,
         marketImageUrl,
         marketIsOpen,
-        traderId,
-        traderWallet: traderWallet ?? null,
-        traderName: getTraderName(
-          profile,
-          traderRecord,
-          order.raw,
-          userPolymarketUsername,
-          copiedTraderNameFromWallet,
-          copiedTraderNameFromMarket,
-          copiedTraderNameFromTitle
-        ),
-        traderAvatarUrl: profile?.avatar_url ?? extractTraderAvatar(order.raw),
+        traderId: resolvedTraderRecord?.trader_id ?? copiedTraderIdFromRow ?? traderId,
+        traderWallet: resolvedTraderWallet ?? null,
+        copiedTraderId: copiedTraderIdFromRow ?? resolvedTraderRecord?.trader_id ?? null,
+        copiedTraderWallet: resolvedTraderWallet ?? copiedTraderWallet ?? null,
+        traderName: traderNameForDisplay,
+        traderAvatarUrl:
+          (resolvedProfile ?? profile)?.avatar_url ?? extractTraderAvatar(order.raw),
         side: String(order.side ?? order.raw?.side ?? '').toLowerCase(),
         outcome: order.outcome ?? null,
         size: sizeValue ?? 0,
@@ -479,24 +556,82 @@ async function fetchTraderRecords(
   }
 }
 
+async function fetchTraderRecordsByWallets(
+  client: ReturnType<typeof createServiceClient>,
+  wallets: string[]
+) {
+  const normalizedWallets = Array.from(
+    new Set(
+      wallets
+        .map((wallet) => normalizeWalletAddress(wallet))
+        .filter((wallet): wallet is string => Boolean(wallet))
+    )
+  )
+  if (normalizedWallets.length === 0) return []
+  try {
+    const { data } = await client
+      .from('traders')
+      .select('id, display_name, wallet_address')
+      .in('wallet_address', normalizedWallets)
+    return (
+      (data ?? []).map((row) => ({
+        trader_id: row?.id ?? null,
+        display_name: row?.display_name ?? null,
+        wallet_address: row?.wallet_address ?? null,
+      })) ?? []
+    )
+  } catch (error) {
+    console.warn('[orders] trader lookup by wallet failed', error)
+    return []
+  }
+}
+
+type CopiedTraderDetails = {
+  id?: string | null
+  username: string | null
+  wallet: string | null
+}
+
 type CopiedTraderLookup = {
-  wallet: Map<string, string>
-  marketOutcome: Map<string, string>
-  marketTitleOutcome: Map<string, string>
+  wallet: Map<string, CopiedTraderDetails>
+  marketOutcome: Map<string, CopiedTraderDetails>
+  marketSlugOutcome: Map<string, CopiedTraderDetails>
+  marketTitleOutcome: Map<string, CopiedTraderDetails>
+}
+
+function normalizeOutcome(value?: string | null) {
+  return value ? value.trim().toLowerCase() : ''
+}
+
+function normalizeMarketKey(value?: string | null) {
+  if (!value) return ''
+  return value.trim().toLowerCase()
+}
+
+function normalizeMarketTitle(value?: string | null) {
+  if (!value) return ''
+  return value.trim().toLowerCase()
 }
 
 function getCopiedTraderKey(marketId: string | null, outcome?: string | null) {
-  if (!marketId) return ''
-  const outcomePart = outcome?.trim().toLowerCase() ?? ''
-  return `${marketId.trim()}|${outcomePart}`
+  const normalizedMarketId = normalizeMarketKey(marketId)
+  if (!normalizedMarketId) return ''
+  const outcomePart = normalizeOutcome(outcome)
+  return `${normalizedMarketId}|${outcomePart}`
+}
+
+function getCopiedTraderSlugKey(marketSlug?: string | null, outcome?: string | null) {
+  const normalizedSlug = normalizeMarketTitle(marketSlug)
+  if (!normalizedSlug) return ''
+  const outcomePart = normalizeOutcome(outcome)
+  return `${normalizedSlug}|${outcomePart}`
 }
 
 function getCopiedTraderTitleKey(marketTitle?: string | null, outcome?: string | null) {
-  if (!marketTitle) return ''
-  const titlePart = marketTitle.trim()
-  if (!titlePart) return ''
-  const outcomePart = outcome?.trim().toLowerCase() ?? ''
-  return `${titlePart}|${outcomePart}`
+  const normalizedTitle = normalizeMarketTitle(marketTitle)
+  if (!normalizedTitle) return ''
+  const outcomePart = normalizeOutcome(outcome)
+  return `${normalizedTitle}|${outcomePart}`
 }
 
 async function fetchCopiedTraderNames(
@@ -505,23 +640,25 @@ async function fetchCopiedTraderNames(
 ): Promise<CopiedTraderLookup> {
   if (!userId) {
     return {
-      wallet: new Map(),
-      marketOutcome: new Map(),
-      marketTitleOutcome: new Map(),
+      wallet: new Map<string, CopiedTraderDetails>(),
+      marketOutcome: new Map<string, CopiedTraderDetails>(),
+      marketSlugOutcome: new Map<string, CopiedTraderDetails>(),
+      marketTitleOutcome: new Map<string, CopiedTraderDetails>(),
     }
   }
   try {
     const { data } = await client
       .from('copied_trades')
-      .select('market_id, market_title, outcome, trader_username, trader_wallet')
+      .select('market_id, market_title, market_slug, outcome, trader_username, trader_wallet')
       .eq('user_id', userId)
       .order('copied_at', { ascending: false })
       .limit(1000)
 
     const lookup: CopiedTraderLookup = {
-      wallet: new Map<string, string>(),
-      marketOutcome: new Map<string, string>(),
-      marketTitleOutcome: new Map<string, string>(),
+      wallet: new Map<string, CopiedTraderDetails>(),
+      marketOutcome: new Map<string, CopiedTraderDetails>(),
+      marketSlugOutcome: new Map<string, CopiedTraderDetails>(),
+      marketTitleOutcome: new Map<string, CopiedTraderDetails>(),
     }
 
     for (const row of data ?? []) {
@@ -529,47 +666,149 @@ async function fetchCopiedTraderNames(
         typeof row?.market_id === 'string' && row.market_id.trim()
           ? row.market_id.trim()
           : null
-      const outcome =
-        typeof row?.outcome === 'string' && row.outcome.trim()
-          ? row.outcome.trim().toLowerCase()
-          : ''
+      const marketSlug =
+        typeof row?.market_slug === 'string' && row.market_slug.trim()
+          ? row.market_slug.trim()
+          : null
+      const outcome = typeof row?.outcome === 'string' ? row.outcome : ''
       const username =
         typeof row?.trader_username === 'string' && row.trader_username.trim()
           ? row.trader_username.trim()
           : null
-      const wallet =
-        typeof row?.trader_wallet === 'string' && row.trader_wallet.trim()
-          ? row.trader_wallet.trim().toLowerCase()
-          : null
+      const wallet = normalizeWalletAddress(row?.trader_wallet ?? null)
       const marketTitle =
         typeof row?.market_title === 'string' && row.market_title.trim()
           ? row.market_title.trim()
           : null
 
-      if (wallet && username && !lookup.wallet.has(wallet)) {
-        lookup.wallet.set(wallet, username)
+      const details: CopiedTraderDetails = {
+        id: null,
+        username: normalizeTraderDisplayName(username),
+        wallet,
       }
 
-      if (marketId && username) {
-        const key = `${marketId}|${outcome}`
-        if (!lookup.marketOutcome.has(key)) {
-          lookup.marketOutcome.set(key, username)
-        }
+      if (wallet && !lookup.wallet.has(wallet)) {
+        lookup.wallet.set(wallet, details)
       }
+
+      const marketKey = getCopiedTraderKey(marketId, outcome)
+      if (marketKey && !lookup.marketOutcome.has(marketKey)) {
+        lookup.marketOutcome.set(marketKey, details)
+      }
+
+      const slugKey = getCopiedTraderSlugKey(marketSlug, outcome)
+      if (slugKey && !lookup.marketSlugOutcome.has(slugKey)) {
+        lookup.marketSlugOutcome.set(slugKey, details)
+      }
+
       const titleKey = getCopiedTraderTitleKey(marketTitle, outcome)
-      if (titleKey && username && !lookup.marketTitleOutcome.has(titleKey)) {
-        lookup.marketTitleOutcome.set(titleKey, username)
+      if (titleKey && !lookup.marketTitleOutcome.has(titleKey)) {
+        lookup.marketTitleOutcome.set(titleKey, details)
       }
     }
     return lookup
   } catch (error) {
     console.warn('[orders] copied_trades lookup failed', error)
     return {
-      wallet: new Map(),
-      marketOutcome: new Map(),
-      marketTitleOutcome: new Map(),
+      wallet: new Map<string, CopiedTraderDetails>(),
+      marketOutcome: new Map<string, CopiedTraderDetails>(),
+      marketSlugOutcome: new Map<string, CopiedTraderDetails>(),
+      marketTitleOutcome: new Map<string, CopiedTraderDetails>(),
     }
   }
+}
+
+function resolveCopiedTraderForOrder(
+  lookup: CopiedTraderLookup,
+  marketId: string | null,
+  marketTitle: string | null,
+  outcome: string | null,
+  metadata?: MarketMetadata,
+  rawOrder?: any,
+  copiedTraderIdFromRow?: string | null,
+  copiedTraderWalletFromRow?: string | null
+): CopiedTraderDetails | null {
+  const copiedName = normalizeTraderDisplayName(
+    rawOrder?.copied_trader_username ??
+      rawOrder?.raw?.copied_trader_username ??
+      rawOrder?.copiedTraderUsername ??
+      rawOrder?.raw?.copiedTraderUsername ??
+      rawOrder?.copied_trader_display_name ??
+      rawOrder?.copied_trader_name
+  )
+  const traderName = normalizeTraderDisplayName(
+    rawOrder?.trader_username ?? rawOrder?.trader?.username ?? rawOrder?.trader?.display_name
+  )
+  const hasExplicitCopiedTrader = Boolean(copiedTraderIdFromRow || copiedTraderWalletFromRow)
+  const fallbackName = copiedName ?? (hasExplicitCopiedTrader ? null : traderName ?? null)
+  const normalizedOutcome = normalizeOutcome(outcome ?? rawOrder?.outcome ?? rawOrder?.raw?.outcome)
+  const normalizedMarketId = normalizeMarketKey(marketId)
+  const withOverrides = (details: CopiedTraderDetails | null): CopiedTraderDetails | null => {
+    if (!details) return null
+    return {
+      id: copiedTraderIdFromRow ?? details.id ?? null,
+      wallet: copiedTraderWalletFromRow ?? details.wallet ?? null,
+      username: details.username ?? fallbackName ?? null,
+    }
+  }
+
+  if (normalizedMarketId) {
+    const marketMatch = lookup.marketOutcome.get(
+      getCopiedTraderKey(normalizedMarketId, normalizedOutcome)
+    )
+    if (marketMatch) return withOverrides(marketMatch)
+  }
+
+  const slugCandidates = [
+    metadata?.slug,
+    metadata?.metadataPayload?.slug,
+    rawOrder?.market_slug,
+    rawOrder?.market?.slug,
+    rawOrder?.market?.market_slug,
+  ]
+  for (const slug of slugCandidates) {
+    const slugKey = getCopiedTraderSlugKey(slug, normalizedOutcome)
+    if (!slugKey) continue
+    const match = lookup.marketSlugOutcome.get(slugKey)
+    if (match) return withOverrides(match)
+  }
+
+  const titleCandidates = [
+    marketTitle,
+    metadata?.question,
+    rawOrder?.market?.market_title,
+    rawOrder?.market?.title,
+    rawOrder?.market?.name,
+  ].filter(Boolean) as string[]
+
+  for (const title of titleCandidates) {
+    const titleKey = getCopiedTraderTitleKey(title, normalizedOutcome)
+    if (!titleKey) continue
+    const match = lookup.marketTitleOutcome.get(titleKey)
+    if (match) return withOverrides(match)
+  }
+
+  const copiedWalletCandidates = [
+    copiedTraderWalletFromRow,
+    normalizeWalletAddress(rawOrder?.copied_trader_wallet ?? null),
+    normalizeWalletAddress(rawOrder?.copiedTraderWallet ?? null),
+    normalizeWalletAddress(rawOrder?.copied_from_wallet ?? null),
+  ].filter(Boolean) as string[]
+
+  for (const wallet of copiedWalletCandidates) {
+    const walletMatch = lookup.wallet.get(wallet)
+    if (walletMatch) return withOverrides(walletMatch)
+  }
+
+  if (hasExplicitCopiedTrader) {
+    return {
+      id: copiedTraderIdFromRow ?? null,
+      wallet: copiedTraderWalletFromRow ?? null,
+      username: fallbackName ?? null,
+    }
+  }
+
+  return fallbackName ? { id: null, wallet: null, username: fallbackName } : null
 }
 
 type TraderProfileRow = {
@@ -649,10 +888,14 @@ function getTraderName(
   traderRecord?: TraderRecordRow,
   rawOrder?: any,
   userProfileName?: string | null,
+  copiedTraderDirectName?: string | null,
   copiedTraderWalletName?: string | null,
   copiedTraderMarketName?: string | null,
   copiedTraderMarketTitleName?: string | null
 ) {
+  const directCopiedName = normalizeTraderDisplayName(copiedTraderDirectName)
+  if (directCopiedName) return directCopiedName
+
   const mappedWalletName = normalizeTraderDisplayName(copiedTraderWalletName)
   if (mappedWalletName) return mappedWalletName
 
@@ -674,13 +917,20 @@ function getTraderName(
   const userName = normalizeTraderDisplayName(userProfileName)
   if (userName) return userName
 
-  return 'unknown trader'
+  return ''
 }
 
 function normalizeWalletAddress(value?: string | null) {
   if (!value) return null
   const trimmed = value.trim()
   return trimmed ? trimmed.toLowerCase() : null
+}
+
+function formatWalletDisplay(wallet?: string | null) {
+  if (!wallet) return null
+  const normalized = wallet.trim()
+  if (normalized.length <= 10) return normalized
+  return `${normalized.slice(0, 6)}...${normalized.slice(-4)}`
 }
 
 function resolveTraderWallet(traderRecord?: TraderRecordRow, rawOrder?: any) {
@@ -901,4 +1151,37 @@ function normalizePositionStateValue(
 function getPositionStateLabel(state: 'open' | 'closed' | 'unknown' | null): string | null {
   if (!state || state === 'unknown') return null
   return state === 'open' ? 'Position open' : 'Position closed'
+}
+
+function columnMissing(error: any) {
+  if (!error) return false
+  const code = error?.code
+  const message = typeof error?.message === 'string' ? error.message.toLowerCase() : ''
+  return code === '42703' || message.includes('column') || message.includes('does not exist')
+}
+
+async function fetchOrdersForTrader(
+  client: ReturnType<typeof createServiceClient>,
+  ordersTable: OrdersTableName,
+  traderId: string
+) {
+  const selectWithCopied =
+    'order_id, trader_id, copied_trader_id, copied_trader_wallet, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, raw'
+  const selectLegacy =
+    'order_id, trader_id, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, raw'
+
+  const query = (columns: string) =>
+    client
+      .from(ordersTable)
+      .select(columns)
+      .eq('trader_id', traderId)
+      .order('created_at', { ascending: false })
+      .limit(200)
+
+  const result = await query(selectWithCopied)
+  if (!result.error) return result
+  if (!columnMissing(result.error)) return result
+
+  console.warn('[orders] copied trader columns missing, falling back to legacy select')
+  return query(selectLegacy)
 }

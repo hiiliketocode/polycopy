@@ -597,6 +597,10 @@ export default function TraderProfilePage({
           side: trade.side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL',
           orderType: 'IOC',
           confirm: true,
+          copiedTraderWallet: wallet,
+          copiedTraderUsername: traderData?.displayName || wallet.slice(0, 8),
+          marketId: trade.conditionId || trade.marketSlug || trade.market,
+          outcome: trade.outcome,
         }),
       });
 

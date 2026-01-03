@@ -11,6 +11,8 @@ export interface OrderRow {
   traderWallet?: string | null
   traderName: string
   traderAvatarUrl: string | null
+  copiedTraderId?: string | null
+  copiedTraderWallet?: string | null
   side: string
   outcome: string | null
   size: number

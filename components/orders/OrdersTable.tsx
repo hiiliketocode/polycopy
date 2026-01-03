@@ -44,6 +44,7 @@ type OrdersTableProps = {
   statusSummary: Record<OrderStatus, number>
   getPositionForOrder: (order: OrderRow) => PositionSummary | null
   onSellPosition: (order: OrderRow) => void
+  showActions?: boolean
 }
 
 export default function OrdersTable({
@@ -52,6 +53,7 @@ export default function OrdersTable({
   statusSummary,
   getPositionForOrder,
   onSellPosition,
+  showActions = true,
 }: OrdersTableProps) {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
@@ -134,7 +136,7 @@ export default function OrdersTable({
                 <th className="py-2 pr-4 font-medium min-w-[120px]">Current price</th>
                 <th className="py-2 pr-4 font-medium min-w-[120px]">P/L</th>
                 <th className="py-2 pr-4 font-medium min-w-[140px]">Date</th>
-                <th className="py-2 pr-4 font-medium min-w-[140px]">Actions</th>
+                {showActions && <th className="py-2 pr-4 font-medium min-w-[140px]">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -145,6 +147,10 @@ export default function OrdersTable({
                 const hasOpenPosition = Boolean(position && position.size > 0)
                 const isMarketOpen = order.marketIsOpen === true || order.status === 'open'
                 const canSell = hasOpenPosition && isMarketOpen
+                const traderName = order.traderName?.trim() || ''
+                const traderDisplay = traderName
+                const traderLinkTarget = traderDisplay ? order.traderWallet ?? order.traderId ?? null : null
+                const traderInitial = traderDisplay ? traderDisplay.charAt(0).toUpperCase() : '—'
                 return (
                   <React.Fragment key={order.orderId}>
                     <tr className="cursor-pointer border-b border-slate-100 hover:bg-slate-50" onClick={() => toggleRow(order.orderId)}>
@@ -193,22 +199,26 @@ export default function OrdersTable({
                             {order.traderAvatarUrl ? (
                               <img
                                 src={order.traderAvatarUrl}
-                                alt={order.traderName}
+                                alt={traderDisplay || 'Trader'}
                                 className="h-full w-full object-cover"
                               />
                             ) : (
                               <span className="flex h-full items-center justify-center">
-                                {order.traderName.charAt(0).toUpperCase()}
+                                {traderInitial}
                               </span>
                             )}
                           </div>
                           <div className="flex min-w-0 flex-col">
-                            <Link
-                              href={`/trader/${order.traderWallet ?? order.traderId}`}
-                              className="truncate font-medium text-slate-900 hover:text-slate-800"
-                            >
-                              {order.traderName}
-                            </Link>
+                            {traderLinkTarget ? (
+                              <Link
+                                href={`/trader/${traderLinkTarget}`}
+                                className="truncate font-medium text-slate-900 hover:text-slate-800"
+                              >
+                                {traderDisplay || ''}
+                              </Link>
+                            ) : (
+                              <span className="truncate font-medium text-slate-900">{traderDisplay}</span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -235,26 +245,28 @@ export default function OrdersTable({
                       <td className="py-3 pr-4 align-top text-slate-600">
                         {formatDate(order.createdAt)}
                       </td>
-                      <td className="py-3 pr-4 align-top text-right">
-                        {isMarketOpen && (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              if (!canSell) return
-                              onSellPosition(order)
-                            }}
-                            disabled={!canSell}
-                            className={`rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
-                              canSell
-                                ? 'bg-rose-500 text-white hover:bg-rose-400'
-                                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            }`}
-                          >
-                            Sell
-                          </button>
-                        )}
-                      </td>
+                      {showActions && (
+                        <td className="py-3 pr-4 align-top text-right">
+                          {isMarketOpen && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                if (!canSell) return
+                                onSellPosition(order)
+                              }}
+                              disabled={!canSell}
+                              className={`rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
+                                canSell
+                                  ? 'bg-rose-500 text-white hover:bg-rose-400'
+                                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                              }`}
+                            >
+                              Sell
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                     {expandedOrderId === order.orderId && (
                       <tr className="bg-slate-50">
