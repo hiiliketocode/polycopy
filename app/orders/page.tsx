@@ -746,8 +746,8 @@ function getPnlColorClass(value: number | null | undefined) {
 function normalizeTimeInForce(order: OrderRow): string | null {
   const raw = order.raw ?? {}
   const candidates = [
-    order.timeInForce,
-    order.orderType,
+    (order as any).timeInForce,
+    (order as any).orderType,
     raw.time_in_force,
     raw.timeInForce,
     raw.order_type,
