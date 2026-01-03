@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from '@/lib/feature-tier';
+import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { TradeCard } from '@/components/polycopy/trade-card';
@@ -28,6 +29,7 @@ interface FeedTrade {
     slug: string;
     eventSlug?: string;
     category?: string;
+    avatarUrl?: string;
   };
   trade: {
     side: 'BUY' | 'SELL';
@@ -405,6 +407,7 @@ export default function FeedPage() {
               slug: trade.market_slug || trade.slug || '',
               eventSlug: trade.eventSlug || trade.event_slug || '',
               category: undefined,
+              avatarUrl: extractMarketAvatarUrl(trade) || undefined,
             },
             trade: {
               side: (trade.side || 'BUY').toUpperCase() as 'BUY' | 'SELL',
@@ -804,10 +807,11 @@ export default function FeedPage() {
                   key={trade.id}
                   trader={{
                     name: trade.trader.displayName,
-                    address: `${trade.trader.wallet.slice(0, 6)}...${trade.trader.wallet.slice(-4)}`,
+                    address: trade.trader.wallet,
                     id: trade.trader.wallet,
                   }}
                   market={trade.market.title}
+                  marketAvatar={trade.market.avatarUrl}
                   position={trade.trade.outcome.toUpperCase() as "YES" | "NO"}
                   action={trade.trade.side === 'BUY' ? 'Buy' : 'Sell'}
                   price={trade.trade.price}

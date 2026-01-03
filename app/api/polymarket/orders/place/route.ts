@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
 import { POST_ORDER } from '@polymarket/clob-client/dist/endpoints.js'
 import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
@@ -7,6 +8,7 @@ import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
 import { ensureEvomiProxyAgent } from '@/lib/evomi/proxy'
 import { getBodySnippet } from '@/lib/polymarket/order-route-helpers'
 import { sanitizeError } from '@/lib/http/sanitize-error'
+import { resolveOrdersTableName, type OrdersTableName } from '@/lib/orders/table'
 
 const DEV_BYPASS_AUTH =
   process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
@@ -21,6 +23,12 @@ type Body = {
   side?: 'BUY' | 'SELL'
   orderType?: 'GTC' | 'FOK' | 'IOC'
   confirm?: boolean
+  copiedTraderId?: string | null
+  copiedTraderWallet?: string | null
+  copiedTraderUsername?: string | null
+  copiedTradeId?: string | null
+  marketId?: string | null
+  outcome?: string | null
 }
 
 function respondWithMetadata(body: Record<string, unknown>, status: number) {
@@ -31,6 +39,19 @@ function respondWithMetadata(body: Record<string, unknown>, status: number) {
   const response = NextResponse.json(payload, { status })
   response.headers.set('x-polycopy-handler', HANDLER_FINGERPRINT)
   return response
+}
+
+function createServiceClientInstance() {
+  return createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  )
 }
 
 export async function POST(request: NextRequest) {
@@ -75,21 +96,24 @@ export async function POST(request: NextRequest) {
     )
   }
   function sanitizeForResponse(value: unknown): unknown {
-    if (value === undefined) return undefined
-    if (typeof value !== 'object' || value === null) return value
+    if (value === undefined || value === null) return value
+    if (typeof value !== 'object') return value
     try {
       const seen = new WeakSet<any>()
       return JSON.parse(
         JSON.stringify(value, (_, replacement) => {
           if (typeof replacement === 'object' && replacement !== null) {
-            if (seen.has(replacement)) return undefined
+            if (seen.has(replacement)) return '[Circular]'
             seen.add(replacement)
           }
+          if (typeof replacement === 'function') return '[Function]'
+          if (typeof replacement === 'bigint') return replacement.toString()
           return replacement
         })
       )
     } catch {
-      return undefined
+      // Final fallback to a safe string so callers never try to stringify a circular object again
+      return '[Unserializable]'
     }
   }
 
@@ -147,7 +171,7 @@ export async function POST(request: NextRequest) {
               code,
             }
     }
-    const safeRawResult = sanitizeForResponse(rawResult) ?? rawResult
+    const safeRawResult = sanitizeForResponse(rawResult)
     const evaluation = interpretClobOrderResult(safeRawResult)
     const failedEvaluation = !evaluation.success
     const upstreamStatus = failedEvaluation ? evaluation.status ?? 502 : 200
@@ -169,7 +193,15 @@ export async function POST(request: NextRequest) {
     console.log('[POLY-ORDER-PLACE] Upstream response', logPayload)
 
     if (failedEvaluation) {
-      const snippet = getBodySnippet(evaluation.raw ?? '')
+      let snippet: string | null = null
+      try {
+        const snippetSource =
+          sanitizedEvaluationRaw ?? sanitizeForResponse(evaluation.raw) ?? evaluation.raw ?? ''
+        snippet = getBodySnippet(snippetSource)
+      } catch (snippetError) {
+        console.warn('[POLY-ORDER-PLACE] snippet serialization failed', snippetError)
+        snippet = '[unserializable]'
+      }
       return respondWithMetadata(
         {
           ok: false,
@@ -183,11 +215,12 @@ export async function POST(request: NextRequest) {
           upstreamStatus,
           isHtml: evaluation.contentType === 'text/html',
           contentType: evaluation.contentType,
-          raw: sanitizedEvaluationRaw
-            ? typeof sanitizedEvaluationRaw === 'string'
+          raw:
+            typeof sanitizedEvaluationRaw === 'string'
               ? sanitizedEvaluationRaw
-              : JSON.stringify(sanitizedEvaluationRaw)
-            : undefined,
+              : sanitizedEvaluationRaw !== undefined
+                ? sanitizedEvaluationRaw
+                : undefined,
           snippet,
         },
         upstreamStatus
@@ -195,6 +228,30 @@ export async function POST(request: NextRequest) {
     }
 
     const { orderId } = evaluation
+
+    try {
+      const supabaseService = createServiceClientInstance()
+      const ordersTable = await resolveOrdersTableName(supabaseService)
+      await persistOrderRecord({
+        serviceClient: supabaseService,
+        ordersTable,
+        orderId,
+        proxyAddress: proxyAddress ?? signerAddress,
+        tokenId: tokenId!,
+        side: side!,
+        price: price!,
+        amount: amount!,
+        orderType,
+        marketId: body.marketId ?? null,
+        outcome: body.outcome ?? null,
+        copiedTraderId: body.copiedTraderId ?? null,
+        copiedTraderWallet: body.copiedTraderWallet ?? null,
+        copiedTraderUsername: body.copiedTraderUsername ?? null,
+        copiedTradeId: body.copiedTradeId ?? null,
+      })
+    } catch (error) {
+      console.warn('[POLY-ORDER-PLACE] Failed to persist order row', error)
+    }
 
     return respondWithMetadata(
       {
@@ -224,5 +281,124 @@ export async function POST(request: NextRequest) {
       },
       safeError.status && Number.isInteger(safeError.status) ? safeError.status : 500
     )
+  }
+}
+
+function normalizeWalletAddress(value?: string | null) {
+  if (!value) return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed.toLowerCase() : null
+}
+
+function deriveMarketIdFromToken(tokenId?: string | null) {
+  if (!tokenId) return null
+  const trimmed = tokenId.trim()
+  return trimmed.length >= 66 ? trimmed.slice(0, 66) : trimmed || null
+}
+
+async function ensureTraderId(
+  client: ReturnType<typeof createServiceClientInstance>,
+  walletAddress: string
+) {
+  const normalized = normalizeWalletAddress(walletAddress)
+  if (!normalized) throw new Error('Missing wallet address for trader lookup')
+
+  const { data: existing } = await client
+    .from('traders')
+    .select('id')
+    .eq('wallet_address', normalized)
+    .maybeSingle()
+
+  if (existing?.id) return existing.id
+
+  const { data: inserted, error } = await client
+    .from('traders')
+    .insert({ wallet_address: normalized })
+    .select('id')
+    .single()
+
+  if (error) throw error
+  return inserted.id
+}
+
+type PersistOrderArgs = {
+  serviceClient: ReturnType<typeof createServiceClientInstance>
+  ordersTable: OrdersTableName
+  orderId: string
+  proxyAddress: string
+  tokenId: string
+  side: 'BUY' | 'SELL'
+  price: number
+  amount: number
+  orderType: 'GTC' | 'FOK' | 'IOC'
+  marketId?: string | null
+  outcome?: string | null
+  copiedTraderId?: string | null
+  copiedTraderWallet?: string | null
+  copiedTraderUsername?: string | null
+  copiedTradeId?: string | null
+}
+
+async function persistOrderRecord({
+  serviceClient,
+  ordersTable,
+  orderId,
+  proxyAddress,
+  tokenId,
+  side,
+  price,
+  amount,
+  orderType,
+  marketId,
+  outcome,
+  copiedTraderId,
+  copiedTraderWallet,
+  copiedTraderUsername,
+  copiedTradeId,
+}: PersistOrderArgs) {
+  const traderId = await ensureTraderId(serviceClient, proxyAddress)
+  const normalizedCopiedWallet = normalizeWalletAddress(copiedTraderWallet)
+  let resolvedCopiedTraderId = copiedTraderId ?? null
+
+  if (!resolvedCopiedTraderId && normalizedCopiedWallet) {
+    try {
+      resolvedCopiedTraderId = await ensureTraderId(serviceClient, normalizedCopiedWallet)
+    } catch (error) {
+      console.warn('[POLY-ORDER-PLACE] Failed to ensure copied trader record', error)
+    }
+  }
+
+  const payload = {
+    order_id: orderId,
+    trader_id: traderId,
+    market_id: marketId ?? deriveMarketIdFromToken(tokenId),
+    outcome: outcome ?? null,
+    side: side.toLowerCase(),
+    order_type: orderType,
+    time_in_force: orderType,
+    price,
+    size: amount,
+    filled_size: 0,
+    remaining_size: amount,
+    status: 'open',
+    copied_trader_id: resolvedCopiedTraderId,
+    copied_trader_wallet: normalizedCopiedWallet,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    raw: {
+      copied_trader_id: resolvedCopiedTraderId,
+      copied_trader_wallet: normalizedCopiedWallet,
+      copied_trader_username: copiedTraderUsername ?? null,
+      copied_trade_id: copiedTradeId ?? null,
+      source: 'place_route',
+    },
+  }
+
+  const { error } = await serviceClient.from(ordersTable).upsert(payload, {
+    onConflict: 'order_id',
+  })
+
+  if (error) {
+    throw error
   }
 }

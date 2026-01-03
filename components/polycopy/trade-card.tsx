@@ -17,6 +17,7 @@ interface TradeCardProps {
     roi?: number
   }
   market: string
+  marketAvatar?: string
   position: "YES" | "NO"
   action: "Buy" | "Sell"
   price: number
@@ -39,6 +40,7 @@ interface TradeCardProps {
 export function TradeCard({
   trader,
   market,
+  marketAvatar,
   position,
   action,
   price,
@@ -62,6 +64,18 @@ export function TradeCard({
   const [isSuccess, setIsSuccess] = useState(false)
   const [localCopied, setLocalCopied] = useState(isCopied)
   const [refreshStatus, setRefreshStatus] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle')
+
+  const formatWallet = (value: string) => {
+    const trimmed = value?.trim() || ""
+    if (trimmed.length <= 10) return trimmed
+    return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`
+  }
+
+  const isUuid = (value?: string | null) =>
+    Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))
+
+  const displayAddress = formatWallet(trader.address || "")
+  const copiedTraderId = isUuid(trader.id) ? trader.id! : null
 
   const currentPrice = price * (0.98 + Math.random() * 0.04) // Within 2% of entry price
 
@@ -165,6 +179,11 @@ export function TradeCard({
           side: action === 'Buy' ? 'BUY' : 'SELL',
           orderType: 'IOC',
           confirm: true,
+          copiedTraderId,
+          copiedTraderWallet: trader.address,
+          copiedTraderUsername: trader.name,
+          marketId: conditionId || (finalTokenId ? finalTokenId.slice(0, 66) : undefined),
+          outcome: position,
         }),
       })
 
@@ -219,7 +238,7 @@ export function TradeCard({
             </Avatar>
             <div className="min-w-0">
               <p className="font-medium text-slate-900 text-sm">{trader.name}</p>
-              <p className="text-xs text-slate-500 font-mono truncate">{trader.address}</p>
+              <p className="text-xs text-slate-500 font-mono truncate">{displayAddress}</p>
             </div>
           </Link>
           <div className="flex items-center gap-2">
@@ -232,7 +251,15 @@ export function TradeCard({
           </div>
         </div>
 
-        <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug mb-4">{market}</h3>
+        <div className="flex items-center gap-3 mb-4">
+          <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
+            <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
+            <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
+              {market.slice(0, 2)}
+            </AvatarFallback>
+          </Avatar>
+          <h3 className="flex-1 text-base md:text-lg font-medium text-slate-900 leading-snug">{market}</h3>
+        </div>
 
         <div className="border border-slate-200 rounded-lg p-4 mb-4 bg-slate-50/50">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 relative">
