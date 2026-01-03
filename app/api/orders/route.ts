@@ -236,7 +236,7 @@ export async function GET(request: NextRequest) {
     console.log('[orders] Query result:', {
       traderId: trader.id,
       ordersCount: ordersList.length,
-      orderIds: ordersList.map(o => o.order_id).slice(0, 5),
+      orderIds: ordersList.map(o => (o as any).order_id || o.orderId).slice(0, 5),
       table: ordersTable,
     })
 
