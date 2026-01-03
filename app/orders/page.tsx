@@ -1073,7 +1073,7 @@ function PositionsList({
                     ? 'bg-emerald-50 text-emerald-700'
                     : 'bg-amber-50 text-amber-700'
               const canSell = (order?.marketIsOpen ?? meta?.open) === true
-              const traderHandle = getCopiedTraderLabel(order)
+              const traderHandle = order ? getCopiedTraderLabel(order) : null
               const pnlCalc = computePositionPnl(position, entryPrice, currentPrice)
               return (
                 <tr key={`${position.tokenId}-${position.size}`} className="border-b border-slate-100">
