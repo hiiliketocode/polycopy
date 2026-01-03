@@ -379,7 +379,8 @@ export async function GET(request: NextRequest) {
         )
       const copiedProfileName = hasCopiedData
         ? normalizeTraderDisplayName(
-            (resolvedProfile ?? profile)?.display_name ?? resolvedTraderRecord?.display_name ?? null
+            (resolvedProfile ?? profile)?.display_name ?? 
+            (resolvedTraderRecord && typeof resolvedTraderRecord === 'object' ? resolvedTraderRecord.display_name : null) ?? null
           )
         : null
       const traderNameForDisplay =
@@ -455,9 +456,9 @@ export async function GET(request: NextRequest) {
         marketTitle,
         marketImageUrl,
         marketIsOpen,
-        traderId: resolvedTraderRecord?.trader_id ?? copiedTraderIdFromRow ?? traderId,
+        traderId: (resolvedTraderRecord && typeof resolvedTraderRecord === 'object' ? resolvedTraderRecord.trader_id : null) ?? copiedTraderIdFromRow ?? traderId,
         traderWallet: resolvedTraderWallet ?? null,
-        copiedTraderId: copiedTraderIdFromRow ?? resolvedTraderRecord?.trader_id ?? null,
+        copiedTraderId: copiedTraderIdFromRow ?? (resolvedTraderRecord && typeof resolvedTraderRecord === 'object' ? resolvedTraderRecord.trader_id : null) ?? null,
         copiedTraderWallet: resolvedTraderWallet ?? copiedTraderWallet ?? null,
         traderName: traderNameForDisplay,
         traderAvatarUrl:
