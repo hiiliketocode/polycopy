@@ -231,40 +231,40 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const ordersList = ((ordersResult.data || []) as unknown) as OrderRow[]
+    const ordersList = ordersResult.data || []
     
     console.log('[orders] Query result:', {
       traderId: trader.id,
       ordersCount: ordersList.length,
-      orderIds: ordersList.map(o => (o as any).order_id || o.orderId).slice(0, 5),
+      orderIds: ordersList.map((o: any) => o.order_id).slice(0, 5),
       table: ordersTable,
     })
 
     const marketIds = Array.from(
       new Set(
         ordersList
-          .map((order) => order.market_id)
+          .map((order: any) => order.market_id)
           .filter(Boolean) as string[]
       )
     )
     const traderIds = Array.from(
       new Set(
         ordersList
-          .map((order) => order.trader_id)
+          .map((order: any) => order.trader_id)
           .filter(Boolean) as string[]
       )
     )
     const copiedTraderIdsFromOrders = Array.from(
       new Set(
         ordersList
-          .map((order) => order.copied_trader_id)
+          .map((order: any) => order.copied_trader_id)
           .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
       )
     )
     const copiedTraderWalletsFromOrders = Array.from(
       new Set(
         ordersList
-          .map((order) => order.copied_trader_wallet)
+          .map((order: any) => order.copied_trader_wallet)
           .filter((wallet): wallet is string => typeof wallet === 'string' && wallet.trim().length > 0)
       )
     )
