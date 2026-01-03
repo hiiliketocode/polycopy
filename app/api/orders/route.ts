@@ -317,7 +317,7 @@ export async function GET(request: NextRequest) {
 
     const cacheUpsertMap = new Map<string, MarketCacheUpsertRow>()
 
-    const enrichedOrders: OrderRow[] = ordersList.map((order) => {
+    const enrichedOrders: OrderRow[] = (ordersList as any[]).map((order: any) => {
       const marketId = String(order.market_id ?? '')
       const traderId = String(order.trader_id ?? '')
       const copiedTraderIdFromRow =
