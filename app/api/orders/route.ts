@@ -348,7 +348,7 @@ export async function GET(request: NextRequest) {
         (resolvedTraderWallet && traderRecordByWallet.get(resolvedTraderWallet)) ??
         (copiedTraderIdFromRow ? traderRecordMap.get(copiedTraderIdFromRow) : null) ??
         traderRecord
-      const resolvedProfile = resolvedTraderRecord?.trader_id
+      const resolvedProfile = resolvedTraderRecord && typeof resolvedTraderRecord === 'object' && resolvedTraderRecord.trader_id
         ? traderProfileMap.get(resolvedTraderRecord.trader_id)
         : profile
       const copiedTraderFromWallet =
