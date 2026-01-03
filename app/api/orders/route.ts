@@ -217,21 +217,21 @@ export async function GET(request: NextRequest) {
     const userPolymarketUsername = accountProfile?.polymarket_username ?? null
     const copiedTraderLookup = await fetchCopiedTraderNames(supabase, user.id)
 
-    const { data: orders, error: ordersError } = await fetchOrdersForTrader(
+    const ordersResult = await fetchOrdersForTrader(
       supabase,
       ordersTable,
       trader.id
     )
 
-    if (ordersError) {
-      console.error('[orders] orders query error', ordersError)
+    if (ordersResult.error) {
+      console.error('[orders] orders query error', ordersResult.error)
       return NextResponse.json(
-        { error: 'Failed to load orders', details: ordersError.message },
+        { error: 'Failed to load orders', details: ordersResult.error.message },
         { status: 500 }
       )
     }
 
-    const ordersList = (orders || []) as OrderRow[]
+    const ordersList = (ordersResult.data || []) as OrderRow[]
     
     console.log('[orders] Query result:', {
       traderId: trader.id,
