@@ -231,21 +231,14 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const ordersList = orders || []
+    const ordersList = (orders || []) as OrderRow[]
+    
     console.log('[orders] Query result:', {
       traderId: trader.id,
       ordersCount: ordersList.length,
       orderIds: ordersList.map(o => o.order_id).slice(0, 5),
       table: ordersTable,
     })
-
-    if (ordersError) {
-      console.error('[orders] orders query error', ordersError)
-      return NextResponse.json(
-        { error: 'Failed to load orders', details: ordersError.message },
-        { status: 500 }
-      )
-    }
 
     const marketIds = Array.from(
       new Set(
