@@ -223,10 +223,19 @@ export async function GET(request: NextRequest) {
       trader.id
     )
 
+    if (ordersError) {
+      console.error('[orders] orders query error', ordersError)
+      return NextResponse.json(
+        { error: 'Failed to load orders', details: ordersError.message },
+        { status: 500 }
+      )
+    }
+
+    const ordersList = orders || []
     console.log('[orders] Query result:', {
       traderId: trader.id,
-      ordersCount: orders?.length || 0,
-      orderIds: orders?.map(o => o.order_id).slice(0, 5),
+      ordersCount: ordersList.length,
+      orderIds: ordersList.map(o => o.order_id).slice(0, 5),
       table: ordersTable,
     })
 
@@ -240,28 +249,28 @@ export async function GET(request: NextRequest) {
 
     const marketIds = Array.from(
       new Set(
-        (orders || [])
+        ordersList
           .map((order) => order.market_id)
           .filter(Boolean) as string[]
       )
     )
     const traderIds = Array.from(
       new Set(
-        (orders || [])
+        ordersList
           .map((order) => order.trader_id)
           .filter(Boolean) as string[]
       )
     )
     const copiedTraderIdsFromOrders = Array.from(
       new Set(
-        (orders || [])
+        ordersList
           .map((order) => order.copied_trader_id)
           .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
       )
     )
     const copiedTraderWalletsFromOrders = Array.from(
       new Set(
-        (orders || [])
+        ordersList
           .map((order) => order.copied_trader_wallet)
           .filter((wallet): wallet is string => typeof wallet === 'string' && wallet.trim().length > 0)
       )
@@ -315,7 +324,7 @@ export async function GET(request: NextRequest) {
 
     const cacheUpsertMap = new Map<string, MarketCacheUpsertRow>()
 
-    const enrichedOrders: OrderRow[] = (orders || []).map((order) => {
+    const enrichedOrders: OrderRow[] = ordersList.map((order) => {
       const marketId = String(order.market_id ?? '')
       const traderId = String(order.trader_id ?? '')
       const copiedTraderIdFromRow =
