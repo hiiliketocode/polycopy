@@ -231,7 +231,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const ordersList = (ordersResult.data || []) as OrderRow[]
+    const ordersList = ((ordersResult.data || []) as unknown) as OrderRow[]
     
     console.log('[orders] Query result:', {
       traderId: trader.id,
