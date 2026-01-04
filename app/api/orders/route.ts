@@ -249,7 +249,7 @@ export async function GET(request: NextRequest) {
     }
 
     const ordersList = ordersResult.data || []
-    const clobOrderIdsForSet = Array.isArray(clobOpenOrderIds) ? clobOpenOrderIds : []
+    const clobOrderIdsForSet: string[] = Array.isArray(clobOpenOrderIds) ? clobOpenOrderIds : []
     const clobOpenSet =
       clobOrderIdsForSet.length > 0
         ? new Set(clobOrderIdsForSet.map((id) => id.trim().toLowerCase()))
