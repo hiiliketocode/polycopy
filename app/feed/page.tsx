@@ -282,17 +282,23 @@ export default function FeedPage() {
           if (priceResponse.ok) {
             const priceData = await priceResponse.json();
             
-            // Get the trade to determine which outcome we need
-            const trade = trades.find(t => t.market.conditionId === conditionId);
-            if (trade) {
-              const outcome = trade.trade.outcome.toUpperCase();
-              const price = priceData[outcome] || priceData.price;
-              
-              if (price !== undefined) {
-                newLiveData.set(conditionId, { 
-                  price: Number(price),
-                  score: trade.market.category === 'sports' ? priceData.score : undefined
-                });
+            if (priceData.success && priceData.market) {
+              // Get the trade to determine which outcome we need
+              const trade = trades.find(t => t.market.conditionId === conditionId);
+              if (trade) {
+                const outcome = trade.trade.outcome.toUpperCase();
+                const { outcomes, outcomePrices } = priceData.market;
+                
+                // Find the price for this specific outcome
+                const outcomeIndex = outcomes?.findIndex((o: string) => o.toUpperCase() === outcome);
+                if (outcomeIndex !== -1 && outcomePrices && outcomePrices[outcomeIndex]) {
+                  const price = Number(outcomePrices[outcomeIndex]);
+                  
+                  newLiveData.set(conditionId, { 
+                    price,
+                    score: trade.market.category === 'sports' ? priceData.market.score : undefined
+                  });
+                }
               }
             }
           }
