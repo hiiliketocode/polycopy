@@ -299,6 +299,16 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
             </Link>
 
             <Link
+              href="/orders"
+              className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors min-w-[64px] ${
+                isActive("/orders") ? "bg-slate-100 text-[#FDB022]" : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <FileText className={`w-5 h-5 ${isActive("/orders") ? "stroke-[2.5]" : "stroke-2"}`} />
+              <span className={`text-[10px] ${isActive("/orders") ? "font-semibold" : "font-medium"}`}>Orders</span>
+            </Link>
+
+            <Link
               href="/profile"
               className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors min-w-[64px] ${
                 isActive("/profile") ? "bg-slate-100 text-[#FDB022]" : "text-slate-600 hover:bg-slate-50"
