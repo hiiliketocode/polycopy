@@ -137,9 +137,16 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
       <nav className="hidden md:block sticky top-0 z-50 bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <Image src="/logos/polycopy-logo-icon.png" alt="Polycopy" width={32} height={32} className="w-8 h-8" />
-            <span className="text-xl font-bold text-slate-900">Polycopy</span>
+          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <Image 
+              src="/logos/polycopy-logo-icon.svg" 
+              alt="Polycopy" 
+              width={32} 
+              height={32} 
+              className="w-8 h-8 object-contain" 
+              priority 
+            />
+            <span className="text-xl font-bold text-slate-900 tracking-tight">Polycopy</span>
           </Link>
 
           {/* Center Navigation Links */}
@@ -283,7 +290,13 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
         <div className="flex items-center h-14 px-4">
           {/* Logo - Left side, non-clickable branding */}
           <div className="mr-auto">
-            <Image src="/logos/polycopy-logo-icon.png" alt="Polycopy" width={32} height={32} className="h-6 w-auto" />
+            <Image 
+              src="/logos/polycopy-logo-icon.svg" 
+              alt="Polycopy" 
+              width={24} 
+              height={24} 
+              className="h-6 w-6 object-contain" 
+            />
           </div>
 
           {/* Navigation Buttons - Right side with button-like styling */}
