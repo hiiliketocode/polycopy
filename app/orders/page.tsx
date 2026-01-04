@@ -113,7 +113,7 @@ export default function OrdersPage() {
       const openIds = Array.isArray(data.openOrderIds)
         ? data.openOrderIds
             .map((id: unknown) => (typeof id === 'string' ? id.trim().toLowerCase() : null))
-            .filter((id): id is string => Boolean(id))
+            .filter((id: string | null): id is string => Boolean(id))
         : []
       setOpenOrderIds(openIds)
       const fetchedWallet =
