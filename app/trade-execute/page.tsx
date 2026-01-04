@@ -829,7 +829,32 @@ function TradeExecutePageInner() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setSubmitError(data?.error || data?.message || 'Send failed')
+        // Handle error - ensure it's a string, not an object
+        let errorMessage = 'Trade execution failed'
+        
+        if (data?.error) {
+          // If error is an object, try to extract a meaningful message
+          if (typeof data.error === 'string') {
+            errorMessage = data.error
+          } else if (typeof data.error === 'object') {
+            errorMessage = data.error.message || data.error.error || JSON.stringify(data.error)
+          }
+        } else if (data?.message) {
+          errorMessage = data.message
+        }
+        
+        // Add helpful context based on error type
+        if (errorMessage.includes('No turnkey wallet') || errorMessage.includes('wallet not found')) {
+          errorMessage = 'Trading wallet not connected. Please connect your wallet in your profile settings before executing trades.'
+        } else if (errorMessage.includes('No Polymarket API credentials') || errorMessage.includes('L2 credentials')) {
+          errorMessage = 'Polymarket credentials not set up. Please complete wallet setup in your profile to enable trading.'
+        } else if (errorMessage.includes('Unauthorized')) {
+          errorMessage = 'Session expired. Please log out and log back in to continue trading.'
+        } else if (errorMessage.includes('balance') || errorMessage.includes('insufficient')) {
+          errorMessage = 'Insufficient balance. Please add funds to your wallet or reduce the trade amount.'
+        }
+        
+        setSubmitError(errorMessage)
         setSubmitFailureDetails({
           errorType: data?.errorType ?? data?.error_type ?? null,
           rayId: data?.rayId ?? data?.ray_id ?? null,
@@ -856,7 +881,17 @@ function TradeExecutePageInner() {
       setStatusError(null)
       setStatusPhase('submitted')
     } catch (err: any) {
-      setSubmitError(err?.message || 'Network error')
+      let errorMessage = 'Network error - please check your connection and try again'
+      
+      if (err?.message) {
+        if (typeof err.message === 'string') {
+          errorMessage = err.message
+        } else {
+          errorMessage = JSON.stringify(err.message)
+        }
+      }
+      
+      setSubmitError(errorMessage)
     } finally {
       setSubmitLoading(false)
     }

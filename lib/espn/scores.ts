@@ -27,6 +27,7 @@ interface ESPNScoreResult {
   status: 'scheduled' | 'live' | 'final';
   startTime: string;
   displayClock?: string;
+  period?: number;
 }
 
 // Detect sport type from market title
@@ -192,6 +193,7 @@ export async function getESPNScoreForTrade(trade: FeedTrade): Promise<ESPNScoreR
     status: matchingGame.status,
     startTime: matchingGame.startTime,
     displayClock: matchingGame.displayClock,
+    period: matchingGame.period,
   };
 }
 
@@ -242,6 +244,7 @@ export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<s
             status: matchingGame.status,
             startTime: matchingGame.startTime,
             displayClock: matchingGame.displayClock,
+            period: matchingGame.period,
           });
         }
       });
