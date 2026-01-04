@@ -232,7 +232,8 @@ export async function GET(request: NextRequest) {
     )
 
     // If CLOB reported zero open orders, reconcile any stale open/partial rows in our DB.
-    if (Array.isArray(clobOpenOrderIds) && clobOpenOrderIds.length === 0) {
+    const clobOrderIdsArray = Array.isArray(clobOpenOrderIds) ? clobOpenOrderIds : []
+    if (clobOrderIdsArray.length === 0) {
       const reconciled = await reconcileMissingOpenOrders(supabase, ordersTable, trader.id)
       if (reconciled) {
         ordersResult = await fetchOrdersForTrader(supabase, ordersTable, trader.id)
