@@ -16,6 +16,7 @@ import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { MarkTradeClosed } from '@/components/polycopy/mark-trade-closed';
 import { EditCopiedTrade } from '@/components/polycopy/edit-copied-trade';
 import { PhoneNotificationSettings } from '@/components/polycopy/phone-notification-settings';
+import { CancelPremiumModal } from '@/components/polycopy/cancel-premium-modal';
 import {
   Dialog,
   DialogContent,
@@ -152,6 +153,7 @@ function ProfilePageContent() {
   const initialTab = (tabParam === 'settings' || tabParam === 'performance') ? tabParam : 'copied-trades';
   const [activeTab, setActiveTab] = useState<'copied-trades' | 'performance' | 'settings'>(initialTab as any);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   
   // Disconnect wallet confirmation modal state
@@ -1713,14 +1715,22 @@ function ProfilePageContent() {
               <div>
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Premium</h3>
                 {isPremium ? (
-                  <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 space-y-3">
                     <div className="flex items-center gap-2 mb-2">
                       <Crown className="h-5 w-5 text-yellow-600" />
                       <p className="font-semibold text-yellow-900">Premium Member</p>
                     </div>
                     <p className="text-sm text-yellow-700">
-                      You have access to all premium features including Real Copy trading.
+                      You have access to all premium features including Real Copy trading and WhatsApp notifications.
                     </p>
+                    <Button
+                      onClick={() => setShowCancelModal(true)}
+                      variant="outline"
+                      size="sm"
+                      className="w-full sm:w-auto text-slate-600 hover:text-slate-900 border-slate-300"
+                    >
+                      Cancel Subscription
+                    </Button>
                   </div>
                 ) : (
                   <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
@@ -1744,6 +1754,17 @@ function ProfilePageContent() {
 
       {/* Modals */}
       <UpgradeModal open={showUpgradeModal} onOpenChange={setShowUpgradeModal} />
+      <CancelPremiumModal
+        open={showCancelModal}
+        onOpenChange={setShowCancelModal}
+        onCancelConfirmed={() => {
+          // Refresh user data to reflect cancellation
+          fetchUserData()
+          setToastMessage('Subscription canceled. You\'ll have access until the end of your billing period.')
+          setShowToast(true)
+          setTimeout(() => setShowToast(false), 3000)
+        }}
+      />
       <ConnectWalletModal
         open={isConnectModalOpen}
         onOpenChange={setIsConnectModalOpen}
