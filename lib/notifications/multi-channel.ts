@@ -64,7 +64,10 @@ export async function sendMultiChannelNotification(
 
   // Send SMS
   if (user.preferences.sms) {
-    const smsResult = await sendSMS(user.phoneNumber, content.message)
+    const smsResult = await sendSMS({
+      to: user.phoneNumber,
+      message: content.message,
+    })
     result.sms = smsResult
     
     if (smsResult.sent) {
@@ -76,7 +79,10 @@ export async function sendMultiChannelNotification(
 
   // Send WhatsApp
   if (user.preferences.whatsapp) {
-    const whatsappResult = await sendWhatsApp(user.phoneNumber, content.message)
+    const whatsappResult = await sendWhatsApp({
+      to: user.phoneNumber,
+      message: content.message,
+    })
     result.whatsapp = whatsappResult
     
     if (whatsappResult.sent) {
