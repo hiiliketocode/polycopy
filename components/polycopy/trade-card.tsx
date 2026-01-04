@@ -250,24 +250,26 @@ export function TradeCard({
               <p className="text-xs text-slate-500 font-mono truncate">{displayAddress}</p>
             </div>
           </Link>
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            {/* Live Price Badge */}
-            {currentMarketPrice && (
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-50 border border-slate-200">
-                <span className="text-xs font-semibold text-slate-700">${currentMarketPrice.toFixed(2)}</span>
-                {priceDirection !== 'neutral' && (
-                  <span className={`text-xs font-medium ${priceDirection === 'up' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {priceDirection === 'up' ? '↑' : '↓'} {Math.abs(priceChange).toFixed(1)}%
-                  </span>
-                )}
-              </div>
-            )}
-            {/* Live Score/Odds */}
-            {liveScore && (
-              <div className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200">
-                <span className="text-xs font-medium text-blue-700">{liveScore}</span>
-              </div>
-            )}
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            {/* Live Price & Odds Display (Always visible for all users) */}
+            <div className="flex flex-col items-end gap-1">
+              {currentMarketPrice && (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
+                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Price:</span>
+                  <span className="text-xs font-bold text-slate-900">${currentMarketPrice.toFixed(2)}</span>
+                  {priceDirection !== 'neutral' && (
+                    <span className={`text-xs font-semibold flex items-center ${priceDirection === 'up' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {priceDirection === 'up' ? '↑' : '↓'}{Math.abs(priceChange).toFixed(1)}%
+                    </span>
+                  )}
+                </div>
+              )}
+              {liveScore && (
+                <div className="px-2 py-1 rounded bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 shadow-sm">
+                  <span className="text-[10px] font-semibold text-blue-900">{liveScore}</span>
+                </div>
+              )}
+            </div>
             {/* Timestamp & Expand */}
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
@@ -367,21 +369,6 @@ export function TradeCard({
             <>
               <div>
                 <h4 className="text-sm font-semibold text-slate-900 mb-4">Quick Copy</h4>
-
-                <div className="bg-white border border-slate-200 rounded-lg p-2.5 mb-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-slate-600">Current Price</span>
-                    <div className="text-right">
-                      <p className="text-base font-semibold text-slate-900">{formatCurrency(currentPrice)}</p>
-                      <p
-                        className={`text-xs font-medium ${currentPrice >= price ? "text-emerald-600" : "text-red-600"}`}
-                      >
-                        {currentPrice >= price ? "+" : ""}
-                        {(((currentPrice - price) / price) * 100).toFixed(2)}% from entry
-                      </p>
-                    </div>
-                  </div>
-                </div>
 
                 {/* Amount Input */}
                 <div className="space-y-2 mb-4">

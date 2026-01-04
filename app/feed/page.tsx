@@ -271,6 +271,8 @@ export default function FeedPage() {
     // Group trades by condition ID to avoid duplicate API calls
     const uniqueConditionIds = [...new Set(trades.map(t => t.market.conditionId).filter(Boolean))];
     
+    console.log(`📊 Fetching live data for ${uniqueConditionIds.length} markets`);
+    
     // Fetch prices for each market
     await Promise.all(
       uniqueConditionIds.map(async (conditionId) => {
@@ -289,18 +291,48 @@ export default function FeedPage() {
                 const outcome = trade.trade.outcome.toUpperCase();
                 const { outcomes, outcomePrices } = priceData.market;
                 
+                console.log(`✅ Got price for ${trade.market.title.slice(0, 40)}... | Category: ${trade.market.category} | Outcomes:`, outcomes, outcomePrices);
+                
                 // Find the price for this specific outcome
                 const outcomeIndex = outcomes?.findIndex((o: string) => o.toUpperCase() === outcome);
                 if (outcomeIndex !== -1 && outcomePrices && outcomePrices[outcomeIndex]) {
                   const price = Number(outcomePrices[outcomeIndex]);
                   
+                  // Detect sports markets by checking for "vs." or "vs" in title, or common sports patterns
+                  const isSportsMarket = trade.market.title.includes(' vs. ') || 
+                                        trade.market.title.includes(' vs ') ||
+                                        trade.market.category === 'sports' ||
+                                        (outcomes?.length === 2 && 
+                                         (trade.market.title.includes('O/U') || 
+                                          trade.market.title.match(/\w+ (vs\.?|@) \w+/)));
+                  
+                  // Show odds for ALL binary markets (not just sports)
+                  let scoreDisplay: string | undefined;
+                  if (outcomes?.length === 2) {
+                    // Show both outcomes with their probabilities
+                    const prob1 = (Number(outcomePrices[0]) * 100).toFixed(0);
+                    const prob2 = (Number(outcomePrices[1]) * 100).toFixed(0);
+                    
+                    if (isSportsMarket) {
+                      // For sports: show team names
+                      scoreDisplay = `${outcomes[0]}: ${prob1}% | ${outcomes[1]}: ${prob2}%`;
+                      console.log(`🏀 Sports market: ${scoreDisplay}`);
+                    } else {
+                      // For non-sports: show Yes/No or outcome labels
+                      scoreDisplay = `${outcomes[0]}: ${prob1}% | ${outcomes[1]}: ${prob2}%`;
+                      console.log(`📊 Binary market: ${scoreDisplay}`);
+                    }
+                  }
+                  
                   newLiveData.set(conditionId, { 
                     price,
-                    score: trade.market.category === 'sports' ? priceData.market.score : undefined
+                    score: scoreDisplay
                   });
                 }
               }
             }
+          } else {
+            console.warn(`❌ Price API failed for ${conditionId}: ${priceResponse.status}`);
           }
         } catch (error) {
           console.warn(`Failed to fetch live data for ${conditionId}:`, error);
@@ -308,6 +340,7 @@ export default function FeedPage() {
       })
     );
     
+    console.log(`💾 Stored live data for ${newLiveData.size} markets`);
     setLiveMarketData(newLiveData);
   }, []);
 
