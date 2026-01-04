@@ -252,9 +252,9 @@ export function TradeCard({
           </Link>
           <div className="flex flex-col items-end gap-1.5 shrink-0">
             {/* Live Price & Odds Display (Always visible for all users) */}
-            <div className="flex flex-col items-end gap-1">
+            <div className="flex flex-col md:flex-row items-end md:items-center gap-1">
               {currentMarketPrice && (
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
                   <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Price:</span>
                   <span className="text-xs font-bold text-slate-900">${currentMarketPrice.toFixed(2)}</span>
                   {priceDirection !== 'neutral' && (
@@ -265,7 +265,7 @@ export function TradeCard({
                 </div>
               )}
               {liveScore && (
-                <div className="px-2 py-1 rounded bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 shadow-sm">
+                <div className="px-2 py-1 h-7 rounded bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 shadow-sm flex items-center">
                   <span className="text-[10px] font-semibold text-blue-900">{liveScore}</span>
                 </div>
               )}
