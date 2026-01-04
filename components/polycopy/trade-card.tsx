@@ -17,6 +17,7 @@ interface TradeCardProps {
     roi?: number
   }
   market: string
+  marketAvatar?: string
   position: "YES" | "NO"
   action: "Buy" | "Sell"
   price: number
@@ -30,11 +31,20 @@ interface TradeCardProps {
   isExpanded?: boolean
   onToggleExpand?: () => void
   isCopied?: boolean
+  // Trade execution data
+  conditionId?: string
+  tokenId?: string
+  marketSlug?: string
+  // Live data
+  currentMarketPrice?: number
+  liveScore?: string
+  category?: string
 }
 
 export function TradeCard({
   trader,
   market,
+  marketAvatar,
   position,
   action,
   price,
@@ -48,14 +58,35 @@ export function TradeCard({
   isExpanded = false,
   onToggleExpand,
   isCopied = false,
+  conditionId,
+  tokenId,
+  marketSlug,
+  currentMarketPrice,
+  liveScore,
+  category,
 }: TradeCardProps) {
   const [usdAmount, setUsdAmount] = useState<string>("")
   const [autoClose, setAutoClose] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [localCopied, setLocalCopied] = useState(isCopied)
+  const [refreshStatus, setRefreshStatus] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle')
 
-  const currentPrice = price * (0.98 + Math.random() * 0.04) // Within 2% of entry price
+  const formatWallet = (value: string) => {
+    const trimmed = value?.trim() || ""
+    if (trimmed.length <= 10) return trimmed
+    return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`
+  }
+
+  const isUuid = (value?: string | null) =>
+    Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))
+
+  const displayAddress = formatWallet(trader.address || "")
+  const copiedTraderId = isUuid(trader.id) ? trader.id! : null
+
+  const currentPrice = currentMarketPrice || (price * (0.98 + Math.random() * 0.04)) // Use live price or simulate
+  const priceChange = currentMarketPrice ? ((currentMarketPrice - price) / price) * 100 : 0
+  const priceDirection = priceChange > 0 ? 'up' : priceChange < 0 ? 'down' : 'neutral'
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -76,19 +107,119 @@ export function TradeCard({
     return Math.floor(amount / currentPrice)
   }
 
+  const refreshOrders = async () => {
+    setRefreshStatus('refreshing')
+    try {
+      await fetch('/api/polymarket/orders/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      setRefreshStatus('done')
+    } catch (error) {
+      console.warn('Order refresh failed', error)
+      setRefreshStatus('error')
+    } finally {
+      setTimeout(() => setRefreshStatus('idle'), 3000)
+    }
+  }
+
   const handleQuickCopy = async () => {
+    if (!isPremium) {
+      // Non-premium users: just open Polymarket
+      onCopyTrade?.()
+      return
+    }
+
     setIsSubmitting(true)
-    await new Promise((resolve) => setTimeout(resolve, 1500 + Math.random() * 1000))
-    setIsSubmitting(false)
-    setIsSuccess(true)
-    setLocalCopied(true)
+    
+    try {
+      const amount = Number.parseFloat(usdAmount)
+      if (isNaN(amount) || amount <= 0) {
+        alert('Please enter a valid amount')
+        setIsSubmitting(false)
+        return
+      }
 
-    setTimeout(() => {
-      setIsSuccess(false)
-      onToggleExpand?.() // Collapse the dropdown
-    }, 2000)
+      // Calculate contracts from USD amount
+      const contracts = calculateContracts()
+      if (contracts <= 0) {
+        alert('Amount is too small to purchase any contracts')
+        setIsSubmitting(false)
+        return
+      }
 
-    onCopyTrade?.()
+      // If we don't have tokenId, we need to fetch it from conditionId + outcome
+      let finalTokenId = tokenId
+      if (!finalTokenId && conditionId) {
+        try {
+          // Fetch market data to get tokenId
+          const marketResponse = await fetch(`/api/polymarket/market?conditionId=${conditionId}`)
+          if (marketResponse.ok) {
+            const marketData = await marketResponse.json()
+            // Find the token matching the outcome
+            const tokens = marketData.tokens || []
+            const matchingToken = tokens.find((t: any) => 
+              t.outcome?.toUpperCase() === position.toUpperCase()
+            )
+            if (matchingToken?.token_id) {
+              finalTokenId = matchingToken.token_id
+            }
+          }
+        } catch (error) {
+          console.error('Failed to fetch market data:', error)
+        }
+      }
+
+      if (!finalTokenId) {
+        alert('Unable to determine token ID. Please use Advanced mode.')
+        setIsSubmitting(false)
+        return
+      }
+
+      // Execute the trade via API
+      const response = await fetch('/api/polymarket/orders/place', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tokenId: finalTokenId,
+          price: currentPrice,
+          amount: contracts,
+          side: action === 'Buy' ? 'BUY' : 'SELL',
+          orderType: 'IOC',
+          confirm: true,
+          copiedTraderId,
+          copiedTraderWallet: trader.address,
+          copiedTraderUsername: trader.name,
+          marketId: conditionId || (finalTokenId ? finalTokenId.slice(0, 66) : undefined),
+          outcome: position,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || 'Failed to execute trade')
+      }
+
+      // Success!
+      setIsSubmitting(false)
+      setIsSuccess(true)
+      setLocalCopied(true)
+      refreshOrders().catch(() => {
+        /* handled in refreshOrders */
+      })
+
+      setTimeout(() => {
+        setIsSuccess(false)
+        onToggleExpand?.() // Collapse the dropdown
+      }, 3000)
+
+    } catch (error: any) {
+      console.error('Trade execution error:', error)
+      alert(error?.message || 'Failed to execute trade. Please try again.')
+      setIsSubmitting(false)
+    }
   }
 
   const handleCopyTradeClick = () => {
@@ -103,7 +234,7 @@ export function TradeCard({
     <div className="group bg-white border border-slate-200 rounded-xl overflow-hidden transition-all hover:shadow-lg">
       <div className="p-5 md:p-6">
         {/* Header Row */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-start justify-between mb-4 gap-3">
           <Link
             href={`/trader/${trader.id || "1"}`}
             className="flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
@@ -116,20 +247,48 @@ export function TradeCard({
             </Avatar>
             <div className="min-w-0">
               <p className="font-medium text-slate-900 text-sm">{trader.name}</p>
-              <p className="text-xs text-slate-500 font-mono truncate">{trader.address}</p>
+              <p className="text-xs text-slate-500 font-mono truncate">{displayAddress}</p>
             </div>
           </Link>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
-            {isPremium && onToggleExpand && !localCopied && (
-              <button onClick={onToggleExpand} className="text-slate-400 hover:text-slate-600 transition-colors ml-2">
-                {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-              </button>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            {/* Live Price Badge */}
+            {currentMarketPrice && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-50 border border-slate-200">
+                <span className="text-xs font-semibold text-slate-700">${currentMarketPrice.toFixed(2)}</span>
+                {priceDirection !== 'neutral' && (
+                  <span className={`text-xs font-medium ${priceDirection === 'up' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {priceDirection === 'up' ? '↑' : '↓'} {Math.abs(priceChange).toFixed(1)}%
+                  </span>
+                )}
+              </div>
             )}
+            {/* Live Score/Odds */}
+            {liveScore && (
+              <div className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200">
+                <span className="text-xs font-medium text-blue-700">{liveScore}</span>
+              </div>
+            )}
+            {/* Timestamp & Expand */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
+              {isPremium && onToggleExpand && !localCopied && (
+                <button onClick={onToggleExpand} className="text-slate-400 hover:text-slate-600 transition-colors">
+                  {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug mb-4">{market}</h3>
+        <div className="flex items-center gap-3 mb-4">
+          <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
+            <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
+            <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
+              {market.slice(0, 2)}
+            </AvatarFallback>
+          </Avatar>
+          <h3 className="flex-1 text-base md:text-lg font-medium text-slate-900 leading-snug">{market}</h3>
+        </div>
 
         <div className="border border-slate-200 rounded-lg p-4 mb-4 bg-slate-50/50">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 relative">
@@ -295,6 +454,17 @@ export function TradeCard({
                     Advanced
                   </Button>
                 </div>
+                {refreshStatus === 'refreshing' && (
+                  <p className="text-xs text-slate-600 mt-2">Refreshing order status…</p>
+                )}
+                {refreshStatus === 'done' && (
+                  <p className="text-xs text-emerald-600 mt-2">Order submitted. Latest status will appear in Orders shortly.</p>
+                )}
+                {refreshStatus === 'error' && (
+                  <p className="text-xs text-rose-600 mt-2">
+                    Order sent, but status refresh failed. Check the Orders page for updates.
+                  </p>
+                )}
               </div>
             </>
           ) : (

@@ -4,11 +4,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from '@/lib/feature-tier';
+import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { TradeCard } from '@/components/polycopy/trade-card';
 import { MarkTradeCopiedModal } from '@/components/polycopy/mark-trade-copied-modal';
-import { ExecuteTradeModal } from '@/components/polycopy/execute-trade-modal';
 import { EmptyState } from '@/components/polycopy/empty-state';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Activity } from 'lucide-react';
@@ -29,6 +29,7 @@ interface FeedTrade {
     slug: string;
     eventSlug?: string;
     category?: string;
+    avatarUrl?: string;
   };
   trade: {
     side: 'BUY' | 'SELL';
@@ -90,10 +91,12 @@ export default function FeedPage() {
   // Copied trades state
   const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(false);
+  
+  // Live market data (prices and scores)
+  const [liveMarketData, setLiveMarketData] = useState<Map<string, { price: number; score?: string }>>(new Map());
 
   // Modal state
   const [showCopiedModal, setShowCopiedModal] = useState(false);
-  const [showExecuteModal, setShowExecuteModal] = useState(false);
   const [selectedTrade, setSelectedTrade] = useState<FeedTrade | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [expandedTradeIndex, setExpandedTradeIndex] = useState<number | null>(null);
@@ -261,6 +264,47 @@ export default function FeedPage() {
     };
   }, [user]);
 
+  // Fetch live market data (prices and scores)
+  const fetchLiveMarketData = useCallback(async (trades: FeedTrade[]) => {
+    const newLiveData = new Map<string, { price: number; score?: string }>();
+    
+    // Group trades by condition ID to avoid duplicate API calls
+    const uniqueConditionIds = [...new Set(trades.map(t => t.market.conditionId).filter(Boolean))];
+    
+    // Fetch prices for each market
+    await Promise.all(
+      uniqueConditionIds.map(async (conditionId) => {
+        if (!conditionId) return;
+        
+        try {
+          // Fetch current price from Polymarket API
+          const priceResponse = await fetch(`/api/polymarket/price?conditionId=${conditionId}`);
+          if (priceResponse.ok) {
+            const priceData = await priceResponse.json();
+            
+            // Get the trade to determine which outcome we need
+            const trade = trades.find(t => t.market.conditionId === conditionId);
+            if (trade) {
+              const outcome = trade.trade.outcome.toUpperCase();
+              const price = priceData[outcome] || priceData.price;
+              
+              if (price !== undefined) {
+                newLiveData.set(conditionId, { 
+                  price: Number(price),
+                  score: trade.market.category === 'sports' ? priceData.score : undefined
+                });
+              }
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch live data for ${conditionId}:`, error);
+        }
+      })
+    );
+    
+    setLiveMarketData(newLiveData);
+  }, []);
+
   // Fetch feed data
   const fetchFeed = useCallback(async (userOverride?: User) => {
     const currentUser = userOverride || user;
@@ -407,6 +451,7 @@ export default function FeedPage() {
               slug: trade.market_slug || trade.slug || '',
               eventSlug: trade.eventSlug || trade.event_slug || '',
               category: undefined,
+              avatarUrl: extractMarketAvatarUrl(trade) || undefined,
             },
             trade: {
               side: (trade.side || 'BUY').toUpperCase() as 'BUY' | 'SELL',
@@ -461,6 +506,9 @@ export default function FeedPage() {
         setDisplayedTradesCount(35);
         setLatestTradeTimestamp(latestTimestamp);
         setLastFeedFetchAt(Date.now());
+        
+        // Fetch live market data for displayed trades
+        fetchLiveMarketData(formattedTrades.slice(0, 35));
 
         // Calculate today's volume and trade count
         const today = new Date();
@@ -806,10 +854,11 @@ export default function FeedPage() {
                   key={trade.id}
                   trader={{
                     name: trade.trader.displayName,
-                    address: `${trade.trader.wallet.slice(0, 6)}...${trade.trader.wallet.slice(-4)}`,
+                    address: trade.trader.wallet,
                     id: trade.trader.wallet,
                   }}
                   market={trade.market.title}
+                  marketAvatar={trade.market.avatarUrl}
                   position={trade.trade.outcome.toUpperCase() as "YES" | "NO"}
                   action={trade.trade.side === 'BUY' ? 'Buy' : 'Sell'}
                   price={trade.trade.price}
@@ -818,16 +867,18 @@ export default function FeedPage() {
                   timestamp={getRelativeTime(trade.trade.timestamp)}
                   onCopyTrade={() => handleCopyTrade(trade)}
                   onMarkAsCopied={() => handleMarkAsCopied(trade)}
-                  onAdvancedCopy={() => {
-                    setSelectedTrade(trade);
-                    setShowExecuteModal(true);
-                  }}
+                  onAdvancedCopy={() => handleRealCopy(trade)}
                   isPremium={tierHasPremiumAccess(userTier)}
                   isExpanded={expandedTradeIndex === index}
                   onToggleExpand={() => {
                     setExpandedTradeIndex(expandedTradeIndex === index ? null : index);
                   }}
                   isCopied={isTraceCopied(trade)}
+                  conditionId={trade.market.conditionId}
+                  marketSlug={trade.market.slug}
+                  currentMarketPrice={liveMarketData.get(trade.market.conditionId || '')?.price}
+                  liveScore={liveMarketData.get(trade.market.conditionId || '')?.score}
+                  category={trade.market.category}
                 />
               ))}
               
@@ -862,22 +913,6 @@ export default function FeedPage() {
             }}
             isPremium={tierHasPremiumAccess(userTier)}
             onConfirm={handleConfirmCopy}
-          />
-
-          <ExecuteTradeModal
-            open={showExecuteModal}
-            onOpenChange={setShowExecuteModal}
-            trade={{
-              market: selectedTrade.market.title,
-              traderName: selectedTrade.trader.displayName,
-              traderAddress: `${selectedTrade.trader.wallet.slice(0, 6)}...${selectedTrade.trader.wallet.slice(-4)}`,
-              traderAvatar: '',
-              traderId: selectedTrade.trader.wallet,
-              position: selectedTrade.trade.outcome.toUpperCase() as "YES" | "NO",
-              action: selectedTrade.trade.side === 'BUY' ? 'Buy' as const : 'Sell' as const,
-              traderPrice: selectedTrade.trade.price,
-              traderROI: 0,
-            }}
           />
         </>
       )}
