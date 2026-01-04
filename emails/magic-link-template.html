@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in to Polycopy</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 480px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);">
+          <!-- Header with Logo -->
+          <tr>
+            <td align="center" style="padding: 40px 40px 24px 40px;">
+              <!-- Logo: Actual Polycopy logo -->
+              <div style="display: inline-flex; align-items: center; gap: 8px;">
+                <img 
+                  src="https://polycopy.app/logos/polycopy-logo-icon.svg" 
+                  alt="Polycopy" 
+                  width="40" 
+                  height="40" 
+                  style="width: 40px; height: 40px; display: block;"
+                />
+                <span style="font-size: 24px; font-weight: 600; color: #1e293b; letter-spacing: -0.02em;">Polycopy</span>
+              </div>
+            </td>
+          </tr>
+          
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 0 40px 32px 40px;">
+              <h1 style="margin: 0 0 16px 0; font-size: 22px; font-weight: 600; color: #1e293b; text-align: center;">
+                Sign in to Polycopy
+              </h1>
+              <p style="margin: 0 0 24px 0; font-size: 15px; line-height: 24px; color: #64748b; text-align: center;">
+                Click the button below to sign in to your account. This link will expire in 24 hours.
+              </p>
+              
+              <!-- CTA Button -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <a href="{{ .ConfirmationURL }}" style="display: inline-block; padding: 14px 32px; background-color: #FDB022; color: #1e293b; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px;">
+                      Sign in to Polycopy
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Divider -->
+          <tr>
+            <td style="padding: 0 40px;">
+              <div style="border-top: 1px solid #e2e8f0;"></div>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 24px 40px 32px 40px;">
+              <p style="margin: 0 0 8px 0; font-size: 13px; line-height: 20px; color: #94a3b8; text-align: center;">
+                If you didn't request this email, you can safely ignore it.
+              </p>
+              <p style="margin: 0; font-size: 13px; line-height: 20px; color: #94a3b8; text-align: center;">
+                © 2025 Polycopy. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+        
+        <!-- Sub-footer -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 480px;">
+          <tr>
+            <td style="padding: 24px 40px;">
+              <p style="margin: 0; font-size: 12px; line-height: 18px; color: #94a3b8; text-align: center;">
+                Polycopy is a copy trading discovery platform for Polymarket. Trading involves risk. Past performance does not guarantee future results.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+

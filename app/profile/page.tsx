@@ -1758,8 +1758,8 @@ function ProfilePageContent() {
         open={showCancelModal}
         onOpenChange={setShowCancelModal}
         onCancelConfirmed={() => {
-          // Refresh user data to reflect cancellation
-          fetchUserData()
+          // Refresh the page to reflect cancellation
+          router.refresh()
           setToastMessage('Subscription canceled. You\'ll have access until the end of your billing period.')
           setShowToast(true)
           setTimeout(() => setShowToast(false), 3000)
