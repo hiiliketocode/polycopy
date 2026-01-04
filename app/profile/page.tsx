@@ -15,6 +15,7 @@ import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { MarkTradeClosed } from '@/components/polycopy/mark-trade-closed';
 import { EditCopiedTrade } from '@/components/polycopy/edit-copied-trade';
+import { PhoneNotificationSettings } from '@/components/polycopy/phone-notification-settings';
 import {
   Dialog,
   DialogContent,
@@ -1671,26 +1672,37 @@ function ProfilePageContent() {
             <Card className="p-6 space-y-6">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Notifications</h3>
-                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
-                  <div className="flex items-center gap-3">
-                    {notificationsEnabled ? (
-                      <Bell className="h-5 w-5 text-slate-600" />
-                    ) : (
-                      <BellOff className="h-5 w-5 text-slate-400" />
-                    )}
-                    <div>
-                      <p className="font-medium text-slate-900">Email Notifications</p>
-                      <p className="text-sm text-slate-500">Get notified when traders close positions</p>
+                <div className="space-y-4">
+                  {/* Email Notifications */}
+                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                    <div className="flex items-center gap-3">
+                      {notificationsEnabled ? (
+                        <Bell className="h-5 w-5 text-slate-600" />
+                      ) : (
+                        <BellOff className="h-5 w-5 text-slate-400" />
+                      )}
+                      <div>
+                        <p className="font-medium text-slate-900">Email Notifications</p>
+                        <p className="text-sm text-slate-500">Get notified when traders close positions</p>
+                      </div>
                     </div>
+                    <Button
+                      onClick={handleToggleNotifications}
+                      disabled={loadingNotificationPrefs}
+                      variant={notificationsEnabled ? "default" : "outline"}
+                      size="sm"
+                    >
+                      {notificationsEnabled ? 'Enabled' : 'Disabled'}
+                    </Button>
                   </div>
-                  <Button
-                    onClick={handleToggleNotifications}
-                    disabled={loadingNotificationPrefs}
-                    variant={notificationsEnabled ? "default" : "outline"}
-                    size="sm"
-                  >
-                    {notificationsEnabled ? 'Enabled' : 'Disabled'}
-                  </Button>
+
+                  {/* Phone Notifications (SMS/WhatsApp) */}
+                  <div>
+                    <PhoneNotificationSettings
+                      isPremium={isPremium}
+                      onUpgradeClick={() => setShowUpgradeModal(true)}
+                    />
+                  </div>
                 </div>
               </div>
 

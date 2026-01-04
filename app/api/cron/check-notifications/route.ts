@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import TraderClosedPositionEmail from '@/emails/TraderClosedPosition'
 import MarketResolvedEmail from '@/emails/MarketResolved'
+import { sendMultiChannelNotification, type UserContactInfo, type NotificationContent } from '@/lib/notifications/multi-channel'
+import { formatTraderClosedMessage, formatMarketResolvedMessage } from '@/lib/notifications/sms-templates'
 
 // Create service role client
 const supabase = createClient(
@@ -91,10 +93,10 @@ export async function GET(request: NextRequest) {
           continue
         }
         
-        // Get user email
+        // Get user email, phone, and premium status
         const { data: profile } = await supabase
           .from('profiles')
-          .select('email')
+          .select('email, phone_number, phone_verified, is_premium, notification_preferences')
           .eq('id', trade.user_id)
           .single()
         
@@ -165,7 +167,7 @@ export async function GET(request: NextRequest) {
               })
               .eq('id', trade.id)
           } else {
-            console.log(`📧 Sending "Trader Closed" email for trade ${trade.id}`)
+            console.log(`📧 Sending "Trader Closed" notifications for trade ${trade.id}`)
           
           const traderROI = calculateTraderROI(
             statusData.traderAvgPrice,
@@ -173,29 +175,55 @@ export async function GET(request: NextRequest) {
           )
           
           try {
-            if (!resend) {
-              console.error('Resend not configured, skipping email notification')
-              continue
+            // Prepare user contact info
+            const userContact: UserContactInfo = {
+              email: profile.email,
+              phoneNumber: profile.phone_verified ? profile.phone_number : null,
+              isPremium: profile.is_premium || false,
+              preferences: profile.notification_preferences || { email: true, sms: false, whatsapp: false },
             }
-            
-            await resend.emails.send({
-              from: 'Polycopy <notifications@polycopy.app>',
-              to: profile.email,
+
+            // Prepare notification content
+            const notificationContent: NotificationContent = {
               subject: `${trade.trader_username} closed their position`,
-              react: TraderClosedPositionEmail({
-                userName: profile.email.split('@')[0],
+              message: formatTraderClosedMessage({
                 traderUsername: trade.trader_username,
                 marketTitle: trade.market_title,
                 outcome: trade.outcome,
-                userEntryPrice: trade.price_when_copied,
-                traderExitPrice: statusData.currentPrice || 0,
                 userROI: statusData.roi || 0,
                 traderROI,
-                tradeUrl: `${appUrl}/profile`,
-                polymarketUrl: `https://polymarket.com/event/${trade.market_id}`,
-                unsubscribeUrl: `${appUrl}/profile`
-              })
-            })
+              }),
+            }
+            
+            // Send via all configured channels
+            const result = await sendMultiChannelNotification(
+              userContact,
+              notificationContent,
+              async () => {
+                if (!resend) {
+                  throw new Error('Resend not configured')
+                }
+                
+                await resend.emails.send({
+                  from: 'Polycopy <notifications@polycopy.app>',
+                  to: profile.email,
+                  subject: notificationContent.subject,
+                  react: TraderClosedPositionEmail({
+                    userName: profile.email.split('@')[0],
+                    traderUsername: trade.trader_username,
+                    marketTitle: trade.market_title,
+                    outcome: trade.outcome,
+                    userEntryPrice: trade.price_when_copied,
+                    traderExitPrice: statusData.currentPrice || 0,
+                    userROI: statusData.roi || 0,
+                    traderROI,
+                    tradeUrl: `${appUrl}/profile`,
+                    polymarketUrl: `https://polymarket.com/event/${trade.market_id}`,
+                    unsubscribeUrl: `${appUrl}/profile`
+                  })
+                })
+              }
+            )
             
             // Mark notification as sent
             await supabase
@@ -207,10 +235,17 @@ export async function GET(request: NextRequest) {
               .eq('id', trade.id)
             
             notificationsSent++
-            console.log(`✅ Sent "Trader Closed" email for trade ${trade.id} to ${profile.email}`)
-          } catch (emailError: any) {
-            console.error(`❌ Failed to send "Trader Closed" email for trade ${trade.id}:`, {
-              error: emailError.message || emailError,
+            
+            const channelsSent = [
+              result.email.sent && 'email',
+              result.sms.sent && 'SMS',
+              result.whatsapp.sent && 'WhatsApp'
+            ].filter(Boolean).join(', ')
+            
+            console.log(`✅ Sent "Trader Closed" notifications for trade ${trade.id} via: ${channelsSent}`)
+          } catch (notificationError: any) {
+            console.error(`❌ Failed to send "Trader Closed" notifications for trade ${trade.id}:`, {
+              error: notificationError.message || notificationError,
               to: profile.email,
               trade: trade.market_title
             })
@@ -224,7 +259,7 @@ export async function GET(request: NextRequest) {
           newMarketResolved &&
           !trade.notification_resolved_sent
         ) {
-          console.log(`📧 Sending "Market Resolved" email for trade ${trade.id}`)
+          console.log(`📧 Sending "Market Resolved" notifications for trade ${trade.id}`)
           
           // Determine if user won based on resolved outcome
           const resolvedOutcome = statusData.resolvedOutcome
@@ -243,9 +278,9 @@ export async function GET(request: NextRequest) {
             statusData.currentPrice
           )
           
-          // Only send email if we have a resolved outcome
+          // Only send notification if we have a resolved outcome
           if (!resolvedOutcome) {
-            console.log(`⚠️ Skipping email for trade ${trade.id} - no resolved outcome yet`)
+            console.log(`⚠️ Skipping notification for trade ${trade.id} - no resolved outcome yet`)
             // Update market_resolved but don't mark notification as sent
             await supabase
               .from('copied_trades')
@@ -255,28 +290,53 @@ export async function GET(request: NextRequest) {
           }
           
           try {
-            if (!resend) {
-              console.error('Resend not configured, skipping email notification')
-              continue
+            // Prepare user contact info
+            const userContact: UserContactInfo = {
+              email: profile.email,
+              phoneNumber: profile.phone_verified ? profile.phone_number : null,
+              isPremium: profile.is_premium || false,
+              preferences: profile.notification_preferences || { email: true, sms: false, whatsapp: false },
+            }
+
+            // Prepare notification content
+            const notificationContent: NotificationContent = {
+              subject: `Market Resolved: "${trade.market_title}"`,
+              message: formatMarketResolvedMessage({
+                marketTitle: trade.market_title,
+                outcome: resolvedOutcome,
+                didWin: didUserWin,
+                userROI: statusData.roi || 0,
+              }),
             }
             
-            await resend.emails.send({
-              from: 'Polycopy <notifications@polycopy.app>',
-              to: profile.email,
-              subject: `Market Resolved: "${trade.market_title}"`,
-              react: MarketResolvedEmail({
-                userName: profile.email.split('@')[0],
-                marketTitle: trade.market_title,
-                resolvedOutcome: resolvedOutcome,
-                userPosition: trade.outcome,
-                userEntryPrice: trade.price_when_copied,
-                userROI: statusData.roi || 0,
-                betAmount: trade.amount_invested,
-                didUserWin,
-                tradeUrl: `${appUrl}/profile`,
-                unsubscribeUrl: `${appUrl}/profile`
-              })
-            })
+            // Send via all configured channels
+            const result = await sendMultiChannelNotification(
+              userContact,
+              notificationContent,
+              async () => {
+                if (!resend) {
+                  throw new Error('Resend not configured')
+                }
+                
+                await resend.emails.send({
+                  from: 'Polycopy <notifications@polycopy.app>',
+                  to: profile.email,
+                  subject: notificationContent.subject,
+                  react: MarketResolvedEmail({
+                    userName: profile.email.split('@')[0],
+                    marketTitle: trade.market_title,
+                    resolvedOutcome: resolvedOutcome,
+                    userPosition: trade.outcome,
+                    userEntryPrice: trade.price_when_copied,
+                    userROI: statusData.roi || 0,
+                    betAmount: trade.amount_invested,
+                    didUserWin,
+                    tradeUrl: `${appUrl}/profile`,
+                    unsubscribeUrl: `${appUrl}/profile`
+                  })
+                })
+              }
+            )
             
             // Mark notification as sent and market as resolved
             await supabase
@@ -288,14 +348,21 @@ export async function GET(request: NextRequest) {
               .eq('id', trade.id)
             
             notificationsSent++
-            console.log(`✅ Sent "Market Resolved" email for trade ${trade.id} to ${profile.email}`, {
+            
+            const channelsSent = [
+              result.email.sent && 'email',
+              result.sms.sent && 'SMS',
+              result.whatsapp.sent && 'WhatsApp'
+            ].filter(Boolean).join(', ')
+            
+            console.log(`✅ Sent "Market Resolved" notifications for trade ${trade.id} via: ${channelsSent}`, {
               outcome: resolvedOutcome,
               userWon: didUserWin,
               userROI: statusData.roi
             })
-          } catch (emailError: any) {
-            console.error(`❌ Failed to send "Market Resolved" email for trade ${trade.id}:`, {
-              error: emailError.message || emailError,
+          } catch (notificationError: any) {
+            console.error(`❌ Failed to send "Market Resolved" notifications for trade ${trade.id}:`, {
+              error: notificationError.message || notificationError,
               to: profile.email,
               trade: trade.market_title,
               resolvedOutcome

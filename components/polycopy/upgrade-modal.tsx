@@ -23,7 +23,8 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
   const premiumFeatures = [
     "Track unlimited trades",
     "Advanced analytics and insights",
-    "Real-time notifications",
+    "SMS & WhatsApp notifications",
+    "Real-time email notifications",
     "Priority support",
     "Export trade history",
     "Custom alerts and filters",
