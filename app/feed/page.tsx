@@ -636,10 +636,10 @@ export default function FeedPage() {
     setDisplayedTradesCount(newCount);
   };
 
-  // Filter trades by buy/sell AND category
+  // Filter trades to only show BUY trades AND by category
   const filteredAllTrades = allTrades.filter(trade => {
-    if (activeFilter === 'buys' && trade.trade.side !== 'BUY') return false;
-    if (activeFilter === 'sells' && trade.trade.side !== 'SELL') return false;
+    // Only show BUY trades
+    if (trade.trade.side !== 'BUY') return false;
     
     if (activeCategory !== 'all') {
       const tradeCategory = trade.market.category?.toLowerCase();
@@ -802,24 +802,6 @@ export default function FeedPage() {
                 {latestTradeTimestamp ? ` • Latest trade ${getRelativeTime(latestTradeTimestamp)}` : ''}
               </div>
             )}
-
-            {/* Filter Tabs */}
-            <div className="grid grid-cols-3 gap-2 mb-2.5 md:mb-3">
-              {filterTabs.map((tab) => (
-                <button
-                  key={tab.value}
-                  onClick={() => setActiveFilter(tab.value)}
-                  className={cn(
-                    "px-3 py-2.5 rounded-lg font-medium text-xs sm:text-sm whitespace-nowrap transition-all",
-                    activeFilter === tab.value
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50",
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
 
             {/* Category Pills */}
             <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 md:pb-2">
