@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
     // Send SMS with verification code
     const smsResult = await sendVerificationCode(phoneNumber, code)
 
-    if (!smsResult.success) {
+    if (!smsResult.sent) {
       return NextResponse.json(
         { error: smsResult.error || 'Failed to send verification code' },
         { status: 500 }

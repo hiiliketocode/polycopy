@@ -6,10 +6,10 @@ export interface SendSMSParams {
   message: string
 }
 
-export async function sendSMS({ to, message }: SendSMSParams): Promise<{ success: boolean; error?: string; messageId?: string }> {
+export async function sendSMS({ to, message }: SendSMSParams): Promise<{ sent: boolean; error?: string; messageId?: string }> {
   if (!twilioClient || !config.phoneNumber) {
     console.error('❌ Twilio not configured')
-    return { success: false, error: 'SMS service not configured' }
+    return { sent: false, error: 'SMS service not configured' }
   }
 
   try {
@@ -24,19 +24,19 @@ export async function sendSMS({ to, message }: SendSMSParams): Promise<{ success
     console.log(`✅ SMS sent successfully. Message SID: ${result.sid}`)
     
     return {
-      success: true,
+      sent: true,
       messageId: result.sid,
     }
   } catch (error: any) {
     console.error('❌ Error sending SMS:', error.message)
     return {
-      success: false,
+      sent: false,
       error: error.message || 'Failed to send SMS',
     }
   }
 }
 
-export async function sendVerificationCode(to: string, code: string): Promise<{ success: boolean; error?: string }> {
+export async function sendVerificationCode(to: string, code: string): Promise<{ sent: boolean; error?: string }> {
   const message = `Your Polycopy verification code is: ${code}. This code expires in 10 minutes.`
   
   return sendSMS({ to, message })

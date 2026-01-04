@@ -6,10 +6,10 @@ export interface SendWhatsAppParams {
   message: string
 }
 
-export async function sendWhatsApp({ to, message }: SendWhatsAppParams): Promise<{ success: boolean; error?: string; messageId?: string }> {
+export async function sendWhatsApp({ to, message }: SendWhatsAppParams): Promise<{ sent: boolean; error?: string; messageId?: string }> {
   if (!twilioClient || !config.whatsappNumber) {
     console.error('❌ Twilio WhatsApp not configured')
-    return { success: false, error: 'WhatsApp service not configured' }
+    return { sent: false, error: 'WhatsApp service not configured' }
   }
 
   try {
@@ -27,13 +27,13 @@ export async function sendWhatsApp({ to, message }: SendWhatsAppParams): Promise
     console.log(`✅ WhatsApp sent successfully. Message SID: ${result.sid}`)
     
     return {
-      success: true,
+      sent: true,
       messageId: result.sid,
     }
   } catch (error: any) {
     console.error('❌ Error sending WhatsApp:', error.message)
     return {
-      success: false,
+      sent: false,
       error: error.message || 'Failed to send WhatsApp',
     }
   }
