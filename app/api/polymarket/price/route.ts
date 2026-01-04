@@ -37,6 +37,11 @@ export async function GET(request: Request) {
               closed: market.closed,
               outcomePrices: prices,
               outcomes: outcomes,
+              description: market.description,
+              category: market.category,
+              endDateIso: market.end_date_iso || null,
+              gameStartTime: market.game_start_time || market.start_date_iso || null,
+              enableOrderBook: market.enable_order_book || false,
             }
           });
         }

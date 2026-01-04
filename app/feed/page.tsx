@@ -42,7 +42,6 @@ interface FeedTrade {
   };
 }
 
-type FilterTab = "all" | "buys" | "sells";
 type Category = "all" | "politics" | "sports" | "crypto" | "culture" | "finance" | "economics" | "tech" | "weather";
 
 // Helper: Format relative time
@@ -97,7 +96,6 @@ export default function FeedPage() {
   const [userTier, setUserTier] = useState<FeatureTier>('anon');
   const [isPremium, setIsPremium] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [activeCategory, setActiveCategory] = useState<Category>('all');
   
   // Data state
@@ -117,8 +115,8 @@ export default function FeedPage() {
   const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(false);
   
-  // Live market data (prices and scores)
-  const [liveMarketData, setLiveMarketData] = useState<Map<string, { price: number; score?: string; closed?: boolean }>>(new Map());
+  // Live market data (prices, scores, and game times)
+  const [liveMarketData, setLiveMarketData] = useState<Map<string, { price: number; score?: string; closed?: boolean; gameStartTime?: string }>>(new Map());
 
   // Modal state
   const [showCopiedModal, setShowCopiedModal] = useState(false);
@@ -152,12 +150,6 @@ export default function FeedPage() {
     { value: "economics" as Category, label: "Economics" },
     { value: "tech" as Category, label: "Tech" },
     { value: "weather" as Category, label: "Weather" },
-  ];
-
-  const filterTabs: { value: FilterTab; label: string }[] = [
-    { value: "all", label: "All Trades" },
-    { value: "buys", label: "Buys Only" },
-    { value: "sells", label: "Sells Only" },
   ];
 
   // Auth check
@@ -300,9 +292,9 @@ export default function FeedPage() {
     };
   }, [user]);
 
-  // Fetch live market data (prices and scores)
+  // Fetch live market data (prices, scores, and game times)
   const fetchLiveMarketData = useCallback(async (trades: FeedTrade[]) => {
-    const newLiveData = new Map<string, { price: number; score?: string; closed?: boolean }>();
+    const newLiveData = new Map<string, { price: number; score?: string; closed?: boolean; gameStartTime?: string }>();
     
     // Group trades by condition ID to avoid duplicate API calls
     const uniqueConditionIds = [...new Set(trades.map(t => t.market.conditionId).filter(Boolean))];
@@ -325,7 +317,7 @@ export default function FeedPage() {
               const trade = trades.find(t => t.market.conditionId === conditionId);
               if (trade) {
                 const outcome = trade.trade.outcome.toUpperCase();
-                const { outcomes, outcomePrices } = priceData.market;
+                const { outcomes, outcomePrices, gameStartTime, endDateIso, closed } = priceData.market;
                 
                 console.log(`✅ Got price for ${trade.market.title.slice(0, 40)}... | Category: ${trade.market.category} | Outcomes:`, outcomes, outcomePrices);
                 
@@ -342,28 +334,49 @@ export default function FeedPage() {
                                          (trade.market.title.includes('O/U') || 
                                           trade.market.title.match(/\w+ (vs\.?|@) \w+/)));
                   
-                  // Show odds for ALL binary markets (not just sports)
+                  // For sports markets: Show game start time or "LIVE" indicator
                   let scoreDisplay: string | undefined;
-                  if (outcomes?.length === 2) {
-                    // Show both outcomes with their probabilities
+                  if (isSportsMarket && outcomes?.length === 2) {
+                    if (closed) {
+                      // Game finished
+                      scoreDisplay = '🏁 Final';
+                    } else if (gameStartTime) {
+                      // Check if game has started
+                      const startTime = new Date(gameStartTime);
+                      const now = new Date();
+                      
+                      if (now < startTime) {
+                        // Game hasn't started - show start time
+                        const formatter = new Intl.DateTimeFormat('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true,
+                        });
+                        scoreDisplay = `🗓️ ${formatter.format(startTime)}`;
+                      } else {
+                        // Game in progress - show "LIVE" indicator
+                        scoreDisplay = '🔴 LIVE';
+                      }
+                    } else {
+                      // No game time data, show current odds
+                      const prob1 = (Number(outcomePrices[0]) * 100).toFixed(0);
+                      const prob2 = (Number(outcomePrices[1]) * 100).toFixed(0);
+                      scoreDisplay = `${outcomes[0]}: ${prob1}% | ${outcomes[1]}: ${prob2}%`;
+                    }
+                  } else if (outcomes?.length === 2) {
+                    // For non-sports binary markets: show odds
                     const prob1 = (Number(outcomePrices[0]) * 100).toFixed(0);
                     const prob2 = (Number(outcomePrices[1]) * 100).toFixed(0);
-                    
-                    if (isSportsMarket) {
-                      // For sports: show team names
-                      scoreDisplay = `${outcomes[0]}: ${prob1}% | ${outcomes[1]}: ${prob2}%`;
-                      console.log(`🏀 Sports market: ${scoreDisplay}`);
-                    } else {
-                      // For non-sports: show Yes/No or outcome labels
-                      scoreDisplay = `${outcomes[0]}: ${prob1}% | ${outcomes[1]}: ${prob2}%`;
-                      console.log(`📊 Binary market: ${scoreDisplay}`);
-                    }
+                    scoreDisplay = `${outcomes[0]}: ${prob1}% | ${outcomes[1]}: ${prob2}%`;
                   }
                   
                   newLiveData.set(conditionId, { 
                     price,
                     score: scoreDisplay,
-                    closed: Boolean(priceData.market?.closed)
+                    closed: Boolean(closed),
+                    gameStartTime: gameStartTime || endDateIso || undefined,
                   });
                 }
               }
@@ -674,10 +687,10 @@ export default function FeedPage() {
     setDisplayedTradesCount(newCount);
   };
 
-  // Filter trades by buy/sell AND category
+  // Filter trades to only show BUY trades AND by category
   const filteredAllTrades = allTrades.filter(trade => {
-    if (activeFilter === 'buys' && trade.trade.side !== 'BUY') return false;
-    if (activeFilter === 'sells' && trade.trade.side !== 'SELL') return false;
+    // Only show BUY trades
+    if (trade.trade.side !== 'BUY') return false;
     
     if (activeCategory !== 'all') {
       const tradeCategory = trade.market.category?.toLowerCase();
@@ -871,24 +884,6 @@ export default function FeedPage() {
                 {latestTradeTimestamp ? ` • Latest trade ${getRelativeTime(latestTradeTimestamp)}` : ''}
               </div>
             )}
-
-            {/* Filter Tabs */}
-            <div className="grid grid-cols-3 gap-2 mb-2.5 md:mb-3">
-              {filterTabs.map((tab) => (
-                <button
-                  key={tab.value}
-                  onClick={() => setActiveFilter(tab.value)}
-                  className={cn(
-                    "px-3 py-2.5 rounded-lg font-medium text-xs sm:text-sm whitespace-nowrap transition-all",
-                    activeFilter === tab.value
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50",
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
 
             {/* Category Pills */}
             <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 md:pb-2">

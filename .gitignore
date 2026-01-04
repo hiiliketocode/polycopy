@@ -42,3 +42,4 @@ next-env.d.ts
 
 # temp design files (not part of build)
 temp-newdesign/
+temp-redesign/node_modules/
