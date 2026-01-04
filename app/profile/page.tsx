@@ -1,13 +1,47 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
 import { resolveFeatureTier, tierHasPremiumAccess } from '@/lib/feature-tier';
 import type { User } from '@supabase/supabase-js';
-import Header from '../components/Header';
-import ImportWalletModal from '@/components/ImportWalletModal';
+import { Navigation } from '@/components/polycopy/navigation';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
+import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
+import { MarkTradeClosed } from '@/components/polycopy/mark-trade-closed';
+import { EditCopiedTrade } from '@/components/polycopy/edit-copied-trade';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import {
+  TrendingUp,
+  Percent,
+  DollarSign,
+  Crown,
+  Wallet,
+  Copy,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  Edit2,
+  X,
+  Bell,
+  BellOff,
+  Trash2,
+  RotateCcw,
+  Check,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 // Types for copied trades
 interface CopiedTrade {
@@ -29,6 +63,20 @@ interface CopiedTrade {
   roi: number | null;
   user_closed_at: string | null;
   user_exit_price: number | null;
+  resolved_outcome?: string | null;
+}
+
+interface MonthlyROI {
+  month: string;
+  roi: number;
+  trades: number;
+}
+
+interface CategoryDistribution {
+  category: string;
+  count: number;
+  percentage: number;
+  color: string;
 }
 
 // Helper: Format relative time
@@ -53,10 +101,19 @@ function formatRelativeTime(dateString: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function ProfilePage() {
+function formatCompactNumber(value: number) {
+  const absValue = Math.abs(value);
+  if (absValue >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+  if (absValue >= 1000) return `$${(value / 1000).toFixed(1)}K`;
+  return `$${value.toFixed(0)}`;
+}
+
+function ProfilePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isPremium, setIsPremium] = useState(false);
   const [followingCount, setFollowingCount] = useState(0);
   const [loadingStats, setLoadingStats] = useState(true);
   
@@ -66,31 +123,49 @@ export default function ProfilePage() {
   const [disconnectingWallet, setDisconnectingWallet] = useState(false);
   const featureTier = resolveFeatureTier(Boolean(user), profile);
   const hasPremiumAccess = tierHasPremiumAccess(featureTier);
-  const isAdmin = featureTier === 'admin';
   
-  // Display name state
-  const [displayName, setDisplayName] = useState<string>('You');
-
   // Copied trades state
   const [copiedTrades, setCopiedTrades] = useState<CopiedTrade[]>([]);
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(true);
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved'>('all');
-  const [hasAutoRefreshed, setHasAutoRefreshed] = useState(false); // Track if we've done initial auto-refresh
   
-  // Edit trade modal state
+  // Performance tab data
+  const [monthlyROI, setMonthlyROI] = useState<MonthlyROI[]>([]);
+  const [categoryDistribution, setCategoryDistribution] = useState<CategoryDistribution[]>([]);
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
+  const [hoveredMonth, setHoveredMonth] = useState<{ month: string; roi: number; x: number; y: number } | null>(null);
+  
+  // Edit/Close trade modal state
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showCloseModal, setShowCloseModal] = useState(false);
   const [tradeToEdit, setTradeToEdit] = useState<CopiedTrade | null>(null);
   
   // Toast state
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  
+  // UI state - Check for tab query parameter
+  const tabParam = searchParams?.get('tab');
+  const initialTab = (tabParam === 'settings' || tabParam === 'performance') ? tabParam : 'copied-trades';
+  const [activeTab, setActiveTab] = useState<'copied-trades' | 'performance' | 'settings'>(initialTab as any);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  
+  // Disconnect wallet confirmation modal state
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+  const [disconnectConfirmText, setDisconnectConfirmText] = useState('');
   
   // Notification preferences state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loadingNotificationPrefs, setLoadingNotificationPrefs] = useState(false);
+  
+  // Polymarket username state
+  const [polymarketUsername, setPolymarketUsername] = useState<string | null>(null);
+  
+  // Pagination state for copied trades
+  const [tradesToShow, setTradesToShow] = useState(15);
   
   // Refs to prevent re-fetching on tab focus
   const hasLoadedStatsRef = useRef(false);
@@ -113,7 +188,7 @@ export default function ProfilePage() {
         setUser(session.user);
         await ensureProfile(session.user.id, session.user.email!);
       } catch (err) {
-        console.error('❌ Auth error:', err);
+        console.error('Auth error:', err);
         router.push('/login');
       } finally {
         setLoading(false);
@@ -133,7 +208,7 @@ export default function ProfilePage() {
     return () => subscription.unsubscribe();
   }, [router]);
 
-  // Fetch user stats and wallet (only once on mount)
+  // Fetch user stats and wallet
   useEffect(() => {
     if (!user || hasLoadedStatsRef.current) return;
     hasLoadedStatsRef.current = true;
@@ -142,7 +217,6 @@ export default function ProfilePage() {
       setLoadingStats(true);
 
       try {
-        // Count how many traders user is following
         const { count, error } = await supabase
           .from('follows')
           .select('*', { count: 'exact', head: true })
@@ -154,18 +228,34 @@ export default function ProfilePage() {
           setFollowingCount(count || 0);
         }
 
-        // Fetch premium status and trading wallet from profile
-        const { data: profileData, error: profileError} = await supabase
+        const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('is_premium, is_admin, trading_wallet_address, premium_since')
+          .select('is_premium, is_admin, premium_since')
           .eq('id', user.id)
           .single();
 
         if (profileError) {
           console.error('Error fetching profile:', profileError);
         } else {
-          setProfile(profileData);
+          setIsPremium(profileData?.is_premium || false);
         }
+
+        // Fetch wallet from turnkey_wallets table
+        const { data: walletData, error: walletError } = await supabase
+          .from('turnkey_wallets')
+          .select('polymarket_account_address, eoa_address')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (walletError) {
+          console.error('Error fetching wallet:', walletError);
+        }
+
+        // Combine profile and wallet data
+        setProfile({
+          ...profileData,
+          trading_wallet_address: walletData?.polymarket_account_address || walletData?.eoa_address || null
+        });
       } catch (err) {
         console.error('Error fetching stats:', err);
       } finally {
@@ -176,8 +266,34 @@ export default function ProfilePage() {
     fetchStats();
   }, [user]);
 
-  // Fetch copied trades when user is available - using direct Supabase (like follow)
-  // Only fetch once on mount to prevent re-fetching when switching tabs
+  // Fetch Polymarket username when wallet is connected
+  useEffect(() => {
+    if (!profile?.trading_wallet_address) {
+      setPolymarketUsername(null);
+      return;
+    }
+
+    const fetchPolymarketUsername = async () => {
+      try {
+        const response = await fetch(
+          `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${profile.trading_wallet_address}`
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data) && data.length > 0 && data[0].userName) {
+            setPolymarketUsername(data[0].userName);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching Polymarket username:', err);
+      }
+    };
+
+    fetchPolymarketUsername();
+  }, [profile?.trading_wallet_address]);
+
+  // Fetch copied trades with auto-refresh status
   useEffect(() => {
     if (!user || hasLoadedTradesRef.current) return;
     hasLoadedTradesRef.current = true;
@@ -185,7 +301,6 @@ export default function ProfilePage() {
     const fetchCopiedTrades = async () => {
       setLoadingCopiedTrades(true);
       try {
-        // Direct Supabase query - same pattern as follow/unfollow
         const { data: trades, error } = await supabase
           .from('copied_trades')
           .select('*')
@@ -199,88 +314,18 @@ export default function ProfilePage() {
           return;
         }
         
-        console.log('📊 Loaded', trades?.length || 0, 'copied trades from database');
-        
-        // Recalculate ROI for user-closed trades (fixes old wrong ROIs saved before skip logic)
-        const tradesWithCorrectRoi = trades.map(trade => {
+        // Recalculate ROI for user-closed trades
+        const tradesWithCorrectRoi = (trades || []).map(trade => {
           if (trade.user_closed_at && trade.user_exit_price && trade.price_when_copied) {
             const correctRoi = ((trade.user_exit_price - trade.price_when_copied) / trade.price_when_copied) * 100;
-            
-            // Only log and update if ROI is different
-            if (Math.abs(correctRoi - (trade.roi || 0)) > 0.1) {
-              console.log(`🔧 Recalculated ROI for user-closed trade: ${trade.market_title?.substring(0, 30)}`, {
-                entry: trade.price_when_copied,
-                exit: trade.user_exit_price,
-                oldRoi: trade.roi,
-                newRoi: parseFloat(correctRoi.toFixed(2))
-              });
-            }
-            
             return { ...trade, roi: parseFloat(correctRoi.toFixed(2)) };
           }
           return trade;
         });
         
-        // Auto-refresh status for ALL trades (database status may be stale)
-        // The status API will determine if market is resolved or trader exited
-        console.log('🔄 Auto-refreshing status for', tradesWithCorrectRoi?.length || 0, 'trades...');
-        
-        if (tradesWithCorrectRoi && tradesWithCorrectRoi.length > 0) {
-          // Refresh status for ALL trades in parallel
-          const tradesWithFreshStatus = await Promise.all(
-            tradesWithCorrectRoi.map(async (trade) => {
-              // Skip user-closed trades - their status and ROI are locked
-              if (trade.user_closed_at) {
-                console.log(`⏭️ Skipping status refresh for user-closed trade: ${trade.market_title?.substring(0, 30)} (locked at user_exit_price: ${trade.user_exit_price})`);
-                return trade; // Return unchanged
-              }
-              
-              try {
-                // Call status API to get fresh status
-                const statusRes = await fetch(`/api/copied-trades/${trade.id}/status?userId=${user.id}`);
-                if (statusRes.ok) {
-                  const statusData = await statusRes.json();
-                  
-                  // Log the status change
-                  console.log(`📊 Trade ${trade.id} status refreshed:`, {
-                    market: trade.market_title?.substring(0, 40),
-                    oldStatus: {
-                      traderHasPosition: trade.trader_still_has_position,
-                      marketResolved: trade.market_resolved
-                    },
-                    newStatus: {
-                      traderHasPosition: statusData.traderStillHasPosition,
-                      marketResolved: statusData.marketResolved
-                    },
-                    currentPrice: statusData.currentPrice,
-                    roi: statusData.roi
-                  });
-                  
-                  // Merge fresh status data with database trade
-                  return {
-                    ...trade,
-                    trader_still_has_position: statusData.traderStillHasPosition ?? trade.trader_still_has_position,
-                    trader_closed_at: statusData.traderClosedAt ?? trade.trader_closed_at,
-                    market_resolved: statusData.marketResolved ?? trade.market_resolved,
-                    current_price: statusData.currentPrice ?? trade.current_price,
-                    roi: statusData.roi ?? trade.roi,
-                    resolved_outcome: statusData.resolvedOutcome ?? trade.resolved_outcome
-                  };
-                } else {
-                  console.warn(`⚠️ Failed to refresh status for trade ${trade.id}:`, statusRes.status);
-                }
-              } catch (e) {
-                console.error('❌ Failed to refresh status for trade:', trade.id, e);
-              }
-              return trade;
-            })
-          );
-          
-          console.log('✅ Status refresh complete for all trades');
-          setCopiedTrades(tradesWithFreshStatus);
-        } else {
-          setCopiedTrades(trades || []);
-        }
+        // Skip auto-refresh on initial load for better performance
+        // Users can manually click "Refresh Status" if they want updated prices
+        setCopiedTrades(tradesWithCorrectRoi);
       } catch (err) {
         console.error('Error fetching copied trades:', err);
         setCopiedTrades([]);
@@ -292,473 +337,427 @@ export default function ProfilePage() {
     fetchCopiedTrades();
   }, [user]);
 
-  // Fetch notification preferences when user is available (only once on mount)
+  // Process copied trades for performance metrics
+  useEffect(() => {
+    if (copiedTrades.length === 0) {
+      setMonthlyROI([]);
+      setCategoryDistribution([]);
+      return;
+    }
+
+    // Calculate Monthly ROI (last 12 months)
+    const monthlyData: { [key: string]: { pnl: number; invested: number; trades: number } } = {};
+    const now = new Date();
+    
+    // Initialize last 12 months
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthKey = date.toISOString().substring(0, 7); // YYYY-MM
+      monthlyData[monthKey] = { pnl: 0, invested: 0, trades: 0 };
+    }
+
+    // Aggregate trades by month
+    copiedTrades.forEach(trade => {
+      const tradeDate = new Date(trade.copied_at);
+      const monthKey = tradeDate.toISOString().substring(0, 7);
+      
+      if (monthlyData[monthKey]) {
+        const invested = trade.amount_invested || 0;
+        monthlyData[monthKey].invested += invested;
+        monthlyData[monthKey].trades += 1;
+        
+        // Calculate P&L from ROI if available
+        if (trade.roi !== null && trade.roi !== 0) {
+          monthlyData[monthKey].pnl += (invested * trade.roi / 100);
+        }
+      }
+    });
+
+    // Convert to array and calculate cumulative ROI month-over-month
+    const monthlyROIData: MonthlyROI[] = [];
+    let cumulativePnL = 0;
+    let cumulativeInvested = 0;
+    
+    // Calculate overall ROI from all trades for proportional distribution
+    const totalPnL = Object.values(monthlyData).reduce((sum, d) => sum + d.pnl, 0);
+    const totalInvested = Object.values(monthlyData).reduce((sum, d) => sum + d.invested, 0);
+    const overallROI = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
+    
+    Object.keys(monthlyData).sort().forEach(monthKey => {
+      const data = monthlyData[monthKey];
+      
+      // Accumulate investment
+      cumulativeInvested += data.invested;
+      
+      // For trades with ROI data, accumulate actual P&L
+      cumulativePnL += data.pnl;
+      
+      // Calculate ROI - if we have actual P&L, use it; otherwise estimate proportionally
+      let roi = 0;
+      if (cumulativePnL !== 0) {
+        // We have actual P&L data
+        roi = cumulativeInvested > 0 ? (cumulativePnL / cumulativeInvested) * 100 : 0;
+      } else if (overallROI !== 0) {
+        // No P&L yet, but we have overall ROI - show proportional growth
+        const portfolioProgress = totalInvested > 0 ? (cumulativeInvested / totalInvested) : 0;
+        roi = overallROI * portfolioProgress;
+      }
+      
+      const date = new Date(monthKey + '-01');
+      const monthName = date.toLocaleDateString('en-US', { month: 'short' });
+      
+      monthlyROIData.push({
+        month: monthName,
+        roi: roi,
+        trades: data.trades
+      });
+    });
+
+    setMonthlyROI(monthlyROIData);
+
+    // Calculate Category Distribution
+    const categoryMap: { [key: string]: number } = {};
+    const categoryColors: { [key: string]: string } = {
+      'Politics': '#3b82f6',
+      'Sports': '#10b981',
+      'Crypto': '#f59e0b',
+      'Culture': '#ec4899',
+      'Finance': '#8b5cf6',
+      'Economics': '#06b6d4',
+      'Tech': '#6366f1',
+      'Weather': '#14b8a6',
+      'Other': '#64748b'
+    };
+
+    copiedTrades.forEach(trade => {
+      // Categorize based on market title keywords with comprehensive patterns
+      const title = trade.market_title.toLowerCase();
+      let category = 'Other';
+      
+      // Politics - elections, government, political figures
+      if (title.match(/trump|biden|harris|election|president|congress|senate|governor|democrat|republican|political|vote|campaign|white house|administration|policy|parliament|prime minister|cabinet|legislation/)) {
+        category = 'Politics';
+      }
+      // Sports - all major sports and events (including "vs", spread betting terms)
+      else if (title.match(/\svs\s|\svs\.|spread:|o\/u\s|over\/under|moneyline|nfl|nba|nhl|mlb|soccer|football|basketball|baseball|hockey|tennis|golf|mma|ufc|boxing|olympics|world cup|super bowl|playoffs|championship|athlete|team|game|match|score|tournament|league|premier league|fifa|celtics|lakers|warriors|bulls|knicks|heat|nets|bucks|raptors|76ers|sixers|pacers|pistons|cavaliers|hornets|magic|hawks|wizards|spurs|mavericks|rockets|grizzlies|pelicans|thunder|jazz|suns|trail blazers|kings|clippers|nuggets|timberwolves|chiefs|bills|bengals|ravens|browns|steelers|texans|colts|jaguars|titans|broncos|raiders|chargers|cowboys|giants|eagles|commanders|packers|bears|lions|vikings|saints|falcons|panthers|buccaneers|rams|49ers|cardinals|seahawks|yankees|red sox|dodgers|astros|mets|braves|cubs|white sox|red wings|maple leafs|canadiens|bruins|rangers|flyers|penguins|capitals|lightning|panthers|hurricanes|islanders|devils|blue jackets|predators|jets|avalanche|stars|blues|wild|blackhawks|ducks|sharks|kraken|flames|oilers|canucks|golden knights/)) {
+        category = 'Sports';
+      }
+      // Crypto - cryptocurrencies and blockchain
+      else if (title.match(/bitcoin|btc|ethereum|eth|crypto|blockchain|defi|nft|solana|sol|dogecoin|doge|cardano|ada|polkadot|dot|binance|bnb|ripple|xrp|litecoin|ltc|satoshi|mining|wallet|token|coin/)) {
+        category = 'Crypto';
+      }
+      // Culture - entertainment, celebrities, media
+      else if (title.match(/movie|film|music|song|album|artist|celebrity|actor|actress|director|oscar|grammy|emmy|tv show|series|netflix|disney|spotify|concert|tour|premiere|box office|streaming|podcast|youtube|tiktok|instagram|social media|influencer|viral|trending|fashion|style|beauty/)) {
+        category = 'Culture';
+      }
+      // Finance - markets, stocks, companies
+      else if (title.match(/stock|s&p|nasdaq|dow|market|ipo|shares|trading|wall street|investor|portfolio|dividend|earnings|revenue|profit|valuation|acquisition|merger|bankruptcy|sec|ftx|robinhood|index|etf|mutual fund|hedge fund|investment|asset/)) {
+        category = 'Finance';
+      }
+      // Economics - macro indicators, central banks
+      else if (title.match(/gdp|inflation|recession|unemployment|interest rate|fed|federal reserve|central bank|cpi|ppi|economy|economic|jobs report|payroll|consumer|spending|debt|deficit|fiscal|monetary|quantitative easing|treasury|bond|yield/)) {
+        category = 'Economics';
+      }
+      // Tech - technology companies and innovations
+      else if (title.match(/ai|artificial intelligence|tech|technology|apple|google|microsoft|amazon|meta|facebook|tesla|spacex|nvidia|amd|intel|chip|semiconductor|software|hardware|startup|silicon valley|ipo|app|platform|cloud|data|cybersecurity|robot|autonomous|electric vehicle|ev|5g|quantum|vr|ar|metaverse|openai|chatgpt|gpt/)) {
+        category = 'Tech';
+      }
+      // Weather - climate and weather events
+      else if (title.match(/temperature|weather|climate|hurricane|storm|tornado|flood|drought|snow|rain|heat wave|cold|frost|wind|forecast|meteorolog|el nino|la nina|global warming|celsius|fahrenheit/)) {
+        category = 'Weather';
+      }
+      
+      categoryMap[category] = (categoryMap[category] || 0) + 1;
+    });
+
+    // Convert to array with percentages
+    const totalTrades = copiedTrades.length;
+    const categoryData: CategoryDistribution[] = Object.entries(categoryMap)
+      .map(([category, count]) => ({
+        category,
+        count,
+        percentage: (count / totalTrades) * 100,
+        color: categoryColors[category] || '#64748b'
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    setCategoryDistribution(categoryData);
+  }, [copiedTrades]);
+
+  // Fetch notification preferences
   useEffect(() => {
     if (!user || hasLoadedNotificationPrefsRef.current) return;
     hasLoadedNotificationPrefsRef.current = true;
     
     const fetchNotificationPrefs = async () => {
+      setLoadingNotificationPrefs(true);
       try {
-        const response = await fetch(`/api/notification-preferences?userId=${user.id}`, { credentials: 'include' });
-        if (response.ok) {
-          const data = await response.json();
-          setNotificationsEnabled(data.email_notifications_enabled ?? true);
-        } else {
-          console.warn('⚠️ Could not fetch notification preferences:', response.status);
-          // Default to enabled if API fails
-          setNotificationsEnabled(true);
+        const { data, error } = await supabase
+          .from('notification_preferences')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle(); // Use maybeSingle() instead of single() to avoid error when no row exists
+        
+        // Don't log errors from maybeSingle() - it's expected to return no data for new users
+        // Only log if there's a real error with a non-empty message
+        if (error && error.message && error.message.trim() !== '') {
+          console.error('Error fetching notification preferences:', error);
         }
+        
+        if (data) {
+          setNotificationsEnabled(data.trader_closes_position || false);
+        }
+        // If no data and no error, user has no preferences yet - that's fine, use default
       } catch (err) {
         console.error('Error fetching notification preferences:', err);
-        // Default to enabled if API fails
-        setNotificationsEnabled(true);
+      } finally {
+        setLoadingNotificationPrefs(false);
       }
     };
 
     fetchNotificationPrefs();
   }, [user]);
 
-  // Helper function to fetch current price from Polymarket via our proxy API (avoids CORS)
-  const fetchCurrentPriceFromPolymarket = async (trade: CopiedTrade): Promise<{ currentPrice: number | null; roi: number | null }> => {
-    try {
-      console.log(`[Price] Fetching price for: "${trade.market_title?.substring(0, 40)}..."`);
-      
-      // Build query params for our proxy API
-      const params = new URLSearchParams();
-      if (trade.market_id) {
-        if (trade.market_id.startsWith('0x')) {
-          params.set('conditionId', trade.market_id);
-        } else {
-          params.set('slug', trade.market_id);
-        }
-      }
-      if (trade.market_title) {
-        params.set('title', trade.market_title);
-      }
-      
-      // Call our proxy API (server-side, no CORS issues)
-      const response = await fetch(`/api/polymarket/price?${params.toString()}`);
-      const data = await response.json();
-      
-      if (!data.success || !data.market) {
-        console.log(`[Price] Market not found for: "${trade.market_title?.substring(0, 30)}..."`);
-        return { currentPrice: null, roi: null };
-      }
-      
-      const market = data.market;
-      console.log(`[Price] Found market: "${market.question?.substring(0, 40)}..."`);
-      console.log(`[Price] Outcomes: ${JSON.stringify(market.outcomes)}, Prices: ${JSON.stringify(market.outcomePrices)}`);
-      
-      const prices = market.outcomePrices;
-      const outcomes = market.outcomes;
-      
-      if (!prices || !Array.isArray(prices) || prices.length < 2) {
-        console.log(`[Price] Invalid prices array`);
-        return { currentPrice: null, roi: null };
-      }
-      
-      const outcomeUpper = trade.outcome?.toUpperCase();
-      let currentPrice: number | null = null;
-      
-      // Standard YES/NO markets
-      if (outcomeUpper === 'YES') {
-        currentPrice = parseFloat(prices[0]);
-        console.log(`[Price] YES → ${currentPrice}`);
-      } else if (outcomeUpper === 'NO') {
-        currentPrice = parseFloat(prices[1]);
-        console.log(`[Price] NO → ${currentPrice}`);
-      } else if (outcomes && Array.isArray(outcomes)) {
-        // Custom outcomes - find by name (case-insensitive)
-        const outcomeIndex = outcomes.findIndex(
-          (o: string) => o?.toUpperCase() === outcomeUpper
-        );
-        console.log(`[Price] Custom outcome "${outcomeUpper}" → index ${outcomeIndex}`);
-        if (outcomeIndex >= 0 && outcomeIndex < prices.length) {
-          currentPrice = parseFloat(prices[outcomeIndex]);
-        }
-      }
-      
-      // Calculate ROI
-      let roi: number | null = null;
-      if (trade.price_when_copied) {
-        const entryPrice = trade.price_when_copied;
-        
-        // Use user's exit price if they manually closed the trade
-        // Otherwise use current market price
-        const exitPrice = trade.user_exit_price ?? currentPrice;
-        
-        if (entryPrice > 0 && exitPrice !== null) {
-          roi = ((exitPrice - entryPrice) / entryPrice) * 100;
-          roi = parseFloat(roi.toFixed(2));
-        }
-        
-        // Debug logging for user-closed trades
-        if (trade.user_closed_at) {
-          console.log('💰 User-Closed Trade ROI:', {
-            market: trade.market_title?.substring(0, 30),
-            entryPrice,
-            userExitPrice: trade.user_exit_price,
-            currentPrice,
-            exitPriceUsed: exitPrice,
-            calculation: `((${exitPrice} - ${entryPrice}) / ${entryPrice}) * 100`,
-            roi
-          });
-        }
-      }
-      
-      console.log(`[Price] ✓ Final: price=${currentPrice}, exitPrice=${trade.user_exit_price ?? currentPrice}, roi=${roi}%`);
-      return { currentPrice, roi };
-      
-    } catch (err) {
-      console.error('[Price] Error fetching price:', err);
-      return { currentPrice: null, roi: null };
-    }
-  };
-
-  // Auto-refresh trade status once when trades are first loaded (to get current prices)
-  useEffect(() => {
-    // Only auto-refresh once: when trades finish loading and we have some
-    if (hasAutoRefreshed || loadingCopiedTrades || copiedTrades.length === 0 || !user) {
-      return;
-    }
+  // Calculate stats
+  const calculateStats = () => {
+    const openTrades = copiedTrades.filter(t => !t.user_closed_at && !t.market_resolved);
+    const closedTrades = copiedTrades.filter(t => t.user_closed_at || t.market_resolved);
     
-    console.log('🔄 Auto-refreshing prices for', copiedTrades.length, 'trades...');
-    setHasAutoRefreshed(true); // Mark as done FIRST to prevent re-triggering
-    
-    // Auto-refresh prices via our proxy API (avoids CORS)
-    const autoRefreshPrices = async () => {
-      setRefreshingStatus(true);
-      const updatedTrades: CopiedTrade[] = [];
-      let successCount = 0;
-      
-      // Use the trades from this render cycle
-      const tradesToRefresh = [...copiedTrades];
-      
-      for (const trade of tradesToRefresh) {
-        // Skip price refresh for user-closed trades - their ROI is locked
-        if (trade.user_closed_at) {
-          console.log(`⏭️ Skipping user-closed trade: ${trade.market_title?.substring(0, 30)} (user_exit_price: ${trade.user_exit_price})`);
-          updatedTrades.push(trade);
-          continue;
-        }
-        
-        const { currentPrice, roi } = await fetchCurrentPriceFromPolymarket(trade);
-        if (currentPrice !== null) {
-          successCount++;
-        }
-        updatedTrades.push({
-          ...trade,
-          current_price: currentPrice ?? trade.current_price,
-          roi: roi ?? trade.roi,
-        });
+    const totalPnl = closedTrades.reduce((sum, trade) => {
+      if (trade.roi !== null && trade.amount_invested) {
+        return sum + (trade.amount_invested * (trade.roi / 100));
       }
-      
-      setCopiedTrades(updatedTrades);
-      setRefreshingStatus(false);
-      console.log(`✅ Auto-refresh complete: ${successCount}/${tradesToRefresh.length} prices found`);
+      return sum;
+    }, 0);
+    
+    const totalVolume = copiedTrades.reduce((sum, trade) => {
+      return sum + (trade.amount_invested || 0);
+    }, 0);
+    
+    const avgRoi = closedTrades.length > 0
+      ? closedTrades.reduce((sum, trade) => sum + (trade.roi || 0), 0) / closedTrades.length
+      : 0;
+    
+    const winningTrades = closedTrades.filter(t => (t.roi || 0) > 0).length;
+    const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
+    
+    return {
+      totalPnl,
+      roi: avgRoi,
+      totalVolume,
+      winRate: Math.round(winRate),
     };
-    
-    autoRefreshPrices();
-  }, [hasAutoRefreshed, loadingCopiedTrades, copiedTrades, user]);
-
-
-  const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-      router.push('/');
-    } catch (error) {
-      console.error('Error logging out:', error);
-    }
   };
 
+  const userStats = calculateStats();
 
-  // Toggle email notifications
-  const handleToggleNotifications = async () => {
-    if (!user || loadingNotificationPrefs) return;
-    
-    const newValue = !notificationsEnabled;
-    setNotificationsEnabled(newValue);
-    setLoadingNotificationPrefs(true);
-    
-    try {
-      const response = await fetch('/api/notification-preferences', {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          email_notifications_enabled: newValue
-        })
-      });
-      
-      if (response.ok) {
-        setToastMessage(newValue ? 'Email notifications enabled' : 'Email notifications disabled');
-        setToastType('success');
-        setShowToast(true);
-        setTimeout(() => setShowToast(false), 3000);
-      } else {
-        // Revert on error
-        setNotificationsEnabled(!newValue);
-        setToastMessage('Failed to update notification preferences');
-        setToastType('error');
-        setShowToast(true);
-        setTimeout(() => setShowToast(false), 3000);
-      }
-    } catch (err) {
-      console.error('Error updating notification preferences:', err);
-      setNotificationsEnabled(!newValue);
-      setToastMessage('Failed to update notification preferences');
-      setToastType('error');
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
-    } finally {
-      setLoadingNotificationPrefs(false);
-    }
-  };
+  // Filter trades
+  const filteredTrades = copiedTrades.filter(trade => {
+    if (tradeFilter === 'all') return true;
+    if (tradeFilter === 'open') return !trade.user_closed_at && !trade.market_resolved;
+    if (tradeFilter === 'closed') return Boolean(trade.user_closed_at);
+    if (tradeFilter === 'resolved') return Boolean(trade.market_resolved);
+    return true;
+  });
 
-
-  // Show toast helper
-  const showToastMessage = (message: string, type: 'success' | 'error' = 'success') => {
-    setToastMessage(message);
-    setToastType(type);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
-  };
-
-
-  // Refresh status for all copied trades - fetches directly from Polymarket (no auth needed)
-  const handleRefreshStatus = async () => {
-    if (refreshingStatus || copiedTrades.length === 0 || !user) return;
-    
-    setRefreshingStatus(true);
-    let successCount = 0;
-    let errorCount = 0;
-    
-    try {
-      // Refresh prices directly from Polymarket (bypasses auth issues)
-      const updatedTrades: CopiedTrade[] = [];
-      
-      for (let i = 0; i < copiedTrades.length; i++) {
-        const trade = copiedTrades[i];
-        
-        // Skip price refresh for user-closed trades - their ROI is locked
-        if (trade.user_closed_at) {
-          console.log(`⏭️ Skipping user-closed trade: ${trade.market_title?.substring(0, 30)} (user_exit_price: ${trade.user_exit_price})`);
-          updatedTrades.push(trade);
-          continue;
-        }
-        
-        try {
-          const { currentPrice, roi } = await fetchCurrentPriceFromPolymarket(trade);
-          
-          if (currentPrice !== null) {
-            successCount++;
-            updatedTrades.push({
-              ...trade,
-              current_price: currentPrice,
-              roi: roi,
-            });
-          } else {
-            errorCount++;
-            updatedTrades.push(trade); // Keep original trade data
-          }
-        } catch (err: any) {
-          console.error('❌ Price fetch error:', err.message);
-          errorCount++;
-          updatedTrades.push(trade); // Keep original trade data
-        }
-      }
-      
-      // Update state with new data
-      setCopiedTrades(updatedTrades);
-      
-      // Show success/error toast
-      if (errorCount === 0) {
-        showToastMessage(`${successCount} trade${successCount !== 1 ? 's' : ''} updated!`, 'success');
-      } else if (successCount > 0) {
-        showToastMessage(`${successCount} updated, ${errorCount} could not find prices`, 'error');
-      } else {
-        showToastMessage('Could not fetch prices - markets may be resolved', 'error');
-      }
-    } catch (err: any) {
-      console.error('❌ Error in refresh:', err);
-      showToastMessage('Failed to refresh prices: ' + (err.message || 'Unknown error'), 'error');
-    } finally {
-      setRefreshingStatus(false);
-    }
-  };
-
-  // Get trade status display
-  const getTradeStatus = (trade: CopiedTrade) => {
-    if (trade.market_resolved) {
-      return { label: 'Resolved', color: 'text-blue-600', bg: 'bg-blue-50' };
-    }
-    if (trade.user_closed_at) {
-      return { label: 'You Closed', color: 'text-purple-600', bg: 'bg-purple-50' };
-    }
-    if (!trade.trader_still_has_position) {
-      return { label: 'Trader Closed', color: 'text-red-600', bg: 'bg-red-50' };
-    }
-    return { label: 'Open', color: 'text-green-600', bg: 'bg-green-50' };
-  };
-  
-  // Status tooltip state
-  const [showStatusTooltip, setShowStatusTooltip] = useState(false);
-  
-  // Delete trade state
-  const [deletingTradeId, setDeletingTradeId] = useState<string | null>(null);
-  
-  // Mark as Closed state
-  const [showCloseModal, setShowCloseModal] = useState(false);
-  const [tradeToClose, setTradeToClose] = useState<CopiedTrade | null>(null);
-  const [exitPriceCents, setExitPriceCents] = useState('');
-  
-  // Delete trade handler - using direct Supabase (like follow/unfollow)
-  const handleDeleteTrade = async (tradeId: string) => {
+  // Manual refresh status
+  const handleManualRefresh = async () => {
     if (!user) return;
     
-    if (!confirm('Are you sure you want to delete this copied trade? This cannot be undone.')) {
+    setRefreshingStatus(true);
+    
+    try {
+      const tradesWithFreshStatus = await Promise.all(
+        copiedTrades.map(async (trade) => {
+          if (trade.user_closed_at) {
+            return trade;
+          }
+          
+          try {
+            const statusRes = await fetch(`/api/copied-trades/${trade.id}/status?userId=${user.id}`);
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              
+              return {
+                ...trade,
+                trader_still_has_position: statusData.traderStillHasPosition ?? trade.trader_still_has_position,
+                trader_closed_at: statusData.traderClosedAt ?? trade.trader_closed_at,
+                market_resolved: statusData.marketResolved ?? trade.market_resolved,
+                current_price: statusData.currentPrice ?? trade.current_price,
+                roi: statusData.roi ?? trade.roi,
+                resolved_outcome: statusData.resolvedOutcome ?? trade.resolved_outcome
+              };
+            }
+          } catch (e) {
+            console.error('Failed to refresh status for trade:', trade.id, e);
+          }
+          return trade;
+        })
+      );
+      
+      setCopiedTrades(tradesWithFreshStatus);
+      setToastMessage('Positions refreshed!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error refreshing status:', err);
+    } finally {
+      setRefreshingStatus(false);
+    }
+  };
+
+  // Wallet handlers
+  const handleWalletConnect = async (address: string) => {
+    if (!user) return;
+    
+    // The ConnectWalletModal handles the Turnkey import
+    // After successful import, the wallet is already in turnkey_wallets table
+    // We just need to refresh the profile to show the wallet
+    try {
+      // Fetch the updated wallet from turnkey_wallets
+      const { data: walletData, error: walletError } = await supabase
+        .from('turnkey_wallets')
+        .select('polymarket_account_address, eoa_address')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (walletError) throw walletError;
+
+      // Update local profile state with the wallet address
+      setProfile({
+        ...profile,
+        trading_wallet_address: walletData?.polymarket_account_address || walletData?.eoa_address || address
+      });
+      
+      setToastMessage('Wallet connected successfully!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error fetching wallet after connection:', err);
+      // Still update with the address we received
+      setProfile({ ...profile, trading_wallet_address: address });
+    } finally {
+      setIsConnectModalOpen(false);
+    }
+  };
+
+  const handleWalletDisconnect = async () => {
+    if (!user || !profile?.trading_wallet_address) return;
+    
+    // Check if confirmation is correct
+    if (disconnectConfirmText.toUpperCase() !== 'YES') {
       return;
     }
     
-    setDeletingTradeId(tradeId);
+    setDisconnectingWallet(true);
     
     try {
-      // Direct Supabase delete - same pattern as unfollow
+      // Delete from turnkey_wallets table
       const { error } = await supabase
-        .from('copied_trades')
+        .from('turnkey_wallets')
         .delete()
-        .eq('id', tradeId)
-        .eq('user_id', user.id);  // Security: only delete if it's their trade
+        .eq('user_id', user.id);
       
-      if (error) {
-        throw new Error(error.message || 'Failed to delete trade');
-      }
+      if (error) throw error;
       
-      // Remove from local state
-      setCopiedTrades(prev => prev.filter(t => t.id !== tradeId));
-      setExpandedTradeId(null);
-      
-      // Show success toast
-      showToastMessage('Trade deleted successfully', 'success');
-      
-    } catch (err: any) {
-      console.error('Error deleting trade:', err);
-      showToastMessage(err.message || 'Failed to delete trade', 'error');
+      setProfile({ ...profile, trading_wallet_address: null });
+      setShowDisconnectModal(false);
+      setDisconnectConfirmText('');
+      setToastMessage('Wallet disconnected');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error disconnecting wallet:', err);
     } finally {
-      setDeletingTradeId(null);
+      setDisconnectingWallet(false);
     }
   };
 
-  // Handle edit trade
-  const handleEditTrade = async (updatedEntryPrice: number, updatedAmountInvested?: number) => {
-    if (!tradeToEdit || !user) return;
-
+  // Edit trade handler
+  const handleEditTrade = async (entryPrice: number, amountInvested: number | null) => {
+    if (!user || !tradeToEdit) return;
+    
     try {
-      // Update in Supabase
       const { error } = await supabase
         .from('copied_trades')
         .update({
-          price_when_copied: updatedEntryPrice,
-          amount_invested: updatedAmountInvested || null,
+          price_when_copied: entryPrice,
+          amount_invested: amountInvested,
         })
         .eq('id', tradeToEdit.id)
-        .eq('user_id', user.id);  // Security: only update if it's their trade
-
-      if (error) {
-        throw new Error(error.message || 'Failed to update trade');
-      }
-
-      // Recalculate ROI if there's a current price
-      let newRoi = tradeToEdit.roi;
-      if (tradeToEdit.user_closed_at && tradeToEdit.user_exit_price) {
-        // User-closed trade: recalculate ROI with new entry price
-        newRoi = ((tradeToEdit.user_exit_price - updatedEntryPrice) / updatedEntryPrice) * 100;
-      } else if (tradeToEdit.current_price !== null && tradeToEdit.current_price !== undefined) {
-        // Open trade: recalculate ROI with new entry price
-        newRoi = ((tradeToEdit.current_price - updatedEntryPrice) / updatedEntryPrice) * 100;
-      }
-
-      // Update local state
-      setCopiedTrades(prev => 
-        prev.map(t => 
-          t.id === tradeToEdit.id 
-            ? { ...t, price_when_copied: updatedEntryPrice, amount_invested: updatedAmountInvested || null, roi: newRoi }
-            : t
-        )
-      );
-
-      // Show success toast
-      showToastMessage('Trade updated successfully', 'success');
-      
-      // Close modal
-      setShowEditModal(false);
-      setTradeToEdit(null);
-      
-    } catch (err: any) {
-      console.error('Error updating trade:', err);
-      showToastMessage(err.message || 'Failed to update trade', 'error');
-    }
-  };
-
-  // Mark trade as closed handler
-  const handleMarkAsClosed = async () => {
-    if (!tradeToClose || !exitPriceCents || !user) return;
-    
-    const exitPrice = parseFloat(exitPriceCents) / 100; // Convert cents to decimal
-    const entryPrice = tradeToClose.price_when_copied;
-    const finalRoi = entryPrice > 0 ? ((exitPrice - entryPrice) / entryPrice) * 100 : null;
-    
-    // Debug logging
-    console.log('💰 Mark as Closed - ROI Calculation:', {
-      exitPriceCents,
-      exitPriceDecimal: exitPrice,
-      entryPrice,
-      calculation: `((${exitPrice} - ${entryPrice}) / ${entryPrice}) * 100`,
-      finalRoi,
-      finalRoiRounded: finalRoi ? parseFloat(finalRoi.toFixed(2)) : null
-    });
-    
-    try {
-      const { error } = await supabase
-        .from('copied_trades')
-        .update({
-          user_closed_at: new Date().toISOString(),
-          user_exit_price: exitPrice,
-          current_price: exitPrice,
-          roi: finalRoi ? parseFloat(finalRoi.toFixed(2)) : null,
-        })
-        .eq('id', tradeToClose.id)
         .eq('user_id', user.id);
       
       if (error) throw error;
       
       // Update local state
-      setCopiedTrades(trades => trades.map(t => 
-        t.id === tradeToClose.id 
-          ? { 
-              ...t, 
-              user_closed_at: new Date().toISOString(), 
-              user_exit_price: exitPrice, 
-              current_price: exitPrice, 
-              roi: finalRoi 
-            }
-          : t
-      ));
+      setCopiedTrades(trades =>
+        trades.map(t =>
+          t.id === tradeToEdit.id
+            ? { ...t, price_when_copied: entryPrice, amount_invested: amountInvested }
+            : t
+        )
+      );
       
-      setShowCloseModal(false);
-      setTradeToClose(null);
-      setExitPriceCents('');
-      showToastMessage('Trade marked as closed', 'success');
-    } catch (err: any) {
-      console.error('Error marking trade as closed:', err);
-      showToastMessage('Failed to update trade', 'error');
+      setShowEditModal(false);
+      setTradeToEdit(null);
+      setToastMessage('Trade updated!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error updating trade:', err);
     }
   };
 
-  // Unmark trade as closed handler
-  const handleUnmarkAsClosed = async (tradeId: string) => {
+  // Close trade handler
+  const handleCloseTrade = async (exitPrice: number) => {
+    if (!user || !tradeToEdit) return;
+    
+    try {
+      const roi = ((exitPrice - tradeToEdit.price_when_copied) / tradeToEdit.price_when_copied) * 100;
+      
+      const { error } = await supabase
+        .from('copied_trades')
+        .update({
+          user_closed_at: new Date().toISOString(),
+          user_exit_price: exitPrice,
+          roi: parseFloat(roi.toFixed(2)),
+        })
+        .eq('id', tradeToEdit.id)
+        .eq('user_id', user.id);
+      
+      if (error) throw error;
+      
+      // Update local state
+      setCopiedTrades(trades =>
+        trades.map(t =>
+          t.id === tradeToEdit.id
+            ? {
+                ...t,
+                user_closed_at: new Date().toISOString(),
+                user_exit_price: exitPrice,
+                roi: parseFloat(roi.toFixed(2)),
+              }
+            : t
+        )
+      );
+      
+      setShowCloseModal(false);
+      setTradeToEdit(null);
+      setToastMessage('Position closed!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error closing trade:', err);
+    }
+  };
+
+  // Unmark trade as closed
+  const handleUnmarkClosed = async (trade: CopiedTrade) => {
     if (!user) return;
+    
+    if (!confirm('Are you sure you want to reopen this trade? This will clear your exit price and ROI.')) {
+      return;
+    }
     
     try {
       const { error } = await supabase
@@ -766,1096 +765,1078 @@ export default function ProfilePage() {
         .update({
           user_closed_at: null,
           user_exit_price: null,
-          // Keep current_price and roi as they may still be valid
         })
-        .eq('id', tradeId)
+        .eq('id', trade.id)
         .eq('user_id', user.id);
       
       if (error) throw error;
       
       // Update local state
-      setCopiedTrades(trades => trades.map(t => 
-        t.id === tradeId 
-          ? { 
-              ...t, 
-              user_closed_at: null, 
-              user_exit_price: null
-            }
-          : t
-      ));
+      setCopiedTrades(trades =>
+        trades.map(t =>
+          t.id === trade.id
+            ? {
+                ...t,
+                user_closed_at: null,
+                user_exit_price: null,
+              }
+            : t
+        )
+      );
       
-      showToastMessage('Trade reopened', 'success');
-    } catch (err: any) {
-      console.error('Error unmarking trade as closed:', err);
-      showToastMessage('Failed to reopen trade', 'error');
+      setToastMessage('Trade reopened!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error unmarking trade:', err);
     }
   };
 
-  // Truncate text
-  const truncateText = (text: string, maxLength: number) => {
-    if (text.length <= maxLength) return text;
-    return text.slice(0, maxLength) + '...';
+  // Delete trade
+  const handleDeleteTrade = async (trade: CopiedTrade) => {
+    if (!user) return;
+    
+    if (!confirm('Are you sure you want to delete this copied trade? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('copied_trades')
+        .delete()
+        .eq('id', trade.id)
+        .eq('user_id', user.id);
+      
+      if (error) throw error;
+      
+      // Remove from local state
+      setCopiedTrades(trades => trades.filter(t => t.id !== trade.id));
+      
+      setToastMessage('Trade deleted!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error deleting trade:', err);
+    }
   };
 
-  // Filter copied trades
-  const filteredCopiedTrades = copiedTrades.filter((trade) => {
-    switch (tradeFilter) {
-      case 'open':
-        return trade.trader_still_has_position && !trade.market_resolved && !trade.user_closed_at;
-      case 'closed':
-        return (!trade.trader_still_has_position || trade.user_closed_at) && !trade.market_resolved;
-      case 'resolved':
-        return trade.market_resolved;
-      default:
-        return true;
+  // Notification toggle
+  const handleToggleNotifications = async () => {
+    if (!user) return;
+    
+    const newValue = !notificationsEnabled;
+    setNotificationsEnabled(newValue);
+    
+    try {
+      const { error } = await supabase
+        .from('notification_preferences')
+        .upsert({
+          user_id: user.id,
+          trader_closes_position: newValue,
+          market_resolves: newValue,
+        });
+      
+      if (error) throw error;
+      
+      setToastMessage(`Notifications ${newValue ? 'enabled' : 'disabled'}`);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error updating notification preferences:', err);
+      setNotificationsEnabled(!newValue);
     }
-  });
-
+  };
 
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-secondary pb-20 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-primary mx-auto mb-4"></div>
-          <p className="text-tertiary text-lg">Loading profile...</p>
+      <>
+        <Navigation 
+          user={user ? { id: user.id, email: user.email || '' } : null} 
+          isPremium={isPremium}
+          walletAddress={profile?.trading_wallet_address}
+        />
+        <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
+            <p className="text-slate-600 text-lg">Loading...</p>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
-  // This shouldn't be reached if auth check works, but just in case
-  if (!user) {
-    return null;
-  }
+  const truncateAddress = (address: string) => {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      <Header />
-
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-4 md:px-8 py-6 md:py-8">
-        {/* Profile Hero Section - Single Compact Card */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
-            {/* Left Side - Profile Info + Stats */}
-            <div className="flex items-start gap-4">
-              {/* Avatar */}
-              <div className="w-16 h-16 md:w-14 md:h-14 bg-[#FDB022] rounded-full flex items-center justify-center text-[#0F0F0F] font-bold text-2xl md:text-xl shadow-sm flex-shrink-0">
-                {displayName[0].toUpperCase()}
-              </div>
-              <div>
-                {/* Username */}
-                <h1 className="text-xl font-bold text-slate-900 mb-2">{displayName}</h1>
-                {isAdmin && (
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-0.5 text-xs font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200 rounded-full uppercase tracking-wide">
-                      Admin
-                    </span>
-                  </div>
-                )}
-               
-                {/* Stats Section Header */}
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Performance</span>
-                  <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-medium rounded-full">Lifetime</span>
-                </div>
-                
-                {/* Stats Row */}
-                {loadingStats ? (
-                  <div className="flex items-center gap-6">
-                    <div className="h-4 w-16 bg-slate-100 animate-pulse rounded"></div>
-                    <div className="h-4 w-20 bg-slate-100 animate-pulse rounded"></div>
-                    <div className="h-4 w-16 bg-slate-100 animate-pulse rounded"></div>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-                    <Link href="/discover" className="hover:text-[#FDB022] transition-colors">
-                      <span className="font-semibold text-slate-900">{followingCount}</span>
-                      <span className="text-slate-500 ml-1">Following</span>
-                    </Link>
-                    <div>
-                      <span className="font-semibold text-slate-900">{copiedTrades.length}</span>
-                      <span className="text-slate-500 ml-1">Trades Copied</span>
-                    </div>
-                    <div>
-                      <span className={`font-semibold ${
-                        copiedTrades.length === 0 ? 'text-slate-400' :
-                        (() => {
-                          const tradesWithData = copiedTrades.filter(t => 
-                            t.roi !== null && t.roi !== undefined && t.amount_invested
-                          );
-                          if (tradesWithData.length === 0) return 'text-slate-400';
-                          
-                          // Calculate total P&L and total investment (same as trader profile ROI)
-                          const totalInvestment = tradesWithData.reduce((sum, t) => sum + (t.amount_invested || 0), 0);
-                          
-                          if (totalInvestment === 0) return 'text-slate-400';
-                          
-                          // Calculate total P&L: for each trade, P&L = (ROI / 100) × investment
-                          const totalPnL = tradesWithData.reduce((sum, t) => {
-                            const pnl = ((t.roi || 0) / 100) * (t.amount_invested || 0);
-                            return sum + pnl;
-                          }, 0);
-                          
-                          // ROI = (Total P&L / Total Investment) × 100
-                          const roi = (totalPnL / totalInvestment) * 100;
-                          
-                          return roi >= 0 ? 'text-emerald-600' : 'text-red-600';
-                        })()
-                      }`}>
-                        {copiedTrades.length === 0 ? '--' : 
-                          (() => {
-                            const tradesWithData = copiedTrades.filter(t => 
-                              t.roi !== null && t.roi !== undefined && t.amount_invested
-                            );
-                            if (tradesWithData.length === 0) return '--';
-                            
-                            // Calculate total P&L and total investment (same as trader profile ROI)
-                            const totalInvestment = tradesWithData.reduce((sum, t) => sum + (t.amount_invested || 0), 0);
-                            
-                            if (totalInvestment === 0) return '--';
-                            
-                            // Calculate total P&L: for each trade, P&L = (ROI / 100) × investment
-                            const totalPnL = tradesWithData.reduce((sum, t) => {
-                              const pnl = ((t.roi || 0) / 100) * (t.amount_invested || 0);
-                              return sum + pnl;
-                            }, 0);
-                            
-                            // ROI = (Total P&L / Total Investment) × 100
-                            const roi = (totalPnL / totalInvestment) * 100;
-                            
-                            return `${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%`;
-                          })()
-                        }
-                      </span>
-                      <span className="text-slate-500 ml-1">ROI</span>
-                    </div>
-                  </div>
-                )}
-              </div>
+    <>
+      <Navigation 
+        user={user ? { id: user.id, email: user.email || '' } : null} 
+        isPremium={isPremium}
+        walletAddress={profile?.trading_wallet_address}
+      />
+      
+      <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pt-4 md:pt-0 pb-20 md:pb-8">
+        <div className="max-w-[1200px] mx-auto px-4 md:px-6 space-y-6 py-8">
+          {/* Mobile-only Upgrade to Premium button */}
+          {!isPremium && (
+            <div className="lg:hidden">
+              <Button
+                onClick={() => setShowUpgradeModal(true)}
+                className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold shadow-md hover:shadow-lg transition-all"
+              >
+                <Crown className="mr-2 h-4 w-4" />
+                Upgrade to Premium
+              </Button>
             </div>
+          )}
 
-          </div>
-        </div>
+          {/* User Profile Card */}
+          <Card className="bg-white border-slate-200 p-4 sm:p-8">
+            <div className="flex flex-col lg:flex-row lg:items-start gap-6">
+              {/* Left side - Profile info */}
+              <div className="flex flex-col items-center lg:flex-row lg:items-start gap-4 flex-1">
+                <Avatar className="h-20 w-20 bg-gradient-to-br from-yellow-400 to-orange-500">
+                  <AvatarFallback className="text-2xl font-bold text-white bg-transparent">
+                    {user?.email?.charAt(0).toUpperCase() || 'U'}
+                  </AvatarFallback>
+                </Avatar>
 
-          {/* Polymarket Wallet Section - Only show for premium/admin users */}
-          {hasPremiumAccess && (
-          <div className="mb-6">
-            <h2 className="text-label text-slate-400 mb-4">POLYMARKET WALLET</h2>
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-              <div className="flex items-start gap-4">
-                {/* Wallet Icon */}
-                <div className="w-12 h-12 rounded-full bg-[#FDB022]/10 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-6 h-6 text-[#FDB022]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                  </svg>
-                </div>
+                <div className="flex-1 text-center lg:text-left">
+                  <h2 className="text-2xl font-bold text-slate-900 mb-1">
+                    {profile?.trading_wallet_address && polymarketUsername
+                      ? polymarketUsername.startsWith('0x') && polymarketUsername.length > 20
+                        ? truncateAddress(polymarketUsername)
+                        : polymarketUsername
+                      : 'You'}
+                  </h2>
+                  <div className="flex items-center gap-2 text-sm text-slate-600 justify-center lg:justify-start">
+                    <Avatar className="h-9 w-9 ring-2 ring-slate-100">
+                      <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-xs font-semibold">
+                        {polymarketUsername
+                          ? polymarketUsername.charAt(0).toUpperCase()
+                          : user?.email?.charAt(0).toUpperCase() || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span>Following {followingCount} traders</span>
+                  </div>
 
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-1">
-                    Polymarket Wallet
-                  </h3>
-                  <p className="text-sm text-slate-600 mb-4">
-                    {profile?.trading_wallet_address 
-                      ? 'Your wallet is connected and ready to copy trades'
-                      : 'Import your Polymarket wallet to automatically copy trades'
-                    }
-                  </p>
-
-                  {profile?.trading_wallet_address ? (
-                    <>
-                      {/* Connected Wallet Display */}
-                      <div className="bg-slate-50 rounded-lg p-4 mb-4">
-                        <div className="flex items-center gap-2 mb-1">
-                          <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <span className="text-sm font-medium text-slate-700">Wallet Connected</span>
-                        </div>
-                        <p className="font-mono text-sm text-slate-900 break-all">
-                          {profile.trading_wallet_address}
-                        </p>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <button
-                          onClick={() => setShowWalletSetup(true)}
-                          className="px-4 py-2 border border-slate-300 rounded-lg font-medium text-slate-700 hover:bg-slate-50 transition-colors text-sm"
-                        >
-                          Re-import Wallet
-                        </button>
-                        <button
-                          onClick={async () => {
-                            if (!confirm('Are you sure you want to disconnect your wallet? You will need to import it again to copy trades.')) {
-                              return;
-                            }
-                            
-                            setDisconnectingWallet(true);
-                            try {
-                              const { data: { session } } = await supabase.auth.getSession();
-                              
-                              if (!session?.access_token) {
-                                throw new Error('Not authenticated');
-                              }
-
-                              const response = await fetch('/api/wallet/disconnect', {
-                                method: 'POST',
-                                headers: {
-                                  'Authorization': `Bearer ${session.access_token}`
-                                }
-                              });
-
-                              const data = await response.json();
-
-                              if (!response.ok) {
-                                throw new Error(data.error || 'Failed to disconnect wallet');
-                              }
-
-                              showToastMessage('Wallet disconnected successfully', 'success');
-                              window.location.reload();
-                            } catch (error: any) {
-                              console.error('Disconnect error:', error);
-                              showToastMessage(error.message || 'Failed to disconnect wallet', 'error');
-                            } finally {
-                              setDisconnectingWallet(false);
-                            }
-                          }}
-                          disabled={disconnectingWallet}
-                          className="px-4 py-2 border border-red-300 rounded-lg font-medium text-red-700 hover:bg-red-50 transition-colors text-sm disabled:opacity-50"
-                        >
-                          {disconnectingWallet ? 'Disconnecting...' : 'Disconnect Wallet'}
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      {/* Not Connected - Import Button */}
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                        <p className="text-sm text-blue-800">
-                          💡 <strong>How it works:</strong> Import your Polymarket wallet private key. 
-                          We'll securely encrypt and store it to execute trades on your behalf when you copy a trader.
-                        </p>
-                      </div>
-                      
-                      <button
-                        onClick={() => setShowWalletSetup(true)}
-                        className="px-6 py-3 bg-[#FDB022] hover:bg-[#E69E1A] text-black rounded-lg font-semibold transition-colors text-sm"
+                  {profile?.trading_wallet_address && (
+                    <div className="flex items-center gap-2 flex-wrap mt-3 justify-center lg:justify-start">
+                      <code className="text-sm font-mono text-slate-600 bg-slate-50 px-3 py-1 rounded-lg border border-slate-200">
+                        {truncateAddress(profile.trading_wallet_address)}
+                      </code>
+                      <Button
+                        onClick={() => navigator.clipboard.writeText(profile.trading_wallet_address)}
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-slate-500 hover:text-slate-900"
                       >
-                        Import Wallet
-                      </button>
-                    </>
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        onClick={() => setShowDisconnectModal(true)}
+                        disabled={disconnectingWallet}
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-red-500 hover:text-red-700"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+
+                  {!profile?.trading_wallet_address && hasPremiumAccess && (
+                    <Button
+                      onClick={() => setIsConnectModalOpen(true)}
+                      className="mt-3 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold"
+                      size="sm"
+                    >
+                      <Wallet className="mr-2 h-4 w-4" />
+                      Connect Polymarket Wallet
+                    </Button>
                   )}
                 </div>
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* Copied Trades Section */}
-        <div className="mb-6">
-          {/* Header Row - with Refresh button on mobile */}
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-label text-slate-400">
-              COPIED TRADES {!loadingCopiedTrades && `(${filteredCopiedTrades.length})`}
-            </h2>
-            {/* Refresh Status Button - Mobile only */}
-            {!loadingCopiedTrades && copiedTrades.length > 0 && (
-              <button
-                onClick={handleRefreshStatus}
-                disabled={refreshingStatus}
-                className="md:hidden text-sm text-[#FDB022] hover:text-[#E69E1A] font-medium flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
-              >
-                <svg 
-                  className={`w-4 h-4 ${refreshingStatus ? 'animate-spin' : ''}`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                {refreshingStatus ? 'Refreshing...' : 'Refresh'}
-              </button>
-            )}
-          </div>
-
-          {/* Filter Tabs Row */}
-          {!loadingCopiedTrades && copiedTrades.length > 0 && (
-            <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
-              <button
-                onClick={() => setTradeFilter('all')}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-                  tradeFilter === 'all'
-                    ? 'bg-[#FDB022] text-black'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                All Trades
-              </button>
-              <button
-                onClick={() => setTradeFilter('open')}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-                  tradeFilter === 'open'
-                    ? 'bg-[#FDB022] text-black'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                Open
-              </button>
-              <button
-                onClick={() => setTradeFilter('closed')}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-                  tradeFilter === 'closed'
-                    ? 'bg-[#FDB022] text-black'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                Closed
-              </button>
-              <button
-                onClick={() => setTradeFilter('resolved')}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-                  tradeFilter === 'resolved'
-                    ? 'bg-[#FDB022] text-black'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                Resolved
-              </button>
-              
-              {/* Refresh Status Button - Desktop only */}
-              <button
-                onClick={handleRefreshStatus}
-                disabled={refreshingStatus}
-                className="hidden md:flex ml-auto text-sm text-[#FDB022] hover:text-[#E69E1A] font-medium items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
-              >
-                <svg 
-                  className={`w-4 h-4 ${refreshingStatus ? 'animate-spin' : ''}`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                {refreshingStatus ? 'Refreshing...' : 'Refresh Status'}
-              </button>
-            </div>
-          )}
-
-          {loadingCopiedTrades ? (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-              <div className="animate-pulse space-y-4">
-                <div className="h-4 bg-slate-200 rounded w-1/3"></div>
-                <div className="h-12 bg-slate-100 rounded"></div>
-                <div className="h-12 bg-slate-100 rounded"></div>
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 gap-4 md:gap-6 lg:min-w-[400px]">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <TrendingUp className="h-4 w-4 text-slate-500" />
+                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Total P&L</p>
+                  </div>
+                  <p
+                    className={cn(
+                      "text-xl sm:text-2xl font-bold",
+                      userStats.totalPnl >= 0 ? "text-emerald-600" : "text-red-600"
+                    )}
+                  >
+                    {userStats.totalPnl >= 0 ? "+" : ""}
+                    {formatCompactNumber(userStats.totalPnl)}
+                  </p>
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Percent className="h-4 w-4 text-slate-500" />
+                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">ROI</p>
+                  </div>
+                  <p className="text-xl sm:text-2xl font-bold text-emerald-600">
+                    {userStats.roi >= 0 ? '+' : ''}{userStats.roi.toFixed(1)}%
+                  </p>
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <DollarSign className="h-4 w-4 text-slate-500" />
+                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Volume</p>
+                  </div>
+                  <p className="text-xl sm:text-2xl font-bold text-slate-900">
+                    {formatCompactNumber(userStats.totalVolume)}
+                  </p>
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <TrendingUp className="h-4 w-4 text-slate-500" />
+                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Win Rate</p>
+                  </div>
+                  <p className="text-xl sm:text-2xl font-bold text-slate-900">{userStats.winRate}%</p>
+                </div>
               </div>
             </div>
-          ) : copiedTrades.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center">
-              <div className="text-5xl mb-4">📋</div>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">No copied trades yet</h3>
-              <p className="text-slate-500 mb-6">
-                You haven't copied any trades yet. Visit the Feed to start copying from top traders!
-              </p>
-              <Link
-                href="/feed"
-                className="inline-block bg-[#FDB022] hover:bg-[#E69E1A] text-black font-semibold py-2.5 px-6 rounded-lg transition-colors"
-              >
-                Go to Feed
-              </Link>
-            </div>
-          ) : filteredCopiedTrades.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center">
-              <div className="text-5xl mb-4">🔍</div>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">
-                No {tradeFilter} trades
-              </h3>
-              <p className="text-slate-500">
-                Try selecting a different filter to see more trades.
-              </p>
-            </div>
-          ) : (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              {/* Desktop Table */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>
-                      <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">Market</th>
-                      <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">Outcome</th>
-                      <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">Trader</th>
-                      <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">
-                        <div className="relative inline-flex items-center gap-1">
-                          Status
-                          <button
-                            onMouseEnter={() => setShowStatusTooltip(true)}
-                            onMouseLeave={() => setShowStatusTooltip(false)}
-                            className="text-slate-400 hover:text-slate-600 transition-colors"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </button>
-                          {showStatusTooltip && (
-                            <div className="absolute left-0 top-full mt-2 z-50 w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-lg normal-case tracking-normal font-normal">
-                              <p className="font-medium mb-2">Position Status</p>
-                              <ul className="space-y-1.5">
-                                <li className="flex items-center gap-2">
-                                  <span className="text-green-400 font-medium">Open</span>
-                                  <span className="text-slate-300">— Trader still holds position</span>
-                                </li>
-                                <li className="flex items-center gap-2">
-                                  <span className="text-red-400 font-medium">Closed</span>
-                                  <span className="text-slate-300">— Trader exited position</span>
-                                </li>
-                                <li className="flex items-center gap-2">
-                                  <span className="text-blue-400 font-medium">Resolved</span>
-                                  <span className="text-slate-300">— Market has ended</span>
-                                </li>
-                              </ul>
-                              <div className="absolute -top-1.5 left-4 w-3 h-3 bg-slate-800 rotate-45"></div>
-                            </div>
-                          )}
-                        </div>
-                      </th>
-                      <th className="text-right text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">ROI</th>
-                      <th className="text-right text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">Copied</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredCopiedTrades.map((trade) => {
-                      const status = getTradeStatus(trade);
-                      const isExpanded = expandedTradeId === trade.id;
-                      
-                      return (
-                        <React.Fragment key={trade.id}>
-                          {/* Main Row */}
-                          <tr 
-                            className="hover:bg-slate-50 transition-colors cursor-pointer"
-                            onClick={() => setExpandedTradeId(isExpanded ? null : trade.id)}
-                          >
-                            {/* MARKET */}
-                            <td className="px-4 py-3 max-w-[200px]">
-                              <p className="text-sm font-medium text-slate-900 truncate">
-                                {truncateText(trade.market_title, 40)}
-                              </p>
-                            </td>
-                            {/* OUTCOME */}
-                            <td className="px-4 py-3">
-                              <span className={`text-sm font-semibold ${
-                                trade.outcome?.toUpperCase() === 'YES' ? 'text-green-600' :
-                                trade.outcome?.toUpperCase() === 'NO' ? 'text-red-600' :
-                                'text-slate-700'
-                              }`}>
-                                {trade.outcome || '--'}
-                              </span>
-                            </td>
-                            {/* TRADER */}
-                            <td className="px-4 py-3">
+          </Card>
+
+          {/* Tab Navigation */}
+          <div className="flex gap-2 mb-6">
+            <Button
+              onClick={() => setActiveTab('copied-trades')}
+              variant="ghost"
+              className={cn(
+                "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
+                activeTab === 'copied-trades'
+                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+              )}
+            >
+              Copied Trades
+            </Button>
+            <Button
+              onClick={() => setActiveTab('performance')}
+              variant="ghost"
+              className={cn(
+                "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
+                activeTab === 'performance'
+                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+              )}
+            >
+              Performance
+            </Button>
+            <Button
+              onClick={() => setActiveTab('settings')}
+              variant="ghost"
+              className={cn(
+                "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
+                activeTab === 'settings'
+                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+              )}
+            >
+              Settings
+            </Button>
+          </div>
+
+          {/* Tab Content */}
+          {activeTab === 'copied-trades' && (
+            <div className="space-y-4">
+              {/* Filter and Refresh */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex gap-2">
+                  {(['all', 'open', 'closed', 'resolved'] as const).map((filter) => (
+                    <button
+                      key={filter}
+                      onClick={() => setTradeFilter(filter)}
+                      className={cn(
+                        "px-4 py-2 rounded-lg font-medium text-sm transition-all",
+                        tradeFilter === filter
+                          ? "bg-slate-900 text-white"
+                          : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                      )}
+                    >
+                      {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                <Button
+                  onClick={handleManualRefresh}
+                  disabled={refreshingStatus}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                >
+                  <RefreshCw className={cn("h-4 w-4", refreshingStatus && "animate-spin")} />
+                  Refresh Status
+                </Button>
+              </div>
+
+              {/* Trades List */}
+              {loadingCopiedTrades ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <Card key={i} className="p-6 animate-pulse">
+                      <div className="h-4 bg-slate-200 rounded w-3/4 mb-3"></div>
+                      <div className="h-4 bg-slate-200 rounded w-1/2"></div>
+                    </Card>
+                  ))}
+                </div>
+              ) : filteredTrades.length === 0 ? (
+                <Card className="p-8 text-center">
+                  <p className="text-slate-600">No copied trades yet.</p>
+                  <Link href="/discover">
+                    <Button className="mt-4 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900">
+                      Discover Traders
+                    </Button>
+                  </Link>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {filteredTrades.slice(0, tradesToShow).map((trade) => (
+                    <Card key={trade.id} className="p-4 sm:p-6">
+                      <div className="space-y-4">
+                        {/* Trade Header */}
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
                             <Link
                               href={`/trader/${trade.trader_wallet}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-sm text-[#FDB022] hover:underline"
+                              className="text-sm text-slate-600 hover:text-slate-900 font-medium"
                             >
-                              {trade.trader_username 
-                                ? (trade.trader_username.length > 15 
-                                    ? `${trade.trader_username.slice(0, 6)}...${trade.trader_username.slice(-4)}` 
-                                    : trade.trader_username)
-                                : `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`
-                              }
+                              {trade.trader_username || `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
                             </Link>
-                            </td>
-                            {/* STATUS */}
-                            <td className="px-4 py-3">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${status.color} ${status.bg}`}>
-                                {status.label}
-                              </span>
-                            </td>
-                            {/* ROI */}
-                            <td className="px-4 py-3 text-right">
-                              <span className={`text-sm font-semibold ${
-                                trade.roi === null ? 'text-slate-400' :
-                                trade.roi > 0 ? 'text-green-600' :
-                                trade.roi < 0 ? 'text-red-600' : 'text-slate-500'
-                              }`}>
-                                {trade.roi === null ? '--' : `${trade.roi > 0 ? '+' : ''}${trade.roi.toFixed(1)}%`}
-                              </span>
-                            </td>
-                            {/* COPIED */}
-                            <td className="px-4 py-3 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                <span className="text-sm text-slate-500">
-                                  {formatRelativeTime(trade.copied_at)}
-                                </span>
-                                <svg 
-                                  className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} 
-                                  fill="none" 
-                                  stroke="currentColor" 
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                </svg>
-                              </div>
-                            </td>
-                          </tr>
-                          
-                          {/* Expanded Details Row */}
-                          {isExpanded && (
-                            <tr>
-                              <td colSpan={6} className="px-4 pb-4 bg-slate-50 border-t border-slate-100">
-                                <div className="pt-4">
-                                  <p className="text-sm text-slate-700 mb-4">{trade.market_title}</p>
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                                    <div>
-                                      <p className="text-xs text-slate-500 mb-1">Entry Price</p>
-                                      <p className="text-sm font-semibold text-slate-900">
-                                        {trade.price_when_copied !== null && trade.price_when_copied !== undefined
-                                          ? `${Math.round(trade.price_when_copied * 100)}¢`
-                                          : '--'}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-xs text-slate-500 mb-1">
-                                        {trade.user_closed_at ? "Closed Price" : "Current Price"}
-                                      </p>
-                                      <p className="text-sm font-semibold text-slate-900">
-                                        {trade.user_closed_at 
-                                          ? (trade.user_exit_price !== null && trade.user_exit_price !== undefined
-                                              ? `${Math.round(trade.user_exit_price * 100)}¢`
-                                              : '--')
-                                          : (trade.current_price !== null && trade.current_price !== undefined
-                                              ? `${Math.round(trade.current_price * 100)}¢`
-                                              : '--')
-                                        }
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-xs text-slate-500 mb-1">Outcome</p>
-                                      <p className={`text-sm font-semibold ${trade.outcome === 'YES' ? 'text-green-600' : 'text-red-600'}`}>
-                                        {trade.outcome}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-xs text-slate-500 mb-1">Amount Invested</p>
-                                      <p className="text-sm font-semibold text-slate-900">
-                                        {trade.amount_invested !== null ? `$${trade.amount_invested.toFixed(2)}` : '--'}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center justify-between">
-                                    <a
-                                      href={
-                                        trade.market_slug 
-                                          ? `https://polymarket.com/event/${trade.market_slug}`
-                                          : `https://polymarket.com/search?q=${encodeURIComponent(trade.market_title)}`
-                                      }
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-sm text-[#FDB022] hover:underline font-medium"
-                                    >
-                                      View on Polymarket ↗
-                                    </a>
-                                    <div className="flex items-center gap-3">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setTradeToEdit(trade);
-                                          setShowEditModal(true);
-                                        }}
-                                        className="text-xs text-slate-600 hover:text-slate-900 font-medium"
-                                      >
-                                        Edit
-                                      </button>
-                                      {!trade.market_resolved && (
-                                        trade.user_closed_at ? (
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleUnmarkAsClosed(trade.id);
-                                            }}
-                                            className="text-xs text-green-600 hover:text-green-800 font-medium"
-                                          >
-                                            Unmark as Closed
-                                          </button>
-                                        ) : (
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setTradeToClose(trade);
-                                              setShowCloseModal(true);
-                                            }}
-                                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                                          >
-                                            Mark as Closed
-                                          </button>
-                                        )
-                                      )}
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteTrade(trade.id);
-                                        }}
-                                        disabled={deletingTradeId === trade.id}
-                                        className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
-                                      >
-                                        {deletingTradeId === trade.id ? 'Deleting...' : 'Delete Trade'}
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile Cards */}
-              <div className="md:hidden divide-y divide-slate-100">
-                {filteredCopiedTrades.map((trade) => {
-                  const status = getTradeStatus(trade);
-                  const isExpanded = expandedTradeId === trade.id;
-                  
-                  return (
-                    <div key={trade.id}>
-                      <button
-                        onClick={() => setExpandedTradeId(isExpanded ? null : trade.id)}
-                        className="w-full text-left p-4 hover:bg-slate-50 transition-colors"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <p className="text-sm font-medium text-slate-900 flex-1 pr-2">
-                            {truncateText(trade.market_title, 60)}
-                          </p>
-                          <svg 
-                            className={`w-4 h-4 text-slate-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} 
-                            fill="none" 
-                            stroke="currentColor" 
-                            viewBox="0 0 24 24"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </div>
-                        <div className="flex items-center gap-3 text-xs">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded font-medium ${status.color} ${status.bg}`}>
-                            {status.label}
-                          </span>
-                          <span className="text-slate-400">•</span>
-                          <span className={`font-semibold ${
-                            trade.outcome?.toUpperCase() === 'YES' ? 'text-green-600' :
-                            trade.outcome?.toUpperCase() === 'NO' ? 'text-red-600' :
-                            'text-slate-700'
-                          }`}>
-                            {trade.outcome || '--'}
-                          </span>
-                          <span className="text-slate-400">•</span>
-                          <span className={`font-semibold ${
-                            trade.roi === null ? 'text-slate-400' :
-                            trade.roi > 0 ? 'text-green-600' :
-                            trade.roi < 0 ? 'text-red-600' : 'text-slate-500'
-                          }`}>
-                            {trade.roi === null ? '--' : `${trade.roi > 0 ? '+' : ''}${trade.roi.toFixed(1)}%`}
-                          </span>
-                          <span className="text-slate-400">•</span>
-                          <span className="text-slate-500">{formatRelativeTime(trade.copied_at)}</span>
-                        </div>
-                      </button>
-                      
-                      {/* Expanded Details - Mobile */}
-                      {isExpanded && (
-                        <div className="px-4 pb-4 bg-slate-50 border-t border-slate-100">
-                          <div className="pt-4 space-y-3">
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <p className="text-xs text-slate-500">Entry Price</p>
-                                <p className="text-sm font-semibold text-slate-900">
-                                  {trade.price_when_copied !== null && trade.price_when_copied !== undefined
-                                    ? `${Math.round(trade.price_when_copied * 100)}¢`
-                                    : '--'}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-slate-500">
-                                  {trade.user_closed_at ? "Closed Price" : "Current Price"}
-                                </p>
-                                <p className="text-sm font-semibold text-slate-900">
-                                  {trade.user_closed_at 
-                                    ? (trade.user_exit_price !== null && trade.user_exit_price !== undefined
-                                        ? `${Math.round(trade.user_exit_price * 100)}¢`
-                                        : '--')
-                                    : (trade.current_price !== null && trade.current_price !== undefined
-                                        ? `${Math.round(trade.current_price * 100)}¢`
-                                        : '--')
-                                  }
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-slate-500">Outcome</p>
-                                <p className={`text-sm font-semibold ${trade.outcome === 'YES' ? 'text-green-600' : 'text-red-600'}`}>
-                                  {trade.outcome}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-slate-500">Amount Invested</p>
-                                <p className="text-sm font-semibold text-slate-900">
-                                  {trade.amount_invested !== null ? `$${trade.amount_invested.toFixed(2)}` : '--'}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="pt-2 flex items-center justify-between">
-                              <a
-                                href={
-                                  trade.market_slug 
-                                    ? `https://polymarket.com/event/${trade.market_slug}`
-                                    : `https://polymarket.com/search?q=${encodeURIComponent(trade.market_title)}`
-                                }
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-sm text-[#FDB022] hover:underline font-medium"
-                              >
-                                View on Polymarket ↗
-                              </a>
-                              <div className="flex items-center gap-3">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setTradeToEdit(trade);
-                                    setShowEditModal(true);
-                                  }}
-                                  className="text-xs text-slate-600 hover:text-slate-900 font-medium"
-                                >
-                                  Edit
-                                </button>
-                                {!trade.market_resolved && (
-                                  trade.user_closed_at ? (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUnmarkAsClosed(trade.id);
-                                      }}
-                                      className="text-xs text-green-600 hover:text-green-800 font-medium"
-                                    >
-                                      Unmark as Closed
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setTradeToClose(trade);
-                                        setShowCloseModal(true);
-                                      }}
-                                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                                    >
-                                      Mark as Closed
-                                    </button>
-                                  )
-                                )}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteTrade(trade.id);
-                                  }}
-                                  disabled={deletingTradeId === trade.id}
-                                  className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
-                                >
-                                  {deletingTradeId === trade.id ? 'Deleting...' : 'Delete Trade'}
-                                </button>
-                              </div>
-                            </div>
+                            <h3 className="font-medium text-slate-900 mt-1">{trade.market_title}</h3>
+                            <p className="text-xs text-slate-500 mt-1">{formatRelativeTime(trade.copied_at)}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              className={cn(
+                                "font-semibold",
+                                trade.outcome === 'YES'
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : "bg-red-50 text-red-700 border-red-200"
+                              )}
+                            >
+                              {trade.outcome}
+                            </Badge>
+                            <button
+                              onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
+                              className="text-slate-400 hover:text-slate-600"
+                            >
+                              {expandedTradeId === trade.id ? (
+                                <ChevronUp className="h-5 w-5" />
+                              ) : (
+                                <ChevronDown className="h-5 w-5" />
+                              )}
+                            </button>
                           </div>
                         </div>
-                      )}
+
+                        {/* Stats Grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 rounded-lg p-3">
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Entry</p>
+                            <p className="font-semibold text-slate-900">${trade.price_when_copied.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Current</p>
+                            <p className="font-semibold text-slate-900">
+                              ${trade.current_price?.toFixed(2) || trade.price_when_copied.toFixed(2)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Amount</p>
+                            <p className="font-semibold text-slate-900">
+                              ${trade.amount_invested?.toFixed(0) || '—'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">ROI</p>
+                            <p className={cn(
+                              "font-semibold",
+                              (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
+                            )}>
+                              {(trade.roi || 0) >= 0 ? '+' : ''}{(trade.roi || 0).toFixed(1)}%
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Status Badges */}
+                        <div className="flex flex-wrap gap-2">
+                          {trade.market_resolved && (
+                            <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
+                              Market Resolved: {trade.resolved_outcome || 'Unknown'}
+                            </Badge>
+                          )}
+                          {trade.user_closed_at && (
+                            <Badge variant="secondary" className="bg-gray-50 text-gray-700 border-gray-200">
+                              You Closed
+                            </Badge>
+                          )}
+                          {!trade.trader_still_has_position && !trade.market_resolved && !trade.user_closed_at && (
+                            <Badge variant="secondary" className="bg-orange-50 text-orange-700 border-orange-200">
+                              Trader Exited
+                            </Badge>
+                          )}
+                        </div>
+
+                        {/* Expanded Details */}
+                        {expandedTradeId === trade.id && (
+                          <div className="space-y-4 pt-4 border-t border-slate-200">
+                            {/* Additional Details in 2x2 Grid */}
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">Current Price</p>
+                                <p className="font-semibold text-slate-900">
+                                  ${trade.current_price?.toFixed(2) || trade.price_when_copied.toFixed(2)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">Shares</p>
+                                <p className="font-semibold text-slate-900">
+                                  {trade.amount_invested && trade.price_when_copied 
+                                    ? Math.round(trade.amount_invested / trade.price_when_copied)
+                                    : '—'}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">Amount Invested</p>
+                                <p className="font-semibold text-slate-900">
+                                  ${trade.amount_invested?.toFixed(0) || '—'}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">P&L</p>
+                                <p className={cn(
+                                  "font-semibold",
+                                  (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
+                                )}>
+                                  {trade.amount_invested && trade.roi
+                                    ? `${(trade.roi >= 0 ? '+' : '')}$${((trade.amount_invested * trade.roi) / 100).toFixed(0)}`
+                                    : '—'}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex gap-2">
+                              {/* Open trades: Mark as Closed, Edit, Delete */}
+                              {!trade.user_closed_at && !trade.market_resolved && (
+                                <>
+                                  <Button
+                                    onClick={() => {
+                                      setTradeToEdit(trade);
+                                      setShowCloseModal(true);
+                                    }}
+                                    variant="outline"
+                                    size="default"
+                                    className="flex-1 border-blue-600 text-blue-600 hover:bg-blue-50 gap-2"
+                                  >
+                                    <Check className="h-4 w-4" />
+                                    Mark as Closed
+                                  </Button>
+                                  <Button
+                                    onClick={() => {
+                                      setTradeToEdit(trade);
+                                      setShowEditModal(true);
+                                    }}
+                                    variant="outline"
+                                    size="default"
+                                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                  >
+                                    <Edit2 className="h-4 w-4" />
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleDeleteTrade(trade)}
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                                  >
+                                    <Trash2 className="h-5 w-5" />
+                                  </Button>
+                                </>
+                              )}
+                              
+                              {/* User-closed trades: Edit, Unmark as Closed, Delete */}
+                              {trade.user_closed_at && (
+                                <>
+                                  <Button
+                                    onClick={() => {
+                                      setTradeToEdit(trade);
+                                      setShowEditModal(true);
+                                    }}
+                                    variant="outline"
+                                    size="default"
+                                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                  >
+                                    <Edit2 className="h-4 w-4" />
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleUnmarkClosed(trade)}
+                                    variant="outline"
+                                    size="default"
+                                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                    Unmark as Closed
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleDeleteTrade(trade)}
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                                  >
+                                    <Trash2 className="h-5 w-5" />
+                                  </Button>
+                                </>
+                              )}
+                              
+                              {/* Market-resolved trades: Edit, Delete */}
+                              {trade.market_resolved && !trade.user_closed_at && (
+                                <>
+                                  <Button
+                                    onClick={() => {
+                                      setTradeToEdit(trade);
+                                      setShowEditModal(true);
+                                    }}
+                                    variant="outline"
+                                    size="default"
+                                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                  >
+                                    <Edit2 className="h-4 w-4" />
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleDeleteTrade(trade)}
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                                  >
+                                    <Trash2 className="h-5 w-5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  ))}
+                  
+                  {/* View More Button */}
+                  {filteredTrades.length > tradesToShow && (
+                    <div className="flex justify-center pt-4">
+                      <Button
+                        onClick={() => setTradesToShow(prev => prev + 15)}
+                        variant="outline"
+                        className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                      >
+                        View More Copied Trades ({filteredTrades.length - tradesToShow} remaining)
+                      </Button>
                     </div>
-                  );
-                })}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
-        </div>
 
-        {/* Settings Section */}
-        <div className="mb-6">
-          <h2 className="text-label text-slate-400 mb-4">SETTINGS</h2>
-          
-          {/* Email Notifications */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-4">
-            <div className="flex items-center justify-between p-4">
-              <div className="flex items-center gap-3">
-                {/* Bell icon */}
-                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
-                  <svg className="w-5 h-5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                  </svg>
-                </div>
-                
-                <div>
-                  <p className="font-semibold text-slate-900">Email Notifications</p>
-                  <p className="text-small text-slate-500">Get notified when traders close positions or markets resolve</p>
-                </div>
-              </div>
-              
-              {/* Toggle Switch */}
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notificationsEnabled}
-                  onChange={handleToggleNotifications}
-                  disabled={loadingNotificationPrefs}
-                  className="sr-only peer"
-                />
-                <div className={`w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-yellow-300/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#FDB022] ${loadingNotificationPrefs ? 'opacity-50' : ''}`}></div>
-              </label>
-            </div>
-          </div>
-
-          {/* Polymarket Wallet - Only show for premium/admin users */}
-          {hasPremiumAccess && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-4">
-              <div className="flex items-center justify-between p-4">
-                <div className="flex items-center gap-3">
-                  {/* Wallet icon */}
-                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
-                    <svg className="w-5 h-5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+          {activeTab === 'performance' && (
+            <div className="space-y-6">
+              {/* Data Context Banner */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 mt-0.5">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
-                  
                   <div className="flex-1">
-                    <p className="font-semibold text-slate-900">Import Polymarket Wallet</p>
-                    <p className="text-small text-slate-500">
-                      {profile?.trading_wallet_address 
-                        ? `Connected: ${profile.trading_wallet_address.slice(0, 6)}...${profile.trading_wallet_address.slice(-4)}`
-                        : 'Connect your wallet to copy trades automatically'
-                      }
+                    <h4 className="text-sm font-semibold text-blue-900 mb-1">Recent Performance Analysis</h4>
+                    <p className="text-sm text-blue-800">
+                      Performance metrics are based on your most recent 100 trades. This provides the most relevant and up-to-date view of your trading performance.
                     </p>
                   </div>
                 </div>
-
-                {/* Import/Re-import Button */}
-                <button
-                  onClick={() => setShowWalletSetup(true)}
-                  className="px-4 py-2 bg-[#FDB022] hover:bg-[#E69E1A] text-black rounded-lg font-medium transition-colors text-sm whitespace-nowrap"
-                >
-                  {profile?.trading_wallet_address ? 'Re-import' : 'Import Wallet'}
-                </button>
               </div>
+
+              {/* ROI Over Time Chart */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-6">ROI Over Time (Last 12 Months)</h3>
+                {monthlyROI.length > 0 ? (
+                  <div className="relative h-64">
+                    {/* Y-axis labels */}
+                    <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-xs text-slate-500">
+                      {(() => {
+                        const maxROI = Math.max(...monthlyROI.map(m => m.roi), 5);
+                        const minROI = Math.min(...monthlyROI.map(m => m.roi), -5);
+                        // Ensure at least a 10% range for visibility
+                        const range = Math.max(maxROI - minROI, 10);
+                        const actualMax = maxROI + (10 - (maxROI - minROI)) / 2;
+                        const actualMin = minROI - (10 - (maxROI - minROI)) / 2;
+                        const step = (actualMax - actualMin) / 4;
+                        return [actualMax, actualMax - step, actualMax - 2 * step, actualMax - 3 * step, actualMin].map((val, i) => (
+                          <span key={i}>{val.toFixed(1)}%</span>
+                        ));
+                      })()}
+                    </div>
+                    
+                    {/* Chart area */}
+                    <div className="ml-12 h-full border-l border-b border-slate-200 relative">
+                      <svg className="w-full h-full" viewBox="0 0 600 200" preserveAspectRatio="xMidYMid meet">
+                        <polyline
+                          points={monthlyROI.map((m, i) => {
+                            const x = (i / (monthlyROI.length - 1)) * 600;
+                            const maxROI = Math.max(...monthlyROI.map(m => m.roi), 5);
+                            const minROI = Math.min(...monthlyROI.map(m => m.roi), -5);
+                            const range = Math.max(maxROI - minROI, 10);
+                            const actualMax = maxROI + (10 - (maxROI - minROI)) / 2;
+                            const actualMin = minROI - (10 - (maxROI - minROI)) / 2;
+                            const y = 200 - ((m.roi - actualMin) / (actualMax - actualMin)) * 200;
+                            return `${x},${y}`;
+                          }).join(' ')}
+                          fill="none"
+                          stroke="#64748b"
+                          strokeWidth="2"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                        {/* Data points */}
+                        {monthlyROI.map((m, i) => {
+                          const x = (i / (monthlyROI.length - 1)) * 600;
+                          const maxROI = Math.max(...monthlyROI.map(m => m.roi), 5);
+                          const minROI = Math.min(...monthlyROI.map(m => m.roi), -5);
+                          const range = Math.max(maxROI - minROI, 10);
+                          const actualMax = maxROI + (10 - (maxROI - minROI)) / 2;
+                          const actualMin = minROI - (10 - (maxROI - minROI)) / 2;
+                          const y = 200 - ((m.roi - actualMin) / (actualMax - actualMin)) * 200;
+                          const isNegative = m.roi < 0;
+                          return (
+                            <circle
+                              key={i}
+                              cx={x}
+                              cy={y}
+                              r="5"
+                              fill={isNegative ? '#ef4444' : '#10b981'}
+                              className="cursor-pointer hover:r-6 transition-all"
+                              onMouseEnter={() => setHoveredMonth({ month: m.month, roi: m.roi, x, y })}
+                              onMouseLeave={() => setHoveredMonth(null)}
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          );
+                        })}
+                      </svg>
+                      
+                      {/* Tooltip for chart points */}
+                      {hoveredMonth && (
+                        <div 
+                          className="absolute bg-slate-900 text-white rounded-lg shadow-lg p-3 pointer-events-none z-10 text-sm"
+                          style={{
+                            left: `${(hoveredMonth.x / 600) * 100}%`,
+                            top: `${(hoveredMonth.y / 200) * 100}%`,
+                            transform: 'translate(-50%, -120%)'
+                          }}
+                        >
+                          <div className="font-semibold">{hoveredMonth.month}</div>
+                          <div className={hoveredMonth.roi >= 0 ? 'text-green-400' : 'text-red-400'}>
+                            {hoveredMonth.roi >= 0 ? '+' : ''}{hoveredMonth.roi.toFixed(2)}%
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* X-axis labels */}
+                      <div className="absolute -bottom-6 left-0 right-0 flex justify-between text-xs text-slate-500">
+                        {monthlyROI.map((m, i) => (
+                          <span key={i}>{m.month}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-64 flex items-center justify-center text-slate-500">
+                    <p>Not enough trade history to display ROI over time</p>
+                  </div>
+                )}
+              </Card>
+
+              {/* Performance Metrics */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-6">Performance Metrics</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Column 1 */}
+                <div className="space-y-4">
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Total Volume</p>
+                    <p className="text-2xl font-bold text-slate-900">
+                      ${(copiedTrades.reduce((sum, t) => sum + (t.amount_invested || 0), 0) / 1000).toFixed(1)}K
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Best Trade ROI</p>
+                    <p className="text-2xl font-bold text-green-600">
+                      {(() => {
+                        const tradesWithROI = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
+                        if (tradesWithROI.length === 0) return 'N/A';
+                        const bestROI = Math.max(...tradesWithROI.map(t => t.roi!));
+                        return `+${bestROI.toFixed(1)}%`;
+                      })()}
+                    </p>
+                    {copiedTrades.filter(t => t.roi !== null && t.roi !== 0).length === 0 && (
+                      <p className="text-xs text-slate-400 mt-1">No closed trades yet</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 2 */}
+                <div className="space-y-4">
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Open Markets</p>
+                    <p className="text-2xl font-bold text-slate-900">{copiedTrades.filter(t => !t.market_resolved && !t.user_closed_at).length}</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Closed Trades</p>
+                    <p className="text-2xl font-bold text-slate-900">
+                      {(() => {
+                        const closedTrades = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
+                        const profitableTrades = closedTrades.filter(t => (t.roi || 0) > 0);
+                        return `${profitableTrades.length}/${closedTrades.length}`;
+                      })()}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">Profitable/Total</p>
+                  </div>
+                </div>
+
+                {/* Column 3 */}
+                <div className="space-y-4">
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Avg Trade Size</p>
+                    <p className="text-2xl font-bold text-slate-900">
+                      ${copiedTrades.length > 0 ? (copiedTrades.reduce((sum, t) => sum + (t.amount_invested || 0), 0) / copiedTrades.length).toFixed(0) : '0'}
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Total Trades</p>
+                    <p className="text-2xl font-bold text-slate-900">{copiedTrades.length}</p>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+              {/* Category Distribution Pie Chart */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-6">Trading Categories</h3>
+                {categoryDistribution.length > 0 ? (
+                  <div className="flex flex-col md:flex-row gap-8 items-center">
+                    {/* Pie Chart */}
+                    <div className="relative w-64 h-64 flex-shrink-0">
+                      <svg viewBox="0 0 200 200" className="w-full h-full">
+                        {(() => {
+                          let currentAngle = -90; // Start at top
+                          return categoryDistribution.map((cat, i) => {
+                            const angle = (cat.percentage / 100) * 360;
+                            const startAngle = currentAngle;
+                            const endAngle = currentAngle + angle;
+                            currentAngle = endAngle;
+
+                            // Calculate path for pie slice
+                            const startRad = (startAngle * Math.PI) / 180;
+                            const endRad = (endAngle * Math.PI) / 180;
+                            const x1 = 100 + 80 * Math.cos(startRad);
+                            const y1 = 100 + 80 * Math.sin(startRad);
+                            const x2 = 100 + 80 * Math.cos(endRad);
+                            const y2 = 100 + 80 * Math.sin(endRad);
+                            const largeArc = angle > 180 ? 1 : 0;
+
+                            return (
+                              <g
+                                key={i}
+                                onMouseEnter={() => setHoveredCategory(cat.category)}
+                                onMouseLeave={() => setHoveredCategory(null)}
+                                className="cursor-pointer transition-opacity"
+                                style={{ opacity: hoveredCategory === null || hoveredCategory === cat.category ? 1 : 0.3 }}
+                              >
+                                <path
+                                  d={`M 100 100 L ${x1} ${y1} A 80 80 0 ${largeArc} 1 ${x2} ${y2} Z`}
+                                  fill={cat.color}
+                                  stroke="white"
+                                  strokeWidth="2"
+                                />
+                              </g>
+                            );
+                          });
+                        })()}
+                      </svg>
+                      
+                      {/* Tooltip */}
+                      {hoveredCategory && (
+                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-lg p-4 border border-slate-200 pointer-events-none z-10">
+                          <p className="font-semibold text-slate-900">
+                            {hoveredCategory}
+                          </p>
+                          <p className="text-sm text-slate-600">
+                            {categoryDistribution.find(c => c.category === hoveredCategory)?.percentage.toFixed(1)}%
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {categoryDistribution.find(c => c.category === hoveredCategory)?.count} trades
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Legend */}
+                    <div className="flex-1 space-y-2">
+                      {categoryDistribution.map((cat) => (
+                        <div
+                          key={cat.category}
+                          className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
+                          onMouseEnter={() => setHoveredCategory(cat.category)}
+                          onMouseLeave={() => setHoveredCategory(null)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="w-4 h-4 rounded"
+                              style={{ backgroundColor: cat.color }}
+                            />
+                            <span className="text-sm font-medium text-slate-700">{cat.category}</span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <span className="text-sm text-slate-500">{cat.count} trades</span>
+                            <span className="text-sm font-semibold text-slate-900 min-w-[3rem] text-right">
+                              {cat.percentage.toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-64 flex items-center justify-center text-slate-500">
+                    <p>No trade data available</p>
+                  </div>
+                )}
+              </Card>
+
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Performing Trades</h3>
+                <div className="space-y-3">
+                  {copiedTrades
+                    .filter(t => t.user_closed_at || t.market_resolved)
+                    .sort((a, b) => (b.roi || 0) - (a.roi || 0))
+                    .slice(0, 5)
+                    .map((trade) => (
+                      <div key={trade.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-slate-900 truncate">{trade.market_title}</p>
+                          <p className="text-sm text-slate-500">{formatRelativeTime(trade.copied_at)}</p>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <Badge
+                            className={cn(
+                              "font-semibold",
+                              trade.outcome === 'YES'
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : "bg-red-50 text-red-700 border-red-200"
+                            )}
+                          >
+                            {trade.outcome}
+                          </Badge>
+                          <p className={cn(
+                            "font-bold text-lg",
+                            (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
+                          )}>
+                            {(trade.roi || 0) >= 0 ? '+' : ''}{(trade.roi || 0).toFixed(1)}%
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  {copiedTrades.filter(t => t.user_closed_at || t.market_resolved).length === 0 && (
+                    <p className="text-center py-8 text-slate-500">
+                      No closed trades yet. Close some positions to see your top performers!
+                    </p>
+                  )}
+                </div>
+              </Card>
             </div>
           )}
 
-          {/* Help & Support */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <a
-              href="https://twitter.com/polycopyapp"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors cursor-pointer group"
-            >
-              <div className="flex items-center gap-3">
-                {/* Twitter/X icon */}
-                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center group-hover:bg-[#FDB022]/10 transition-colors">
-                  <svg className="w-5 h-5 text-slate-600 group-hover:text-[#FDB022] transition-colors" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                  </svg>
-                </div>
-                
-                <div>
-                  <p className="font-semibold text-slate-900">Help & Support</p>
-                  <p className="text-small text-slate-500">Get help on X @polycopyapp</p>
+          {activeTab === 'settings' && (
+            <Card className="p-6 space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Notifications</h3>
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="flex items-center gap-3">
+                    {notificationsEnabled ? (
+                      <Bell className="h-5 w-5 text-slate-600" />
+                    ) : (
+                      <BellOff className="h-5 w-5 text-slate-400" />
+                    )}
+                    <div>
+                      <p className="font-medium text-slate-900">Email Notifications</p>
+                      <p className="text-sm text-slate-500">Get notified when traders close positions</p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={handleToggleNotifications}
+                    disabled={loadingNotificationPrefs}
+                    variant={notificationsEnabled ? "default" : "outline"}
+                    size="sm"
+                  >
+                    {notificationsEnabled ? 'Enabled' : 'Disabled'}
+                  </Button>
                 </div>
               </div>
-              
-              {/* External link icon */}
-              <svg className="w-5 h-5 text-slate-400 group-hover:text-slate-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-            </a>
-          </div>
-        </div>
 
-        {/* Logout Button */}
-        <button
-          onClick={handleLogout}
-          className="w-full bg-red-50 hover:bg-red-100 text-red-600 py-4 px-6 rounded-2xl font-bold transition-all duration-200 border border-red-200 shadow-sm"
-        >
-          Sign Out
-        </button>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Premium</h3>
+                {isPremium ? (
+                  <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Crown className="h-5 w-5 text-yellow-600" />
+                      <p className="font-semibold text-yellow-900">Premium Member</p>
+                    </div>
+                    <p className="text-sm text-yellow-700">
+                      You have access to all premium features including Real Copy trading.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                    <p className="text-sm text-slate-600 mb-3">
+                      Upgrade to Premium to unlock Real Copy trading and advanced features.
+                    </p>
+                    <Button
+                      onClick={() => setShowUpgradeModal(true)}
+                      className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white"
+                    >
+                      <Crown className="mr-2 h-4 w-4" />
+                      Upgrade to Premium
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+        </div>
       </div>
 
-      {/* Toast Notification */}
+      {/* Modals */}
+      <UpgradeModal open={showUpgradeModal} onOpenChange={setShowUpgradeModal} />
+      <ConnectWalletModal
+        open={isConnectModalOpen}
+        onOpenChange={setIsConnectModalOpen}
+        onConnect={handleWalletConnect}
+      />
+      <EditCopiedTrade
+        isOpen={showEditModal}
+        onClose={() => {
+          setShowEditModal(false);
+          setTradeToEdit(null);
+        }}
+        trade={tradeToEdit ? {
+          id: tradeToEdit.id,
+          market: tradeToEdit.market_title,
+          position: tradeToEdit.outcome as "YES" | "NO",
+          entryPrice: tradeToEdit.price_when_copied,
+          amount: tradeToEdit.amount_invested || 0,
+        } : null}
+        onSave={handleEditTrade}
+      />
+      <MarkTradeClosed
+        isOpen={showCloseModal}
+        onClose={() => {
+          setShowCloseModal(false);
+          setTradeToEdit(null);
+        }}
+        trade={tradeToEdit ? {
+          id: tradeToEdit.id,
+          market: tradeToEdit.market_title,
+          position: tradeToEdit.outcome as "YES" | "NO",
+          entryPrice: tradeToEdit.price_when_copied,
+          currentPrice: tradeToEdit.current_price || tradeToEdit.price_when_copied,
+        } : null}
+        onConfirm={handleCloseTrade}
+      />
+
+      {/* Disconnect Wallet Confirmation Modal */}
+      <Dialog open={showDisconnectModal} onOpenChange={setShowDisconnectModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-red-600">Disconnect Wallet?</DialogTitle>
+            <DialogDescription className="text-slate-600 mt-2">
+              This will remove your connected Polymarket wallet from Polycopy. You will need to reconnect it to use Real Copy trading features.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 mt-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm font-semibold text-red-900 mb-2">⚠️ Warning:</p>
+              <ul className="text-sm text-red-800 space-y-1 list-disc list-inside">
+                <li>You will lose access to automated trade execution</li>
+                <li>Your private key will be removed from secure storage</li>
+                <li>This action cannot be undone</li>
+              </ul>
+            </div>
+            
+            <div className="space-y-2">
+              <label htmlFor="confirm-text" className="text-sm font-medium text-slate-900">
+                Type <span className="font-bold">YES</span> to confirm:
+              </label>
+              <Input
+                id="confirm-text"
+                type="text"
+                placeholder="Type YES to confirm"
+                value={disconnectConfirmText}
+                onChange={(e) => setDisconnectConfirmText(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+            
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDisconnectModal(false);
+                  setDisconnectConfirmText('');
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleWalletDisconnect}
+                disabled={disconnectConfirmText.toUpperCase() !== 'YES' || disconnectingWallet}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+              >
+                {disconnectingWallet ? 'Disconnecting...' : 'Disconnect Wallet'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Toast */}
       {showToast && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
-          <div className={`px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 ${
-            toastType === 'success' 
-              ? 'bg-neutral-900 text-white' 
-              : 'bg-red-600 text-white'
-          }`}>
-            {toastType === 'success' ? (
-              <svg className="w-5 h-5 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            )}
-            <span>{toastMessage}</span>
+          <div className="bg-slate-900 text-white px-4 py-3 rounded-lg shadow-lg">
+            {toastMessage}
           </div>
         </div>
       )}
+    </>
+  );
+}
 
-      {/* Mark as Closed Modal */}
-      {showCloseModal && tradeToClose && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Mark Trade as Closed</h3>
-            <p className="text-sm text-slate-600 mb-4">
-              Enter the price you sold at to calculate your final ROI.
-            </p>
-            
-            <div className="mb-4">
-              <p className="text-sm text-slate-500 mb-1">Market: {tradeToClose.market_title}</p>
-              <p className="text-sm text-slate-500 mb-3">Entry Price: {Math.round(tradeToClose.price_when_copied * 100)}¢</p>
-              
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Exit Price (in cents)
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={exitPriceCents}
-                  onChange={(e) => setExitPriceCents(e.target.value)}
-                  placeholder="e.g. 65"
-                  className="flex-1 px-4 py-2 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-[#FDB022]"
-                />
-                <span className="text-slate-500">¢</span>
-              </div>
-            </div>
-            
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowCloseModal(false);
-                  setTradeToClose(null);
-                  setExitPriceCents('');
-                }}
-                className="flex-1 bg-slate-100 text-slate-700 py-2 px-4 rounded-lg font-semibold hover:bg-slate-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleMarkAsClosed}
-                disabled={!exitPriceCents}
-                className="flex-1 bg-[#FDB022] text-black py-2 px-4 rounded-lg font-semibold hover:bg-[#E69E1A] disabled:opacity-50"
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Trade Modal */}
-      {showEditModal && tradeToEdit && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Edit Copied Trade</h3>
-            <p className="text-sm text-slate-600 mb-4">
-              Update your entry price and investment amount.
-            </p>
-            
-            <div className="mb-4">
-              <p className="text-sm text-slate-500 mb-1">Market: {tradeToEdit.market_title}</p>
-              <p className="text-sm text-slate-500 mb-3">Outcome: {tradeToEdit.outcome}</p>
-              
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Entry Price <span className="text-red-500">*</span>
-              </label>
-              <div className="flex items-center gap-2 mb-4">
-                <span className="text-slate-500">$</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  max="0.99"
-                  defaultValue={tradeToEdit.price_when_copied}
-                  id="edit-entry-price"
-                  placeholder="0.58"
-                  className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
-                />
-              </div>
-              
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Amount Invested (optional)
-              </label>
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500">$</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  defaultValue={tradeToEdit.amount_invested || ''}
-                  id="edit-amount-invested"
-                  placeholder="0.00"
-                  className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
-                />
-              </div>
-            </div>
-            
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowEditModal(false);
-                  setTradeToEdit(null);
-                }}
-                className="flex-1 bg-slate-100 text-slate-700 py-2.5 px-4 rounded-lg font-semibold hover:bg-slate-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const entryPriceInput = document.getElementById('edit-entry-price') as HTMLInputElement;
-                  const amountInput = document.getElementById('edit-amount-invested') as HTMLInputElement;
-                  
-                  const entryPrice = parseFloat(entryPriceInput.value);
-                  const amount = amountInput.value ? parseFloat(amountInput.value) : undefined;
-                  
-                  if (!entryPrice || entryPrice <= 0 || entryPrice >= 1) {
-                    alert('Please enter a valid entry price between $0.01 and $0.99');
-                    return;
-                  }
-                  
-                  handleEditTrade(entryPrice, amount);
-                }}
-                className="flex-1 bg-[#FDB022] text-white py-2.5 px-4 rounded-lg font-semibold hover:bg-[#E69E1A] transition-colors"
-              >
-                Save Changes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-        {/* Import Wallet Modal */}
-        <ImportWalletModal
-          isOpen={showWalletSetup}
-          onClose={() => setShowWalletSetup(false)}
-          onSuccess={(address) => {
-            // Wallet is already saved by the API endpoint
-            // Turnkey stores the private key securely on their infrastructure
-            // We only store the public wallet address (not the private key!)
-            console.log('Wallet imported successfully:', address);
-            setShowWalletSetup(false);
-            showToastMessage('Wallet imported successfully!', 'success');
-            // Refresh profile data to show new wallet
-            window.location.reload();
-          }}
-        />
-      </div>
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>}>
+      <ProfilePageContent />
+    </Suspense>
   );
 }

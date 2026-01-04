@@ -37,6 +37,17 @@ export async function GET(request: Request) {
               closed: market.closed,
               outcomePrices: prices,
               outcomes: outcomes,
+              // Sports/Event metadata
+              description: market.description,
+              category: market.category,
+              endDateIso: market.end_date_iso || null,
+              gameStartTime: market.game_start_time || market.start_date_iso || market.event_start_date || null,
+              enableOrderBook: market.enable_order_book || false,
+              // Additional sports metadata if available
+              eventStatus: market.event_status || market.status || null,
+              score: market.score || market.live_score || null,
+              homeTeam: market.home_team || null,
+              awayTeam: market.away_team || null,
             }
           });
         }
