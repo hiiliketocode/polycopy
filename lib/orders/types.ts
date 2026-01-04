@@ -1,8 +1,19 @@
 export type OrderStatus = 'open' | 'partial' | 'filled' | 'canceled' | 'expired' | 'failed'
+export type OrderActivity =
+  | 'bought'
+  | 'sold'
+  | 'redeemed'
+  | 'lost'
+  | 'canceled'
+  | 'expired'
+  | 'failed'
 
 export interface OrderRow {
   orderId: string
   status: OrderStatus
+  activity: OrderActivity
+  activityLabel: string
+  activityIcon: string
   marketId: string
   marketTitle: string
   marketImageUrl: string | null

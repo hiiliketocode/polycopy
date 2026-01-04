@@ -3,10 +3,6 @@ import { createClient } from '@/lib/supabase/server'
 import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
 import type { Trade } from '@polymarket/clob-client/dist/types'
 
-const DEV_BYPASS_AUTH =
-  process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
-  Boolean(process.env.TURNKEY_DEV_BYPASS_USER_ID)
-
 const MIN_OPEN_SIZE = 1e-6
 
 type PositionAccumulator = {
@@ -69,10 +65,7 @@ export async function GET() {
     error: authError,
   } = await supabase.auth.getUser()
 
-  let userId: string | null = user?.id ?? null
-  if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
-    userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
-  }
+  const userId: string | null = user?.id ?? null
 
   if (!userId) {
     return NextResponse.json(

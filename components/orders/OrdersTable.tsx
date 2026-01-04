@@ -1,21 +1,10 @@
 'use client'
-
-import Link from 'next/link'
 import React, { useMemo, useState } from 'react'
-import { OrderRow, OrderStatus } from '@/lib/orders/types'
+import { OrderActivity, OrderRow, OrderStatus } from '@/lib/orders/types'
 import { PositionSummary } from '@/lib/orders/position'
 import OrderRowDetails from './OrderRowDetails'
 
 const PAGE_SIZE = 12
-
-const STATUS_BADGE_STYLES: Record<OrderStatus, string> = {
-  open: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  partial: 'bg-amber-50 text-amber-700 ring-amber-200',
-  filled: 'bg-slate-100 text-slate-700 ring-slate-200',
-  canceled: 'bg-rose-50 text-rose-700 ring-rose-200',
-  expired: 'bg-slate-50 text-slate-500 ring-slate-200',
-  failed: 'bg-rose-50 text-rose-700 ring-rose-200',
-}
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   open: 'Open',
@@ -26,16 +15,24 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   failed: 'Failed',
 }
 
-type MarketStatus = 'open' | 'closed'
-
-const MARKET_STATUS_LABELS: Record<MarketStatus, string> = {
-  open: 'Open',
-  closed: 'Closed',
+const ACTIVITY_ICON_STYLES: Record<OrderActivity, { iconBg: string; iconText: string }> = {
+  bought: { iconBg: 'bg-sky-100 border-sky-200', iconText: 'text-sky-700' },
+  sold: { iconBg: 'bg-amber-100 border-amber-200', iconText: 'text-amber-700' },
+  redeemed: { iconBg: 'bg-emerald-100 border-emerald-200', iconText: 'text-emerald-700' },
+  lost: { iconBg: 'bg-rose-100 border-rose-200', iconText: 'text-rose-700' },
+  canceled: { iconBg: 'bg-slate-100 border-slate-200', iconText: 'text-slate-600' },
+  expired: { iconBg: 'bg-slate-100 border-slate-200', iconText: 'text-slate-600' },
+  failed: { iconBg: 'bg-rose-100 border-rose-200', iconText: 'text-rose-700' },
 }
 
-const MARKET_STATUS_DOT_STYLES: Record<MarketStatus, string> = {
-  open: 'bg-emerald-500',
-  closed: 'bg-rose-500',
+const OUTCOME_PILL_STYLES: Record<OrderActivity, string> = {
+  bought: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+  sold: 'bg-amber-50 text-amber-700 ring-amber-100',
+  redeemed: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+  lost: 'bg-rose-50 text-rose-700 ring-rose-100',
+  canceled: 'bg-slate-100 text-slate-600 ring-slate-200',
+  expired: 'bg-slate-50 text-slate-500 ring-slate-200',
+  failed: 'bg-rose-50 text-rose-700 ring-rose-100',
 }
 
 type OrdersTableProps = {
@@ -45,15 +42,19 @@ type OrdersTableProps = {
   getPositionForOrder: (order: OrderRow) => PositionSummary | null
   onSellPosition: (order: OrderRow) => void
   showActions?: boolean
+  onCancelOrder?: (order: OrderRow) => void
+  cancelingOrderId?: string | null
 }
 
 export default function OrdersTable({
   orders,
   loading,
-  statusSummary,
+  statusSummary: _statusSummary,
   getPositionForOrder,
   onSellPosition,
   showActions = true,
+  onCancelOrder,
+  cancelingOrderId = null,
 }: OrdersTableProps) {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
@@ -65,18 +66,8 @@ export default function OrdersTable({
     return orders.slice(start, start + PAGE_SIZE)
   }, [orders, safePage])
 
-  const statusSummaryEntries = useMemo(
-    () =>
-      (Object.entries(statusSummary) as [OrderStatus, number][]).filter(([, count]) => count > 0),
-    [statusSummary]
-  )
-
   const toggleRow = (orderId: string) => {
     setExpandedOrderId((current) => (current === orderId ? null : orderId))
-  }
-
-  const renderMarketStatus = (isOpen: boolean | null): MarketStatus => {
-    return isOpen === true ? 'open' : 'closed'
   }
 
   if (!loading && orders.length === 0) {
@@ -91,21 +82,11 @@ export default function OrdersTable({
   }
 
   return (
-    <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-      <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+    <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-6">
+      <div className="mb-2 flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Orders</h2>
-          <p className="text-sm text-slate-500">{orders.length} total orders</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {statusSummaryEntries.map(([status, count]) => (
-            <span
-              key={status}
-              className="text-xs font-semibold px-3 py-1 rounded-full bg-slate-50 text-slate-600 border border-slate-200"
-            >
-              {STATUS_LABELS[status]}: {count}
-            </span>
-          ))}
+          <h2 className="text-base font-semibold text-slate-900">Orders</h2>
+          <p className="text-sm text-slate-500">{orders.length} items</p>
         </div>
       </div>
 
@@ -127,55 +108,46 @@ export default function OrdersTable({
           <table className="min-w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200 text-xs tracking-wider">
-                <th className="py-2 pr-4 font-medium min-w-[140px]">Status</th>
-                <th className="py-2 pr-4 font-medium min-w-[220px]">Market</th>
-                <th className="py-2 pr-4 font-medium min-w-[200px]">Trader</th>
-                <th className="py-2 pr-4 font-medium min-w-[160px]">Side / outcome</th>
-                <th className="py-2 pr-4 font-medium min-w-[120px]">Contracts</th>
-                <th className="py-2 pr-4 font-medium min-w-[120px]">Price</th>
-                <th className="py-2 pr-4 font-medium min-w-[120px]">Current price</th>
-                <th className="py-2 pr-4 font-medium min-w-[120px]">P/L</th>
-                <th className="py-2 pr-4 font-medium min-w-[140px]">Date</th>
-                {showActions && <th className="py-2 pr-4 font-medium min-w-[140px]">Actions</th>}
+                <th className="py-2 pr-4 font-medium min-w-[140px]">Activity</th>
+                <th className="py-2 pr-4 font-medium min-w-[280px]">Market</th>
+                <th className="py-2 pr-4 font-medium text-right min-w-[100px]">Value</th>
+                <th className="py-2 pr-2 font-medium text-right min-w-[120px]">Time</th>
+                {showActions && <th className="py-2 pl-2 font-medium text-right min-w-[120px]">Actions</th>}
               </tr>
             </thead>
             <tbody>
               {pagedOrders.map((order) => {
                 const contractsValue = order.filledSize > 0 ? order.filledSize : order.size
-                const marketStatus = renderMarketStatus(order.marketIsOpen)
                 const position = getPositionForOrder(order)
                 const hasOpenPosition = Boolean(position && position.size > 0)
-                const isMarketOpen = order.marketIsOpen === true || order.status === 'open'
+                const isMarketOpen =
+                  (order.marketIsOpen ?? null) !== false &&
+                  (order.status === 'open' || order.status === 'partial' || order.marketIsOpen === true)
                 const canSell = hasOpenPosition && isMarketOpen
-                const traderName = order.traderName?.trim() || ''
-                const traderDisplay = traderName
-                const traderLinkTarget = traderDisplay ? order.traderWallet ?? order.traderId ?? null : null
-                const traderInitial = traderDisplay ? traderDisplay.charAt(0).toUpperCase() : '—'
+                const activityStyle = ACTIVITY_ICON_STYLES[order.activity]
+                const activityTooltip = getActivityTooltip(order)
+                const value = deriveOrderValue(order, contractsValue)
+                const outcomeStyle = OUTCOME_PILL_STYLES[order.activity]
                 return (
                   <React.Fragment key={order.orderId}>
                     <tr className="cursor-pointer border-b border-slate-100 hover:bg-slate-50" onClick={() => toggleRow(order.orderId)}>
                       <td className="py-3 pr-4 align-top">
-                        <div className="flex flex-col gap-1">
-                          <div className="inline-flex items-center gap-2">
-                            <span
-                              className={`h-2.5 w-2.5 rounded-full ${MARKET_STATUS_DOT_STYLES[marketStatus]}`}
-                              aria-label={`Market ${MARKET_STATUS_LABELS[marketStatus]}`}
-                              title={`Market ${MARKET_STATUS_LABELS[marketStatus]}`}
-                            />
-                            <span
-                              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ring-1 ${STATUS_BADGE_STYLES[order.status]}`}
-                            >
-                              {STATUS_LABELS[order.status]}
-                            </span>
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`flex h-8 w-8 items-center justify-center rounded-full border text-sm font-semibold ${activityStyle.iconBg} ${activityStyle.iconText}`}
+                            title={activityTooltip}
+                          >
+                            {order.activityIcon}
+                          </span>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-slate-900">{order.activityLabel}</span>
+                            <span className="text-xs text-slate-500">{STATUS_LABELS[order.status]}</span>
                           </div>
-                          {order.positionStateLabel && (
-                            <p className="text-xs text-slate-500">{order.positionStateLabel}</p>
-                          )}
                         </div>
                       </td>
                       <td className="py-3 pr-4 align-top">
                         <div className="flex items-start gap-3 min-w-0">
-                          <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-slate-100 text-xs font-semibold text-slate-500">
+                          <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-md bg-slate-100 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
                             {order.marketImageUrl ? (
                               <img
                                 src={order.marketImageUrl}
@@ -189,88 +161,78 @@ export default function OrdersTable({
                             )}
                           </div>
                           <div className="flex min-w-0 flex-col">
-                            <p className="truncate font-medium text-slate-900">{order.marketTitle}</p>
+                            <p className="truncate text-sm font-semibold text-slate-900">{order.marketTitle}</p>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              {order.outcome && (
+                                <span
+                                  className={`inline-flex items-center gap-2 rounded-full px-2 py-0.5 font-semibold ring-1 ${outcomeStyle}`}
+                                >
+                                  {formatOutcome(order.outcome)}
+                                  {order.priceOrAvgPrice !== null && order.priceOrAvgPrice !== undefined && !Number.isNaN(order.priceOrAvgPrice)
+                                    ? formatCents(order.priceOrAvgPrice)
+                                    : null}
+                                </span>
+                              )}
+                              <span className="text-slate-500">{formatShares(contractsValue)} shares</span>
+                            </div>
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 pr-4 align-top">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-slate-100 text-xs font-semibold text-slate-500">
-                            {order.traderAvatarUrl ? (
-                              <img
-                                src={order.traderAvatarUrl}
-                                alt={traderDisplay || 'Trader'}
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <span className="flex h-full items-center justify-center">
-                                {traderInitial}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex min-w-0 flex-col">
-                            {traderLinkTarget ? (
-                              <Link
-                                href={`/trader/${traderLinkTarget}`}
-                                className="truncate font-medium text-slate-900 hover:text-slate-800"
-                              >
-                                {traderDisplay || ''}
-                              </Link>
-                            ) : (
-                              <span className="truncate font-medium text-slate-900">{traderDisplay}</span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 pr-4 align-top text-slate-700">
-                        <div className="text-sm font-semibold text-slate-900">{formatSide(order.side)}</div>
-                        <div className="text-xs text-slate-500">{formatOutcome(order.outcome)}</div>
-                      </td>
-                      <td className="py-3 pr-4 align-top text-slate-700">
-                        {formatNumber(contractsValue)}
-                      </td>
-                      <td className="py-3 pr-4 align-top text-slate-700">
-                        {formatCurrency(order.priceOrAvgPrice)}
-                      </td>
-                      <td className="py-3 pr-4 align-top text-slate-700">
-                        {formatCurrency(order.currentPrice)}
-                      </td>
-                      <td className="py-3 pr-4 align-top">
+                      <td className="py-3 pr-4 align-top text-right">
                         <span
-                          className={`text-sm font-semibold ${getPnlColorClass(order.pnlUsd)}`}
+                          className={`text-sm font-semibold ${getValueColorClass(value)}`}
+                          title={value === null ? 'No value' : undefined}
                         >
-                          {formatPnl(order.pnlUsd)}
+                          {formatCurrencySigned(value)}
                         </span>
                       </td>
-                      <td className="py-3 pr-4 align-top text-slate-600">
-                        {formatDate(order.createdAt)}
+                      <td className="py-3 pr-2 align-top text-right text-slate-600">
+                        {formatRelativeTime(order.createdAt)}
                       </td>
                       {showActions && (
                         <td className="py-3 pr-4 align-top text-right">
-                          {isMarketOpen && (
+                          {onCancelOrder ? (
                             <button
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation()
-                                if (!canSell) return
-                                onSellPosition(order)
+                                onCancelOrder(order)
                               }}
-                              disabled={!canSell}
+                              disabled={cancelingOrderId === order.orderId}
                               className={`rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
-                                canSell
-                                  ? 'bg-rose-500 text-white hover:bg-rose-400'
-                                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                cancelingOrderId === order.orderId
+                                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                  : 'bg-slate-900 text-white hover:bg-slate-800'
                               }`}
                             >
-                              Sell
+                              {cancelingOrderId === order.orderId ? 'Canceling…' : 'Cancel'}
                             </button>
+                          ) : (
+                            isMarketOpen && (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  if (!canSell) return
+                                  onSellPosition(order)
+                                }}
+                                disabled={!canSell}
+                                className={`rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
+                                  canSell
+                                    ? 'bg-rose-500 text-white hover:bg-rose-400'
+                                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                }`}
+                              >
+                                Sell
+                              </button>
+                            )
                           )}
                         </td>
                       )}
                     </tr>
                     {expandedOrderId === order.orderId && (
                       <tr className="bg-slate-50">
-                        <td colSpan={10} className="px-4 pb-4 pt-2">
+                        <td colSpan={showActions ? 5 : 4} className="px-4 pb-4 pt-2">
                           <OrderRowDetails order={order} />
                         </td>
                       </tr>
@@ -309,63 +271,110 @@ export default function OrdersTable({
   )
 }
 
-function formatNumber(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) return '—'
-  return new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: 4,
-    minimumFractionDigits: value % 1 === 0 ? 0 : 2,
-  }).format(value)
+function getActivityTooltip(order: OrderRow) {
+  const baseLabel =
+    order.activity === 'bought' && (order.status === 'open' || order.status === 'partial')
+      ? `${order.activityLabel} (open)`
+      : order.activityLabel
+  const rawAction = getRawAction(order)
+  if (rawAction) return `${baseLabel} - ${rawAction}`
+  return baseLabel
 }
 
-function formatCurrency(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) return '—'
-  const formatted = new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: 4,
-    minimumFractionDigits: value % 1 === 0 ? 0 : 2,
-  }).format(value)
-  return `$${formatted}`
-}
-
-function formatPnl(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) return '—'
-  const formatted = new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-  }).format(Math.abs(value))
-  const sign = value > 0 ? '+' : value < 0 ? '-' : ''
-  return `${sign}$${formatted}`
-}
-
-function getPnlColorClass(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return 'text-slate-600'
+function getRawAction(order: OrderRow) {
+  const raw = order.raw ?? {}
+  const candidates = [
+    raw.action_type,
+    raw.action,
+    raw.event_type,
+    raw.eventType,
+    raw.raw_action,
+  ]
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim()
+    }
   }
-  if (value > 0) return 'text-emerald-600'
-  if (value < 0) return 'text-rose-600'
-  return 'text-slate-600'
-}
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return '--'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '--'
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
-
-function formatSide(value: string) {
-  if (!value) return '—'
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'sell') return 'Sell'
-  if (normalized === 'buy') return 'Buy'
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  return null
 }
 
 function formatOutcome(value: string | null) {
   if (!value) return '—'
   return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function formatShares(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: value % 1 === 0 ? 0 : 1,
+  }).format(value)
+}
+
+function formatCents(price: number | null | undefined) {
+  if (price === null || price === undefined || Number.isNaN(price)) return ''
+  const cents = price * 100
+  const formatted = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: cents % 1 === 0 ? 0 : 1,
+    maximumFractionDigits: 2,
+  }).format(cents)
+  return `${formatted}¢`
+}
+
+function formatCurrencySigned(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  const abs = Math.abs(value)
+  const formatted = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(abs)
+  const sign = value > 0 ? '+' : value < 0 ? '-' : ''
+  return `${sign}$${formatted}`
+}
+
+function getValueColorClass(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'text-slate-500'
+  if (value > 0) return 'text-emerald-600'
+  if (value < 0) return 'text-rose-600'
+  return 'text-slate-600'
+}
+
+function formatRelativeTime(value: string | null | undefined) {
+  if (!value) return '--'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '--'
+  const now = Date.now()
+  const diffMs = now - date.getTime()
+  const diffMinutes = Math.floor(diffMs / 60000)
+  if (diffMinutes < 1) return 'Just now'
+  if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`
+  const diffDays = Math.floor(diffHours / 24)
+  return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`
+}
+
+function deriveOrderValue(order: OrderRow, contractsValue: number | null | undefined) {
+  const size = Number.isFinite(contractsValue ?? NaN) ? (contractsValue as number) : null
+  const price = Number.isFinite(order.priceOrAvgPrice ?? NaN)
+    ? (order.priceOrAvgPrice as number)
+    : Number.isFinite(order.currentPrice ?? NaN)
+      ? (order.currentPrice as number)
+      : null
+
+  if (order.activity === 'redeemed' || order.activity === 'lost') {
+    const pnl = Number.isFinite(order.pnlUsd ?? NaN) ? (order.pnlUsd as number) : null
+    if (pnl !== null) return pnl
+  }
+
+  if (price === null || size === null) return null
+  const notional = price * size
+  if (!Number.isFinite(notional)) return null
+
+  if (order.activity === 'sold') return notional
+  if (order.activity === 'redeemed') return notional
+  if (order.activity === 'lost' || order.activity === 'canceled' || order.activity === 'expired' || order.activity === 'failed') {
+    return -notional
+  }
+  return -notional
 }

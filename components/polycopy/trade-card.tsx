@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronUp, Settings2, Check, Loader2 } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 interface TradeCardProps {
   trader: {
@@ -39,6 +39,7 @@ interface TradeCardProps {
   currentMarketPrice?: number
   liveScore?: string
   category?: string
+  marketStatus?: "open" | "closed"
 }
 
 export function TradeCard({
@@ -64,6 +65,7 @@ export function TradeCard({
   currentMarketPrice,
   liveScore,
   category,
+  marketStatus,
 }: TradeCardProps) {
   const [usdAmount, setUsdAmount] = useState<string>("")
   const [autoClose, setAutoClose] = useState(true)
@@ -71,6 +73,12 @@ export function TradeCard({
   const [isSuccess, setIsSuccess] = useState(false)
   const [localCopied, setLocalCopied] = useState(isCopied)
   const [refreshStatus, setRefreshStatus] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle')
+
+  useEffect(() => {
+    if (isCopied && !localCopied) {
+      setLocalCopied(true)
+    }
+  }, [isCopied, localCopied])
 
   const formatWallet = (value: string) => {
     const trimmed = value?.trim() || ""
@@ -87,6 +95,7 @@ export function TradeCard({
   const currentPrice = currentMarketPrice || (price * (0.98 + Math.random() * 0.04)) // Use live price or simulate
   const priceChange = currentMarketPrice ? ((currentMarketPrice - price) / price) * 100 : 0
   const priceDirection = priceChange > 0 ? 'up' : priceChange < 0 ? 'down' : 'neutral'
+  const isClosed = marketStatus === 'closed'
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -125,6 +134,7 @@ export function TradeCard({
   }
 
   const handleQuickCopy = async () => {
+    if (isClosed) return
     if (!isPremium) {
       // Non-premium users: just open Polymarket
       onCopyTrade?.()
@@ -223,6 +233,7 @@ export function TradeCard({
   }
 
   const handleCopyTradeClick = () => {
+    if (isClosed) return
     if (isPremium && onToggleExpand && !localCopied) {
       onToggleExpand()
     } else if (!isPremium) {
@@ -250,14 +261,19 @@ export function TradeCard({
               <p className="text-xs text-slate-500 font-mono truncate">{displayAddress}</p>
             </div>
           </Link>
-          <div className="flex flex-col items-end gap-1.5 shrink-0">
-            {/* Live Price & Odds Display (Always visible for all users) */}
-            <div className="flex flex-col md:flex-row items-end md:items-center gap-1">
-              {currentMarketPrice && (
-                <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
-                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Price:</span>
-                  <span className="text-xs font-bold text-slate-900">${currentMarketPrice.toFixed(2)}</span>
-                  {priceDirection !== 'neutral' && (
+            <div className="flex flex-col items-end gap-1.5 shrink-0">
+              {/* Live Price & Odds Display (Always visible for all users) */}
+              <div className="flex flex-col md:flex-row items-end md:items-center gap-1">
+                {isClosed && (
+                  <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-rose-50 border border-rose-200 shadow-sm">
+                    <span className="text-[10px] font-semibold text-rose-700 uppercase tracking-wide">Market Closed</span>
+                  </div>
+                )}
+                {currentMarketPrice && (
+                  <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
+                    <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Price:</span>
+                    <span className="text-xs font-bold text-slate-900">${currentMarketPrice.toFixed(2)}</span>
+                    {priceDirection !== 'neutral' && (
                     <span className={`text-xs font-semibold flex items-center ${priceDirection === 'up' ? 'text-emerald-600' : 'text-rose-600'}`}>
                       {priceDirection === 'up' ? '↑' : '↓'}{Math.abs(priceChange).toFixed(1)}%
                     </span>
@@ -273,7 +289,7 @@ export function TradeCard({
             {/* Timestamp & Expand */}
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
-              {isPremium && onToggleExpand && !localCopied && (
+              {isPremium && onToggleExpand && !localCopied && !isClosed && (
                 <button onClick={onToggleExpand} className="text-slate-400 hover:text-slate-600 transition-colors">
                   {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                 </button>
@@ -331,13 +347,15 @@ export function TradeCard({
         <div className={isPremium ? "w-full" : "grid grid-cols-2 gap-2"}>
           <Button
             onClick={handleCopyTradeClick}
-            disabled={localCopied}
+            disabled={localCopied || isClosed}
             className={`font-semibold shadow-sm text-sm ${
               localCopied
                 ? "w-full bg-emerald-500 hover:bg-emerald-600 text-white"
-                : isPremium
-                  ? "w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
-                  : "bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900"
+                : isClosed
+                  ? "w-full bg-slate-200 text-slate-500 cursor-not-allowed"
+                  : isPremium
+                    ? "w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
+                    : "bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900"
             }`}
             size="lg"
           >
@@ -346,6 +364,8 @@ export function TradeCard({
                 <Check className="w-4 h-4 mr-2" />
                 Trade Copied
               </>
+            ) : isClosed ? (
+              "Market Closed"
             ) : (
               "Copy Trade"
             )}
@@ -354,16 +374,21 @@ export function TradeCard({
             <Button
               onClick={onMarkAsCopied}
               variant="outline"
-              className="border-slate-300 text-slate-700 hover:bg-slate-50 font-medium bg-transparent text-sm transition-all"
+              disabled={isClosed}
+              className={`font-medium text-sm transition-all ${
+                isClosed
+                  ? "border-slate-200 text-slate-400 cursor-not-allowed"
+                  : "border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent"
+              }`}
               size="lg"
             >
-              Mark as Copied
+              {isClosed ? "Market Closed" : "Mark as Copied"}
             </Button>
           )}
         </div>
       </div>
 
-      {isPremium && isExpanded && !localCopied && (
+      {isPremium && isExpanded && !localCopied && !isClosed && (
         <div className="border-t border-slate-200 bg-slate-50 p-6 space-y-5">
           {!isSuccess ? (
             <>

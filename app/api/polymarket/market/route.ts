@@ -27,8 +27,43 @@ export async function GET(request: Request) {
           token_id: token?.token_id ?? token?.tokenId ?? null,
           outcome: token?.outcome ?? null,
           price: token?.price ?? null,
+          winner: token?.winner ?? null,
         })) :
         []
+
+    const closedValue = market?.closed
+    const closed =
+      typeof closedValue === 'boolean'
+        ? closedValue
+        : closedValue === null
+          ? null
+          : closedValue !== undefined
+            ? Boolean(closedValue)
+            : null
+    const acceptingValue = market?.accepting_orders
+    const acceptingOrders =
+      typeof acceptingValue === 'boolean'
+        ? acceptingValue
+        : acceptingValue === null
+          ? null
+          : acceptingValue !== undefined
+            ? Boolean(acceptingValue)
+            : null
+    const resolvedValue = market?.resolved
+    const resolved =
+      typeof resolvedValue === 'boolean'
+        ? resolvedValue
+        : resolvedValue === null
+          ? null
+          : resolvedValue !== undefined
+            ? Boolean(resolvedValue)
+            : null
+    const minimumTickSize =
+      typeof market?.minimum_tick_size === 'number'
+        ? market.minimum_tick_size
+        : market?.minimum_tick_size
+          ? Number(market.minimum_tick_size)
+          : null
 
     return NextResponse.json({
       ok: true,
@@ -37,6 +72,10 @@ export async function GET(request: Request) {
       tokens,
       icon: market?.icon ?? null,
       image: market?.image ?? null,
+      closed,
+      acceptingOrders,
+      resolved,
+      minimumTickSize,
     })
   } catch (error: any) {
     return NextResponse.json(

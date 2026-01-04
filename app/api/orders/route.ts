@@ -3,7 +3,7 @@ import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveOrdersTableName, type OrdersTableName } from '@/lib/orders/table'
 import { normalizeOrderStatus } from '@/lib/orders/normalizeStatus'
-import { OrderRow } from '@/lib/orders/types'
+import { OrderActivity, OrderRow, OrderStatus } from '@/lib/orders/types'
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar'
 import {
   extractTraderNameFromRecord,
@@ -73,6 +73,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ orders: [] })
     }
 
+    // Track the set of open order ids returned by CLOB so the client can filter to truly-pending orders
+    let clobOpenOrderIds: string[] | null = null
+
     // Refresh orders from CLOB first (with timeout to avoid blocking)
     // This ensures we have the latest orders in the database
     try {
@@ -80,6 +83,11 @@ export async function GET(request: NextRequest) {
         try {
           const { client } = await getAuthedClobClientForUser(user.id)
           const openOrders = await client.getOpenOrders({}, true)
+          clobOpenOrderIds = Array.isArray(openOrders)
+            ? openOrders
+                .map((order: any) => (typeof order?.id === 'string' ? order.id.trim().toLowerCase() : null))
+                .filter((id): id is string => Boolean(id))
+            : []
           
           // Get trader_id using service client
           const supabaseService = createServiceClient()
@@ -217,11 +225,19 @@ export async function GET(request: NextRequest) {
     const userPolymarketUsername = accountProfile?.polymarket_username ?? null
     const copiedTraderLookup = await fetchCopiedTraderNames(supabase, user.id)
 
-    const ordersResult = await fetchOrdersForTrader(
+    let ordersResult = await fetchOrdersForTrader(
       supabase,
       ordersTable,
       trader.id
     )
+
+    // If CLOB reported zero open orders, reconcile any stale open/partial rows in our DB.
+    if (Array.isArray(clobOpenOrderIds) && clobOpenOrderIds.length === 0) {
+      const reconciled = await reconcileMissingOpenOrders(supabase, ordersTable, trader.id)
+      if (reconciled) {
+        ordersResult = await fetchOrdersForTrader(supabase, ordersTable, trader.id)
+      }
+    }
 
     if (ordersResult.error) {
       console.error('[orders] orders query error', ordersResult.error)
@@ -232,6 +248,10 @@ export async function GET(request: NextRequest) {
     }
 
     const ordersList = ordersResult.data || []
+    const clobOpenSet =
+      Array.isArray(clobOpenOrderIds) && clobOpenOrderIds.length > 0
+        ? new Set(clobOpenOrderIds.map((id) => id.trim().toLowerCase()))
+        : null
     
     console.log('[orders] Query result:', {
       traderId: trader.id,
@@ -404,13 +424,25 @@ export async function GET(request: NextRequest) {
 
       const priceValue = parseNumeric(order.price ?? order.raw?.price ?? order.raw?.avg_price)
 
-      const status = normalizeOrderStatus(
+      let status = normalizeOrderStatus(
         order.raw,
         order.status,
         filledValue,
         sizeValue,
         remainingValue
       )
+
+      // If CLOB said there are no open orders (or we have an explicit allowlist) but this row is still open/partial, mark it closed.
+      const orderIdLower = String(order.order_id ?? '').trim().toLowerCase()
+      const isStaleOpen =
+        (status === 'open' || status === 'partial') &&
+        clobOpenSet !== null &&
+        !clobOpenSet.has(orderIdLower)
+
+      if (isStaleOpen) {
+        const fullyFilled = Number.isFinite(sizeValue) && Number.isFinite(filledValue) && (sizeValue ?? 0) > 0 && (filledValue ?? 0) >= (sizeValue ?? 0)
+        status = fullyFilled ? 'filled' : 'canceled'
+      }
 
       if (marketId && metadata) {
         const existing = cacheUpsertMap.get(marketId) ?? { market_id: marketId }
@@ -445,13 +477,18 @@ export async function GET(request: NextRequest) {
       }
 
       const currentPrice = resolveCurrentPrice(order, metadata)
-      const pnlUsd = calculatePnlUsd(order.side, priceValue, currentPrice, filledValue)
+      const side = String(order.side ?? order.raw?.side ?? '').toLowerCase()
+      const pnlUsd = calculatePnlUsd(side, priceValue, currentPrice, filledValue)
       const positionState = resolvePositionState(order.raw)
       const positionStateLabel = getPositionStateLabel(positionState)
+      const activity = deriveOrderActivity(order.raw, status, side, positionState, pnlUsd)
 
       return {
         orderId: String(order.order_id ?? ''),
         status,
+        activity: activity.activity,
+        activityLabel: activity.activityLabel,
+        activityIcon: activity.activityIcon,
         marketId,
         marketTitle,
         marketImageUrl,
@@ -463,7 +500,7 @@ export async function GET(request: NextRequest) {
         traderName: traderNameForDisplay,
         traderAvatarUrl:
           (resolvedProfile ?? profile)?.avatar_url ?? extractTraderAvatar(order.raw),
-        side: String(order.side ?? order.raw?.side ?? '').toLowerCase(),
+        side,
         outcome: order.outcome ?? null,
         size: sizeValue ?? 0,
         filledSize: filledValue ?? 0,
@@ -485,7 +522,7 @@ export async function GET(request: NextRequest) {
         .upsert(cacheUpserts, { onConflict: 'market_id' })
     }
 
-    return NextResponse.json({ orders: enrichedOrders, walletAddress })
+    return NextResponse.json({ orders: enrichedOrders, walletAddress, openOrderIds: clobOpenOrderIds ?? [] })
   } catch (error: any) {
     console.error('[orders] fatal error', error)
     const message =
@@ -853,13 +890,38 @@ function getMarketTitle(
 }
 
 function deriveMarketOpenStatus(cache?: MarketCacheRow, rawOrder?: any, metadata?: MarketMetadata) {
-  if (cache?.is_open !== undefined && cache.is_open !== null) {
-    return cache.is_open
+  const acceptingOrders = parseBoolean(
+    metadata?.acceptingOrders ??
+      metadata?.metadataPayload?.acceptingOrders ??
+      rawOrder?.market?.accepting_orders ??
+      rawOrder?.accepting_orders
+  )
+  if (acceptingOrders !== null) {
+    return acceptingOrders
   }
 
-  const metadataClosed = parseBoolean(metadata?.metadataPayload?.closed)
+  const metadataClosed = parseBoolean(
+    metadata?.closed ??
+      metadata?.metadataPayload?.closed ??
+      rawOrder?.market?.closed ??
+      rawOrder?.closed
+  )
   if (metadataClosed !== null) {
     return !metadataClosed
+  }
+
+  const metadataResolved = parseBoolean(
+    metadata?.resolved ??
+      metadata?.metadataPayload?.resolved ??
+      rawOrder?.market?.resolved ??
+      rawOrder?.resolved
+  )
+  if (metadataResolved !== null) {
+    return !metadataResolved
+  }
+
+  if (cache?.is_open !== undefined && cache.is_open !== null) {
+    return cache.is_open
   }
 
   const rawValue =
@@ -972,6 +1034,13 @@ type MarketCacheUpsertRow = {
   is_open?: boolean | null
 }
 
+type MarketMetadataToken = {
+  tokenId: string | null
+  outcome: string | null
+  price: number | null
+  winner: boolean | null
+}
+
 type MarketMetadata = {
   icon?: string | null
   image?: string | null
@@ -979,6 +1048,10 @@ type MarketMetadata = {
   slug?: string | null
   outcomes: string[]
   outcomePrices: number[]
+  tokens?: MarketMetadataToken[]
+  closed?: boolean | null
+  resolved?: boolean | null
+  acceptingOrders?: boolean | null
   metadataPayload: Record<string, any> | null
 }
 
@@ -1032,8 +1105,14 @@ async function fetchMarketMetadataFromClob(conditionIds: string[]) {
             typeof market?.image === 'string' && market.image.trim() ? market.image.trim() : null
 
           const tokens = Array.isArray(market?.tokens) ? market.tokens : []
-          const outcomePairs = tokens
+          const metadataTokens: MarketMetadataToken[] = tokens
             .map((token: any) => {
+              const tokenId =
+                typeof token?.token_id === 'string'
+                  ? token.token_id
+                  : typeof token?.tokenId === 'string'
+                    ? token.tokenId
+                    : null
               const outcome =
                 token?.outcome ??
                 token?.name ??
@@ -1042,15 +1121,53 @@ async function fetchMarketMetadataFromClob(conditionIds: string[]) {
                 token?.token ??
                 null
               const price = parseNumeric(token?.price ?? token?.execution_price ?? token?.avg_price)
+              const winner =
+                typeof token?.winner === 'boolean'
+                  ? token.winner
+                  : token?.winner !== undefined
+                    ? Boolean(token.winner)
+                    : null
               return {
+                tokenId,
                 outcome: outcome ? String(outcome) : null,
                 price: price,
+                winner,
               }
             })
-            .filter((entry: any) => entry.outcome && entry.price !== null)
+            .filter((entry: MarketMetadataToken) => entry.tokenId || entry.outcome || entry.price !== null)
 
+          const outcomePairs = metadataTokens.filter(
+            (entry: MarketMetadataToken) => entry.outcome && entry.price !== null
+          )
           const outcomes = outcomePairs.map((entry: any) => entry.outcome!)
           const outcomePrices = outcomePairs.map((entry: any) => entry.price!)
+          const closedValue = market?.closed
+          const closed =
+            typeof closedValue === 'boolean'
+              ? closedValue
+              : closedValue === null
+                ? null
+                : closedValue !== undefined
+                  ? Boolean(closedValue)
+                  : null
+          const resolvedValue = market?.resolved
+          const resolved =
+            typeof resolvedValue === 'boolean'
+              ? resolvedValue
+              : resolvedValue === null
+                ? null
+                : resolvedValue !== undefined
+                  ? Boolean(resolvedValue)
+                  : null
+          const acceptingValue = market?.accepting_orders
+          const acceptingOrders =
+            typeof acceptingValue === 'boolean'
+              ? acceptingValue
+              : acceptingValue === null
+                ? null
+                : acceptingValue !== undefined
+                  ? Boolean(acceptingValue)
+                  : null
 
           metadataMap[conditionId] = {
             icon,
@@ -1059,12 +1176,19 @@ async function fetchMarketMetadataFromClob(conditionIds: string[]) {
             slug: market?.market_slug ?? null,
             outcomes,
             outcomePrices,
+            tokens: metadataTokens,
+            closed,
+            resolved,
+            acceptingOrders,
             metadataPayload: {
               question: market?.question ?? null,
               slug: market?.market_slug ?? null,
-              closed: market?.closed ?? null,
+              closed,
+              resolved,
+              acceptingOrders,
               outcomes,
               outcomePrices,
+              tokens: metadataTokens,
             },
           }
         } catch (error) {
@@ -1077,10 +1201,55 @@ async function fetchMarketMetadataFromClob(conditionIds: string[]) {
   return metadataMap
 }
 
+function extractTokenIdFromOrderRecord(order: any): string | null {
+  const rawCandidates = [
+    order?.token_id,
+    order?.tokenId,
+    order?.tokenID,
+    order?.asset_id,
+    order?.assetId,
+    order?.asset,
+  ]
+  for (const candidate of rawCandidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim()
+  }
+  const raw = order?.raw
+  if (raw && typeof raw === 'object') {
+    const nestedCandidates = [
+      raw.token_id,
+      raw.tokenId,
+      raw.asset_id,
+      raw.assetId,
+      raw.asset,
+      raw?.market?.token_id,
+      raw?.market?.asset_id,
+    ]
+    for (const candidate of nestedCandidates) {
+      if (typeof candidate === 'string' && candidate.trim()) return candidate.trim()
+    }
+  }
+  return null
+}
+
 function resolveCurrentPrice(order: any, metadata?: MarketMetadata): number | null {
   const normalizedOutcome = String(order?.outcome ?? order?.raw?.outcome ?? '')
     .trim()
     .toLowerCase()
+  const tokenId = extractTokenIdFromOrderRecord(order)
+  const normalizedTokenId = tokenId ? tokenId.toLowerCase() : null
+
+  if (metadata?.tokens && normalizedTokenId) {
+    const tokenMatch = metadata.tokens.find(
+      (token) => typeof token.tokenId === 'string' && token.tokenId.toLowerCase() === normalizedTokenId
+    )
+    if (tokenMatch) {
+      if (Number.isFinite(tokenMatch.price ?? NaN)) {
+        return tokenMatch.price as number
+      }
+      if (tokenMatch.winner === true) return 1
+      if (tokenMatch.winner === false) return 0
+    }
+  }
 
   if (metadata && metadata.outcomes.length > 0 && metadata.outcomePrices.length > 0) {
     if (normalizedOutcome) {
@@ -1124,6 +1293,126 @@ function calculatePnlUsd(
   return delta * (filledSize ?? 0)
 }
 
+const ACTIVITY_LABELS: Record<OrderActivity, string> = {
+  bought: 'Bought',
+  sold: 'Sold',
+  redeemed: 'Redeemed',
+  lost: 'Lost',
+  canceled: 'Canceled',
+  expired: 'Expired',
+  failed: 'Failed',
+}
+
+const ACTIVITY_ICONS: Record<OrderActivity, string> = {
+  bought: '+',
+  sold: '-',
+  redeemed: '✓',
+  lost: '✕',
+  canceled: '✕',
+  expired: '⏲',
+  failed: '!',
+}
+
+function normalizeActionType(rawOrder: any): string | null {
+  const candidates = [
+    rawOrder?.action_type,
+    rawOrder?.action,
+    rawOrder?.event_type,
+    rawOrder?.eventType,
+    rawOrder?.raw_action,
+  ]
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim().toLowerCase()
+    }
+  }
+
+  return null
+}
+
+function deriveOrderActivity(
+  rawOrder: any,
+  status: OrderStatus,
+  side: string | null | undefined,
+  positionState: 'open' | 'closed' | 'unknown' | null,
+  pnlUsd: number | null
+): { activity: OrderActivity; activityLabel: string; activityIcon: string } {
+  const normalizedAction = normalizeActionType(rawOrder)
+  const normalizedSide = String(side ?? '').trim().toLowerCase()
+  const resolvedPnl = Number.isFinite(pnlUsd ?? NaN) ? (pnlUsd as number) : null
+
+  if (normalizedAction) {
+    if (['redeem', 'claim', 'settle_win'].includes(normalizedAction)) {
+      return {
+        activity: 'redeemed',
+        activityLabel: ACTIVITY_LABELS.redeemed,
+        activityIcon: ACTIVITY_ICONS.redeemed,
+      }
+    }
+    if (['expire', 'settle_loss'].includes(normalizedAction)) {
+      return {
+        activity: 'lost',
+        activityLabel: ACTIVITY_LABELS.lost,
+        activityIcon: ACTIVITY_ICONS.lost,
+      }
+    }
+  }
+
+  if (status === 'failed') {
+    return {
+      activity: 'failed',
+      activityLabel: ACTIVITY_LABELS.failed,
+      activityIcon: ACTIVITY_ICONS.failed,
+    }
+  }
+
+  if (status === 'canceled') {
+    return {
+      activity: 'canceled',
+      activityLabel: ACTIVITY_LABELS.canceled,
+      activityIcon: ACTIVITY_ICONS.canceled,
+    }
+  }
+
+  if (status === 'expired') {
+    return {
+      activity: 'expired',
+      activityLabel: ACTIVITY_LABELS.expired,
+      activityIcon: ACTIVITY_ICONS.expired,
+    }
+  }
+
+  if (positionState === 'closed') {
+    if ((resolvedPnl ?? 0) > 0) {
+      return {
+        activity: 'redeemed',
+        activityLabel: ACTIVITY_LABELS.redeemed,
+        activityIcon: ACTIVITY_ICONS.redeemed,
+      }
+    }
+    return {
+      activity: 'lost',
+      activityLabel: ACTIVITY_LABELS.lost,
+      activityIcon: ACTIVITY_ICONS.lost,
+    }
+  }
+
+  if (normalizedSide === 'sell') {
+    return {
+      activity: 'sold',
+      activityLabel: ACTIVITY_LABELS.sold,
+      activityIcon: ACTIVITY_ICONS.sold,
+    }
+  }
+
+  return {
+    activity: 'bought',
+    activityLabel: ACTIVITY_LABELS.bought,
+    activityIcon: ACTIVITY_ICONS.bought,
+  }
+}
+
 function resolvePositionState(rawOrder?: any): 'open' | 'closed' | 'unknown' | null {
   const candidates = [
     rawOrder?.position_status,
@@ -1161,6 +1450,57 @@ function columnMissing(error: any) {
   const code = error?.code
   const message = typeof error?.message === 'string' ? error.message.toLowerCase() : ''
   return code === '42703' || message.includes('column') || message.includes('does not exist')
+}
+
+async function reconcileMissingOpenOrders(
+  client: ReturnType<typeof createServiceClient>,
+  ordersTable: OrdersTableName,
+  traderId: string
+): Promise<boolean> {
+  try {
+    const { data, error } = await client
+      .from(ordersTable)
+      .select('order_id, size, filled_size, status')
+      .eq('trader_id', traderId)
+      .in('status', ['open', 'partial'])
+      .limit(200)
+
+    if (error) {
+      console.warn('[orders] reconcile query failed', error)
+      return false
+    }
+
+    const rows = data ?? []
+    if (rows.length === 0) return false
+
+    const now = new Date().toISOString()
+    const updates = rows.map((row: any) => {
+      const size = Number(row?.size ?? 0)
+      const filled = Number(row?.filled_size ?? 0)
+      const closedStatus = size > 0 && filled >= size ? 'filled' : 'canceled'
+      return {
+        order_id: row.order_id,
+        status: closedStatus,
+        remaining_size: 0,
+        updated_at: now,
+      }
+    })
+
+    const { error: updateError } = await client
+      .from(ordersTable)
+      .upsert(updates, { onConflict: 'order_id' })
+
+    if (updateError) {
+      console.warn('[orders] reconcile update failed', updateError)
+      return false
+    }
+
+    console.log('[orders] reconciled stale open orders', updates.length)
+    return updates.length > 0
+  } catch (err) {
+    console.warn('[orders] reconcile missing open orders failed', err)
+    return false
+  }
 }
 
 async function fetchOrdersForTrader(

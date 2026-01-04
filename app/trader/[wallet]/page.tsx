@@ -53,6 +53,33 @@ interface CategoryDistribution {
   color: string;
 }
 
+const normalizeTradeStatus = (
+  rawStatus?: string | null,
+  rawMarketStatus?: string | null
+): Trade['status'] => {
+  const status = rawStatus || rawMarketStatus;
+  if (status) {
+    const normalized = status.toLowerCase().trim();
+    if (
+      normalized.includes('trader closed') ||
+      normalized === 'closed_by_trader' ||
+      normalized === 'trader_closed'
+    ) {
+      return 'Trader Closed';
+    }
+    if (
+      normalized.includes('bonded') ||
+      normalized === 'closed' ||
+      normalized.includes('market closed') ||
+      normalized.includes('resolved') ||
+      normalized.includes('closed')
+    ) {
+      return 'Bonded';
+    }
+  }
+  return 'Open';
+};
+
 export default function TraderProfilePage({
   params,
 }: {
@@ -188,6 +215,65 @@ export default function TraderProfilePage({
     checkFollowStatus();
   }, [wallet, user]);
 
+  const enrichBondedStatuses = async (tradesList: Trade[]): Promise<Trade[]> => {
+    const conditionIds = tradesList
+      .map((trade) => trade.conditionId)
+      .filter((id): id is string => Boolean(id));
+
+    const uniqueIds = Array.from(new Set(conditionIds.map((id) => id.toLowerCase())));
+    if (uniqueIds.length === 0) return tradesList;
+
+    const statusMap = new Map<string, Trade['status']>();
+    const batchSize = 25;
+
+    for (let i = 0; i < uniqueIds.length; i += batchSize) {
+      const batch = uniqueIds.slice(i, i + batchSize);
+      try {
+        const response = await fetch(
+          `https://clob.polymarket.com/markets?ids=${batch.join(',')}`,
+          { cache: 'no-store' }
+        );
+
+        if (!response.ok) continue;
+
+        const data = await response.json();
+        const markets = Array.isArray(data) ? data : data?.data;
+
+        if (Array.isArray(markets)) {
+          markets.forEach((market: any) => {
+            const conditionId = market?.condition_id || market?.conditionId;
+            if (!conditionId) return;
+
+            const normalizedId = String(conditionId).toLowerCase();
+            const marketClosed =
+              market?.closed === true ||
+              market?.active === false ||
+              market?.accepting_orders === false ||
+              market?.enable_order_book === false;
+
+            if (marketClosed) {
+              statusMap.set(normalizedId, 'Bonded');
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Error checking market status:', err);
+      }
+    }
+
+    if (statusMap.size === 0) {
+      return tradesList;
+    }
+
+    return tradesList.map((trade) => {
+      const key = trade.conditionId?.toLowerCase();
+      if (key && statusMap.has(key)) {
+        return { ...trade, status: statusMap.get(key)! };
+      }
+      return trade;
+    });
+  };
+
   // Fetch trades from blockchain (complete history, no limits!)
   useEffect(() => {
     if (!wallet) return;
@@ -209,6 +295,10 @@ export default function TraderProfilePage({
             
             const formattedTrades: Trade[] = blockchainData.trades.map((trade: any) => {
               const tradeDate = new Date(trade.timestamp);
+              const status = normalizeTradeStatus(
+                trade.status,
+                trade.marketStatus || trade.market_status
+              );
               const formattedDate = tradeDate.toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
@@ -227,12 +317,13 @@ export default function TraderProfilePage({
                 marketSlug: trade.marketSlug || '',
                 eventSlug: trade.eventSlug || '',
                 conditionId: trade.conditionId || '',
-                status: 'Open', // Simplified for now
+                status,
               };
             });
 
             formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
-            setTrades(formattedTrades);
+            const tradesWithStatus = await enrichBondedStatuses(formattedTrades);
+            setTrades(tradesWithStatus);
             setLoadingTrades(false);
             return;
           }
@@ -258,6 +349,11 @@ export default function TraderProfilePage({
               year: 'numeric'
             });
             
+            const status = normalizeTradeStatus(
+              trade.status,
+              trade.marketStatus || trade.market_status
+            );
+
             return {
               timestamp: timestampMs,
               market: trade.title || trade.market?.title || 'Unknown Market',
@@ -270,12 +366,13 @@ export default function TraderProfilePage({
               marketSlug: trade.slug || trade.market?.slug || '',
               eventSlug: trade.eventSlug || trade.event_slug || '',
               conditionId: trade.conditionId || trade.condition_id || '',
-              status: 'Open',
+              status,
             };
           });
 
           formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
-          setTrades(formattedTrades);
+          const tradesWithStatus = await enrichBondedStatuses(formattedTrades);
+          setTrades(tradesWithStatus);
         }
       } catch (err) {
         console.error('❌ Error fetching trades:', err);
@@ -487,6 +584,9 @@ export default function TraderProfilePage({
 
   // Handle mark as copied
   const handleMarkAsCopied = (trade: Trade) => {
+    if (trade.status === 'Bonded') {
+      return;
+    }
     if (!user) {
       router.push('/login');
       return;
@@ -540,6 +640,10 @@ export default function TraderProfilePage({
 
   // Handle quick copy for premium users
   const handleQuickCopy = async (trade: Trade) => {
+    if (trade.status === 'Bonded') {
+      return;
+    }
+
     setIsSubmitting(true);
     
     // Simulate trade execution
@@ -847,6 +951,12 @@ export default function TraderProfilePage({
                   const polymarketUrl = getPolymarketUrl(trade);
                   const isAlreadyCopied = isTradeCopied(trade);
                   const isExpanded = expandedTradeIndex === index;
+                  const isBonded = trade.status === 'Bonded';
+                  const statusBadgeClass = trade.status === 'Open'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : trade.status === 'Bonded'
+                      ? 'bg-red-50 text-red-700 border-red-200'
+                      : 'bg-slate-100 text-slate-600 border-slate-200';
                   
                   // Calculate ROI
                   let roi: number | null = null;
@@ -881,14 +991,9 @@ export default function TraderProfilePage({
                         <div className="flex items-center gap-2">
                           <Badge
                             variant="secondary"
-                            className={cn(
-                              'text-xs font-medium',
-                              trade.status === 'Open'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-slate-100 text-slate-600 border-slate-200'
-                            )}
+                            className={cn('text-xs font-medium', statusBadgeClass)}
                           >
-                            {trade.status}
+                            {trade.status === 'Bonded' ? 'Market Closed (Bonded)' : trade.status}
                           </Badge>
                           {isPremium && !isAlreadyCopied && (
                             <button
@@ -937,15 +1042,17 @@ export default function TraderProfilePage({
                         <>
                           <Button
                             onClick={() => {
-                              if (isAlreadyCopied) return;
+                              if (isAlreadyCopied || isBonded) return;
                               setExpandedTradeIndex(isExpanded ? null : index);
                             }}
-                            disabled={isAlreadyCopied}
+                            disabled={isAlreadyCopied || isBonded}
                             className={cn(
                               'w-full font-semibold shadow-sm text-sm',
                               isAlreadyCopied
                                 ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
-                                : 'bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900'
+                                : isBonded
+                                  ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                                  : 'bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900'
                             )}
                             size="lg"
                           >
@@ -954,13 +1061,15 @@ export default function TraderProfilePage({
                                 <Check className="w-4 h-4 mr-2" />
                                 Trade Copied
                               </>
+                            ) : isBonded ? (
+                              'Market Closed'
                             ) : (
                               'Copy Trade'
                             )}
                           </Button>
 
                           {/* Premium: Expanded Quick Copy Interface */}
-                          {isExpanded && !isAlreadyCopied && (
+                          {isExpanded && !isAlreadyCopied && !isBonded && (
                             <div className="mt-4 p-4 bg-slate-50 rounded-lg space-y-4">
                               <h4 className="text-sm font-semibold text-slate-900">Quick Copy</h4>
 
@@ -1025,7 +1134,7 @@ export default function TraderProfilePage({
                               {/* Execute Button */}
                               <Button
                                 onClick={() => handleQuickCopy(trade)}
-                                disabled={!usdAmount || Number.parseFloat(usdAmount) <= 0 || isSubmitting}
+                                disabled={!usdAmount || Number.parseFloat(usdAmount) <= 0 || isSubmitting || isBonded}
                                 className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
                                 size="lg"
                               >
@@ -1044,25 +1153,36 @@ export default function TraderProfilePage({
                       ) : (
                         /* Free Users: Copy Trade + Mark as Copied */
                         <div className="flex gap-2">
-                          <a
-                            href={polymarketUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex-1"
-                          >
-                            <Button className="w-full bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold">
-                              Copy Trade
+                          {isBonded ? (
+                            <Button
+                              className="flex-1 bg-slate-200 text-slate-600 cursor-not-allowed"
+                              disabled
+                            >
+                              Market Closed
                             </Button>
-                          </a>
+                          ) : (
+                            <a
+                              href={polymarketUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex-1"
+                            >
+                              <Button className="w-full bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold">
+                                Copy Trade
+                              </Button>
+                            </a>
+                          )}
                           <Button
                             onClick={() => handleMarkAsCopied(trade)}
-                            disabled={isAlreadyCopied}
+                            disabled={isAlreadyCopied || isBonded}
                             variant="outline"
                             className={cn(
                               'flex-1',
                               isAlreadyCopied
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                                : isBonded
+                                  ? 'border-slate-200 text-slate-400 cursor-not-allowed'
+                                  : 'border-slate-300 text-slate-700 hover:bg-slate-50'
                             )}
                           >
                             {isAlreadyCopied ? (
@@ -1070,11 +1190,18 @@ export default function TraderProfilePage({
                                 <Check className="h-4 w-4 mr-2" />
                                 Copied
                               </>
+                            ) : isBonded ? (
+                              'Market Closed'
                             ) : (
                               'Mark as Copied'
                             )}
                           </Button>
                         </div>
+                      )}
+                      {isBonded && (
+                        <p className="text-xs text-red-600 mt-3">
+                          This market is bonded/closed; copying is disabled.
+                        </p>
                       )}
                     </Card>
                   );

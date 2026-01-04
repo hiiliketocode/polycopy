@@ -30,6 +30,7 @@ interface FeedTrade {
     eventSlug?: string;
     category?: string;
     avatarUrl?: string;
+    status?: 'open' | 'closed';
   };
   trade: {
     side: 'BUY' | 'SELL';
@@ -65,6 +66,30 @@ function getRelativeTime(timestamp: number): string {
   return new Date(tradeTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// Normalize keys for copied-trade lookup (case-insensitive, trimmed)
+const normalizeKeyPart = (value?: string | null): string | null => {
+  if (!value) return null;
+  const normalized = String(value).trim().toLowerCase();
+  return normalized || null;
+};
+
+// Build a set-friendly key using multiple possible market identifiers + wallet
+const buildCopiedTradeKeys = (
+  marketParts: Array<string | null | undefined>,
+  wallet?: string | null
+): string[] => {
+  const walletKey = normalizeKeyPart(wallet);
+  if (!walletKey) return [];
+
+  const uniqueMarketIds = new Set(
+    marketParts
+      .map(normalizeKeyPart)
+      .filter((v): v is string => Boolean(v))
+  );
+
+  return Array.from(uniqueMarketIds).map((id) => `${id}-${walletKey}`);
+};
+
 export default function FeedPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -93,7 +118,7 @@ export default function FeedPage() {
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(false);
   
   // Live market data (prices and scores)
-  const [liveMarketData, setLiveMarketData] = useState<Map<string, { price: number; score?: string }>>(new Map());
+  const [liveMarketData, setLiveMarketData] = useState<Map<string, { price: number; score?: string; closed?: boolean }>>(new Map());
 
   // Modal state
   const [showCopiedModal, setShowCopiedModal] = useState(false);
@@ -176,18 +201,29 @@ export default function FeedPage() {
       try {
         const { data: trades, error } = await supabase
           .from('copied_trades')
-          .select('market_id, trader_wallet')
+          .select('market_id, market_slug, market_title, trader_wallet')
           .eq('user_id', user.id);
         
         if (error) {
           console.error('Error fetching copied trades:', error);
           setCopiedTradeIds(new Set());
         } else {
-          const copiedIds = new Set<string>(
-            trades?.map((t: { market_id: string; trader_wallet: string }) => 
-              `${t.market_id}-${t.trader_wallet}`
-            ) || []
-          );
+          type CopiedTradeRow = {
+            market_id: string | null;
+            market_slug?: string | null;
+            market_title?: string | null;
+            trader_wallet: string | null;
+          };
+
+          const copiedIds = new Set<string>();
+
+          (trades as CopiedTradeRow[] | null | undefined)?.forEach((t) => {
+            buildCopiedTradeKeys(
+              [t.market_id, t.market_slug, t.market_title],
+              t.trader_wallet
+            ).forEach((key) => copiedIds.add(key));
+          });
+
           setCopiedTradeIds(copiedIds);
         }
       } catch (err) {
@@ -266,7 +302,7 @@ export default function FeedPage() {
 
   // Fetch live market data (prices and scores)
   const fetchLiveMarketData = useCallback(async (trades: FeedTrade[]) => {
-    const newLiveData = new Map<string, { price: number; score?: string }>();
+    const newLiveData = new Map<string, { price: number; score?: string; closed?: boolean }>();
     
     // Group trades by condition ID to avoid duplicate API calls
     const uniqueConditionIds = [...new Set(trades.map(t => t.market.conditionId).filter(Boolean))];
@@ -326,7 +362,8 @@ export default function FeedPage() {
                   
                   newLiveData.set(conditionId, { 
                     price,
-                    score: scoreDisplay
+                    score: scoreDisplay,
+                    closed: Boolean(priceData.market?.closed)
                   });
                 }
               }
@@ -491,6 +528,7 @@ export default function FeedPage() {
               eventSlug: trade.eventSlug || trade.event_slug || '',
               category: undefined,
               avatarUrl: extractMarketAvatarUrl(trade) || undefined,
+              status: undefined,
             },
             trade: {
               side: (trade.side || 'BUY').toUpperCase() as 'BUY' | 'SELL',
@@ -701,14 +739,21 @@ export default function FeedPage() {
     setIsSubmitting(true);
 
     try {
+      const marketId =
+        selectedTrade.market.conditionId ||
+        selectedTrade.market.id ||
+        selectedTrade.market.slug ||
+        selectedTrade.market.title;
+
       const { data: createdTrade, error: insertError } = await supabase
         .from('copied_trades')
         .insert({
           user_id: user.id,
           trader_wallet: selectedTrade.trader.wallet,
           trader_username: selectedTrade.trader.displayName,
-          market_id: selectedTrade.market.id || selectedTrade.market.slug || selectedTrade.market.title,
+          market_id: marketId,
           market_title: selectedTrade.market.title,
+          market_slug: selectedTrade.market.slug || selectedTrade.market.eventSlug || null,
           outcome: selectedTrade.trade.outcome.toUpperCase(),
           price_when_copied: entryPrice,
           amount_invested: amountInvested || null,
@@ -728,8 +773,22 @@ export default function FeedPage() {
 
       console.log('Trade copied successfully:', createdTrade.id);
 
-      const tradeKey = `${selectedTrade.market.id || selectedTrade.market.slug || selectedTrade.market.title}-${selectedTrade.trader.wallet}`;
-      setCopiedTradeIds(prev => new Set([...prev, tradeKey]));
+      const newKeys = buildCopiedTradeKeys(
+        [
+          selectedTrade.market.id,
+          selectedTrade.market.conditionId,
+          selectedTrade.market.slug,
+          selectedTrade.market.eventSlug,
+          selectedTrade.market.title,
+        ],
+        selectedTrade.trader.wallet
+      );
+
+      setCopiedTradeIds(prev => {
+        const next = new Set(prev);
+        newKeys.forEach((key) => next.add(key));
+        return next;
+      });
 
       setShowCopiedModal(false);
       setSelectedTrade(null);
@@ -744,8 +803,18 @@ export default function FeedPage() {
 
   // Check if a trade is copied
   const isTraceCopied = (trade: FeedTrade): boolean => {
-    const tradeKey = `${trade.market.id || trade.market.slug || trade.market.title}-${trade.trader.wallet}`;
-    return copiedTradeIds.has(tradeKey);
+    const tradeKeys = buildCopiedTradeKeys(
+      [
+        trade.market.id,
+        trade.market.conditionId,
+        trade.market.slug,
+        trade.market.eventSlug,
+        trade.market.title,
+      ],
+      trade.trader.wallet
+    );
+
+    return tradeKeys.some((key) => copiedTradeIds.has(key));
   };
 
   // Loading state
@@ -917,6 +986,7 @@ export default function FeedPage() {
                   marketSlug={trade.market.slug}
                   currentMarketPrice={liveMarketData.get(trade.market.conditionId || '')?.price}
                   liveScore={liveMarketData.get(trade.market.conditionId || '')?.score}
+                  marketStatus={liveMarketData.get(trade.market.conditionId || '')?.closed ? 'closed' : 'open'}
                   category={trade.market.category}
                 />
               ))}

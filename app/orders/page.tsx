@@ -22,6 +22,7 @@ export default function OrdersPage() {
   const [cashLoading, setCashLoading] = useState(false)
   const [showFailedOrders, setShowFailedOrders] = useState(false)
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
+  const [openOrderIds, setOpenOrderIds] = useState<string[]>([])
   const [openPositionsCount, setOpenPositionsCount] = useState<number | null>(null)
   const [openPositionsLoading, setOpenPositionsLoading] = useState(false)
   const [openPositionsError, setOpenPositionsError] = useState<string | null>(null)
@@ -32,6 +33,8 @@ export default function OrdersPage() {
   const [closeSubmitting, setCloseSubmitting] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
   const [closeSuccess, setCloseSuccess] = useState<string | null>(null)
+  const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null)
+  const [cancelError, setCancelError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'positions' | 'openOrders' | 'history'>('positions')
   const [showClosedPositions, setShowClosedPositions] = useState(false)
   const ordersWithoutFailed = useMemo(
@@ -43,16 +46,23 @@ export default function OrdersPage() {
     return showFailedOrders ? base : base.filter((order) => order.status !== 'failed')
   }, [orders, showFailedOrders])
 
-  const openOrdersOnly = useMemo(
-    () =>
-      orders.filter((order) => {
-        const statusOpen = order.status === 'open' || order.status === 'partial'
-        if (!statusOpen) return false
-        const tif = normalizeTimeInForce(order)
-        return tif === 'GTC'
-      }),
-    [orders]
-  )
+  const openOrdersOnly = useMemo(() => {
+    const MIN_REMAINING = 1e-6
+    const openIdSet = new Set(openOrderIds.map((id) => id.toLowerCase()))
+    return orders.filter((order) => {
+      const statusOpen = order.status === 'open' || order.status === 'partial'
+      if (!statusOpen) return false
+      const tif = normalizeTimeInForce(order)
+      if (tif !== 'GTC') return false
+      const remaining = deriveRemainingSize(order)
+      if (!(remaining > MIN_REMAINING)) return false
+      const normalizedId = (order.orderId || '').trim().toLowerCase()
+      if (openIdSet.size > 0) {
+        return openIdSet.has(normalizedId)
+      }
+      return true
+    })
+  }, [orders, openOrderIds])
 
   const hiddenFailedOrdersCount = useMemo(() => {
     const base = orders.filter((order) => order.status !== 'open' && order.status !== 'partial')
@@ -100,6 +110,12 @@ export default function OrdersPage() {
       }
 
       setOrders(data.orders || [])
+      const openIds = Array.isArray(data.openOrderIds)
+        ? data.openOrderIds
+            .map((id: unknown) => (typeof id === 'string' ? id.trim().toLowerCase() : null))
+            .filter((id): id is string => Boolean(id))
+        : []
+      setOpenOrderIds(openIds)
       const fetchedWallet =
         typeof data.walletAddress === 'string' && data.walletAddress.trim()
           ? data.walletAddress.trim().toLowerCase()
@@ -315,6 +331,32 @@ export default function OrdersPage() {
       setCloseSuccess(null)
     },
     [findPositionForOrder]
+  )
+
+  const handleCancelOrder = useCallback(
+    async (order: OrderRow) => {
+      if (!order?.orderId) return
+      setCancelError(null)
+      setCancelingOrderId(order.orderId)
+      try {
+        const response = await fetch('/api/polymarket/orders/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderHash: order.orderId }),
+        })
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data?.error || 'Failed to cancel order')
+        }
+        await refreshOrders()
+      } catch (err: any) {
+        console.error('Cancel order error:', err)
+        setCancelError(err?.message || 'Failed to cancel order')
+      } finally {
+        setCancelingOrderId(null)
+      }
+    },
+    [refreshOrders]
   )
 
   const handleConfirmClose = useCallback(
@@ -552,6 +594,11 @@ export default function OrdersPage() {
             {ordersError}
           </div>
         )}
+        {cancelError && activeTab === 'openOrders' && (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 shadow-sm">
+            {cancelError}
+          </div>
+        )}
 
         <div className="mb-6 space-y-4 rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">
           <SectionGrid
@@ -665,7 +712,9 @@ export default function OrdersPage() {
             statusSummary={statusSummary}
             getPositionForOrder={resolvePositionForOrder}
             onSellPosition={handleSellPosition}
-            showActions={false}
+            showActions
+            onCancelOrder={handleCancelOrder}
+            cancelingOrderId={cancelingOrderId}
           />
         )}
 
@@ -734,6 +783,23 @@ function formatPercent(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
   const formatted = value.toFixed(1)
   return `${formatted}%`
+}
+
+function deriveRemainingSize(order: OrderRow): number {
+  const raw = order.raw ?? {}
+  const candidates = [
+    raw.remaining_size,
+    raw.remainingSize,
+    raw.size_remaining,
+    (order.size ?? null) - (order.filledSize ?? 0),
+  ]
+  for (const candidate of candidates) {
+    const numeric = typeof candidate === 'number' ? candidate : Number(candidate)
+    if (Number.isFinite(numeric)) {
+      return numeric
+    }
+  }
+  return 0
 }
 
 function getPnlColorClass(value: number | null | undefined) {
@@ -900,6 +966,14 @@ function PositionsList({
             })
             if (!resp.ok) return
             const data = await resp.json()
+            const openStatus =
+              typeof data?.acceptingOrders === 'boolean'
+                ? data.acceptingOrders
+                : typeof data?.closed === 'boolean'
+                  ? !data.closed
+                  : typeof data?.resolved === 'boolean'
+                    ? !data.resolved
+                    : null
             const prices = new Map<string, number>()
             if (Array.isArray(data?.tokens)) {
               data.tokens.forEach((token: any) => {
@@ -920,10 +994,7 @@ function PositionsList({
               {
                 title: data?.question ?? null,
                 image: data?.icon ?? data?.image ?? null,
-                open:
-                  typeof data?.closed === 'boolean'
-                    ? !data.closed
-                    : null,
+                open: openStatus,
                 prices,
               },
             ])
@@ -1019,15 +1090,15 @@ function PositionsList({
               <thead>
                 <tr className="text-left text-slate-500 border-b border-slate-200 text-xs tracking-wider">
                   <th className="py-2 pr-4 font-medium min-w-[220px]">Market</th>
+                  <th className="py-2 pr-4 font-medium min-w-[120px]">Status</th>
                   <th className="py-2 pr-4 font-medium min-w-[120px]">Side</th>
                   <th className="py-2 pr-4 font-medium min-w-[120px]">Amount / contracts</th>
                   <th className="py-2 pr-4 font-medium min-w-[140px]">Entry → Now</th>
                   <th className="py-2 pr-4 font-medium min-w-[100px]">P/L</th>
-              <th className="py-2 pr-4 font-medium min-w-[140px]">Copied Trader</th>
-                  <th className="py-2 pr-4 font-medium min-w-[120px]">Status</th>
-              <th className="py-2 pr-4 font-medium min-w-[100px]">Action</th>
-            </tr>
-          </thead>
+                  <th className="py-2 pr-4 font-medium min-w-[140px]">Copied Trader</th>
+                  <th className="py-2 pr-4 font-medium min-w-[100px]">Action</th>
+                </tr>
+              </thead>
           <tbody>
             {visiblePositions.map((position) => {
               const order = resolveOrderForPosition(position)
@@ -1054,25 +1125,33 @@ function PositionsList({
                 tokenIdLower && meta?.prices?.has(tokenIdLower) ? meta.prices.get(tokenIdLower) ?? null : null
               const currentPrice = order?.currentPrice ?? metaPrice ?? null
               const entryPrice = position.avgEntryPrice ?? order?.priceOrAvgPrice ?? null
+              const inferredMarketOpen =
+                order?.marketIsOpen ??
+                meta?.open ??
+                (currentPrice !== null
+                  ? currentPrice > 0.05 && currentPrice < 0.95
+                    ? true
+                    : false
+                  : null)
               const marketStatusLabel =
                 order?.positionState === 'closed'
                   ? 'Closed'
-                  : order?.marketIsOpen ?? meta?.open
-                    ? 'Open'
-                    : 'Ended'
+                  : inferredMarketOpen === false
+                    ? 'Ended'
+                    : 'Open'
               const statusDot =
                 order?.positionState === 'closed'
                   ? 'bg-slate-400'
-                  : order?.marketIsOpen ?? meta?.open
-                    ? 'bg-emerald-500'
-                    : 'bg-rose-500'
+                  : inferredMarketOpen === false
+                    ? 'bg-rose-500'
+                    : 'bg-emerald-500'
               const statusPill =
                 order?.positionState === 'closed'
                   ? 'bg-slate-100 text-slate-600'
-                  : order?.marketIsOpen ?? meta?.open
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-amber-50 text-amber-700'
-              const canSell = (order?.marketIsOpen ?? meta?.open) === true
+                  : inferredMarketOpen === false
+                    ? 'bg-amber-50 text-amber-700'
+                    : 'bg-emerald-50 text-emerald-700'
+              const canSell = order?.positionState === 'closed' ? false : inferredMarketOpen !== false
               const traderHandle = order ? getCopiedTraderLabel(order) : null
               const pnlCalc = computePositionPnl(position, entryPrice, currentPrice)
               return (
@@ -1090,14 +1169,14 @@ function PositionsList({
                       </div>
                       <div className="flex flex-col">
                         <p className="text-sm font-semibold text-slate-900">{marketTitle}</p>
-                        <p className="text-[11px] font-semibold">
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${statusPill}`}>
-                            <span className={`h-2 w-2 rounded-full ${statusDot}`} />
-                            {marketStatusLabel === 'Open' ? 'Open' : 'Ended'}
-                          </span>
-                        </p>
                       </div>
                     </div>
+                  </td>
+                  <td className="py-3 pr-4 align-top text-sm text-slate-700">
+                    <span className="inline-flex items-center gap-2">
+                      <span className={`h-2.5 w-2.5 rounded-full ${statusDot}`} />
+                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusPill}`}>{marketStatusLabel}</span>
+                    </span>
                   </td>
                   <td className="py-3 pr-4 align-top text-sm font-semibold text-slate-900">
                     {directionLabel}
@@ -1116,12 +1195,6 @@ function PositionsList({
                     </span>
                   </td>
                   <td className="py-3 pr-4 align-top text-sm text-slate-700">{traderHandle}</td>
-                  <td className="py-3 pr-4 align-top text-sm text-slate-700">
-                    <span className="inline-flex items-center gap-2">
-                      <span className={`h-2.5 w-2.5 rounded-full ${statusDot}`} />
-                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusPill}`}>{marketStatusLabel}</span>
-                    </span>
-                  </td>
                   <td className="py-3 pr-4 align-top text-sm text-right">
                     <button
                       type="button"
