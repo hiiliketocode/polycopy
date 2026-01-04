@@ -184,6 +184,9 @@ export async function GET(request: NextRequest) {
             }
 
             // Prepare notification content
+            const currentPrice = statusData.currentPrice || trade.price_when_copied
+            const oppositePrice = 1 - currentPrice // Polymarket prices sum to 1
+            
             const notificationContent: NotificationContent = {
               subject: `${trade.trader_username} closed their position`,
               message: formatTraderClosedMessage({
@@ -191,7 +194,8 @@ export async function GET(request: NextRequest) {
                 marketTitle: trade.market_title,
                 outcome: trade.outcome,
                 userROI: statusData.roi || 0,
-                traderROI,
+                currentPrice,
+                oppositePrice,
               }),
             }
             
@@ -303,8 +307,8 @@ export async function GET(request: NextRequest) {
               subject: `Market Resolved: "${trade.market_title}"`,
               message: formatMarketResolvedMessage({
                 marketTitle: trade.market_title,
-                outcome: resolvedOutcome,
-                didWin: didUserWin,
+                userBet: trade.outcome,
+                result: resolvedOutcome,
                 userROI: statusData.roi || 0,
               }),
             }

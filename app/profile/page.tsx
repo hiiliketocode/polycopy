@@ -826,25 +826,29 @@ function ProfilePageContent() {
     if (!user) return;
     
     const newValue = !notificationsEnabled;
-    setNotificationsEnabled(newValue);
+    setLoadingNotificationPrefs(true);
     
     try {
       const { error } = await supabase
         .from('notification_preferences')
         .upsert({
           user_id: user.id,
-          trader_closes_position: newValue,
-          market_resolves: newValue,
+          email_notifications_enabled: newValue,
         });
       
       if (error) throw error;
       
-      setToastMessage(`Notifications ${newValue ? 'enabled' : 'disabled'}`);
+      setNotificationsEnabled(newValue);
+      setToastMessage(`Email notifications ${newValue ? 'enabled' : 'disabled'}`);
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
     } catch (err) {
       console.error('Error updating notification preferences:', err);
-      setNotificationsEnabled(!newValue);
+      setToastMessage('Failed to update notifications');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } finally {
+      setLoadingNotificationPrefs(false);
     }
   };
 
@@ -1671,7 +1675,7 @@ function ProfilePageContent() {
           {activeTab === 'settings' && (
             <Card className="p-6 space-y-6">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">Notifications</h3>
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Settings</h3>
                 <div className="space-y-4">
                   {/* Email Notifications */}
                   <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">

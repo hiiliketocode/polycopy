@@ -70,6 +70,11 @@ export async function POST(request: NextRequest) {
         phone_number: phoneNumber,
         phone_verified: true,
         phone_verified_at: new Date().toISOString(),
+        notification_preferences: {
+          email: true,
+          sms: false,
+          whatsapp: true, // Auto-enable WhatsApp on verification
+        },
       })
       .eq('id', user.id)
 

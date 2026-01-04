@@ -5,28 +5,48 @@ export function formatTraderClosedMessage(params: {
   marketTitle: string
   outcome: string
   userROI: number
-  traderROI: number
+  currentPrice: number
+  oppositePrice: number
 }): string {
-  const { traderUsername, marketTitle, outcome, userROI, traderROI } = params
+  const { traderUsername, marketTitle, outcome, userROI, currentPrice, oppositePrice } = params
   
-  // Keep it concise for SMS (160 chars ideal)
+  // Format ROI
   const roiSign = userROI >= 0 ? '+' : ''
   
-  return `${traderUsername} closed their ${outcome} position on "${marketTitle}". Your ROI: ${roiSign}${userROI.toFixed(1)}%. Trader ROI: ${traderROI >= 0 ? '+' : ''}${traderROI.toFixed(1)}%. View details: https://polycopy.app/profile`
+  // Format market odds (current prices as percentages)
+  const yesPrice = outcome === 'YES' ? currentPrice : oppositePrice
+  const noPrice = outcome === 'NO' ? currentPrice : oppositePrice
+  const marketOdds = `YES: ${Math.round(yesPrice * 100)}¢, NO: ${Math.round(noPrice * 100)}¢`
+  
+  return `${traderUsername} closed their ${outcome} position on "${marketTitle}".
+
+Your current ROI: ${roiSign}${userROI.toFixed(1)}%
+Current Market Odds: ${marketOdds}
+
+You can visit your profile now to close your position, or do nothing and wait for the market to resolve.
+
+View Trade: https://polycopy.app/profile`
 }
 
 export function formatMarketResolvedMessage(params: {
   marketTitle: string
-  outcome: string
-  didWin: boolean
+  userBet: string
+  result: string
   userROI: number
 }): string {
-  const { marketTitle, outcome, didWin, userROI } = params
+  const { marketTitle, userBet, result, userROI } = params
   
-  const result = didWin ? '🎉 You won!' : '😔 You lost'
   const roiSign = userROI >= 0 ? '+' : ''
+  const didWin = userBet.toUpperCase() === result.toUpperCase()
+  const emoji = didWin ? '🎉' : '😔'
   
-  return `${result} Market resolved: "${marketTitle}" → ${outcome}. Your ROI: ${roiSign}${userROI.toFixed(1)}%. View details: https://polycopy.app/profile`
+  return `${emoji} The trade you copied in market "${marketTitle}" has resolved:
+
+Your bet: ${userBet}
+Result: ${result}
+Your ROI: ${roiSign}${userROI.toFixed(1)}%
+
+View Trade: https://polycopy.app/profile`
 }
 
 export function formatVerificationCodeMessage(code: string): string {
