@@ -165,6 +165,16 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
               Discover
             </Link>
             <Link
+              href="/orders"
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                isActive("/orders")
+                  ? "text-slate-900 bg-slate-100"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+              }`}
+            >
+              Orders
+            </Link>
+            <Link
               href="/profile"
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 isActive("/profile")
