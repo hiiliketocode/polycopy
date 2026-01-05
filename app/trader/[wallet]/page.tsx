@@ -1622,27 +1622,35 @@ export default function TraderProfilePage({
               <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Performing Trades</h3>
               <div className="space-y-3">
                 {(() => {
-                  const closedTrades = trades
-                    .filter(t => t.currentPrice && t.price)
-                    .map(t => ({
-                      ...t,
-                      roi: ((t.currentPrice! - t.price) / t.price) * 100
-                    }))
+                  // Calculate ROI for all trades using live market data
+                  const tradesWithROI = trades
+                    .map(t => {
+                      // Get current price from live market data or fall back to trade's currentPrice
+                      const liveData = t.conditionId ? liveMarketData.get(t.conditionId) : undefined;
+                      const currentPrice = liveData?.price || t.currentPrice || t.price;
+                      
+                      return {
+                        ...t,
+                        currentPrice: currentPrice,
+                        roi: ((currentPrice - t.price) / t.price) * 100
+                      };
+                    })
+                    .filter(t => t.price && t.price > 0) // Only trades with valid entry price
                     .sort((a, b) => b.roi - a.roi)
                     .slice(0, 5);
 
-                  if (closedTrades.length === 0) {
+                  if (tradesWithROI.length === 0) {
                     return (
                       <div className="text-center py-8">
-                        <p className="text-slate-500 mb-2">No closed trades available yet</p>
+                        <p className="text-slate-500 mb-2">No trade data available yet</p>
                         <p className="text-sm text-slate-400">
-                          Top performing trades will appear here once the trader closes positions
+                          Top performing trades will appear here once data is loaded
                         </p>
                       </div>
                     );
                   }
 
-                  return closedTrades.map((trade, index) => (
+                  return tradesWithROI.map((trade, index) => (
                     <div key={index} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-slate-900 truncate">{trade.market}</p>
