@@ -529,6 +529,155 @@ interface Position {
   curPrice?: number;
 }
 
+// Simple Confirmation Modal Component for "Mark as Copied"
+function ConfirmModal({ 
+  isOpen, 
+  trade, 
+  onClose, 
+  onConfirm, 
+  isSubmitting 
+}: { 
+  isOpen: boolean; 
+  trade: Trade | null;
+  onClose: () => void; 
+  onConfirm: (entryPrice: number, amountInvested?: number) => void;
+  isSubmitting: boolean;
+}) {
+  const [entryPrice, setEntryPrice] = useState<string>('');
+  const [amountInvested, setAmountInvested] = useState<string>('');
+
+  // Pre-fill entry price when trade changes (in dollars)
+  useEffect(() => {
+    if (trade) {
+      setEntryPrice(trade.price.toFixed(2));
+    }
+  }, [trade]);
+
+  if (!isOpen || !trade) return null;
+
+  const handleConfirm = () => {
+    const price = entryPrice ? parseFloat(entryPrice) : trade.price;
+    const amount = amountInvested ? parseFloat(amountInvested) : undefined;
+    onConfirm(price, amount);
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  return (
+    <div 
+      className="fixed inset-0 z-50 bg-black/60 overflow-hidden"
+      onClick={handleBackdropClick}
+    >
+      <div className="h-full w-full overflow-y-auto flex items-start justify-center pt-8 pb-24 px-4 sm:items-center sm:pt-4 sm:pb-4">
+        <div 
+          className="w-full max-w-md bg-white rounded-2xl shadow-xl mx-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="p-6 max-h-[calc(100vh-8rem)] sm:max-h-[85vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-neutral-900">Mark Trade as Copied</h3>
+              <button 
+                onClick={onClose}
+                className="text-neutral-400 hover:text-neutral-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Trade Details */}
+            <div className="bg-neutral-50 rounded-xl p-3 sm:p-4 mb-4">
+              <p className="text-sm text-neutral-600 mb-1">Market</p>
+              <p className="font-medium text-neutral-900 mb-3 text-sm sm:text-base break-words">{trade.market}</p>
+              
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm text-neutral-600 mb-1">Position</p>
+                  <p className="font-medium text-neutral-900 text-sm sm:text-base">
+                    <span className={trade.outcome.toUpperCase() === 'YES' ? 'text-[#10B981]' : 'text-[#EF4444]'}>
+                      {trade.outcome.toUpperCase()}
+                    </span>
+                    {' '}at {Math.round(trade.price * 100)}¢
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Entry Price Input */}
+            <div className="mb-4 w-full">
+              <label className="block w-full text-sm font-medium text-neutral-700 mb-2">
+                Your entry price <span className="text-red-500">*</span>
+              </label>
+              <div className="relative w-full">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
+                <input
+                  type="number"
+                  value={entryPrice}
+                  onChange={(e) => setEntryPrice(e.target.value)}
+                  placeholder="0.58"
+                  min="0.01"
+                  max="0.99"
+                  step="0.01"
+                  className="w-full pl-8 pr-4 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
+                />
+              </div>
+              <p className="text-xs text-neutral-500 mt-1">
+                The price you bought/sold at (trader's price: ${trade.price.toFixed(2)})
+              </p>
+            </div>
+
+            {/* Amount Input */}
+            <div className="mb-6 w-full">
+              <label className="block w-full text-sm font-medium text-neutral-700 mb-2">
+                Amount invested (optional)
+              </label>
+              <div className="relative w-full">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
+                <input
+                  type="number"
+                  value={amountInvested}
+                  onChange={(e) => setAmountInvested(e.target.value)}
+                  placeholder="100"
+                  min="0"
+                  step="1"
+                  className="w-full pl-8 pr-4 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
+                />
+              </div>
+              <p className="text-xs text-neutral-500 mt-1">
+                How much USD you invested in this trade
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="flex-1 px-4 py-2.5 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 font-semibold rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={isSubmitting || !entryPrice}
+                className="flex-1 px-4 py-2.5 bg-[#FDB022] hover:bg-[#E69E1A] text-neutral-900 font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? 'Saving...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TraderProfilePage({
   params,
 }: {
@@ -2277,12 +2426,10 @@ export default function TraderProfilePage({
         )}
       </div>
       
-      {/* Copy Trade Modal */}
-      <CopyTradeModal
+      {/* Mark as Copied Confirmation Modal */}
+      <ConfirmModal
         isOpen={modalOpen}
         trade={selectedTrade}
-        traderWallet={wallet}
-        traderName={traderData?.displayName || wallet.slice(0, 8)}
         onClose={() => {
           setModalOpen(false);
           setSelectedTrade(null);
