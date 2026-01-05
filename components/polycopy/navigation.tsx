@@ -21,6 +21,7 @@ interface NavigationProps {
   user?: { id: string; email: string } | null
   isPremium?: boolean
   walletAddress?: string | null
+  profileImageUrl?: string | null
 }
 
 const FeedIcon = ({ className }: { className?: string }) => (
@@ -30,7 +31,7 @@ const FeedIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
-export function Navigation({ user, isPremium = false, walletAddress = null }: NavigationProps) {
+export function Navigation({ user, isPremium = false, walletAddress = null, profileImageUrl = null }: NavigationProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
@@ -40,7 +41,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
   const [showUI, setShowUI] = useState(false)
   
   // Track previous prop values to detect when they've stabilized
-  const prevPropsRef = useRef({ user, isPremium, walletAddress })
+  const prevPropsRef = useRef({ user, isPremium, walletAddress, profileImageUrl })
   const stabilityTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   const isLoggedIn = user !== null && user !== undefined
@@ -67,10 +68,11 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
     const propsChanged = 
       prevPropsRef.current.user?.id !== user?.id ||
       prevPropsRef.current.isPremium !== isPremium ||
-      prevPropsRef.current.walletAddress !== walletAddress
+      prevPropsRef.current.walletAddress !== walletAddress ||
+      prevPropsRef.current.profileImageUrl !== profileImageUrl
 
     // Update ref with current props
-    prevPropsRef.current = { user, isPremium, walletAddress }
+    prevPropsRef.current = { user, isPremium, walletAddress, profileImageUrl }
 
     // Clear any existing timer
     if (stabilityTimerRef.current) {
@@ -95,7 +97,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
         clearTimeout(stabilityTimerRef.current)
       }
     }
-  }, [user, isPremium, walletAddress, showUI])
+  }, [user, isPremium, walletAddress, profileImageUrl, showUI])
 
   // Fetch wallet balance for premium users with connected wallets
   useEffect(() => {
@@ -233,6 +235,9 @@ export function Navigation({ user, isPremium = false, walletAddress = null }: Na
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-2 hover:opacity-80 transition-opacity">
                     <Avatar className="w-9 h-9 ring-2 ring-slate-200">
+                      {profileImageUrl ? (
+                        <AvatarImage src={profileImageUrl} alt="Profile" />
+                      ) : null}
                       <AvatarFallback className={`bg-gradient-to-br ${isPremium ? 'from-yellow-400 to-yellow-500' : 'from-yellow-400 to-yellow-500'} text-slate-900 font-semibold relative`}>
                         {isPremium && (
                           <Crown className="absolute -top-1 -right-1 w-3 h-3 text-yellow-600" />

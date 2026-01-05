@@ -74,6 +74,7 @@ export default function FeedPage() {
   const [userTier, setUserTier] = useState<FeatureTier>('anon');
   const [isPremium, setIsPremium] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [activeCategory, setActiveCategory] = useState<Category>('all');
   
@@ -215,6 +216,7 @@ export default function FeedPage() {
       setUserTier('anon');
       setIsPremium(false);
       setWalletAddress(null);
+      setProfileImageUrl(null);
       return;
     }
 
@@ -227,7 +229,7 @@ export default function FeedPage() {
         const [profileRes, walletRes] = await Promise.all([
           supabase
             .from('profiles')
-            .select('is_premium, is_admin')
+            .select('is_premium, is_admin, profile_image_url')
             .eq('id', user.id)
             .single(),
           supabase
@@ -242,6 +244,7 @@ export default function FeedPage() {
           if (!cancelled) {
             setUserTier(resolveFeatureTier(true, null));
             setIsPremium(false);
+            setProfileImageUrl(null);
           }
           return;
         }
@@ -249,6 +252,7 @@ export default function FeedPage() {
         if (!cancelled) {
           setUserTier(resolveFeatureTier(true, profileRes.data));
           setIsPremium(profileRes.data?.is_premium || false);
+          setProfileImageUrl(profileRes.data?.profile_image_url || null);
           setWalletAddress(
             walletRes.data?.polymarket_account_address || 
             walletRes.data?.eoa_address || 
@@ -261,6 +265,7 @@ export default function FeedPage() {
           setUserTier('registered');
           setIsPremium(false);
           setWalletAddress(null);
+          setProfileImageUrl(null);
         }
       }
     };
@@ -903,6 +908,7 @@ export default function FeedPage() {
         user={user ? { id: user.id, email: user.email || '' } : null} 
         isPremium={isPremium}
         walletAddress={walletAddress}
+        profileImageUrl={profileImageUrl}
       />
         <div className="min-h-screen bg-slate-50 pb-24 w-full max-w-full overflow-x-hidden flex items-center justify-center">
           <div className="text-center">
@@ -920,6 +926,7 @@ export default function FeedPage() {
         user={user ? { id: user.id, email: user.email || '' } : null} 
         isPremium={isPremium}
         walletAddress={walletAddress}
+        profileImageUrl={profileImageUrl}
       />
       
       <div className="min-h-screen bg-slate-50 pt-4 md:pt-0 pb-20 md:pb-8">

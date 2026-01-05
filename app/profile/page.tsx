@@ -40,7 +40,10 @@ import {
   Trash2,
   RotateCcw,
   Check,
+  Info,
+  ArrowUpRight,
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 // Types for copied trades
@@ -66,10 +69,10 @@ interface CopiedTrade {
   resolved_outcome?: string | null;
 }
 
-interface MonthlyROI {
-  month: string;
-  roi: number;
-  trades: number;
+interface PositionSizeBucket {
+  range: string;
+  count: number;
+  percentage: number;
 }
 
 interface CategoryDistribution {
@@ -132,10 +135,10 @@ function ProfilePageContent() {
   const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved'>('all');
   
   // Performance tab data
-  const [monthlyROI, setMonthlyROI] = useState<MonthlyROI[]>([]);
+  const [positionSizeBuckets, setPositionSizeBuckets] = useState<PositionSizeBucket[]>([]);
   const [categoryDistribution, setCategoryDistribution] = useState<CategoryDistribution[]>([]);
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
-  const [hoveredMonth, setHoveredMonth] = useState<{ month: string; roi: number; x: number; y: number } | null>(null);
+  const [hoveredBucket, setHoveredBucket] = useState<{ range: string; count: number; percentage: number; x: number; y: number } | null>(null);
   
   // Edit/Close trade modal state
   const [showEditModal, setShowEditModal] = useState(false);
@@ -163,6 +166,9 @@ function ProfilePageContent() {
   
   // Polymarket username state
   const [polymarketUsername, setPolymarketUsername] = useState<string | null>(null);
+  
+  // Profile image state
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   
   // Pagination state for copied trades
   const [tradesToShow, setTradesToShow] = useState(15);
@@ -230,7 +236,7 @@ function ProfilePageContent() {
 
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('is_premium, is_admin, premium_since')
+          .select('is_premium, is_admin, premium_since, profile_image_url')
           .eq('id', user.id)
           .single();
 
@@ -238,6 +244,7 @@ function ProfilePageContent() {
           console.error('Error fetching profile:', profileError);
         } else {
           setIsPremium(profileData?.is_premium || false);
+          setProfileImageUrl(profileData?.profile_image_url || null);
         }
 
         // Fetch wallet from turnkey_wallets table
@@ -340,80 +347,40 @@ function ProfilePageContent() {
   // Process copied trades for performance metrics
   useEffect(() => {
     if (copiedTrades.length === 0) {
-      setMonthlyROI([]);
+      setPositionSizeBuckets([]);
       setCategoryDistribution([]);
       return;
     }
 
-    // Calculate Monthly ROI (last 12 months)
-    const monthlyData: { [key: string]: { pnl: number; invested: number; trades: number } } = {};
-    const now = new Date();
+    // Calculate Position Size Distribution
+    const positionSizes = copiedTrades.map(trade => trade.amount_invested || 0);
     
-    // Initialize last 12 months
-    for (let i = 11; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthKey = date.toISOString().substring(0, 7); // YYYY-MM
-      monthlyData[monthKey] = { pnl: 0, invested: 0, trades: 0 };
-    }
-
-    // Aggregate trades by month
-    copiedTrades.forEach(trade => {
-      const tradeDate = new Date(trade.copied_at);
-      const monthKey = tradeDate.toISOString().substring(0, 7);
-      
-      if (monthlyData[monthKey]) {
-        const invested = trade.amount_invested || 0;
-        monthlyData[monthKey].invested += invested;
-        monthlyData[monthKey].trades += 1;
-        
-        // Calculate P&L from ROI if available
-        if (trade.roi !== null && trade.roi !== 0) {
-          monthlyData[monthKey].pnl += (invested * trade.roi / 100);
-        }
-      }
+    // Define buckets based on the data
+    const buckets = [
+      { min: 0, max: 100, label: '$0-$100' },
+      { min: 100, max: 500, label: '$100-$500' },
+      { min: 500, max: 1000, label: '$500-$1K' },
+      { min: 1000, max: 5000, label: '$1K-$5K' },
+      { min: 5000, max: 10000, label: '$5K-$10K' },
+      { min: 10000, max: Infinity, label: '$10K+' },
+    ];
+    
+    const bucketCounts = buckets.map(bucket => ({
+      range: bucket.label,
+      count: positionSizes.filter(size => size >= bucket.min && size < bucket.max).length,
+      percentage: 0
+    }));
+    
+    // Calculate percentages
+    const totalTradesForBuckets = copiedTrades.length;
+    bucketCounts.forEach(bucket => {
+      bucket.percentage = (bucket.count / totalTradesForBuckets) * 100;
     });
-
-    // Convert to array and calculate cumulative ROI month-over-month
-    const monthlyROIData: MonthlyROI[] = [];
-    let cumulativePnL = 0;
-    let cumulativeInvested = 0;
     
-    // Calculate overall ROI from all trades for proportional distribution
-    const totalPnL = Object.values(monthlyData).reduce((sum, d) => sum + d.pnl, 0);
-    const totalInvested = Object.values(monthlyData).reduce((sum, d) => sum + d.invested, 0);
-    const overallROI = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
-    
-    Object.keys(monthlyData).sort().forEach(monthKey => {
-      const data = monthlyData[monthKey];
-      
-      // Accumulate investment
-      cumulativeInvested += data.invested;
-      
-      // For trades with ROI data, accumulate actual P&L
-      cumulativePnL += data.pnl;
-      
-      // Calculate ROI - if we have actual P&L, use it; otherwise estimate proportionally
-      let roi = 0;
-      if (cumulativePnL !== 0) {
-        // We have actual P&L data
-        roi = cumulativeInvested > 0 ? (cumulativePnL / cumulativeInvested) * 100 : 0;
-      } else if (overallROI !== 0) {
-        // No P&L yet, but we have overall ROI - show proportional growth
-        const portfolioProgress = totalInvested > 0 ? (cumulativeInvested / totalInvested) : 0;
-        roi = overallROI * portfolioProgress;
-      }
-      
-      const date = new Date(monthKey + '-01');
-      const monthName = date.toLocaleDateString('en-US', { month: 'short' });
-      
-      monthlyROIData.push({
-        month: monthName,
-        roi: roi,
-        trades: data.trades
-      });
-    });
+    // Filter out empty buckets
+    const nonEmptyBuckets = bucketCounts.filter(b => b.count > 0);
 
-    setMonthlyROI(monthlyROIData);
+    setPositionSizeBuckets(nonEmptyBuckets);
 
     // Calculate Category Distribution
     const categoryMap: { [key: string]: number } = {};
@@ -623,11 +590,46 @@ function ProfilePageContent() {
 
       if (walletError) throw walletError;
 
+      const connectedWallet = walletData?.polymarket_account_address || walletData?.eoa_address || address;
+      
       // Update local profile state with the wallet address
       setProfile({
         ...profile,
-        trading_wallet_address: walletData?.polymarket_account_address || walletData?.eoa_address || address
+        trading_wallet_address: connectedWallet
       });
+      
+      // Fetch and save profile image from Polymarket leaderboard
+      try {
+        console.log('🖼️ Fetching profile image from Polymarket...');
+        const leaderboardResponse = await fetch(
+          `/api/polymarket/leaderboard?limit=1000&orderBy=PNL&timePeriod=all`
+        );
+        
+        if (leaderboardResponse.ok) {
+          const leaderboardData = await leaderboardResponse.json();
+          const trader = leaderboardData.traders?.find(
+            (t: any) => t.wallet.toLowerCase() === connectedWallet.toLowerCase()
+          );
+          
+          if (trader?.profileImage) {
+            // Save profile image to database
+            const { error: imageError } = await supabase
+              .from('profiles')
+              .update({ profile_image_url: trader.profileImage })
+              .eq('id', user.id);
+            
+            if (!imageError) {
+              setProfileImageUrl(trader.profileImage);
+              console.log('✅ Profile image saved:', trader.profileImage);
+            }
+          } else {
+            console.log('ℹ️ No profile image found for this wallet');
+          }
+        }
+      } catch (imageErr) {
+        console.error('Error fetching profile image:', imageErr);
+        // Non-critical, continue anyway
+      }
       
       setToastMessage('Wallet connected successfully!');
       setShowToast(true);
@@ -855,6 +857,7 @@ function ProfilePageContent() {
           user={user ? { id: user.id, email: user.email || '' } : null} 
           isPremium={isPremium}
           walletAddress={profile?.trading_wallet_address}
+          profileImageUrl={profileImageUrl}
         />
         <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 flex items-center justify-center">
           <div className="text-center">
@@ -876,6 +879,7 @@ function ProfilePageContent() {
         user={user ? { id: user.id, email: user.email || '' } : null} 
         isPremium={isPremium}
         walletAddress={profile?.trading_wallet_address}
+        profileImageUrl={profileImageUrl}
       />
       
       <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pt-4 md:pt-0 pb-20 md:pb-8">
@@ -912,39 +916,52 @@ function ProfilePageContent() {
                         : polymarketUsername
                       : 'You'}
                   </h2>
-                  <div className="flex items-center gap-2 text-sm text-slate-600 justify-center lg:justify-start">
-                    <Avatar className="h-9 w-9 ring-2 ring-slate-100">
-                      <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-xs font-semibold">
-                        {polymarketUsername
-                          ? polymarketUsername.charAt(0).toUpperCase()
-                          : user?.email?.charAt(0).toUpperCase() || 'U'}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span>Following {followingCount} traders</span>
-                  </div>
-
                   {profile?.trading_wallet_address && (
-                    <div className="flex items-center gap-2 flex-wrap mt-3 justify-center lg:justify-start">
-                      <code className="text-sm font-mono text-slate-600 bg-slate-50 px-3 py-1 rounded-lg border border-slate-200">
+                    <>
+                      <p className="text-sm font-mono text-slate-500 mt-2">
                         {truncateAddress(profile.trading_wallet_address)}
-                      </code>
-                      <Button
-                        onClick={() => navigator.clipboard.writeText(profile.trading_wallet_address)}
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 px-2 text-slate-500 hover:text-slate-900"
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        onClick={() => setShowDisconnectModal(true)}
-                        disabled={disconnectingWallet}
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 px-2 text-red-500 hover:text-red-700"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                      </p>
+                      <div className="flex items-center gap-3 mt-3 justify-center lg:justify-start">
+                        <a
+                          href={`https://polymarket.com/profile/${profile.trading_wallet_address}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-yellow-600 transition-colors"
+                        >
+                          View on Polymarket
+                          <ArrowUpRight className="h-3 w-3" />
+                        </a>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            onClick={() => navigator.clipboard.writeText(profile.trading_wallet_address)}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-slate-500 hover:text-slate-900"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            onClick={() => setShowDisconnectModal(true)}
+                            disabled={disconnectingWallet}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-red-500 hover:text-red-700"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {!profile?.trading_wallet_address && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600 justify-center lg:justify-start mt-2">
+                      <Avatar className="h-9 w-9 ring-2 ring-slate-100">
+                        <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-xs font-semibold">
+                          {user?.email?.charAt(0).toUpperCase() || 'U'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span>Following {followingCount} traders</span>
                     </div>
                   )}
 
@@ -962,46 +979,37 @@ function ProfilePageContent() {
               </div>
 
               {/* Stats Grid */}
-              <div className="grid grid-cols-2 gap-4 md:gap-6 lg:min-w-[400px]">
-                <div>
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <TrendingUp className="h-4 w-4 text-slate-500" />
-                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Total P&L</p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="text-center p-4 bg-slate-50 rounded-lg">
+                  <div className="text-xs font-medium text-slate-500 mb-1">
+                    Total P&L
                   </div>
-                  <p
-                    className={cn(
-                      "text-xl sm:text-2xl font-bold",
-                      userStats.totalPnl >= 0 ? "text-emerald-600" : "text-red-600"
-                    )}
-                  >
+                  <div className={cn("text-2xl font-bold", userStats.totalPnl >= 0 ? "text-emerald-600" : "text-red-600")}>
                     {userStats.totalPnl >= 0 ? "+" : ""}
                     {formatCompactNumber(userStats.totalPnl)}
-                  </p>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Percent className="h-4 w-4 text-slate-500" />
-                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">ROI</p>
                   </div>
-                  <p className="text-xl sm:text-2xl font-bold text-emerald-600">
+                </div>
+                <div className="text-center p-4 bg-slate-50 rounded-lg">
+                  <div className="text-xs font-medium text-slate-500 mb-1">
+                    ROI
+                  </div>
+                  <div className={cn("text-2xl font-bold", userStats.roi >= 0 ? "text-emerald-600" : "text-red-600")}>
                     {userStats.roi >= 0 ? '+' : ''}{userStats.roi.toFixed(1)}%
-                  </p>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <DollarSign className="h-4 w-4 text-slate-500" />
-                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Volume</p>
                   </div>
-                  <p className="text-xl sm:text-2xl font-bold text-slate-900">
+                </div>
+                <div className="text-center p-4 bg-slate-50 rounded-lg">
+                  <div className="text-xs font-medium text-slate-500 mb-1">
+                    Volume
+                  </div>
+                  <div className="text-2xl font-bold text-slate-900">
                     {formatCompactNumber(userStats.totalVolume)}
-                  </p>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <TrendingUp className="h-4 w-4 text-slate-500" />
-                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Win Rate</p>
                   </div>
-                  <p className="text-xl sm:text-2xl font-bold text-slate-900">{userStats.winRate}%</p>
+                </div>
+                <div className="text-center p-4 bg-slate-50 rounded-lg">
+                  <div className="text-xs font-medium text-slate-500 mb-1">
+                    Win Rate
+                  </div>
+                  <div className="text-2xl font-bold text-slate-900">{userStats.winRate}%</div>
                 </div>
               </div>
             </div>
@@ -1352,191 +1360,252 @@ function ProfilePageContent() {
 
           {activeTab === 'performance' && (
             <div className="space-y-6">
-              {/* Data Context Banner */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 mt-0.5">
-                    <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="text-sm font-semibold text-blue-900 mb-1">Recent Performance Analysis</h4>
-                    <p className="text-sm text-blue-800">
-                      Performance metrics are based on your most recent 100 trades. This provides the most relevant and up-to-date view of your trading performance.
-                    </p>
-                  </div>
-                </div>
+              {/* Header Section */}
+              <div className="mb-6">
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Performance Analysis</h2>
+                <p className="text-sm text-slate-500 mt-1">Your complete trading performance across all copied trades</p>
               </div>
 
-              {/* ROI Over Time Chart */}
+              {/* Position Size Distribution */}
               <Card className="p-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-6">ROI Over Time (Last 12 Months)</h3>
-                {monthlyROI.length > 0 ? (
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-slate-900">Position Size Distribution</h3>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-4 w-4 text-slate-400 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <p>Shows how you size your copied positions. Consistent sizing indicates disciplined risk management.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-medium">Your Trades</span>
+                </div>
+                {positionSizeBuckets.length > 0 ? (
                   <div className="relative h-64">
                     {/* Y-axis labels */}
                     <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-xs text-slate-500">
                       {(() => {
-                        const maxROI = Math.max(...monthlyROI.map(m => m.roi), 5);
-                        const minROI = Math.min(...monthlyROI.map(m => m.roi), -5);
-                        // Ensure at least a 10% range for visibility
-                        const range = Math.max(maxROI - minROI, 10);
-                        const actualMax = maxROI + (10 - (maxROI - minROI)) / 2;
-                        const actualMin = minROI - (10 - (maxROI - minROI)) / 2;
-                        const step = (actualMax - actualMin) / 4;
-                        return [actualMax, actualMax - step, actualMax - 2 * step, actualMax - 3 * step, actualMin].map((val, i) => (
-                          <span key={i}>{val.toFixed(1)}%</span>
-                        ));
+                        const maxCount = Math.max(...positionSizeBuckets.map(b => b.count), 1);
+                        const steps = 5;
+                        return Array.from({ length: steps }, (_, i) => {
+                          const value = maxCount - (i / (steps - 1)) * maxCount;
+                          return <span key={i}>{Math.round(value)}</span>;
+                        });
                       })()}
                     </div>
                     
                     {/* Chart area */}
                     <div className="ml-12 h-full border-l border-b border-slate-200 relative">
                       <svg className="w-full h-full" viewBox="0 0 600 200" preserveAspectRatio="xMidYMid meet">
-                        <polyline
-                          points={monthlyROI.map((m, i) => {
-                            const x = (i / (monthlyROI.length - 1)) * 600;
-                            const maxROI = Math.max(...monthlyROI.map(m => m.roi), 5);
-                            const minROI = Math.min(...monthlyROI.map(m => m.roi), -5);
-                            const range = Math.max(maxROI - minROI, 10);
-                            const actualMax = maxROI + (10 - (maxROI - minROI)) / 2;
-                            const actualMin = minROI - (10 - (maxROI - minROI)) / 2;
-                            const y = 200 - ((m.roi - actualMin) / (actualMax - actualMin)) * 200;
-                            return `${x},${y}`;
-                          }).join(' ')}
-                          fill="none"
-                          stroke="#64748b"
-                          strokeWidth="2"
-                          vectorEffect="non-scaling-stroke"
-                        />
-                        {/* Data points */}
-                        {monthlyROI.map((m, i) => {
-                          const x = (i / (monthlyROI.length - 1)) * 600;
-                          const maxROI = Math.max(...monthlyROI.map(m => m.roi), 5);
-                          const minROI = Math.min(...monthlyROI.map(m => m.roi), -5);
-                          const range = Math.max(maxROI - minROI, 10);
-                          const actualMax = maxROI + (10 - (maxROI - minROI)) / 2;
-                          const actualMin = minROI - (10 - (maxROI - minROI)) / 2;
-                          const y = 200 - ((m.roi - actualMin) / (actualMax - actualMin)) * 200;
-                          const isNegative = m.roi < 0;
+                        {/* Bar chart */}
+                        {positionSizeBuckets.map((bucket, i) => {
+                          const maxCount = Math.max(...positionSizeBuckets.map(b => b.count), 1);
+                          const barWidth = 600 / positionSizeBuckets.length * 0.7;
+                          const x = (i / positionSizeBuckets.length) * 600 + (600 / positionSizeBuckets.length - barWidth) / 2;
+                          const height = (bucket.count / maxCount) * 200;
+                          const y = 200 - height;
+                          
                           return (
-                            <circle
+                            <rect
                               key={i}
-                              cx={x}
-                              cy={y}
-                              r="5"
-                              fill={isNegative ? '#ef4444' : '#10b981'}
-                              className="cursor-pointer hover:r-6 transition-all"
-                              onMouseEnter={() => setHoveredMonth({ month: m.month, roi: m.roi, x, y })}
-                              onMouseLeave={() => setHoveredMonth(null)}
-                              vectorEffect="non-scaling-stroke"
+                              x={x}
+                              y={y}
+                              width={barWidth}
+                              height={height}
+                              fill="#10b981"
+                              className="cursor-pointer hover:opacity-80 transition-opacity"
+                              onMouseEnter={() => setHoveredBucket({ range: bucket.range, count: bucket.count, percentage: bucket.percentage, x: x + barWidth / 2, y })}
+                              onMouseLeave={() => setHoveredBucket(null)}
                             />
                           );
                         })}
                       </svg>
                       
-                      {/* Tooltip for chart points */}
-                      {hoveredMonth && (
+                      {/* Tooltip for bars */}
+                      {hoveredBucket && (
                         <div 
                           className="absolute bg-slate-900 text-white rounded-lg shadow-lg p-3 pointer-events-none z-10 text-sm"
                           style={{
-                            left: `${(hoveredMonth.x / 600) * 100}%`,
-                            top: `${(hoveredMonth.y / 200) * 100}%`,
+                            left: `${(hoveredBucket.x / 600) * 100}%`,
+                            top: `${(hoveredBucket.y / 200) * 100}%`,
                             transform: 'translate(-50%, -120%)'
                           }}
                         >
-                          <div className="font-semibold">{hoveredMonth.month}</div>
-                          <div className={hoveredMonth.roi >= 0 ? 'text-green-400' : 'text-red-400'}>
-                            {hoveredMonth.roi >= 0 ? '+' : ''}{hoveredMonth.roi.toFixed(2)}%
+                          <div className="font-semibold">{hoveredBucket.range}</div>
+                          <div className="text-emerald-400">
+                            {hoveredBucket.count} {hoveredBucket.count === 1 ? 'trade' : 'trades'}
+                          </div>
+                          <div className="text-slate-300 text-xs">
+                            {hoveredBucket.percentage.toFixed(1)}% of total
                           </div>
                         </div>
                       )}
                       
                       {/* X-axis labels */}
                       <div className="absolute -bottom-6 left-0 right-0 flex justify-between text-xs text-slate-500">
-                        {monthlyROI.map((m, i) => (
-                          <span key={i}>{m.month}</span>
+                        {positionSizeBuckets.map((bucket, i) => (
+                          <span key={i} className="text-center">{bucket.range}</span>
                         ))}
                       </div>
                     </div>
                   </div>
                 ) : (
                   <div className="h-64 flex items-center justify-center text-slate-500">
-                    <p>Not enough trade history to display ROI over time</p>
+                    <p>Not enough trade data to display position sizing</p>
                   </div>
                 )}
               </Card>
 
               {/* Performance Metrics */}
               <Card className="p-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-6">Performance Metrics</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Column 1 */}
-                <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">Performance Metrics</h3>
+                <p className="text-sm text-slate-500 mb-6">Showing lifetime performance across all trades</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {/* Lifetime ROI */}
                   <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Total Volume</p>
-                    <p className="text-2xl font-bold text-slate-900">
-                      ${(copiedTrades.reduce((sum, t) => sum + (t.amount_invested || 0), 0) / 1000).toFixed(1)}K
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Best Trade ROI</p>
-                    <p className="text-2xl font-bold text-green-600">
-                      {(() => {
-                        const tradesWithROI = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
-                        if (tradesWithROI.length === 0) return 'N/A';
-                        const bestROI = Math.max(...tradesWithROI.map(t => t.roi!));
-                        return `+${bestROI.toFixed(1)}%`;
-                      })()}
-                    </p>
-                    {copiedTrades.filter(t => t.roi !== null && t.roi !== 0).length === 0 && (
-                      <p className="text-xs text-slate-400 mt-1">No closed trades yet</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Column 2 */}
-                <div className="space-y-4">
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Open Markets</p>
-                    <p className="text-2xl font-bold text-slate-900">{copiedTrades.filter(t => !t.market_resolved && !t.user_closed_at).length}</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Closed Trades</p>
-                    <p className="text-2xl font-bold text-slate-900">
+                    <p className="text-sm text-slate-500 mb-1">Lifetime ROI</p>
+                    <p className={`text-2xl font-bold ${(() => {
+                      const closedTrades = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
+                      if (closedTrades.length === 0) return 'text-slate-900';
+                      const totalROI = closedTrades.reduce((sum, t) => sum + (t.roi || 0), 0) / closedTrades.length;
+                      return totalROI > 0 ? 'text-emerald-600' : 'text-red-600';
+                    })()}`}>
                       {(() => {
                         const closedTrades = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
-                        const profitableTrades = closedTrades.filter(t => (t.roi || 0) > 0);
-                        return `${profitableTrades.length}/${closedTrades.length}`;
+                        if (closedTrades.length === 0) return 'N/A';
+                        const totalROI = closedTrades.reduce((sum, t) => sum + (t.roi || 0), 0) / closedTrades.length;
+                        return `${totalROI > 0 ? '+' : ''}${totalROI.toFixed(1)}%`;
                       })()}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">Profitable/Total</p>
+                    <p className="text-xs text-slate-500 mt-1">All time</p>
                   </div>
-                </div>
 
-                {/* Column 3 */}
-                <div className="space-y-4">
+                  {/* Total P&L */}
                   <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Avg Trade Size</p>
-                    <p className="text-2xl font-bold text-slate-900">
-                      ${copiedTrades.length > 0 ? (copiedTrades.reduce((sum, t) => sum + (t.amount_invested || 0), 0) / copiedTrades.length).toFixed(0) : '0'}
+                    <p className="text-sm text-slate-500 mb-1">Total P&L</p>
+                    <p className={`text-2xl font-bold ${(() => {
+                      const totalPnL = copiedTrades
+                        .filter(t => t.roi !== null && t.roi !== 0)
+                        .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
+                      return totalPnL > 0 ? 'text-emerald-600' : 'text-red-600';
+                    })()}`}>
+                      {(() => {
+                        const totalPnL = copiedTrades
+                          .filter(t => t.roi !== null && t.roi !== 0)
+                          .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
+                        return `${totalPnL > 0 ? '+' : ''}$${Math.abs(totalPnL).toFixed(0)}`;
+                      })()}
                     </p>
+                    <p className="text-xs text-slate-500 mt-1">All time</p>
                   </div>
+
+                  {/* Best Position */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Best Position</p>
+                    <p className="text-2xl font-bold text-slate-900">
+                      ${(() => {
+                        if (copiedTrades.length === 0) return '0';
+                        const maxTrade = Math.max(...copiedTrades.map(t => t.amount_invested || 0));
+                        return maxTrade >= 1000000 
+                          ? `${(maxTrade / 1000000).toFixed(2)}M`
+                          : maxTrade >= 1000 
+                            ? `${(maxTrade / 1000).toFixed(1)}K` 
+                            : maxTrade.toFixed(0);
+                      })()}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">Largest trade</p>
+                  </div>
+
+                  {/* Total Trades */}
                   <div className="bg-slate-50 rounded-lg p-4">
                     <p className="text-sm text-slate-500 mb-1">Total Trades</p>
                     <p className="text-2xl font-bold text-slate-900">{copiedTrades.length}</p>
+                    <p className="text-xs text-slate-500 mt-1">All time</p>
+                  </div>
+
+                  {/* Net P&L / Trade */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Net P&L / Trade</p>
+                    <p className={`text-2xl font-bold ${(() => {
+                      const totalPnL = copiedTrades
+                        .filter(t => t.roi !== null && t.roi !== 0)
+                        .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
+                      return totalPnL > 0 ? 'text-emerald-600' : 'text-red-600';
+                    })()}`}>
+                      {(() => {
+                        if (copiedTrades.length === 0) return '$0';
+                        const totalPnL = copiedTrades
+                          .filter(t => t.roi !== null && t.roi !== 0)
+                          .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
+                        const avgPnL = totalPnL / copiedTrades.length;
+                        return `${avgPnL > 0 ? '+' : ''}$${Math.abs(avgPnL).toFixed(0)}`;
+                      })()}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">Per trade</p>
+                  </div>
+
+                  {/* Avg ROI / Trade */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Avg ROI / Trade</p>
+                    <p className={`text-2xl font-bold ${(() => {
+                      const closedTrades = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
+                      if (closedTrades.length === 0) return 'text-slate-900';
+                      const avgROI = closedTrades.reduce((sum, t) => sum + (t.roi || 0), 0) / closedTrades.length;
+                      return avgROI > 0 ? 'text-emerald-600' : 'text-red-600';
+                    })()}`}>
+                      {(() => {
+                        const closedTrades = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
+                        if (closedTrades.length === 0) return 'N/A';
+                        const avgROI = closedTrades.reduce((sum, t) => sum + (t.roi || 0), 0) / closedTrades.length;
+                        return `${avgROI > 0 ? '+' : ''}${avgROI.toFixed(2)}%`;
+                      })()}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">Per trade</p>
+                  </div>
+
+                  {/* Open Positions */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Open Positions</p>
+                    <p className="text-2xl font-bold text-slate-900">
+                      {copiedTrades.filter(t => !t.market_resolved && !t.user_closed_at).length}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">Currently active</p>
+                  </div>
+
+                  {/* Avg P&L / Trade */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Avg P&L / Trade</p>
+                    <p className={`text-2xl font-bold ${(() => {
+                      const totalPnL = copiedTrades
+                        .filter(t => t.roi !== null && t.roi !== 0)
+                        .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
+                      return totalPnL > 0 ? 'text-emerald-600' : 'text-red-600';
+                    })()}`}>
+                      {(() => {
+                        if (copiedTrades.length === 0) return '$0';
+                        const totalPnL = copiedTrades
+                          .filter(t => t.roi !== null && t.roi !== 0)
+                          .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
+                        const avgPnL = totalPnL / copiedTrades.length;
+                        return `${avgPnL > 0 ? '+' : ''}$${Math.abs(avgPnL).toFixed(0)}`;
+                      })()}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">Average</p>
                   </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
 
               {/* Category Distribution Pie Chart */}
               <Card className="p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-6">Trading Categories</h3>
                 {categoryDistribution.length > 0 ? (
-                  <div className="flex flex-col md:flex-row gap-8 items-center">
+                  <div className="flex flex-col md:flex-row gap-6 items-center md:items-start justify-center">
                     {/* Pie Chart */}
-                    <div className="relative w-64 h-64 flex-shrink-0">
+                    <div className="relative w-56 h-56 flex-shrink-0">
                       <svg viewBox="0 0 200 200" className="w-full h-full">
                         {(() => {
                           let currentAngle = -90; // Start at top

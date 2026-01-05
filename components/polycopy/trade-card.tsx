@@ -309,7 +309,7 @@ export function TradeCard({
         </div>
 
         <div className="border border-slate-200 rounded-lg p-4 mb-4 bg-slate-50/50">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 relative">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 relative">
             <div className="text-center">
               <p className="text-xs text-slate-500 mb-1 font-medium">Position</p>
               <div className="flex flex-wrap md:flex-row md:items-center md:justify-center items-center justify-center gap-1">
@@ -340,6 +340,16 @@ export function TradeCard({
             <div className="text-center md:border-l border-slate-200">
               <p className="text-xs text-slate-500 mb-1 font-medium">Total</p>
               <p className="text-sm md:text-base font-semibold text-slate-900">{formatCurrency(total)}</p>
+            </div>
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">ROI</p>
+              <p className={`text-sm md:text-base font-semibold ${
+                priceDirection === 'neutral' || !currentMarketPrice ? 'text-slate-400' :
+                priceDirection === 'up' ? 'text-emerald-600' :
+                'text-red-600'
+              }`}>
+                {!currentMarketPrice ? '--' : `${priceChange > 0 ? '+' : ''}${priceChange.toFixed(1)}%`}
+              </p>
             </div>
           </div>
         </div>

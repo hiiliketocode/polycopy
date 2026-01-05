@@ -2,15 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ArrowUpRight, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { Check, ArrowUpRight, ChevronDown, ChevronUp, Loader2, Info } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Navigation } from '@/components/polycopy/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { MarkTradeCopiedModal } from '@/components/polycopy/mark-trade-copied-modal';
+import { TradeCard } from '@/components/polycopy/trade-card';
+import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
+import { getESPNScoresForTrades } from '@/lib/espn/scores';
+import { abbreviateTeamName } from '@/lib/utils/team-abbreviations';
 import type { User } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
 
@@ -40,10 +45,10 @@ interface Trade {
   category?: string;
 }
 
-interface MonthlyROI {
-  month: string;
-  roi: number;
-  trades: number;
+interface PositionSizeBucket {
+  range: string;
+  count: number;
+  percentage: number;
 }
 
 interface CategoryDistribution {
@@ -70,6 +75,7 @@ export default function TraderProfilePage({
   const [followLoading, setFollowLoading] = useState(false);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loadingTrades, setLoadingTrades] = useState(true);
+  const [tradesToShow, setTradesToShow] = useState(15); // Start with 15 trades for faster loading
   const [activeTab, setActiveTab] = useState<'positions' | 'performance'>('positions');
   const [positionFilter, setPositionFilter] = useState<'all' | 'open' | 'closed' | 'resolved'>('all');
   
@@ -85,10 +91,18 @@ export default function TraderProfilePage({
   const [autoClose, setAutoClose] = useState(true);
   
   // Performance tab data
-  const [monthlyROI, setMonthlyROI] = useState<MonthlyROI[]>([]);
+  const [positionSizeBuckets, setPositionSizeBuckets] = useState<PositionSizeBucket[]>([]);
   const [categoryDistribution, setCategoryDistribution] = useState<CategoryDistribution[]>([]);
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
-  const [hoveredMonth, setHoveredMonth] = useState<{ month: string; roi: number; x: number; y: number } | null>(null);
+  const [hoveredBucket, setHoveredBucket] = useState<{ range: string; count: number; percentage: number; x: number; y: number } | null>(null);
+  
+  // Live market data for trade cards
+  const [liveMarketData, setLiveMarketData] = useState<Map<string, { 
+    price: number; 
+    score?: string;
+    closed?: boolean;
+    resolved?: boolean;
+  }>>(new Map());
 
   // Unwrap params
   useEffect(() => {
@@ -208,26 +222,40 @@ export default function TraderProfilePage({
             console.log(`✅ Blockchain: Fetched ${blockchainData.trades.length} trades`);
             
             const formattedTrades: Trade[] = blockchainData.trades.map((trade: any) => {
-              const tradeDate = new Date(trade.timestamp);
+              // Ensure timestamp is in milliseconds
+              let timestampMs = trade.timestamp;
+              if (timestampMs < 10000000000) {
+                timestampMs = timestampMs * 1000;
+              }
+              
+              const tradeDate = new Date(timestampMs);
               const formattedDate = tradeDate.toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric'
               });
               
+              // Determine trade status based on market data
+              let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open';
+              if (trade.closed === true || trade.is_closed === true) {
+                status = 'Trader Closed';
+              } else if (trade.resolved === true || trade.is_resolved === true || trade.marketResolved === true) {
+                status = 'Bonded';
+              }
+              
               return {
-                timestamp: trade.timestamp,
-                market: trade.market || 'Unknown Market',
+                timestamp: timestampMs,
+                market: trade.title || trade.question || trade.market || trade.marketTitle || 'Unknown Market',
                 side: trade.side || 'BUY',
                 outcome: trade.outcome || '',
                 size: parseFloat(trade.size || 0),
                 price: parseFloat(trade.price || 0),
-                currentPrice: undefined, // Will be fetched if needed
+                currentPrice: trade.closedPrice || trade.resolvedPrice || trade.exitPrice ? parseFloat(trade.closedPrice || trade.resolvedPrice || trade.exitPrice) : undefined,
                 formattedDate,
-                marketSlug: trade.marketSlug || '',
-                eventSlug: trade.eventSlug || '',
-                conditionId: trade.conditionId || '',
-                status: 'Open', // Simplified for now
+                marketSlug: trade.marketSlug || trade.slug || '',
+                eventSlug: trade.eventSlug || trade.event_slug || '',
+                conditionId: trade.conditionId || trade.condition_id || '',
+                status: status,
               };
             });
 
@@ -258,19 +286,27 @@ export default function TraderProfilePage({
               year: 'numeric'
             });
             
+            // Determine trade status based on market data
+            let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open';
+            if (trade.closed === true || trade.is_closed === true) {
+              status = 'Trader Closed';
+            } else if (trade.resolved === true || trade.is_resolved === true || trade.marketResolved === true) {
+              status = 'Bonded';
+            }
+            
             return {
               timestamp: timestampMs,
-              market: trade.title || trade.market?.title || 'Unknown Market',
+              market: trade.title || trade.question || trade.market?.title || trade.marketTitle || 'Unknown Market',
               side: trade.side || 'BUY',
               outcome: trade.outcome || '',
               size: parseFloat(trade.size || 0),
               price: parseFloat(trade.price || 0),
-              currentPrice: trade.currentPrice ? parseFloat(trade.currentPrice) : undefined,
+              currentPrice: trade.currentPrice || trade.closedPrice || trade.resolvedPrice || trade.exitPrice ? parseFloat(trade.currentPrice || trade.closedPrice || trade.resolvedPrice || trade.exitPrice) : undefined,
               formattedDate,
-              marketSlug: trade.slug || trade.market?.slug || '',
+              marketSlug: trade.slug || trade.marketSlug || trade.market?.slug || '',
               eventSlug: trade.eventSlug || trade.event_slug || '',
               conditionId: trade.conditionId || trade.condition_id || '',
-              status: 'Open',
+              status: status,
             };
           });
 
@@ -288,92 +324,165 @@ export default function TraderProfilePage({
     fetchAllTrades();
   }, [wallet]);
 
+  // Fetch live market data for trades (prices, scores, and resolution status)
+  // Using progressive loading - updates state as data comes in
+  useEffect(() => {
+    if (trades.length === 0) return;
+
+    const fetchLiveMarketData = async () => {
+      // Only fetch data for the trades we're currently displaying
+      const displayedTrades = trades.slice(0, tradesToShow);
+      
+      console.log(`📊 Fetching live data for ${displayedTrades.length} trades...`);
+      
+      // Convert trades to the format expected by getESPNScoresForTrades
+      const tradesForESPN = displayedTrades.map(trade => ({
+        market: {
+          conditionId: trade.conditionId,
+          title: trade.market,
+          category: trade.category,
+        },
+        trade: {
+          outcome: trade.outcome,
+        },
+      }));
+
+      // Start ESPN scores fetch (don't await - let it run in parallel)
+      const espnScoresPromise = getESPNScoresForTrades(tradesForESPN as any);
+      console.log('🏈 Fetching ESPN scores in background...');
+
+      // Immediately start fetching prices for all trades in parallel
+      const pricePromises = displayedTrades.map(async (trade) => {
+        if (!trade.conditionId) return;
+
+        try {
+          // Fetch market data to check resolution status and get price
+          const response = await fetch(`/api/polymarket/price?conditionId=${trade.conditionId}`);
+          if (response.ok) {
+            const priceData = await response.json();
+            
+            if (priceData.success && priceData.market) {
+              const { outcomes, outcomePrices, closed } = priceData.market;
+              
+              // Check if market is resolved
+              const isResolved = closed === true;
+              
+              // Find the price for this specific outcome
+              const outcome = trade.outcome.toUpperCase();
+              const outcomeIndex = outcomes?.findIndex((o: string) => o.toUpperCase() === outcome);
+              const currentPrice = (outcomeIndex !== -1 && outcomePrices && outcomePrices[outcomeIndex]) 
+                ? Number(outcomePrices[outcomeIndex])
+                : trade.price;
+
+              // Update state immediately with price data (without score yet)
+              setLiveMarketData(prev => new Map(prev).set(trade.conditionId!, {
+                price: currentPrice,
+                closed: closed,
+                resolved: isResolved,
+              }));
+
+              return { trade, outcomes, currentPrice, closed, isResolved };
+            }
+          }
+        } catch (error) {
+          console.error(`Failed to fetch market data for ${trade.conditionId}:`, error);
+        }
+        return null;
+      });
+
+      // Wait for all price fetches to complete
+      const priceResults = await Promise.all(pricePromises);
+
+      // Now wait for ESPN scores and update trades with scores
+      try {
+        const espnScores = await espnScoresPromise;
+        console.log(`✅ Got ESPN scores for ${espnScores.size} markets`);
+
+        // Update trades with scores
+        priceResults.forEach(result => {
+          if (!result) return;
+          const { trade, outcomes, currentPrice, closed, isResolved } = result;
+
+          const espnScore = espnScores.get(trade.conditionId!);
+          let scoreDisplay: string | undefined;
+
+          // Detect if this is a sports market
+          const isSportsMarket = trade.market.includes(' vs. ') || 
+                                trade.market.includes(' vs ') ||
+                                trade.market.includes(' @ ') ||
+                                trade.category === 'sports';
+
+          if (isSportsMarket && espnScore && outcomes?.length === 2) {
+            if (espnScore.status === 'final') {
+              const team1Abbrev = abbreviateTeamName(outcomes[0] || '');
+              const team2Abbrev = abbreviateTeamName(outcomes[1] || '');
+              scoreDisplay = `🏁 ${team1Abbrev} ${espnScore.homeScore} - ${espnScore.awayScore} ${team2Abbrev}`;
+            } else if (espnScore.status === 'live') {
+              const team1Abbrev = abbreviateTeamName(outcomes[0] || '');
+              const team2Abbrev = abbreviateTeamName(outcomes[1] || '');
+              scoreDisplay = `🔴 ${team1Abbrev} ${espnScore.homeScore} - ${espnScore.awayScore} ${team2Abbrev}`;
+            }
+          }
+
+          // Update with score if we found one
+          if (scoreDisplay) {
+            setLiveMarketData(prev => new Map(prev).set(trade.conditionId!, {
+              price: currentPrice,
+              score: scoreDisplay,
+              closed: closed,
+              resolved: isResolved,
+            }));
+          }
+        });
+      } catch (error) {
+        console.error('Failed to fetch ESPN scores:', error);
+      }
+    };
+
+    fetchLiveMarketData();
+  }, [trades, tradesToShow]);
+
   // Process trades for performance metrics
   useEffect(() => {
     if (trades.length === 0 || !traderData) {
-      setMonthlyROI([]);
+      setPositionSizeBuckets([]);
       setCategoryDistribution([]);
       return;
     }
 
-    console.log('📊 Processing performance metrics with traderData ROI:', traderData.roi);
+    console.log('📊 Processing performance metrics for position sizing');
 
-    // Calculate Monthly ROI (last 12 months)
-    const monthlyData: { [key: string]: { pnl: number; invested: number; trades: number } } = {};
-    const now = new Date();
+    // Calculate Position Size Distribution
+    const positionSizes = trades.map(trade => trade.size * trade.price);
     
-    // Initialize last 12 months
-    for (let i = 11; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthKey = date.toISOString().substring(0, 7); // YYYY-MM
-      monthlyData[monthKey] = { pnl: 0, invested: 0, trades: 0 };
-    }
-
-    // Aggregate trades by month
-    // Since individual trades don't have currentPrice, we'll use the overall trader ROI
-    // to estimate P&L proportionally
-    const overallROI = (traderData?.roi || 0) / 100; // Convert percentage to decimal
+    // Define buckets based on the data
+    const buckets = [
+      { min: 0, max: 100, label: '$0-$100' },
+      { min: 100, max: 500, label: '$100-$500' },
+      { min: 500, max: 1000, label: '$500-$1K' },
+      { min: 1000, max: 5000, label: '$1K-$5K' },
+      { min: 5000, max: 10000, label: '$5K-$10K' },
+      { min: 10000, max: Infinity, label: '$10K+' },
+    ];
     
-    trades.forEach(trade => {
-      const tradeDate = new Date(trade.timestamp);
-      const monthKey = tradeDate.toISOString().substring(0, 7);
-      
-      if (monthlyData[monthKey]) {
-        const invested = trade.size * trade.price;
-        monthlyData[monthKey].invested += invested;
-        monthlyData[monthKey].trades += 1;
-        
-        // For trades with explicit currentPrice (rare for open positions)
-        if (trade.currentPrice !== undefined && trade.currentPrice !== null && trade.currentPrice !== trade.price) {
-          const currentValue = trade.size * trade.currentPrice;
-          monthlyData[monthKey].pnl += (currentValue - invested);
-        } else {
-          // For open positions without currentPrice, estimate P&L using overall trader ROI
-          // This gives us a reasonable approximation of monthly performance
-          monthlyData[monthKey].pnl += (invested * overallROI);
-        }
-      }
-    });
-
-    // Convert to array and calculate cumulative ROI month-over-month
-    const monthlyROIData: MonthlyROI[] = [];
-    let cumulativeInvested = 0;
-    const totalInvestment = Object.values(monthlyData).reduce((sum, d) => sum + d.invested, 0);
-    const overallROIPercent = traderData?.roi || 0;
+    const bucketCounts = buckets.map(bucket => ({
+      range: bucket.label,
+      count: positionSizes.filter(size => size >= bucket.min && size < bucket.max).length,
+      percentage: 0
+    }));
     
-    console.log('💰 Monthly ROI Calculation:', {
-      totalInvestment: totalInvestment.toFixed(2),
-      overallROIPercent: overallROIPercent.toFixed(2) + '%',
-      monthsWithTrades: Object.keys(monthlyData).length
+    // Calculate percentages
+    const totalTradesForBuckets = trades.length;
+    bucketCounts.forEach(bucket => {
+      bucket.percentage = (bucket.count / totalTradesForBuckets) * 100;
     });
     
-    Object.keys(monthlyData).sort().forEach(monthKey => {
-      const data = monthlyData[monthKey];
-      
-      // Accumulate investment
-      cumulativeInvested += data.invested;
-      
-      // Calculate ROI based on proportion of total portfolio opened by this month
-      // This shows how ROI grows as more positions are added
-      // If 50% of positions are opened, assume ROI is proportionally scaled
-      const portfolioProgress = totalInvestment > 0 ? (cumulativeInvested / totalInvestment) : 0;
-      const roi = overallROIPercent * portfolioProgress;
-      
-      const date = new Date(monthKey + '-01');
-      const monthName = date.toLocaleDateString('en-US', { month: 'short' });
-      
-      console.log(`  ${monthName}: invested=${data.invested.toFixed(0)}, cumulative=${cumulativeInvested.toFixed(0)}, progress=${(portfolioProgress*100).toFixed(1)}%, roi=${roi.toFixed(2)}%`);
-      
-      monthlyROIData.push({
-        month: monthName,
-        roi: roi,
-        trades: data.trades
-      });
-    });
+    // Filter out empty buckets
+    const nonEmptyBuckets = bucketCounts.filter(b => b.count > 0);
     
-    console.log('✅ Final monthlyROI data points:', monthlyROIData.length);
+    console.log('✅ Position size buckets:', nonEmptyBuckets);
 
-    setMonthlyROI(monthlyROIData);
+    setPositionSizeBuckets(nonEmptyBuckets);
 
     // Calculate Category Distribution
     const categoryMap: { [key: string]: number } = {};
@@ -431,12 +540,12 @@ export default function TraderProfilePage({
     });
 
     // Convert to array with percentages
-    const totalTrades = trades.length;
+    const totalTradesForCategories = trades.length;
     const categoryData: CategoryDistribution[] = Object.entries(categoryMap)
       .map(([category, count]) => ({
         category,
         count,
-        percentage: (count / totalTrades) * 100,
+        percentage: (count / totalTradesForCategories) * 100,
         color: categoryColors[category] || '#64748b'
       }))
       .sort((a, b) => b.count - a.count);
@@ -752,24 +861,64 @@ export default function TraderProfilePage({
 
           {/* Stats Grid */}
           <div className="grid grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-slate-50 rounded-lg">
-              <div className="text-xs font-medium text-slate-500 mb-1">ROI</div>
+            <div className="text-center p-4 bg-slate-50 rounded-lg relative group">
+              <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
+                ROI
+                <div className="relative">
+                  <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
+                    All-time return on investment from Polymarket leaderboard
+                  </div>
+                </div>
+              </div>
               <div className={`text-2xl font-bold ${parseFloat(roi) > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                 {formatPercentage(parseFloat(roi))}
               </div>
             </div>
-            <div className="text-center p-4 bg-slate-50 rounded-lg">
-              <div className="text-xs font-medium text-slate-500 mb-1">P&L</div>
+            <div className="text-center p-4 bg-slate-50 rounded-lg relative group">
+              <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
+                P&L
+                <div className="relative">
+                  <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
+                    Total profit/loss from all trades on Polymarket
+                  </div>
+                </div>
+              </div>
               <div className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                 {traderData.pnl >= 0 ? '+' : ''}{formatCurrency(traderData.pnl)}
               </div>
             </div>
-            <div className="text-center p-4 bg-slate-50 rounded-lg">
-              <div className="text-xs font-medium text-slate-500 mb-1">Win Rate</div>
+            <div className="text-center p-4 bg-slate-50 rounded-lg relative group">
+              <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
+                Win Rate
+                <div className="relative">
+                  <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
+                    Calculated from recent trades only (limited data)
+                  </div>
+                </div>
+              </div>
               <div className="text-2xl font-bold text-slate-900">{winRate}%</div>
             </div>
-            <div className="text-center p-4 bg-slate-50 rounded-lg">
-              <div className="text-xs font-medium text-slate-500 mb-1">Volume</div>
+            <div className="text-center p-4 bg-slate-50 rounded-lg relative group">
+              <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
+                Volume
+                <div className="relative">
+                  <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
+                    Total trading volume across all markets on Polymarket
+                  </div>
+                </div>
+              </div>
               <div className="text-2xl font-bold text-slate-900">{formatCurrency(traderData.volume)}</div>
             </div>
           </div>
@@ -843,21 +992,104 @@ export default function TraderProfilePage({
               </Card>
             ) : (
               <div className="space-y-3">
-                {filteredTrades.map((trade, index) => {
+                {filteredTrades.slice(0, tradesToShow).map((trade, index) => {
                   const polymarketUrl = getPolymarketUrl(trade);
                   const isAlreadyCopied = isTradeCopied(trade);
                   const isExpanded = expandedTradeIndex === index;
                   
+                  // Get live market data
+                  const liveData = trade.conditionId ? liveMarketData.get(trade.conditionId) : undefined;
+                  const currentPrice = liveData?.price || trade.currentPrice || trade.price;
+                  const liveScore = liveData?.score;
+                  const isClosed = liveData?.closed || false;
+                  const isResolved = liveData?.resolved || false;
+                  
                   // Calculate ROI
                   let roi: number | null = null;
                   const entryPrice = trade.price;
-                  const currentPrice = trade.currentPrice;
                   
                   if ((entryPrice && entryPrice !== 0) && (currentPrice !== undefined && currentPrice !== null)) {
                     roi = ((currentPrice - entryPrice) / entryPrice) * 100;
                   }
+                  
+                  // Determine trade status based on live data
+                  let tradeStatus: 'Open' | 'Trader Closed' | 'Bonded' = 'Open';
+                  if (isResolved) {
+                    tradeStatus = 'Bonded';
+                  } else if (isClosed) {
+                    tradeStatus = 'Trader Closed';
+                  }
+                  
+                  // Format timestamp
+                  const tradeDate = new Date(trade.timestamp);
+                  const now = new Date();
+                  const diffMs = now.getTime() - tradeDate.getTime();
+                  const diffMins = Math.floor(diffMs / 60000);
+                  const diffHours = Math.floor(diffMs / 3600000);
+                  const diffDays = Math.floor(diffMs / 86400000);
+                  
+                  let formattedTimestamp = '';
+                  if (diffMins < 60) {
+                    formattedTimestamp = `${diffMins}m ago`;
+                  } else if (diffHours < 24) {
+                    formattedTimestamp = `${diffHours}h ago`;
+                  } else if (diffDays < 7) {
+                    formattedTimestamp = `${diffDays}d ago`;
+                  } else {
+                    formattedTimestamp = tradeDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                  }
+                  
+                  // Extract market avatar URL
+                  const marketAvatar = extractMarketAvatarUrl({
+                    market: trade.market,
+                    slug: trade.marketSlug,
+                    eventSlug: trade.eventSlug,
+                  });
 
-                  return (
+                  return isPremium ? (
+                    <TradeCard
+                      key={`${trade.timestamp}-${index}`}
+                      trader={{
+                        name: traderData.displayName,
+                        avatar: undefined,
+                        address: wallet,
+                        id: wallet,
+                        roi: traderData.roi,
+                      }}
+                      market={trade.market}
+                      marketAvatar={marketAvatar || undefined}
+                      position={trade.outcome.toUpperCase() as 'YES' | 'NO'}
+                      action={trade.side === 'BUY' ? 'Buy' : 'Sell'}
+                      price={trade.price}
+                      size={trade.size}
+                      total={trade.price * trade.size}
+                      timestamp={formattedTimestamp}
+                      onCopyTrade={() => {
+                        if (polymarketUrl) {
+                          window.open(polymarketUrl, '_blank');
+                        }
+                      }}
+                      onMarkAsCopied={() => {
+                        setSelectedTrade(trade);
+                        setShowCopiedModal(true);
+                      }}
+                      onAdvancedCopy={() => {
+                        if (polymarketUrl) {
+                          window.open(polymarketUrl, '_blank');
+                        }
+                      }}
+                      isPremium={isPremium}
+                      isExpanded={isExpanded}
+                      onToggleExpand={() => setExpandedTradeIndex(isExpanded ? null : index)}
+                      isCopied={isAlreadyCopied}
+                      conditionId={trade.conditionId}
+                      marketSlug={trade.marketSlug}
+                      currentMarketPrice={currentPrice}
+                      liveScore={liveScore}
+                      category={trade.category}
+                      polymarketUrl={polymarketUrl}
+                    />
+                  ) : (
                     <Card key={`${trade.timestamp}-${index}`} className="p-6">
                       <div className="flex items-start justify-between gap-4 mb-4">
                         <div className="flex-1 min-w-0">
@@ -883,14 +1115,14 @@ export default function TraderProfilePage({
                             variant="secondary"
                             className={cn(
                               'text-xs font-medium',
-                              trade.status === 'Open'
+                              tradeStatus === 'Open'
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                 : 'bg-slate-100 text-slate-600 border-slate-200'
                             )}
                           >
-                            {trade.status}
+                            {tradeStatus}
                           </Badge>
-                          {isPremium && !isAlreadyCopied && (
+                          {!isAlreadyCopied && (
                             <button
                               onClick={() => setExpandedTradeIndex(isExpanded ? null : index)}
                               className="text-slate-400 hover:text-slate-600 transition-colors"
@@ -1079,6 +1311,19 @@ export default function TraderProfilePage({
                     </Card>
                   );
                 })}
+                
+                {/* Load More Button */}
+                {filteredTrades.length > tradesToShow && (
+                  <div className="flex justify-center pt-4">
+                    <Button
+                      onClick={() => setTradesToShow(prev => prev + 15)}
+                      variant="outline"
+                      className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                    >
+                      Load More Trades ({filteredTrades.length - tradesToShow} remaining)
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1086,102 +1331,87 @@ export default function TraderProfilePage({
 
         {activeTab === 'performance' && (
           <div className="space-y-6">
-            {/* Data Context Banner */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 mt-0.5">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h4 className="text-sm font-semibold text-blue-900 mb-1">Recent Performance Analysis</h4>
-                  <p className="text-sm text-blue-800">
-                    Performance metrics are based on the trader's most recent 100 trades. This provides the most relevant and up-to-date view of their trading strategy and current performance.
-                  </p>
-                </div>
-              </div>
+            {/* Header Section */}
+            <div className="mb-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Historical Performance</h2>
+              <p className="text-sm text-slate-500 mt-1">The data below covers this trader's last 100 trades. Please note this does not cover complete historical performance data.</p>
             </div>
 
-            {/* ROI Over Time Chart */}
+            {/* Position Size Distribution */}
             <Card className="p-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-6">ROI Over Time (Last 12 Months)</h3>
-              {monthlyROI.length > 0 ? (
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-slate-900">Position Size Distribution</h3>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-4 w-4 text-slate-400 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p>Shows how this trader sizes their positions. Larger positions indicate higher conviction or risk tolerance. Most traders should have a consistent sizing strategy.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-medium">Recent Trades</span>
+              </div>
+              {positionSizeBuckets.length > 0 ? (
                   <div className="relative h-64">
                     {/* Y-axis labels */}
                     <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-xs text-slate-500">
                       {(() => {
-                        const maxROI = Math.max(...monthlyROI.map(m => m.roi), 5);
-                        const minROI = Math.min(...monthlyROI.map(m => m.roi), -5);
-                        // Ensure at least a 10% range for visibility
-                        const range = Math.max(maxROI - minROI, 10);
-                        const actualMax = maxROI + (10 - (maxROI - minROI)) / 2;
-                        const actualMin = minROI - (10 - (maxROI - minROI)) / 2;
-                        const step = (actualMax - actualMin) / 4;
-                        return [actualMax, actualMax - step, actualMax - 2 * step, actualMax - 3 * step, actualMin].map((val, i) => (
-                          <span key={i}>{val.toFixed(1)}%</span>
-                        ));
+                        const maxCount = Math.max(...positionSizeBuckets.map(b => b.count), 1);
+                        const steps = 5;
+                        return Array.from({ length: steps }, (_, i) => {
+                          const value = maxCount - (i / (steps - 1)) * maxCount;
+                          return <span key={i}>{Math.round(value)}</span>;
+                        });
                       })()}
                     </div>
                   
                   {/* Chart area */}
                   <div className="ml-12 h-full border-l border-b border-slate-200 relative">
                     <svg className="w-full h-full" viewBox="0 0 600 200" preserveAspectRatio="xMidYMid meet">
-                        <polyline
-                          points={monthlyROI.map((m, i) => {
-                            const x = (i / (monthlyROI.length - 1)) * 600;
-                            const maxROI = Math.max(...monthlyROI.map(m => m.roi), 5);
-                            const minROI = Math.min(...monthlyROI.map(m => m.roi), -5);
-                            const range = Math.max(maxROI - minROI, 10);
-                            const actualMax = maxROI + (10 - (maxROI - minROI)) / 2;
-                            const actualMin = minROI - (10 - (maxROI - minROI)) / 2;
-                            const y = 200 - ((m.roi - actualMin) / (actualMax - actualMin)) * 200;
-                            return `${x},${y}`;
-                          }).join(' ')}
-                          fill="none"
-                          stroke="#64748b"
-                          strokeWidth="2"
-                          vectorEffect="non-scaling-stroke"
-                        />
-                        {/* Data points */}
-                        {monthlyROI.map((m, i) => {
-                          const x = (i / (monthlyROI.length - 1)) * 600;
-                          const maxROI = Math.max(...monthlyROI.map(m => m.roi), 5);
-                          const minROI = Math.min(...monthlyROI.map(m => m.roi), -5);
-                          const range = Math.max(maxROI - minROI, 10);
-                          const actualMax = maxROI + (10 - (maxROI - minROI)) / 2;
-                          const actualMin = minROI - (10 - (maxROI - minROI)) / 2;
-                          const y = 200 - ((m.roi - actualMin) / (actualMax - actualMin)) * 200;
-                          const isNegative = m.roi < 0;
+                        {/* Bar chart */}
+                        {positionSizeBuckets.map((bucket, i) => {
+                          const maxCount = Math.max(...positionSizeBuckets.map(b => b.count), 1);
+                          const barWidth = 600 / positionSizeBuckets.length * 0.7;
+                          const x = (i / positionSizeBuckets.length) * 600 + (600 / positionSizeBuckets.length - barWidth) / 2;
+                          const height = (bucket.count / maxCount) * 200;
+                          const y = 200 - height;
+                          
                           return (
-                            <circle
+                            <rect
                               key={i}
-                              cx={x}
-                              cy={y}
-                              r="5"
-                              fill={isNegative ? '#ef4444' : '#10b981'}
-                              className="cursor-pointer hover:r-6 transition-all"
-                              onMouseEnter={() => setHoveredMonth({ month: m.month, roi: m.roi, x, y })}
-                              onMouseLeave={() => setHoveredMonth(null)}
-                              vectorEffect="non-scaling-stroke"
+                              x={x}
+                              y={y}
+                              width={barWidth}
+                              height={height}
+                              fill="#10b981"
+                              className="cursor-pointer hover:opacity-80 transition-opacity"
+                              onMouseEnter={() => setHoveredBucket({ range: bucket.range, count: bucket.count, percentage: bucket.percentage, x: x + barWidth / 2, y })}
+                              onMouseLeave={() => setHoveredBucket(null)}
                             />
                           );
                         })}
                     </svg>
                     
-                    {/* Tooltip for chart points */}
-                    {hoveredMonth && (
+                    {/* Tooltip for bars */}
+                    {hoveredBucket && (
                       <div 
                         className="absolute bg-slate-900 text-white rounded-lg shadow-lg p-3 pointer-events-none z-10 text-sm"
                         style={{
-                          left: `${(hoveredMonth.x / 600) * 100}%`,
-                          top: `${(hoveredMonth.y / 200) * 100}%`,
+                          left: `${(hoveredBucket.x / 600) * 100}%`,
+                          top: `${(hoveredBucket.y / 200) * 100}%`,
                           transform: 'translate(-50%, -120%)'
                         }}
                       >
-                        <div className="font-semibold">{hoveredMonth.month}</div>
-                        <div className={hoveredMonth.roi >= 0 ? 'text-green-400' : 'text-red-400'}>
-                          {hoveredMonth.roi >= 0 ? '+' : ''}{hoveredMonth.roi.toFixed(2)}%
+                        <div className="font-semibold">{hoveredBucket.range}</div>
+                        <div className="text-emerald-400">
+                          {hoveredBucket.count} {hoveredBucket.count === 1 ? 'trade' : 'trades'}
+                        </div>
+                        <div className="text-slate-300 text-xs">
+                          {hoveredBucket.percentage.toFixed(1)}% of total
                         </div>
                       </div>
                     )}
@@ -1189,100 +1419,115 @@ export default function TraderProfilePage({
                     
                     {/* X-axis labels */}
                     <div className="absolute -bottom-6 left-0 right-0 flex justify-between text-xs text-slate-500">
-                      {monthlyROI.map((m, i) => (
-                        <span key={i}>{m.month}</span>
+                      {positionSizeBuckets.map((bucket, i) => (
+                        <span key={i} className="text-center">{bucket.range}</span>
                       ))}
                     </div>
                   </div>
                 </div>
               ) : (
                 <div className="h-64 flex items-center justify-center text-slate-500">
-                  <p>Not enough trade history to display ROI over time</p>
+                  <p>Not enough trade data to display position sizing</p>
                 </div>
               )}
             </Card>
 
             {/* Performance Metrics */}
             <Card className="p-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-6">Performance Metrics</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Column 1 */}
-                <div className="space-y-4">
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Total Volume</p>
-                    <p className="text-2xl font-bold text-slate-900">
-                      ${((traderData?.volume || 0) / 1000000).toFixed(1)}M
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Best Trade ROI</p>
-                    <p className="text-2xl font-bold text-green-600">
-                      {(() => {
-                        const tradesWithPrices = trades.filter(t => t.currentPrice && t.price);
-                        if (tradesWithPrices.length === 0) return 'N/A';
-                        const bestTrade = tradesWithPrices.reduce((best, trade) => {
-                          const roi = ((trade.currentPrice! - trade.price) / trade.price) * 100;
-                          return roi > best ? roi : best;
-                        }, -Infinity);
-                        return bestTrade === -Infinity ? 'N/A' : `+${bestTrade.toFixed(1)}%`;
-                      })()}
-                    </p>
-                    {trades.filter(t => t.currentPrice && t.price).length === 0 && (
-                      <p className="text-xs text-slate-400 mt-1">No closed trades yet</p>
-                    )}
-                  </div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">Performance Metrics</h3>
+              <p className="text-sm text-slate-500 mb-6">Showing lifetime performance across all trades</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* Lifetime ROI */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Lifetime ROI</p>
+                  <p className={`text-2xl font-bold ${(traderData.roi ?? 0) > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {(traderData.roi ?? 0) > 0 ? '+' : ''}{(traderData.roi ?? 0).toFixed(1)}%
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">All time</p>
                 </div>
 
-                {/* Column 2 */}
-                <div className="space-y-4">
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Open Markets</p>
-                    <p className="text-2xl font-bold text-slate-900">
-                      {(() => {
-                        const count = trades.filter(t => t.status === 'Open').length;
-                        return count === 100 ? '100+' : count;
-                      })()}
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Closed Trades</p>
-                    <p className="text-2xl font-bold text-slate-900">
-                      {(() => {
-                        const closedCount = trades.filter(t => t.currentPrice && t.price).length;
-                        const profitableCount = trades.filter(t => t.currentPrice && t.price && t.currentPrice > t.price).length;
-                        return `${profitableCount}/${closedCount}`;
-                      })()}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">Profitable/Total</p>
-                  </div>
+                {/* Total P&L */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Total P&L</p>
+                  <p className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {traderData.pnl > 0 ? '+' : ''}{formatCurrency(traderData.pnl)}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">All time</p>
                 </div>
 
-                {/* Column 3 */}
-                <div className="space-y-4">
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Avg Trade Size</p>
-                    <p className="text-2xl font-bold text-slate-900">
-                      ${traderData && trades.length > 0 ? ((traderData.volume / trades.length) / 1000).toFixed(1) : '0'}K
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Total Trades</p>
-                    <p className="text-2xl font-bold text-slate-900">
-                      {(() => {
-                        const count = trades.length;
-                        return count === 100 ? '100+' : count;
-                      })()}
-                    </p>
-                  </div>
+                {/* Best Position */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Best Position</p>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {formatCurrency(traderData.volume)}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Largest trade</p>
+                </div>
+
+                {/* Total Trades */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Total Trades</p>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {(() => {
+                      const count = trades.length;
+                      return count === 100 ? '100+' : count;
+                    })()}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">In sample</p>
+                </div>
+
+                {/* Net P&L / Trade */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Net P&L / Trade</p>
+                  <p className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {(() => {
+                      const avgPnL = trades.length > 0 ? traderData.pnl / trades.length : 0;
+                      return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
+                    })()}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Per trade</p>
+                </div>
+
+                {/* Avg ROI / Trade */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Avg ROI / Trade</p>
+                  <p className={`text-2xl font-bold ${(traderData.roi ?? 0) > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {(traderData.roi ?? 0) > 0 ? '+' : ''}{(traderData.roi ?? 0).toFixed(2)}%
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Per trade</p>
+                </div>
+
+                {/* Open Positions */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Open Positions</p>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {trades.filter(t => t.status === 'Open').length}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Currently active</p>
+                </div>
+
+                {/* Avg P&L / Trade */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Avg P&L / Trade</p>
+                  <p className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {(() => {
+                      const avgPnL = trades.length > 0 ? traderData.pnl / trades.length : 0;
+                      return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
+                    })()}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Average</p>
                 </div>
               </div>
             </Card>
 
             {/* Category Distribution Pie Chart */}
             <Card className="p-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-6">Trading Categories</h3>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-slate-900">Trading Categories</h3>
+                <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-medium">Recent Trades</span>
+              </div>
               {categoryDistribution.length > 0 ? (
-                <div className="flex flex-col md:flex-row gap-8 items-center">
+                <div className="flex flex-col md:flex-row gap-8 items-center justify-center max-w-3xl mx-auto">
                   {/* Pie Chart */}
                   <div className="relative w-64 h-64 flex-shrink-0">
                     <svg viewBox="0 0 200 200" className="w-full h-full">
@@ -1370,6 +1615,67 @@ export default function TraderProfilePage({
                   <p>No trade data available</p>
                 </div>
               )}
+            </Card>
+
+            {/* Top Performing Trades */}
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Performing Trades</h3>
+              <div className="space-y-3">
+                {(() => {
+                  const closedTrades = trades
+                    .filter(t => t.currentPrice && t.price)
+                    .map(t => ({
+                      ...t,
+                      roi: ((t.currentPrice! - t.price) / t.price) * 100
+                    }))
+                    .sort((a, b) => b.roi - a.roi)
+                    .slice(0, 5);
+
+                  if (closedTrades.length === 0) {
+                    return (
+                      <div className="text-center py-8">
+                        <p className="text-slate-500 mb-2">No closed trades available yet</p>
+                        <p className="text-sm text-slate-400">
+                          Top performing trades will appear here once the trader closes positions
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return closedTrades.map((trade, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-slate-900 truncate">{trade.market}</p>
+                        <p className="text-sm text-slate-500">
+                          {new Date(trade.timestamp).toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            year: 'numeric' 
+                          })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <Badge
+                          className={cn(
+                            "font-semibold",
+                            trade.outcome?.toLowerCase() === 'yes'
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : "bg-red-50 text-red-700 border-red-200"
+                          )}
+                        >
+                          {trade.outcome?.toUpperCase() || 'N/A'}
+                        </Badge>
+                        <p className={cn(
+                          "font-bold text-lg min-w-[4rem] text-right",
+                          trade.roi >= 0 ? "text-emerald-600" : "text-red-600"
+                        )}>
+                          {trade.roi >= 0 ? '+' : ''}{trade.roi.toFixed(1)}%
+                        </p>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
             </Card>
           </div>
         )}

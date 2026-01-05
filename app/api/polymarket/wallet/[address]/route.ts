@@ -103,10 +103,12 @@ export async function GET(
       // Calculate total value of open positions
       if (Array.isArray(positions)) {
         for (const position of positions) {
-          if (position.size && position.market_price) {
+          // Try curPrice first, fall back to currentPrice
+          const currentPrice = position.curPrice || position.currentPrice
+          if (position.size && currentPrice) {
             // size * current_price gives position value in dollars
             const size = parseFloat(position.size)
-            const price = parseFloat(position.market_price)
+            const price = parseFloat(currentPrice)
             const value = size * price
             positionsValue += value
             console.log(`Position value: ${value.toFixed(2)} (size: ${size}, price: ${price})`)

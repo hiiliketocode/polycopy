@@ -52,6 +52,7 @@ export default function DiscoverPage() {
   const [user, setUser] = useState<User | null>(null);
   const [isPremium, setIsPremium] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [traders, setTraders] = useState<Trader[]>([]);
   const [loadingTraders, setLoadingTraders] = useState(true);
@@ -76,7 +77,7 @@ export default function DiscoverPage() {
         Promise.all([
           supabase
             .from('profiles')
-            .select('is_premium')
+            .select('is_premium, profile_image_url')
             .eq('id', session.user.id)
             .single(),
           supabase
@@ -86,6 +87,7 @@ export default function DiscoverPage() {
             .maybeSingle()
         ]).then(([profileRes, walletRes]) => {
           setIsPremium(profileRes.data?.is_premium || false);
+          setProfileImageUrl(profileRes.data?.profile_image_url || null);
           setWalletAddress(
             walletRes.data?.polymarket_account_address || 
             walletRes.data?.eoa_address || 
@@ -376,6 +378,7 @@ export default function DiscoverPage() {
         user={user ? { id: user.id, email: user.email || '' } : null} 
         isPremium={isPremium}
         walletAddress={walletAddress}
+        profileImageUrl={profileImageUrl}
       />
       
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white md:pt-0 pb-20 md:pb-8">
@@ -453,8 +456,45 @@ export default function DiscoverPage() {
                 </div>
               </div>
             ) : featuredTraders.length > 0 ? (
-              <div className="overflow-x-auto pb-4 -mx-3 px-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-                <div className="flex gap-4" style={{ width: "max-content" }}>
+              <div className="relative group">
+                {/* Left Arrow */}
+                {featuredTraders.length > 3 && (
+                  <button
+                    onClick={() => {
+                      const container = document.getElementById('featured-traders-scroll');
+                      if (container) {
+                        container.scrollBy({ left: -320, behavior: 'smooth' });
+                      }
+                    }}
+                    className="hidden sm:flex absolute left-0 top-1/2 -translate-y-1/2 z-20 items-center justify-center w-10 h-10 rounded-full bg-white border-2 border-slate-200 shadow-lg hover:bg-slate-50 hover:border-slate-300 transition-all opacity-0 group-hover:opacity-100"
+                    aria-label="Scroll left"
+                  >
+                    <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                )}
+                
+                {/* Right Arrow */}
+                {featuredTraders.length > 3 && (
+                  <button
+                    onClick={() => {
+                      const container = document.getElementById('featured-traders-scroll');
+                      if (container) {
+                        container.scrollBy({ left: 320, behavior: 'smooth' });
+                      }
+                    }}
+                    className="hidden sm:flex absolute right-0 top-1/2 -translate-y-1/2 z-20 items-center justify-center w-10 h-10 rounded-full bg-white border-2 border-slate-200 shadow-lg hover:bg-slate-50 hover:border-slate-300 transition-all opacity-0 group-hover:opacity-100"
+                    aria-label="Scroll right"
+                  >
+                    <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                )}
+                
+                <div id="featured-traders-scroll" className="overflow-x-auto pb-4 -mx-3 px-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 scrollbar-hide">
+                  <div className="flex gap-4" style={{ width: "max-content" }}>
                   {featuredTraders.map((trader) => {
                     const isFollowing = followedWallets.has(trader.wallet.toLowerCase());
                     const getInitials = (name: string) => name.slice(0, 2).toUpperCase();
@@ -525,6 +565,7 @@ export default function DiscoverPage() {
                     );
                   })}
                 </div>
+              </div>
               </div>
             ) : (
               <div className="text-center py-12 text-slate-500">

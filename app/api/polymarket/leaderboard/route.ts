@@ -110,6 +110,7 @@ export async function GET(request: Request) {
         volume: Math.round(volume * 100) / 100, // Round to 2 decimals
         rank: parseInt(trader.rank) || 0,
         followerCount: 0, // Will be fetched from our database in the future
+        profileImage: trader.profileImage || null, // Polymarket profile picture URL
       };
     });
 

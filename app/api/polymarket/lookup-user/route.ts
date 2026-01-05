@@ -64,12 +64,14 @@ export async function POST(request: Request) {
       if (trader && trader.wallet) {
         console.log('✅ Found wallet address for username:', trader.wallet);
         console.log('✅ Trader username:', trader.displayName);
+        console.log('✅ Profile image:', trader.profileImage || 'none');
         
         return NextResponse.json({
           success: true,
           username: trader.displayName,
           walletAddress: trader.wallet.toLowerCase(),
-          profileUrl: `https://polymarket.com/profile/${trader.displayName}`
+          profileUrl: `https://polymarket.com/profile/${trader.displayName}`,
+          profileImage: trader.profileImage || null
         })
       }
 
