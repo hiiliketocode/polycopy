@@ -1,29 +1,25 @@
 # SQL Files Overview
 
-This project has several SQL files for setting up your Supabase database. Here's which one to use:
+This project has SQL files for setting up your Supabase database.
 
-## 🎯 Quick Start (Use This!)
+## 🎯 Current Active Migration
 
-### `RUN_BOTH_POLICIES.sql` ⭐ RECOMMENDED
-Run this ONE file to fix both the `follows` and `profiles` table RLS policies at once.
+### `RUN_THIS_ADD_PROFILE_IMAGE.sql` ⭐ LATEST
+Adds `profile_image_url` column to `profiles` table for syncing profile pictures from Polymarket.
 
-**When to use:** You're getting "query timeout" or the app is stuck loading.
+**Status:** ✅ Applied to production (Jan 5, 2025)
 
 ---
 
-## 📁 Individual Files (If You Need Them)
+## 📁 Archived Files
 
-### `RUN_THIS_IN_SUPABASE.sql`
-Fixes RLS policies for the `follows` table only.
+All previous SQL migration files have been moved to `supabase/migrations/archive/`:
+- RLS policy fixes (Dec 2024)
+- Wallet address column
+- User closed trades columns
+- Security vulnerability fixes
 
-### `RUN_THIS_FOR_PROFILES.sql`
-Fixes RLS policies for the `profiles` table only.
-
-### `RUN_THIS_ADD_WALLET.sql` 🆕
-Adds `wallet_address` column to `profiles` table for wallet connection feature.
-
-### `supabase-rls-policies.sql`
-Original comprehensive RLS setup (includes both tables + extra policies).
+**Note:** These files are kept for reference only. They have already been applied to production.
 
 ---
 
@@ -31,20 +27,18 @@ Original comprehensive RLS setup (includes both tables + extra policies).
 
 Located in `supabase/migrations/`:
 
-- **002_fix_follows_policies.sql** - Follows table RLS migration
-- **003_fix_profiles_policies.sql** - Profiles table RLS migration
-- **004_add_wallet_to_profiles.sql** - Adds wallet_address column
+- **20251228231853_create_truncate_trades_function.sql** - Active migration for truncate function
+- **archive/** - Historical migrations (already applied)
 
-These are the same as the individual files above, just formatted as migrations if you're using Supabase CLI.
+If you're setting up a new database from scratch, see `SUPABASE_SETUP.md`.
 
 ---
 
 ## 📖 Documentation Files
 
-- **QUICK_FIX.md** - Step-by-step visual guide to fix RLS issues
 - **SUPABASE_SETUP.md** - Complete database setup from scratch
-- **WALLET_CONNECTION.md** - Wallet connection feature documentation
 - **supabase/migrations/README.md** - How to run migrations
+- **supabase/migrations/archive/README.md** - Historical migrations reference
 
 ---
 
@@ -52,13 +46,10 @@ These are the same as the individual files above, just formatted as migrations i
 
 | Situation | File to Use |
 |-----------|-------------|
-| 🆕 First time setup | `RUN_BOTH_POLICIES.sql` |
-| 🐛 App stuck loading | `RUN_BOTH_POLICIES.sql` |
-| ⚠️ "Query timeout" error | `RUN_BOTH_POLICIES.sql` |
-| 📋 Only follows broken | `RUN_THIS_IN_SUPABASE.sql` |
-| 👤 Only profiles broken | `RUN_THIS_FOR_PROFILES.sql` |
-| 👛 Add wallet connection | `RUN_THIS_ADD_WALLET.sql` |
+| 🆕 Add profile images | `RUN_THIS_ADD_PROFILE_IMAGE.sql` |
 | 🔄 Using Supabase CLI | Files in `supabase/migrations/` |
+| 📚 Reference old migrations | `supabase/migrations/archive/` |
+| 🆕 New database setup | See `SUPABASE_SETUP.md` |
 
 ---
 

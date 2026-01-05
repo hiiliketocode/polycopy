@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useSearchParams } from 'next/navigation'
-import Header from '@/app/components/Header'
+import { Navigation } from '@/components/polycopy/navigation'
 import { USDC_DECIMALS } from '@/lib/turnkey/config'
 import { extractTraderNameFromRecord } from '@/lib/trader-name'
 import { CheckCircle2, Clock, XCircle } from 'lucide-react'
@@ -1045,7 +1045,7 @@ function TradeExecutePageInner() {
 
   return (
     <div>
-      <Header />
+      <Navigation />
       <main className="mx-auto max-w-3xl px-4 py-10 space-y-6">
         <section className="rounded-md border border-slate-200 bg-white px-5 py-6 shadow-sm space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-4">

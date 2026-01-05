@@ -1,10 +1,10 @@
 import Link from 'next/link';
-import Header from '@/app/components/Header';
+import { Navigation } from '@/components/polycopy/navigation';
 
 export default function PrivacyPolicy() {
   return (
     <div className="min-h-screen bg-slate-50">
-      <Header />
+      <Navigation />
       
       <div className="max-w-4xl mx-auto px-4 py-12">
         {/* Back to Home */}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { verifyMessage } from 'ethers/lib/utils'
-import Header from '../../components/Header'
+import { Navigation } from '@/components/polycopy/navigation'
 
 const TURNKEY_UI_ENABLED = process.env.NEXT_PUBLIC_TURNKEY_ENABLED === 'true'
 
@@ -577,7 +577,7 @@ export default function ConnectWalletTurnkeyPage() {
 
   return (
     <>
-      <Header />
+      <Navigation />
       <div className="max-w-xl mx-auto p-6 space-y-6">
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
         {linkStatusError && (

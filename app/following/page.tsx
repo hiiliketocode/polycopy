@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
-import TraderCard from '../components/TraderCard';
+import { Navigation } from '@/components/polycopy/navigation';
+import { TraderCard } from '@/components/polycopy/trader-card';
 
 interface Trader {
   wallet: string;
@@ -360,10 +361,14 @@ export default function FollowingPage() {
             {followedTraders.map((trader) => (
               <TraderCard
                 key={trader.wallet}
-                {...trader}
+                name={trader.displayName}
+                username={trader.wallet}
+                winRate={0}
+                totalReturn={trader.pnl}
+                followers={trader.followerCount}
+                volume={trader.volume}
                 isFollowing={true}
-                skipFollowCheck={true}
-                onFollowChange={fetchFollowedTraders}
+                onFollowClick={fetchFollowedTraders}
               />
             ))}
           </div>

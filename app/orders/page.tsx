@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Header from '../components/Header'
+import { Navigation } from '@/components/polycopy/navigation'
 import OrdersTable from '@/components/orders/OrdersTable'
 import ClosePositionModal from '@/components/orders/ClosePositionModal'
 import { supabase } from '@/lib/supabase'
@@ -460,7 +460,7 @@ export default function OrdersPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <Header />
+      <Navigation />
       <main className="mx-auto max-w-6xl px-4 py-8">
         {refreshing && !ordersLoading && (
           <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
