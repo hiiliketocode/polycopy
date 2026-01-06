@@ -36,6 +36,7 @@ export async function GET(
     let pnl = 0
     let volume = 0
     let roi = 0
+    let profileImage: string | null = null
     let foundInLeaderboard = false
     
     // STEP 1: Get data from V1 leaderboard endpoint (CORRECT API)
@@ -77,6 +78,7 @@ export async function GET(
           pnl = trader.pnl ?? 0;
           volume = trader.vol ?? 0;
           roi = volume > 0 ? ((pnl / volume) * 100) : 0;
+          profileImage = trader.profileImage ?? null;
           
           console.log('✅ Found trader stats from V1 API:', {
             displayName,
@@ -170,6 +172,7 @@ export async function GET(
       roi: hasStats ? parseFloat(roi.toFixed(1)) : null,
       volume: hasStats ? Math.round(volume) : null,
       followerCount,
+      profileImage,
       hasStats, // Indicates if stats are available (user on leaderboard)
       source: foundInLeaderboard ? 'v1_leaderboard' : 'none',
     })

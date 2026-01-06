@@ -186,6 +186,32 @@ export async function POST(request: NextRequest) {
     // Use service role client for database operations (bypasses RLS)
     const supabase = createServiceClient()
     
+    // Fetch trader profile image from Polymarket leaderboard (if not provided)
+    let traderProfileImage = tradeData.traderProfileImage || null
+    if (!traderProfileImage && tradeData.traderWallet) {
+      try {
+        console.log('🖼️ Fetching trader profile image for wallet:', tradeData.traderWallet)
+        const leaderboardResponse = await fetch(
+          `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${tradeData.traderWallet}`,
+          { next: { revalidate: 3600 } } // Cache for 1 hour
+        )
+        
+        if (leaderboardResponse.ok) {
+          const leaderboardData = await leaderboardResponse.json()
+          if (Array.isArray(leaderboardData) && leaderboardData.length > 0) {
+            traderProfileImage = leaderboardData[0].profileImage || null
+            console.log('✅ Found trader profile image:', traderProfileImage ? 'yes' : 'no')
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ Failed to fetch trader profile image:', err)
+        // Continue without image - not critical
+      }
+    }
+    
+    // Extract market avatar URL (if provided in tradeData)
+    const marketAvatarUrl = tradeData.marketAvatarUrl || null
+    
     // Insert the copied trade
     const { data: trade, error: dbError } = await supabase
       .from('copied_trades')
@@ -199,6 +225,8 @@ export async function POST(request: NextRequest) {
         outcome: tradeData.outcome,
         price_when_copied: tradeData.priceWhenCopied,
         amount_invested: tradeData.amountInvested || null,
+        trader_profile_image_url: traderProfileImage,
+        market_avatar_url: marketAvatarUrl,
       })
       .select()
       .single()

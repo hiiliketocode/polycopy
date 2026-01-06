@@ -51,9 +51,11 @@ interface CopiedTrade {
   id: string;
   trader_wallet: string;
   trader_username: string | null;
+  trader_profile_image_url: string | null;
   market_id: string;
   market_title: string;
   market_slug: string | null;
+  market_avatar_url: string | null;
   outcome: string;
   price_when_copied: number;
   amount_invested: number | null;
@@ -172,6 +174,13 @@ function ProfilePageContent() {
   
   // Pagination state for copied trades
   const [tradesToShow, setTradesToShow] = useState(15);
+  
+  // Live market data (prices and scores)
+  const [liveMarketData, setLiveMarketData] = useState<Map<string, { 
+    price: number; 
+    score?: string;
+    closed?: boolean;
+  }>>(new Map());
   
   // Refs to prevent re-fetching on tab focus
   const hasLoadedStatsRef = useRef(false);
@@ -330,9 +339,10 @@ function ProfilePageContent() {
           return trade;
         });
         
-        // Skip auto-refresh on initial load for better performance
-        // Users can manually click "Refresh Status" if they want updated prices
         setCopiedTrades(tradesWithCorrectRoi);
+        
+        // Fetch live market data for the trades
+        fetchLiveMarketData(tradesWithCorrectRoi);
       } catch (err) {
         console.error('Error fetching copied trades:', err);
         setCopiedTrades([]);
@@ -343,6 +353,49 @@ function ProfilePageContent() {
 
     fetchCopiedTrades();
   }, [user]);
+  
+  // Fetch live market data (prices and scores)
+  const fetchLiveMarketData = async (trades: CopiedTrade[]) => {
+    const newLiveData = new Map<string, { price: number; score?: string; closed?: boolean }>();
+    
+    // Get unique market IDs
+    const uniqueMarketIds = [...new Set(trades.map(t => t.market_id).filter(Boolean))];
+    
+    console.log(`📊 Fetching live data for ${uniqueMarketIds.length} markets`);
+    
+    await Promise.all(
+      uniqueMarketIds.map(async (marketId) => {
+        try {
+          // Fetch current price from Polymarket API
+          const priceResponse = await fetch(`/api/polymarket/price?conditionId=${marketId}`);
+          if (priceResponse.ok) {
+            const priceData = await priceResponse.json();
+            
+            if (priceData.success && priceData.market) {
+              // Find the trade to determine which outcome we need
+              const trade = trades.find(t => t.market_id === marketId);
+              if (trade) {
+                const outcome = trade.outcome.toUpperCase();
+                const { outcomes, outcomePrices, closed } = priceData.market;
+                
+                // Find the price for this specific outcome
+                const outcomeIndex = outcomes?.findIndex((o: string) => o.toUpperCase() === outcome);
+                if (outcomeIndex !== -1 && outcomePrices && outcomePrices[outcomeIndex]) {
+                  const price = Number(outcomePrices[outcomeIndex]);
+                  newLiveData.set(marketId, { price, closed: Boolean(closed) });
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch live data for ${marketId}:`, error);
+        }
+      })
+    );
+    
+    console.log(`💾 Stored live data for ${newLiveData.size} markets`);
+    setLiveMarketData(newLiveData);
+  };
 
   // Process copied trades for performance metrics
   useEffect(() => {
@@ -563,6 +616,10 @@ function ProfilePageContent() {
       );
       
       setCopiedTrades(tradesWithFreshStatus);
+      
+      // Also refresh live market data
+      await fetchLiveMarketData(tradesWithFreshStatus);
+      
       setToastMessage('Positions refreshed!');
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
@@ -1112,22 +1169,93 @@ function ProfilePageContent() {
                   {filteredTrades.slice(0, tradesToShow).map((trade) => (
                     <Card key={trade.id} className="p-4 sm:p-6">
                       <div className="space-y-4">
-                        {/* Trade Header */}
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1 min-w-0">
-                            <Link
-                              href={`/trader/${trade.trader_wallet}`}
-                              className="text-sm text-slate-600 hover:text-slate-900 font-medium"
-                            >
-                              {trade.trader_username || `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
-                            </Link>
-                            <h3 className="font-medium text-slate-900 mt-1">{trade.market_title}</h3>
-                            <p className="text-xs text-slate-500 mt-1">{formatRelativeTime(trade.copied_at)}</p>
+                        {/* Trader Header Row */}
+                        <div className="flex items-start justify-between gap-3">
+                          <Link
+                            href={`/trader/${trade.trader_wallet}`}
+                            className="flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
+                          >
+                            <Avatar className="h-10 w-10 ring-2 ring-slate-100">
+                              {trade.trader_profile_image_url ? (
+                                <img
+                                  src={trade.trader_profile_image_url}
+                                  alt={trade.trader_username || 'Trader'}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : null}
+                              <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-sm font-semibold">
+                                {(trade.trader_username || trade.trader_wallet).slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                              <p className="font-medium text-slate-900 text-sm">
+                                {trade.trader_username || `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
+                              </p>
+                              <p className="text-xs text-slate-500 font-mono truncate">
+                                {`${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
+                              </p>
+                            </div>
+                          </Link>
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
+                            {/* Live Price Display */}
+                            {liveMarketData.get(trade.market_id) && (
+                              <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
+                                <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Price:</span>
+                                <span className="text-xs font-bold text-slate-900">
+                                  ${liveMarketData.get(trade.market_id)!.price.toFixed(2)}
+                                </span>
+                                {(() => {
+                                  const currentPrice = liveMarketData.get(trade.market_id)!.price;
+                                  const priceChange = ((currentPrice - trade.price_when_copied) / trade.price_when_copied) * 100;
+                                  if (Math.abs(priceChange) > 0.1) {
+                                    return (
+                                      <span className={`text-xs font-semibold flex items-center ${priceChange > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        {priceChange > 0 ? '↑' : '↓'}{Math.abs(priceChange).toFixed(1)}%
+                                      </span>
+                                    );
+                                  }
+                                })()}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
+                                {formatRelativeTime(trade.copied_at)}
+                              </span>
+                              <button
+                                onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                              >
+                                {expandedTradeId === trade.id ? (
+                                  <ChevronUp className="h-5 w-5" />
+                                ) : (
+                                  <ChevronDown className="h-5 w-5" />
+                                )}
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                        </div>
+
+                        {/* Market Row */}
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50">
+                            {trade.market_avatar_url ? (
+                              <img
+                                src={trade.market_avatar_url}
+                                alt={trade.market_title}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : null}
+                            <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
+                              {trade.market_title.slice(0, 2)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 flex items-center gap-2">
+                            <h3 className="font-medium text-slate-900 leading-snug">
+                              {trade.market_title}
+                            </h3>
                             <Badge
                               className={cn(
-                                "font-semibold",
+                                "font-semibold flex-shrink-0",
                                 trade.outcome === 'YES'
                                   ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                                   : "bg-red-50 text-red-700 border-red-200"
@@ -1135,16 +1263,6 @@ function ProfilePageContent() {
                             >
                               {trade.outcome}
                             </Badge>
-                            <button
-                              onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
-                              className="text-slate-400 hover:text-slate-600"
-                            >
-                              {expandedTradeId === trade.id ? (
-                                <ChevronUp className="h-5 w-5" />
-                              ) : (
-                                <ChevronDown className="h-5 w-5" />
-                              )}
-                            </button>
                           </div>
                         </div>
 

@@ -853,6 +853,26 @@ export default function FeedPage() {
     setIsSubmitting(true);
 
     try {
+      // Fetch trader profile image from Polymarket leaderboard
+      let traderProfileImage: string | null = null
+      try {
+        console.log('🖼️ Fetching trader profile image for wallet:', selectedTrade.trader.wallet)
+        const leaderboardResponse = await fetch(
+          `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${selectedTrade.trader.wallet}`
+        )
+        
+        if (leaderboardResponse.ok) {
+          const leaderboardData = await leaderboardResponse.json()
+          if (Array.isArray(leaderboardData) && leaderboardData.length > 0) {
+            traderProfileImage = leaderboardData[0].profileImage || null
+            console.log('✅ Found trader profile image:', traderProfileImage ? 'yes' : 'no')
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ Failed to fetch trader profile image:', err)
+        // Continue without image - not critical
+      }
+      
       const { data: createdTrade, error: insertError } = await supabase
         .from('copied_trades')
         .insert({
@@ -864,6 +884,8 @@ export default function FeedPage() {
           outcome: selectedTrade.trade.outcome.toUpperCase(),
           price_when_copied: entryPrice,
           amount_invested: amountInvested || null,
+          trader_profile_image_url: traderProfileImage,
+          market_avatar_url: selectedTrade.market.avatarUrl || null,
         })
         .select()
         .single();

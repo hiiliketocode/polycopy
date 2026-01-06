@@ -25,6 +25,7 @@ interface TraderData {
   pnl: number;
   volume: number;
   followerCount: number;
+  profileImage?: string | null;
   roi?: number;
   tradesCount?: number;
 }
@@ -811,6 +812,9 @@ export default function TraderProfilePage({
         <Card className="bg-white border-slate-200 p-8">
           <div className="flex items-start gap-4 mb-5">
             <Avatar className="h-20 w-20 border-2 border-white shadow-md flex-shrink-0" style={{ backgroundColor: avatarColor }}>
+              {traderData.profileImage && (
+                <AvatarImage src={traderData.profileImage} alt={traderData.displayName} />
+              )}
               <AvatarFallback className="text-white text-xl font-semibold bg-transparent">
                 {initials}
               </AvatarFallback>
