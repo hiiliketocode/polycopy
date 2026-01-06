@@ -1,10 +1,9 @@
 "use client"
 
-import { useState } from "react"
 import { Check, Crown, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { StripePaymentModal } from "./stripe-payment-modal"
+import { useUpgrade } from "@/hooks/useUpgrade"
 
 interface UpgradeModalProps {
   open: boolean
@@ -12,12 +11,11 @@ interface UpgradeModalProps {
 }
 
 export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
-  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const { upgrade, loading } = useUpgrade()
 
-  const handleUpgrade = () => {
-    console.log("[v0] Opening Stripe payment modal")
-    onOpenChange(false)
-    setShowPaymentModal(true)
+  const handleUpgrade = async () => {
+    await upgrade()
+    // Modal will auto-close when user navigates to Stripe
   }
 
   const premiumFeatures = [
@@ -79,10 +77,11 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
             {/* CTA Button */}
             <Button
               onClick={handleUpgrade}
-              className="w-full h-11 bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white font-bold text-base shadow-lg hover:shadow-xl transition-all"
+              disabled={loading}
+              className="w-full h-11 bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white font-bold text-base shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Crown className="h-5 w-5 mr-2" />
-              Upgrade Now
+              {loading ? "Loading..." : "Upgrade Now"}
             </Button>
 
             {/* Trust indicators */}
@@ -93,9 +92,6 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Stripe payment modal */}
-      <StripePaymentModal open={showPaymentModal} onOpenChange={setShowPaymentModal} />
     </>
   )
 }
