@@ -4,9 +4,11 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
-  const response = NextResponse.redirect(requestUrl.origin)
   
   if (code) {
+    let redirectUrl = `${requestUrl.origin}/feed`
+    const response = NextResponse.redirect(redirectUrl)
+    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -74,26 +76,30 @@ export async function GET(request: NextRequest) {
         .eq('user_id', user.id)
         .limit(1)
       
-      if (followsError) {
-        console.error('Error checking follows:', followsError)
-        // Default to feed on error
-        return NextResponse.redirect(`${requestUrl.origin}/feed`)
-      }
-      
-      // If user has follows, send to feed. If not, send to discover page
-      if (follows && follows.length > 0) {
+      if (!followsError && follows && follows.length > 0) {
         console.log('User has follows, redirecting to feed')
-        return NextResponse.redirect(`${requestUrl.origin}/feed`)
+        redirectUrl = `${requestUrl.origin}/feed`
       } else {
         console.log('User has no follows, redirecting to discover')
-        return NextResponse.redirect(`${requestUrl.origin}/discover`)
+        redirectUrl = `${requestUrl.origin}/discover`
       }
+      
+      // Update the response with the correct redirect URL
+      const finalResponse = NextResponse.redirect(redirectUrl)
+      
+      // Copy all cookies from the original response to the final response
+      response.cookies.getAll().forEach(cookie => {
+        finalResponse.cookies.set(cookie)
+      })
+      
+      return finalResponse
       
     } catch (error) {
       console.error('Callback error:', error)
+      return NextResponse.redirect(`${requestUrl.origin}?error=auth_error`)
     }
   }
   
-  // Default redirect to feed
+  // No code provided, redirect to home
   return NextResponse.redirect(`${requestUrl.origin}/feed`)
 }

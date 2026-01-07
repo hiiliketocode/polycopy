@@ -94,6 +94,7 @@ export default function TraderProfilePage({
   const [tradesToShow, setTradesToShow] = useState(15); // Start with 15 trades for faster loading
   const [activeTab, setActiveTab] = useState<'positions' | 'performance'>('positions');
   const [positionFilter, setPositionFilter] = useState<'all' | 'open' | 'closed' | 'resolved'>('all');
+  const [timePeriod, setTimePeriod] = useState<'all' | 'month' | 'week'>('all');
   
   // Modal state
   const [showCopiedModal, setShowCopiedModal] = useState(false);
@@ -177,7 +178,7 @@ export default function TraderProfilePage({
       setError(null);
 
       try {
-        const response = await fetch(`/api/trader/${wallet}`);
+        const response = await fetch(`/api/trader/${wallet}?timePeriod=${timePeriod}`);
         
         if (!response.ok) {
           throw new Error('Failed to fetch trader data');
@@ -194,7 +195,7 @@ export default function TraderProfilePage({
     };
 
     loadTraderData();
-  }, [wallet]);
+  }, [wallet, timePeriod]);
 
   // Check follow status
   useEffect(() => {
@@ -880,6 +881,26 @@ export default function TraderProfilePage({
             </div>
           </div>
 
+          {/* Time Period Buttons */}
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-slate-700">Performance Stats</h3>
+            <div className="flex gap-2">
+              {(['all', 'month', 'week'] as const).map((period) => (
+                <button
+                  key={period}
+                  onClick={() => setTimePeriod(period)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                    timePeriod === period
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  {period === 'all' ? 'All Time' : period === 'month' ? '30 Days' : '7 Days'}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Stats Grid */}
           <div className="grid grid-cols-4 gap-4">
             <div className="text-center p-4 bg-slate-50 rounded-lg relative group">
@@ -890,7 +911,7 @@ export default function TraderProfilePage({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
-                    All-time return on investment from Polymarket leaderboard
+                    {timePeriod === 'all' ? 'All-time' : timePeriod === 'month' ? 'Last 30 days' : 'Last 7 days'} return on investment from Polymarket leaderboard
                   </div>
                 </div>
               </div>
@@ -906,7 +927,7 @@ export default function TraderProfilePage({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
-                    Total profit/loss from all trades on Polymarket
+                    {timePeriod === 'all' ? 'All-time' : timePeriod === 'month' ? 'Last 30 days' : 'Last 7 days'} profit/loss from Polymarket
                   </div>
                 </div>
               </div>
@@ -957,7 +978,7 @@ export default function TraderProfilePage({
                 : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
             )}
           >
-            Positions
+            Trades
           </Button>
           <Button
             onClick={() => setActiveTab('performance')}

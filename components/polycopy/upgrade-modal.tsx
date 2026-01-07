@@ -1,6 +1,6 @@
 "use client"
 
-import { Check, Crown, Sparkles } from "lucide-react"
+import { Check, Crown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useUpgrade } from "@/hooks/useUpgrade"
@@ -19,13 +19,10 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
   }
 
   const premiumFeatures = [
-    "Track unlimited trades",
-    "Advanced analytics and insights",
-    "Real-time notifications",
-    "Priority support",
-    "Export trade history",
-    "Custom alerts and filters",
-    "Portfolio performance tracking",
+    "Automatically copy trades in Polycopy using your Polymarket wallet",
+    "Advanced trade features, like limit orders, slippage, and more",
+    "Receive copied trade status alerts via WhatsApp",
+    "Copy portfolio performance tracking",
     "Early access to new features",
   ]
 
@@ -45,13 +42,7 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
 
           <div className="p-6 space-y-5 overflow-y-auto">
             {/* Pricing */}
-            <div className="bg-gradient-to-br from-slate-50 to-white border-2 border-yellow-400 rounded-xl p-5 relative overflow-hidden">
-              <div className="absolute top-2.5 right-2.5">
-                <div className="bg-gradient-to-r from-yellow-400 to-amber-500 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
-                  <Sparkles className="h-3 w-3" />
-                  BEST VALUE
-                </div>
-              </div>
+            <div className="bg-gradient-to-br from-slate-50 to-white border-2 border-yellow-400 rounded-xl p-5">
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="text-3xl font-bold text-slate-900">$20</span>
                 <span className="text-base text-slate-600">/month</span>

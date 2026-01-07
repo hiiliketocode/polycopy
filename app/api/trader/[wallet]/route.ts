@@ -30,6 +30,10 @@ export async function GET(
     )
   }
 
+  // Get time period from query params (default to 'all')
+  const { searchParams } = new URL(request.url)
+  const timePeriod = searchParams.get('timePeriod') || 'all'
+
   try {
     // Initialize with defaults
     let displayName = abbreviateWallet(wallet)
@@ -42,10 +46,10 @@ export async function GET(
     // STEP 1: Get data from V1 leaderboard endpoint (CORRECT API)
     // This is the same endpoint Polymarket's website uses
     try {
-      console.log('🔍 Looking up trader using V1 leaderboard API:', wallet);
+      console.log('🔍 Looking up trader using V1 leaderboard API:', wallet, 'timePeriod:', timePeriod);
       
-      // IMPORTANT: Use V1 endpoint with user parameter for accurate all-time stats
-      const v1LeaderboardUrl = `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${wallet}`;
+      // Use V1 endpoint with user parameter and specified time period
+      const v1LeaderboardUrl = `https://data-api.polymarket.com/v1/leaderboard?timePeriod=${timePeriod}&orderBy=VOL&limit=1&offset=0&category=overall&user=${wallet}`;
       
       const leaderboardResponse = await fetch(v1LeaderboardUrl, { cache: 'no-store' });
       
