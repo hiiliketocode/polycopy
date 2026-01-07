@@ -285,9 +285,10 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
         </div>
       </nav>
 
-      {/* Mobile Top Navigation Bar */}
-      <nav className="md:hidden sticky top-0 z-50 bg-white border-b border-slate-200">
-        <div className="flex items-center h-14 px-4">
+      {/* Mobile Top Navigation Bar - Only show on login/signup pages, otherwise use BottomNav */}
+      {(pathname === '/login' || pathname?.startsWith('/login?')) && (
+        <nav className="md:hidden sticky top-0 z-50 bg-white border-b border-slate-200">
+          <div className="flex items-center h-14 px-4">
           {/* Logo - Left side, non-clickable branding */}
           <div className="mr-auto">
             <Image src="/logos/polycopy-logo-icon.png" alt="Polycopy" width={32} height={32} className="h-6 w-auto" />
@@ -336,7 +337,8 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
             </Link>
           </div>
         </div>
-      </nav>
+        </nav>
+      )}
 
       {/* Upgrade Modal for free users */}
       {isLoggedIn && !isPremium && <UpgradeModal open={upgradeModalOpen} onOpenChange={setUpgradeModalOpen} />}

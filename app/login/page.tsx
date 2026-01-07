@@ -57,12 +57,12 @@ function LoginForm() {
   return (
     <>
       <Navigation user={null} />
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-[calc(100vh-64px)] bg-slate-50">
         {isSignupMode ? (
           // Signup Page - Split Screen Design
-          <div className="min-h-screen flex flex-col lg:flex-row">
+          <div className="min-h-[calc(100vh-64px)] flex flex-col-reverse lg:flex-row">
             {/* Left Side - Value Props */}
-            <div className="lg:w-1/2 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-8 lg:p-12 flex flex-col justify-center text-white">
+            <div className="lg:w-1/2 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 lg:p-12 flex flex-col justify-center text-white">
               <div className="max-w-xl mx-auto">
                 <img 
                   src="/logos/polycopy-logo-primary.png"
@@ -132,7 +132,7 @@ function LoginForm() {
             </div>
 
             {/* Right Side - Signup Form */}
-            <div className="lg:w-1/2 flex items-center justify-center p-8 lg:p-12 bg-white">
+            <div className="lg:w-1/2 flex items-center justify-center p-6 py-8 lg:p-12 bg-white">
               <div className="w-full max-w-md">
                 <div className="mb-8">
                   <h2 className="text-3xl font-bold text-slate-900 mb-2">Create your account</h2>
@@ -246,10 +246,10 @@ function LoginForm() {
           </div>
         ) : (
           // Login Page - Original Centered Design
-          <div className="min-h-screen flex items-center justify-center px-4 py-8">
+          <div className="min-h-[calc(100vh-64px)] flex items-center justify-center px-4 py-4">
             <div className="w-full max-w-md">
               {/* Logo/Header */}
-              <div className="flex flex-col items-center mb-8">
+              <div className="flex flex-col items-center mb-6">
                 <img 
                   src="/logos/polycopy-logo-primary.png"
                   alt="Polycopy"
@@ -386,9 +386,9 @@ export default function LoginPage() {
     <Suspense fallback={
       <>
         <Navigation user={null} />
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-8">
+        <div className="min-h-[calc(100vh-64px)] bg-slate-50 flex items-center justify-center px-4 py-4">
           <div className="w-full max-w-md">
-            <div className="flex flex-col items-center mb-8">
+            <div className="flex flex-col items-center mb-6">
               <img 
                 src="/logos/polycopy-logo-primary.png"
                 alt="Polycopy"

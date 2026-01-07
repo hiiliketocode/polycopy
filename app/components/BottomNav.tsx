@@ -6,6 +6,11 @@ import { usePathname } from 'next/navigation';
 export default function BottomNav() {
   const pathname = usePathname();
 
+  // Hide bottom nav on login/signup pages
+  if (pathname === '/login' || pathname?.startsWith('/login?')) {
+    return null;
+  }
+
   const isActive = (href: string) => {
     if (href === '/feed') {
       return pathname === '/' || pathname === '/feed';
