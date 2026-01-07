@@ -59,6 +59,20 @@ interface CategoryDistribution {
   color: string;
 }
 
+const normalizeOutcome = (value: string) => value?.trim().toLowerCase();
+
+const findOutcomeIndex = (outcomes: string[] | null | undefined, target: string) => {
+  if (!outcomes || outcomes.length === 0) return -1;
+  const normalizedTarget = normalizeOutcome(target);
+  if (!normalizedTarget) return -1;
+  const normalizedOutcomes = outcomes.map((outcome) => normalizeOutcome(outcome));
+  const exactIndex = normalizedOutcomes.findIndex((outcome) => outcome === normalizedTarget);
+  if (exactIndex >= 0) return exactIndex;
+  return normalizedOutcomes.findIndex(
+    (outcome) => outcome.includes(normalizedTarget) || normalizedTarget.includes(outcome)
+  );
+};
+
 export default function TraderProfilePage({
   params,
 }: {
@@ -369,8 +383,7 @@ export default function TraderProfilePage({
               const isResolved = closed === true;
               
               // Find the price for this specific outcome
-              const outcome = trade.outcome.toUpperCase();
-              const outcomeIndex = outcomes?.findIndex((o: string) => o.toUpperCase() === outcome);
+              const outcomeIndex = findOutcomeIndex(outcomes, trade.outcome);
               const currentPrice = (outcomeIndex !== -1 && outcomePrices && outcomePrices[outcomeIndex]) 
                 ? Number(outcomePrices[outcomeIndex])
                 : trade.price;
@@ -1007,6 +1020,7 @@ export default function TraderProfilePage({
                   const liveScore = liveData?.score;
                   const isClosed = liveData?.closed || false;
                   const isResolved = liveData?.resolved || false;
+                  const marketIsOpen = isResolved ? false : (liveData?.closed === undefined ? undefined : !liveData.closed);
                   
                   // Calculate ROI
                   let roi: number | null = null;
@@ -1062,7 +1076,7 @@ export default function TraderProfilePage({
                       }}
                       market={trade.market}
                       marketAvatar={marketAvatar || undefined}
-                      position={trade.outcome.toUpperCase() as 'YES' | 'NO'}
+                      position={trade.outcome}
                       action={trade.side === 'BUY' ? 'Buy' : 'Sell'}
                       price={trade.price}
                       size={trade.size}
@@ -1089,6 +1103,7 @@ export default function TraderProfilePage({
                       conditionId={trade.conditionId}
                       marketSlug={trade.marketSlug}
                       currentMarketPrice={currentPrice}
+                      marketIsOpen={marketIsOpen}
                       liveScore={liveScore}
                       category={trade.category}
                       polymarketUrl={polymarketUrl}
@@ -1236,6 +1251,22 @@ export default function TraderProfilePage({
                                 )}
                               </div>
 
+                              {/* Execute Button */}
+                              <Button
+                                onClick={() => handleQuickCopy(trade)}
+                                disabled={!usdAmount || Number.parseFloat(usdAmount) <= 0 || isSubmitting}
+                                className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
+                                size="lg"
+                              >
+                                {isSubmitting ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    Executing Trade...
+                                  </>
+                                ) : (
+                                  'Execute Trade'
+                                )}
+                              </Button>
                               {/* Auto-close Checkbox */}
                               <div className="flex items-start space-x-2.5 p-2.5 bg-white rounded-lg border border-slate-200">
                                 <Checkbox
@@ -1257,23 +1288,6 @@ export default function TraderProfilePage({
                                   </p>
                                 </div>
                               </div>
-
-                              {/* Execute Button */}
-                              <Button
-                                onClick={() => handleQuickCopy(trade)}
-                                disabled={!usdAmount || Number.parseFloat(usdAmount) <= 0 || isSubmitting}
-                                className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
-                                size="lg"
-                              >
-                                {isSubmitting ? (
-                                  <>
-                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    Executing Trade...
-                                  </>
-                                ) : (
-                                  'Execute Trade'
-                                )}
-                              </Button>
                             </div>
                           )}
                         </>

@@ -4,9 +4,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronUp, Settings2, Check, Loader2, ExternalLink } from "lucide-react"
+import { ArrowDown, ChevronDown, ChevronUp, Check, HelpCircle, Loader2, ExternalLink, X } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 
 interface TradeCardProps {
   trader: {
@@ -18,7 +22,7 @@ interface TradeCardProps {
   }
   market: string
   marketAvatar?: string
-  position: "YES" | "NO"
+  position: string
   action: "Buy" | "Sell"
   price: number
   size: number
@@ -37,9 +41,51 @@ interface TradeCardProps {
   marketSlug?: string
   // Live data
   currentMarketPrice?: number
+  marketIsOpen?: boolean | null
   liveScore?: string
   category?: string
   polymarketUrl?: string
+}
+
+type StatusPhase =
+  | 'submitted'
+  | 'processing'
+  | 'pending'
+  | 'open'
+  | 'partial'
+  | 'filled'
+  | 'canceled'
+  | 'expired'
+  | 'rejected'
+  | 'unknown'
+
+const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
+  'filled',
+  'partial',
+  'canceled',
+  'expired',
+  'rejected',
+])
+
+function normalizeStatusPhase(status?: string | null): StatusPhase {
+  if (!status) return 'pending'
+  const normalized = status.trim().toLowerCase()
+  if (normalized === 'matched' || normalized === 'filled') return 'filled'
+  if (['accepted', 'pending', 'submitted', 'unknown'].includes(normalized)) return 'pending'
+  if (normalized === 'processing') return 'processing'
+  if (normalized === 'open') return 'open'
+  if (normalized === 'partial') return 'partial'
+  if (normalized === 'canceled' || normalized === 'cancelled') return 'canceled'
+  if (normalized === 'expired') return 'expired'
+  if (
+    normalized.includes('reject') ||
+    normalized.includes('error') ||
+    normalized.includes('fail') ||
+    normalized === 'inactive'
+  ) {
+    return 'rejected'
+  }
+  return 'pending'
 }
 
 export function TradeCard({
@@ -63,6 +109,7 @@ export function TradeCard({
   tokenId,
   marketSlug,
   currentMarketPrice,
+  marketIsOpen,
   liveScore,
   category,
   polymarketUrl,
@@ -73,6 +120,21 @@ export function TradeCard({
   const [isSuccess, setIsSuccess] = useState(false)
   const [localCopied, setLocalCopied] = useState(isCopied)
   const [refreshStatus, setRefreshStatus] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle')
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [slippagePreset, setSlippagePreset] = useState<number | 'custom'>(2)
+  const [customSlippage, setCustomSlippage] = useState("")
+  const [orderType, setOrderType] = useState<'IOC' | 'GTC'>('IOC')
+  const [orderId, setOrderId] = useState<string | null>(null)
+  const [statusPhase, setStatusPhase] = useState<StatusPhase>('submitted')
+  const [statusData, setStatusData] = useState<any | null>(null)
+  const [statusError, setStatusError] = useState<string | null>(null)
+  const [showConfirmation, setShowConfirmation] = useState(false)
+  const [livePrice, setLivePrice] = useState<number | null>(
+    typeof currentMarketPrice === "number" && !Number.isNaN(currentMarketPrice)
+      ? currentMarketPrice
+      : null
+  )
 
   const formatWallet = (value: string) => {
     const trimmed = value?.trim() || ""
@@ -86,9 +148,19 @@ export function TradeCard({
   const displayAddress = formatWallet(trader.address || "")
   const copiedTraderId = isUuid(trader.id) ? trader.id! : null
 
-  const currentPrice = currentMarketPrice || (price * (0.98 + Math.random() * 0.04)) // Use live price or simulate
-  const priceChange = currentMarketPrice ? ((currentMarketPrice - price) / price) * 100 : 0
+  const resolvedLivePrice =
+    typeof livePrice === "number" && !Number.isNaN(livePrice) ? livePrice : null
+  const hasCurrentPrice = resolvedLivePrice !== null
+  const currentPrice = hasCurrentPrice ? resolvedLivePrice : price
+  const priceChange = hasCurrentPrice ? ((currentPrice - price) / price) * 100 : 0
   const priceDirection = priceChange > 0 ? 'up' : priceChange < 0 ? 'down' : 'neutral'
+  const inferredMarketOpen =
+    typeof marketIsOpen === "boolean"
+      ? marketIsOpen
+      : hasCurrentPrice
+        ? currentPrice > 0.05 && currentPrice < 0.95
+        : null
+  const isMarketEnded = inferredMarketOpen === false
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -103,11 +175,204 @@ export function TradeCard({
     return new Intl.NumberFormat("en-US").format(value)
   }
 
-  const calculateContracts = () => {
-    const amount = Number.parseFloat(usdAmount)
-    if (isNaN(amount) || amount <= 0) return 0
-    return Math.floor(amount / currentPrice)
+  const formatOutcomeLabel = (value: string) => {
+    const trimmed = value?.trim()
+    if (!trimmed) return "--"
+    const lower = trimmed.toLowerCase()
+    if (lower === "yes") return "Yes"
+    if (lower === "no") return "No"
+    return trimmed
+      .split(" ")
+      .map((word) => (word ? word[0].toUpperCase() + word.slice(1).toLowerCase() : ""))
+      .join(" ")
   }
+
+  const normalizeOutcome = (value: string) => value?.trim().toLowerCase()
+  const findOutcomeIndex = (outcomes: string[], target: string) => {
+    const normalizedTarget = normalizeOutcome(target)
+    if (!normalizedTarget) return -1
+    const normalizedOutcomes = outcomes.map((outcome) => normalizeOutcome(outcome))
+    const exactIndex = normalizedOutcomes.findIndex((outcome) => outcome === normalizedTarget)
+    if (exactIndex >= 0) return exactIndex
+
+    const containsIndex = normalizedOutcomes.findIndex(
+      (outcome) =>
+        outcome.includes(normalizedTarget) || normalizedTarget.includes(outcome)
+    )
+    return containsIndex
+  }
+
+  useEffect(() => {
+    if (typeof currentMarketPrice === "number" && !Number.isNaN(currentMarketPrice)) {
+      setLivePrice(currentMarketPrice)
+    }
+  }, [currentMarketPrice])
+
+  useEffect(() => {
+    setLocalCopied(isCopied)
+  }, [isCopied])
+
+  useEffect(() => {
+    if (!isExpanded) return
+    if (!conditionId && !marketSlug && !market) return
+
+    let canceled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let inFlight = false
+
+    const fetchPrice = async () => {
+      if (inFlight || canceled) return
+      inFlight = true
+      try {
+        const params = new URLSearchParams()
+        if (conditionId) {
+          params.set('conditionId', conditionId)
+        } else if (marketSlug) {
+          params.set('slug', marketSlug)
+        } else if (market) {
+          params.set('title', market)
+        }
+        const response = await fetch(`/api/polymarket/price?${params.toString()}`, {
+          cache: 'no-store',
+        })
+        if (!response.ok) return
+        const data = await response.json()
+        if (!data?.success || !data?.market) return
+
+        const outcomes = Array.isArray(data.market.outcomes) ? data.market.outcomes : null
+        const prices = Array.isArray(data.market.outcomePrices) ? data.market.outcomePrices : null
+        if (!outcomes || !prices) return
+        const outcomeIndex = findOutcomeIndex(outcomes, position)
+        if (outcomeIndex < 0 || outcomeIndex >= prices.length) return
+        const nextPrice = Number(prices[outcomeIndex])
+        if (!Number.isFinite(nextPrice) || nextPrice <= 0) return
+        if (!canceled) setLivePrice(nextPrice)
+      } catch {
+        // Ignore transient fetch errors for live price polling.
+      } finally {
+        inFlight = false
+        if (!canceled) {
+          timer = setTimeout(fetchPrice, 250)
+        }
+      }
+    }
+
+    fetchPrice()
+    return () => {
+      canceled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [conditionId, isExpanded, market, marketSlug, position])
+
+  const normalizedOutcome = position?.trim().toLowerCase()
+  const outcomeBadgeClass =
+    normalizedOutcome === "yes"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : normalizedOutcome === "no"
+        ? "bg-red-50 text-red-700 border-red-200"
+        : "bg-slate-100 text-slate-700 border-slate-200"
+
+  const amountValue = Number.parseFloat(usdAmount)
+  const hasAmountInput = usdAmount.trim().length > 0
+  const calculatedContracts =
+    Number.isFinite(amountValue) && amountValue > 0 ? Math.floor(amountValue / currentPrice) : 0
+  const amountTooSmall = hasAmountInput && Number.isFinite(amountValue) && amountValue > 0 && calculatedContracts < 1
+  const inlineAmountError = amountTooSmall ? 'Amount too small. Must be at least 1 contract.' : null
+  const traderSize = Number.isFinite(size) && size > 0 ? size : 0
+  const sizePercent =
+    traderSize > 0 && calculatedContracts > 0 ? (calculatedContracts / traderSize) * 100 : null
+  const sizePercentLabel = sizePercent !== null ? `${sizePercent.toFixed(0)}%` : '--%'
+  const contractLabel = calculatedContracts === 1 ? "contract" : "contracts"
+  const defaultSlippagePercent = 2
+  const slippagePercent =
+    slippagePreset === "custom" ? Number(customSlippage) : Number(slippagePreset)
+  const resolvedSlippage =
+    Number.isFinite(slippagePercent) && slippagePercent >= 0 ? slippagePercent : defaultSlippagePercent
+  const limitPrice =
+    action === "Buy"
+      ? currentPrice * (1 + resolvedSlippage / 100)
+      : currentPrice * (1 - resolvedSlippage / 100)
+  const estimatedContractsAtLimit =
+    Number.isFinite(amountValue) && amountValue > 0 && limitPrice > 0
+      ? Math.floor(amountValue / limitPrice)
+      : 0
+  const estimatedMaxCost = estimatedContractsAtLimit * limitPrice
+  const previousSlippage = useRef(resolvedSlippage)
+  const statusDataRef = useRef<any | null>(null)
+
+  useEffect(() => {
+    if (previousSlippage.current !== resolvedSlippage) {
+      if (Number.isFinite(amountValue) && amountValue > 0 && limitPrice > 0) {
+        const contractsAtLimit = Math.floor(amountValue / limitPrice)
+        if (contractsAtLimit > 0) {
+          const normalizedAmount = contractsAtLimit * limitPrice
+          setUsdAmount(normalizedAmount.toFixed(2))
+        }
+      }
+    }
+    previousSlippage.current = resolvedSlippage
+  }, [amountValue, limitPrice, resolvedSlippage])
+
+  useEffect(() => {
+    if (!orderId || !showConfirmation) return
+    let cancelled = false
+    let intervalId: ReturnType<typeof setInterval> | null = null
+    let pendingTimer: ReturnType<typeof setTimeout> | null = null
+    let inFlight = false
+
+    setStatusPhase('submitted')
+    setStatusData(null)
+    statusDataRef.current = null
+    setStatusError(null)
+
+    pendingTimer = setTimeout(() => {
+      if (!cancelled && !statusDataRef.current) {
+        setStatusPhase('pending')
+      }
+    }, 800)
+
+    const poll = async () => {
+      if (cancelled || inFlight) return
+      inFlight = true
+      try {
+        const res = await fetch(`/api/polymarket/orders/${encodeURIComponent(orderId)}/status`, {
+          cache: 'no-store',
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          setStatusError(data?.error || data?.message || 'Status check failed')
+        } else {
+          if (pendingTimer) {
+            clearTimeout(pendingTimer)
+            pendingTimer = null
+          }
+          statusDataRef.current = data
+          setStatusData(data)
+          setStatusError(null)
+          const rawStatus = data?.status ? String(data.status) : ''
+          const phase = normalizeStatusPhase(rawStatus)
+          setStatusPhase(phase)
+          if (TERMINAL_STATUS_PHASES.has(phase) && intervalId) {
+            clearInterval(intervalId)
+            intervalId = null
+          }
+        }
+      } catch (err: any) {
+        setStatusError(err?.message || 'Network error')
+      } finally {
+        inFlight = false
+      }
+    }
+
+    poll()
+    intervalId = setInterval(poll, 250)
+
+    return () => {
+      cancelled = true
+      if (intervalId) clearInterval(intervalId)
+      if (pendingTimer) clearTimeout(pendingTimer)
+    }
+  }, [orderId, showConfirmation])
 
   const refreshOrders = async () => {
     setRefreshStatus('refreshing')
@@ -134,19 +399,18 @@ export function TradeCard({
     }
 
     setIsSubmitting(true)
+    setSubmitError(null)
     
     try {
-      const amount = Number.parseFloat(usdAmount)
-      if (isNaN(amount) || amount <= 0) {
-        alert('Please enter a valid amount')
+      if (!Number.isFinite(amountValue) || amountValue <= 0) {
+        setSubmitError('Enter a valid amount.')
         setIsSubmitting(false)
         return
       }
 
       // Calculate contracts from USD amount
-      const contracts = calculateContracts()
-      if (contracts <= 0) {
-        alert('Amount is too small to purchase any contracts')
+      if (calculatedContracts <= 0) {
+        setSubmitError('Amount too small. Must be at least 1 contract.')
         setIsSubmitting(false)
         return
       }
@@ -174,7 +438,7 @@ export function TradeCard({
       }
 
       if (!finalTokenId) {
-        alert('Unable to determine token ID. Please use Advanced mode.')
+        setSubmitError('Unable to determine token ID. Please use Advanced mode.')
         setIsSubmitting(false)
         return
       }
@@ -185,10 +449,10 @@ export function TradeCard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tokenId: finalTokenId,
-          price: currentPrice,
-          amount: contracts,
+          price: limitPrice,
+          amount: calculatedContracts,
           side: action === 'Buy' ? 'BUY' : 'SELL',
-          orderType: 'IOC',
+          orderType,
           confirm: true,
           copiedTraderId,
           copiedTraderWallet: trader.address,
@@ -204,33 +468,65 @@ export function TradeCard({
         throw new Error(data?.error || data?.message || 'Failed to execute trade')
       }
 
-      // Success!
+      const placedOrderId =
+        data?.orderId ||
+        data?.orderID ||
+        data?.raw?.orderId ||
+        data?.raw?.orderID ||
+        data?.raw?.order_id ||
+        null
+
+      if (!placedOrderId) {
+        throw new Error('Order submitted but no order ID returned.')
+      }
+
+      // Success: open confirmation view
       setIsSubmitting(false)
-      setIsSuccess(true)
-      setLocalCopied(true)
+      setShowConfirmation(true)
+      setOrderId(String(placedOrderId))
       refreshOrders().catch(() => {
         /* handled in refreshOrders */
       })
 
-      setTimeout(() => {
-        setIsSuccess(false)
-        onToggleExpand?.() // Collapse the dropdown
-      }, 3000)
-
     } catch (error: any) {
       console.error('Trade execution error:', error)
-      alert(error?.message || 'Failed to execute trade. Please try again.')
+      setSubmitError(error?.message || 'Failed to execute trade. Please try again.')
       setIsSubmitting(false)
     }
   }
 
   const handleCopyTradeClick = () => {
-    if (isPremium && onToggleExpand && !localCopied) {
+    if (isMarketEnded) return
+    if (isPremium && onToggleExpand) {
       onToggleExpand()
     } else if (!isPremium) {
       onCopyTrade?.()
     }
   }
+
+  const isCopyDisabled = isMarketEnded
+  const statusLabel =
+    statusPhase === 'submitted'
+      ? 'Order Sent'
+      : statusPhase === 'pending' || statusPhase === 'processing' || statusPhase === 'open'
+        ? 'Order Pending'
+        : statusPhase === 'filled'
+          ? 'Order Filled'
+          : statusPhase === 'partial'
+            ? 'Partially Filled'
+            : 'Not Filled'
+  const filledContracts =
+    typeof statusData?.filledSize === 'number' ? statusData.filledSize : null
+  const totalContracts =
+    typeof statusData?.size === 'number' ? statusData.size : null
+  const remainingContracts =
+    typeof statusData?.remainingSize === 'number' ? statusData.remainingSize : null
+  const fillPrice =
+    typeof statusData?.price === 'number' ? statusData.price : null
+  const statusContractsText =
+    filledContracts !== null && totalContracts !== null
+      ? `${filledContracts.toLocaleString()} of ${totalContracts.toLocaleString()} filled`
+      : `${calculatedContracts.toLocaleString()} ${contractLabel}`
 
   return (
     <div className="group bg-white border border-slate-200 rounded-xl overflow-hidden transition-all hover:shadow-lg">
@@ -253,18 +549,15 @@ export function TradeCard({
             </div>
           </Link>
           <div className="flex flex-col items-end gap-1.5 shrink-0">
-            {/* Live Price & Odds Display (Always visible for all users) */}
-            <div className="flex flex-col md:flex-row items-end md:items-center gap-1">
-              {currentMarketPrice && (
-                <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
-                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Price:</span>
-                  <span className="text-xs font-bold text-slate-900">${currentMarketPrice.toFixed(2)}</span>
-                  {priceDirection !== 'neutral' && (
-                    <span className={`text-xs font-semibold flex items-center ${priceDirection === 'up' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {priceDirection === 'up' ? '↑' : '↓'}{Math.abs(priceChange).toFixed(1)}%
-                    </span>
-                  )}
-                </div>
+            {/* Live Score (Always visible for all users) */}
+            <div className="flex flex-col md:flex-row items-end md:items-center gap-2">
+              {isMarketEnded && (
+                <Badge
+                  variant="secondary"
+                  className="h-7 px-2 text-[10px] font-semibold bg-rose-50 text-rose-700 border-rose-200 flex items-center"
+                >
+                  Ended
+                </Badge>
               )}
               {liveScore && (
                 <div className="px-2 py-1 h-7 rounded bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 shadow-sm flex items-center">
@@ -275,11 +568,7 @@ export function TradeCard({
             {/* Timestamp & Expand */}
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
-              {isPremium && onToggleExpand && !localCopied && (
-                <button onClick={onToggleExpand} className="text-slate-400 hover:text-slate-600 transition-colors">
-                  {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                </button>
-              )}
+              {isPremium && onToggleExpand && !localCopied && null}
             </div>
           </div>
         </div>
@@ -308,146 +597,227 @@ export function TradeCard({
           </div>
         </div>
 
-        <div className="border border-slate-200 rounded-lg p-4 mb-4 bg-slate-50/50">
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 relative">
+        <div className="border border-slate-200 rounded-lg px-4 py-3 mb-2 bg-slate-50/50">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 relative">
             <div className="text-center">
-              <p className="text-xs text-slate-500 mb-1 font-medium">Position</p>
-              <div className="flex flex-wrap md:flex-row md:items-center md:justify-center items-center justify-center gap-1">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Trade</p>
+              <div className="flex flex-wrap items-center justify-center gap-1 max-w-full">
                 <Badge
                   variant="secondary"
                   className={`font-semibold text-xs ${
-                    position === "YES"
+                    action === "Buy"
                       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                       : "bg-red-50 text-red-700 border-red-200"
                   }`}
                 >
-                  {position}
+                  {action}
                 </Badge>
-                <div className="flex items-center gap-0.5 text-xs text-slate-600">
-                  {action === "Buy" ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                  <span className="font-medium">{action}</span>
-                </div>
+                <span className="text-xs text-slate-400 font-semibold">|</span>
+                <Badge
+                  variant="secondary"
+                  className={`font-semibold text-xs ${outcomeBadgeClass} max-w-[140px] whitespace-normal break-words text-center leading-snug`}
+                >
+                  {formatOutcomeLabel(position)}
+                </Badge>
               </div>
+            </div>
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Invested</p>
+              <p className="text-sm md:text-base font-semibold text-slate-900">{formatCurrency(total)}</p>
+            </div>
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Contracts</p>
+              <p className="text-sm md:text-base font-semibold text-slate-900">{formatNumber(size)}</p>
             </div>
             <div className="text-center md:border-l border-slate-200">
               <p className="text-xs text-slate-500 mb-1 font-medium">Entry</p>
               <p className="text-sm md:text-base font-semibold text-slate-900">{formatCurrency(price)}</p>
             </div>
             <div className="text-center md:border-l border-slate-200">
-              <p className="text-xs text-slate-500 mb-1 font-medium">Size</p>
-              <p className="text-sm md:text-base font-semibold text-slate-900">{formatNumber(size)}</p>
-            </div>
-            <div className="text-center md:border-l border-slate-200">
-              <p className="text-xs text-slate-500 mb-1 font-medium">Total</p>
-              <p className="text-sm md:text-base font-semibold text-slate-900">{formatCurrency(total)}</p>
+              <p className="text-xs text-slate-500 mb-1 font-medium">Current</p>
+              <p className="text-sm md:text-base font-semibold text-slate-900">
+                {hasCurrentPrice ? formatCurrency(currentPrice) : "--"}
+              </p>
             </div>
             <div className="text-center md:border-l border-slate-200">
               <p className="text-xs text-slate-500 mb-1 font-medium">ROI</p>
               <p className={`text-sm md:text-base font-semibold ${
-                priceDirection === 'neutral' || !currentMarketPrice ? 'text-slate-400' :
+                priceDirection === 'neutral' || !hasCurrentPrice ? 'text-slate-400' :
                 priceDirection === 'up' ? 'text-emerald-600' :
                 'text-red-600'
               }`}>
-                {!currentMarketPrice ? '--' : `${priceChange > 0 ? '+' : ''}${priceChange.toFixed(1)}%`}
+                {!hasCurrentPrice ? '--' : `${priceChange > 0 ? '+' : ''}${priceChange.toFixed(1)}%`}
               </p>
             </div>
           </div>
         </div>
 
-        <div className={isPremium ? "w-full" : "grid grid-cols-2 gap-2"}>
-          <Button
-            onClick={handleCopyTradeClick}
-            disabled={localCopied}
-            className={`font-semibold shadow-sm text-sm ${
-              localCopied
-                ? "w-full bg-emerald-500 hover:bg-emerald-600 text-white"
-                : isPremium
-                  ? "w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
-                  : "bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900"
-            }`}
-            size="lg"
-          >
-            {localCopied ? (
-              <>
-                <Check className="w-4 h-4 mr-2" />
-                Trade Copied
-              </>
-            ) : (
-              <>
-                Copy Trade
-                {!isPremium && <ExternalLink className="w-4 h-4 ml-2" />}
-              </>
-            )}
-          </Button>
-          {!isPremium && (
+        {!(isPremium && isExpanded) && (
+          <div className={isPremium ? "w-full" : "grid grid-cols-2 gap-2"}>
             <Button
-              onClick={onMarkAsCopied}
-              variant="outline"
-              className="border-slate-300 text-slate-700 hover:bg-slate-50 font-medium bg-transparent text-sm transition-all"
+              onClick={handleCopyTradeClick}
+              disabled={isCopyDisabled}
+              className={`font-semibold shadow-sm text-sm ${
+                localCopied
+                  ? "w-full bg-emerald-500 hover:bg-emerald-600 text-white"
+                  : isMarketEnded
+                    ? "w-full bg-slate-200 text-slate-500 cursor-not-allowed"
+                    : isPremium
+                      ? "w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
+                      : "bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900"
+              }`}
               size="lg"
             >
-              Mark as Copied
+              {localCopied ? (
+                <>
+                  <Check className="w-4 h-4 mr-2" />
+                  Copy Again
+                </>
+              ) : (
+                <>
+                  Copy Trade
+                  {!isPremium && <ExternalLink className="w-4 h-4 ml-2" />}
+                </>
+              )}
             </Button>
-          )}
-        </div>
+            {!isPremium && (
+              <Button
+                onClick={onMarkAsCopied}
+                variant="outline"
+                className="border-slate-300 text-slate-700 hover:bg-slate-50 font-medium bg-transparent text-sm transition-all"
+                size="lg"
+              >
+                Mark as Copied
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
-      {isPremium && isExpanded && !localCopied && (
-        <div className="border-t border-slate-200 bg-slate-50 p-6 space-y-5">
-          {!isSuccess ? (
-            <>
-              <div>
-                <h4 className="text-sm font-semibold text-slate-900 mb-4">Quick Copy</h4>
-
-                {/* Amount Input */}
-                <div className="space-y-2 mb-4">
-                  <label htmlFor="amount" className="text-xs font-medium text-slate-700">
-                    Amount (USD)
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
-                    <input
-                      id="amount"
-                      type="number"
-                      value={usdAmount}
-                      onChange={(e) => setUsdAmount(e.target.value)}
-                      onWheel={(e) => e.currentTarget.blur()}
-                      placeholder="0.00"
-                      disabled={isSubmitting}
-                      className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
+      {isPremium && isExpanded && (
+        <div className="bg-white px-6 pb-3 pt-0">
+          <div className="-mt-4 mb-2 flex justify-center">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">
+              <ArrowDown className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-0.5 rounded-xl border border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
+            {showConfirmation ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Status</p>
+                    <p className="text-lg font-semibold text-slate-900">{statusLabel}</p>
                   </div>
-                  {usdAmount && Number.parseFloat(usdAmount) > 0 && (
-                    <p className="text-xs text-slate-500">≈ {calculateContracts().toLocaleString()} contracts</p>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowConfirmation(false)
+                      setOrderId(null)
+                      setStatusData(null)
+                      statusDataRef.current = null
+                      setStatusError(null)
+                      setStatusPhase('submitted')
+                    }}
+                    className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 h-8 w-8"
+                    aria-label="Close order confirmation"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-
-                {/* Auto-close Checkbox */}
-                <div className="flex items-start space-x-3 p-2.5 bg-white rounded-lg border border-slate-200 mb-4">
-                  <Checkbox
-                    id="auto-close"
-                    checked={autoClose}
-                    onCheckedChange={(checked) => setAutoClose(!!checked)}
-                    disabled={isSubmitting}
-                  />
-                  <div className="flex-1">
-                    <label
-                      htmlFor="auto-close"
-                      className="text-sm font-medium text-slate-900 cursor-pointer leading-tight"
+                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+                  <div className="flex flex-col gap-1 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                    <span>Order ID</span>
+                    <span className="font-mono text-slate-700 break-all sm:text-right">{orderId}</span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
+                    <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
+                      <label className="text-xs font-medium text-slate-700">
+                        Amount (USD)
+                      </label>
+                      <div className="flex h-14 items-center rounded-lg border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700">
+                        {formatCurrency(Number.isFinite(amountValue) ? amountValue : 0)}
+                      </div>
+                    </div>
+                    <div className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px]">
+                      {statusContractsText}
+                    </div>
+                    <div className="flex h-14 items-center text-xs font-medium text-slate-500">
+                      Filled Price {fillPrice !== null ? formatCurrency(fillPrice) : '—'}
+                    </div>
+                  </div>
+                </div>
+                {statusError && (
+                  <p className="text-xs text-rose-600">Status error: {statusError}</p>
+                )}
+              </div>
+            ) : !isSuccess ? (
+              <div className="space-y-5">
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <button
+                      type="button"
+                      onClick={onToggleExpand}
+                      className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors"
+                      aria-label="Collapse quick copy"
                     >
-                      Auto-close when trader closes
-                    </label>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Automatically close your position when {trader.name} closes theirs
-                    </p>
+                      <ChevronUp className="w-4 h-4" />
+                    </button>
+                    <h4 className="text-sm font-semibold text-slate-900">Copy</h4>
+                    <span className="w-[52px]" aria-hidden="true" />
                   </div>
-                </div>
 
-                <div className="flex gap-2">
+                  {/* Amount Input */}
+                  <div className="space-y-2 mb-4">
+                    <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
+                      <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
+                        <label htmlFor="amount" className="text-xs font-medium text-slate-700">
+                          Amount (USD)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                          <input
+                            id="amount"
+                            type="number"
+                            value={usdAmount}
+                            onChange={(e) => {
+                              setUsdAmount(e.target.value)
+                              if (submitError) setSubmitError(null)
+                            }}
+                            onBlur={() => {
+                              if (!Number.isFinite(amountValue) || amountValue <= 0) return
+                              if (calculatedContracts < 1) return
+                              const normalizedAmount = calculatedContracts * currentPrice
+                              setUsdAmount(normalizedAmount.toFixed(2))
+                            }}
+                            onWheel={(e) => e.currentTarget.blur()}
+                            placeholder="0.00"
+                            disabled={isSubmitting}
+                            className="w-full h-14 pl-7 pr-3 border border-slate-300 rounded-lg text-base font-semibold text-slate-700 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px]">
+                        = {calculatedContracts.toLocaleString()} {contractLabel}
+                      </div>
+                      <div className="flex h-14 items-center text-xs font-medium text-slate-500">
+                        {sizePercentLabel} of original trade
+                      </div>
+                    </div>
+                    {inlineAmountError && (
+                      <p className="text-xs text-rose-600">{inlineAmountError}</p>
+                    )}
+                    {submitError && !inlineAmountError && (
+                      <p className="text-xs text-rose-600">{submitError}</p>
+                    )}
+                  </div>
+
                   <Button
                     onClick={handleQuickCopy}
-                    disabled={!usdAmount || Number.parseFloat(usdAmount) <= 0 || isSubmitting}
-                    className="flex-1 bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
+                    disabled={isMarketEnded || !usdAmount || Number.parseFloat(usdAmount) <= 0 || amountTooSmall || isSubmitting}
+                    className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
                     size="lg"
                   >
                     {isSubmitting ? (
@@ -459,41 +829,195 @@ export function TradeCard({
                       "Execute Trade"
                     )}
                   </Button>
-                  <Button
-                    onClick={onAdvancedCopy}
-                    variant="outline"
-                    disabled={isSubmitting}
-                    className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent disabled:opacity-50"
-                    size="lg"
-                  >
-                    <Settings2 className="w-4 h-4 mr-2" />
-                    Advanced
-                  </Button>
+                  {/* Auto-close Checkbox */}
+                  <div className="mt-4 flex items-start space-x-3 p-2.5 bg-white rounded-lg border border-slate-200">
+                    <Checkbox
+                      id="auto-close"
+                      checked={autoClose}
+                      onCheckedChange={(checked) => setAutoClose(!!checked)}
+                      disabled={isSubmitting}
+                    />
+                    <div className="flex-1">
+                      <label
+                        htmlFor="auto-close"
+                        className="text-sm font-medium text-slate-900 cursor-pointer leading-tight"
+                      >
+                        Auto-close when trader closes
+                      </label>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    {!showAdvanced && (
+                      <TooltipProvider>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+                              >
+                                Slippage ({resolvedSlippage}%)
+                                <HelpCircle className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <p>
+                                We set your limit price up to {resolvedSlippage}% worse than the current best price to increase the chance of filling. You still fill at the best available price.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+                              >
+                                {orderType === "GTC" ? "Good 'Til Canceled (GTC)" : "Immediate-or-cancel (IOC)"}
+                                <HelpCircle className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <p>
+                                {orderType === "GTC"
+                                  ? "GTC leaves the order open until it fills or you cancel it."
+                                  : "We try to fill instantly. Anything not filled right away is canceled (so you don't leave a stray order sitting on the book)."}
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </TooltipProvider>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvanced((prev) => !prev)}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-800"
+                    >
+                      Advanced
+                      <ChevronDown className={`h-4 w-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+                    </button>
+                  </div>
+                  {!showAdvanced && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Estimated: {estimatedContractsAtLimit.toLocaleString()} contracts, up to {formatCurrency(estimatedMaxCost)} (may fill for less).
+                    </p>
+                  )}
+                  {showAdvanced && (
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 space-y-3">
+                      <div className="space-y-1.5">
+                        <TooltipProvider>
+                          <div className="flex items-center gap-1.5">
+                            <Label className="text-xs font-medium text-slate-900">Slippage Tolerance</Label>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button type="button" className="text-slate-400 hover:text-slate-500">
+                                  <HelpCircle className="h-3 w-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p>
+                                  We set your limit price up to {resolvedSlippage}% worse than the current best price to increase the chance of filling. You still fill at the best available price.
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TooltipProvider>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {[0, 1, 3, 5].map((value) => (
+                            <Button
+                              key={value}
+                              type="button"
+                              variant={slippagePreset === value ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => {
+                                setSlippagePreset(value)
+                                setCustomSlippage("")
+                              }}
+                              className={
+                                slippagePreset === value
+                                  ? "bg-slate-900 text-white hover:bg-slate-800 font-semibold h-8 text-xs"
+                                  : "border-slate-300 text-slate-700 hover:bg-slate-50 font-medium h-8 text-xs"
+                              }
+                            >
+                              {value}%
+                            </Button>
+                          ))}
+                          <Input
+                            type="number"
+                            placeholder="Custom"
+                            value={customSlippage}
+                            onChange={(e) => {
+                              setCustomSlippage(e.target.value)
+                              setSlippagePreset("custom")
+                            }}
+                            onWheel={(e) => e.currentTarget.blur()}
+                            className="w-20 h-8 text-xs border-slate-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          Estimated: {estimatedContractsAtLimit.toLocaleString()} contracts, up to {formatCurrency(estimatedMaxCost)} (may fill for less).
+                        </p>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <TooltipProvider>
+                          <div className="flex items-center gap-1.5">
+                            <Label className="text-xs font-medium text-slate-900">Order Behavior</Label>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button type="button" className="text-slate-400 hover:text-slate-500">
+                                  <HelpCircle className="h-3 w-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p>
+                                  IOC tries to fill immediately and cancels any unfilled portion. GTC leaves the order open until it fills or you cancel it.
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TooltipProvider>
+                        <RadioGroup value={orderType} onValueChange={(value) => setOrderType(value as 'IOC' | 'GTC')} className="space-y-1.5">
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="IOC" id="quick-copy-ioc" className="h-4 w-4" />
+                            <Label htmlFor="quick-copy-ioc" className="text-xs font-medium text-slate-700 cursor-pointer">
+                              Immediate or Cancel (IOC)
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="GTC" id="quick-copy-gtc" className="h-4 w-4" />
+                            <Label htmlFor="quick-copy-gtc" className="text-xs font-medium text-slate-700 cursor-pointer">
+                              Good 'Til Canceled (GTC)
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                      </div>
+                    </div>
+                  )}
+                  {refreshStatus === 'refreshing' && (
+                    <p className="text-xs text-slate-600 mt-2">Refreshing order status…</p>
+                  )}
+                  {refreshStatus === 'done' && (
+                    <p className="text-xs text-emerald-600 mt-2">Order submitted. Latest status will appear in Orders shortly.</p>
+                  )}
+                  {refreshStatus === 'error' && (
+                    <p className="text-xs text-rose-600 mt-2">
+                      Order sent, but status refresh failed. Check the Orders page for updates.
+                    </p>
+                  )}
                 </div>
-                {refreshStatus === 'refreshing' && (
-                  <p className="text-xs text-slate-600 mt-2">Refreshing order status…</p>
-                )}
-                {refreshStatus === 'done' && (
-                  <p className="text-xs text-emerald-600 mt-2">Order submitted. Latest status will appear in Orders shortly.</p>
-                )}
-                {refreshStatus === 'error' && (
-                  <p className="text-xs text-rose-600 mt-2">
-                    Order sent, but status refresh failed. Check the Orders page for updates.
-                  </p>
-                )}
               </div>
-            </>
-          ) : (
-            <div className="text-center py-6">
-              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Check className="w-8 h-8 text-emerald-600" />
+            ) : (
+              <div className="text-center py-6">
+                <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Check className="w-8 h-8 text-emerald-600" />
+                </div>
+                <h4 className="text-lg font-semibold text-slate-900 mb-2">Trade Executed Successfully!</h4>
+                <p className="text-sm text-slate-600">
+                  Your copy trade of {formatCurrency(Number.parseFloat(usdAmount))} has been submitted to Polymarket
+                </p>
               </div>
-              <h4 className="text-lg font-semibold text-slate-900 mb-2">Trade Executed Successfully!</h4>
-              <p className="text-sm text-slate-600">
-                Your copy trade of {formatCurrency(Number.parseFloat(usdAmount))} has been submitted to Polymarket
-              </p>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>

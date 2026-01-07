@@ -189,6 +189,19 @@ function meetsMinimumTradeUsd(value: number | null | undefined) {
   return value + MINIMUM_TRADE_TOLERANCE >= MINIMUM_TRADE_USD
 }
 
+function meetsMinimumContracts(
+  amountMode: 'usd' | 'contracts',
+  amountValue: number,
+  limitPriceValue: number | null
+) {
+  if (!Number.isFinite(amountValue) || amountValue <= 0) return false
+  if (amountMode === 'contracts') {
+    return amountValue + MINIMUM_TRADE_TOLERANCE >= 1
+  }
+  if (!limitPriceValue || !Number.isFinite(limitPriceValue) || limitPriceValue <= 0) return false
+  return amountValue + MINIMUM_TRADE_TOLERANCE >= limitPriceValue
+}
+
 function normalizeOutcome(value: string) {
   return value.trim().toLowerCase()
 }
@@ -494,9 +507,10 @@ function TradeExecutePageInner() {
       limitPriceValue > 0 &&
       contractsValue !== null &&
       contractsValue > 0 &&
-      meetsMinimumTradeUsd(total)
+      meetsMinimumTradeUsd(total) &&
+      meetsMinimumContracts(amountMode, amountValue, limitPriceValue)
     )
-  }, [estimatedTotal, form.tokenId, limitPriceValue, contractsValue])
+  }, [amountMode, amountValue, contractsValue, estimatedTotal, form.tokenId, limitPriceValue])
   const elapsed = record ? formatElapsedDetailed(record.trade_timestamp, nowMs) : '—'
   const tradeSize =
     record && Number.isFinite(Number(record.size))
@@ -529,6 +543,15 @@ function TradeExecutePageInner() {
 
   const minimumTotalNotMet =
     estimatedTotal !== null && !meetsMinimumTradeUsd(estimatedTotal)
+  const minimumContractsNotMet = hasAmount
+    ? amountMode === 'contracts'
+      ? !meetsMinimumContracts(amountMode, amountValue, limitPriceValue)
+      : limitPriceValue !== null
+        ? !meetsMinimumContracts(amountMode, amountValue, limitPriceValue)
+        : false
+    : false
+  const minimumContractUsd =
+    limitPriceValue !== null && Number.isFinite(limitPriceValue) ? limitPriceValue : null
 
   const isOrderSent = Boolean(orderId)
   const slippageLabel =
@@ -795,6 +818,15 @@ function TradeExecutePageInner() {
       const total = estimatedTotal ?? 0
       if (!form.tokenId.trim() || !limitPriceValue || !contractsValue) {
         setSubmitError('Fill in amount and slippage before sending.')
+        return
+      }
+      if (!meetsMinimumContracts(amountMode, amountValue, limitPriceValue)) {
+        if (amountMode === 'contracts') {
+          setSubmitError('Minimum amount is 1 contract.')
+        } else {
+          const minUsdLabel = limitPriceValue ? formatMoney(limitPriceValue) : '$0'
+          setSubmitError(`Minimum amount is ${minUsdLabel} for 1 contract at the limit price.`)
+        }
         return
       }
       if (!meetsMinimumTradeUsd(total)) {
@@ -1286,8 +1318,18 @@ function TradeExecutePageInner() {
                       <span className="text-base font-semibold text-slate-900">{winTotalValue}</span>
                     </div>
                   </div>
-                  {(minimumTotalNotMet || notEnoughFunds) ? (
+                  {(minimumTotalNotMet || minimumContractsNotMet || notEnoughFunds) ? (
                     <div className="flex flex-wrap gap-2 text-xs text-rose-600 mt-2">
+                      {minimumContractsNotMet && amountMode === 'contracts' && (
+                        <span>Minimum amount is 1 contract.</span>
+                      )}
+                      {minimumContractsNotMet && amountMode === 'usd' && (
+                        <span>
+                          Minimum amount is{' '}
+                          {minimumContractUsd !== null ? formatMoney(minimumContractUsd) : '$0'} for
+                          1 contract at the limit price.
+                        </span>
+                      )}
                       {minimumTotalNotMet && <span>Minimum total is $1.</span>}
                       {notEnoughFunds && <span>Not enough funds available.</span>}
                     </div>

@@ -1,8 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { OrderRow } from '@/lib/orders/types'
 import type { PositionSummary } from '@/lib/orders/position'
+
+// Polymarket tick sizes bottom out at 0.001, but some markets use larger ticks (e.g., 0.01)
+const FALLBACK_MIN_TICK_SIZE = 0.001
 
 type CloseTarget = {
   order: OrderRow
@@ -45,6 +48,45 @@ export default function ClosePositionModal({
   const [showSlippageInfo, setShowSlippageInfo] = useState(false)
   const [showOrderBehaviorInfo, setShowOrderBehaviorInfo] = useState(false)
   const [orderType, setOrderType] = useState<'IOC' | 'GTC'>('IOC')
+  const [minTickSize, setMinTickSize] = useState<number>(FALLBACK_MIN_TICK_SIZE)
+
+  useEffect(() => {
+    let canceled = false
+    const conditionId = deriveConditionId(position.tokenId)
+    if (!conditionId) {
+      setMinTickSize(FALLBACK_MIN_TICK_SIZE)
+      return
+    }
+
+    const fetchTick = async () => {
+      try {
+        const response = await fetch(
+          `/api/polymarket/market?conditionId=${encodeURIComponent(conditionId)}`,
+          { cache: 'no-store' }
+        )
+        if (!response.ok) {
+          if (!canceled) setMinTickSize(FALLBACK_MIN_TICK_SIZE)
+          return
+        }
+        const data = await response.json()
+        const tick =
+          typeof data?.minimumTickSize === 'number'
+            ? data.minimumTickSize
+            : data?.minimumTickSize
+              ? Number(data.minimumTickSize)
+              : null
+        const clamped = Number.isFinite(tick) ? Math.max(tick as number, FALLBACK_MIN_TICK_SIZE) : FALLBACK_MIN_TICK_SIZE
+        if (!canceled) setMinTickSize(clamped)
+      } catch (err) {
+        if (!canceled) setMinTickSize(FALLBACK_MIN_TICK_SIZE)
+      }
+    }
+
+    fetchTick()
+    return () => {
+      canceled = true
+    }
+  }, [position.tokenId])
 
   const marketDirection = useMemo(
     () => (order.side?.trim().toLowerCase() === 'sell' ? 'sell' : 'buy'),
@@ -61,17 +103,17 @@ export default function ClosePositionModal({
   const normalizedSlippage = Number.isFinite(slippagePercent) && slippagePercent >= 0 ? slippagePercent : 0
   const limitPrice =
     referencePrice !== null
-      ? Math.max(referencePrice * (1 - normalizedSlippage / 100), Number.EPSILON)
-      : null
+      ? Math.max(referencePrice * (1 - normalizedSlippage / 100), minTickSize)
+      : minTickSize
   const proceeds = amountValid && limitPrice !== null ? limitPrice * amountValue : null
   const estimatedPnl =
     amountValid && entryPrice !== null && limitPrice !== null
       ? (limitPrice - entryPrice) * amountValue
       : null
   const currentPnl = order.pnlUsd ?? null
-  const effectivePriceForSubmit = limitPrice ?? referencePrice
-  const limitPriceLabel = formatCurrency(limitPrice ?? referencePrice)
-  const currentPriceLabel = formatCurrency(currentPrice ?? referencePrice)
+  const effectivePriceForSubmit = limitPrice ?? referencePrice ?? minTickSize
+  const limitPriceLabel = formatCurrency(limitPrice ?? referencePrice ?? minTickSize)
+  const currentPriceLabel = formatCurrency(currentPrice ?? referencePrice ?? minTickSize)
   const totalCostLabel = proceeds !== null ? formatCurrency(proceeds) : '—'
   const payoutLabel = estimatedPnl !== null ? formatPnl(estimatedPnl) : '—'
   const filledPriceLabel = formatCurrency(entryPrice)
@@ -102,7 +144,7 @@ export default function ClosePositionModal({
     >
       <div className="flex min-h-full w-full items-start justify-center px-4 py-8 sm:items-center">
         <div
-          className="w-full max-w-3xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+          className="w-full max-w-3xl max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
           role="dialog"
           aria-modal="true"
           onClick={(event) => event.stopPropagation()}
@@ -278,7 +320,7 @@ export default function ClosePositionModal({
                 <p className="text-xs text-slate-500">
                   {limitPriceLabel === '—'
                     ? 'Set slippage to preview the lower bound.'
-                    : `Allow this close to execute down to ${limitPriceLabel} when the market price moves.`}
+                    : `Allow this close to execute down to ${limitPriceLabel} (market tick size applied).`}
                 </p>
                 {showSlippageInfo && (
                   <div
@@ -407,4 +449,14 @@ function getPnlColorClass(value: number | null | undefined) {
   if (value > 0) return 'text-emerald-600'
   if (value < 0) return 'text-rose-600'
   return 'text-slate-600'
+}
+
+function deriveConditionId(tokenId: string | null | undefined): string | null {
+  if (!tokenId) return null
+  const trimmed = tokenId.trim()
+  if (!trimmed.startsWith('0x')) return null
+  if (trimmed.length >= 66) {
+    return trimmed.slice(0, 66)
+  }
+  return null
 }

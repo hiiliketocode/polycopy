@@ -1046,39 +1046,43 @@ export default function FeedPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {displayedTrades.map((trade, index) => (
-                <TradeCard
-                  key={trade.id}
-                  trader={{
-                    name: trade.trader.displayName,
-                    address: trade.trader.wallet,
-                    id: trade.trader.wallet,
-                  }}
-                  market={trade.market.title}
-                  marketAvatar={trade.market.avatarUrl}
-                  position={trade.trade.outcome.toUpperCase() as "YES" | "NO"}
-                  action={trade.trade.side === 'BUY' ? 'Buy' : 'Sell'}
-                  price={trade.trade.price}
-                  size={trade.trade.size}
-                  total={trade.trade.price * trade.trade.size}
-                  timestamp={getRelativeTime(trade.trade.timestamp)}
-                  onCopyTrade={() => handleCopyTrade(trade)}
-                  onMarkAsCopied={() => handleMarkAsCopied(trade)}
-                  onAdvancedCopy={() => handleRealCopy(trade)}
-                  isPremium={tierHasPremiumAccess(userTier)}
-                  isExpanded={expandedTradeIndex === index}
-                  onToggleExpand={() => {
-                    setExpandedTradeIndex(expandedTradeIndex === index ? null : index);
-                  }}
-                  isCopied={isTraceCopied(trade)}
-                  conditionId={trade.market.conditionId}
-                  marketSlug={trade.market.slug}
-                  currentMarketPrice={liveMarketData.get(trade.market.conditionId || '')?.price}
-                  liveScore={liveMarketData.get(trade.market.conditionId || '')?.score}
-                  category={trade.market.category}
-                  polymarketUrl={trade.market.slug ? `https://polymarket.com/event/${trade.market.slug}` : undefined}
-                />
-              ))}
+              {displayedTrades.map((trade, index) => {
+                const liveMarket = liveMarketData.get(trade.market.conditionId || '')
+                return (
+                  <TradeCard
+                    key={trade.id}
+                    trader={{
+                      name: trade.trader.displayName,
+                      address: trade.trader.wallet,
+                      id: trade.trader.wallet,
+                    }}
+                    market={trade.market.title}
+                    marketAvatar={trade.market.avatarUrl}
+                    position={trade.trade.outcome}
+                    action={trade.trade.side === 'BUY' ? 'Buy' : 'Sell'}
+                    price={trade.trade.price}
+                    size={trade.trade.size}
+                    total={trade.trade.price * trade.trade.size}
+                    timestamp={getRelativeTime(trade.trade.timestamp)}
+                    onCopyTrade={() => handleCopyTrade(trade)}
+                    onMarkAsCopied={() => handleMarkAsCopied(trade)}
+                    onAdvancedCopy={() => handleRealCopy(trade)}
+                    isPremium={tierHasPremiumAccess(userTier)}
+                    isExpanded={expandedTradeIndex === index}
+                    onToggleExpand={() => {
+                      setExpandedTradeIndex(expandedTradeIndex === index ? null : index);
+                    }}
+                    isCopied={isTraceCopied(trade)}
+                    conditionId={trade.market.conditionId}
+                    marketSlug={trade.market.slug}
+                    currentMarketPrice={liveMarket?.price}
+                    marketIsOpen={liveMarket?.closed === undefined ? undefined : !liveMarket.closed}
+                    liveScore={liveMarket?.score}
+                    category={trade.market.category}
+                    polymarketUrl={trade.market.slug ? `https://polymarket.com/event/${trade.market.slug}` : undefined}
+                  />
+                )
+              })}
               
               {/* Load More Button */}
               {hasMoreTrades && (
