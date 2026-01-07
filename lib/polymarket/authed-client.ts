@@ -46,9 +46,24 @@ function decryptSecret(ciphertext: string, kid?: string | null): string {
   const key = createHash('sha256').update(keyMaterial).digest()
   const iv = Buffer.from(ivHex, 'hex')
   const decipher = createDecipheriv('aes-256-cbc', key, iv)
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8')
-  decrypted += decipher.final('utf8')
-  return decrypted
+  
+  try {
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8')
+    decrypted += decipher.final('utf8')
+    return decrypted
+  } catch (error: any) {
+    console.error('[CLOB-DECRYPT] Failed to decrypt CLOB credential:', {
+      kid,
+      hasV1Key: Boolean(CLOB_ENCRYPTION_KEY_V1),
+      hasV2Key: Boolean(CLOB_ENCRYPTION_KEY_V2),
+      hasDefaultKey: Boolean(CLOB_ENCRYPTION_KEY),
+      errorMessage: error.message,
+    })
+    throw new Error(
+      `Failed to decrypt Polymarket API credentials. The encryption key (CLOB_ENCRYPTION_KEY) may be incorrect or missing. ` +
+      `Encryption version: ${kid || 'legacy'}. You may need to re-run the CLOB credential setup.`
+    )
+  }
 }
 
 type TurnkeyWalletRow = {
