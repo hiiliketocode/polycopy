@@ -465,7 +465,14 @@ export function TradeCard({
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data?.error || data?.message || 'Failed to execute trade')
+        // Handle various error formats from API
+        const errorMsg = 
+          (typeof data?.error === 'string' ? data.error : null) ||
+          (typeof data?.message === 'string' ? data.message : null) ||
+          (data?.error?.message) ||
+          (data?.message?.message) ||
+          'Failed to execute trade'
+        throw new Error(errorMsg)
       }
 
       const placedOrderId =
@@ -490,7 +497,13 @@ export function TradeCard({
 
     } catch (error: any) {
       console.error('Trade execution error:', error)
-      setSubmitError(error?.message || 'Failed to execute trade. Please try again.')
+      // Properly extract error message from various error formats
+      const errorMessage = 
+        (typeof error === 'string' ? error : null) ||
+        error?.message ||
+        (typeof error?.error === 'string' ? error.error : null) ||
+        'Failed to execute trade. Please try again.'
+      setSubmitError(errorMessage)
       setIsSubmitting(false)
     }
   }
