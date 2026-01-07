@@ -69,7 +69,7 @@ function LoginForm() {
                   alt="Polycopy"
                   width={202}
                   height={48}
-                  className="h-10 w-auto mb-8 brightness-0 invert"
+                  className="h-10 w-auto mb-8"
                   style={{ 
                     imageRendering: '-webkit-optimize-contrast',
                     WebkitBackfaceVisibility: 'hidden',
@@ -121,12 +121,6 @@ function LoginForm() {
                       <p className="text-slate-400">Access comprehensive performance metrics and trade history.</p>
                     </div>
                   </div>
-                </div>
-
-                <div className="mt-12 pt-8 border-t border-slate-700">
-                  <p className="text-sm text-slate-400">
-                    Trusted by prediction market traders worldwide
-                  </p>
                 </div>
               </div>
             </div>
