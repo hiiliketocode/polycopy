@@ -649,6 +649,46 @@ function ProfilePageContent() {
 
       const connectedWallet = walletData?.polymarket_account_address || walletData?.eoa_address || address;
       
+      // First, delete any existing credentials to ensure clean state
+      console.log('[Profile] Resetting existing L2 credentials...');
+      try {
+        await fetch('/api/polymarket/reset-credentials', {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        console.log('[Profile] Old credentials reset successfully');
+      } catch (resetError) {
+        console.error('[Profile] Error resetting credentials:', resetError);
+        // Continue anyway - not critical
+      }
+      
+      // Generate L2 CLOB credentials for trading
+      console.log('[Profile] Generating L2 credentials for wallet:', connectedWallet);
+      try {
+        const l2Response = await fetch('/api/polymarket/l2-credentials', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({
+            polymarketAccountAddress: connectedWallet,
+          }),
+        });
+        
+        const l2Data = await l2Response.json();
+        
+        if (!l2Response.ok) {
+          console.error('[Profile] Failed to generate L2 credentials:', l2Data?.error);
+          // Don't throw - allow wallet connection to succeed even if L2 creds fail
+        } else {
+          console.log('[Profile] L2 credentials generated successfully');
+        }
+      } catch (l2Error) {
+        console.error('[Profile] L2 credential generation error:', l2Error);
+        // Don't throw - allow wallet connection to succeed even if L2 creds fail
+      }
+      
       // Update local profile state with the wallet address
       setProfile({
         ...profile,
@@ -691,6 +731,10 @@ function ProfilePageContent() {
       setToastMessage('Wallet connected successfully!');
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
+      
+      // Refresh the page to show the connected wallet and updated data
+      console.log('[Profile] Refreshing page to show connected wallet');
+      router.refresh();
     } catch (err) {
       console.error('Error fetching wallet after connection:', err);
       // Still update with the address we received

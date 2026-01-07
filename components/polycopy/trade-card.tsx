@@ -708,30 +708,49 @@ export function TradeCard({
       showedConfirmation = true
 
       // Execute the trade via API
+      const requestBody = {
+        tokenId: finalTokenId,
+        price: limitPrice,
+        amount: calculatedContracts,
+        side: action === 'Buy' ? 'BUY' : 'SELL',
+        orderType,
+        confirm: true,
+        copiedTraderId,
+        copiedTraderWallet: trader.address,
+        copiedTraderUsername: trader.name,
+        marketId: conditionId || (finalTokenId ? finalTokenId.slice(0, 66) : undefined),
+        marketTitle: market,
+        marketSlug,
+        marketAvatarUrl: marketAvatar,
+        amountInvested: Number.isFinite(amountValue) ? amountValue : undefined,
+        outcome: position,
+        autoCloseOnTraderClose: autoClose,
+      }
+      
+      console.log('🚀 Sending trade request:', requestBody)
+      
       const response = await fetch('/api/polymarket/orders/place', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tokenId: finalTokenId,
-            price: limitPrice,
-            amount: calculatedContracts,
-            side: action === 'Buy' ? 'BUY' : 'SELL',
-            orderType,
-            confirm: true,
-            copiedTraderId,
-            copiedTraderWallet: trader.address,
-            copiedTraderUsername: trader.name,
-            marketId: conditionId || (finalTokenId ? finalTokenId.slice(0, 66) : undefined),
-            marketTitle: market,
-            marketSlug,
-            marketAvatarUrl: marketAvatar,
-            amountInvested: Number.isFinite(amountValue) ? amountValue : undefined,
-            outcome: position,
-            autoCloseOnTraderClose: autoClose,
-          }),
-        })
+        body: JSON.stringify(requestBody),
+      })
 
-      const data = await response.json()
+      let data: any
+      try {
+        data = await response.json()
+      } catch (parseError) {
+        console.error('Failed to parse response as JSON:', parseError)
+        const errorInfo = resolveTradeErrorInfo(
+          parseError,
+          `Server returned ${response.status}: ${response.statusText}`
+        )
+        setConfirmationError(errorInfo)
+        setStatusPhase('rejected')
+        setIsSubmitting(false)
+        return
+      }
+
+      console.log('Response data:', JSON.parse(JSON.stringify(data)))
 
       if (!response.ok) {
         const errorInfo = resolveTradeErrorInfo(

@@ -119,6 +119,7 @@ function getCacheTtlMs(): number {
 let proxyCache: { url: string; expiresAt: number } | null = null
 let inFlightFetch: Promise<string | null> | null = null
 let configuredProxyUrl: string | null = null
+let axiosInterceptorAdded = false
 
 function chooseProduct(products: EvomiProducts): EvomiProduct | null {
   const code = getProductCode()
@@ -230,6 +231,23 @@ export async function ensureEvomiProxyAgent(): Promise<string | null> {
   axios.defaults.httpsAgent = agent
   axios.defaults.proxy = false
   configuredProxyUrl = url
+  
+  // Add response interceptor to prevent circular reference errors
+  if (!axiosInterceptorAdded) {
+    axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        // If the error config contains httpAgent/httpsAgent, it means the proxy agent
+        // is causing a circular reference during serialization. Remove it.
+        if (error.config && (error.config.httpAgent || error.config.httpsAgent)) {
+          delete error.config.httpAgent
+          delete error.config.httpsAgent
+        }
+        return Promise.reject(error)
+      }
+    )
+    axiosInterceptorAdded = true
+  }
   
   // Extract proxy info for logging (without credentials)
   const proxyInfo = url.split('@')[1] ?? url
