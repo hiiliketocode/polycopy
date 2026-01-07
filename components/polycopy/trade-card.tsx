@@ -675,7 +675,7 @@ export function TradeCard({
                 </>
               ) : (
                 <>
-                  Copy Trade
+                  {isPremium ? "Copy Trade" : "Manual Copy"}
                   {!isPremium && <ExternalLink className="w-4 h-4 ml-2" />}
                 </>
               )}

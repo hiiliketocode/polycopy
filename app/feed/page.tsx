@@ -7,6 +7,7 @@ import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from '@/li
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
+import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { TradeCard } from '@/components/polycopy/trade-card';
 import { MarkTradeCopiedModal } from '@/components/polycopy/mark-trade-copied-modal';
 import { EmptyState } from '@/components/polycopy/empty-state';
@@ -932,6 +933,7 @@ export default function FeedPage() {
         walletAddress={walletAddress}
         profileImageUrl={profileImageUrl}
       />
+        <SignupBanner isLoggedIn={!!user} />
         <div className="min-h-screen bg-slate-50 pb-24 w-full max-w-full overflow-x-hidden flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
@@ -950,6 +952,7 @@ export default function FeedPage() {
         walletAddress={walletAddress}
         profileImageUrl={profileImageUrl}
       />
+      <SignupBanner isLoggedIn={!!user} />
       
       <div className="min-h-screen bg-slate-50 pt-4 md:pt-0 pb-20 md:pb-8">
         {/* Page Header */}

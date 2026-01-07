@@ -67,11 +67,33 @@ export async function GET(request: NextRequest) {
         console.log('Profile created successfully')
       }
       
+      // Check if user has any follows to determine redirect destination
+      const { data: follows, error: followsError } = await supabase
+        .from('follows')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1)
+      
+      if (followsError) {
+        console.error('Error checking follows:', followsError)
+        // Default to feed on error
+        return NextResponse.redirect(`${requestUrl.origin}/feed`)
+      }
+      
+      // If user has follows, send to feed. If not, send to discover page
+      if (follows && follows.length > 0) {
+        console.log('User has follows, redirecting to feed')
+        return NextResponse.redirect(`${requestUrl.origin}/feed`)
+      } else {
+        console.log('User has no follows, redirecting to discover')
+        return NextResponse.redirect(`${requestUrl.origin}/discover`)
+      }
+      
     } catch (error) {
       console.error('Callback error:', error)
     }
   }
   
-  // Redirect to home page
-  return response
+  // Default redirect to feed
+  return NextResponse.redirect(`${requestUrl.origin}/feed`)
 }

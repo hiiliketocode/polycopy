@@ -273,10 +273,12 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
               </DropdownMenu>
             ) : (
               <>
-                <Button variant="ghost" className="text-slate-700 hover:text-slate-900">
-                  Log In
+                <Button variant="ghost" className="text-slate-700 hover:text-slate-900" asChild>
+                  <Link href="/login">Log In</Link>
                 </Button>
-                <Button className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-medium">Sign Up</Button>
+                <Button className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-medium" asChild>
+                  <Link href="/login?mode=signup">Sign Up</Link>
+                </Button>
               </>
             )}
           </div>

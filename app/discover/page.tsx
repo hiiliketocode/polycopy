@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase, ensureProfile } from '@/lib/supabase';
 import { resolveFeatureTier } from '@/lib/feature-tier';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
+import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { TraderDiscoveryCard } from '@/components/polycopy/trader-discovery-card';
 import { Button } from '@/components/ui/button';
 import { Search, X, Check } from 'lucide-react';
@@ -48,6 +49,7 @@ function formatDisplayName(name: string, wallet: string): string {
 
 export default function DiscoverPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [selectedCategory, setSelectedCategory] = useState('overall');
   const [user, setUser] = useState<User | null>(null);
   const [isPremium, setIsPremium] = useState(false);
@@ -65,6 +67,14 @@ export default function DiscoverPage() {
   // BATCH FOLLOW FETCHING
   const [followedWallets, setFollowedWallets] = useState<Set<string>>(new Set());
   const [loadingFollows, setLoadingFollows] = useState(true);
+
+  // Initialize category from URL on mount
+  useEffect(() => {
+    const categoryFromUrl = searchParams.get('category');
+    if (categoryFromUrl) {
+      setSelectedCategory(categoryFromUrl);
+    }
+  }, [searchParams]);
 
   // Check auth status
   useEffect(() => {
@@ -148,12 +158,12 @@ export default function DiscoverPage() {
     fetchAllFollows();
   }, [user]);
 
-  // Fetch featured traders
+  // Fetch trending traders (7 days)
   useEffect(() => {
     const fetchFeaturedTraders = async () => {
       setLoadingFeatured(true);
       try {
-        const url = '/api/polymarket/leaderboard?limit=30&orderBy=PNL&timePeriod=month';
+        const url = '/api/polymarket/leaderboard?limit=30&orderBy=PNL&timePeriod=week';
         const response = await fetch(url);
         
         if (!response.ok) {
@@ -380,6 +390,7 @@ export default function DiscoverPage() {
         walletAddress={walletAddress}
         profileImageUrl={profileImageUrl}
       />
+      <SignupBanner isLoggedIn={!!user} />
       
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white md:pt-0 pb-20 md:pb-8">
         {/* Hero Section */}
@@ -387,10 +398,10 @@ export default function DiscoverPage() {
           <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-3 sm:pt-10 sm:pb-5">
             <div className="text-center max-w-3xl mx-auto mb-6 sm:mb-8">
               <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold text-slate-900 mb-2 sm:mb-4 tracking-tight">
-                Discover Top Traders
+                Discover Top Traders to Copy
               </h1>
               <p className="text-sm sm:text-lg text-slate-600 mb-4 sm:mb-6">
-                Follow the best prediction market traders on Polymarket
+                Follow and copy the best Polymarket traders. Track their performance and replicate winning strategies.
               </p>
             </div>
 
@@ -428,8 +439,8 @@ export default function DiscoverPage() {
         <div className="border-b border-slate-100 bg-white">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-7">
             <div className="mb-6">
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Featured Traders</h2>
-              <p className="text-sm text-slate-500 mt-1">Top 10 by ROI (Last 30 Days)</p>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Trending Traders</h2>
+              <p className="text-sm text-slate-500 mt-1">Top 10 by ROI (Last 7 Days)</p>
             </div>
 
             {loadingFeatured ? (
@@ -610,7 +621,13 @@ export default function DiscoverPage() {
                   return (
                     <button
                       key={category}
-                      onClick={() => setSelectedCategory(categoryValue)}
+                      onClick={() => {
+                        setSelectedCategory(categoryValue);
+                        // Update URL with category parameter
+                        const newUrl = new URL(window.location.href);
+                        newUrl.searchParams.set('category', categoryValue);
+                        window.history.pushState({}, '', newUrl.toString());
+                      }}
                       className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-full font-medium text-xs sm:text-sm transition-all whitespace-nowrap ${
                         isActive
                           ? "bg-[#FDB022] text-slate-900 shadow-sm"
