@@ -73,7 +73,6 @@ const findOutcomeIndex = (outcomes: string[] | null | undefined, target: string)
     (outcome) => outcome.includes(normalizedTarget) || normalizedTarget.includes(outcome)
   );
 };
-
 export default function TraderProfilePage({
   params,
 }: {
