@@ -228,12 +228,12 @@ function resolveTradeErrorInfo(value: unknown, fallbackMessage: string): TradeEr
       message: detail.message,
       description: 'description' in detail ? detail.description : undefined,
       success: detail.success,
-      rawMessage,
+      rawMessage: rawMessage ?? undefined,
     }
   }
   return {
     message: rawMessage || fallbackMessage,
-    rawMessage,
+    rawMessage: rawMessage ?? undefined,
   }
 }
 
@@ -662,7 +662,7 @@ export function TradeCard({
     try {
       if (!Number.isFinite(amountValue) || amountValue <= 0) {
         setSubmitError('Enter a valid amount.')
-        setIsSubmitting(false)
+    setIsSubmitting(false)
         return
       }
 
@@ -873,8 +873,8 @@ export function TradeCard({
               )}
             </div>
             {/* Timestamp & Expand */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
               {isPremium && onToggleExpand && !localCopied && null}
             </div>
           </div>
@@ -926,8 +926,8 @@ export function TradeCard({
                 >
                   {formatOutcomeLabel(position)}
                 </Badge>
+                </div>
               </div>
-            </div>
             <div className="text-center md:border-l border-slate-200">
               <p className="text-xs text-slate-500 mb-1 font-medium">Invested</p>
               <p className="text-sm md:text-base font-semibold text-slate-900">{formatCurrency(total)}</p>
@@ -960,44 +960,44 @@ export function TradeCard({
         </div>
 
         {!(isPremium && isExpanded) && (
-          <div className={isPremium ? "w-full" : "grid grid-cols-2 gap-2"}>
-            <Button
-              onClick={handleCopyTradeClick}
+        <div className={isPremium ? "w-full" : "grid grid-cols-2 gap-2"}>
+          <Button
+            onClick={handleCopyTradeClick}
               disabled={isCopyDisabled}
-              className={`font-semibold shadow-sm text-sm ${
-                localCopied
-                  ? "w-full bg-emerald-500 hover:bg-emerald-600 text-white"
+            className={`font-semibold shadow-sm text-sm ${
+              localCopied
+                ? "w-full bg-emerald-500 hover:bg-emerald-600 text-white"
                   : isMarketEnded
                     ? "w-full bg-slate-200 text-slate-500 cursor-not-allowed"
-                    : isPremium
-                      ? "w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
-                      : "bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900"
-              }`}
-              size="lg"
-            >
-              {localCopied ? (
-                <>
-                  <Check className="w-4 h-4 mr-2" />
+                : isPremium
+                  ? "w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
+                  : "bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900"
+            }`}
+            size="lg"
+          >
+            {localCopied ? (
+              <>
+                <Check className="w-4 h-4 mr-2" />
                   Copy Again
-                </>
-              ) : (
+              </>
+            ) : (
                 <>
                   {isPremium ? "Copy Trade" : "Manual Copy"}
                   {!isPremium && <ExternalLink className="w-4 h-4 ml-2" />}
                 </>
-              )}
-            </Button>
-            {!isPremium && (
-              <Button
-                onClick={onMarkAsCopied}
-                variant="outline"
-                className="border-slate-300 text-slate-700 hover:bg-slate-50 font-medium bg-transparent text-sm transition-all"
-                size="lg"
-              >
-                Mark as Copied
-              </Button>
             )}
-          </div>
+          </Button>
+          {!isPremium && (
+            <Button
+              onClick={onMarkAsCopied}
+              variant="outline"
+              className="border-slate-300 text-slate-700 hover:bg-slate-50 font-medium bg-transparent text-sm transition-all"
+              size="lg"
+            >
+              Mark as Copied
+            </Button>
+          )}
+        </div>
         )}
       </div>
 
@@ -1011,7 +1011,7 @@ export function TradeCard({
           <div className="mt-0.5 rounded-xl border border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
             {showConfirmation ? (
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold tracking-wide text-slate-400">Status</p>
                     <p className="flex items-center gap-2 text-lg font-semibold text-slate-900">
@@ -1060,7 +1060,7 @@ export function TradeCard({
                       confirmationError.rawMessage !== confirmationError.message && (
                         <p className="text-[11px] opacity-70">{confirmationError.rawMessage}</p>
                       )}
-                  </div>
+                    </div>
                 )}
                 <div className="space-y-2">
                   <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
@@ -1070,7 +1070,7 @@ export function TradeCard({
                       </label>
                       <div className="flex h-14 items-center rounded-lg border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700">
                         {formatCurrency(Number.isFinite(statusAmountValue) ? statusAmountValue : 0)}
-                      </div>
+                  </div>
                     </div>
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
                       <span className="text-xs font-medium text-slate-700 text-center sm:text-left">
@@ -1108,16 +1108,16 @@ export function TradeCard({
                     </button>
                     <h4 className="text-sm font-semibold text-slate-900">Copy</h4>
                     <span className="w-[52px]" aria-hidden="true" />
-                  </div>
+                </div>
 
-                  {/* Amount Input */}
-                  <div className="space-y-2 mb-4">
+                {/* Amount Input */}
+                <div className="space-y-2 mb-4">
                     <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
                       <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
                         <div className="flex items-center gap-1.5">
-                          <label htmlFor="amount" className="text-xs font-medium text-slate-700">
-                            Amount (USD)
-                          </label>
+                  <label htmlFor="amount" className="text-xs font-medium text-slate-700">
+                    Amount (USD)
+                  </label>
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -1138,12 +1138,12 @@ export function TradeCard({
                             </Tooltip>
                           </TooltipProvider>
                         </div>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
-                          <input
-                            id="amount"
-                            type="number"
-                            value={usdAmount}
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                    <input
+                      id="amount"
+                      type="number"
+                      value={usdAmount}
                             onChange={(e) => {
                               setUsdAmount(e.target.value)
                               if (submitError) setSubmitError(null)
@@ -1154,12 +1154,12 @@ export function TradeCard({
                               const normalizedAmount = calculatedContracts * effectivePrice
                               setUsdAmount(normalizedAmount.toFixed(2))
                             }}
-                            onWheel={(e) => e.currentTarget.blur()}
-                            placeholder="0.00"
-                            disabled={isSubmitting}
+                      onWheel={(e) => e.currentTarget.blur()}
+                      placeholder="0.00"
+                      disabled={isSubmitting}
                             className="w-full h-14 pl-7 pr-3 border border-slate-300 rounded-lg text-base font-semibold text-slate-700 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          />
-                        </div>
+                    />
+                  </div>
                       </div>
                       <div className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px]">
                         = {calculatedContracts.toLocaleString()} {contractLabel}
@@ -1173,8 +1173,8 @@ export function TradeCard({
                     )}
                     {submitError && !inlineAmountError && (
                       <p className="text-xs text-rose-600">{submitError}</p>
-                    )}
-                  </div>
+                  )}
+                </div>
 
                   <Button
                     onClick={handleQuickCopy}
@@ -1196,23 +1196,23 @@ export function TradeCard({
                       "Execute Trade"
                     )}
                   </Button>
-                  {/* Auto-close Checkbox */}
+                {/* Auto-close Checkbox */}
                   <div className="mt-4 flex items-start space-x-3 p-2.5 bg-white rounded-lg border border-slate-200">
-                    <Checkbox
-                      id="auto-close"
-                      checked={autoClose}
-                      onCheckedChange={(checked) => setAutoClose(!!checked)}
-                      disabled={isSubmitting}
-                    />
-                    <div className="flex-1">
-                      <label
-                        htmlFor="auto-close"
-                        className="text-sm font-medium text-slate-900 cursor-pointer leading-tight"
-                      >
-                        Auto-close when trader closes
-                      </label>
-                    </div>
+                  <Checkbox
+                    id="auto-close"
+                    checked={autoClose}
+                    onCheckedChange={(checked) => setAutoClose(!!checked)}
+                    disabled={isSubmitting}
+                  />
+                  <div className="flex-1">
+                    <label
+                      htmlFor="auto-close"
+                      className="text-sm font-medium text-slate-900 cursor-pointer leading-tight"
+                    >
+                      Auto-close when trader closes
+                    </label>
                   </div>
+                </div>
                   <div className="mt-2 flex items-center justify-between gap-3">
                     {!showAdvanced && (
                       <TooltipProvider>
@@ -1259,7 +1259,7 @@ export function TradeCard({
                       onClick={() => setShowAdvanced((prev) => !prev)}
                       className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-800"
                     >
-                      Advanced
+                    Advanced
                       <ChevronDown className={`h-4 w-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
                     </button>
                   </div>
@@ -1306,7 +1306,7 @@ export function TradeCard({
                               }
                             >
                               {value}%
-                            </Button>
+                  </Button>
                           ))}
                           <Input
                             type="number"
@@ -1319,11 +1319,11 @@ export function TradeCard({
                             onWheel={(e) => e.currentTarget.blur()}
                             className="w-20 h-8 text-xs border-slate-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
-                        </div>
+                </div>
                         <p className="text-xs text-slate-500">
                           Estimated: {estimatedContractsAtLimit.toLocaleString()} contracts, up to {formatCurrency(estimatedMaxCost)} (may fill for less).
                         </p>
-                      </div>
+              </div>
 
                       <div className="space-y-1.5">
                         <TooltipProvider>
@@ -1373,17 +1373,17 @@ export function TradeCard({
                   )}
                 </div>
               </div>
-            ) : (
-              <div className="text-center py-6">
-                <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Check className="w-8 h-8 text-emerald-600" />
-                </div>
-                <h4 className="text-lg font-semibold text-slate-900 mb-2">Trade Executed Successfully!</h4>
-                <p className="text-sm text-slate-600">
-                  Your copy trade of {formatCurrency(Number.parseFloat(usdAmount))} has been submitted to Polymarket
-                </p>
+          ) : (
+            <div className="text-center py-6">
+              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Check className="w-8 h-8 text-emerald-600" />
               </div>
-            )}
+              <h4 className="text-lg font-semibold text-slate-900 mb-2">Trade Executed Successfully!</h4>
+              <p className="text-sm text-slate-600">
+                Your copy trade of {formatCurrency(Number.parseFloat(usdAmount))} has been submitted to Polymarket
+              </p>
+            </div>
+          )}
           </div>
         </div>
       )}
