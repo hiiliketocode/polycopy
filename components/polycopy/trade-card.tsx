@@ -506,7 +506,7 @@ export function TradeCard({
   const amountTooSmall =
     hasAmountInput && Number.isFinite(amountValue) && amountValue > 0 && calculatedContracts < 1
   const marketMinimumSize =
-    Number.isFinite(marketMinimumOrderSize) && marketMinimumOrderSize > 0
+    marketMinimumOrderSize !== null && Number.isFinite(marketMinimumOrderSize) && marketMinimumOrderSize > 0
       ? marketMinimumOrderSize
       : null
   const marketMinimumContracts =
