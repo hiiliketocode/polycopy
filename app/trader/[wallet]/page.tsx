@@ -73,6 +73,16 @@ const findOutcomeIndex = (outcomes: string[] | null | undefined, target: string)
     (outcome) => outcome.includes(normalizedTarget) || normalizedTarget.includes(outcome)
   );
 };
+
+const normalizeKeyPart = (value?: string | null) => value?.trim().toLowerCase() || '';
+const buildCopiedTradeKey = (marketKey?: string | null, traderWallet?: string | null) => {
+  const market = normalizeKeyPart(marketKey);
+  const wallet = normalizeKeyPart(traderWallet);
+  if (!market || !wallet) return '';
+  return `${market}-${wallet}`;
+};
+const getMarketKeyForTrade = (trade: Trade) =>
+  normalizeKeyPart(trade.conditionId || trade.marketSlug || trade.market || null);
 export default function TraderProfilePage({
   params,
 }: {
@@ -156,11 +166,22 @@ export default function TraderProfilePage({
         // Fetch copied trades
         const { data: copiedTrades } = await supabase
           .from('copied_trades')
-          .select('market_id, trader_wallet')
+          .select('market_id, trader_wallet, market_slug, market_title')
           .eq('user_id', user.id);
         
         if (copiedTrades) {
-          const ids = new Set(copiedTrades.map(t => `${t.market_id}-${t.trader_wallet}`));
+          const ids = new Set<string>();
+          copiedTrades.forEach((t: { market_id?: string; trader_wallet?: string; market_slug?: string; market_title?: string }) => {
+            const walletKey = normalizeKeyPart(t.trader_wallet);
+            if (!walletKey) return;
+            const marketKeys = [t.market_id, t.market_slug, t.market_title]
+              .map(normalizeKeyPart)
+              .filter(Boolean);
+            if (marketKeys.length === 0) return;
+            for (const key of new Set(marketKeys)) {
+              ids.add(`${key}-${walletKey}`);
+            }
+          });
           setCopiedTradeIds(ids);
         }
       }
@@ -643,8 +664,14 @@ export default function TraderProfilePage({
           amount_invested: amountInvested || null,
         });
 
-      const tradeKey = `${marketId}-${wallet}`;
-      setCopiedTradeIds(prev => new Set([...prev, tradeKey]));
+      const tradeKey = buildCopiedTradeKey(marketId, wallet);
+      if (tradeKey) {
+        setCopiedTradeIds(prev => {
+          const next = new Set(prev);
+          next.add(tradeKey);
+          return next;
+        });
+      }
 
       setShowCopiedModal(false);
       setSelectedTrade(null);
@@ -658,9 +685,8 @@ export default function TraderProfilePage({
 
   // Check if trade is copied
   const isTradeCopied = (trade: Trade): boolean => {
-    const marketId = trade.conditionId || trade.marketSlug || trade.market;
-    const tradeKey = `${marketId}-${wallet}`;
-    return copiedTradeIds.has(tradeKey);
+    const tradeKey = buildCopiedTradeKey(getMarketKeyForTrade(trade), wallet);
+    return tradeKey ? copiedTradeIds.has(tradeKey) : false;
   };
 
   // Handle quick copy for premium users
@@ -677,9 +703,14 @@ export default function TraderProfilePage({
     await new Promise((resolve) => setTimeout(resolve, 1500));
     
     // Mark as copied
-    const marketId = trade.conditionId || trade.marketSlug || trade.market;
-    const tradeKey = `${marketId}-${wallet}`;
-    setCopiedTradeIds(prev => new Set([...prev, tradeKey]));
+    const tradeKey = buildCopiedTradeKey(getMarketKeyForTrade(trade), wallet);
+    if (tradeKey) {
+      setCopiedTradeIds(prev => {
+        const next = new Set(prev);
+        next.add(tradeKey);
+        return next;
+      });
+    }
     
     setIsSubmitting(false);
     setExpandedTradeIndex(null);

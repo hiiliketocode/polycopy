@@ -108,24 +108,89 @@ async function upsertOrders(orders: NormalizedOrder[], traderId: string) {
   if (orders.length === 0) return 0
 
   const table = await resolveOrdersTableName()
-  const payload = orders.map((o) => ({
-    order_id: o.orderId,
-    trader_id: traderId,
-    market_id: o.marketId,
-    outcome: o.outcome,
-    side: o.side,
-    order_type: o.orderType,
-    time_in_force: o.timeInForce,
-    price: o.price,
-    size: o.size,
-    filled_size: o.filledSize,
-    remaining_size: o.remainingSize,
-    status: o.status,
-    expiration: o.expiration ? o.expiration.toISOString() : null,
-    raw: o.raw,
-    created_at: o.createdAt.toISOString(),
-    updated_at: o.updatedAt.toISOString()
-  }))
+  const orderIds = orders.map((o) => o.orderId)
+  let supportsCopiedColumns = true
+  let existingRows: Array<{
+    order_id: string
+    order_type?: string | null
+    time_in_force?: string | null
+    copied_trader_id?: string | null
+    copied_trader_wallet?: string | null
+  }> = []
+
+  function columnMissing(error: any) {
+    if (!error) return false
+    const code = error?.code
+    const message = typeof error?.message === 'string' ? error.message.toLowerCase() : ''
+    return code === '42703' || message.includes('column') || message.includes('does not exist')
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from(table)
+      .select('order_id, order_type, time_in_force, copied_trader_id, copied_trader_wallet')
+      .eq('trader_id', traderId)
+      .in('order_id', orderIds)
+
+    if (error) {
+      if (columnMissing(error)) {
+        supportsCopiedColumns = false
+      } else {
+        throw error
+      }
+    }
+
+    if (data) {
+      existingRows = data as typeof existingRows
+    }
+  } catch (error) {
+    console.warn('[syncTrader] existing order lookup failed', error)
+  }
+
+  if (!supportsCopiedColumns) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('order_id, order_type, time_in_force')
+      .eq('trader_id', traderId)
+      .in('order_id', orderIds)
+
+    if (!error && data) {
+      existingRows = data as typeof existingRows
+    }
+  }
+
+  const existingMap = new Map(existingRows.map((row) => [row.order_id, row]))
+
+  const payload = orders.map((o) => {
+    const existing = existingMap.get(o.orderId)
+    const resolvedOrderType = existing?.order_type ?? o.orderType
+    const resolvedTimeInForce = existing?.time_in_force ?? o.timeInForce
+    const row = {
+      order_id: o.orderId,
+      trader_id: traderId,
+      market_id: o.marketId,
+      outcome: o.outcome,
+      side: o.side,
+      order_type: resolvedOrderType,
+      time_in_force: resolvedTimeInForce,
+      price: o.price,
+      size: o.size,
+      filled_size: o.filledSize,
+      remaining_size: o.remainingSize,
+      status: o.status,
+      expiration: o.expiration ? o.expiration.toISOString() : null,
+      raw: o.raw,
+      created_at: o.createdAt.toISOString(),
+      updated_at: o.updatedAt.toISOString()
+    } as Record<string, unknown>
+
+    if (supportsCopiedColumns) {
+      row.copied_trader_id = existing?.copied_trader_id ?? null
+      row.copied_trader_wallet = existing?.copied_trader_wallet ?? null
+    }
+
+    return row
+  })
 
   const { error, count } = await supabase
     .from(table)

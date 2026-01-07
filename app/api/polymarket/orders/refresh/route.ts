@@ -59,6 +59,13 @@ function parseTimestamp(value: string | number | null | undefined): Date | null 
   return new Date(ms)
 }
 
+function columnMissing(error: any) {
+  if (!error) return false
+  const code = error?.code
+  const message = typeof error?.message === 'string' ? error.message.toLowerCase() : ''
+  return code === '42703' || message.includes('column') || message.includes('does not exist')
+}
+
 function getEncryptionKeyForKid(kid?: string | null): string {
   if (kid === 'v2' && CLOB_ENCRYPTION_KEY_V2) return CLOB_ENCRYPTION_KEY_V2
   if (kid === 'v1' && CLOB_ENCRYPTION_KEY_V1) return CLOB_ENCRYPTION_KEY_V1
@@ -265,32 +272,85 @@ async function refreshOrders(userId: string, limit: number): Promise<RefreshResu
     }
   }
 
-  const payload = filteredOrders.map((order) => ({
-    order_id: order.polymarket_order_id,
-    trader_id: traderId,
-    market_id: order.market_id,
-    outcome: order.outcome,
-    side: order.side,
-    order_type: order.order_type,
-    time_in_force: order.time_in_force,
-    price: order.price,
-    size: order.size,
-    filled_size: order.filled_size,
-    remaining_size: order.remaining_size,
-    status: order.status,
-    created_at: order.created_at,
-    updated_at: order.updated_at,
-    raw: order.raw,
-  }))
+  const payloadOrderIds = filteredOrders.map((order) => order.polymarket_order_id)
+  let supportsCopiedColumns = true
+  let existingOrderRows: Array<{
+    order_id: string
+    order_type?: string | null
+    time_in_force?: string | null
+    copied_trader_id?: string | null
+    copied_trader_wallet?: string | null
+  }> = []
 
-  const payloadOrderIds = payload.map((order) => order.order_id)
-  const { data: existingOrderRows } = await supabaseServiceRole
-    .from(ordersTable)
-    .select('order_id')
-    .eq('trader_id', traderId)
-    .in('order_id', payloadOrderIds)
+  try {
+    const { data, error } = await supabaseServiceRole
+      .from(ordersTable)
+      .select('order_id, order_type, time_in_force, copied_trader_id, copied_trader_wallet')
+      .eq('trader_id', traderId)
+      .in('order_id', payloadOrderIds)
 
-  const existingIds = new Set((existingOrderRows || []).map((row) => row.order_id))
+    if (error) {
+      if (columnMissing(error)) {
+        supportsCopiedColumns = false
+      } else {
+        throw error
+      }
+    }
+
+    if (data) {
+      existingOrderRows = data as typeof existingOrderRows
+    }
+  } catch (error) {
+    console.warn('[POLY-ORDERS-REFRESH] existing order lookup failed', error)
+  }
+
+  if (!supportsCopiedColumns) {
+    const { data, error } = await supabaseServiceRole
+      .from(ordersTable)
+      .select('order_id, order_type, time_in_force')
+      .eq('trader_id', traderId)
+      .in('order_id', payloadOrderIds)
+
+    if (!error && data) {
+      existingOrderRows = data as typeof existingOrderRows
+    }
+  }
+
+  const existingOrderMap = new Map(
+    existingOrderRows.map((row) => [row.order_id, row])
+  )
+
+  const payload = filteredOrders.map((order) => {
+    const existing = existingOrderMap.get(order.polymarket_order_id)
+    const resolvedOrderType = existing?.order_type ?? order.order_type ?? null
+    const resolvedTimeInForce = existing?.time_in_force ?? order.time_in_force ?? null
+    const row = {
+      order_id: order.polymarket_order_id,
+      trader_id: traderId,
+      market_id: order.market_id,
+      outcome: order.outcome,
+      side: order.side,
+      order_type: resolvedOrderType,
+      time_in_force: resolvedTimeInForce,
+      price: order.price,
+      size: order.size,
+      filled_size: order.filled_size,
+      remaining_size: order.remaining_size,
+      status: order.status,
+      created_at: order.created_at,
+      updated_at: order.updated_at,
+      raw: order.raw,
+    } as Record<string, unknown>
+
+    if (supportsCopiedColumns) {
+      row.copied_trader_id = existing?.copied_trader_id ?? null
+      row.copied_trader_wallet = existing?.copied_trader_wallet ?? null
+    }
+
+    return row
+  })
+
+  const existingIds = new Set(existingOrderRows.map((row) => row.order_id))
   const insertedCount = payload.filter((order) => !existingIds.has(order.order_id)).length
   const updatedCount = payload.length - insertedCount
 

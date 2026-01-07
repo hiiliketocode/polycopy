@@ -106,6 +106,11 @@ function mapOrder(openOrder: OpenOrder, traderWallet: string): NormalizedOrder {
   const originalSize = parseNumber(openOrder.original_size) ?? 0
   const matched = parseNumber(openOrder.size_matched) ?? 0
   const remaining = Number.isFinite(originalSize - matched) ? originalSize - matched : null
+  const timeInForce =
+    (openOrder as any).time_in_force ||
+    (openOrder as any).timeInForce ||
+    openOrder.order_type ||
+    null
 
   return {
     orderId: openOrder.id,
@@ -114,7 +119,7 @@ function mapOrder(openOrder: OpenOrder, traderWallet: string): NormalizedOrder {
     outcome: openOrder.outcome || null,
     side: (openOrder.side || '').toLowerCase(),
     orderType: openOrder.order_type || null,
-    timeInForce: openOrder.order_type || null,
+    timeInForce: timeInForce ? String(timeInForce).toUpperCase() : null,
     price: parseNumber(openOrder.price),
     size: originalSize,
     filledSize: matched,

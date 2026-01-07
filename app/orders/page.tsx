@@ -24,17 +24,14 @@ export default function OrdersPage() {
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [ordersError, setOrdersError] = useState<string | null>(null)
   const [hasLoaded, setHasLoaded] = useState(false)
-  const [cashBalance, setCashBalance] = useState<string | null>(null)
-  const [cashLoading, setCashLoading] = useState(false)
   const [showFailedOrders, setShowFailedOrders] = useState(false)
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [openOrderIds, setOpenOrderIds] = useState<string[]>([])
-  const [openPositionsCount, setOpenPositionsCount] = useState<number | null>(null)
-  const [openPositionsLoading, setOpenPositionsLoading] = useState(false)
-  const [openPositionsError, setOpenPositionsError] = useState<string | null>(null)
+  const [openOrdersFetched, setOpenOrdersFetched] = useState(false)
   const [positions, setPositions] = useState<PositionSummary[]>([])
   const [positionsLoading, setPositionsLoading] = useState(false)
   const [positionsError, setPositionsError] = useState<string | null>(null)
+  const [positionsLoaded, setPositionsLoaded] = useState(false)
   const [closeTarget, setCloseTarget] = useState<{ order: OrderRow; position: PositionSummary } | null>(null)
   const [closeSubmitting, setCloseSubmitting] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
@@ -43,10 +40,6 @@ export default function OrdersPage() {
   const [cancelError, setCancelError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'positions' | 'openOrders' | 'history'>('positions')
   const [showClosedPositions, setShowClosedPositions] = useState(false)
-  const ordersWithoutFailed = useMemo(
-    () => orders.filter((order) => order.status !== 'failed'),
-    [orders]
-  )
   const historyOrdersOnly = useMemo(() => {
     const base = orders.filter((order) => order.status !== 'open' && order.status !== 'partial')
     return showFailedOrders ? base : base.filter((order) => order.status !== 'failed')
@@ -63,12 +56,12 @@ export default function OrdersPage() {
       const remaining = deriveRemainingSize(order)
       if (!(remaining > MIN_REMAINING)) return false
       const normalizedId = (order.orderId || '').trim().toLowerCase()
-      if (openIdSet.size > 0) {
+      if (openOrdersFetched) {
         return openIdSet.has(normalizedId)
       }
       return true
     })
-  }, [orders, openOrderIds])
+  }, [orders, openOrderIds, openOrdersFetched])
 
   const hiddenFailedOrdersCount = useMemo(() => {
     const base = orders.filter((order) => order.status !== 'open' && order.status !== 'partial')
@@ -203,6 +196,7 @@ export default function OrdersPage() {
             .filter((id: string | null): id is string => Boolean(id))
         : []
       setOpenOrderIds(openIds)
+      setOpenOrdersFetched(typeof data.openOrdersFetched === 'boolean' ? data.openOrdersFetched : false)
       const fetchedWallet =
         typeof data.walletAddress === 'string' && data.walletAddress.trim()
           ? data.walletAddress.trim().toLowerCase()
@@ -217,61 +211,6 @@ export default function OrdersPage() {
       setOrdersLoading(false)
     }
   }, [router])
-
-  const fetchCashBalance = useCallback(async () => {
-    setCashLoading(true)
-    try {
-      const response = await fetch('/api/polymarket/balance', { cache: 'no-store' })
-      if (!response.ok) {
-        throw new Error('Failed to load cash balance')
-      }
-      const data = await response.json()
-      setCashBalance(data.balanceFormatted ?? null)
-    } catch (err) {
-      console.error('Cash balance load error:', err)
-      setCashBalance(null)
-    } finally {
-      setCashLoading(false)
-    }
-  }, [])
-
-  const fetchOpenPositions = useCallback(
-    async (overrideWallet?: string | null): Promise<number | null> => {
-      const targetAddress = (overrideWallet ?? walletAddress ?? '').trim()
-      if (!targetAddress) {
-        setOpenPositionsCount(null)
-        setOpenPositionsError(null)
-        return null
-      }
-
-      const normalizedAddress = targetAddress.toLowerCase()
-      setOpenPositionsLoading(true)
-      setOpenPositionsError(null)
-      try {
-        const response = await fetch(
-          `/api/polymarket/open-positions?wallet=${encodeURIComponent(normalizedAddress)}`,
-          {
-            cache: 'no-store',
-          }
-        )
-        const data = await response.json()
-        if (!response.ok) {
-          throw new Error(data?.error || 'Failed to load open positions')
-        }
-        const count = typeof data?.open_positions === 'number' ? data.open_positions : 0
-        setOpenPositionsCount(count)
-        return count
-      } catch (err: any) {
-        console.error('Open positions load error:', err)
-        setOpenPositionsError(err?.message || 'Failed to fetch open positions')
-        setOpenPositionsCount(null)
-        return null
-      } finally {
-        setOpenPositionsLoading(false)
-      }
-    },
-    [walletAddress]
-  )
 
   const fetchPositions = useCallback(async () => {
     setPositionsLoading(true)
@@ -320,6 +259,7 @@ export default function OrdersPage() {
         .filter((entry: PositionSummary | null): entry is PositionSummary => Boolean(entry))
 
       setPositions(normalized)
+      setPositionsLoaded(true)
     } catch (err: any) {
       console.error('Positions load error:', err)
       setPositionsError(err?.message || 'Failed to fetch positions')
@@ -398,16 +338,13 @@ export default function OrdersPage() {
       console.error('Orders refresh error:', err)
       setRefreshError('Failed to refresh orders')
     } finally {
-      const fetchedWallet = await fetchOrders()
+      await fetchOrders()
       setRefreshing(false)
-      const walletForPositions = fetchedWallet ?? walletAddress
-      if (walletForPositions) {
-        fetchOpenPositions(walletForPositions)
+      if (activeTab === 'positions') {
+        fetchPositions()
       }
-      fetchCashBalance()
-      fetchPositions()
     }
-  }, [fetchOrders, router, walletAddress, fetchOpenPositions, fetchCashBalance, fetchPositions])
+  }, [fetchOrders, router, fetchPositions, activeTab])
 
   const handleSellPosition = useCallback(
     (order: OrderRow) => {
@@ -519,14 +456,10 @@ export default function OrdersPage() {
   }, [loadingAuth, hasLoaded, refreshOrders])
 
   useEffect(() => {
-    if (loadingAuth) return
-    fetchCashBalance()
-  }, [loadingAuth, fetchCashBalance])
-
-  useEffect(() => {
-    if (!walletAddress) return
+    if (activeTab !== 'positions') return
+    if (positionsLoaded) return
     fetchPositions()
-  }, [walletAddress, fetchPositions])
+  }, [activeTab, positionsLoaded, fetchPositions])
 
   const statusSummaryOrders =
     activeTab === 'openOrders'
@@ -570,82 +503,6 @@ export default function OrdersPage() {
     [orderByTokenId]
   )
 
-  const performanceSummary = useMemo(() => {
-    let realizedPnl = 0
-    let realizedBase = 0
-    let unrealizedPnl = 0
-    let unrealizedBase = 0
-    let amountInvested = 0
-    let tradesWon = 0
-    let tradesLost = 0
-    let tradesOpen = 0
-
-    const safeNumber = (value: number | null | undefined) =>
-      Number.isFinite(value ?? NaN) ? (value as number) : 0
-
-    const entryValue = (order: OrderRow) => {
-      const contractsValue = order.filledSize > 0 ? order.filledSize : order.size
-      const price = order.priceOrAvgPrice ?? order.currentPrice ?? 0
-      const safeContracts = Number.isFinite(contractsValue) ? contractsValue : 0
-      const safePrice = Number.isFinite(price) ? price : 0
-      return safeContracts * safePrice
-    }
-
-    ordersWithoutFailed.forEach((order) => {
-      const pnl = safeNumber(order.pnlUsd)
-      const invested = entryValue(order)
-      amountInvested += invested
-
-      const isClosed =
-        order.positionState === 'closed' ||
-        ['filled', 'canceled', 'expired'].includes(order.status)
-
-      if (isClosed) {
-        realizedPnl += pnl
-        realizedBase += invested
-        if (pnl > 0) tradesWon += 1
-        if (pnl < 0) tradesLost += 1
-      } else {
-        unrealizedPnl += pnl
-        unrealizedBase += invested
-      }
-
-      if (order.positionState === 'open') {
-        tradesOpen += 1
-      }
-    })
-
-    const blendedPnl = realizedPnl + unrealizedPnl
-    const blendedBase = realizedBase + unrealizedBase
-
-    const pct = (pnl: number, base: number) =>
-      base !== 0 ? (pnl / base) * 100 : 0
-
-    const resolvedTradesOpen =
-      typeof openPositionsCount === 'number' ? openPositionsCount : tradesOpen
-    const cappedTradesOpen = Math.min(
-      Math.max(0, resolvedTradesOpen),
-      ordersWithoutFailed.length
-    )
-
-    return {
-      realizedPnl,
-      realizedPct: pct(realizedPnl, realizedBase),
-      unrealizedPnl,
-      unrealizedPct: pct(unrealizedPnl, unrealizedBase),
-      blendedPnl,
-      blendedPct: pct(blendedPnl, blendedBase),
-      tradesTotal: ordersWithoutFailed.length,
-      tradesOpen: cappedTradesOpen,
-      tradesClosed: ordersWithoutFailed.length - cappedTradesOpen,
-      tradesWon,
-      tradesLost,
-      amountInvested,
-      amountWon: Math.max(realizedPnl, 0),
-      amountLost: Math.abs(Math.min(realizedPnl, 0)),
-    }
-  }, [ordersWithoutFailed, openPositionsCount])
-
   return (
     <>
       <Navigation 
@@ -673,10 +530,7 @@ export default function OrdersPage() {
             {closeSuccess}
           </div>
         )}
-        {positionsLoading && (
-          <div className="mb-4 text-xs text-slate-500">Refreshing open positions data…</div>
-        )}
-        {positionsError && (
+        {positionsError && activeTab === 'positions' && (
           <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 shadow-sm">
             {positionsError}
           </div>
@@ -692,63 +546,6 @@ export default function OrdersPage() {
             {cancelError}
           </div>
         )}
-
-        <div className="mb-6 space-y-4 rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">
-          <SectionGrid
-            title="P&L"
-            items={[
-              {
-                label: 'Realized P&L',
-                value: formatCurrency(performanceSummary.realizedPnl),
-                sub: formatPercent(performanceSummary.realizedPct),
-              },
-              {
-                label: 'Unrealized P&L',
-                value: formatCurrency(performanceSummary.unrealizedPnl),
-                sub: formatPercent(performanceSummary.unrealizedPct),
-              },
-              {
-                label: 'Blended P&L',
-                value: formatCurrency(performanceSummary.blendedPnl),
-                sub: formatPercent(performanceSummary.blendedPct),
-              },
-            ]}
-          />
-          <SectionGrid
-            title="Trades"
-            items={[
-              { label: 'Trades made', value: performanceSummary.tradesTotal.toString(), sub: 'Total orders' },
-              { label: 'Trades open', value: performanceSummary.tradesOpen.toString(), sub: 'Unresolved positions' },
-              { label: 'Trades won', value: performanceSummary.tradesWon.toString(), sub: 'Closed w/ profit' },
-              { label: 'Trades lost', value: performanceSummary.tradesLost.toString(), sub: 'Closed w/ loss' },
-              { label: 'Trade counts', value: performanceSummary.tradesClosed.toString(), sub: 'Closed/settled' },
-            ]}
-          />
-          <SectionGrid
-            title="Amounts"
-            items={[
-              {
-                label: 'Amount invested',
-                value: formatCurrency(performanceSummary.amountInvested),
-                sub: 'Sum of entry exposure',
-              },
-              {
-                label: 'Amount won',
-                value: formatCurrency(performanceSummary.amountWon),
-                sub: 'Positive realized P&L',
-              },
-              {
-                label: 'Amount lost',
-                value: formatCurrency(performanceSummary.amountLost),
-                sub: 'Negative realized P&L',
-              },
-            ]}
-          />
-          <div>
-            <p className="text-xs text-slate-400">Cash available</p>
-            <p className="text-base text-slate-900">{cashLoading ? 'Loading…' : cashBalance ?? '—'}</p>
-          </div>
-        </div>
 
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-700">
           {(['positions', 'openOrders', 'history'] as const).map((tab) => (
@@ -841,29 +638,6 @@ export default function OrdersPage() {
   )
 }
 
-type SectionItem = {
-  label: string
-  value: string
-  sub: string
-}
-
-function SectionGrid({ title, items }: { title: string; items: SectionItem[] }) {
-  return (
-    <div>
-      <p className="text-xs uppercase tracking-[0.15em] text-slate-400">{title}</p>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((item) => (
-          <div key={item.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-            <p className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{item.label}</p>
-            <p className="text-lg font-semibold text-slate-900">{item.value}</p>
-            <p className="text-xs text-slate-500">{item.sub}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 function formatCurrency(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
   const formatted = new Intl.NumberFormat('en-US', {
@@ -873,10 +647,19 @@ function formatCurrency(value: number | null | undefined) {
   return `$${formatted}`
 }
 
-function formatPercent(value: number | null | undefined) {
+function formatContracts(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
-  const formatted = value.toFixed(1)
-  return `${formatted}%`
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+  }).format(value)
+}
+
+function formatPercentCompact(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  const needsDecimals = Math.abs(value % 1) > 1e-6
+  const digits = needsDecimals ? 2 : 0
+  return `${value.toFixed(digits)}%`
 }
 
 function deriveRemainingSize(order: OrderRow): number {
@@ -977,6 +760,14 @@ function abbreviateWallet(wallet: string | null | undefined): string | null {
   return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`
 }
 
+function abbreviateHex(value: string | null | undefined): string | null {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (trimmed.length <= 12) return trimmed
+  return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`
+}
+
 function getCopiedTraderLabel(order: OrderRow): string {
   const raw = (order && typeof order === 'object' && order.raw) ? order.raw : {}
   const candidates = [
@@ -1027,6 +818,7 @@ function PositionsList({
       }
     >
   >(new Map())
+  const [metaLoading, setMetaLoading] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -1038,9 +830,13 @@ function PositionsList({
       )
     ).filter((id) => !marketMeta.has(id))
 
-    if (idsToFetch.length === 0) return
+    if (idsToFetch.length === 0) {
+      setMetaLoading(false)
+      return
+    }
 
     const fetchMeta = async () => {
+      setMetaLoading(true)
       const entries: Array<
         [
           string,
@@ -1104,6 +900,9 @@ function PositionsList({
           return next
         })
       }
+      if (!cancelled) {
+        setMetaLoading(false)
+      }
     }
 
     fetchMeta()
@@ -1144,6 +943,28 @@ function PositionsList({
     return showClosedPositions ? true : !isClosed
   })
 
+  const needsMarketMeta = visiblePositions.some((position) => {
+    const conditionId = deriveConditionId(position.tokenId, position.marketId)
+    return conditionId ? !marketMeta.has(conditionId) : false
+  })
+
+  if (metaLoading && needsMarketMeta) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, idx) => (
+          <div key={idx} className="animate-pulse rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <div className="mb-2 h-4 w-48 rounded-full bg-slate-200" />
+            <div className="grid gap-2 sm:grid-cols-4">
+              {Array.from({ length: 4 }).map((__, i) => (
+                <div key={i} className="h-3 rounded-full bg-slate-200" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   if (visiblePositions.length === 0) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
@@ -1180,17 +1001,17 @@ function PositionsList({
       </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+            <table className="w-full table-fixed text-sm">
               <thead>
                 <tr className="text-left text-slate-500 border-b border-slate-200 text-xs tracking-wider">
-                  <th className="py-2 pr-4 font-medium min-w-[220px]">Market</th>
-                  <th className="py-2 pr-4 font-medium min-w-[120px]">Status</th>
-                  <th className="py-2 pr-4 font-medium min-w-[120px]">Side</th>
-                  <th className="py-2 pr-4 font-medium min-w-[120px]">Amount / contracts</th>
-                  <th className="py-2 pr-4 font-medium min-w-[140px]">Entry → Now</th>
-                  <th className="py-2 pr-4 font-medium min-w-[100px]">P/L</th>
-                  <th className="py-2 pr-4 font-medium min-w-[140px]">Copied Trader</th>
-                  <th className="py-2 pr-4 font-medium min-w-[100px]">Action</th>
+                  <th className="py-2 pr-3 font-medium w-[120px]">Status</th>
+                  <th className="py-2 pr-3 font-medium w-[240px]">Market</th>
+                  <th className="py-2 pr-3 font-medium w-[130px]">Outcome</th>
+                  <th className="py-2 pr-3 font-medium w-[120px]">Amount</th>
+                  <th className="py-2 pr-3 font-medium w-[120px]">Entry → Now</th>
+                  <th className="py-2 pr-3 font-medium w-[110px]">P/L</th>
+                  <th className="py-2 pr-3 font-medium w-[140px]">Copied Trader</th>
+                  <th className="py-2 pr-3 font-medium w-[90px] text-right">Action</th>
                 </tr>
               </thead>
           <tbody>
@@ -1198,14 +1019,20 @@ function PositionsList({
               const order = resolveOrderForPosition(position)
               const conditionId = deriveConditionId(position.tokenId, position.marketId)
               const meta = conditionId ? marketMeta.get(conditionId) : null
-              const marketTitle =
+              const rawMarketTitle =
                 order?.marketTitle ??
                 meta?.title ??
                 position.marketId ??
                 position.tokenId ??
                 'Market'
+              const marketTitle =
+                order?.marketTitle || meta?.title
+                  ? rawMarketTitle
+                  : abbreviateHex(rawMarketTitle) ?? rawMarketTitle
               const marketImage = order?.marketImageUrl ?? meta?.image ?? null
-              const directionLabel = position.side === 'SELL' ? 'Short' : 'Long'
+              const sideLabel = position.side === 'SELL' ? 'Sell' : 'Buy'
+              const outcomeLabel = extractString(position.outcome) ?? extractString(order?.outcome) ?? '—'
+              const outcomeDisplay = outcomeLabel !== '—' ? `${sideLabel} ${outcomeLabel}` : sideLabel
               const pnlLabel =
                 order?.pnlUsd !== null && order?.pnlUsd !== undefined
                   ? formatCurrency(order.pnlUsd)
@@ -1248,9 +1075,16 @@ function PositionsList({
               const canSell = order?.positionState === 'closed' ? false : inferredMarketOpen !== false
               const traderHandle = order ? getCopiedTraderLabel(order) : null
               const pnlCalc = computePositionPnl(position, entryPrice, currentPrice)
+              const contractsCount = Number.isFinite(position.size) ? position.size : 0
               return (
                 <tr key={`${position.tokenId}-${position.size}`} className="border-b border-slate-100">
-                  <td className="py-3 pr-4 align-top">
+                  <td className="py-3 pr-3 align-top text-sm text-slate-700">
+                    <span className="inline-flex items-center gap-2">
+                      <span className={`h-2.5 w-2.5 rounded-full ${statusDot}`} />
+                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusPill}`}>{marketStatusLabel}</span>
+                    </span>
+                  </td>
+                  <td className="py-3 pr-3 align-top">
                     <div className="flex items-center gap-3">
                       <div className="h-10 w-10 overflow-hidden rounded-full bg-slate-100">
                         {marketImage ? (
@@ -1261,35 +1095,31 @@ function PositionsList({
                           </span>
                         )}
                       </div>
-                      <div className="flex flex-col">
-                        <p className="text-sm font-semibold text-slate-900">{marketTitle}</p>
+                      <div className="flex min-w-0 flex-col">
+                        <p className="truncate text-sm font-semibold text-slate-900">{marketTitle}</p>
+                        <p className="truncate text-xs text-slate-500">{outcomeLabel}</p>
                       </div>
                     </div>
                   </td>
-                  <td className="py-3 pr-4 align-top text-sm text-slate-700">
-                    <span className="inline-flex items-center gap-2">
-                      <span className={`h-2.5 w-2.5 rounded-full ${statusDot}`} />
-                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusPill}`}>{marketStatusLabel}</span>
-                    </span>
+                  <td className="py-3 pr-3 align-top text-sm font-semibold text-slate-900">
+                    {outcomeDisplay}
                   </td>
-                  <td className="py-3 pr-4 align-top text-sm font-semibold text-slate-900">
-                    {directionLabel}
+                  <td className="py-3 pr-3 align-top text-sm text-slate-700">
+                    {formatCurrency(amountUsd)}
+                    <div className="text-xs text-slate-500">{formatContracts(contractsCount)}</div>
                   </td>
-                  <td className="py-3 pr-4 align-top text-sm text-slate-700">
-                    {formatCurrency(amountUsd)} <div className="text-xs text-slate-500">{position.size.toFixed(6)} contracts</div>
-                  </td>
-                  <td className="py-3 pr-4 align-top text-sm text-slate-700">
+                  <td className="py-3 pr-3 align-top text-sm text-slate-700">
                     {formatCurrency(entryPrice)} → {formatCurrency(currentPrice)}
                   </td>
-                  <td className="py-3 pr-4 align-top">
+                  <td className="py-3 pr-3 align-top">
                     <span className={`text-sm font-semibold ${getPnlColorClass(pnlCalc?.pnl ?? order?.pnlUsd)}`}>
                       {pnlCalc
-                        ? `${formatCurrency(pnlCalc.pnl)} (${pnlCalc.pct.toFixed(2)}%)`
+                        ? `${formatCurrency(pnlCalc.pnl)} (${formatPercentCompact(pnlCalc.pct)})`
                         : pnlLabel}
                     </span>
                   </td>
-                  <td className="py-3 pr-4 align-top text-sm text-slate-700">{traderHandle}</td>
-                  <td className="py-3 pr-4 align-top text-sm text-right">
+                  <td className="py-3 pr-3 align-top text-sm text-slate-700">{traderHandle}</td>
+                  <td className="py-3 pr-3 align-top text-sm text-right">
                     <button
                       type="button"
                       onClick={() => onSellPosition(position)}

@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowDown, ChevronDown, ChevronUp, Check, HelpCircle, Loader2, ExternalLink, X } from "lucide-react"
+import { ArrowDown, ChevronDown, ChevronUp, Check, HelpCircle, ExternalLink, X, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -61,16 +61,21 @@ type StatusPhase =
 
 const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
   'filled',
-  'partial',
   'canceled',
   'expired',
   'rejected',
 ])
 
+const MINIMUM_TRADE_USD = 1
+const MINIMUM_TRADE_TOLERANCE = 1e-6
+
 function normalizeStatusPhase(status?: string | null): StatusPhase {
   if (!status) return 'pending'
   const normalized = status.trim().toLowerCase()
   if (normalized === 'matched' || normalized === 'filled') return 'filled'
+  if (['complete', 'completed', 'closed', 'done', 'executed', 'success', 'succeeded'].includes(normalized)) {
+    return 'filled'
+  }
   if (['accepted', 'pending', 'submitted', 'unknown'].includes(normalized)) return 'pending'
   if (normalized === 'processing') return 'processing'
   if (normalized === 'open') return 'open'
@@ -272,17 +277,6 @@ export function TradeCard({
         ? "bg-red-50 text-red-700 border-red-200"
         : "bg-slate-100 text-slate-700 border-slate-200"
 
-  const amountValue = Number.parseFloat(usdAmount)
-  const hasAmountInput = usdAmount.trim().length > 0
-  const calculatedContracts =
-    Number.isFinite(amountValue) && amountValue > 0 ? Math.floor(amountValue / currentPrice) : 0
-  const amountTooSmall = hasAmountInput && Number.isFinite(amountValue) && amountValue > 0 && calculatedContracts < 1
-  const inlineAmountError = amountTooSmall ? 'Amount too small. Must be at least 1 contract.' : null
-  const traderSize = Number.isFinite(size) && size > 0 ? size : 0
-  const sizePercent =
-    traderSize > 0 && calculatedContracts > 0 ? (calculatedContracts / traderSize) * 100 : null
-  const sizePercentLabel = sizePercent !== null ? `${sizePercent.toFixed(0)}%` : '--%'
-  const contractLabel = calculatedContracts === 1 ? "contract" : "contracts"
   const defaultSlippagePercent = 2
   const slippagePercent =
     slippagePreset === "custom" ? Number(customSlippage) : Number(slippagePreset)
@@ -292,6 +286,36 @@ export function TradeCard({
     action === "Buy"
       ? currentPrice * (1 + resolvedSlippage / 100)
       : currentPrice * (1 - resolvedSlippage / 100)
+  const amountValue = Number.parseFloat(usdAmount)
+  const hasAmountInput = usdAmount.trim().length > 0
+  const effectivePrice = Number.isFinite(limitPrice) && limitPrice > 0 ? limitPrice : currentPrice
+  const calculatedContracts =
+    Number.isFinite(amountValue) && amountValue > 0 ? Math.floor(amountValue / effectivePrice) : 0
+  const estimatedTotal = calculatedContracts > 0 ? calculatedContracts * effectivePrice : 0
+  const amountTooSmall =
+    hasAmountInput && Number.isFinite(amountValue) && amountValue > 0 && calculatedContracts < 1
+  const minimumTotalNotMet =
+    hasAmountInput &&
+    calculatedContracts > 0 &&
+    estimatedTotal + MINIMUM_TRADE_TOLERANCE < MINIMUM_TRADE_USD
+  const minimumContractsForUsd =
+    Number.isFinite(effectivePrice) && effectivePrice > 0
+      ? Math.max(1, Math.ceil(MINIMUM_TRADE_USD / effectivePrice))
+      : 1
+  const minimumTotalMessage =
+    Number.isFinite(effectivePrice) && effectivePrice > 0
+      ? `Polymarket requires a $${MINIMUM_TRADE_USD} minimum order value. At ${formatCurrency(effectivePrice)} per contract, you need ${minimumContractsForUsd} contracts.`
+      : `Polymarket requires a $${MINIMUM_TRADE_USD} minimum order value.`
+  const inlineAmountError = amountTooSmall
+    ? `Minimum is 1 contract (≈ ${formatCurrency(effectivePrice)} at current price).`
+    : minimumTotalNotMet
+      ? minimumTotalMessage
+      : null
+  const traderSize = Number.isFinite(size) && size > 0 ? size : 0
+  const sizePercent =
+    traderSize > 0 && calculatedContracts > 0 ? (calculatedContracts / traderSize) * 100 : null
+  const sizePercentLabel = sizePercent !== null ? `${sizePercent.toFixed(0)}%` : '--%'
+  const contractLabel = calculatedContracts === 1 ? "contract" : "contracts"
   const estimatedContractsAtLimit =
     Number.isFinite(amountValue) && amountValue > 0 && limitPrice > 0
       ? Math.floor(amountValue / limitPrice)
@@ -329,7 +353,7 @@ export function TradeCard({
       if (!cancelled && !statusDataRef.current) {
         setStatusPhase('pending')
       }
-    }, 800)
+    }, 300)
 
     const poll = async () => {
       if (cancelled || inFlight) return
@@ -350,7 +374,19 @@ export function TradeCard({
           setStatusData(data)
           setStatusError(null)
           const rawStatus = data?.status ? String(data.status) : ''
-          const phase = normalizeStatusPhase(rawStatus)
+          let phase = normalizeStatusPhase(rawStatus)
+          const filledSize =
+            typeof data?.filledSize === 'number' ? data.filledSize : null
+          const remainingSize =
+            typeof data?.remainingSize === 'number' ? data.remainingSize : null
+          if (
+            remainingSize !== null &&
+            remainingSize <= 0 &&
+            filledSize !== null &&
+            filledSize > 0
+          ) {
+            phase = 'filled'
+          }
           setStatusPhase(phase)
           if (TERMINAL_STATUS_PHASES.has(phase) && intervalId) {
             clearInterval(intervalId)
@@ -365,7 +401,7 @@ export function TradeCard({
     }
 
     poll()
-    intervalId = setInterval(poll, 250)
+    intervalId = setInterval(poll, 200)
 
     return () => {
       cancelled = true
@@ -400,6 +436,7 @@ export function TradeCard({
 
     setIsSubmitting(true)
     setSubmitError(null)
+    let showedConfirmation = false
     
     try {
       if (!Number.isFinite(amountValue) || amountValue <= 0) {
@@ -411,6 +448,11 @@ export function TradeCard({
       // Calculate contracts from USD amount
       if (calculatedContracts <= 0) {
         setSubmitError('Amount too small. Must be at least 1 contract.')
+        setIsSubmitting(false)
+        return
+      }
+      if (minimumTotalNotMet) {
+        setSubmitError(minimumTotalMessage)
         setIsSubmitting(false)
         return
       }
@@ -443,24 +485,34 @@ export function TradeCard({
         return
       }
 
+      setShowConfirmation(true)
+      setStatusPhase('submitted')
+      setStatusError(null)
+      showedConfirmation = true
+
       // Execute the trade via API
       const response = await fetch('/api/polymarket/orders/place', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tokenId: finalTokenId,
-          price: limitPrice,
-          amount: calculatedContracts,
-          side: action === 'Buy' ? 'BUY' : 'SELL',
-          orderType,
-          confirm: true,
-          copiedTraderId,
-          copiedTraderWallet: trader.address,
-          copiedTraderUsername: trader.name,
-          marketId: conditionId || (finalTokenId ? finalTokenId.slice(0, 66) : undefined),
-          outcome: position,
-        }),
-      })
+          body: JSON.stringify({
+            tokenId: finalTokenId,
+            price: limitPrice,
+            amount: calculatedContracts,
+            side: action === 'Buy' ? 'BUY' : 'SELL',
+            orderType,
+            confirm: true,
+            copiedTraderId,
+            copiedTraderWallet: trader.address,
+            copiedTraderUsername: trader.name,
+            marketId: conditionId || (finalTokenId ? finalTokenId.slice(0, 66) : undefined),
+            marketTitle: market,
+            marketSlug,
+            marketAvatarUrl: marketAvatar,
+            amountInvested: Number.isFinite(amountValue) ? amountValue : undefined,
+            outcome: position,
+            autoCloseOnTraderClose: autoClose,
+          }),
+        })
 
       const data = await response.json()
 
@@ -482,7 +534,7 @@ export function TradeCard({
 
       // Success: open confirmation view
       setIsSubmitting(false)
-      setShowConfirmation(true)
+      setLocalCopied(true)
       setOrderId(String(placedOrderId))
       refreshOrders().catch(() => {
         /* handled in refreshOrders */
@@ -491,6 +543,9 @@ export function TradeCard({
     } catch (error: any) {
       console.error('Trade execution error:', error)
       setSubmitError(error?.message || 'Failed to execute trade. Please try again.')
+      if (showedConfirmation) {
+        setShowConfirmation(false)
+      }
       setIsSubmitting(false)
     }
   }
@@ -527,6 +582,7 @@ export function TradeCard({
     filledContracts !== null && totalContracts !== null
       ? `${filledContracts.toLocaleString()} of ${totalContracts.toLocaleString()} filled`
       : `${calculatedContracts.toLocaleString()} ${contractLabel}`
+  const isFinalStatus = TERMINAL_STATUS_PHASES.has(statusPhase)
 
   return (
     <div className="group bg-white border border-slate-200 rounded-xl overflow-hidden transition-all hover:shadow-lg">
@@ -706,8 +762,11 @@ export function TradeCard({
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Status</p>
-                    <p className="text-lg font-semibold text-slate-900">{statusLabel}</p>
+                    <p className="text-xs font-semibold tracking-wide text-slate-400">Status</p>
+                    <p className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                      {!isFinalStatus && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
+                      {statusLabel}
+                    </p>
                   </div>
                   <button
                     type="button"
@@ -719,17 +778,15 @@ export function TradeCard({
                       setStatusError(null)
                       setStatusPhase('submitted')
                     }}
-                    className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 h-8 w-8"
-                    aria-label="Close order confirmation"
+                    className={
+                      isFinalStatus
+                        ? "inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 h-8 text-xs font-semibold text-slate-600 hover:text-slate-800"
+                        : "inline-flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 h-8 w-8"
+                    }
+                    aria-label={isFinalStatus ? "Copy again" : "Close order confirmation"}
                   >
-                    <X className="h-4 w-4" />
+                    {isFinalStatus ? "Copy Again" : <X className="h-4 w-4" />}
                   </button>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-                  <div className="flex flex-col gap-1 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-                    <span>Order ID</span>
-                    <span className="font-mono text-slate-700 break-all sm:text-right">{orderId}</span>
-                  </div>
                 </div>
                 <div className="space-y-2">
                   <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
@@ -741,11 +798,21 @@ export function TradeCard({
                         {formatCurrency(Number.isFinite(amountValue) ? amountValue : 0)}
                       </div>
                     </div>
-                    <div className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px]">
-                      {statusContractsText}
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
+                      <span className="text-xs font-medium text-slate-700 text-center sm:text-left">
+                        Contracts
+                      </span>
+                      <div className="flex h-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center">
+                        {statusContractsText}
+                      </div>
                     </div>
-                    <div className="flex h-14 items-center text-xs font-medium text-slate-500">
-                      Filled Price {fillPrice !== null ? formatCurrency(fillPrice) : '—'}
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
+                      <span className="text-xs font-medium text-slate-700 text-center sm:text-left">
+                        Filled Price
+                      </span>
+                      <div className="flex h-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center">
+                        {fillPrice !== null ? formatCurrency(fillPrice) : '—'}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -773,9 +840,30 @@ export function TradeCard({
                   <div className="space-y-2 mb-4">
                     <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
                       <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
-                        <label htmlFor="amount" className="text-xs font-medium text-slate-700">
-                          Amount (USD)
-                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <label htmlFor="amount" className="text-xs font-medium text-slate-700">
+                            Amount (USD)
+                          </label>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="text-slate-400 hover:text-slate-500"
+                                  aria-label="Amount (USD) info"
+                                >
+                                  <HelpCircle className="h-3 w-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p>
+                                  We use your dollar amount to calculate the maximum whole contracts at the current price.
+                                  We then round to the nearest fillable total so the order stays within your budget.
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
                         <div className="relative">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
                           <input
@@ -789,7 +877,7 @@ export function TradeCard({
                             onBlur={() => {
                               if (!Number.isFinite(amountValue) || amountValue <= 0) return
                               if (calculatedContracts < 1) return
-                              const normalizedAmount = calculatedContracts * currentPrice
+                              const normalizedAmount = calculatedContracts * effectivePrice
                               setUsdAmount(normalizedAmount.toFixed(2))
                             }}
                             onWheel={(e) => e.currentTarget.blur()}
@@ -816,14 +904,20 @@ export function TradeCard({
 
                   <Button
                     onClick={handleQuickCopy}
-                    disabled={isMarketEnded || !usdAmount || Number.parseFloat(usdAmount) <= 0 || amountTooSmall || isSubmitting}
+                    disabled={
+                      isMarketEnded ||
+                      !usdAmount ||
+                      Number.parseFloat(usdAmount) <= 0 ||
+                      amountTooSmall ||
+                      minimumTotalNotMet ||
+                      isSubmitting
+                    }
                     className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
                     size="lg"
                   >
                     {isSubmitting ? (
                       <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Executing Trade...
+                        Order sent
                       </>
                     ) : (
                       "Execute Trade"

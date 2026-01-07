@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
 import { POST_ORDER } from '@polymarket/clob-client/dist/endpoints.js'
 import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
@@ -7,6 +8,7 @@ import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
 import { ensureEvomiProxyAgent } from '@/lib/evomi/proxy'
 import { getBodySnippet } from '@/lib/polymarket/order-route-helpers'
 import { sanitizeError } from '@/lib/http/sanitize-error'
+import { resolveOrdersTableName } from '@/lib/orders/table'
 
 const DEV_BYPASS_AUTH =
   process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
@@ -18,9 +20,20 @@ type Body = {
   tokenId?: string
   price?: number
   amount?: number
+  amountInvested?: number
   side?: 'BUY' | 'SELL'
   orderType?: 'GTC' | 'FOK' | 'IOC'
   confirm?: boolean
+  copiedTraderId?: string
+  copiedTraderWallet?: string
+  copiedTraderUsername?: string
+  marketId?: string
+  marketTitle?: string
+  marketSlug?: string
+  marketAvatarUrl?: string
+  outcome?: string
+  autoCloseOnTraderClose?: boolean
+  autoClose?: boolean
 }
 
 function respondWithMetadata(body: Record<string, unknown>, status: number) {
@@ -31,6 +44,202 @@ function respondWithMetadata(body: Record<string, unknown>, status: number) {
   const response = NextResponse.json(payload, { status })
   response.headers.set('x-polycopy-handler', HANDLER_FINGERPRINT)
   return response
+}
+
+function normalizeOptionalString(value?: string | null) {
+  if (!value) return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function normalizeWallet(value?: string | null) {
+  const normalized = normalizeOptionalString(value)
+  return normalized ? normalized.toLowerCase() : null
+}
+
+function normalizeNumber(value?: number | string | null) {
+  if (value === null || value === undefined) return null
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function createServiceRoleClient() {
+  return createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: { autoRefreshToken: false, persistSession: false },
+    }
+  )
+}
+
+async function ensureTraderId(
+  client: ReturnType<typeof createServiceRoleClient>,
+  walletAddress: string
+) {
+  const normalized = walletAddress.toLowerCase()
+  const { data: existing, error } = await client
+    .from('traders')
+    .select('id')
+    .eq('wallet_address', normalized)
+    .maybeSingle()
+
+  if (error) throw error
+  if (existing?.id) return existing.id
+
+  const { data: inserted, error: insertError } = await client
+    .from('traders')
+    .insert({ wallet_address: normalized })
+    .select('id')
+    .single()
+
+  if (insertError) throw insertError
+  return inserted.id
+}
+
+async function persistCopiedTraderMetadata({
+  userId,
+  orderId,
+  tokenId,
+  price,
+  amount,
+  amountInvested,
+  side,
+  orderType,
+  copiedTraderId,
+  copiedTraderWallet,
+  copiedTraderUsername,
+  marketId,
+  marketTitle,
+  marketSlug,
+  marketAvatarUrl,
+  outcome,
+  autoCloseOnTraderClose,
+  autoClose,
+}: {
+  userId: string
+  orderId: string
+  tokenId?: string
+  price?: number
+  amount?: number
+  amountInvested?: number
+  side?: 'BUY' | 'SELL'
+  orderType?: 'GTC' | 'FOK' | 'IOC'
+  copiedTraderId?: string
+  copiedTraderWallet?: string
+  copiedTraderUsername?: string
+  marketId?: string
+  marketTitle?: string
+  marketSlug?: string
+  marketAvatarUrl?: string
+  outcome?: string
+  autoCloseOnTraderClose?: boolean
+  autoClose?: boolean
+}) {
+  const hasCopiedMetadata =
+    Boolean(normalizeOptionalString(copiedTraderId)) ||
+    Boolean(normalizeOptionalString(copiedTraderWallet)) ||
+    Boolean(normalizeOptionalString(copiedTraderUsername))
+  const hasOrderContext =
+    Boolean(normalizeOptionalString(orderType ?? null)) ||
+    Boolean(normalizeOptionalString(tokenId ?? null)) ||
+    Boolean(normalizeOptionalString(marketId ?? null)) ||
+    Boolean(normalizeOptionalString(outcome ?? null)) ||
+    Boolean(normalizeOptionalString(side ?? null)) ||
+    normalizeNumber(price) !== null ||
+    normalizeNumber(amount) !== null
+  if (!hasCopiedMetadata && !hasOrderContext) return
+
+  const service = createServiceRoleClient()
+  const ordersTable = await resolveOrdersTableName(service)
+
+  const { data: credential, error: credentialError } = await service
+    .from('clob_credentials')
+    .select('polymarket_account_address')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (credentialError || !credential?.polymarket_account_address) {
+    throw credentialError ?? new Error('Missing Polymarket account address for user')
+  }
+
+  const traderId = await ensureTraderId(service, credential.polymarket_account_address)
+  const normalizedMarketId =
+    normalizeOptionalString(marketId) ??
+    (tokenId && tokenId.length >= 66 ? tokenId.slice(0, 66) : null)
+  const normalizedMarketTitle = normalizeOptionalString(marketTitle)
+  const normalizedMarketSlug = normalizeOptionalString(marketSlug)
+  const normalizedMarketAvatarUrl = normalizeOptionalString(marketAvatarUrl)
+  const normalizedPrice = normalizeNumber(price)
+  const normalizedSize = normalizeNumber(amount)
+  const normalizedAmountInvested = normalizeNumber(amountInvested)
+  const normalizedCopiedTraderId = normalizeOptionalString(copiedTraderId)
+  const normalizedCopiedTraderWallet = normalizeWallet(copiedTraderWallet)
+  const normalizedCopiedTraderUsername = normalizeOptionalString(copiedTraderUsername)
+  const now = new Date().toISOString()
+  const resolvedAutoClose =
+    typeof autoCloseOnTraderClose === 'boolean'
+      ? autoCloseOnTraderClose
+      : typeof autoClose === 'boolean'
+        ? autoClose
+        : true
+
+  const payload = {
+    order_id: orderId,
+    trader_id: traderId,
+    copied_trader_id: normalizedCopiedTraderId,
+    copied_trader_wallet: normalizedCopiedTraderWallet,
+    market_id: normalizedMarketId,
+    outcome: normalizeOptionalString(outcome),
+    side: side ? side.toLowerCase() : null,
+    order_type: orderType ?? null,
+    time_in_force: orderType ?? null,
+    price: normalizedPrice ?? 0,
+    size: normalizedSize ?? 0,
+    filled_size: 0,
+    remaining_size: normalizedSize ?? 0,
+    status: 'open',
+    created_at: now,
+    updated_at: now,
+    auto_close_on_trader_close: resolvedAutoClose,
+    raw: {
+      source: 'polycopy_place_order',
+      token_id: tokenId ?? null,
+      market_id: normalizedMarketId,
+      outcome: normalizeOptionalString(outcome),
+      copied_trader_id: normalizedCopiedTraderId,
+      copied_trader_wallet: normalizedCopiedTraderWallet,
+      copied_trader_username: normalizeOptionalString(copiedTraderUsername),
+      auto_close_on_trader_close: resolvedAutoClose,
+    },
+  }
+
+  await service.from(ordersTable).upsert(payload, { onConflict: 'order_id' })
+
+  const resolvedMarketTitle = normalizedMarketTitle || normalizedMarketId
+  if (
+    normalizedCopiedTraderWallet &&
+    normalizedMarketId &&
+    resolvedMarketTitle &&
+    normalizedPrice !== null
+  ) {
+    await service
+      .from('copied_trades')
+      .insert({
+        user_id: userId,
+        trader_wallet: normalizedCopiedTraderWallet,
+        trader_username: normalizedCopiedTraderUsername || normalizedCopiedTraderWallet.slice(0, 8),
+        market_id: normalizedMarketId,
+        market_title: resolvedMarketTitle,
+        market_slug: normalizedMarketSlug,
+        outcome: normalizeOptionalString(outcome),
+        price_when_copied: normalizedPrice,
+        amount_invested: normalizedAmountInvested ?? null,
+        market_avatar_url: normalizedMarketAvatarUrl ?? null,
+      })
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -57,7 +266,25 @@ export async function POST(request: NextRequest) {
   }
 
   const body: Body = await request.json()
-  const { tokenId, price, amount, side, orderType = 'GTC', confirm } = body
+  const {
+    tokenId,
+    price,
+    amount,
+    amountInvested,
+    side,
+    orderType = 'GTC',
+    confirm,
+    copiedTraderId,
+    copiedTraderWallet,
+    copiedTraderUsername,
+    marketId,
+    marketTitle,
+    marketSlug,
+    marketAvatarUrl,
+    outcome,
+    autoCloseOnTraderClose,
+    autoClose,
+  } = body
 
   const requestId = request.headers.get('x-request-id') ?? null
 
@@ -195,6 +422,33 @@ export async function POST(request: NextRequest) {
     }
 
     const { orderId } = evaluation
+
+    try {
+      if (orderId) {
+        await persistCopiedTraderMetadata({
+          userId,
+          orderId,
+          tokenId,
+          price,
+          amount,
+          amountInvested,
+          side,
+          orderType,
+          copiedTraderId,
+          copiedTraderWallet,
+          copiedTraderUsername,
+          marketId,
+          marketTitle,
+          marketSlug,
+          marketAvatarUrl,
+          outcome,
+          autoCloseOnTraderClose,
+          autoClose,
+        })
+      }
+    } catch (error) {
+      console.warn('[POLY-ORDER-PLACE] Failed to persist copied trader metadata', error)
+    }
 
     return respondWithMetadata(
       {

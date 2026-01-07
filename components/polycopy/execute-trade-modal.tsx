@@ -10,6 +10,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import Link from "next/link"
 
 interface ExecuteTradeModalProps {
@@ -53,6 +54,20 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
     const amount = Number.parseFloat(usd) || 0
     return (amount / mockCurrentPrice).toFixed(2)
   }
+
+  const amountValue = Number.parseFloat(amountUSD)
+  const parsedSlippage =
+    slippageTolerance === "custom" ? Number(customSlippage) : Number(slippageTolerance)
+  const resolvedSlippage = Number.isFinite(parsedSlippage) ? parsedSlippage : 0
+  const limitPrice =
+    trade.action === "Buy"
+      ? mockCurrentPrice * (1 + resolvedSlippage / 100)
+      : mockCurrentPrice * (1 - resolvedSlippage / 100)
+  const estimatedContractsAtLimit =
+    Number.isFinite(amountValue) && amountValue > 0 && limitPrice > 0
+      ? Math.floor(amountValue / limitPrice)
+      : 0
+  const estimatedMaxCost = estimatedContractsAtLimit * limitPrice
 
   const hasEnoughFunds = Number.parseFloat(amountUSD) <= mockCashAvailable
 
@@ -195,9 +210,30 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
 
                   {/* Amount Input */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="amount" className="text-xs font-medium text-slate-900">
-                      Amount
-                    </Label>
+                    <div className="flex items-center gap-1.5">
+                      <Label htmlFor="amount" className="text-xs font-medium text-slate-900">
+                        Amount (USD)
+                      </Label>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-slate-400 hover:text-slate-500"
+                              aria-label="Amount (USD) info"
+                            >
+                              <HelpCircle className="h-3 w-3" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            <p>
+                              We use your dollar amount to calculate the maximum whole contracts at the current price.
+                              We then round to the nearest fillable total so the order stays within your budget.
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
                     <div className="space-y-1.5">
                       <div className="relative">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 font-semibold text-sm">$</span>
@@ -355,6 +391,44 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                     {(Number.parseFloat(amountUSD) / executedPrice).toFixed(2)} contracts
                   </span>
                 </div>
+              </div>
+              <div className="mt-2">
+                <TooltipProvider>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
+                          Slippage ({resolvedSlippage}%)
+                          <HelpCircle className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p>
+                          We set your limit price up to {resolvedSlippage}% worse than the current best price to increase the chance of filling.
+                          You still fill at the best available price.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
+                          {orderBehavior === "good-til-canceled" ? "Good 'Til Canceled (GTC)" : "Immediate-or-cancel (IOC)"}
+                          <HelpCircle className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p>
+                          {orderBehavior === "good-til-canceled"
+                            ? "GTC leaves the order open until it fills or you cancel it."
+                            : "We try to fill instantly. Anything not filled right away is canceled (so you don't leave a stray order sitting on the book)."}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </TooltipProvider>
+                <p className="mt-1 text-xs text-slate-500">
+                  Estimated: {estimatedContractsAtLimit.toLocaleString()} contracts, up to ${estimatedMaxCost.toFixed(2)} (may fill for less).
+                </p>
               </div>
             </>
           )}

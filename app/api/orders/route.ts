@@ -70,11 +70,12 @@ export async function GET(request: NextRequest) {
 
     const walletAddress = credential?.polymarket_account_address?.toLowerCase() || null
     if (!walletAddress) {
-      return NextResponse.json({ orders: [] })
+      return NextResponse.json({ orders: [], openOrderIds: [], openOrdersFetched: false })
     }
 
     // Track the set of open order ids returned by CLOB so the client can filter to truly-pending orders
     let clobOpenOrderIds: string[] | null = null
+    let clobOpenOrdersFetched = false
 
     // Refresh orders from CLOB first (with timeout to avoid blocking)
     // This ensures we have the latest orders in the database
@@ -83,6 +84,7 @@ export async function GET(request: NextRequest) {
         try {
           const { client } = await getAuthedClobClientForUser(user.id)
           const openOrders = await client.getOpenOrders({}, true)
+          clobOpenOrdersFetched = true
           clobOpenOrderIds = Array.isArray(openOrders)
             ? openOrders
                 .map((order: any) => (typeof order?.id === 'string' ? order.id.trim().toLowerCase() : null))
@@ -140,6 +142,13 @@ export async function GET(request: NextRequest) {
                 const sizeMatched = Number(fullOrder.size_matched || 0)
                 const remainingSize = originalSize - sizeMatched
 
+                const timeInForce =
+                  fullOrder.time_in_force ||
+                  fullOrder.timeInForce ||
+                  fullOrder.order_type ||
+                  fullOrder.orderType ||
+                  null
+
                 return {
                   order_id: fullOrder.id,
                   trader_id: trader.id,
@@ -147,7 +156,7 @@ export async function GET(request: NextRequest) {
                   outcome: outcome,
                   side: (fullOrder.side || '').toLowerCase(),
                   order_type: fullOrder.order_type || null,
-                  time_in_force: fullOrder.order_type || null,
+                  time_in_force: timeInForce ? String(timeInForce).toUpperCase() : null,
                   price: Number(fullOrder.price || 0),
                   size: originalSize,
                   filled_size: sizeMatched,
@@ -524,7 +533,12 @@ export async function GET(request: NextRequest) {
         .upsert(cacheUpserts, { onConflict: 'market_id' })
     }
 
-    return NextResponse.json({ orders: enrichedOrders, walletAddress, openOrderIds: clobOpenOrderIds ?? [] })
+    return NextResponse.json({
+      orders: enrichedOrders,
+      walletAddress,
+      openOrderIds: clobOpenOrderIds ?? [],
+      openOrdersFetched: clobOpenOrdersFetched,
+    })
   } catch (error: any) {
     console.error('[orders] fatal error', error)
     const message =
