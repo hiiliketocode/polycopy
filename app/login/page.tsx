@@ -65,7 +65,7 @@ function LoginForm() {
             <div className="lg:w-1/2 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 lg:p-12 flex flex-col justify-center text-white">
               <div className="max-w-xl mx-auto">
                 <img 
-                  src="/logos/polycopy-logo-primary.png"
+                  src="/logos/polycopy-logo-white.png"
                   alt="Polycopy"
                   width={202}
                   height={48}
@@ -73,8 +73,7 @@ function LoginForm() {
                   style={{ 
                     imageRendering: '-webkit-optimize-contrast',
                     WebkitBackfaceVisibility: 'hidden',
-                    backfaceVisibility: 'hidden',
-                    filter: 'brightness(0) invert(1)'
+                    backfaceVisibility: 'hidden'
                   }}
                 />
                 
