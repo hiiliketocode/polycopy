@@ -1155,17 +1155,14 @@ export default function TraderProfilePage({
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge
-                            variant="secondary"
-                            className={cn(
-                              'text-xs font-medium',
-                              tradeStatus === 'Open'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-slate-100 text-slate-600 border-slate-200'
-                            )}
-                          >
-                            {tradeStatus}
-                          </Badge>
+                          {tradeStatus !== 'Open' && (
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
+                            >
+                              {tradeStatus === 'Bonded' ? 'Resolved' : tradeStatus === 'Trader Closed' ? 'Ended' : tradeStatus}
+                            </Badge>
+                          )}
                           {!isAlreadyCopied && (
                             <button
                               onClick={() => setExpandedTradeIndex(isExpanded ? null : index)}
@@ -1214,9 +1211,10 @@ export default function TraderProfilePage({
                           <Button
                             onClick={() => {
                               if (isAlreadyCopied) return;
+                              if (trade.status === 'Trader Closed' || trade.status === 'Bonded') return;
                               setExpandedTradeIndex(isExpanded ? null : index);
                             }}
-                            disabled={isAlreadyCopied}
+                            disabled={isAlreadyCopied || trade.status === 'Trader Closed' || trade.status === 'Bonded'}
                             className={cn(
                               'w-full font-semibold shadow-sm text-sm',
                               isAlreadyCopied
@@ -1230,6 +1228,8 @@ export default function TraderProfilePage({
                                 <Check className="w-4 h-4 mr-2" />
                                 Trade Copied
                               </>
+                            ) : trade.status === 'Trader Closed' || trade.status === 'Bonded' ? (
+                              'Market Closed'
                             ) : (
                               'Copy Trade'
                             )}
@@ -1319,36 +1319,47 @@ export default function TraderProfilePage({
                       ) : (
                         /* Free Users: Manual Copy + Mark as Copied */
                         <div className="flex gap-2">
-                          <a
-                            href={polymarketUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex-1"
-                          >
-                            <Button className="w-full bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold">
-                              Manual Copy
+                          {trade.status === 'Trader Closed' || trade.status === 'Bonded' ? (
+                            <Button 
+                              disabled 
+                              className="w-full bg-slate-300 text-slate-600 font-semibold cursor-not-allowed"
+                            >
+                              Market Closed
                             </Button>
-                          </a>
-                          <Button
-                            onClick={() => handleMarkAsCopied(trade)}
-                            disabled={isAlreadyCopied}
-                            variant="outline"
-                            className={cn(
-                              'flex-1',
-                              isAlreadyCopied
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'border-slate-300 text-slate-700 hover:bg-slate-50'
-                            )}
-                          >
-                            {isAlreadyCopied ? (
-                              <>
-                                <Check className="h-4 w-4 mr-2" />
-                                Copied
-                              </>
-                            ) : (
-                              'Mark as Copied'
-                            )}
-                          </Button>
+                          ) : (
+                            <>
+                              <a
+                                href={polymarketUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-1"
+                              >
+                                <Button className="w-full bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold">
+                                  Manual Copy
+                                </Button>
+                              </a>
+                              <Button
+                                onClick={() => handleMarkAsCopied(trade)}
+                                disabled={isAlreadyCopied}
+                                variant="outline"
+                                className={cn(
+                                  'flex-1',
+                                  isAlreadyCopied
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                                )}
+                              >
+                                {isAlreadyCopied ? (
+                                  <>
+                                    <Check className="h-4 w-4 mr-2" />
+                                    Copied
+                                  </>
+                                ) : (
+                                  'Mark as Copied'
+                                )}
+                              </Button>
+                            </>
+                          )}
                         </div>
                       )}
                     </Card>
@@ -1379,6 +1390,85 @@ export default function TraderProfilePage({
               <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Historical Performance</h2>
               <p className="text-sm text-slate-500 mt-1">The data below covers this trader's last 100 trades. Please note this does not cover complete historical performance data.</p>
             </div>
+
+            {/* Performance Metrics */}
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">Performance Metrics</h3>
+              <p className="text-sm text-slate-500 mb-6">Showing lifetime performance across all trades</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* Lifetime ROI */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Lifetime ROI</p>
+                  <p className={`text-2xl font-bold ${(traderData.roi ?? 0) > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {(traderData.roi ?? 0) > 0 ? '+' : ''}{(traderData.roi ?? 0).toFixed(1)}%
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">All time</p>
+                </div>
+
+                {/* Total P&L */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Total P&L</p>
+                  <p className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {traderData.pnl > 0 ? '+' : ''}{formatCurrency(traderData.pnl)}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">All time</p>
+                </div>
+
+                {/* Best Position */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Best Position</p>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {formatCurrency(traderData.volume)}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Largest trade</p>
+                </div>
+
+                {/* Total Trades */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Total Trades</p>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {(() => {
+                      const count = trades.length;
+                      return count === 100 ? '100+' : count;
+                    })()}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">In sample</p>
+                </div>
+
+                {/* Net P&L / Trade */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Net P&L / Trade</p>
+                  <p className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {(() => {
+                      const avgPnL = trades.length > 0 ? traderData.pnl / trades.length : 0;
+                      return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
+                    })()}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Per trade</p>
+                </div>
+
+                {/* Open Positions */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Open Positions</p>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {trades.filter(t => t.status === 'Open').length}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Currently active</p>
+                </div>
+
+                {/* Avg P&L / Trade */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Avg P&L / Trade</p>
+                  <p className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {(() => {
+                      const avgPnL = trades.length > 0 ? traderData.pnl / trades.length : 0;
+                      return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
+                    })()}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Average</p>
+                </div>
+              </div>
+            </Card>
 
             {/* Position Size Distribution */}
             <Card className="p-6">
@@ -1461,9 +1551,18 @@ export default function TraderProfilePage({
 
                     
                     {/* X-axis labels */}
-                    <div className="absolute -bottom-6 left-0 right-0 flex justify-between text-xs text-slate-500">
+                    <div className="absolute -bottom-6 left-0 right-0 flex text-xs text-slate-500">
                       {positionSizeBuckets.map((bucket, i) => (
-                        <span key={i} className="text-center">{bucket.range}</span>
+                        <span 
+                          key={i} 
+                          className="text-center" 
+                          style={{ 
+                            width: `${100 / positionSizeBuckets.length}%`,
+                            display: 'inline-block'
+                          }}
+                        >
+                          {bucket.range}
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -1473,94 +1572,6 @@ export default function TraderProfilePage({
                   <p>Not enough trade data to display position sizing</p>
                 </div>
               )}
-            </Card>
-
-            {/* Performance Metrics */}
-            <Card className="p-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Performance Metrics</h3>
-              <p className="text-sm text-slate-500 mb-6">Showing lifetime performance across all trades</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {/* Lifetime ROI */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Lifetime ROI</p>
-                  <p className={`text-2xl font-bold ${(traderData.roi ?? 0) > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {(traderData.roi ?? 0) > 0 ? '+' : ''}{(traderData.roi ?? 0).toFixed(1)}%
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">All time</p>
-                </div>
-
-                {/* Total P&L */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Total P&L</p>
-                  <p className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {traderData.pnl > 0 ? '+' : ''}{formatCurrency(traderData.pnl)}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">All time</p>
-                </div>
-
-                {/* Best Position */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Best Position</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {formatCurrency(traderData.volume)}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Largest trade</p>
-                </div>
-
-                {/* Total Trades */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Total Trades</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {(() => {
-                      const count = trades.length;
-                      return count === 100 ? '100+' : count;
-                    })()}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">In sample</p>
-                </div>
-
-                {/* Net P&L / Trade */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Net P&L / Trade</p>
-                  <p className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {(() => {
-                      const avgPnL = trades.length > 0 ? traderData.pnl / trades.length : 0;
-                      return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
-                    })()}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Per trade</p>
-                </div>
-
-                {/* Avg ROI / Trade */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Avg ROI / Trade</p>
-                  <p className={`text-2xl font-bold ${(traderData.roi ?? 0) > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {(traderData.roi ?? 0) > 0 ? '+' : ''}{(traderData.roi ?? 0).toFixed(2)}%
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Per trade</p>
-                </div>
-
-                {/* Open Positions */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Open Positions</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {trades.filter(t => t.status === 'Open').length}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Currently active</p>
-                </div>
-
-                {/* Avg P&L / Trade */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Avg P&L / Trade</p>
-                  <p className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {(() => {
-                      const avgPnL = trades.length > 0 ? traderData.pnl / trades.length : 0;
-                      return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
-                    })()}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Average</p>
-                </div>
-              </div>
             </Card>
 
             {/* Category Distribution Pie Chart */}
