@@ -351,7 +351,10 @@ async function refreshOrders(userId: string, limit: number): Promise<RefreshResu
   })
 
   const existingIds = new Set(existingOrderRows.map((row) => row.order_id))
-  const insertedCount = payload.filter((order) => !existingIds.has(order.order_id)).length
+  const insertedCount = payload.filter((order) => {
+    const orderId = typeof order.order_id === 'string' ? order.order_id : String(order.order_id || '')
+    return !existingIds.has(orderId)
+  }).length
   const updatedCount = payload.length - insertedCount
 
   const { error: upsertError } = await supabaseServiceRole
