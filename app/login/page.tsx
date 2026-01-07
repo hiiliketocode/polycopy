@@ -73,7 +73,8 @@ function LoginForm() {
                   style={{ 
                     imageRendering: '-webkit-optimize-contrast',
                     WebkitBackfaceVisibility: 'hidden',
-                    backfaceVisibility: 'hidden'
+                    backfaceVisibility: 'hidden',
+                    filter: 'brightness(0) invert(1)'
                   }}
                 />
                 
