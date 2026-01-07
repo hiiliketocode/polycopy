@@ -66,10 +66,17 @@ function extractErrorMessage(record: OrderResponseData): string | null {
       return value.trim()
     }
     if (typeof value === 'object' && value !== null) {
-      const innerRecord = asRecord(value)
-      if (innerRecord) {
-        const nested = extractErrorMessage(innerRecord)
-        if (nested) return nested
+      try {
+        // Ensure object doesn't have circular references before recursing
+        JSON.stringify(value)
+        const innerRecord = asRecord(value)
+        if (innerRecord) {
+          const nested = extractErrorMessage(innerRecord)
+          if (nested) return nested
+        }
+      } catch {
+        // Skip objects with circular references
+        continue
       }
     }
   }
@@ -78,7 +85,12 @@ function extractErrorMessage(record: OrderResponseData): string | null {
       .map((item) => {
         if (typeof item === 'string') return item
         if (typeof item === 'object' && item !== null) {
-          return extractErrorMessage(item as OrderResponseData)
+          try {
+            JSON.stringify(item)
+            return extractErrorMessage(item as OrderResponseData)
+          } catch {
+            return null
+          }
         }
         return null
       })

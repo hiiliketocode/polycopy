@@ -139,13 +139,28 @@ export async function POST(request: NextRequest) {
       const code = typeof error?.code === 'string' ? error.code : null
       // Prefer upstream data when safe, but avoid bubbling full axios response (circular)
       const responseData = error?.response?.data
-      rawResult =
-        responseData && typeof responseData === 'object'
-          ? responseData
-          : {
-              error: message || 'Network error placing order',
-              code,
-            }
+      
+      // Ensure responseData doesn't contain circular references (like HttpsProxyAgent)
+      let safeResponseData = null
+      if (responseData && typeof responseData === 'object') {
+        try {
+          // Test if it's JSON-serializable
+          JSON.stringify(responseData)
+          safeResponseData = responseData
+        } catch {
+          // If it contains circular refs, extract only safe fields
+          safeResponseData = {
+            error: responseData.error || responseData.message || 'Response contains circular structure',
+            status: responseData.status,
+            code: responseData.code,
+          }
+        }
+      }
+      
+      rawResult = safeResponseData || {
+        error: message || 'Network error placing order',
+        code,
+      }
     }
     const safeRawResult = sanitizeForResponse(rawResult) ?? rawResult
     const evaluation = interpretClobOrderResult(safeRawResult)
