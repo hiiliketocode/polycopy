@@ -22,7 +22,7 @@ type ClosePositionModalProps = {
     amount: number
     price: number
     slippagePercent: number
-    orderType: 'IOC' | 'GTC'
+    orderType: 'FAK' | 'GTC'
   }) => void
 }
 
@@ -31,7 +31,7 @@ const layoutBadgeBase = `${badgeBase} bg-slate-100 text-slate-600 border border-
 const SLIPPAGE_TOOLTIP =
   'Limits how much lower than your limit price this close can execute; 1% means the execution price may be at most 1% worse than the quote.'
 const ORDER_BEHAVIOR_TOOLTIP =
-  "IOC cancels any unfilled portion immediately, while GTC keeps the order open until it either fills or you cancel it."
+  'FAK fills as much as possible immediately and cancels the rest, while GTC keeps the order open until it either fills or you cancel it.'
 const SLIPPAGE_PRESETS: Array<number> = [0, 1, 3, 5]
 
 export default function ClosePositionModal({
@@ -47,7 +47,7 @@ export default function ClosePositionModal({
   const [customSlippage, setCustomSlippage] = useState('')
   const [showSlippageInfo, setShowSlippageInfo] = useState(false)
   const [showOrderBehaviorInfo, setShowOrderBehaviorInfo] = useState(false)
-  const [orderType, setOrderType] = useState<'IOC' | 'GTC'>('IOC')
+  const [orderType, setOrderType] = useState<'FAK' | 'GTC'>('FAK')
   const [minTickSize, setMinTickSize] = useState<number>(FALLBACK_MIN_TICK_SIZE)
 
   useEffect(() => {
@@ -350,10 +350,10 @@ export default function ClosePositionModal({
                     <input
                       type="radio"
                       name="closeOrderBehavior"
-                      checked={orderType === 'IOC'}
-                      onChange={() => setOrderType('IOC')}
+                      checked={orderType === 'FAK'}
+                      onChange={() => setOrderType('FAK')}
                     />
-                    <span className="text-xs font-semibold text-slate-900">Immediate or Cancel (recommended)</span>
+                    <span className="text-xs font-semibold text-slate-900">Fill and Kill (FAK) (recommended)</span>
                   </label>
                   <label className="flex cursor-pointer items-center gap-2 rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                     <input

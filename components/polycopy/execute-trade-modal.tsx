@@ -322,7 +322,7 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="immediate" id="immediate" className="h-4 w-4" />
                         <Label htmlFor="immediate" className="text-xs font-medium text-slate-700 cursor-pointer">
-                          Immediate or Cancel (recommended)
+                          Fill and Kill (FAK) (recommended)
                         </Label>
                       </div>
                       <div className="flex items-center space-x-2">
@@ -412,7 +412,7 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button type="button" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
-                          {orderBehavior === "good-til-canceled" ? "Good 'Til Canceled (GTC)" : "Immediate-or-cancel (IOC)"}
+                          {orderBehavior === "good-til-canceled" ? "Good 'Til Canceled (GTC)" : "Fill and Kill (FAK)"}
                           <HelpCircle className="h-3.5 w-3.5" />
                         </button>
                       </TooltipTrigger>
@@ -420,7 +420,7 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                         <p>
                           {orderBehavior === "good-til-canceled"
                             ? "GTC leaves the order open until it fills or you cancel it."
-                            : "We try to fill instantly. Anything not filled right away is canceled (so you don't leave a stray order sitting on the book)."}
+                            : "FAK fills as much as possible immediately and cancels the rest."}
                         </p>
                       </TooltipContent>
                     </Tooltip>

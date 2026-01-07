@@ -66,8 +66,176 @@ const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
   'rejected',
 ])
 
-const MINIMUM_TRADE_USD = 1
-const MINIMUM_TRADE_TOLERANCE = 1e-6
+const MINIMUM_ORDER_TOLERANCE = 1e-6
+
+type TradeErrorInfo = {
+  code?: string
+  message: string
+  description?: string
+  success?: boolean
+  rawMessage?: string
+}
+
+const TRADE_ERROR_DETAILS = {
+  INVALID_ORDER_MIN_TICK_SIZE: {
+    success: true,
+    message: "order is invalid. Price breaks minimum tick size rules",
+    description: "order price isn't accurate to correct tick sizing",
+  },
+  INVALID_ORDER_MIN_SIZE: {
+    success: true,
+    message: "order is invalid. Size lower than the minimum",
+    description: "order size must meet min size threshold requirement",
+  },
+  INVALID_ORDER_DUPLICATED: {
+    success: true,
+    message: "order is invalid. Duplicated. Same order has already been placed, can't be placed again",
+  },
+  INVALID_ORDER_NOT_ENOUGH_BALANCE: {
+    success: true,
+    message: "not enough balance / allowance",
+    description: "funder address doesn't have sufficient balance or allowance for order",
+  },
+  INVALID_ORDER_EXPIRATION: {
+    success: true,
+    message: "invalid expiration",
+    description: "expiration field expresses a time before now",
+  },
+  INVALID_ORDER_ERROR: {
+    success: true,
+    message: "could not insert order",
+    description: "system error while inserting order",
+  },
+  INVALID_POST_ONLY_ORDER_TYPE: {
+    success: true,
+    message: "invalid post-only order: only GTC and GTD order types are allowed",
+    description: "post only flag attached to a market order",
+  },
+  INVALID_POST_ONLY_ORDER: {
+    success: true,
+    message: "invalid post-only order: order crosses book",
+    description: "post only order would match",
+  },
+  EXECUTION_ERROR: {
+    success: true,
+    message: "could not run the execution",
+    description: "system error while attempting to execute trade",
+  },
+  ORDER_DELAYED: {
+    success: false,
+    message: "order match delayed due to market conditions",
+    description: "order placement delayed",
+  },
+  DELAYING_ORDER_ERROR: {
+    success: true,
+    message: "error delaying the order",
+    description: "system error while delaying order",
+  },
+  FOK_ORDER_NOT_FILLED_ERROR: {
+    success: true,
+    message: "order couldn't be fully filled, FOK orders are fully filled/killed",
+    description: "FOK order not fully filled so can't be placed",
+  },
+  MARKET_NOT_READY: {
+    success: false,
+    message: "the market is not yet ready to process new orders",
+    description: "system not accepting orders for market yet https://docs.polymarket.com/developers/CLOB/orders/create-order",
+  },
+} as const
+
+const TRADE_ERROR_ENTRIES = Object.entries(TRADE_ERROR_DETAILS)
+
+function matchTradeErrorCode(text: string): string | null {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+  for (const [code] of TRADE_ERROR_ENTRIES) {
+    if (trimmed.includes(code)) return code
+  }
+  const lower = trimmed.toLowerCase()
+  for (const [code, detail] of TRADE_ERROR_ENTRIES) {
+    if (lower.includes(detail.message.toLowerCase())) return code
+  }
+  return null
+}
+
+function findTradeErrorCode(value: unknown, seen = new Set<unknown>()): string | null {
+  if (!value) return null
+  if (typeof value === "string") return matchTradeErrorCode(value)
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findTradeErrorCode(item, seen)
+      if (found) return found
+    }
+    return null
+  }
+  if (typeof value === "object") {
+    if (seen.has(value)) return null
+    seen.add(value)
+    const record = value as Record<string, unknown>
+    const candidates = [
+      record.code,
+      record.error,
+      record.message,
+      record.reason,
+      record.detail,
+      record.details,
+      record.data,
+      record.upstream,
+    ]
+    for (const candidate of candidates) {
+      const found = findTradeErrorCode(candidate, seen)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function findTradeErrorMessage(value: unknown, seen = new Set<unknown>()): string | null {
+  if (!value) return null
+  if (typeof value === "string") return value
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findTradeErrorMessage(item, seen)
+      if (found) return found
+    }
+    return null
+  }
+  if (typeof value === "object") {
+    if (seen.has(value)) return null
+    seen.add(value)
+    const record = value as Record<string, unknown>
+    const candidates = [record.error, record.message, record.reason, record.detail]
+    for (const candidate of candidates) {
+      const found = findTradeErrorMessage(candidate, seen)
+      if (found) return found
+    }
+    const nestedCandidates = [record.details, record.data, record.upstream]
+    for (const candidate of nestedCandidates) {
+      const found = findTradeErrorMessage(candidate, seen)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function resolveTradeErrorInfo(value: unknown, fallbackMessage: string): TradeErrorInfo {
+  const rawMessage = findTradeErrorMessage(value)
+  const code = findTradeErrorCode(value)
+  if (code && code in TRADE_ERROR_DETAILS) {
+    const detail = TRADE_ERROR_DETAILS[code as keyof typeof TRADE_ERROR_DETAILS]
+    return {
+      code,
+      message: detail.message,
+      description: detail.description,
+      success: detail.success,
+      rawMessage,
+    }
+  }
+  return {
+    message: rawMessage || fallbackMessage,
+    rawMessage,
+  }
+}
 
 function normalizeStatusPhase(status?: string | null): StatusPhase {
   if (!status) return 'pending'
@@ -129,17 +297,20 @@ export function TradeCard({
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [slippagePreset, setSlippagePreset] = useState<number | 'custom'>(2)
   const [customSlippage, setCustomSlippage] = useState("")
-  const [orderType, setOrderType] = useState<'IOC' | 'GTC'>('IOC')
+  const [orderType, setOrderType] = useState<'FAK' | 'GTC'>('FAK')
   const [orderId, setOrderId] = useState<string | null>(null)
   const [statusPhase, setStatusPhase] = useState<StatusPhase>('submitted')
   const [statusData, setStatusData] = useState<any | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
+  const [confirmationError, setConfirmationError] = useState<TradeErrorInfo | null>(null)
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [livePrice, setLivePrice] = useState<number | null>(
     typeof currentMarketPrice === "number" && !Number.isNaN(currentMarketPrice)
       ? currentMarketPrice
       : null
   )
+  const [marketMinimumOrderSize, setMarketMinimumOrderSize] = useState<number | null>(null)
+  const [marketTickSize, setMarketTickSize] = useState<number | null>(null)
 
   const formatWallet = (value: string) => {
     const trimmed = value?.trim() || ""
@@ -178,6 +349,13 @@ export function TradeCard({
 
   const formatNumber = (value: number) => {
     return new Intl.NumberFormat("en-US").format(value)
+  }
+
+  const formatContracts = (value: number) => {
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value)
   }
 
   const formatOutcomeLabel = (value: string) => {
@@ -269,6 +447,40 @@ export function TradeCard({
     }
   }, [conditionId, isExpanded, market, marketSlug, position])
 
+  useEffect(() => {
+    if (!isExpanded || !conditionId) return
+    let cancelled = false
+
+    const fetchMarketConstraints = async () => {
+      try {
+        const response = await fetch(`/api/polymarket/market?conditionId=${conditionId}`)
+        if (!response.ok) return
+        const data = await response.json()
+        const minSize =
+          typeof data?.minimumOrderSize === 'number'
+            ? data.minimumOrderSize
+            : typeof data?.minOrderSize === 'number'
+              ? data.minOrderSize
+              : null
+        const tick = typeof data?.tickSize === 'number' ? data.tickSize : null
+        if (!cancelled) {
+          setMarketMinimumOrderSize(minSize)
+          setMarketTickSize(tick)
+        }
+      } catch {
+        if (!cancelled) {
+          setMarketMinimumOrderSize(null)
+          setMarketTickSize(null)
+        }
+      }
+    }
+
+    fetchMarketConstraints()
+    return () => {
+      cancelled = true
+    }
+  }, [conditionId, isExpanded])
+
   const normalizedOutcome = position?.trim().toLowerCase()
   const outcomeBadgeClass =
     normalizedOutcome === "yes"
@@ -291,25 +503,33 @@ export function TradeCard({
   const effectivePrice = Number.isFinite(limitPrice) && limitPrice > 0 ? limitPrice : currentPrice
   const calculatedContracts =
     Number.isFinite(amountValue) && amountValue > 0 ? Math.floor(amountValue / effectivePrice) : 0
-  const estimatedTotal = calculatedContracts > 0 ? calculatedContracts * effectivePrice : 0
   const amountTooSmall =
     hasAmountInput && Number.isFinite(amountValue) && amountValue > 0 && calculatedContracts < 1
-  const minimumTotalNotMet =
+  const marketMinimumSize =
+    Number.isFinite(marketMinimumOrderSize) && marketMinimumOrderSize > 0
+      ? marketMinimumOrderSize
+      : null
+  const marketMinimumContracts =
+    marketMinimumSize !== null
+      ? Math.max(1, Math.ceil(marketMinimumSize - MINIMUM_ORDER_TOLERANCE))
+      : null
+  const marketMinimumNotMet =
     hasAmountInput &&
     calculatedContracts > 0 &&
-    estimatedTotal + MINIMUM_TRADE_TOLERANCE < MINIMUM_TRADE_USD
-  const minimumContractsForUsd =
-    Number.isFinite(effectivePrice) && effectivePrice > 0
-      ? Math.max(1, Math.ceil(MINIMUM_TRADE_USD / effectivePrice))
-      : 1
-  const minimumTotalMessage =
-    Number.isFinite(effectivePrice) && effectivePrice > 0
-      ? `Polymarket requires a $${MINIMUM_TRADE_USD} minimum order value. At ${formatCurrency(effectivePrice)} per contract, you need ${minimumContractsForUsd} contracts.`
-      : `Polymarket requires a $${MINIMUM_TRADE_USD} minimum order value.`
+    marketMinimumContracts !== null &&
+    calculatedContracts + MINIMUM_ORDER_TOLERANCE < marketMinimumContracts
+  const tickSizeLabel =
+    Number.isFinite(marketTickSize) && marketTickSize && marketTickSize > 0
+      ? ` Prices must follow the ${formatCurrency(marketTickSize)} tick size.`
+      : ''
+  const marketMinimumMessage =
+    marketMinimumContracts !== null
+      ? `Minimum order size for this market is ${marketMinimumContracts} ${marketMinimumContracts === 1 ? 'contract' : 'contracts'} (min_order_size).${tickSizeLabel}`
+      : `Minimum order size varies by market (min_order_size).${tickSizeLabel}`
   const inlineAmountError = amountTooSmall
     ? `Minimum is 1 contract (≈ ${formatCurrency(effectivePrice)} at current price).`
-    : minimumTotalNotMet
-      ? minimumTotalMessage
+    : marketMinimumNotMet
+      ? marketMinimumMessage
       : null
   const traderSize = Number.isFinite(size) && size > 0 ? size : 0
   const sizePercent =
@@ -436,6 +656,7 @@ export function TradeCard({
 
     setIsSubmitting(true)
     setSubmitError(null)
+    setConfirmationError(null)
     let showedConfirmation = false
     
     try {
@@ -448,11 +669,6 @@ export function TradeCard({
       // Calculate contracts from USD amount
       if (calculatedContracts <= 0) {
         setSubmitError('Amount too small. Must be at least 1 contract.')
-        setIsSubmitting(false)
-        return
-      }
-      if (minimumTotalNotMet) {
-        setSubmitError(minimumTotalMessage)
         setIsSubmitting(false)
         return
       }
@@ -488,6 +704,7 @@ export function TradeCard({
       setShowConfirmation(true)
       setStatusPhase('submitted')
       setStatusError(null)
+      setConfirmationError(null)
       showedConfirmation = true
 
       // Execute the trade via API
@@ -517,7 +734,14 @@ export function TradeCard({
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data?.error || data?.message || 'Failed to execute trade')
+        const errorInfo = resolveTradeErrorInfo(
+          data?.error ?? data,
+          data?.message || 'Failed to execute trade'
+        )
+        setConfirmationError(errorInfo)
+        setStatusPhase('rejected')
+        setIsSubmitting(false)
+        return
       }
 
       const placedOrderId =
@@ -529,7 +753,14 @@ export function TradeCard({
         null
 
       if (!placedOrderId) {
-        throw new Error('Order submitted but no order ID returned.')
+        const errorInfo = resolveTradeErrorInfo(
+          data,
+          'Order submitted but no order ID returned.'
+        )
+        setConfirmationError(errorInfo)
+        setStatusPhase('rejected')
+        setIsSubmitting(false)
+        return
       }
 
       // Success: open confirmation view
@@ -542,9 +773,15 @@ export function TradeCard({
 
     } catch (error: any) {
       console.error('Trade execution error:', error)
-      setSubmitError(error?.message || 'Failed to execute trade. Please try again.')
       if (showedConfirmation) {
-        setShowConfirmation(false)
+        const errorInfo = resolveTradeErrorInfo(
+          error,
+          'Failed to execute trade. Please try again.'
+        )
+        setConfirmationError(errorInfo)
+        setStatusPhase('rejected')
+      } else {
+        setSubmitError(error?.message || 'Failed to execute trade. Please try again.')
       }
       setIsSubmitting(false)
     }
@@ -562,14 +799,14 @@ export function TradeCard({
   const isCopyDisabled = isMarketEnded
   const statusLabel =
     statusPhase === 'submitted'
-      ? 'Order Sent'
+      ? 'Order sent to Polymarket'
       : statusPhase === 'pending' || statusPhase === 'processing' || statusPhase === 'open'
-        ? 'Order Pending'
+        ? 'Order Received by Polymarket, Pending'
         : statusPhase === 'filled'
-          ? 'Order Filled'
+          ? 'Order filled on Polymarket'
           : statusPhase === 'partial'
-            ? 'Partially Filled'
-            : 'Not Filled'
+            ? 'Partially filled on Polymarket'
+            : 'Not filled on Polymarket'
   const filledContracts =
     typeof statusData?.filledSize === 'number' ? statusData.filledSize : null
   const totalContracts =
@@ -578,9 +815,23 @@ export function TradeCard({
     typeof statusData?.remainingSize === 'number' ? statusData.remainingSize : null
   const fillPrice =
     typeof statusData?.price === 'number' ? statusData.price : null
+  const filledAmountValue =
+    filledContracts !== null && fillPrice !== null ? filledContracts * fillPrice : null
+  const totalAmountValue =
+    totalContracts !== null && fillPrice !== null ? totalContracts * fillPrice : null
+  const statusAmountValue =
+    filledAmountValue !== null
+      ? filledAmountValue
+      : totalAmountValue !== null
+        ? totalAmountValue
+        : Number.isFinite(estimatedMaxCost) && estimatedMaxCost > 0
+          ? estimatedMaxCost
+          : Number.isFinite(amountValue)
+            ? amountValue
+            : 0
   const statusContractsText =
     filledContracts !== null && totalContracts !== null
-      ? `${filledContracts.toLocaleString()} of ${totalContracts.toLocaleString()} filled`
+      ? `${formatContracts(filledContracts)} of ${formatContracts(totalContracts)} filled`
       : `${calculatedContracts.toLocaleString()} ${contractLabel}`
   const isFinalStatus = TERMINAL_STATUS_PHASES.has(statusPhase)
 
@@ -776,6 +1027,7 @@ export function TradeCard({
                       setStatusData(null)
                       statusDataRef.current = null
                       setStatusError(null)
+                      setConfirmationError(null)
                       setStatusPhase('submitted')
                     }}
                     className={
@@ -788,6 +1040,28 @@ export function TradeCard({
                     {isFinalStatus ? "Copy Again" : <X className="h-4 w-4" />}
                   </button>
                 </div>
+                {confirmationError && (
+                  <div
+                    className={`rounded-lg border px-3 py-2 text-xs ${
+                      confirmationError.success === false
+                        ? "border-amber-200 bg-amber-50 text-amber-900"
+                        : "border-rose-200 bg-rose-50 text-rose-700"
+                    }`}
+                  >
+                    <p className="font-semibold">
+                      {confirmationError.code
+                        ? `${confirmationError.code}: ${confirmationError.message}`
+                        : confirmationError.message}
+                    </p>
+                    {confirmationError.description && (
+                      <p className="text-[11px] opacity-80">{confirmationError.description}</p>
+                    )}
+                    {confirmationError.rawMessage &&
+                      confirmationError.rawMessage !== confirmationError.message && (
+                        <p className="text-[11px] opacity-70">{confirmationError.rawMessage}</p>
+                      )}
+                  </div>
+                )}
                 <div className="space-y-2">
                   <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
                     <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
@@ -795,7 +1069,7 @@ export function TradeCard({
                         Amount (USD)
                       </label>
                       <div className="flex h-14 items-center rounded-lg border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700">
-                        {formatCurrency(Number.isFinite(amountValue) ? amountValue : 0)}
+                        {formatCurrency(Number.isFinite(statusAmountValue) ? statusAmountValue : 0)}
                       </div>
                     </div>
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
@@ -909,7 +1183,6 @@ export function TradeCard({
                       !usdAmount ||
                       Number.parseFloat(usdAmount) <= 0 ||
                       amountTooSmall ||
-                      minimumTotalNotMet ||
                       isSubmitting
                     }
                     className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
@@ -917,7 +1190,7 @@ export function TradeCard({
                   >
                     {isSubmitting ? (
                       <>
-                        Order sent
+                        Order sent to Polymarket
                       </>
                     ) : (
                       "Execute Trade"
@@ -966,7 +1239,7 @@ export function TradeCard({
                                 type="button"
                                 className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
                               >
-                                {orderType === "GTC" ? "Good 'Til Canceled (GTC)" : "Immediate-or-cancel (IOC)"}
+                                {orderType === "GTC" ? "Good 'Til Canceled (GTC)" : "Fill and Kill (FAK)"}
                                 <HelpCircle className="h-3.5 w-3.5" />
                               </button>
                             </TooltipTrigger>
@@ -974,7 +1247,7 @@ export function TradeCard({
                               <p>
                                 {orderType === "GTC"
                                   ? "GTC leaves the order open until it fills or you cancel it."
-                                  : "We try to fill instantly. Anything not filled right away is canceled (so you don't leave a stray order sitting on the book)."}
+                                  : "FAK fills as much as possible immediately and cancels the rest."}
                               </p>
                             </TooltipContent>
                           </Tooltip>
@@ -1064,17 +1337,17 @@ export function TradeCard({
                               </TooltipTrigger>
                               <TooltipContent className="max-w-xs">
                                 <p>
-                                  IOC tries to fill immediately and cancels any unfilled portion. GTC leaves the order open until it fills or you cancel it.
+                                  FAK fills as much as possible immediately and cancels the rest. GTC leaves the order open until it fills or you cancel it.
                                 </p>
                               </TooltipContent>
                             </Tooltip>
                           </div>
                         </TooltipProvider>
-                        <RadioGroup value={orderType} onValueChange={(value) => setOrderType(value as 'IOC' | 'GTC')} className="space-y-1.5">
+                        <RadioGroup value={orderType} onValueChange={(value) => setOrderType(value as 'FAK' | 'GTC')} className="space-y-1.5">
                           <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="IOC" id="quick-copy-ioc" className="h-4 w-4" />
-                            <Label htmlFor="quick-copy-ioc" className="text-xs font-medium text-slate-700 cursor-pointer">
-                              Immediate or Cancel (IOC)
+                            <RadioGroupItem value="FAK" id="quick-copy-fak" className="h-4 w-4" />
+                            <Label htmlFor="quick-copy-fak" className="text-xs font-medium text-slate-700 cursor-pointer">
+                              Fill and Kill (FAK)
                             </Label>
                           </div>
                           <div className="flex items-center space-x-2">
@@ -1091,11 +1364,11 @@ export function TradeCard({
                     <p className="text-xs text-slate-600 mt-2">Refreshing order status…</p>
                   )}
                   {refreshStatus === 'done' && (
-                    <p className="text-xs text-emerald-600 mt-2">Order submitted. Latest status will appear in Orders shortly.</p>
+                    <p className="text-xs text-emerald-600 mt-2">Order submitted to Polymarket. Latest status will appear in Orders shortly.</p>
                   )}
                   {refreshStatus === 'error' && (
                     <p className="text-xs text-rose-600 mt-2">
-                      Order sent, but status refresh failed. Check the Orders page for updates.
+                      Order sent to Polymarket, but status refresh failed. Check the Orders page for updates.
                     </p>
                   )}
                 </div>

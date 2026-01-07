@@ -15,7 +15,7 @@ type ExecuteForm = {
   price: string
   amount: string
   side: 'BUY' | 'SELL'
-  orderType: 'GTC' | 'FOK' | 'IOC'
+  orderType: 'GTC' | 'FOK' | 'FAK'
 }
 
 type OrderStatusResponse = {
@@ -69,7 +69,7 @@ const EMPTY_FORM: ExecuteForm = {
   price: '',
   amount: '',
   side: 'BUY',
-  orderType: 'IOC',
+  orderType: 'FAK',
 }
 
 const TOKEN_ID_KEYS = ['token_id', 'tokenId', 'tokenID']
@@ -92,7 +92,7 @@ const TRADER_ICON_KEYS = [
 const SLIPPAGE_TOOLTIP =
   'Limits how much higher than your limit price the order can fill; 1% means the execution price may be at most 1% above your quote.'
 const ORDER_BEHAVIOR_TOOLTIP =
-  'IOC cancels any unfilled portion immediately, while GTC keeps the order open until you cancel it or it fills.'
+  'FAK fills as much as possible immediately and cancels the rest, while GTC keeps the order open until you cancel it or it fills.'
 function firstStringValue(record: Record<string, any>, keys: string[]) {
   for (const key of keys) {
     const value = record?.[key]
@@ -261,16 +261,16 @@ function formatSubmitErrorReason(code?: string | null) {
 }
 
 const STATUS_SIMPLE_LABELS: Record<StatusPhase, string> = {
-  submitted: 'Submitted',
-  processing: 'Processing',
-  pending: 'Pending',
-  open: 'Open',
-  partial: 'Partial',
-  filled: 'Filled',
-  canceled: 'Canceled',
-  expired: 'Expired',
-  rejected: 'Rejected',
-  unknown: 'Unknown',
+  submitted: 'Order Received by Polymarket',
+  processing: 'Order Received by Polymarket, Processing',
+  pending: 'Order Received by Polymarket, Pending',
+  open: 'Order open on Polymarket',
+  partial: 'Partially filled on Polymarket',
+  filled: 'Filled on Polymarket',
+  canceled: 'Canceled on Polymarket',
+  expired: 'Expired on Polymarket',
+  rejected: 'Rejected by Polymarket',
+  unknown: 'Polymarket status unknown',
 }
 
 function getOrderStatusLabel(status?: string | null) {
@@ -557,7 +557,7 @@ function TradeExecutePageInner() {
   const slippageLabel =
     slippagePreset === 'custom' ? `${customSlippage || '0'}% (custom)` : `${slippagePreset}%`
   const orderBehaviorLabel =
-    form.orderType === 'IOC' ? "Immediate or Cancel (IOC)" : "Good 'Til Canceled (GTC)"
+    form.orderType === 'FAK' ? 'Fill and Kill (FAK)' : "Good 'Til Canceled (GTC)"
   const amountUsdLabel =
     estimatedTotal !== null && Number.isFinite(estimatedTotal)
       ? formatMoney(estimatedTotal)
@@ -580,7 +580,7 @@ function TradeExecutePageInner() {
   const reportedOrderStatus = statusData?.status ? String(statusData.status).trim() : null
   const orderStatusLabel = reportedOrderStatus
     ? getOrderStatusLabel(reportedOrderStatus)
-    : 'Pending'
+    : 'Order Received by Polymarket, Pending'
   const statusReason = statusData ? findStatusReason(statusData.raw) : null
   const orderStatusVariant = getExecutionStatusVariant(statusPhase)
   const StatusIconComponent = STATUS_VARIANT_ICONS[orderStatusVariant]
@@ -601,7 +601,7 @@ function TradeExecutePageInner() {
     Number.isFinite(statusData.price)
       ? Number(statusData.price)
       : null
-  const fillPriceLabel = fillPriceValue !== null ? formatPrice(fillPriceValue) : 'Pending fill'
+  const fillPriceLabel = fillPriceValue !== null ? formatPrice(fillPriceValue) : 'Polymarket pending fill'
   const fillSlippagePercent =
     fillPriceValue !== null && limitPriceValue && limitPriceValue > 0
       ? directionValue === 'SELL'
@@ -613,7 +613,7 @@ function TradeExecutePageInner() {
       ? `${fillSlippagePercent > 0 ? '+' : fillSlippagePercent < 0 ? '-' : ''}${Math.abs(
           fillSlippagePercent
         ).toFixed(2)}%`
-      : 'Pending fill'
+      : 'Polymarket pending fill'
   const fillSlippageTone =
     fillSlippagePercent === null
       ? 'text-slate-500'
@@ -657,7 +657,7 @@ function TradeExecutePageInner() {
       price: firstStringValue(record, PRICE_KEYS),
       amount: firstStringValue(record, AMOUNT_KEYS),
       side: normalizeSide(firstStringValue(record, SIDE_KEYS) || 'BUY'),
-      orderType: 'IOC',
+      orderType: 'FAK',
     }
     setForm(nextForm)
     if (recordTotal !== null && Number.isFinite(recordTotal)) {
@@ -1420,10 +1420,10 @@ function TradeExecutePageInner() {
                     <input
                       type="radio"
                       name="orderBehavior"
-                      checked={form.orderType === 'IOC'}
-                      onChange={() => setForm((prev) => ({ ...prev, orderType: 'IOC' }))}
+                      checked={form.orderType === 'FAK'}
+                      onChange={() => setForm((prev) => ({ ...prev, orderType: 'FAK' }))}
                     />
-                    <span>Immediate or Cancel (recommended)</span>
+                    <span>Fill and Kill (FAK) (recommended)</span>
                   </label>
                   <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                     <input

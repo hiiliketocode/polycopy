@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
+import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client'
 import type { Trade } from '@polymarket/clob-client/dist/types'
 
 const DEV_BYPASS_AUTH =
@@ -82,7 +82,7 @@ export async function GET() {
   }
 
   try {
-    const { client, proxyAddress, signerAddress } = await getAuthedClobClientForUser(userId)
+    const { client, proxyAddress, signerAddress } = await getAuthedClobClientForUserAnyWallet(userId)
     const trades: Trade[] = await client.getTrades({}, false)
     const accumulators = new Map<string, PositionAccumulator>()
     for (const trade of trades) {

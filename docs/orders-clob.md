@@ -27,11 +27,11 @@ time_in_force comes from the CLOB response and is stored as-is:
 - FOK
 - FAK
 
-These influence outcomes:
-- GTC: stays on book until filled or canceled.
-- GTD: expires at a time limit.
-- FOK: fill completely or cancel immediately.
-- FAK: fill what you can, cancel the rest immediately.
+Order types:
+- FOK: A Fill-Or-Kill order is a market order to buy (in dollars) or sell (in shares) shares that must be executed immediately in its entirety; otherwise, the entire order will be cancelled.
+- FAK: A Fill-And-Kill order is a market order to buy (in dollars) or sell (in shares) that will be executed immediately for as many shares as are available; any portion not filled at once is cancelled.
+- GTC: A Good-Til-Cancelled order is a limit order that is active until it is fulfilled or cancelled.
+- GTD: A Good-Til-Date order is a type of order that is active until its specified date (UTC seconds timestamp), unless it has already been fulfilled or cancelled. There is a security threshold of one minute. If the order needs to expire in 90 seconds the correct expiration value is: now + 1 minute + 30 seconds. See https://docs.polymarket.com/developers/CLOB/orders/create-order
 
 ## Non-goals
 

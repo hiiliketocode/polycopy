@@ -395,7 +395,7 @@ export default function OrdersPage() {
       amount: number
       price: number
       slippagePercent: number
-      orderType: 'IOC' | 'GTC'
+      orderType: 'FAK' | 'GTC'
     }) => {
       const positionSide = closeTarget?.position.side
       const sideForClose: 'BUY' | 'SELL' =
@@ -719,7 +719,8 @@ function normalizeTimeInForce(order: OrderRow): string | null {
   for (const candidate of candidates) {
     if (!candidate) continue
     const normalized = String(candidate).trim().toUpperCase()
-    if (normalized === 'GTC' || normalized === 'FOK' || normalized === 'GTD' || normalized === 'FAK' || normalized === 'IOC') {
+    if (normalized === 'IOC') return 'FAK'
+    if (normalized === 'GTC' || normalized === 'FOK' || normalized === 'GTD' || normalized === 'FAK') {
       return normalized
     }
     const mapped = mapNumeric(normalized)

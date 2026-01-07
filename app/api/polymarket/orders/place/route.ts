@@ -22,7 +22,7 @@ type Body = {
   amount?: number
   amountInvested?: number
   side?: 'BUY' | 'SELL'
-  orderType?: 'GTC' | 'FOK' | 'IOC'
+  orderType?: 'GTC' | 'FOK' | 'FAK' | 'IOC'
   confirm?: boolean
   copiedTraderId?: string
   copiedTraderWallet?: string
@@ -124,7 +124,7 @@ async function persistCopiedTraderMetadata({
   amount?: number
   amountInvested?: number
   side?: 'BUY' | 'SELL'
-  orderType?: 'GTC' | 'FOK' | 'IOC'
+  orderType?: 'GTC' | 'FOK' | 'FAK' | 'IOC'
   copiedTraderId?: string
   copiedTraderWallet?: string
   copiedTraderUsername?: string
@@ -342,13 +342,14 @@ export async function POST(request: NextRequest) {
     )
 
     const clobBaseUrl = getValidatedPolymarketClobBaseUrl()
+    const normalizedOrderType = orderType === 'IOC' ? 'FAK' : orderType
     const requestUrl = new URL(POST_ORDER, clobBaseUrl).toString()
     const upstreamHost = new URL(clobBaseUrl).hostname
     console.log('[POLY-ORDER-PLACE] CLOB order', {
       requestId,
       upstreamHost,
       side,
-      orderType,
+      orderType: normalizedOrderType,
       keys: Object.keys(body ?? {}),
     })
 
@@ -359,7 +360,7 @@ export async function POST(request: NextRequest) {
 
     let rawResult: unknown
     try {
-      rawResult = await client.postOrder(order, orderType as any, false)
+      rawResult = await client.postOrder(order, normalizedOrderType as any, false)
     } catch (error: any) {
       // Normalize axios/network errors to avoid circular structures that break JSON serialization
       const message = typeof error?.message === 'string' ? error.message : null
@@ -433,7 +434,7 @@ export async function POST(request: NextRequest) {
           amount,
           amountInvested,
           side,
-          orderType,
+          orderType: normalizedOrderType,
           copiedTraderId,
           copiedTraderWallet,
           copiedTraderUsername,

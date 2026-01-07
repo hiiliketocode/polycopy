@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server'
 
+function toNumber(value: unknown) {
+  if (value === null || value === undefined) return null
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const conditionId = searchParams.get('conditionId')?.trim()
@@ -21,6 +27,9 @@ export async function GET(request: Request) {
     }
 
     const market = await response.json()
+    const minimumOrderSize = toNumber(market?.minimum_order_size)
+    const minOrderSize = toNumber(market?.min_order_size)
+    const tickSize = toNumber(market?.tick_size)
     const tokens =
       Array.isArray(market?.tokens) ?
         market.tokens.map((token: any) => ({
@@ -37,6 +46,9 @@ export async function GET(request: Request) {
       tokens,
       icon: market?.icon ?? null,
       image: market?.image ?? null,
+      minimumOrderSize: minimumOrderSize ?? minOrderSize,
+      minOrderSize,
+      tickSize,
     })
   } catch (error: any) {
     return NextResponse.json(
