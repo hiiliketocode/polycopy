@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase, ensureProfile } from '@/lib/supabase';
@@ -47,7 +47,7 @@ function formatDisplayName(name: string, wallet: string): string {
   return name;
 }
 
-export default function DiscoverPage() {
+function DiscoverPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedCategory, setSelectedCategory] = useState('overall');
@@ -691,5 +691,20 @@ export default function DiscoverPage() {
         </div>
       </div>
     </>
+  );
+}
+
+export default function DiscoverPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
+          <p className="text-slate-600 text-lg">Loading...</p>
+        </div>
+      </div>
+    }>
+      <DiscoverPageContent />
+    </Suspense>
   );
 }
