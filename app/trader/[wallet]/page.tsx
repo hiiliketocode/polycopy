@@ -1160,7 +1160,7 @@ export default function TraderProfilePage({
                               variant="secondary"
                               className="text-[10px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
                             >
-                              {tradeStatus === 'Bonded' ? 'Resolved' : tradeStatus === 'Trader Closed' ? 'Ended' : tradeStatus}
+                              {tradeStatus === 'Bonded' ? 'Resolved' : tradeStatus}
                             </Badge>
                           )}
                           {!isAlreadyCopied && (
