@@ -226,7 +226,7 @@ function resolveTradeErrorInfo(value: unknown, fallbackMessage: string): TradeEr
     return {
       code,
       message: detail.message,
-      description: detail.description,
+      description: 'description' in detail ? detail.description : undefined,
       success: detail.success,
       rawMessage,
     }
