@@ -1071,7 +1071,7 @@ function TradeExecutePageInner() {
         amountToSend && minContractsForBuffer && amountToSend < minContractsForBuffer
           ? minContractsForBuffer
           : amountToSend
-      if (!priceToSend || !amountToSend) {
+      if (!priceToSend || !amountToSend || !finalAmount) {
         setSubmitError('Missing amount or price.')
         return
       }
@@ -1080,7 +1080,7 @@ function TradeExecutePageInner() {
         return
       }
 
-      if (estimatedTotal !== null && priceToSend && amountToSend) {
+      if (estimatedTotal !== null && priceToSend && finalAmount !== null) {
         setSubmittedSnapshot({
           contracts: finalAmount,
           estimatedUsd: finalAmount * priceToSend,
