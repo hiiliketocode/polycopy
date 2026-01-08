@@ -225,6 +225,7 @@ export default function FollowingPage() {
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
+      await fetch('/api/auth/admin-logout', { method: 'POST' });
       setUser(null);
     } catch (error) {
       console.error('Error logging out:', error);
@@ -377,4 +378,3 @@ export default function FollowingPage() {
     </div>
   );
 }
-

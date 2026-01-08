@@ -263,6 +263,13 @@ export async function GET(request: NextRequest) {
       clobOrderIdsForSet.length > 0
         ? new Set(clobOrderIdsForSet.map((id) => id.trim().toLowerCase()))
         : null
+    const autoCloseOrderIds = new Set<string>()
+    for (const order of ordersList as any[]) {
+      const autoCloseId = typeof order?.auto_close_order_id === 'string' ? order.auto_close_order_id.trim() : ''
+      if (autoCloseId) {
+        autoCloseOrderIds.add(autoCloseId.toLowerCase())
+      }
+    }
     
     console.log('[orders] Query result:', {
       traderId: trader.id,
@@ -349,6 +356,7 @@ export async function GET(request: NextRequest) {
     const cacheUpsertMap = new Map<string, MarketCacheUpsertRow>()
 
     const enrichedOrders: OrderRow[] = (ordersList as any[]).map((order: any) => {
+      const orderId = String(order.order_id ?? '')
       const marketId = String(order.market_id ?? '')
       const traderId = String(order.trader_id ?? '')
       const copiedTraderIdFromRow =
@@ -493,9 +501,10 @@ export async function GET(request: NextRequest) {
       const positionState = resolvePositionState(order.raw)
       const positionStateLabel = getPositionStateLabel(positionState)
       const activity = deriveOrderActivity(order.raw, status, side, positionState, pnlUsd)
+      const isAutoClose = autoCloseOrderIds.has(orderId.toLowerCase())
 
       return {
-        orderId: String(order.order_id ?? ''),
+        orderId,
         status,
         activity: activity.activity,
         activityLabel: activity.activityLabel,
@@ -523,6 +532,7 @@ export async function GET(request: NextRequest) {
         createdAt: order.created_at ?? new Date().toISOString(),
         updatedAt: order.updated_at ?? order.created_at ?? new Date().toISOString(),
         raw: order.raw ?? null,
+        isAutoClose,
       }
     })
 
@@ -1525,7 +1535,7 @@ async function fetchOrdersForTrader(
   traderId: string
 ) {
   const selectWithCopied =
-    'order_id, trader_id, copied_trader_id, copied_trader_wallet, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, raw'
+    'order_id, trader_id, copied_trader_id, copied_trader_wallet, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, auto_close_order_id, raw'
   const selectLegacy =
     'order_id, trader_id, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, raw'
 

@@ -12,10 +12,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {
+  adjustSizeForImpliedAmount,
+  adjustSizeForImpliedAmountAtLeast,
   getStepDecimals,
   normalizeContractsFromUsd,
   normalizeContractsInput,
-  roundPriceToTick,
   roundDownToStep,
 } from "@/lib/polymarket/sizing"
 
@@ -209,12 +210,25 @@ function findTradeErrorMessage(value: unknown, seen = new Set<unknown>()): strin
     if (seen.has(value)) return null
     seen.add(value)
     const record = value as Record<string, unknown>
-    const candidates = [record.error, record.message, record.reason, record.detail]
+    const candidates = [
+      record.error,
+      record.message,
+      record.reason,
+      record.detail,
+      record.polymarketError,
+    ]
     for (const candidate of candidates) {
       const found = findTradeErrorMessage(candidate, seen)
       if (found) return found
     }
-    const nestedCandidates = [record.details, record.data, record.upstream]
+    const nestedCandidates = [
+      record.details,
+      record.data,
+      record.upstream,
+      record.raw,
+      record.snippet,
+      record.polymarketError,
+    ]
     for (const candidate of nestedCandidates) {
       const found = findTradeErrorMessage(candidate, seen)
       if (found) return found
@@ -315,13 +329,11 @@ export function TradeCard({
       ? currentMarketPrice
       : null
   )
-  const [marketMinimumOrderSize, setMarketMinimumOrderSize] = useState<number | null>(null)
   const [marketTickSize, setMarketTickSize] = useState<number | null>(null)
   const [orderBookLoading, setOrderBookLoading] = useState(false)
   const [orderBookError, setOrderBookError] = useState<string | null>(null)
   const [bestBidPrice, setBestBidPrice] = useState<number | null>(null)
   const [bestAskPrice, setBestAskPrice] = useState<number | null>(null)
-  const [minAdjustmentNotice, setMinAdjustmentNotice] = useState(false)
 
   const formatWallet = (value: string) => {
     const trimmed = value?.trim() || ""
@@ -378,11 +390,28 @@ export function TradeCard({
     }).format(normalized)
   }
 
-  const formatContracts = (value: number) => formatByStep(value, marketMinimumOrderSize)
+  const contractStep = 0.0001
+  const contractDecimals = 2
+  const formatContracts = (value: number) => formatByStep(value, contractStep)
+
+  const roundPriceToTickSize = (price: number, tickSize?: number | null) => {
+    if (!Number.isFinite(price)) return price
+    const step = tickSize && tickSize > 0 ? tickSize : 0.01
+    const decimals = getStepDecimals(step)
+    const rounded = Math.round(price / step) * step
+    return Number(rounded.toFixed(decimals))
+  }
+
+  const ceilToStep = (value: number, step: number) => {
+    if (!Number.isFinite(value) || step <= 0) return value
+    return Math.ceil(value / step) * step
+  }
 
   const formatPrice = (value: number | null | undefined) => {
     if (value === null || value === undefined || Number.isNaN(value)) return "—"
-    return `$${formatByStep(value, marketTickSize)}`
+    const fixed = value.toFixed(4)
+    const trimmed = fixed.replace(/\.?0+$/, "")
+    return `$${trimmed}`
   }
 
   const formatInputValue = (value: number, decimals: number) => {
@@ -390,9 +419,8 @@ export function TradeCard({
     return fixed.replace(/\.?0+$/, "")
   }
 
-  const formatContractsDisplay = (value: number | null, step: number | null) => {
+  const formatContractsDisplay = (value: number | null, decimals = contractDecimals) => {
     if (value === null || value === undefined || !Number.isFinite(value)) return "—"
-    const decimals = step ? getStepDecimals(step) : 0
     const trimmed = formatInputValue(value, decimals)
     const [whole, fraction] = trimmed.split(".")
     const withCommas = Number(whole).toLocaleString("en-US")
@@ -521,9 +549,7 @@ export function TradeCard({
     setOrderBookLoading(true)
     setBestBidPrice(null)
     setBestAskPrice(null)
-    setMarketMinimumOrderSize(null)
     setMarketTickSize(null)
-    setMinAdjustmentNotice(false)
 
     const fetchBook = async (showLoading: boolean) => {
       if (cancelled || inFlight) return
@@ -545,12 +571,10 @@ export function TradeCard({
         const asks = Array.isArray(data?.asks) ? data.asks : []
         const bestBid = parseBookPrice(bids, "bid")
         const bestAsk = parseBookPrice(asks, "ask")
-        const parsedMin = Number(data?.min_order_size)
         const parsedTick = Number(data?.tick_size)
 
         setBestBidPrice(Number.isFinite(bestBid ?? NaN) ? bestBid : null)
         setBestAskPrice(Number.isFinite(bestAsk ?? NaN) ? bestAsk : null)
-        setMarketMinimumOrderSize(Number.isFinite(parsedMin) ? parsedMin : null)
         setMarketTickSize(Number.isFinite(parsedTick) ? parsedTick : null)
         if (Number.isFinite(bestAsk ?? NaN) || Number.isFinite(bestBid ?? NaN)) {
           setLivePrice(action === "Buy" ? bestAsk : bestBid)
@@ -585,20 +609,12 @@ export function TradeCard({
         const response = await fetch(`/api/polymarket/market?conditionId=${conditionId}`)
         if (!response.ok) return
         const data = await response.json()
-        const minSize =
-          typeof data?.minimumOrderSize === 'number'
-            ? data.minimumOrderSize
-            : typeof data?.minOrderSize === 'number'
-              ? data.minOrderSize
-              : null
         const tick = typeof data?.tickSize === 'number' ? data.tickSize : null
         if (!cancelled) {
-          setMarketMinimumOrderSize(minSize)
           setMarketTickSize(tick)
         }
       } catch {
         if (!cancelled) {
-          setMarketMinimumOrderSize(null)
           setMarketTickSize(null)
         }
       }
@@ -619,6 +635,7 @@ export function TradeCard({
         : "bg-slate-100 text-slate-700 border-slate-200"
 
   const defaultSlippagePercent = 2
+  const minTradeUsd = 1
   const slippagePercent =
     slippagePreset === "custom" ? Number(customSlippage) : Number(slippagePreset)
   const resolvedSlippage =
@@ -631,26 +648,55 @@ export function TradeCard({
       : null
   const limitPrice =
     rawLimitPrice && Number.isFinite(rawLimitPrice)
-      ? marketTickSize && marketTickSize > 0
-        ? roundPriceToTick(rawLimitPrice, marketTickSize)
-        : rawLimitPrice
+      ? roundPriceToTickSize(rawLimitPrice, marketTickSize)
       : null
   const amountValue = Number.parseFloat(amountInput)
   const hasAmountInput = amountInput.trim().length > 0
   const parsedAmountValue =
     Number.isFinite(amountValue) && amountValue > 0 ? amountValue : null
-  const sizeStep =
-    marketMinimumOrderSize !== null && Number.isFinite(marketMinimumOrderSize) && marketMinimumOrderSize > 0
-      ? marketMinimumOrderSize
-      : null
   const contractsSizing =
     amountMode === "usd"
-      ? normalizeContractsFromUsd(parsedAmountValue, limitPrice, sizeStep, sizeStep)
-      : normalizeContractsInput(parsedAmountValue, sizeStep, sizeStep)
-  const contractsValue = hasAmountInput ? contractsSizing.contracts : null
+      ? normalizeContractsFromUsd(parsedAmountValue, limitPrice, null, null)
+      : normalizeContractsInput(parsedAmountValue, null, null)
+  const rawContractsValue = hasAmountInput ? contractsSizing.contracts : null
+  const baseContractsValue =
+    rawContractsValue && limitPrice
+      ? adjustSizeForImpliedAmount(limitPrice, rawContractsValue, marketTickSize, 2, 2)
+      : rawContractsValue
+  const baseEstimatedMaxCost =
+    baseContractsValue !== null && limitPrice !== null ? baseContractsValue * limitPrice : null
+  const bufferPrice = limitPrice ? limitPrice * (1 - resolvedSlippage / 100) : null
+  const safeBufferPrice =
+    bufferPrice !== null && Number.isFinite(bufferPrice) && bufferPrice > 0
+      ? bufferPrice
+      : limitPrice
+  const minContractsForBuffer =
+    safeBufferPrice !== null
+      ? adjustSizeForImpliedAmountAtLeast(
+          limitPrice ?? safeBufferPrice,
+          ceilToStep(minTradeUsd / safeBufferPrice, 0.01),
+          marketTickSize,
+          2,
+          2
+        )
+      : null
+  const needsMinUsdBuffer =
+    amountMode === "usd"
+      ? parsedAmountValue !== null && parsedAmountValue <= minTradeUsd
+      : baseEstimatedMaxCost !== null && baseEstimatedMaxCost < minTradeUsd
+  const contractsValue =
+    needsMinUsdBuffer && minContractsForBuffer
+      ? Math.max(baseContractsValue ?? 0, minContractsForBuffer)
+      : baseContractsValue
   const estimatedMaxCost =
     contractsValue !== null && limitPrice !== null ? contractsValue * limitPrice : null
-  const minOrderNotMet = hasAmountInput && sizeStep !== null ? minAdjustmentNotice : false
+  const isBelowMinUsd =
+    amountMode === "usd"
+      ? parsedAmountValue !== null && parsedAmountValue < minTradeUsd
+      : estimatedMaxCost !== null && estimatedMaxCost < minTradeUsd
+  const minUsdErrorMessage = isBelowMinUsd
+    ? "Order must be at least $1 after slippage buffer."
+    : null
   const traderSize = Number.isFinite(size) && size > 0 ? size : 0
   const sizePercent =
     traderSize > 0 && contractsValue ? (contractsValue / traderSize) * 100 : null
@@ -659,67 +705,65 @@ export function TradeCard({
   const statusDataRef = useRef<any | null>(null)
 
   const handleAmountChange = useCallback((value: string) => {
-    setMinAdjustmentNotice(false)
     setAmountInput(value)
   }, [])
 
   const handleSwitchToContracts = useCallback(() => {
-    if (!contractsValue || contractsValue <= 0) return
+    if (!amountInput.trim()) return
     setAmountMode("contracts")
-    const decimals = sizeStep ? getStepDecimals(sizeStep) : 0
-    setAmountInput(formatInputValue(contractsValue, decimals))
-    setMinAdjustmentNotice(false)
-  }, [contractsValue, sizeStep])
+    if (contractsValue && contractsValue > 0) {
+      setAmountInput(formatInputValue(contractsValue, contractDecimals))
+    }
+  }, [amountInput, contractDecimals, contractsValue])
 
   const handleSwitchToUsd = useCallback(() => {
-    if (!estimatedMaxCost || estimatedMaxCost <= 0) return
+    if (!amountInput.trim()) return
     setAmountMode("usd")
-    setAmountInput(formatInputValue(estimatedMaxCost, 2))
-    setMinAdjustmentNotice(false)
-  }, [estimatedMaxCost])
+    if (estimatedMaxCost && estimatedMaxCost > 0) {
+      setAmountInput(formatInputValue(estimatedMaxCost, 2))
+    }
+  }, [amountInput, estimatedMaxCost])
 
   useEffect(() => {
-    if (!hasAmountInput) return
-    if (amountMode === "contracts") {
-      if (!sizeStep) return
-      const value = Number(amountInput)
-      if (!Number.isFinite(value)) return
-      const decimals = getStepDecimals(sizeStep)
-      if (value <= 0) {
-        const formatted = formatInputValue(sizeStep, decimals)
+    if (!hasAmountInput || !limitPrice) return
+    const bufferPrice = limitPrice * (1 - resolvedSlippage / 100)
+    const safeBufferPrice =
+      Number.isFinite(bufferPrice) && bufferPrice > 0 ? bufferPrice : limitPrice
+    const minContractsForBuffer = adjustSizeForImpliedAmountAtLeast(
+      limitPrice,
+      ceilToStep(minTradeUsd / safeBufferPrice, 0.01),
+      marketTickSize,
+      2,
+      2
+    )
+    if (amountMode === "usd") {
+      if (parsedAmountValue !== null && parsedAmountValue < minTradeUsd) {
+        const formatted = formatInputValue(minTradeUsd, 2)
         if (formatted !== amountInput) {
           setAmountInput(formatted)
         }
-        setMinAdjustmentNotice(true)
-        return
-      }
-      const normalized = normalizeContractsInput(value, sizeStep, sizeStep)
-      if (!normalized.contracts) return
-      const formatted = formatInputValue(normalized.contracts, decimals)
-      if (formatted !== amountInput) {
-        setAmountInput(formatted)
-      }
-      if (normalized.adjustedToMin) {
-        setMinAdjustmentNotice(true)
       }
       return
     }
-
-    if (amountMode === "usd") {
-      if (!limitPrice || !sizeStep) return
-      const value = Number(amountInput)
-      if (!Number.isFinite(value)) return
-      const rawContracts = value / limitPrice
-      if (value <= 0 || rawContracts < sizeStep) {
-        const bumpedUsd = sizeStep * limitPrice
-        const formatted = formatInputValue(bumpedUsd, 2)
-        if (formatted !== amountInput) {
-          setAmountInput(formatted)
-        }
-        setMinAdjustmentNotice(true)
+    if (amountMode === "contracts" && estimatedMaxCost !== null && estimatedMaxCost < minTradeUsd) {
+      const formatted = formatInputValue(minContractsForBuffer ?? 0, contractDecimals)
+      if (formatted !== amountInput) {
+        setAmountInput(formatted)
       }
+      return
     }
-  }, [amountInput, amountMode, hasAmountInput, limitPrice, sizeStep])
+  }, [
+    amountInput,
+    amountMode,
+    contractDecimals,
+    estimatedMaxCost,
+    hasAmountInput,
+    limitPrice,
+    minTradeUsd,
+    parsedAmountValue,
+    resolvedSlippage,
+    marketTickSize,
+  ])
 
   useEffect(() => {
     if (!orderId || !showConfirmation) return
@@ -829,8 +873,13 @@ export function TradeCard({
         setIsSubmitting(false)
         return
       }
-      if (sizeStep !== null && contractsValue < sizeStep) {
-        setSubmitError(`Minimum order is ${formatContractsDisplay(sizeStep, sizeStep)} contracts.`)
+      if (isBelowMinUsd) {
+        setSubmitError(minUsdErrorMessage ?? 'Minimum trade is $1 at current price.')
+        setIsSubmitting(false)
+        return
+      }
+      if (isBelowMinUsd) {
+        setSubmitError('Minimum trade is $1 at current price.')
         setIsSubmitting(false)
         return
       }
@@ -874,16 +923,36 @@ export function TradeCard({
       setConfirmationError(null)
       showedConfirmation = true
 
+      const roundedContracts = roundDownToStep(contractsValue, 0.01)
       const contractsToSend =
-        sizeStep !== null
-          ? Math.max(sizeStep, roundDownToStep(contractsValue, sizeStep))
-          : contractsValue
+        limitPrice && roundedContracts
+          ? adjustSizeForImpliedAmount(limitPrice, roundedContracts, marketTickSize, 2, 2)
+          : roundedContracts
+      const bufferPrice = limitPrice * (1 - resolvedSlippage / 100)
+      const safeBufferPrice =
+        Number.isFinite(bufferPrice) && bufferPrice > 0 ? bufferPrice : limitPrice
+      const minContractsForBuffer = adjustSizeForImpliedAmountAtLeast(
+        limitPrice,
+        ceilToStep(minTradeUsd / safeBufferPrice, 0.01),
+        marketTickSize,
+        2,
+        2
+      )
+      const finalContracts =
+        contractsToSend && minContractsForBuffer && contractsToSend < minContractsForBuffer
+          ? minContractsForBuffer
+          : contractsToSend
+      if (finalContracts && limitPrice && finalContracts * limitPrice < minTradeUsd) {
+        setSubmitError('Minimum trade is $1 at current price.')
+        setIsSubmitting(false)
+        return
+      }
 
       // Execute the trade via API
       const requestBody = {
         tokenId: finalTokenId,
         price: limitPrice,
-        amount: contractsToSend,
+        amount: finalContracts,
         side: action === 'Buy' ? 'BUY' : 'SELL',
         orderType,
         confirm: true,
@@ -897,6 +966,7 @@ export function TradeCard({
         amountInvested: estimatedMaxCost ?? undefined,
         outcome: position,
         autoCloseOnTraderClose: autoClose,
+        slippagePercent: resolvedSlippage,
       }
       
       console.log('🚀 Sending trade request:', requestBody)
@@ -926,7 +996,7 @@ export function TradeCard({
 
       if (!response.ok) {
         const errorInfo = resolveTradeErrorInfo(
-          data?.error ?? data,
+          data,
           data?.message || 'Failed to execute trade'
         )
         setConfirmationError(errorInfo)
@@ -1018,8 +1088,8 @@ export function TradeCard({
           : 0
   const statusContractsText =
     filledContracts !== null && totalContracts !== null
-      ? `${formatContractsDisplay(filledContracts, sizeStep)} / ${formatContractsDisplay(totalContracts, sizeStep)}`
-      : `${formatContractsDisplay(contractsValue ?? 0, sizeStep)} submitted`
+      ? `${formatContractsDisplay(filledContracts)} / ${formatContractsDisplay(totalContracts)}`
+      : `${formatContractsDisplay(contractsValue ?? 0)} submitted`
   const isFinalStatus = TERMINAL_STATUS_PHASES.has(statusPhase)
   const isFilledStatus = statusPhase === 'filled'
   const resetConfirmation = () => {
@@ -1317,7 +1387,7 @@ export function TradeCard({
                     <input
                       id="amount"
                       type="number"
-                      step={amountMode === "contracts" ? sizeStep || 0.0001 : 0.01}
+                      step={amountMode === "contracts" ? contractStep : 0.01}
                       value={amountInput}
                             onChange={(e) => {
                               handleAmountChange(e.target.value)
@@ -1334,27 +1404,25 @@ export function TradeCard({
                         type="button"
                         onClick={amountMode === "usd" ? handleSwitchToContracts : handleSwitchToUsd}
                         className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:border-slate-300 sm:h-12 sm:w-12 disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={amountMode === "usd" ? !contractsValue : !estimatedMaxCost}
+                        disabled={!amountInput.trim()}
                         aria-label={`Switch to ${amountMode === "usd" ? "contracts" : "USD"}`}
                       >
                         <ArrowLeftRight className="h-4 w-4" />
                       </button>
                       <div className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px]">
                         {amountMode === "usd"
-                          ? `≈ ${formatContractsDisplay(contractsValue, sizeStep)} ${contractLabel}`
+                          ? `≈ ${formatContractsDisplay(contractsValue, 1)} ${contractLabel}`
                           : `≈ ${estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"} USD`}
                       </div>
                       <div className="flex h-14 items-center text-xs font-medium text-slate-500">
                         {sizePercentLabel} of original trade
                       </div>
                     </div>
-                    {minOrderNotMet && (
-                      <p className="text-xs text-amber-700">
-                        Minimum order for this market is {formatContractsDisplay(sizeStep, sizeStep)} {sizeStep === 1 ? "contract" : "contracts"}. We&apos;ve adjusted your order.
-                      </p>
+                    {orderBookLoading && (
+                      <p className="text-xs text-amber-700">Loading market prices…</p>
                     )}
-                    {!sizeStep && orderBookLoading && (
-                      <p className="text-xs text-amber-700">Loading market minimums…</p>
+                    {minUsdErrorMessage && (
+                      <p className="text-xs text-rose-600">{minUsdErrorMessage}</p>
                     )}
                     {submitError && (
                       <p className="text-xs text-rose-600">{submitError}</p>
@@ -1368,7 +1436,7 @@ export function TradeCard({
                       !amountInput ||
                       !contractsValue ||
                       contractsValue <= 0 ||
-                      (sizeStep !== null && contractsValue < sizeStep) ||
+                      isBelowMinUsd ||
                       !limitPrice ||
                       isSubmitting
                     }

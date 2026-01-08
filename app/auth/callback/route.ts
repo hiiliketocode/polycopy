@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
+  const adminRefreshCookieName = 'pc_admin_refresh'
   
   if (code) {
     let redirectUrl = `${requestUrl.origin}/feed`
@@ -67,6 +68,42 @@ export async function GET(request: NextRequest) {
         // Don't fail the login, just log it
       } else {
         console.log('Profile created successfully')
+      }
+
+      const { data: adminProfile, error: adminProfileError } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (adminProfileError) {
+        console.error('Admin profile lookup error:', adminProfileError)
+      }
+
+      const isAdmin = Boolean(adminProfile?.is_admin)
+      if (isAdmin) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.refresh_token) {
+          response.cookies.set({
+            name: adminRefreshCookieName,
+            value: session.refresh_token,
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            path: '/',
+            maxAge: 60 * 60 * 24 * 365,
+          })
+        }
+      } else {
+        response.cookies.set({
+          name: adminRefreshCookieName,
+          value: '',
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 0,
+        })
       }
       
       // Check if user has any follows to determine redirect destination

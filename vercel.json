@@ -2,8 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/check-notifications",
-      "schedule": "*/5 * * * *"
+      "schedule": "* * * * *"
     }
   ]
 }
-

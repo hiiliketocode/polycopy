@@ -16,6 +16,36 @@ function countDecimals(value: number) {
   return Math.max(0, baseDecimals - exponent)
 }
 
+function gcd(a: number, b: number) {
+  let x = Math.abs(Math.trunc(a))
+  let y = Math.abs(Math.trunc(b))
+  while (y !== 0) {
+    const temp = y
+    y = x % y
+    x = temp
+  }
+  return x === 0 ? 1 : x
+}
+
+function computeImpliedDivisor(
+  price: number,
+  tickSize: number | null | undefined,
+  sizeDecimals: number,
+  maxImpliedDecimals: number
+) {
+  const sizeFactor = Math.pow(10, sizeDecimals)
+  const priceDecimals = tickSize ? getStepDecimals(tickSize) : countDecimals(price)
+  const priceFactor = Math.pow(10, priceDecimals)
+  const priceUnits = Math.round(price * priceFactor)
+  const maxFactor = Math.pow(10, maxImpliedDecimals)
+  if (!Number.isFinite(priceUnits) || priceUnits <= 0) return null
+  const numerator = priceUnits * maxFactor
+  const denominator = priceFactor * sizeFactor
+  const divisor = denominator / gcd(numerator, denominator)
+  if (!Number.isFinite(divisor) || divisor <= 0) return null
+  return { divisor, sizeFactor }
+}
+
 export function getStepDecimals(step?: number | null) {
   if (!step || !Number.isFinite(step) || step <= 0) return 0
   return Math.max(0, countDecimals(step))
@@ -35,6 +65,46 @@ export function roundDownToStep(value: number, step?: number | null) {
 
 export function roundPriceToTick(price: number, tickSize?: number | null) {
   return roundDownToStep(price, tickSize)
+}
+
+export function adjustSizeForImpliedAmount(
+  price: number | null,
+  size: number | null,
+  tickSize?: number | null,
+  sizeDecimals = 2,
+  maxImpliedDecimals = 2
+) {
+  if (price === null || size === null) return null
+  if (!Number.isFinite(price) || !Number.isFinite(size)) return null
+  if (price <= 0 || size <= 0) return null
+
+  const implied = computeImpliedDivisor(price, tickSize, sizeDecimals, maxImpliedDecimals)
+  if (!implied) return size
+  const { divisor, sizeFactor } = implied
+  const sizeUnits = Math.floor(size * sizeFactor + 1e-9)
+  const adjustedUnits = Math.floor(sizeUnits / divisor) * divisor
+  if (adjustedUnits <= 0) return null
+  return adjustedUnits / sizeFactor
+}
+
+export function adjustSizeForImpliedAmountAtLeast(
+  price: number | null,
+  size: number | null,
+  tickSize?: number | null,
+  sizeDecimals = 2,
+  maxImpliedDecimals = 2
+) {
+  if (price === null || size === null) return null
+  if (!Number.isFinite(price) || !Number.isFinite(size)) return null
+  if (price <= 0 || size <= 0) return null
+
+  const implied = computeImpliedDivisor(price, tickSize, sizeDecimals, maxImpliedDecimals)
+  if (!implied) return size
+  const { divisor, sizeFactor } = implied
+  const sizeUnits = Math.floor(size * sizeFactor + 1e-9)
+  const adjustedUnits = Math.ceil(sizeUnits / divisor) * divisor
+  if (adjustedUnits <= 0) return null
+  return adjustedUnits / sizeFactor
 }
 
 export function normalizeContractsInput(

@@ -125,7 +125,9 @@ export default function OrdersTable({
                   (order.status === 'open' || order.status === 'partial' || order.marketIsOpen === true)
                 const canSell = hasOpenPosition && isMarketOpen
                 const activityStyle = ACTIVITY_ICON_STYLES[order.activity]
-                const activityTooltip = getActivityTooltip(order)
+                const isAutoSold = !showActions && order.activity === 'sold' && order.isAutoClose
+                const activityLabel = isAutoSold ? 'Auto-sold' : order.activityLabel
+                const activityTooltip = getActivityTooltip(order, activityLabel)
                 const value = deriveOrderValue(order, contractsValue)
                 const outcomeStyle = OUTCOME_PILL_STYLES[order.activity]
                 return (
@@ -140,7 +142,7 @@ export default function OrdersTable({
                             {order.activityIcon}
                           </span>
                           <div className="flex flex-col">
-                            <span className="text-sm font-semibold text-slate-900">{order.activityLabel}</span>
+                            <span className="text-sm font-semibold text-slate-900">{activityLabel}</span>
                             <span className="text-xs text-slate-500">{STATUS_LABELS[order.status]}</span>
                           </div>
                         </div>
@@ -271,11 +273,11 @@ export default function OrdersTable({
   )
 }
 
-function getActivityTooltip(order: OrderRow) {
+function getActivityTooltip(order: OrderRow, activityLabel: string) {
   const baseLabel =
     order.activity === 'bought' && (order.status === 'open' || order.status === 'partial')
-      ? `${order.activityLabel} (open)`
-      : order.activityLabel
+      ? `${activityLabel} (open)`
+      : activityLabel
   const rawAction = getRawAction(order)
   if (rawAction) return `${baseLabel} - ${rawAction}`
   return baseLabel

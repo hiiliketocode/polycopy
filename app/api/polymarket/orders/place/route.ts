@@ -9,6 +9,7 @@ import { ensureEvomiProxyAgent } from '@/lib/evomi/proxy'
 import { getBodySnippet } from '@/lib/polymarket/order-route-helpers'
 import { sanitizeError } from '@/lib/http/sanitize-error'
 import { resolveOrdersTableName } from '@/lib/orders/table'
+import { adjustSizeForImpliedAmount, roundDownToStep } from '@/lib/polymarket/sizing'
 
 const DEV_BYPASS_AUTH =
   process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
@@ -34,6 +35,7 @@ type Body = {
   outcome?: string
   autoCloseOnTraderClose?: boolean
   autoClose?: boolean
+  slippagePercent?: number
 }
 
 function respondWithMetadata(body: Record<string, unknown>, status: number) {
@@ -62,6 +64,39 @@ function normalizeNumber(value?: number | string | null) {
   const n = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(n) ? n : null
 }
+
+async function fetchMarketTickSize(clobBaseUrl: string, tokenId: string) {
+  const normalizedTokenId = normalizeOptionalString(tokenId)
+  if (!normalizedTokenId) return null
+  const tickUrl = new URL('/tick-size', clobBaseUrl)
+  tickUrl.searchParams.set('token_id', normalizedTokenId)
+  try {
+    const response = await fetch(tickUrl.toString(), { cache: 'no-store' })
+    const data = await response.json()
+    const tick = normalizeNumber(data?.minimum_tick_size ?? data?.tick_size)
+    if (response.ok && tick && tick > 0) {
+      return tick
+    }
+  } catch {
+    // Fall through to book lookup.
+  }
+
+  const bookUrl = new URL('/book', clobBaseUrl)
+  bookUrl.searchParams.set('token_id', normalizedTokenId)
+  try {
+    const response = await fetch(bookUrl.toString(), { cache: 'no-store' })
+    const data = await response.json()
+    const tick = normalizeNumber(data?.tick_size)
+    if (response.ok && tick && tick > 0) {
+      return tick
+    }
+  } catch {
+    // Ignore failures; caller will fall back to default tick size.
+  }
+
+  return null
+}
+
 
 function createServiceRoleClient() {
   return createServiceClient(
@@ -116,6 +151,7 @@ async function persistCopiedTraderMetadata({
   outcome,
   autoCloseOnTraderClose,
   autoClose,
+  slippagePercent,
 }: {
   userId: string
   orderId: string
@@ -135,6 +171,7 @@ async function persistCopiedTraderMetadata({
   outcome?: string
   autoCloseOnTraderClose?: boolean
   autoClose?: boolean
+  slippagePercent?: number
 }) {
   const hasCopiedMetadata =
     Boolean(normalizeOptionalString(copiedTraderId)) ||
@@ -185,6 +222,10 @@ async function persistCopiedTraderMetadata({
       : typeof autoClose === 'boolean'
         ? autoClose
         : true
+  const normalizedSlippage =
+    typeof slippagePercent === 'number' && Number.isFinite(slippagePercent) && slippagePercent >= 0
+      ? slippagePercent
+      : null
 
   const payload = {
     order_id: orderId,
@@ -204,6 +245,7 @@ async function persistCopiedTraderMetadata({
     created_at: now,
     updated_at: now,
     auto_close_on_trader_close: resolvedAutoClose,
+    auto_close_slippage_percent: normalizedSlippage,
     raw: {
       source: 'polycopy_place_order',
       token_id: tokenId ?? null,
@@ -213,6 +255,7 @@ async function persistCopiedTraderMetadata({
       copied_trader_wallet: normalizedCopiedTraderWallet,
       copied_trader_username: normalizeOptionalString(copiedTraderUsername),
       auto_close_on_trader_close: resolvedAutoClose,
+      auto_close_slippage_percent: normalizedSlippage,
     },
   }
 
@@ -284,6 +327,7 @@ export async function POST(request: NextRequest) {
     outcome,
     autoCloseOnTraderClose,
     autoClose,
+    slippagePercent,
   } = body
 
   const requestId = request.headers.get('x-request-id') ?? null
@@ -345,16 +389,40 @@ export async function POST(request: NextRequest) {
     const normalizedOrderType = orderType === 'IOC' ? 'FAK' : orderType
     const requestUrl = new URL(POST_ORDER, clobBaseUrl).toString()
     const upstreamHost = new URL(clobBaseUrl).hostname
+    const normalizedPrice = normalizeNumber(price)
+    const normalizedAmount = normalizeNumber(amount)
+    const tickSize = await fetchMarketTickSize(clobBaseUrl, tokenId)
+    const effectiveTickSize = tickSize ?? 0.01
+    const roundedPrice =
+      normalizedPrice ? roundDownToStep(normalizedPrice, effectiveTickSize) : normalizedPrice
+    const roundedAmount =
+      normalizedAmount && normalizedAmount > 0 ? roundDownToStep(normalizedAmount, 0.01) : null
+    const adjustedAmount =
+      roundedPrice && roundedAmount
+        ? adjustSizeForImpliedAmount(roundedPrice, roundedAmount, effectiveTickSize, 2, 2)
+        : roundedAmount
     console.log('[POLY-ORDER-PLACE] CLOB order', {
       requestId,
       upstreamHost,
       side,
       orderType: normalizedOrderType,
       keys: Object.keys(body ?? {}),
+      tickSize,
+      effectiveTickSize,
+      roundedPrice,
+      roundedAmount,
+      adjustedAmount,
     })
 
+    if (!roundedPrice || !roundedAmount || !adjustedAmount) {
+      return respondWithMetadata(
+        { error: 'Invalid price or amount after rounding', source: 'local_guard' },
+        400
+      )
+    }
+
     const order = await client.createOrder(
-      { tokenID: tokenId, price, size: amount, side: side as any },
+      { tokenID: tokenId, price: roundedPrice, size: adjustedAmount, side: side as any },
       { signatureType } as any
     )
 
@@ -398,6 +466,18 @@ export async function POST(request: NextRequest) {
 
     if (failedEvaluation) {
       const snippet = getBodySnippet(evaluation.raw ?? '')
+      console.error('[POLY-ORDER-PLACE] Upstream error', {
+        requestId,
+        upstreamHost,
+        upstreamStatus,
+        errorType: evaluation.errorType,
+        message: evaluation.message,
+        raw: sanitizedEvaluationRaw,
+      })
+      console.log('[POLY-ORDER-PLACE] Polymarket raw response', {
+        status: upstreamStatus,
+        body: sanitizedEvaluationRaw ?? evaluation.raw,
+      })
       return respondWithMetadata(
         {
           ok: false,
@@ -411,6 +491,7 @@ export async function POST(request: NextRequest) {
           upstreamStatus,
           isHtml: evaluation.contentType === 'text/html',
           contentType: evaluation.contentType,
+          polymarketError: sanitizedEvaluationRaw ?? evaluation.raw,
           raw: sanitizedEvaluationRaw
             ? typeof sanitizedEvaluationRaw === 'string'
               ? sanitizedEvaluationRaw
@@ -430,8 +511,8 @@ export async function POST(request: NextRequest) {
           userId,
           orderId,
           tokenId,
-          price,
-          amount,
+          price: roundedPrice,
+          amount: adjustedAmount,
           amountInvested,
           side,
           orderType: normalizedOrderType,
@@ -445,6 +526,7 @@ export async function POST(request: NextRequest) {
           outcome,
           autoCloseOnTraderClose,
           autoClose,
+          slippagePercent,
         })
       }
     } catch (error) {

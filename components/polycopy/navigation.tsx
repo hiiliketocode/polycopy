@@ -54,6 +54,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
+    await fetch('/api/auth/admin-logout', { method: 'POST' })
     router.push('/login')
   }
 

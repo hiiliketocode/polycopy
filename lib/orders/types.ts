@@ -36,4 +36,5 @@ export interface OrderRow {
   createdAt: string
   updatedAt: string
   raw: Record<string, any> | null
+  isAutoClose?: boolean
 }
