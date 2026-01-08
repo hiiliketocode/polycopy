@@ -1046,6 +1046,11 @@ function TradeExecutePageInner() {
 
     setSubmitLoading(true)
     try {
+      if (!limitPriceValue) {
+        setSubmitError('Invalid limit price')
+        setSubmitLoading(false)
+        return
+      }
       const priceToSend = limitPriceValue
       const roundedContracts = contractsValue ? roundDownToStep(contractsValue, 0.01) : null
       const amountToSend =
