@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowDown, ChevronDown, ChevronUp, Check, HelpCircle, ExternalLink, X, Loader2 } from "lucide-react"
+import { ArrowDown, ArrowLeftRight, ChevronDown, ChevronUp, Check, HelpCircle, ExternalLink, X, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -1297,17 +1297,6 @@ export function TradeCard({
                     <span className="w-[52px]" aria-hidden="true" />
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                  <span>Live price:</span>
-                  <span className="font-semibold text-slate-900">
-                    {orderBookLoading ? "Loading…" : formatPrice(currentPrice)}
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    Live price
-                  </span>
-                </div>
-                <div className="text-xs text-slate-500">Estimates update with live market prices.</div>
                 {orderBookError && (
                   <div className="text-xs text-amber-600">{orderBookError}</div>
                 )}
@@ -1320,14 +1309,6 @@ export function TradeCard({
                   <label htmlFor="amount" className="text-xs font-medium text-slate-700">
                     {amountMode === "usd" ? "USD (estimated)" : "Contracts"}
                   </label>
-                  <button
-                    type="button"
-                    onClick={amountMode === "usd" ? handleSwitchToContracts : handleSwitchToUsd}
-                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
-                    disabled={amountMode === "usd" ? !contractsValue : !estimatedMaxCost}
-                  >
-                    Switch to {amountMode === "usd" ? "contracts" : "USD"}
-                  </button>
                         </div>
                   <div className="relative">
                     {amountMode === "usd" && (
@@ -1352,13 +1333,17 @@ export function TradeCard({
                       <button
                         type="button"
                         onClick={amountMode === "usd" ? handleSwitchToContracts : handleSwitchToUsd}
-                        className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px] hover:border-slate-300"
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:border-slate-300 sm:h-12 sm:w-12 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={amountMode === "usd" ? !contractsValue : !estimatedMaxCost}
+                        aria-label={`Switch to ${amountMode === "usd" ? "contracts" : "USD"}`}
                       >
+                        <ArrowLeftRight className="h-4 w-4" />
+                      </button>
+                      <div className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px]">
                         {amountMode === "usd"
                           ? `≈ ${formatContractsDisplay(contractsValue, sizeStep)} ${contractLabel}`
                           : `≈ ${estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"} USD`}
-                      </button>
+                      </div>
                       <div className="flex h-14 items-center text-xs font-medium text-slate-500">
                         {sizePercentLabel} of original trade
                       </div>
@@ -1465,11 +1450,6 @@ export function TradeCard({
                       <ChevronDown className={`h-4 w-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
                     </button>
                   </div>
-                  {!showAdvanced && (
-                    <p className="mt-1 text-xs text-slate-500">
-                      Estimated: {formatContractsDisplay(contractsValue, sizeStep)} contracts, up to {estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"}.
-                    </p>
-                  )}
                   {showAdvanced && (
                     <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 space-y-3">
                       <div className="space-y-1.5">
@@ -1522,9 +1502,6 @@ export function TradeCard({
                             className="w-20 h-8 text-xs border-slate-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                 </div>
-                        <p className="text-xs text-slate-500">
-                          Estimated: {formatContractsDisplay(contractsValue, sizeStep)} contracts, up to {estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"}.
-                        </p>
               </div>
 
                       <div className="space-y-1.5">

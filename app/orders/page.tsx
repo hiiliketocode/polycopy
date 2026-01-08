@@ -1114,9 +1114,9 @@ function PositionsList({
         : null)
     const marketStatusLabel =
       order?.positionState === 'closed'
-        ? 'Closed'
+        ? 'Market sold'
         : inferredMarketOpen === false
-          ? 'Ended'
+          ? 'Resolved'
           : 'Open'
     const statusDot =
       order?.positionState === 'closed'
