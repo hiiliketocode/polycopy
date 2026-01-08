@@ -1013,7 +1013,7 @@ export function TradeCard({
       ? filledAmountValue
       : totalAmountValue !== null
         ? totalAmountValue
-        : Number.isFinite(estimatedMaxCost) && estimatedMaxCost > 0
+        : estimatedMaxCost !== null && Number.isFinite(estimatedMaxCost) && estimatedMaxCost > 0
           ? estimatedMaxCost
           : 0
   const statusContractsText =
