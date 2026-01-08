@@ -519,8 +519,8 @@ function ProfilePageContent() {
           .maybeSingle(); // Use maybeSingle() instead of single() to avoid error when no row exists
         
         // Don't log errors from maybeSingle() - it's expected to return no data for new users
-        // Only log if there's a real error with a non-empty message
-        if (error && error.message && error.message.trim() !== '') {
+        // Only log if there's a real error (has code, message, or details)
+        if (error?.code || (error?.message && error.message.trim() !== '')) {
           console.error('Error fetching notification preferences:', error);
         }
         
@@ -554,8 +554,15 @@ function ProfilePageContent() {
       return sum + (trade.amount_invested || 0);
     }, 0);
     
-    const avgRoi = closedTrades.length > 0
-      ? closedTrades.reduce((sum, trade) => sum + (trade.roi || 0), 0) / closedTrades.length
+    // Calculate total invested amount for closed trades
+    const totalInvestedInClosedTrades = closedTrades.reduce((sum, trade) => {
+      return sum + (trade.amount_invested || 0);
+    }, 0);
+    
+    // Calculate actual ROI: (total P&L / total invested) * 100
+    // This gives the true return on investment, not just an average of percentages
+    const actualRoi = totalInvestedInClosedTrades > 0
+      ? (totalPnl / totalInvestedInClosedTrades) * 100
       : 0;
     
     const winningTrades = closedTrades.filter(t => (t.roi || 0) > 0).length;
@@ -563,7 +570,7 @@ function ProfilePageContent() {
     
     return {
       totalPnl,
-      roi: avgRoi,
+      roi: actualRoi,
       totalVolume,
       winRate: Math.round(winRate),
     };

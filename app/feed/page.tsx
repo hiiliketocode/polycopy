@@ -1128,7 +1128,13 @@ export default function FeedPage() {
                     marketIsOpen={liveMarket?.closed === undefined ? undefined : !liveMarket.closed}
                     liveScore={liveMarket?.score}
                     category={trade.market.category}
-                    polymarketUrl={trade.market.slug ? `https://polymarket.com/event/${trade.market.slug}` : undefined}
+                    polymarketUrl={
+                      trade.market.eventSlug 
+                        ? `https://polymarket.com/event/${trade.market.eventSlug}`
+                        : trade.market.slug 
+                        ? `https://polymarket.com/market/${trade.market.slug}`
+                        : undefined
+                    }
                   />
                 )
               })}
