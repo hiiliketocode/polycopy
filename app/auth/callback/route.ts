@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
 
       const { data: adminProfile, error: adminProfileError } = await supabase
         .from('profiles')
-        .select('is_admin')
+        .select('is_admin, has_completed_onboarding')
         .eq('id', user.id)
         .maybeSingle()
 
@@ -104,6 +104,18 @@ export async function GET(request: NextRequest) {
           path: '/',
           maxAge: 0,
         })
+      }
+      
+      // Check if user needs to complete onboarding
+      const hasCompletedOnboarding = adminProfile?.has_completed_onboarding ?? false
+      if (!hasCompletedOnboarding) {
+        console.log('User has not completed onboarding, redirecting to onboarding')
+        redirectUrl = `${requestUrl.origin}/onboarding`
+        const finalResponse = NextResponse.redirect(redirectUrl)
+        response.cookies.getAll().forEach(cookie => {
+          finalResponse.cookies.set(cookie)
+        })
+        return finalResponse
       }
       
       // Check if user has any follows to determine redirect destination
