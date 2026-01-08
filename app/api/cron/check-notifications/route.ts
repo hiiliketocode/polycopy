@@ -272,7 +272,7 @@ export async function GET(request: NextRequest) {
       try {
         const { client, signatureType } = await getAuthedClobClientForUserAnyWallet(userId, userWallet)
         const orderPayload = await client.createOrder(
-          { tokenID: tokenId, price: limitPrice, size: positionSize, side: closeSide },
+          { tokenID: tokenId, price: limitPrice, size: positionSize, side: closeSide as any },
           { signatureType } as any
         )
         const orderType = 'FAK'
