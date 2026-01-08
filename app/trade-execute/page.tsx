@@ -596,6 +596,12 @@ function TradeExecutePageInner() {
     currentPrice !== null && tradePrice !== null ? currentPrice - tradePrice : null
   const priceDeltaPct =
     priceDelta !== null && tradePrice ? (priceDelta / tradePrice) * 100 : null
+  
+  const isOrderSent = Boolean(orderId)
+  const submittedContracts =
+    submittedSnapshot?.contracts ?? (contractsValue !== null ? contractsValue : null)
+  const submittedUsd = submittedSnapshot?.estimatedUsd ?? estimatedTotal
+  const submittedLimitPrice = submittedSnapshot?.limitPrice ?? limitPriceValue
   const limitPriceLabel = submittedLimitPrice ? formatPrice(submittedLimitPrice) : '—'
 
   const availableBalance =
@@ -606,12 +612,6 @@ function TradeExecutePageInner() {
     estimatedTotal !== null && availableBalance !== null && estimatedTotal > availableBalance
 
   const minimumContractsNotMet = hasAmountInput && minOrderSize !== null ? minAdjustmentNotice : false
-
-  const isOrderSent = Boolean(orderId)
-  const submittedContracts =
-    submittedSnapshot?.contracts ?? (contractsValue !== null ? contractsValue : null)
-  const submittedUsd = submittedSnapshot?.estimatedUsd ?? estimatedTotal
-  const submittedLimitPrice = submittedSnapshot?.limitPrice ?? limitPriceValue
   const slippageLabel =
     slippagePreset === 'custom' ? `${customSlippage || '0'}% (custom)` : `${slippagePreset}%`
   const orderBehaviorLabel =
