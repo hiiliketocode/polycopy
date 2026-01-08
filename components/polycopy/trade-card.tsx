@@ -409,7 +409,7 @@ export function TradeCard({
       } else if (entry && typeof entry === "object") {
         price = Number((entry as any).price ?? (entry as any).p ?? (entry as any)[0])
       }
-      if (!Number.isFinite(price)) continue
+      if (price === null || !Number.isFinite(price)) continue
       if (best === null) {
         best = price
         continue
