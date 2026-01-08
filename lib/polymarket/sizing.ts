@@ -63,6 +63,18 @@ export function roundDownToStep(value: number, step?: number | null) {
   return stepped / factor
 }
 
+export function roundUpToStep(value: number, step?: number | null) {
+  if (!Number.isFinite(value)) return NaN
+  if (!step || !Number.isFinite(step) || step <= 0) return value
+  const decimals = getStepDecimals(step)
+  const factor = Math.pow(10, decimals)
+  const scaledStep = Math.round(step * factor)
+  if (scaledStep <= 0) return value
+  const scaledValue = Math.ceil(value * factor - 1e-9)
+  const stepped = Math.ceil(scaledValue / scaledStep) * scaledStep
+  return stepped / factor
+}
+
 export function roundPriceToTick(price: number, tickSize?: number | null) {
   return roundDownToStep(price, tickSize)
 }
