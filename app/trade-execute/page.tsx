@@ -444,7 +444,7 @@ function parseBookPrice(entries: Array<any> | undefined, side: 'bid' | 'ask') {
     } else if (entry && typeof entry === 'object') {
       price = Number(entry.price ?? entry.p ?? entry[0])
     }
-    if (!Number.isFinite(price)) continue
+    if (price === null || !Number.isFinite(price)) continue
     if (best === null) {
       best = price
       continue
