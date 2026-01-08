@@ -36,6 +36,8 @@ export default function OrdersPage() {
   const [closeSubmitting, setCloseSubmitting] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
   const [closeSuccess, setCloseSuccess] = useState<string | null>(null)
+  const [closeOrderId, setCloseOrderId] = useState<string | null>(null)
+  const [closeSubmittedAt, setCloseSubmittedAt] = useState<string | null>(null)
   const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null)
   const [cancelError, setCancelError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'positions' | 'openOrders' | 'history'>('positions')
@@ -353,6 +355,8 @@ export default function OrdersPage() {
       setCloseTarget({ order, position })
       setCloseError(null)
       setCloseSuccess(null)
+      setCloseOrderId(null)
+      setCloseSubmittedAt(null)
     },
     [findPositionForOrder]
   )
@@ -437,7 +441,8 @@ export default function OrdersPage() {
           throw new Error(errorMessage)
         }
         setCloseSuccess(`Close order submitted (${slippagePercent.toFixed(1)}% slippage)`)
-        setCloseTarget(null)
+        setCloseOrderId(data?.orderId ?? null)
+        setCloseSubmittedAt(data?.submittedAt ?? null)
         await refreshOrders()
       } catch (err: any) {
         console.error('Close position error:', err)
@@ -648,8 +653,12 @@ export default function OrdersPage() {
             onClose={() => {
               setCloseTarget(null)
               setCloseError(null)
+              setCloseOrderId(null)
+              setCloseSubmittedAt(null)
             }}
             onSubmit={handleConfirmClose}
+            orderId={closeOrderId}
+            submittedAt={closeSubmittedAt}
           />
         )}
         </main>
