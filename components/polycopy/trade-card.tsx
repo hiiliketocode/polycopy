@@ -6,11 +6,18 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ArrowDown, ChevronDown, ChevronUp, Check, HelpCircle, ExternalLink, X, Loader2 } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import {
+  getStepDecimals,
+  normalizeContractsFromUsd,
+  normalizeContractsInput,
+  roundPriceToTick,
+  roundDownToStep,
+} from "@/lib/polymarket/sizing"
 
 interface TradeCardProps {
   trader: {
@@ -65,8 +72,6 @@ const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
   'expired',
   'rejected',
 ])
-
-const MINIMUM_ORDER_TOLERANCE = 1e-6
 
 type TradeErrorInfo = {
   code?: string
@@ -287,7 +292,8 @@ export function TradeCard({
   category,
   polymarketUrl,
 }: TradeCardProps) {
-  const [usdAmount, setUsdAmount] = useState<string>("")
+  const [amountMode, setAmountMode] = useState<"usd" | "contracts">("usd")
+  const [amountInput, setAmountInput] = useState<string>("")
   const [autoClose, setAutoClose] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
@@ -311,6 +317,11 @@ export function TradeCard({
   )
   const [marketMinimumOrderSize, setMarketMinimumOrderSize] = useState<number | null>(null)
   const [marketTickSize, setMarketTickSize] = useState<number | null>(null)
+  const [orderBookLoading, setOrderBookLoading] = useState(false)
+  const [orderBookError, setOrderBookError] = useState<string | null>(null)
+  const [bestBidPrice, setBestBidPrice] = useState<number | null>(null)
+  const [bestAskPrice, setBestAskPrice] = useState<number | null>(null)
+  const [minAdjustmentNotice, setMinAdjustmentNotice] = useState(false)
 
   const formatWallet = (value: string) => {
     const trimmed = value?.trim() || ""
@@ -324,10 +335,16 @@ export function TradeCard({
   const displayAddress = formatWallet(trader.address || "")
   const copiedTraderId = isUuid(trader.id) ? trader.id! : null
 
+  const orderBookPrice = action === "Buy" ? bestAskPrice : bestBidPrice
   const resolvedLivePrice =
     typeof livePrice === "number" && !Number.isNaN(livePrice) ? livePrice : null
-  const hasCurrentPrice = resolvedLivePrice !== null
-  const currentPrice = hasCurrentPrice ? resolvedLivePrice : price
+  const currentPrice =
+    typeof orderBookPrice === "number" && Number.isFinite(orderBookPrice)
+      ? orderBookPrice
+      : resolvedLivePrice !== null
+        ? resolvedLivePrice
+        : price
+  const hasCurrentPrice = Number.isFinite(currentPrice)
   const priceChange = hasCurrentPrice ? ((currentPrice - price) / price) * 100 : 0
   const priceDirection = priceChange > 0 ? 'up' : priceChange < 0 ? 'down' : 'neutral'
   const inferredMarketOpen =
@@ -347,15 +364,61 @@ export function TradeCard({
     }).format(value)
   }
 
-  const formatNumber = (value: number) => {
-    return new Intl.NumberFormat("en-US").format(value)
-  }
+  const formatNumber = (value: number) => new Intl.NumberFormat("en-US").format(value)
 
-  const formatContracts = (value: number) => {
+  const formatByStep = (value: number, step: number | null) => {
+    if (!Number.isFinite(value)) return "--"
+    if (!step || !Number.isFinite(step) || step <= 0) return formatNumber(value)
+    const decimals = getStepDecimals(step)
+    const quantized = decimals === 0 ? Math.round(value) : Math.round(value / step) * step
+    const normalized = decimals === 0 ? Math.round(quantized) : Number(quantized.toFixed(decimals))
     return new Intl.NumberFormat("en-US", {
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value)
+      maximumFractionDigits: decimals,
+    }).format(normalized)
+  }
+
+  const formatContracts = (value: number) => formatByStep(value, marketMinimumOrderSize)
+
+  const formatPrice = (value: number | null | undefined) => {
+    if (value === null || value === undefined || Number.isNaN(value)) return "—"
+    return `$${formatByStep(value, marketTickSize)}`
+  }
+
+  const formatInputValue = (value: number, decimals: number) => {
+    const fixed = value.toFixed(decimals)
+    return fixed.replace(/\.?0+$/, "")
+  }
+
+  const formatContractsDisplay = (value: number | null, step: number | null) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return "—"
+    const decimals = step ? getStepDecimals(step) : 0
+    const trimmed = formatInputValue(value, decimals)
+    const [whole, fraction] = trimmed.split(".")
+    const withCommas = Number(whole).toLocaleString("en-US")
+    return fraction ? `${withCommas}.${fraction}` : withCommas
+  }
+
+  const parseBookPrice = (entries: Array<any> | undefined, side: "bid" | "ask") => {
+    if (!Array.isArray(entries)) return null
+    let best: number | null = null
+    for (const entry of entries) {
+      let price: number | null = null
+      if (Array.isArray(entry)) {
+        price = Number(entry[0])
+      } else if (entry && typeof entry === "object") {
+        price = Number((entry as any).price ?? (entry as any).p ?? (entry as any)[0])
+      }
+      if (!Number.isFinite(price)) continue
+      if (best === null) {
+        best = price
+        continue
+      }
+      if (side === "bid" ? price > best : price < best) {
+        best = price
+      }
+    }
+    return best
   }
 
   const formatOutcomeLabel = (value: string) => {
@@ -397,6 +460,7 @@ export function TradeCard({
 
   useEffect(() => {
     if (!isExpanded) return
+    if (tokenId) return
     if (!conditionId && !marketSlug && !market) return
 
     let canceled = false
@@ -448,7 +512,72 @@ export function TradeCard({
   }, [conditionId, isExpanded, market, marketSlug, position])
 
   useEffect(() => {
-    if (!isExpanded || !conditionId) return
+    if (!isExpanded || !tokenId) return
+    let cancelled = false
+    let intervalId: ReturnType<typeof setInterval> | null = null
+    let inFlight = false
+
+    setOrderBookError(null)
+    setOrderBookLoading(true)
+    setBestBidPrice(null)
+    setBestAskPrice(null)
+    setMarketMinimumOrderSize(null)
+    setMarketTickSize(null)
+    setMinAdjustmentNotice(false)
+
+    const fetchBook = async (showLoading: boolean) => {
+      if (cancelled || inFlight) return
+      inFlight = true
+      if (showLoading) {
+        setOrderBookLoading(true)
+      }
+      try {
+        const res = await fetch(`/api/polymarket/book?token_id=${encodeURIComponent(tokenId)}`, {
+          cache: "no-store",
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data?.error || "Order book lookup failed.")
+        }
+        if (cancelled) return
+
+        const bids = Array.isArray(data?.bids) ? data.bids : []
+        const asks = Array.isArray(data?.asks) ? data.asks : []
+        const bestBid = parseBookPrice(bids, "bid")
+        const bestAsk = parseBookPrice(asks, "ask")
+        const parsedMin = Number(data?.min_order_size)
+        const parsedTick = Number(data?.tick_size)
+
+        setBestBidPrice(Number.isFinite(bestBid ?? NaN) ? bestBid : null)
+        setBestAskPrice(Number.isFinite(bestAsk ?? NaN) ? bestAsk : null)
+        setMarketMinimumOrderSize(Number.isFinite(parsedMin) ? parsedMin : null)
+        setMarketTickSize(Number.isFinite(parsedTick) ? parsedTick : null)
+        if (Number.isFinite(bestAsk ?? NaN) || Number.isFinite(bestBid ?? NaN)) {
+          setLivePrice(action === "Buy" ? bestAsk : bestBid)
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setOrderBookError(error?.message || "Order book lookup failed.")
+        }
+      } finally {
+        inFlight = false
+        if (!cancelled && showLoading) {
+          setOrderBookLoading(false)
+        }
+      }
+    }
+
+    fetchBook(true)
+    intervalId = setInterval(() => fetchBook(false), 250)
+
+    return () => {
+      cancelled = true
+      if (intervalId) clearInterval(intervalId)
+    }
+  }, [action, isExpanded, tokenId])
+
+  useEffect(() => {
+    if (!isExpanded || !conditionId || tokenId) return
     let cancelled = false
 
     const fetchMarketConstraints = async () => {
@@ -494,68 +623,103 @@ export function TradeCard({
     slippagePreset === "custom" ? Number(customSlippage) : Number(slippagePreset)
   const resolvedSlippage =
     Number.isFinite(slippagePercent) && slippagePercent >= 0 ? slippagePercent : defaultSlippagePercent
+  const rawLimitPrice =
+    Number.isFinite(currentPrice) && currentPrice > 0
+      ? action === "Buy"
+        ? currentPrice * (1 + resolvedSlippage / 100)
+        : currentPrice * (1 - resolvedSlippage / 100)
+      : null
   const limitPrice =
-    action === "Buy"
-      ? currentPrice * (1 + resolvedSlippage / 100)
-      : currentPrice * (1 - resolvedSlippage / 100)
-  const amountValue = Number.parseFloat(usdAmount)
-  const hasAmountInput = usdAmount.trim().length > 0
-  const effectivePrice = Number.isFinite(limitPrice) && limitPrice > 0 ? limitPrice : currentPrice
-  const calculatedContracts =
-    Number.isFinite(amountValue) && amountValue > 0 ? Math.floor(amountValue / effectivePrice) : 0
-  const amountTooSmall =
-    hasAmountInput && Number.isFinite(amountValue) && amountValue > 0 && calculatedContracts < 1
-  const marketMinimumSize =
+    rawLimitPrice && Number.isFinite(rawLimitPrice)
+      ? marketTickSize && marketTickSize > 0
+        ? roundPriceToTick(rawLimitPrice, marketTickSize)
+        : rawLimitPrice
+      : null
+  const amountValue = Number.parseFloat(amountInput)
+  const hasAmountInput = amountInput.trim().length > 0
+  const parsedAmountValue =
+    Number.isFinite(amountValue) && amountValue > 0 ? amountValue : null
+  const sizeStep =
     marketMinimumOrderSize !== null && Number.isFinite(marketMinimumOrderSize) && marketMinimumOrderSize > 0
       ? marketMinimumOrderSize
       : null
-  const marketMinimumContracts =
-    marketMinimumSize !== null
-      ? Math.max(1, Math.ceil(marketMinimumSize - MINIMUM_ORDER_TOLERANCE))
-      : null
-  const marketMinimumNotMet =
-    hasAmountInput &&
-    calculatedContracts > 0 &&
-    marketMinimumContracts !== null &&
-    calculatedContracts + MINIMUM_ORDER_TOLERANCE < marketMinimumContracts
-  const tickSizeLabel =
-    Number.isFinite(marketTickSize) && marketTickSize && marketTickSize > 0
-      ? ` Prices must follow the ${formatCurrency(marketTickSize)} tick size.`
-      : ''
-  const marketMinimumMessage =
-    marketMinimumContracts !== null
-      ? `Minimum order size for this market is ${marketMinimumContracts} ${marketMinimumContracts === 1 ? 'contract' : 'contracts'} (min_order_size).${tickSizeLabel}`
-      : `Minimum order size varies by market (min_order_size).${tickSizeLabel}`
-  const inlineAmountError = amountTooSmall
-    ? `Minimum is 1 contract (≈ ${formatCurrency(effectivePrice)} at current price).`
-    : marketMinimumNotMet
-      ? marketMinimumMessage
-      : null
+  const contractsSizing =
+    amountMode === "usd"
+      ? normalizeContractsFromUsd(parsedAmountValue, limitPrice, sizeStep, sizeStep)
+      : normalizeContractsInput(parsedAmountValue, sizeStep, sizeStep)
+  const contractsValue = hasAmountInput ? contractsSizing.contracts : null
+  const estimatedMaxCost =
+    contractsValue !== null && limitPrice !== null ? contractsValue * limitPrice : null
+  const minOrderNotMet = hasAmountInput && sizeStep !== null ? minAdjustmentNotice : false
   const traderSize = Number.isFinite(size) && size > 0 ? size : 0
   const sizePercent =
-    traderSize > 0 && calculatedContracts > 0 ? (calculatedContracts / traderSize) * 100 : null
-  const sizePercentLabel = sizePercent !== null ? `${sizePercent.toFixed(0)}%` : '--%'
-  const contractLabel = calculatedContracts === 1 ? "contract" : "contracts"
-  const estimatedContractsAtLimit =
-    Number.isFinite(amountValue) && amountValue > 0 && limitPrice > 0
-      ? Math.floor(amountValue / limitPrice)
-      : 0
-  const estimatedMaxCost = estimatedContractsAtLimit * limitPrice
-  const previousSlippage = useRef(resolvedSlippage)
+    traderSize > 0 && contractsValue ? (contractsValue / traderSize) * 100 : null
+  const sizePercentLabel = sizePercent !== null ? `${sizePercent.toFixed(0)}%` : "--%"
+  const contractLabel = contractsValue === 1 ? "contract" : "contracts"
   const statusDataRef = useRef<any | null>(null)
 
+  const handleAmountChange = useCallback((value: string) => {
+    setMinAdjustmentNotice(false)
+    setAmountInput(value)
+  }, [])
+
+  const handleSwitchToContracts = useCallback(() => {
+    if (!contractsValue || contractsValue <= 0) return
+    setAmountMode("contracts")
+    const decimals = sizeStep ? getStepDecimals(sizeStep) : 0
+    setAmountInput(formatInputValue(contractsValue, decimals))
+    setMinAdjustmentNotice(false)
+  }, [contractsValue, sizeStep])
+
+  const handleSwitchToUsd = useCallback(() => {
+    if (!estimatedMaxCost || estimatedMaxCost <= 0) return
+    setAmountMode("usd")
+    setAmountInput(formatInputValue(estimatedMaxCost, 2))
+    setMinAdjustmentNotice(false)
+  }, [estimatedMaxCost])
+
   useEffect(() => {
-    if (previousSlippage.current !== resolvedSlippage) {
-      if (Number.isFinite(amountValue) && amountValue > 0 && limitPrice > 0) {
-        const contractsAtLimit = Math.floor(amountValue / limitPrice)
-        if (contractsAtLimit > 0) {
-          const normalizedAmount = contractsAtLimit * limitPrice
-          setUsdAmount(normalizedAmount.toFixed(2))
+    if (!hasAmountInput) return
+    if (amountMode === "contracts") {
+      if (!sizeStep) return
+      const value = Number(amountInput)
+      if (!Number.isFinite(value)) return
+      const decimals = getStepDecimals(sizeStep)
+      if (value <= 0) {
+        const formatted = formatInputValue(sizeStep, decimals)
+        if (formatted !== amountInput) {
+          setAmountInput(formatted)
         }
+        setMinAdjustmentNotice(true)
+        return
+      }
+      const normalized = normalizeContractsInput(value, sizeStep, sizeStep)
+      if (!normalized.contracts) return
+      const formatted = formatInputValue(normalized.contracts, decimals)
+      if (formatted !== amountInput) {
+        setAmountInput(formatted)
+      }
+      if (normalized.adjustedToMin) {
+        setMinAdjustmentNotice(true)
+      }
+      return
+    }
+
+    if (amountMode === "usd") {
+      if (!limitPrice || !sizeStep) return
+      const value = Number(amountInput)
+      if (!Number.isFinite(value)) return
+      const rawContracts = value / limitPrice
+      if (value <= 0 || rawContracts < sizeStep) {
+        const bumpedUsd = sizeStep * limitPrice
+        const formatted = formatInputValue(bumpedUsd, 2)
+        if (formatted !== amountInput) {
+          setAmountInput(formatted)
+        }
+        setMinAdjustmentNotice(true)
       }
     }
-    previousSlippage.current = resolvedSlippage
-  }, [amountValue, limitPrice, resolvedSlippage])
+  }, [amountInput, amountMode, hasAmountInput, limitPrice, sizeStep])
 
   useEffect(() => {
     if (!orderId || !showConfirmation) return
@@ -660,15 +824,18 @@ export function TradeCard({
     let showedConfirmation = false
     
     try {
-      if (!Number.isFinite(amountValue) || amountValue <= 0) {
-        setSubmitError('Enter a valid amount.')
-    setIsSubmitting(false)
+      if (!contractsValue || contractsValue <= 0) {
+        setSubmitError('Enter an amount to send.')
+        setIsSubmitting(false)
         return
       }
-
-      // Calculate contracts from USD amount
-      if (calculatedContracts <= 0) {
-        setSubmitError('Amount too small. Must be at least 1 contract.')
+      if (sizeStep !== null && contractsValue < sizeStep) {
+        setSubmitError(`Minimum order is ${formatContractsDisplay(sizeStep, sizeStep)} contracts.`)
+        setIsSubmitting(false)
+        return
+      }
+      if (!limitPrice || limitPrice <= 0) {
+        setSubmitError('Live price unavailable. Try again in a moment.')
         setIsSubmitting(false)
         return
       }
@@ -707,11 +874,16 @@ export function TradeCard({
       setConfirmationError(null)
       showedConfirmation = true
 
+      const contractsToSend =
+        sizeStep !== null
+          ? Math.max(sizeStep, roundDownToStep(contractsValue, sizeStep))
+          : contractsValue
+
       // Execute the trade via API
       const requestBody = {
         tokenId: finalTokenId,
         price: limitPrice,
-        amount: calculatedContracts,
+        amount: contractsToSend,
         side: action === 'Buy' ? 'BUY' : 'SELL',
         orderType,
         confirm: true,
@@ -722,7 +894,7 @@ export function TradeCard({
         marketTitle: market,
         marketSlug,
         marketAvatarUrl: marketAvatar,
-        amountInvested: Number.isFinite(amountValue) ? amountValue : undefined,
+        amountInvested: estimatedMaxCost ?? undefined,
         outcome: position,
         autoCloseOnTraderClose: autoClose,
       }
@@ -816,24 +988,22 @@ export function TradeCard({
   }
 
   const isCopyDisabled = isMarketEnded
-  const statusLabel =
-    statusPhase === 'submitted'
-      ? 'Order sent to Polymarket'
-      : statusPhase === 'pending' || statusPhase === 'processing' || statusPhase === 'open'
-        ? 'Order Received by Polymarket, Pending'
-        : statusPhase === 'filled'
-          ? 'Order filled on Polymarket'
-          : statusPhase === 'partial'
-            ? 'Partially filled on Polymarket'
-            : 'Not filled on Polymarket'
   const filledContracts =
     typeof statusData?.filledSize === 'number' ? statusData.filledSize : null
   const totalContracts =
     typeof statusData?.size === 'number' ? statusData.size : null
-  const remainingContracts =
-    typeof statusData?.remainingSize === 'number' ? statusData.remainingSize : null
   const fillPrice =
     typeof statusData?.price === 'number' ? statusData.price : null
+  const statusLabel =
+    statusPhase === "filled"
+      ? "Filled"
+      : statusPhase === "partial"
+        ? "Partially filled"
+        : orderType === "FAK" &&
+            (statusPhase === "canceled" || statusPhase === "expired" || statusPhase === "rejected") &&
+            (!filledContracts || filledContracts <= 0)
+          ? "Not filled (FAK)"
+          : "Order sent to Polymarket"
   const filledAmountValue =
     filledContracts !== null && fillPrice !== null ? filledContracts * fillPrice : null
   const totalAmountValue =
@@ -845,14 +1015,22 @@ export function TradeCard({
         ? totalAmountValue
         : Number.isFinite(estimatedMaxCost) && estimatedMaxCost > 0
           ? estimatedMaxCost
-          : Number.isFinite(amountValue)
-            ? amountValue
-            : 0
+          : 0
   const statusContractsText =
     filledContracts !== null && totalContracts !== null
-      ? `${formatContracts(filledContracts)} of ${formatContracts(totalContracts)} filled`
-      : `${calculatedContracts.toLocaleString()} ${contractLabel}`
+      ? `${formatContractsDisplay(filledContracts, sizeStep)} / ${formatContractsDisplay(totalContracts, sizeStep)}`
+      : `${formatContractsDisplay(contractsValue ?? 0, sizeStep)} submitted`
   const isFinalStatus = TERMINAL_STATUS_PHASES.has(statusPhase)
+  const isFilledStatus = statusPhase === 'filled'
+  const resetConfirmation = () => {
+    setShowConfirmation(false)
+    setOrderId(null)
+    setStatusData(null)
+    statusDataRef.current = null
+    setStatusError(null)
+    setConfirmationError(null)
+    setStatusPhase('submitted')
+  }
 
   return (
     <div className="group bg-white border border-slate-200 rounded-xl overflow-hidden transition-all hover:shadow-lg">
@@ -953,16 +1131,16 @@ export function TradeCard({
             </div>
             <div className="text-center md:border-l border-slate-200">
               <p className="text-xs text-slate-500 mb-1 font-medium">Contracts</p>
-              <p className="text-sm md:text-base font-semibold text-slate-900">{formatNumber(size)}</p>
+              <p className="text-sm md:text-base font-semibold text-slate-900">{formatContracts(size)}</p>
             </div>
             <div className="text-center md:border-l border-slate-200">
               <p className="text-xs text-slate-500 mb-1 font-medium">Entry</p>
-              <p className="text-sm md:text-base font-semibold text-slate-900">{formatCurrency(price)}</p>
+              <p className="text-sm md:text-base font-semibold text-slate-900">{formatPrice(price)}</p>
             </div>
             <div className="text-center md:border-l border-slate-200">
               <p className="text-xs text-slate-500 mb-1 font-medium">Current</p>
               <p className="text-sm md:text-base font-semibold text-slate-900">
-                {hasCurrentPrice ? formatCurrency(currentPrice) : "--"}
+                {hasCurrentPrice ? formatPrice(currentPrice) : "--"}
               </p>
             </div>
             <div className="text-center md:border-l border-slate-200">
@@ -1030,7 +1208,7 @@ export function TradeCard({
           <div className="mt-0.5 rounded-xl border border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
             {showConfirmation ? (
               <div className="space-y-4">
-                  <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold tracking-wide text-slate-400">Status</p>
                     <p className="flex items-center gap-2 text-lg font-semibold text-slate-900">
@@ -1038,26 +1216,16 @@ export function TradeCard({
                       {statusLabel}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowConfirmation(false)
-                      setOrderId(null)
-                      setStatusData(null)
-                      statusDataRef.current = null
-                      setStatusError(null)
-                      setConfirmationError(null)
-                      setStatusPhase('submitted')
-                    }}
-                    className={
-                      isFinalStatus
-                        ? "inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 h-8 text-xs font-semibold text-slate-600 hover:text-slate-800"
-                        : "inline-flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 h-8 w-8"
-                    }
-                    aria-label={isFinalStatus ? "Copy again" : "Close order confirmation"}
-                  >
-                    {isFinalStatus ? "Copy Again" : <X className="h-4 w-4" />}
-                  </button>
+                  {isFilledStatus && (
+                    <button
+                      type="button"
+                      onClick={resetConfirmation}
+                      className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 h-8 w-8"
+                      aria-label="Close order confirmation"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
                 {confirmationError && (
                   <div
@@ -1085,7 +1253,7 @@ export function TradeCard({
                   <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
                     <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
                       <label className="text-xs font-medium text-slate-700">
-                        Amount (USD)
+                        {filledAmountValue !== null ? "Filled USD" : "Estimated max USD"}
                       </label>
                       <div className="flex h-14 items-center rounded-lg border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700">
                         {formatCurrency(Number.isFinite(statusAmountValue) ? statusAmountValue : 0)}
@@ -1093,7 +1261,7 @@ export function TradeCard({
                     </div>
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
                       <span className="text-xs font-medium text-slate-700 text-center sm:text-left">
-                        Contracts
+                        Filled / submitted
                       </span>
                       <div className="flex h-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center">
                         {statusContractsText}
@@ -1101,10 +1269,10 @@ export function TradeCard({
                     </div>
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
                       <span className="text-xs font-medium text-slate-700 text-center sm:text-left">
-                        Filled Price
+                        Average fill price
                       </span>
                       <div className="flex h-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center">
-                        {fillPrice !== null ? formatCurrency(fillPrice) : '—'}
+                        {formatPrice(fillPrice)}
                       </div>
                     </div>
                   </div>
@@ -1129,68 +1297,81 @@ export function TradeCard({
                     <span className="w-[52px]" aria-hidden="true" />
                 </div>
 
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <span>Live price:</span>
+                  <span className="font-semibold text-slate-900">
+                    {orderBookLoading ? "Loading…" : formatPrice(currentPrice)}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    Live price
+                  </span>
+                </div>
+                <div className="text-xs text-slate-500">Estimates update with live market prices.</div>
+                {orderBookError && (
+                  <div className="text-xs text-amber-600">{orderBookError}</div>
+                )}
+
                 {/* Amount Input */}
                 <div className="space-y-2 mb-4">
                     <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
                       <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-between gap-2">
                   <label htmlFor="amount" className="text-xs font-medium text-slate-700">
-                    Amount (USD)
+                    {amountMode === "usd" ? "USD (estimated)" : "Contracts"}
                   </label>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="text-slate-400 hover:text-slate-500"
-                                  aria-label="Amount (USD) info"
-                                >
-                                  <HelpCircle className="h-3 w-3" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent className="max-w-xs">
-                                <p>
-                                  We use your dollar amount to calculate the maximum whole contracts at the current price.
-                                  We then round to the nearest fillable total so the order stays within your budget.
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                  <button
+                    type="button"
+                    onClick={amountMode === "usd" ? handleSwitchToContracts : handleSwitchToUsd}
+                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+                    disabled={amountMode === "usd" ? !contractsValue : !estimatedMaxCost}
+                  >
+                    Switch to {amountMode === "usd" ? "contracts" : "USD"}
+                  </button>
                         </div>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                    {amountMode === "usd" && (
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                    )}
                     <input
                       id="amount"
                       type="number"
-                      value={usdAmount}
+                      step={amountMode === "contracts" ? sizeStep || 0.0001 : 0.01}
+                      value={amountInput}
                             onChange={(e) => {
-                              setUsdAmount(e.target.value)
+                              handleAmountChange(e.target.value)
                               if (submitError) setSubmitError(null)
                             }}
-                            onBlur={() => {
-                              if (!Number.isFinite(amountValue) || amountValue <= 0) return
-                              if (calculatedContracts < 1) return
-                              const normalizedAmount = calculatedContracts * effectivePrice
-                              setUsdAmount(normalizedAmount.toFixed(2))
-                            }}
                       onWheel={(e) => e.currentTarget.blur()}
-                      placeholder="0.00"
+                      placeholder={amountMode === "usd" ? "0.00" : "0"}
                       disabled={isSubmitting}
-                            className="w-full h-14 pl-7 pr-3 border border-slate-300 rounded-lg text-base font-semibold text-slate-700 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            className={`w-full h-14 border border-slate-300 rounded-lg text-base font-semibold text-slate-700 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${amountMode === "usd" ? "pl-7 pr-3" : "pl-3 pr-3"}`}
                     />
                   </div>
                       </div>
-                      <div className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px]">
-                        = {calculatedContracts.toLocaleString()} {contractLabel}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={amountMode === "usd" ? handleSwitchToContracts : handleSwitchToUsd}
+                        className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px] hover:border-slate-300"
+                        disabled={amountMode === "usd" ? !contractsValue : !estimatedMaxCost}
+                      >
+                        {amountMode === "usd"
+                          ? `≈ ${formatContractsDisplay(contractsValue, sizeStep)} ${contractLabel}`
+                          : `≈ ${estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"} USD`}
+                      </button>
                       <div className="flex h-14 items-center text-xs font-medium text-slate-500">
                         {sizePercentLabel} of original trade
                       </div>
                     </div>
-                    {inlineAmountError && (
-                      <p className="text-xs text-rose-600">{inlineAmountError}</p>
+                    {minOrderNotMet && (
+                      <p className="text-xs text-amber-700">
+                        Minimum order for this market is {formatContractsDisplay(sizeStep, sizeStep)} {sizeStep === 1 ? "contract" : "contracts"}. We&apos;ve adjusted your order.
+                      </p>
                     )}
-                    {submitError && !inlineAmountError && (
+                    {!sizeStep && orderBookLoading && (
+                      <p className="text-xs text-amber-700">Loading market minimums…</p>
+                    )}
+                    {submitError && (
                       <p className="text-xs text-rose-600">{submitError}</p>
                   )}
                 </div>
@@ -1199,9 +1380,11 @@ export function TradeCard({
                     onClick={handleQuickCopy}
                     disabled={
                       isMarketEnded ||
-                      !usdAmount ||
-                      Number.parseFloat(usdAmount) <= 0 ||
-                      amountTooSmall ||
+                      !amountInput ||
+                      !contractsValue ||
+                      contractsValue <= 0 ||
+                      (sizeStep !== null && contractsValue < sizeStep) ||
+                      !limitPrice ||
                       isSubmitting
                     }
                     className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
@@ -1284,7 +1467,7 @@ export function TradeCard({
                   </div>
                   {!showAdvanced && (
                     <p className="mt-1 text-xs text-slate-500">
-                      Estimated: {estimatedContractsAtLimit.toLocaleString()} contracts, up to {formatCurrency(estimatedMaxCost)} (may fill for less).
+                      Estimated: {formatContractsDisplay(contractsValue, sizeStep)} contracts, up to {estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"}.
                     </p>
                   )}
                   {showAdvanced && (
@@ -1340,7 +1523,7 @@ export function TradeCard({
                           />
                 </div>
                         <p className="text-xs text-slate-500">
-                          Estimated: {estimatedContractsAtLimit.toLocaleString()} contracts, up to {formatCurrency(estimatedMaxCost)} (may fill for less).
+                          Estimated: {formatContractsDisplay(contractsValue, sizeStep)} contracts, up to {estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"}.
                         </p>
               </div>
 
@@ -1399,11 +1582,26 @@ export function TradeCard({
               </div>
               <h4 className="text-lg font-semibold text-slate-900 mb-2">Trade Executed Successfully!</h4>
               <p className="text-sm text-slate-600">
-                Your copy trade of {formatCurrency(Number.parseFloat(usdAmount))} has been submitted to Polymarket
+                Your copy trade of {formatCurrency(estimatedMaxCost ?? 0)} has been submitted to Polymarket
               </p>
             </div>
           )}
           </div>
+          {showConfirmation && isFinalStatus && (
+            <div className="mt-3">
+              <Button
+                onClick={resetConfirmation}
+                className={`w-full font-semibold ${
+                  isFilledStatus
+                    ? "bg-slate-900 text-white hover:bg-slate-800"
+                    : "bg-amber-500 text-slate-900 hover:bg-amber-400"
+                }`}
+                size="lg"
+              >
+                {isFilledStatus ? "Copy Again" : "Try Again"}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

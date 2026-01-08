@@ -26,8 +26,6 @@ type ClosePositionModalProps = {
   }) => void
 }
 
-const badgeBase = 'inline-flex items-center justify-center rounded-full px-3 py-1 text-sm font-semibold tracking-wide'
-const layoutBadgeBase = `${badgeBase} bg-slate-100 text-slate-600 border border-slate-200`
 const SLIPPAGE_TOOLTIP =
   'Limits how much lower than your limit price this close can execute; 1% means the execution price may be at most 1% worse than the quote.'
 const ORDER_BEHAVIOR_TOOLTIP =
@@ -150,125 +148,157 @@ export default function ClosePositionModal({
           onClick={(event) => event.stopPropagation()}
         >
           <div className="space-y-6 px-6 py-6">
-            <section className="rounded-[32px] border border-slate-200 bg-white px-6 py-5 shadow-sm space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+            <section className="rounded-md border border-slate-200 bg-white px-5 py-6 shadow-sm space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">sell position</p>
+                  <h1 className="text-lg font-semibold text-slate-900">Position You&apos;re Closing</h1>
                   <p className="text-xs text-slate-500">Close this trade through the Polymarket CLOB.</p>
                 </div>
-                <span
-                  className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                <div
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
                     marketStatus === 'market open'
                       ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-slate-100 text-slate-600'
+                      : 'bg-slate-100 text-slate-500'
                   }`}
                 >
                   {marketStatus}
-                </span>
+                </div>
               </div>
               <div className="flex items-start gap-4">
-                <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-full border border-slate-100 bg-slate-50 text-xs font-semibold text-slate-500">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700">
                   {order.marketImageUrl ? (
                     <img
                       src={order.marketImageUrl}
                       alt={order.marketTitle}
-                      className="h-full w-full object-cover"
+                      className="h-14 w-14 rounded-2xl object-cover"
                     />
                   ) : (
-                    <span className="flex h-full items-center justify-center">
-                      {order.marketTitle.charAt(0)}
+                    <span className="text-sm font-semibold text-slate-700">
+                      {order.marketTitle?.charAt(0) ?? 'M'}
                     </span>
                   )}
                 </div>
-                <div className="flex flex-1 flex-col gap-2">
-                  <p className="text-base font-semibold text-slate-900">{order.marketTitle || 'Market'}</p>
-                  <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                    <span
-                      className={`inline-flex rounded-full px-3 py-1 ${
-                        marketDirection === 'buy'
-                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                          : 'bg-rose-50 text-rose-600 border border-rose-100'
-                      }`}
-                    >
-                      direction: {marketDirection}
-                    </span>
-                    <span className="inline-flex rounded-full bg-slate-50 px-3 py-1 text-slate-600 border border-slate-100">
-                      outcome: {order.outcome ?? '—'}
-                    </span>
+                <div className="flex-1">
+                  <div className="text-lg font-semibold text-slate-900">{order.marketTitle || 'Market'}</div>
+                  <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] font-semibold tracking-wide text-slate-500">Direction</span>
+                      <span
+                        className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold shadow-sm ${
+                          marketDirection === 'buy'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-rose-100 text-rose-700'
+                        }`}
+                      >
+                        {marketDirection}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] font-semibold tracking-wide text-slate-500">Outcome</span>
+                      <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                        {order.outcome ?? '—'}
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-500">
-                    {order.createdAt ? `${order.createdAt}` : '—'} · Updated {order.updatedAt ?? '—'}
-                  </p>
                 </div>
-                <div>
-                  <span className="inline-flex rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600">
-                    {contractsLabel} contracts
-                  </span>
+                <div className="text-xs font-semibold text-slate-600">
+                  {contractsLabel} contracts
                 </div>
               </div>
-              <div className="grid gap-4 text-sm text-slate-500 sm:grid-cols-4">
+              <div className="mt-4 grid gap-4 text-xs text-slate-500 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">current price</p>
-                  <p className="text-base font-semibold text-slate-900">{currentPriceLabel}</p>
+                  <div className="text-[11px] font-semibold tracking-wide text-slate-400">Current Price</div>
+                  <div className="text-sm font-semibold text-slate-900">{currentPriceLabel}</div>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">entry price</p>
-                  <p className="text-base font-semibold text-slate-900">{filledPriceLabel}</p>
+                  <div className="text-[11px] font-semibold tracking-wide text-slate-400">Entry Price</div>
+                  <div className="text-sm font-semibold text-slate-900">{filledPriceLabel}</div>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">P / L</p>
-                  <p className={`text-base font-semibold ${getPnlColorClass(currentPnl)}`}>
+                  <div className="text-[11px] font-semibold tracking-wide text-slate-400">P / L</div>
+                  <div className={`text-sm font-semibold ${getPnlColorClass(currentPnl)}`}>
                     {formatPnl(currentPnl)}
-                  </p>
+                  </div>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">contracts</p>
-                  <p className="text-base font-semibold text-slate-900">{contractsLabel}</p>
+                  <div className="text-[11px] font-semibold tracking-wide text-slate-400">Contracts</div>
+                  <div className="text-sm font-semibold text-slate-900">{contractsLabel}</div>
                 </div>
+              </div>
+              <div className="flex flex-col gap-1 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                <span>{order.createdAt ? `${order.createdAt}` : '—'}</span>
+                <span>Updated {order.updatedAt ?? '—'}</span>
               </div>
             </section>
 
-            <section className="rounded-[32px] border border-slate-200 bg-white px-6 py-6 shadow-lg space-y-5">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-900">close order</p>
-                <div className="text-xs text-slate-500">{position.size.toFixed(6)} contracts available</div>
-              </div>
-              <div className="flex items-center justify-between text-sm font-semibold text-slate-900">
-                <span>available exposure</span>
-                <span className="text-xs text-slate-500">
-                  {totalCostLabel} · P&L at limit: {payoutLabel}
-                </span>
-              </div>
-              <div className="rounded-[20px] border border-slate-100 bg-slate-50 px-5 py-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-slate-500">amount</p>
-                    <p className="text-lg font-semibold text-slate-900">contracts to sell</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSellAll}
-                    className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-white"
-                  >
-                    Sell all
-                  </button>
+            <div className="flex justify-center py-0.5">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-base text-slate-500">
+                ↓
+              </span>
+            </div>
+
+            <section className="rounded-md border border-slate-200 bg-white px-4 py-5 shadow-sm space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Your Close Order</h2>
                 </div>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.000001"
-                  value={amountInput}
-                  onChange={(event) => setAmountInput(event.target.value)}
-                  className="mt-3 w-full border-none bg-slate-50 px-3 py-2 text-lg font-semibold text-slate-900 outline-none focus:outline-none"
-                />
-                <p className="mt-2 text-xs text-slate-500">
-                  {amountValid && proceeds !== null ? `≈ ${formatCurrency(proceeds)}` : 'Enter an amount to preview proceeds'}
-                </p>
+                <div className="text-right">
+                  <div className="text-xs font-medium text-slate-500">Contracts Available</div>
+                  <div className="text-sm font-semibold text-slate-900">{position.size.toFixed(6)}</div>
+                </div>
+              </div>
+              <div className="text-sm text-slate-700 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-medium text-slate-500">Current Price / Contract:</span>
+                  <span className="text-sm font-semibold text-slate-900">{currentPriceLabel}</span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    Live price
+                  </span>
+                </div>
+                <div className="text-xs text-slate-500">Estimates update with live market prices.</div>
               </div>
 
-              <div className="space-y-3 text-sm text-slate-600">
+              <div className="space-y-3">
+                <div className="rounded-2xl bg-slate-50 px-4 py-3 shadow-sm">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-slate-500">
+                    <span>Contracts to sell</span>
+                    <button
+                      type="button"
+                      onClick={handleSellAll}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+                    >
+                      Sell all
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm sm:w-auto">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.000001"
+                        value={amountInput}
+                        onChange={(event) => setAmountInput(event.target.value)}
+                        className="w-full flex-1 border-none bg-white px-1 text-lg font-semibold text-slate-900 outline-none focus:outline-none appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-number-spin-box]:appearance-none"
+                        placeholder="10"
+                      />
+                    </div>
+                    <div className="text-sm font-medium text-slate-700">
+                      {amountValid && proceeds !== null ? `≈ ${formatCurrency(proceeds)} USD` : 'Enter an amount to preview proceeds'}
+                    </div>
+                    <div className="ml-auto text-sm text-slate-500">
+                      P&amp;L at limit:{' '}
+                      <span className={`text-base font-semibold ${getPnlColorClass(estimatedPnl)}`}>
+                        {formatPnl(estimatedPnl)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
                 <div className="flex items-center gap-2">
-                  <div className="text-xs font-medium text-slate-500">Slippage tolerance</div>
+                  <div className="text-xs font-medium text-slate-500">Slippage Tolerance</div>
                   <button
                     type="button"
                     onClick={() => setShowSlippageInfo((prev) => !prev)}
@@ -279,13 +309,13 @@ export default function ClosePositionModal({
                     ?
                   </button>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-2">
                   {SLIPPAGE_PRESETS.map((value) => (
                     <button
                       key={value}
                       type="button"
                       onClick={() => setSlippagePreset(value)}
-                      className={`rounded-md border px-3 py-1 text-xs font-semibold ${
+                      className={`rounded-md border px-2 py-1 text-xs ${
                         slippagePreset === value
                           ? 'border-slate-900 bg-slate-900 text-white'
                           : 'border-slate-200 bg-white text-slate-600'
@@ -297,7 +327,7 @@ export default function ClosePositionModal({
                   <button
                     type="button"
                     onClick={() => setSlippagePreset('custom')}
-                    className={`rounded-md border px-3 py-1 text-xs font-semibold ${
+                    className={`rounded-md border px-2 py-1 text-xs ${
                       slippagePreset === 'custom'
                         ? 'border-slate-900 bg-slate-900 text-white'
                         : 'border-slate-200 bg-white text-slate-600'
@@ -312,27 +342,27 @@ export default function ClosePositionModal({
                       step="0.1"
                       value={customSlippage}
                       onChange={(event) => setCustomSlippage(event.target.value)}
-                      className="w-20 rounded-md border border-slate-300 px-2 py-1 text-xs shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       placeholder="0.5"
                     />
                   )}
                 </div>
-                <p className="text-xs text-slate-500">
+                <div className="mt-2 text-xs text-slate-500">
                   {limitPriceLabel === '—'
-                    ? 'Set slippage to preview the lower bound.'
+                    ? 'Set slippage to preview the limit price.'
                     : `Allow this close to execute down to ${limitPriceLabel} (market tick size applied).`}
-                </p>
+                </div>
                 {showSlippageInfo && (
                   <div
                     id="close-slippage-tooltip"
-                    className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
+                    className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
                   >
                     {SLIPPAGE_TOOLTIP}
                   </div>
                 )}
               </div>
 
-              <div className="space-y-3 text-sm text-slate-600">
+              <div>
                 <div className="flex items-center gap-2">
                   <div className="text-xs font-medium text-slate-500">Order Behavior</div>
                   <button
@@ -345,41 +375,41 @@ export default function ClosePositionModal({
                     ?
                   </button>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="flex cursor-pointer items-center gap-2 rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                     <input
                       type="radio"
                       name="closeOrderBehavior"
                       checked={orderType === 'FAK'}
                       onChange={() => setOrderType('FAK')}
                     />
-                    <span className="text-xs font-semibold text-slate-900">Fill and Kill (FAK) (recommended)</span>
+                    <span>Fill and Kill (FAK) (recommended)</span>
                   </label>
-                  <label className="flex cursor-pointer items-center gap-2 rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                  <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                     <input
                       type="radio"
                       name="closeOrderBehavior"
                       checked={orderType === 'GTC'}
                       onChange={() => setOrderType('GTC')}
                     />
-                    <span className="text-xs font-semibold text-slate-900">Good 'Til Canceled</span>
+                    <span>Good &apos;Til Canceled</span>
                   </label>
                 </div>
                 {showOrderBehaviorInfo && (
                   <div
                     id="close-order-behavior-tooltip"
-                    className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
+                    className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
                   >
                     {ORDER_BEHAVIOR_TOOLTIP}
                   </div>
                 )}
               </div>
 
-              <div className="rounded-[20px] border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-700">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
                 <p className="text-xs text-slate-500">Estimated proceeds</p>
                 <p className="text-lg font-semibold text-slate-900">{proceeds !== null ? formatCurrency(proceeds) : '—'}</p>
                 <p className="text-xs text-slate-500">
-                  P&L at limit price:{' '}
+                  P&amp;L at limit price:{' '}
                   <span className={`font-semibold ${getPnlColorClass(estimatedPnl)}`}>
                     {formatPnl(estimatedPnl)}
                   </span>
@@ -392,22 +422,27 @@ export default function ClosePositionModal({
                 </div>
               )}
 
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirm}
-                  disabled={!amountValid || effectivePriceForSubmit === null || isSubmitting}
-                  className="flex-1 rounded-2xl bg-rose-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-400 disabled:opacity-40"
-                >
-                  {isSubmitting ? 'Submitting…' : 'Sell position'}
-                </button>
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="flex-1 rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirm}
+                    disabled={!amountValid || effectivePriceForSubmit === null || isSubmitting}
+                    className="flex-1 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  >
+                    {isSubmitting ? 'Submitting…' : 'Sell position'}
+                  </button>
+                </div>
+                <div className="text-xs text-slate-500">
+                  This sends a limit order. It may fill immediately, partially, or not at all.
+                </div>
               </div>
             </section>
           </div>

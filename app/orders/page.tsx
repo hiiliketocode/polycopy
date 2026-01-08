@@ -450,10 +450,10 @@ export default function OrdersPage() {
   )
 
   useEffect(() => {
-    if (loadingAuth || hasLoaded) return
+    if (loadingAuth || hasLoaded || !user) return
     setHasLoaded(true)
-    refreshOrders()
-  }, [loadingAuth, hasLoaded, refreshOrders])
+    fetchOrders()
+  }, [loadingAuth, hasLoaded, user, fetchOrders])
 
   useEffect(() => {
     if (activeTab !== 'positions') return
@@ -483,24 +483,39 @@ export default function OrdersPage() {
     return summary
   }, [statusSummaryOrders])
 
-  const orderByTokenId = useMemo(() => {
-    const map = new Map<string, OrderRow>()
+  const orderLookups = useMemo(() => {
+    const byTokenId = new Map<string, OrderRow>()
+    const byMarketOutcome = new Map<string, OrderRow>()
     orders.forEach((order) => {
       const tokenId = extractTokenIdFromOrder(order)
       if (tokenId) {
-        map.set(tokenId.toLowerCase(), order)
+        const key = tokenId.toLowerCase()
+        const existing = byTokenId.get(key)
+        byTokenId.set(key, selectPreferredOrder(existing, order))
+      }
+      const marketId = extractString(order.marketId)
+      if (marketId) {
+        const outcome = extractString(order.outcome) ?? ''
+        const key = `${marketId.toLowerCase()}::${outcome.toLowerCase()}`
+        const existing = byMarketOutcome.get(key)
+        byMarketOutcome.set(key, selectPreferredOrder(existing, order))
       }
     })
-    return map
+    return { byTokenId, byMarketOutcome }
   }, [orders])
 
   const resolveOrderForPosition = useCallback(
     (position: PositionSummary): OrderRow | null => {
       const key = position.tokenId?.toLowerCase?.()
       if (!key) return null
-      return orderByTokenId.get(key) ?? null
+      const tokenMatch = orderLookups.byTokenId.get(key) ?? null
+      if (tokenMatch) return tokenMatch
+      const marketId = extractString(position.marketId)
+      if (!marketId) return null
+      const outcome = extractString(position.outcome) ?? ''
+      return orderLookups.byMarketOutcome.get(`${marketId.toLowerCase()}::${outcome.toLowerCase()}`) ?? null
     },
-    [orderByTokenId]
+    [orderLookups]
   )
 
   return (
@@ -516,6 +531,11 @@ export default function OrdersPage() {
         {refreshing && !ordersLoading && (
           <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
             Refreshing orders…
+          </div>
+        )}
+        {activeTab === 'positions' && (
+          <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
+            Showing trades executed via Polycopy only. Current value reflects live market pricing for these copied positions.
           </div>
         )}
 
@@ -655,11 +675,29 @@ function formatContracts(value: number | null | undefined) {
   }).format(value)
 }
 
-function formatPercentCompact(value: number | null | undefined) {
+function formatSignedPercentCompact(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
   const needsDecimals = Math.abs(value % 1) > 1e-6
   const digits = needsDecimals ? 2 : 0
-  return `${value.toFixed(digits)}%`
+  const sign = value > 0 ? '+' : value < 0 ? '' : ''
+  return `${sign}${value.toFixed(digits)}%`
+}
+
+function formatDateOpened(value: string | null | undefined) {
+  if (!value) return '—'
+  const asNumber = Number(value)
+  const parsed = Number.isFinite(asNumber)
+    ? asNumber > 1e12
+      ? asNumber
+      : asNumber * 1000
+    : Date.parse(value)
+  if (!Number.isFinite(parsed)) return '—'
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(parsed)
 }
 
 function deriveRemainingSize(order: OrderRow): number {
@@ -769,7 +807,13 @@ function abbreviateHex(value: string | null | undefined): string | null {
   return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`
 }
 
-function getCopiedTraderLabel(order: OrderRow): string {
+function truncateLabel(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value
+  if (maxLength <= 3) return value.slice(0, maxLength)
+  return `${value.slice(0, maxLength - 3)}...`
+}
+
+function getCopiedTraderDisplay(order: OrderRow): { label: string; full: string } {
   const raw = (order && typeof order === 'object' && order.raw) ? order.raw : {}
   const candidates = [
     raw.copiedTraderUsername,
@@ -780,15 +824,66 @@ function getCopiedTraderLabel(order: OrderRow): string {
     raw.copiedTraderName,
     order?.traderName,
   ]
+  let full = ''
   for (const candidate of candidates) {
     const text = extractString(candidate)
-    if (text) return text
+    if (text) {
+      full = text
+      break
+    }
   }
-  const walletLabel =
-    abbreviateWallet(order?.copiedTraderWallet) ??
-    abbreviateWallet(order?.traderWallet) ??
-    null
-  return walletLabel ?? '—'
+
+  const wallet =
+    extractString(order?.copiedTraderWallet) ??
+    extractString(order?.traderWallet) ??
+    ''
+
+  if (!full && wallet) {
+    return { label: abbreviateWallet(wallet) ?? wallet, full: wallet }
+  }
+
+  if (!full) {
+    return { label: '—', full: '' }
+  }
+
+  const isWalletLike = full.startsWith('0x') && full.length > 12
+  const label = isWalletLike
+    ? abbreviateWallet(full) ?? full
+    : truncateLabel(full, 16)
+  return { label, full }
+}
+
+function selectPreferredOrder(current: OrderRow | undefined, candidate: OrderRow): OrderRow {
+  if (!current) return candidate
+  const currentHasCopied = orderHasCopiedTrader(current)
+  const candidateHasCopied = orderHasCopiedTrader(candidate)
+  if (candidateHasCopied && !currentHasCopied) return candidate
+  if (currentHasCopied && !candidateHasCopied) return current
+  const currentTs = getOrderTimestamp(current)
+  const candidateTs = getOrderTimestamp(candidate)
+  if (candidateTs > currentTs) return candidate
+  return current
+}
+
+function orderHasCopiedTrader(order: OrderRow): boolean {
+  if (order.copiedTraderId || order.copiedTraderWallet) return true
+  const raw = order?.raw ?? {}
+  return Boolean(
+    raw.copiedTraderUsername ||
+      raw.copied_trader_username ||
+      raw.copiedTraderHandle ||
+      raw.copied_trader_handle ||
+      raw.copied_trader_name ||
+      raw.copiedTraderName
+  )
+}
+
+function getOrderTimestamp(order: OrderRow): number {
+  const updated = Date.parse(order.updatedAt ?? '')
+  if (Number.isFinite(updated)) return updated
+  const created = Date.parse(order.createdAt ?? '')
+  if (Number.isFinite(created)) return created
+  return 0
 }
 
 type PositionsListProps = {
@@ -983,6 +1078,95 @@ function PositionsList({
     )
   }
 
+  const positionRows = visiblePositions.map((position) => {
+    const order = resolveOrderForPosition(position)
+    const conditionId = deriveConditionId(position.tokenId, position.marketId)
+    const meta = conditionId ? marketMeta.get(conditionId) : null
+    const rawMarketTitle =
+      order?.marketTitle ??
+      meta?.title ??
+      position.marketId ??
+      position.tokenId ??
+      'Market'
+    const marketTitle =
+      order?.marketTitle || meta?.title
+        ? rawMarketTitle
+        : abbreviateHex(rawMarketTitle) ?? rawMarketTitle
+    const marketImage = order?.marketImageUrl ?? meta?.image ?? null
+    const outcomeLabel = extractString(position.outcome) ?? extractString(order?.outcome) ?? '—'
+    const amountUsd =
+      Number.isFinite(position.size) && Number.isFinite(position.avgEntryPrice ?? NaN)
+        ? position.size * (position.avgEntryPrice ?? 0)
+        : null
+    const tokenIdLower = position.tokenId?.toLowerCase?.()
+    const metaPrice =
+      tokenIdLower && meta?.prices?.has(tokenIdLower) ? meta.prices.get(tokenIdLower) ?? null : null
+    const currentPrice = order?.currentPrice ?? metaPrice ?? null
+    const entryPrice = position.avgEntryPrice ?? order?.priceOrAvgPrice ?? null
+    const openedAt = position.firstTradeAt ?? position.lastTradeAt ?? order?.createdAt ?? null
+    const inferredMarketOpen =
+      order?.marketIsOpen ??
+      meta?.open ??
+      (currentPrice !== null
+        ? currentPrice > 0.05 && currentPrice < 0.95
+          ? true
+          : false
+        : null)
+    const marketStatusLabel =
+      order?.positionState === 'closed'
+        ? 'Closed'
+        : inferredMarketOpen === false
+          ? 'Ended'
+          : 'Open'
+    const statusDot =
+      order?.positionState === 'closed'
+        ? 'bg-slate-400'
+        : inferredMarketOpen === false
+          ? 'bg-rose-500'
+          : 'bg-emerald-500'
+    const statusPill =
+      order?.positionState === 'closed'
+        ? 'bg-slate-100 text-slate-600'
+        : inferredMarketOpen === false
+          ? 'bg-amber-50 text-amber-700'
+          : 'bg-emerald-50 text-emerald-700'
+    const canSell = order?.positionState === 'closed' ? false : inferredMarketOpen !== false
+    const traderDisplay = order ? getCopiedTraderDisplay(order) : { label: '—', full: '' }
+    const pnlCalc = computePositionPnl(position, entryPrice, currentPrice)
+    const pnlValue = pnlCalc?.pnl ?? order?.pnlUsd ?? null
+    const currentValue =
+      Number.isFinite(position.size) && Number.isFinite(currentPrice ?? NaN)
+        ? position.size * (currentPrice ?? 0)
+        : null
+    const displayPct =
+      currentValue === 0 && Number.isFinite(entryPrice ?? NaN) && (entryPrice ?? 0) > 0
+        ? -100
+        : pnlCalc?.pct ?? null
+    const contractsCount = Number.isFinite(position.size) ? position.size : 0
+
+    return {
+      key: `${position.tokenId}-${position.size}`,
+      position,
+      marketTitle,
+      marketImage,
+      outcomeLabel,
+      amountUsd,
+      currentPrice,
+      entryPrice,
+      openedAt,
+      marketStatusLabel,
+      statusDot,
+      statusPill,
+      canSell,
+      traderDisplay,
+      pnlCalc,
+      pnlValue,
+      currentValue,
+      displayPct,
+      contractsCount,
+    }
+  })
+
   return (
     <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
@@ -1001,144 +1185,167 @@ function PositionsList({
         </label>
       </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full table-fixed text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b border-slate-200 text-xs tracking-wider">
-                  <th className="py-2 pr-3 font-medium w-[120px]">Status</th>
-                  <th className="py-2 pr-3 font-medium w-[240px]">Market</th>
-                  <th className="py-2 pr-3 font-medium w-[130px]">Outcome</th>
-                  <th className="py-2 pr-3 font-medium w-[120px]">Amount</th>
-                  <th className="py-2 pr-3 font-medium w-[120px]">Entry → Now</th>
-                  <th className="py-2 pr-3 font-medium w-[110px]">P/L</th>
-                  <th className="py-2 pr-3 font-medium w-[140px]">Copied Trader</th>
-                  <th className="py-2 pr-3 font-medium w-[90px] text-right">Action</th>
-                </tr>
-              </thead>
+      <div className="hidden md:block">
+        <table className="w-full table-fixed text-sm">
+          <thead>
+            <tr className="text-left text-slate-500 border-b border-slate-200 text-xs tracking-wider">
+              <th className="py-2 pr-3 font-medium w-[12%] lg:w-[12%]">Status</th>
+              <th className="py-2 pr-3 font-medium w-[44%] lg:w-[28%]">Market/Outcome</th>
+              <th className="py-2 pr-3 font-medium w-[14%] lg:w-[10%]">Amount</th>
+              <th className="py-2 pr-3 font-medium w-[16%] lg:w-[12%]">Date opened</th>
+              <th className="py-2 pr-3 font-medium hidden lg:table-cell lg:w-[13%]">Entry → Now</th>
+              <th className="py-2 pr-3 font-medium hidden lg:table-cell lg:w-[12%]">Current value</th>
+              <th className="py-2 pr-3 font-medium hidden lg:table-cell lg:w-[10%]">Copied Trader</th>
+              <th className="py-2 pr-3 font-medium w-[14%] lg:w-[13%] text-right">Action</th>
+            </tr>
+          </thead>
           <tbody>
-            {visiblePositions.map((position) => {
-              const order = resolveOrderForPosition(position)
-              const conditionId = deriveConditionId(position.tokenId, position.marketId)
-              const meta = conditionId ? marketMeta.get(conditionId) : null
-              const rawMarketTitle =
-                order?.marketTitle ??
-                meta?.title ??
-                position.marketId ??
-                position.tokenId ??
-                'Market'
-              const marketTitle =
-                order?.marketTitle || meta?.title
-                  ? rawMarketTitle
-                  : abbreviateHex(rawMarketTitle) ?? rawMarketTitle
-              const marketImage = order?.marketImageUrl ?? meta?.image ?? null
-              const sideLabel = position.side === 'SELL' ? 'Sell' : 'Buy'
-              const outcomeLabel = extractString(position.outcome) ?? extractString(order?.outcome) ?? '—'
-              const outcomeDisplay = outcomeLabel !== '—' ? `${sideLabel} ${outcomeLabel}` : sideLabel
-              const pnlLabel =
-                order?.pnlUsd !== null && order?.pnlUsd !== undefined
-                  ? formatCurrency(order.pnlUsd)
-                  : '—'
-              const amountUsd =
-                Number.isFinite(position.size) && Number.isFinite(position.avgEntryPrice ?? NaN)
-                  ? position.size * (position.avgEntryPrice ?? 0)
-                  : null
-              const tokenIdLower = position.tokenId?.toLowerCase?.()
-              const metaPrice =
-                tokenIdLower && meta?.prices?.has(tokenIdLower) ? meta.prices.get(tokenIdLower) ?? null : null
-              const currentPrice = order?.currentPrice ?? metaPrice ?? null
-              const entryPrice = position.avgEntryPrice ?? order?.priceOrAvgPrice ?? null
-              const inferredMarketOpen =
-                order?.marketIsOpen ??
-                meta?.open ??
-                (currentPrice !== null
-                  ? currentPrice > 0.05 && currentPrice < 0.95
-                    ? true
-                    : false
-                  : null)
-              const marketStatusLabel =
-                order?.positionState === 'closed'
-                  ? 'Closed'
-                  : inferredMarketOpen === false
-                    ? 'Ended'
-                    : 'Open'
-              const statusDot =
-                order?.positionState === 'closed'
-                  ? 'bg-slate-400'
-                  : inferredMarketOpen === false
-                    ? 'bg-rose-500'
-                    : 'bg-emerald-500'
-              const statusPill =
-                order?.positionState === 'closed'
-                  ? 'bg-slate-100 text-slate-600'
-                  : inferredMarketOpen === false
-                    ? 'bg-amber-50 text-amber-700'
-                    : 'bg-emerald-50 text-emerald-700'
-              const canSell = order?.positionState === 'closed' ? false : inferredMarketOpen !== false
-              const traderHandle = order ? getCopiedTraderLabel(order) : null
-              const pnlCalc = computePositionPnl(position, entryPrice, currentPrice)
-              const contractsCount = Number.isFinite(position.size) ? position.size : 0
-              return (
-                <tr key={`${position.tokenId}-${position.size}`} className="border-b border-slate-100">
-                  <td className="py-3 pr-3 align-top text-sm text-slate-700">
-                    <span className="inline-flex items-center gap-2">
-                      <span className={`h-2.5 w-2.5 rounded-full ${statusDot}`} />
-                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusPill}`}>{marketStatusLabel}</span>
+            {positionRows.map((row) => (
+              <tr key={row.key} className="border-b border-slate-100">
+                <td className="py-3 pr-3 align-top text-sm text-slate-700">
+                  <span className="inline-flex items-center gap-2">
+                    <span className={`h-2.5 w-2.5 rounded-full ${row.statusDot}`} />
+                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${row.statusPill}`}>
+                      {row.marketStatusLabel}
                     </span>
-                  </td>
-                  <td className="py-3 pr-3 align-top">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 overflow-hidden rounded-full bg-slate-100">
-                        {marketImage ? (
-                          <img src={marketImage} alt={marketTitle} className="h-full w-full object-cover" />
-                        ) : (
-                          <span className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500">
-                            {marketTitle.charAt(0)}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex min-w-0 flex-col">
-                        <p className="truncate text-sm font-semibold text-slate-900">{marketTitle}</p>
-                        <p className="truncate text-xs text-slate-500">{outcomeLabel}</p>
-                      </div>
+                  </span>
+                </td>
+                <td className="py-3 pr-3 align-top">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-slate-100">
+                      {row.marketImage ? (
+                        <img src={row.marketImage} alt={row.marketTitle} className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500">
+                          {row.marketTitle.charAt(0)}
+                        </span>
+                      )}
                     </div>
-                  </td>
-                  <td className="py-3 pr-3 align-top text-sm font-semibold text-slate-900">
-                    {outcomeDisplay}
-                  </td>
-                  <td className="py-3 pr-3 align-top text-sm text-slate-700">
-                    {formatCurrency(amountUsd)}
-                    <div className="text-xs text-slate-500">{formatContracts(contractsCount)}</div>
-                  </td>
-                  <td className="py-3 pr-3 align-top text-sm text-slate-700">
-                    {formatCurrency(entryPrice)} → {formatCurrency(currentPrice)}
-                  </td>
-                  <td className="py-3 pr-3 align-top">
-                    <span className={`text-sm font-semibold ${getPnlColorClass(pnlCalc?.pnl ?? order?.pnlUsd)}`}>
-                      {pnlCalc
-                        ? `${formatCurrency(pnlCalc.pnl)} (${formatPercentCompact(pnlCalc.pct)})`
-                        : pnlLabel}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-3 align-top text-sm text-slate-700">{traderHandle}</td>
-                  <td className="py-3 pr-3 align-top text-sm text-right">
-                    <button
-                      type="button"
-                      onClick={() => onSellPosition(position)}
-                      disabled={!canSell}
-                      className={`rounded-full px-4 py-2 text-xs font-semibold shadow-sm transition ${
-                        canSell
-                          ? 'bg-rose-500 text-white hover:bg-rose-400'
-                          : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                      }`}
-                    >
-                      Sell
-                    </button>
-                  </td>
-                </tr>
-              )
-            })}
+                    <div className="flex min-w-0 flex-col">
+                      <p className="truncate text-sm font-semibold text-slate-900">{row.marketTitle}</p>
+                      <p className="truncate text-xs text-slate-500">{row.outcomeLabel}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="py-3 pr-3 align-top text-sm text-slate-700">
+                  {formatCurrency(row.amountUsd)}
+                  <div className="text-xs text-slate-500">{formatContracts(row.contractsCount)}</div>
+                </td>
+                <td className="py-3 pr-3 align-top text-sm text-slate-700 whitespace-nowrap">
+                  {formatDateOpened(row.openedAt)}
+                </td>
+                <td className="py-3 pr-3 align-top text-sm text-slate-700 hidden lg:table-cell">
+                  {formatCurrency(row.entryPrice)} → {formatCurrency(row.currentPrice)}
+                </td>
+                <td className="py-3 pr-3 align-top hidden lg:table-cell">
+                  <div className="text-sm font-semibold text-slate-900">
+                    {formatCurrency(row.currentValue)}
+                  </div>
+                  <div className={`text-xs ${getPnlColorClass(row.displayPct)}`}>
+                    {formatSignedPercentCompact(row.displayPct)}
+                  </div>
+                </td>
+                <td className="py-3 pr-3 align-top text-sm text-slate-700 hidden lg:table-cell">
+                  <span className="block max-w-[140px] truncate" title={row.traderDisplay.full || undefined}>
+                    {row.traderDisplay.label}
+                  </span>
+                </td>
+                <td className="py-3 pr-3 align-top text-sm text-right">
+                  <button
+                    type="button"
+                    onClick={() => onSellPosition(row.position)}
+                    disabled={!row.canSell}
+                    className={`rounded-full px-4 py-2 text-xs font-semibold shadow-sm transition ${
+                      row.canSell
+                        ? 'bg-rose-500 text-white hover:bg-rose-400'
+                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    Sell
+                  </button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="space-y-3 md:hidden">
+        {positionRows.map((row) => (
+          <article key={row.key} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-slate-100">
+                  {row.marketImage ? (
+                    <img src={row.marketImage} alt={row.marketTitle} className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500">
+                      {row.marketTitle.charAt(0)}
+                    </span>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900">{row.marketTitle}</p>
+                  <p className="truncate text-xs text-slate-500">{row.outcomeLabel}</p>
+                </div>
+              </div>
+              <div className="shrink-0">
+                <span className={`inline-flex items-center gap-2 rounded-full px-2 py-1 text-xs font-semibold ${row.statusPill}`}>
+                  <span className={`h-2 w-2 rounded-full ${row.statusDot}`} />
+                  {row.marketStatusLabel}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-400">Amount</p>
+                <p className="text-sm font-semibold text-slate-900">{formatCurrency(row.amountUsd)}</p>
+                <p className="text-[11px] text-slate-500">{formatContracts(row.contractsCount)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-400">Opened</p>
+                <p className="text-sm font-semibold text-slate-900">{formatDateOpened(row.openedAt)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-400">Entry → Now</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {formatCurrency(row.entryPrice)} → {formatCurrency(row.currentPrice)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-400">Current value</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {formatCurrency(row.currentValue)}
+                </p>
+                <p className={`text-[11px] ${getPnlColorClass(row.displayPct)}`}>
+                  {formatSignedPercentCompact(row.displayPct)}
+                </p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-[10px] uppercase tracking-wide text-slate-400">Copied Trader</p>
+                <p className="truncate text-sm font-semibold text-slate-900" title={row.traderDisplay.full || undefined}>
+                  {row.traderDisplay.label}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => onSellPosition(row.position)}
+                disabled={!row.canSell}
+                className={`rounded-full px-4 py-2 text-xs font-semibold shadow-sm transition ${
+                  row.canSell
+                    ? 'bg-rose-500 text-white hover:bg-rose-400'
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                Sell
+              </button>
+            </div>
+          </article>
+        ))}
       </div>
     </section>
   )

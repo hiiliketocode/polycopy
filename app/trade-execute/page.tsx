@@ -6,6 +6,13 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Compo
 import { useSearchParams } from 'next/navigation'
 import { Navigation } from '@/components/polycopy/navigation'
 import { USDC_DECIMALS } from '@/lib/turnkey/config'
+import {
+  getStepDecimals,
+  normalizeContractsFromUsd,
+  normalizeContractsInput,
+  roundPriceToTick,
+  roundDownToStep,
+} from '@/lib/polymarket/sizing'
 import { extractTraderNameFromRecord } from '@/lib/trader-name'
 import { CheckCircle2, Clock, XCircle } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
@@ -61,9 +68,6 @@ const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
   'expired',
   'rejected',
 ])
-const MINIMUM_TRADE_USD = 1
-const MINIMUM_TRADE_TOLERANCE = 1e-6
-
 const EMPTY_FORM: ExecuteForm = {
   tokenId: '',
   price: '',
@@ -112,11 +116,6 @@ function formatValue(value: any) {
   if (value === null || value === undefined || value === '') return '—'
   if (typeof value === 'number') return value.toLocaleString()
   return String(value)
-}
-
-function formatNumber(value: number | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
-  return value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
 function formatPrice(value: number | null | undefined) {
@@ -184,22 +183,11 @@ function findStatusReason(value: unknown): string | null {
   return null
 }
 
-function meetsMinimumTradeUsd(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return false
-  return value + MINIMUM_TRADE_TOLERANCE >= MINIMUM_TRADE_USD
-}
-
-function meetsMinimumContracts(
-  amountMode: 'usd' | 'contracts',
-  amountValue: number,
-  limitPriceValue: number | null
-) {
-  if (!Number.isFinite(amountValue) || amountValue <= 0) return false
-  if (amountMode === 'contracts') {
-    return amountValue + MINIMUM_TRADE_TOLERANCE >= 1
-  }
-  if (!limitPriceValue || !Number.isFinite(limitPriceValue) || limitPriceValue <= 0) return false
-  return amountValue + MINIMUM_TRADE_TOLERANCE >= limitPriceValue
+type OrderBookResponse = {
+  bids?: Array<any>
+  asks?: Array<any>
+  min_order_size?: number | string | null
+  tick_size?: number | string | null
 }
 
 function normalizeOutcome(value: string) {
@@ -276,6 +264,23 @@ const STATUS_SIMPLE_LABELS: Record<StatusPhase, string> = {
 function getOrderStatusLabel(status?: string | null) {
   const phase = normalizeStatusPhase(status)
   return STATUS_SIMPLE_LABELS[phase] || 'Unknown'
+}
+
+function getPostOrderStateLabel(
+  phase: StatusPhase,
+  orderType: ExecuteForm['orderType'],
+  filledSize: number | null
+) {
+  if (phase === 'filled') return 'Filled'
+  if (phase === 'partial') return 'Partially filled'
+  if (
+    orderType === 'FAK' &&
+    (phase === 'canceled' || phase === 'expired' || phase === 'rejected') &&
+    (!filledSize || filledSize <= 0)
+  ) {
+    return 'Not filled (FAK)'
+  }
+  return 'Order sent to Polymarket'
 }
 
 function resolveOutcomePrice(
@@ -429,6 +434,41 @@ function extractTraderIcon(record: Record<string, any>) {
   return nested ? String(nested) : ''
 }
 
+function parseBookPrice(entries: Array<any> | undefined, side: 'bid' | 'ask') {
+  if (!Array.isArray(entries)) return null
+  let best: number | null = null
+  for (const entry of entries) {
+    let price: number | null = null
+    if (Array.isArray(entry)) {
+      price = Number(entry[0])
+    } else if (entry && typeof entry === 'object') {
+      price = Number(entry.price ?? entry.p ?? entry[0])
+    }
+    if (!Number.isFinite(price)) continue
+    if (best === null) {
+      best = price
+      continue
+    }
+    if (side === 'bid' ? price > best : price < best) {
+      best = price
+    }
+  }
+  return best
+}
+
+function formatInputValue(value: number, decimals: number) {
+  const fixed = value.toFixed(decimals)
+  return fixed.replace(/\.?0+$/, '')
+}
+
+function formatContractsDisplay(value: number | null, decimals: number) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  const trimmed = formatInputValue(value, decimals)
+  const [whole, fraction] = trimmed.split('.')
+  const withCommas = Number(whole).toLocaleString()
+  return fraction ? `${withCommas}.${fraction}` : withCommas
+}
+
 function TradeExecutePageInner() {
   const searchParams = useSearchParams()
   const prefillAppliedRef = useRef(false)
@@ -443,10 +483,22 @@ function TradeExecutePageInner() {
   const [statusData, setStatusData] = useState<OrderStatusResponse | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [statusPhase, setStatusPhase] = useState<StatusPhase>('submitted')
+  const [submittedSnapshot, setSubmittedSnapshot] = useState<{
+    contracts: number
+    estimatedUsd: number
+    limitPrice: number
+  } | null>(null)
   const [latestPrice, setLatestPrice] = useState<number | null>(null)
   const [latestPriceLoading, setLatestPriceLoading] = useState(false)
   const [latestPriceError, setLatestPriceError] = useState<string | null>(null)
   const [marketStatus, setMarketStatus] = useState<'Open' | 'Closed' | null>(null)
+  const [orderBookLoading, setOrderBookLoading] = useState(false)
+  const [orderBookError, setOrderBookError] = useState<string | null>(null)
+  const [bookMinOrderSize, setBookMinOrderSize] = useState<number | null>(null)
+  const [bookTickSize, setBookTickSize] = useState<number | null>(null)
+  const [bestBidPrice, setBestBidPrice] = useState<number | null>(null)
+  const [bestAskPrice, setBestAskPrice] = useState<number | null>(null)
+  const [minAdjustmentNotice, setMinAdjustmentNotice] = useState(false)
   const [nowMs, setNowMs] = useState<number>(Date.now())
   const [amountMode, setAmountMode] = useState<'usd' | 'contracts'>('usd')
   const [amountInput, setAmountInput] = useState('')
@@ -475,42 +527,54 @@ function TradeExecutePageInner() {
   const directionLabel = directionValue === 'SELL' ? 'Sell' : 'Buy'
   const outcomeLabel = record?.outcome ? String(record.outcome) : '—'
   const tradePrice = record && Number.isFinite(Number(record.price)) ? Number(record.price) : null
-  const currentPrice = latestPrice ?? tradePrice
+  const minOrderSize = Number.isFinite(bookMinOrderSize ?? NaN) ? bookMinOrderSize : null
+  const tickSize = Number.isFinite(bookTickSize ?? NaN) ? bookTickSize : null
+  const sizingReady = minOrderSize !== null && tickSize !== null
+  const orderBookPrice = directionValue === 'SELL' ? bestBidPrice : bestAskPrice
+  const liveReferencePrice =
+    orderBookPrice ??
+    latestPrice ??
+    tradePrice
+  const currentPrice = liveReferencePrice ?? null
   const slippagePercent =
     slippagePreset === 'custom' ? Number(customSlippage) : Number(slippagePreset)
   const slippageValue = Number.isFinite(slippagePercent) ? slippagePercent : 0
-  const maxPrice = currentPrice ? currentPrice * (1 + slippageValue / 100) : null
-  const limitPriceValue = Number.isFinite(maxPrice) ? maxPrice : null
+  const rawLimitPrice =
+    currentPrice && Number.isFinite(currentPrice)
+      ? directionValue === 'SELL'
+        ? currentPrice * (1 - slippageValue / 100)
+        : currentPrice * (1 + slippageValue / 100)
+      : null
+  const normalizedLimitPrice =
+    rawLimitPrice && Number.isFinite(rawLimitPrice) && rawLimitPrice > 0 ? rawLimitPrice : null
+  const roundedLimitPrice =
+    normalizedLimitPrice && tickSize ? roundPriceToTick(normalizedLimitPrice, tickSize) : normalizedLimitPrice
+  const limitPriceValue =
+    roundedLimitPrice && Number.isFinite(roundedLimitPrice) ? roundedLimitPrice : null
   const amountValue = Number(amountInput)
-  const hasAmount = Number.isFinite(amountValue) && amountValue > 0
-  const contractsValue =
+  const hasAmountInput = amountInput.trim().length > 0
+  const parsedAmountValue =
+    Number.isFinite(amountValue) && amountValue > 0 ? amountValue : null
+  const sizeStep = minOrderSize
+  const sizeDecimals = getStepDecimals(sizeStep)
+  const contractsSizing =
     amountMode === 'usd'
-      ? hasAmount && limitPriceValue
-        ? amountValue / limitPriceValue
-        : null
-      : hasAmount
-        ? amountValue
-        : null
+      ? normalizeContractsFromUsd(parsedAmountValue, limitPriceValue, minOrderSize, sizeStep)
+      : normalizeContractsInput(parsedAmountValue, minOrderSize, sizeStep)
+  const contractsValue = hasAmountInput ? contractsSizing.contracts : null
   const estimatedTotal =
-    amountMode === 'usd'
-      ? hasAmount
-        ? amountValue
-        : null
-      : contractsValue && limitPriceValue
-        ? contractsValue * limitPriceValue
-        : null
+    contractsValue && limitPriceValue ? contractsValue * limitPriceValue : null
   const canSubmit = useMemo(() => {
-    const total = estimatedTotal ?? 0
     return (
       Boolean(form.tokenId.trim()) &&
+      sizingReady &&
       limitPriceValue !== null &&
       limitPriceValue > 0 &&
       contractsValue !== null &&
       contractsValue > 0 &&
-      meetsMinimumTradeUsd(total) &&
-      meetsMinimumContracts(amountMode, amountValue, limitPriceValue)
+      (minOrderSize === null || contractsValue >= minOrderSize)
     )
-  }, [amountMode, amountValue, contractsValue, estimatedTotal, form.tokenId, limitPriceValue])
+  }, [contractsValue, form.tokenId, limitPriceValue, minOrderSize, sizingReady])
   const elapsed = record ? formatElapsedDetailed(record.trade_timestamp, nowMs) : '—'
   const tradeSize =
     record && Number.isFinite(Number(record.size))
@@ -532,7 +596,7 @@ function TradeExecutePageInner() {
     currentPrice !== null && tradePrice !== null ? currentPrice - tradePrice : null
   const priceDeltaPct =
     priceDelta !== null && tradePrice ? (priceDelta / tradePrice) * 100 : null
-  const limitPriceLabel = limitPriceValue ? formatPrice(limitPriceValue) : '—'
+  const limitPriceLabel = submittedLimitPrice ? formatPrice(submittedLimitPrice) : '—'
 
   const availableBalance =
     balanceData?.balance && !Number.isNaN(Number(balanceData.balance))
@@ -541,53 +605,41 @@ function TradeExecutePageInner() {
   const notEnoughFunds =
     estimatedTotal !== null && availableBalance !== null && estimatedTotal > availableBalance
 
-  const minimumTotalNotMet =
-    estimatedTotal !== null && !meetsMinimumTradeUsd(estimatedTotal)
-  const minimumContractsNotMet = hasAmount
-    ? amountMode === 'contracts'
-      ? !meetsMinimumContracts(amountMode, amountValue, limitPriceValue)
-      : limitPriceValue !== null
-        ? !meetsMinimumContracts(amountMode, amountValue, limitPriceValue)
-        : false
-    : false
-  const minimumContractUsd =
-    limitPriceValue !== null && Number.isFinite(limitPriceValue) ? limitPriceValue : null
+  const minimumContractsNotMet = hasAmountInput && minOrderSize !== null ? minAdjustmentNotice : false
 
   const isOrderSent = Boolean(orderId)
+  const submittedContracts =
+    submittedSnapshot?.contracts ?? (contractsValue !== null ? contractsValue : null)
+  const submittedUsd = submittedSnapshot?.estimatedUsd ?? estimatedTotal
+  const submittedLimitPrice = submittedSnapshot?.limitPrice ?? limitPriceValue
   const slippageLabel =
     slippagePreset === 'custom' ? `${customSlippage || '0'}% (custom)` : `${slippagePreset}%`
   const orderBehaviorLabel =
     form.orderType === 'FAK' ? 'Fill and Kill (FAK)' : "Good 'Til Canceled (GTC)"
   const amountUsdLabel =
-    estimatedTotal !== null && Number.isFinite(estimatedTotal)
-      ? formatMoney(estimatedTotal)
-      : `${amountInput || '0'} USD`
+    submittedUsd !== null && Number.isFinite(submittedUsd)
+      ? formatMoney(submittedUsd)
+      : '—'
   const amountContractsLabel =
-    contractsValue !== null && Number.isFinite(contractsValue)
-      ? `${formatNumber(contractsValue)} contracts`
-      : `${amountInput || '0'} contracts`
-  const confirmationPrimaryLabel =
-    amountMode === 'usd' ? amountUsdLabel : amountContractsLabel
-  const confirmationSecondaryLabel =
-    amountMode === 'usd'
-      ? `${amountContractsLabel} (est)`
-      : `${amountUsdLabel} (est)`
+    submittedContracts !== null && Number.isFinite(submittedContracts)
+      ? `${formatContractsDisplay(submittedContracts, sizeDecimals)} contracts`
+      : '—'
+  const confirmationPrimaryLabel = amountContractsLabel
+  const confirmationSecondaryLabel = `${amountUsdLabel} (est)`
   const winTotalValue =
     contractsValue !== null && Number.isFinite(contractsValue)
       ? formatMoney(contractsValue)
       : '—'
 
   const reportedOrderStatus = statusData?.status ? String(statusData.status).trim() : null
-  const orderStatusLabel = reportedOrderStatus
-    ? getOrderStatusLabel(reportedOrderStatus)
-    : 'Order Received by Polymarket, Pending'
+  const orderStatusLabel = reportedOrderStatus ? getOrderStatusLabel(reportedOrderStatus) : null
   const statusReason = statusData ? findStatusReason(statusData.raw) : null
   const orderStatusVariant = getExecutionStatusVariant(statusPhase)
   const StatusIconComponent = STATUS_VARIANT_ICONS[orderStatusVariant]
   const orderStatusIconClasses = STATUS_VARIANT_WRAPPER_CLASSES[orderStatusVariant]
-  const isTerminal = TERMINAL_STATUS_PHASES.has(statusPhase)
   const filledSize = statusData?.filledSize ?? null
   const totalSize = statusData?.size ?? null
+  const postOrderStateLabel = getPostOrderStateLabel(statusPhase, form.orderType, filledSize)
   const fillProgress =
     filledSize !== null && totalSize !== null && totalSize > 0
       ? Math.min(100, Math.max(0, (filledSize / totalSize) * 100))
@@ -603,10 +655,10 @@ function TradeExecutePageInner() {
       : null
   const fillPriceLabel = fillPriceValue !== null ? formatPrice(fillPriceValue) : 'Polymarket pending fill'
   const fillSlippagePercent =
-    fillPriceValue !== null && limitPriceValue && limitPriceValue > 0
+    fillPriceValue !== null && submittedLimitPrice && submittedLimitPrice > 0
       ? directionValue === 'SELL'
-        ? ((limitPriceValue - fillPriceValue) / limitPriceValue) * 100
-        : ((fillPriceValue - limitPriceValue) / limitPriceValue) * 100
+        ? ((submittedLimitPrice - fillPriceValue) / submittedLimitPrice) * 100
+        : ((fillPriceValue - submittedLimitPrice) / submittedLimitPrice) * 100
       : null
   const fillSlippageLabel =
     fillSlippagePercent !== null
@@ -632,14 +684,41 @@ function TradeExecutePageInner() {
     setStatusData(null)
     setStatusError(null)
     setStatusPhase('submitted')
+    setSubmittedSnapshot(null)
     setLatestPrice(null)
     setLatestPriceError(null)
     setMarketStatus(null)
+    setOrderBookError(null)
+    setOrderBookLoading(false)
+    setBookMinOrderSize(null)
+    setBookTickSize(null)
+    setBestBidPrice(null)
+    setBestAskPrice(null)
+    setMinAdjustmentNotice(false)
     setAmountMode('usd')
     setAmountInput('')
     setSlippagePreset(1)
     setCustomSlippage('')
     setForm(EMPTY_FORM)
+  }, [])
+
+  const handleSwitchToContracts = useCallback(() => {
+    if (!contractsValue || contractsValue <= 0) return
+    setAmountMode('contracts')
+    setAmountInput(formatInputValue(contractsValue, sizeDecimals))
+    setMinAdjustmentNotice(false)
+  }, [contractsValue, sizeDecimals])
+
+  const handleSwitchToUsd = useCallback(() => {
+    if (!estimatedTotal || estimatedTotal <= 0) return
+    setAmountMode('usd')
+    setAmountInput(formatInputValue(estimatedTotal, 2))
+    setMinAdjustmentNotice(false)
+  }, [estimatedTotal])
+
+  const handleAmountChange = useCallback((value: string) => {
+    setMinAdjustmentNotice(false)
+    setAmountInput(value)
   }, [])
 
   const applyRecord = async (record: Record<string, any>) => {
@@ -746,6 +825,68 @@ function TradeExecutePageInner() {
     prefillAppliedRef.current = true
   }, [searchParams, resetRecordState])
 
+  useEffect(() => {
+    const tokenId = form.tokenId.trim()
+    if (!tokenId) return
+    let cancelled = false
+    let inFlight = false
+    let intervalId: ReturnType<typeof setInterval> | null = null
+
+    setBookMinOrderSize(null)
+    setBookTickSize(null)
+    setBestBidPrice(null)
+    setBestAskPrice(null)
+    setMinAdjustmentNotice(false)
+
+    const fetchBook = async (showLoading: boolean) => {
+      if (cancelled || inFlight) return
+      inFlight = true
+      if (showLoading) {
+        setOrderBookLoading(true)
+      }
+      setOrderBookError(null)
+      try {
+        const res = await fetch(`/api/polymarket/book?token_id=${encodeURIComponent(tokenId)}`, {
+          cache: 'no-store',
+        })
+        const data = (await res.json()) as OrderBookResponse
+        if (!res.ok) {
+          throw new Error((data as any)?.error || 'Order book lookup failed.')
+        }
+        if (cancelled) return
+
+        const bids = Array.isArray(data?.bids) ? data.bids : []
+        const asks = Array.isArray(data?.asks) ? data.asks : []
+        const bestBid = parseBookPrice(bids, 'bid')
+        const bestAsk = parseBookPrice(asks, 'ask')
+        const parsedMin = Number(data?.min_order_size)
+        const parsedTick = Number(data?.tick_size)
+
+        setBestBidPrice(Number.isFinite(bestBid ?? NaN) ? bestBid : null)
+        setBestAskPrice(Number.isFinite(bestAsk ?? NaN) ? bestAsk : null)
+        setBookMinOrderSize(Number.isFinite(parsedMin) ? parsedMin : null)
+        setBookTickSize(Number.isFinite(parsedTick) ? parsedTick : null)
+      } catch (error: any) {
+        if (!cancelled) {
+          setOrderBookError(error?.message || 'Order book lookup failed.')
+        }
+      } finally {
+        inFlight = false
+        if (!cancelled && showLoading) {
+          setOrderBookLoading(false)
+        }
+      }
+    }
+
+    fetchBook(true)
+    intervalId = setInterval(() => fetchBook(false), 250)
+
+    return () => {
+      cancelled = true
+      if (intervalId) clearInterval(intervalId)
+    }
+  }, [form.tokenId])
+
   const fetchBalance = useCallback(async (address?: string) => {
     setBalanceLoading(true)
     setBalanceError(null)
@@ -810,41 +951,100 @@ function TradeExecutePageInner() {
     fetchBalance()
   }, [fetchBalance])
 
+  useEffect(() => {
+    if (!hasAmountInput) return
+    if (amountMode === 'contracts') {
+      if (minOrderSize === null) return
+      const value = Number(amountInput)
+      if (!Number.isFinite(value)) return
+      if (value <= 0) {
+        const formatted = formatInputValue(minOrderSize, sizeDecimals)
+        if (formatted !== amountInput) {
+          setAmountInput(formatted)
+        }
+        setMinAdjustmentNotice(true)
+        return
+      }
+      const normalized = normalizeContractsInput(value, minOrderSize, sizeStep)
+      if (!normalized.contracts) return
+      const formatted = formatInputValue(normalized.contracts, sizeDecimals)
+      if (formatted !== amountInput) {
+        setAmountInput(formatted)
+      }
+      if (normalized.adjustedToMin) {
+        setMinAdjustmentNotice(true)
+      }
+      return
+    }
+
+    if (amountMode === 'usd') {
+      if (!limitPriceValue || minOrderSize === null) return
+      const value = Number(amountInput)
+      if (!Number.isFinite(value)) return
+      const rawContracts = value / limitPriceValue
+      if (value <= 0 || rawContracts < minOrderSize) {
+        const bumpedUsd = minOrderSize * limitPriceValue
+        const formatted = formatInputValue(bumpedUsd, 2)
+        if (formatted !== amountInput) {
+          setAmountInput(formatted)
+        }
+        setMinAdjustmentNotice(true)
+        return
+      }
+      return
+    }
+  }, [
+    amountInput,
+    amountMode,
+    hasAmountInput,
+    limitPriceValue,
+    minOrderSize,
+    sizeDecimals,
+    sizeStep,
+  ])
+
   const handleExecute = async () => {
     setSubmitError(null)
     setSubmitFailureDetails(null)
 
     if (!canSubmit) {
-      const total = estimatedTotal ?? 0
+      if (!sizingReady) {
+        setSubmitError('Sizing data is still loading. Try again in a moment.')
+        return
+      }
       if (!form.tokenId.trim() || !limitPriceValue || !contractsValue) {
-        setSubmitError('Fill in amount and slippage before sending.')
+        setSubmitError('Enter an amount to send your order.')
         return
       }
-      if (!meetsMinimumContracts(amountMode, amountValue, limitPriceValue)) {
-        if (amountMode === 'contracts') {
-          setSubmitError('Minimum amount is 1 contract.')
-        } else {
-          const minUsdLabel = limitPriceValue ? formatMoney(limitPriceValue) : '$0'
-          setSubmitError(`Minimum amount is ${minUsdLabel} for 1 contract at the limit price.`)
-        }
+      if (minOrderSize !== null && contractsValue < minOrderSize) {
+        setSubmitError(`Minimum order is ${formatContractsDisplay(minOrderSize, sizeDecimals)} contracts.`)
         return
       }
-      if (!meetsMinimumTradeUsd(total)) {
-        setSubmitError('Total must be at least $1.')
-        return
-      }
-      setSubmitError('Check amount and slippage before sending.')
+      setSubmitError('Check amount and pricing before sending.')
       return
     }
 
     setSubmitLoading(true)
     try {
-      const priceToSend = limitPriceValue
-      const amountToSend = contractsValue
+      const priceToSend =
+        limitPriceValue && tickSize ? roundPriceToTick(limitPriceValue, tickSize) : limitPriceValue
+      const amountToSend =
+        contractsValue && minOrderSize
+          ? Math.max(minOrderSize, roundDownToStep(contractsValue, minOrderSize))
+          : contractsValue
       if (!priceToSend || !amountToSend) {
         setSubmitError('Missing amount or price.')
         return
       }
+
+      if (estimatedTotal !== null && priceToSend && amountToSend) {
+        setSubmittedSnapshot({
+          contracts: amountToSend,
+          estimatedUsd: amountToSend * priceToSend,
+          limitPrice: priceToSend,
+        })
+      }
+
       const payload = {
         tokenId: form.tokenId.trim(),
         price: priceToSend,
@@ -1167,7 +1367,9 @@ function TradeExecutePageInner() {
               <div className="text-[11px] font-semibold tracking-wide text-slate-400">
                 Contracts
               </div>
-              <div className="text-sm font-semibold text-slate-900">{formatNumber(tradeSize)}</div>
+              <div className="text-sm font-semibold text-slate-900">
+                {formatContractsDisplay(tradeSize, sizeDecimals)}
+              </div>
             </div>
             <div>
               <div className="text-[11px] font-semibold tracking-wide text-slate-400">
@@ -1207,23 +1409,32 @@ function TradeExecutePageInner() {
               )}
             </div>
           </div>
-          <div className="text-sm text-slate-700">
-            <span className="text-xs font-medium text-slate-500">Current Price / Contract:</span>{' '}
-            <span className="text-sm font-semibold text-slate-900">
-              {latestPriceLoading ? 'Loading…' : formatPrice(currentPrice)}
-            </span>
-            {priceDeltaPct !== null && (
-              <span
-                className={`ml-3 text-xs font-semibold ${
-                  priceDeltaPct >= 0 ? 'text-emerald-600' : 'text-rose-500'
-                }`}
-              >
-                {`${priceDeltaPct > 0 ? '+' : ''}${priceDeltaPct.toFixed(2)}% since original trade`}
+          <div className="text-sm text-slate-700 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-slate-500">Current Price / Contract:</span>
+              <span className="text-sm font-semibold text-slate-900">
+                {orderBookLoading || latestPriceLoading ? 'Loading…' : formatPrice(currentPrice)}
               </span>
-            )}
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Live price
+              </span>
+              {priceDeltaPct !== null && (
+                <span
+                  className={`text-xs font-semibold ${
+                    priceDeltaPct >= 0 ? 'text-emerald-600' : 'text-rose-500'
+                  }`}
+                >
+                  {`${priceDeltaPct > 0 ? '+' : ''}${priceDeltaPct.toFixed(2)}% since original trade`}
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-slate-500">Estimates update with live market prices.</div>
           </div>
-          {latestPriceError && (
-            <div className="text-xs text-rose-600">{latestPriceError}</div>
+          {(orderBookError || latestPriceError) && (
+            <div className="text-xs text-amber-600">
+              {orderBookError || latestPriceError}
+            </div>
           )}
 
           {isOrderSent ? (
@@ -1253,9 +1464,9 @@ function TradeExecutePageInner() {
               <div className="border-t border-slate-100 pt-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <div className="text-xs font-medium text-slate-500">Filled Price</div>
+                    <div className="text-xs font-medium text-slate-500">Average fill price</div>
                     <div className="text-lg font-semibold text-slate-900">{fillPriceLabel}</div>
-                    <div className="text-xs text-slate-400">Actual execution price</div>
+                    <div className="text-xs text-slate-400">Shown once fills are reported</div>
                   </div>
                   <div>
                     <div className="text-xs font-medium text-slate-500">Slippage vs limit</div>
@@ -1269,28 +1480,15 @@ function TradeExecutePageInner() {
             <>
               <div className="space-y-3">
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 shadow-sm">
-                  <div className="mb-4 flex items-center gap-2">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-slate-500">
+                    <span>{amountMode === 'usd' ? 'USD (estimated)' : 'Contracts'}</span>
                     <button
                       type="button"
-                      onClick={() => setAmountMode('usd')}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
-                        amountMode === 'usd'
-                          ? 'bg-slate-900 text-white'
-                          : 'border border-slate-200 bg-white text-slate-500'
-                      }`}
+                      onClick={amountMode === 'usd' ? handleSwitchToContracts : handleSwitchToUsd}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+                      disabled={amountMode === 'usd' ? !contractsValue : !estimatedTotal}
                     >
-                      USD
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAmountMode('contracts')}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
-                        amountMode === 'contracts'
-                          ? 'bg-slate-900 text-white'
-                          : 'border border-slate-200 bg-white text-slate-500'
-                      }`}
-                    >
-                      Contracts
+                      Switch to {amountMode === 'usd' ? 'contracts' : 'USD'}
                     </button>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
@@ -1301,37 +1499,41 @@ function TradeExecutePageInner() {
                       <input
                         type="number"
                         min="0"
-                        step="0.0001"
+                        step={amountMode === 'contracts' ? sizeStep || 0.0001 : 0.01}
                         value={amountInput}
-                        onChange={(e) => setAmountInput(e.target.value)}
+                        onChange={(e) => handleAmountChange(e.target.value)}
                         className="w-full flex-1 border-none bg-white px-1 text-lg font-semibold text-slate-900 outline-none focus:outline-none appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none  [&::-moz-number-spin-box]:appearance-none"
                         placeholder={amountMode === 'usd' ? '1.20' : '10'}
                       />
                     </div>
-                    <div className="text-sm font-medium text-slate-700">
-                      = {amountMode === 'usd'
-                        ? `${formatNumber(contractsValue)} Contracts (est)`
-                        : `${formatMoney(estimatedTotal)} USD (est)`}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={amountMode === 'usd' ? handleSwitchToContracts : handleSwitchToUsd}
+                      className="text-sm font-medium text-slate-700 hover:text-slate-900"
+                      disabled={amountMode === 'usd' ? !contractsValue : !estimatedTotal}
+                    >
+                      {amountMode === 'usd'
+                        ? `≈ ${formatContractsDisplay(contractsValue, sizeDecimals)} contracts (tap to edit)`
+                        : `≈ ${formatMoney(estimatedTotal)} USD (tap to edit)`}
+                    </button>
                     <div className="ml-auto text-sm text-slate-500">
                       Win Total:{' '}
                       <span className="text-base font-semibold text-slate-900">{winTotalValue}</span>
                     </div>
                   </div>
-                  {(minimumTotalNotMet || minimumContractsNotMet || notEnoughFunds) ? (
-                    <div className="flex flex-wrap gap-2 text-xs text-rose-600 mt-2">
-                      {minimumContractsNotMet && amountMode === 'contracts' && (
-                        <span>Minimum amount is 1 contract.</span>
+                  {(minimumContractsNotMet || notEnoughFunds || !sizingReady) ? (
+                    <div className="flex flex-wrap gap-2 text-xs text-amber-700 mt-2">
+                      {!sizingReady && (
+                        <span>Loading market minimums and price tick size…</span>
                       )}
-                      {minimumContractsNotMet && amountMode === 'usd' && (
+                      {minimumContractsNotMet && (
                         <span>
-                          Minimum amount is{' '}
-                          {minimumContractUsd !== null ? formatMoney(minimumContractUsd) : '$0'} for
-                          1 contract at the limit price.
+                          Minimum order for this market is{' '}
+                          {formatContractsDisplay(minOrderSize, sizeDecimals)} contracts. We&apos;ve adjusted your
+                          order.
                         </span>
                       )}
-                      {minimumTotalNotMet && <span>Minimum total is $1.</span>}
-                      {notEnoughFunds && <span>Not enough funds available.</span>}
+                      {notEnoughFunds && <span>Available cash may be lower than this estimate.</span>}
                     </div>
                   ) : null}
                 </div>
@@ -1389,8 +1591,8 @@ function TradeExecutePageInner() {
                 </div>
                 <div className="mt-2 text-xs text-slate-500">
                   {limitPriceValue
-                    ? `This order will only fill at ${limitPriceLabel} per contract or less.`
-                    : 'Set slippage to preview the upper bound.'}
+                    ? `This order will only fill at ${limitPriceLabel} per contract or ${directionValue === 'SELL' ? 'more' : 'less'}.`
+                    : 'Set slippage to preview the limit price.'}
                 </div>
                 {showSlippageInfo && (
                   <div
@@ -1481,18 +1683,39 @@ function TradeExecutePageInner() {
           {orderId && (
             <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm space-y-4 sm:px-5 sm:py-6">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">Order sent to Polymarket</h3>
+                <h3 className="text-lg font-semibold text-slate-900">{postOrderStateLabel}</h3>
               </div>
-              <div className="text-sm text-slate-600">
-                Status:
-                <span className="ml-2 inline-flex items-center gap-2">
-                  <span
-                    className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${orderStatusIconClasses}`}
-                  >
-                    <StatusIconComponent className="h-3 w-3" aria-hidden />
-                  </span>
-                  <span className="text-sm font-semibold text-slate-900">{orderStatusLabel}</span>
+              <div className="text-sm text-slate-600 flex items-center gap-2">
+                <span
+                  className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${orderStatusIconClasses}`}
+                >
+                  <StatusIconComponent className="h-3 w-3" aria-hidden />
                 </span>
+                <span className="text-sm font-semibold text-slate-900">
+                  {orderStatusLabel || 'Polymarket status pending'}
+                </span>
+              </div>
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
+                <div>
+                  <div className="text-xs font-medium text-slate-500">Submitted contracts</div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    {formatContractsDisplay(submittedContracts, sizeDecimals)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-slate-500">Estimated max USD</div>
+                  <div className="text-sm font-semibold text-slate-900">{amountUsdLabel}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-slate-500">Filled contracts</div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    {formatContractsDisplay(filledSize, sizeDecimals)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-slate-500">Average fill price</div>
+                  <div className="text-sm font-semibold text-slate-900">{fillPriceLabel}</div>
+                </div>
               </div>
               {statusReason && (
                 <div className="text-sm text-slate-500">Reason: {statusReason}</div>
@@ -1500,7 +1723,7 @@ function TradeExecutePageInner() {
               {showFillProgress && (
                 <div>
                   <div className="text-sm text-slate-500">
-                    Filled {formatNumber(filledSize)} / {formatNumber(totalSize)}
+                    Filled {formatContractsDisplay(filledSize, sizeDecimals)} / {formatContractsDisplay(totalSize, sizeDecimals)}
                   </div>
                   <div className="mt-2 h-2 w-full rounded-full bg-slate-100">
                     <div
