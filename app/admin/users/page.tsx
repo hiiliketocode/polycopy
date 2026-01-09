@@ -81,7 +81,8 @@ export default async function AdminUsersPage() {
   }
 
   const { data: userListData, error: userListError } = await supabase.auth.admin.listUsers({
-    limit: MAX_USERS
+    page: 1,
+    perPage: MAX_USERS
   })
 
   if (userListError) {
