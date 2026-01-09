@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { resolveOrdersTableName } from '@/lib/orders/table'
 
 // Type for Polymarket position
 interface PolymarketPosition {
@@ -64,19 +65,26 @@ export async function GET(
     
     // Use service role client to bypass RLS
     const supabase = createServiceClient()
+    const ordersTable = await resolveOrdersTableName(supabase)
 
     // SECURITY: Fetch the copied trade and verify ownership
     // This ensures the user owns the trade before returning any data
-    const { data: trade, error: fetchError } = await supabase
-      .from('copied_trades')
+    const { data: tradeRow, error: fetchError } = await supabase
+      .from(ordersTable)
       .select('*')
-      .eq('id', id)
-      .eq('user_id', userId)
+      .eq('copied_trade_id', id)
+      .eq('copy_user_id', userId)
       .single()
 
-    if (fetchError || !trade) {
+    if (fetchError || !tradeRow) {
       console.error('❌ Trade not found or unauthorized:', fetchError?.message)
       return NextResponse.json({ error: 'Trade not found or unauthorized' }, { status: 404 })
+    }
+    
+    const trade = {
+      ...tradeRow,
+      trader_wallet: tradeRow.copied_trader_wallet ?? tradeRow.trader_wallet,
+      market_title: tradeRow.copied_market_title || tradeRow.market_title,
     }
     
     // If user manually closed this trade, return existing values without updates
@@ -417,10 +425,10 @@ export async function GET(
     }
     
     const { data: updatedTrade, error: updateError } = await supabase
-      .from('copied_trades')
+      .from(ordersTable)
       .update(updateData)
-      .eq('id', id)
-      .eq('user_id', userId)  // SECURITY: Only update if it belongs to this user
+      .eq('copied_trade_id', id)
+      .eq('copy_user_id', userId)  // SECURITY: Only update if it belongs to this user
       .select()
       .single()
 
