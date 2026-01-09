@@ -317,11 +317,41 @@ function ProfilePageContent() {
     const fetchCopiedTrades = async () => {
       setLoadingCopiedTrades(true);
       try {
-        const { data: trades, error } = await supabase
-          .from('copied_trades')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('copied_at', { ascending: false });
+        const { data: orders, error } = await supabase
+          .from('orders')
+          .select(`
+            order_id,
+            copied_trade_id,
+            copy_user_id,
+            copied_trader_wallet,
+            copied_trader_username,
+            trader_profile_image_url,
+            market_id,
+            market_title,
+            copied_market_title,
+            market_slug,
+            market_avatar_url,
+            outcome,
+            price_when_copied,
+            amount_invested,
+            trader_still_has_position,
+            trader_closed_at,
+            current_price,
+            market_resolved,
+            market_resolved_at,
+            roi,
+            notification_closed_sent,
+            notification_resolved_sent,
+            last_checked_at,
+            resolved_outcome,
+            user_closed_at,
+            user_exit_price,
+            created_at,
+            raw
+          `)
+          .eq('copy_user_id', user.id)
+          .not('copied_trade_id', 'is', null)
+          .order('created_at', { ascending: false });
         
         if (error) {
           console.error('Error fetching copied trades:', error);
@@ -331,12 +361,63 @@ function ProfilePageContent() {
         }
         
         // Recalculate ROI for user-closed trades
-        const tradesWithCorrectRoi = (trades || []).map(trade => {
-          if (trade.user_closed_at && trade.user_exit_price && trade.price_when_copied) {
-            const correctRoi = ((trade.user_exit_price - trade.price_when_copied) / trade.price_when_copied) * 100;
-            return { ...trade, roi: parseFloat(correctRoi.toFixed(2)) };
+        const tradesWithCorrectRoi = (orders || []).map(order => {
+          const tradePrice = order.price_when_copied ?? order.raw?.price_when_copied ?? order.raw?.price;
+          if (order.user_closed_at && order.user_exit_price && tradePrice) {
+            const correctRoi = ((order.user_exit_price - tradePrice) / tradePrice) * 100;
+            return {
+              id: order.copied_trade_id || order.order_id,
+              trader_wallet: order.copied_trader_wallet || '',
+              trader_username: order.copied_trader_username,
+              trader_profile_image_url: order.trader_profile_image_url || null,
+              market_id: order.market_id,
+              market_title: order.copied_market_title || order.market_title || '',
+              market_slug: order.market_slug,
+              market_avatar_url: order.market_avatar_url || null,
+              outcome: order.outcome || '',
+              price_when_copied: tradePrice || 0,
+              amount_invested: order.amount_invested ?? null,
+              copied_at: order.created_at,
+              trader_still_has_position: order.trader_still_has_position,
+              trader_closed_at: order.trader_closed_at,
+              current_price: order.current_price,
+              market_resolved: order.market_resolved,
+              market_resolved_at: order.market_resolved_at,
+              roi: parseFloat(correctRoi.toFixed(2)),
+              notification_closed_sent: order.notification_closed_sent,
+              notification_resolved_sent: order.notification_resolved_sent,
+              last_checked_at: order.last_checked_at,
+              resolved_outcome: order.resolved_outcome,
+              user_closed_at: order.user_closed_at,
+              user_exit_price: order.user_exit_price,
+            };
           }
-          return trade;
+          return {
+            id: order.copied_trade_id || order.order_id,
+            trader_wallet: order.copied_trader_wallet || '',
+            trader_username: order.copied_trader_username,
+            trader_profile_image_url: order.trader_profile_image_url || null,
+            market_id: order.market_id,
+            market_title: order.copied_market_title || order.market_title || '',
+            market_slug: order.market_slug,
+            market_avatar_url: order.market_avatar_url || null,
+            outcome: order.outcome || '',
+            price_when_copied: tradePrice || 0,
+            amount_invested: order.amount_invested ?? null,
+            copied_at: order.created_at,
+            trader_still_has_position: order.trader_still_has_position,
+            trader_closed_at: order.trader_closed_at,
+            current_price: order.current_price,
+            market_resolved: order.market_resolved,
+            market_resolved_at: order.market_resolved_at,
+            roi: order.roi,
+            notification_closed_sent: order.notification_closed_sent,
+            notification_resolved_sent: order.notification_resolved_sent,
+            last_checked_at: order.last_checked_at,
+            resolved_outcome: order.resolved_outcome,
+            user_closed_at: order.user_closed_at,
+            user_exit_price: order.user_exit_price,
+          };
         });
         
         setCopiedTrades(tradesWithCorrectRoi);
@@ -789,13 +870,13 @@ function ProfilePageContent() {
     
     try {
       const { error } = await supabase
-        .from('copied_trades')
+        .from('orders')
         .update({
           price_when_copied: entryPrice,
           amount_invested: amountInvested,
         })
-        .eq('id', tradeToEdit.id)
-        .eq('user_id', user.id);
+        .eq('copied_trade_id', tradeToEdit.id)
+        .eq('copy_user_id', user.id);
       
       if (error) throw error;
       
@@ -826,14 +907,14 @@ function ProfilePageContent() {
       const roi = ((exitPrice - tradeToEdit.price_when_copied) / tradeToEdit.price_when_copied) * 100;
       
       const { error } = await supabase
-        .from('copied_trades')
+        .from('orders')
         .update({
           user_closed_at: new Date().toISOString(),
           user_exit_price: exitPrice,
           roi: parseFloat(roi.toFixed(2)),
         })
-        .eq('id', tradeToEdit.id)
-        .eq('user_id', user.id);
+        .eq('copied_trade_id', tradeToEdit.id)
+        .eq('copy_user_id', user.id);
       
       if (error) throw error;
       
@@ -871,13 +952,13 @@ function ProfilePageContent() {
     
     try {
       const { error } = await supabase
-        .from('copied_trades')
+        .from('orders')
         .update({
           user_closed_at: null,
           user_exit_price: null,
         })
-        .eq('id', trade.id)
-        .eq('user_id', user.id);
+        .eq('copied_trade_id', trade.id)
+        .eq('copy_user_id', user.id);
       
       if (error) throw error;
       
@@ -911,18 +992,24 @@ function ProfilePageContent() {
     }
     
     try {
-      const { error } = await supabase
-        .from('copied_trades')
-        .delete()
-        .eq('id', trade.id)
-        .eq('user_id', user.id);
-      
-      if (error) throw error;
-      
+      const response = await fetch(`/api/copied-trades/${trade.id}?userId=${user.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        console.error('Error deleting copied trade:', payload);
+        throw new Error(payload.error || 'Failed to delete copied trade');
+      }
+
       // Remove from local state
       setCopiedTrades(trades => trades.filter(t => t.id !== trade.id));
-      
-      setToastMessage('Trade deleted!');
+
+      setToastMessage(payload.message || 'Trade deleted!');
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
     } catch (err) {
