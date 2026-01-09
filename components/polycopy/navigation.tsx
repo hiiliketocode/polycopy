@@ -274,7 +274,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
               >
                 <div className="absolute inset-0 bg-white/20 transform -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
                 <Crown className="w-4 h-4 mr-2 relative z-10" />
-                <span className="relative z-10">Premium</span>
+                <span className="relative z-10">Get Premium</span>
               </Button>
             )}
 
