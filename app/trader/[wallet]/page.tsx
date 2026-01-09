@@ -166,16 +166,17 @@ export default function TraderProfilePage({
         
         // Fetch copied trades
         const { data: copiedTrades } = await supabase
-          .from('copied_trades')
-          .select('market_id, trader_wallet, market_slug, market_title')
-          .eq('user_id', user.id);
+          .from('orders')
+          .select('market_id, copied_trader_wallet, market_slug, copied_market_title, market_title')
+          .eq('copy_user_id', user.id)
+          .not('copied_trade_id', 'is', null);
         
         if (copiedTrades) {
           const ids = new Set<string>();
-          copiedTrades.forEach((t: { market_id?: string; trader_wallet?: string; market_slug?: string; market_title?: string }) => {
-            const walletKey = normalizeKeyPart(t.trader_wallet);
+          copiedTrades.forEach((t: { market_id?: string; copied_trader_wallet?: string; market_slug?: string; copied_market_title?: string; market_title?: string }) => {
+            const walletKey = normalizeKeyPart(t.copied_trader_wallet);
             if (!walletKey) return;
-            const marketKeys = [t.market_id, t.market_slug, t.market_title]
+            const marketKeys = [t.market_id, t.market_slug, t.copied_market_title, t.market_title]
               .map(normalizeKeyPart)
               .filter(Boolean);
             if (marketKeys.length === 0) return;
@@ -651,19 +652,30 @@ export default function TraderProfilePage({
     try {
       const marketId = selectedTrade.conditionId || selectedTrade.marketSlug || selectedTrade.market;
       
-      await supabase
-        .from('copied_trades')
-        .insert({
-          user_id: user.id,
-          trader_wallet: wallet,
-          trader_username: traderData?.displayName || wallet.slice(0, 8),
-          market_id: marketId,
-          market_title: selectedTrade.market,
-          market_slug: selectedTrade.marketSlug || selectedTrade.eventSlug || null,
+      const response = await fetch('/api/copied-trades', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          traderWallet: wallet,
+          traderUsername: traderData?.displayName || wallet.slice(0, 8),
+          marketId,
+          marketTitle: selectedTrade.market,
+          marketSlug: selectedTrade.marketSlug || selectedTrade.eventSlug || null,
           outcome: selectedTrade.outcome.toUpperCase(),
-          price_when_copied: entryPrice,
-          amount_invested: amountInvested || null,
-        });
+          priceWhenCopied: entryPrice,
+          amountInvested: amountInvested || null,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error('Error copying trade:', result);
+        throw new Error(result.error || 'Failed to save copied trade');
+      }
 
       const tradeKey = buildCopiedTradeKey(marketId, wallet);
       if (tradeKey) {

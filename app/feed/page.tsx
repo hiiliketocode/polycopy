@@ -201,21 +201,22 @@ export default function FeedPage() {
       setLoadingCopiedTrades(true);
       try {
         const { data: trades, error } = await supabase
-          .from('copied_trades')
-          .select('market_id, trader_wallet, market_slug, market_title')
-          .eq('user_id', user.id);
+          .from('orders')
+          .select('market_id, copied_trader_wallet, market_slug, copied_market_title, market_title')
+          .eq('copy_user_id', user.id)
+          .not('copied_trade_id', 'is', null);
         
         if (error) {
           console.error('Error fetching copied trades:', error);
           setCopiedTradeIds(new Set());
         } else {
           const copiedIds = new Set<string>();
-          trades?.forEach((t: { market_id?: string; trader_wallet?: string; market_slug?: string; market_title?: string }) => {
-            const walletKey = normalizeKeyPart(t.trader_wallet);
-            if (!walletKey) return;
-            const marketKeys = [t.market_id, t.market_slug, t.market_title]
-              .map(normalizeKeyPart)
-              .filter(Boolean);
+        trades?.forEach((t: { market_id?: string; copied_trader_wallet?: string; market_slug?: string; copied_market_title?: string; market_title?: string }) => {
+          const walletKey = normalizeKeyPart(t.copied_trader_wallet);
+          if (!walletKey) return;
+          const marketKeys = [t.market_id, t.market_slug, t.copied_market_title, t.market_title]
+            .map(normalizeKeyPart)
+            .filter(Boolean);
             if (marketKeys.length === 0) return;
             for (const key of new Set(marketKeys)) {
               copiedIds.add(`${key}-${walletKey}`);
@@ -910,35 +911,35 @@ export default function FeedPage() {
         selectedTrade.market.conditionId ||
         selectedTrade.market.slug ||
         selectedTrade.market.title;
-      const { data: createdTrade, error: insertError } = await supabase
-        .from('copied_trades')
-        .insert({
-          user_id: user.id,
-          trader_wallet: selectedTrade.trader.wallet,
-          trader_username: selectedTrade.trader.displayName,
-          market_id: marketId,
-          market_title: selectedTrade.market.title,
-          market_slug: selectedTrade.market.slug || null,
+      const response = await fetch('/api/copied-trades', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          traderWallet: selectedTrade.trader.wallet,
+          traderUsername: selectedTrade.trader.displayName,
+          marketId,
+          marketTitle: selectedTrade.market.title,
+          marketSlug: selectedTrade.market.slug || null,
           outcome: selectedTrade.trade.outcome.toUpperCase(),
-          price_when_copied: entryPrice,
-          amount_invested: amountInvested || null,
-          trader_profile_image_url: traderProfileImage,
-          market_avatar_url: selectedTrade.market.avatarUrl || null,
-        })
-        .select()
-        .single();
+          priceWhenCopied: entryPrice,
+          amountInvested: amountInvested || null,
+          traderProfileImage: traderProfileImage,
+          marketAvatarUrl: selectedTrade.market.avatarUrl || null,
+        }),
+      });
 
-      if (insertError) {
-        console.error('Insert error:', insertError);
-        throw new Error(insertError.message || 'Failed to save copied trade');
+      const payload = await response.json();
+      if (!response.ok) {
+        console.error('Copy trade API error:', payload);
+        throw new Error(payload.error || 'Failed to save copied trade');
       }
 
-      if (!createdTrade?.id) {
-        console.error('No trade ID in response');
-        throw new Error('Trade created but no ID returned');
-      }
+      const createdTrade = payload.trade;
 
-      console.log('Trade copied successfully:', createdTrade.id);
+      console.log('Trade copied successfully:', createdTrade?.id || createdTrade?.copiedTradeId);
 
       const tradeKey = buildCopiedTradeKey(marketId, selectedTrade.trader.wallet);
       if (tradeKey) {
