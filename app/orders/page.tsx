@@ -12,7 +12,15 @@ import type { User } from '@supabase/supabase-js'
 import type { OrderRow, OrderStatus } from '@/lib/orders/types'
 import type { PositionSummary } from '@/lib/orders/position'
 
-export default function OrdersPage() {
+type OrdersScreenProps = {
+  hideNavigation?: boolean
+  contentWrapperClassName?: string
+}
+
+export function OrdersScreen({
+  hideNavigation = false,
+  contentWrapperClassName = 'min-h-screen bg-slate-50',
+}: OrdersScreenProps) {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [userTier, setUserTier] = useState<FeatureTier>('anon')
@@ -534,13 +542,15 @@ export default function OrdersPage() {
 
   return (
     <>
-      <Navigation 
-        user={user ? { id: user.id, email: user.email || '' } : null} 
-        isPremium={isPremium}
-        walletAddress={walletAddress}
-        profileImageUrl={profileImageUrl}
-      />
-      <div className="min-h-screen bg-slate-50">
+      {!hideNavigation && (
+        <Navigation 
+          user={user ? { id: user.id, email: user.email || '' } : null} 
+          isPremium={isPremium}
+          walletAddress={walletAddress}
+          profileImageUrl={profileImageUrl}
+        />
+      )}
+      <div className={contentWrapperClassName}>
         <main className="mx-auto max-w-6xl px-4 py-8">
         {refreshing && !ordersLoading && (
           <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
@@ -674,6 +684,9 @@ export default function OrdersPage() {
       </div>
     </>
   )
+}
+export default function OrdersPage() {
+  return <OrdersScreen />
 }
 
 function formatCurrency(value: number | null | undefined) {

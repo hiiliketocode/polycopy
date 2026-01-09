@@ -732,6 +732,20 @@ export default function TraderProfilePage({
     setUsdAmount('');
   };
 
+  const handleManualCopyToggle = (index: number, url: string | null) => {
+    const nextIndex = manualCopyTradeIndex === index ? null : index;
+    setManualCopyTradeIndex(nextIndex);
+    if (nextIndex === index && url && typeof window !== 'undefined') {
+      window.open(url, '_blank');
+    }
+    setManualUsdAmount('');
+  };
+
+  const handleManualCopyCta = (url: string | null) => {
+    if (!url || typeof window === 'undefined') return;
+    window.open(url, '_blank');
+  };
+
   // Calculate contracts for premium quick copy
   const calculateContracts = (usdInput: string, price: number) => {
     const amount = Number.parseFloat(usdInput);
@@ -1090,6 +1104,27 @@ export default function TraderProfilePage({
                   const isClosed = liveData?.closed || false;
                   const isResolved = liveData?.resolved || false;
                   const marketIsOpen = isResolved ? false : (liveData?.closed === undefined ? undefined : !liveData.closed);
+                  const manualAmountValue = Number.parseFloat(manualUsdAmount);
+                  const manualAmountValid = !Number.isNaN(manualAmountValue) && manualAmountValue > 0;
+                  const manualDisplayPrice = currentPrice ?? trade.price ?? 0;
+                  const manualPriceChange =
+                    trade.price && trade.price > 0
+                      ? ((manualDisplayPrice - trade.price) / trade.price) * 100
+                      : null;
+                  const manualPriceChangeColor =
+                    manualPriceChange === null
+                      ? 'text-slate-400'
+                      : manualPriceChange >= 0
+                        ? 'text-emerald-600'
+                        : 'text-red-600';
+                  const manualPriceChangeLabel =
+                    manualPriceChange === null
+                      ? '--'
+                      : `${manualPriceChange >= 0 ? '+' : ''}${manualPriceChange.toFixed(2)}% from entry`;
+                  const manualContractsEstimate =
+                    manualAmountValid && manualDisplayPrice > 0
+                      ? calculateContracts(manualUsdAmount, manualDisplayPrice)
+                      : 0;
                   
                   // Calculate ROI
                   let roi: number | null = null;
@@ -1361,47 +1396,98 @@ export default function TraderProfilePage({
                           )}
                         </>
                       ) : (
-                        /* Free Users: Manual Copy + Mark as Copied */
-                        <div className="flex gap-2">
+                        <div className="space-y-3">
                           {trade.status === 'Trader Closed' || trade.status === 'Bonded' ? (
-                            <Button 
-                              disabled 
+                            <Button
+                              disabled
                               className="w-full bg-slate-300 text-slate-600 font-semibold cursor-not-allowed"
                             >
                               Market Closed
                             </Button>
                           ) : (
                             <>
-                              <a
-                                href={polymarketUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex-1"
-                              >
-                                <Button className="w-full bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold">
-                                  Manual Copy
-                                </Button>
-                              </a>
                               <Button
-                                onClick={() => handleMarkAsCopied(trade)}
-                                disabled={isAlreadyCopied}
-                                variant="outline"
-                                className={cn(
-                                  'flex-1',
-                                  isAlreadyCopied
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    : 'border-slate-300 text-slate-700 hover:bg-slate-50'
-                                )}
+                                type="button"
+                                onClick={() => handleManualCopyToggle(index, polymarketUrl)}
+                                disabled={trade.status === 'Trader Closed' || trade.status === 'Bonded'}
+                                className="w-full flex items-center justify-center gap-2 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm text-sm"
                               >
-                                {isAlreadyCopied ? (
-                                  <>
-                                    <Check className="h-4 w-4 mr-2" />
-                                    Copied
-                                  </>
-                                ) : (
-                                  'Mark as Copied'
-                                )}
+                                Manual Copy
+                                <ExternalLink className="w-4 h-4" />
                               </Button>
+                              {manualCopyTradeIndex === index && (
+                                <div className="space-y-4 mt-1 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                  <h4 className="text-sm font-semibold text-slate-900">
+                                    Manual Copy
+                                  </h4>
+                                  <div className="bg-white border border-slate-200 rounded-lg p-2.5">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs font-medium text-slate-600">Current Price</span>
+                                      <div className="text-right">
+                                        <p className="text-base font-semibold text-slate-900">
+                                          ${manualDisplayPrice.toFixed(2)}
+                                        </p>
+                                        <p className={`text-xs font-medium ${manualPriceChangeColor}`}>
+                                          {manualPriceChangeLabel}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <label htmlFor={`manual-amount-${index}`} className="text-xs font-medium text-slate-700">
+                                      Amount (USD)
+                                    </label>
+                                    <div className="relative">
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                                      <input
+                                        id={`manual-amount-${index}`}
+                                        type="number"
+                                        inputMode="decimal"
+                                        step="0.01"
+                                        value={manualUsdAmount}
+                                        onChange={(e) => setManualUsdAmount(e.target.value)}
+                                        placeholder="0.00"
+                                        className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      />
+                                    </div>
+                                    {manualAmountValid && (
+                                      <p className="text-xs text-slate-500">
+                                        ≈ {manualContractsEstimate.toLocaleString()} contracts
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  <Button
+                                    onClick={() => handleManualCopyCta(polymarketUrl)}
+                                    disabled={!manualAmountValid}
+                                    className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
+                                    size="lg"
+                                  >
+                                    Manual Copy
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleMarkAsCopied(trade)}
+                                    disabled={isAlreadyCopied}
+                                    variant="outline"
+                                    className={cn(
+                                      'w-full font-medium text-sm',
+                                      isAlreadyCopied
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                                    )}
+                                  >
+                                    {isAlreadyCopied ? (
+                                      <>
+                                        <Check className="h-4 w-4 mr-2" />
+                                        Copied
+                                      </>
+                                    ) : (
+                                      'Mark as Copied'
+                                    )}
+                                  </Button>
+                                </div>
+                              )}
                             </>
                           )}
                         </div>

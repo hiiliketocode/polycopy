@@ -15,6 +15,7 @@ import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { MarkTradeClosed } from '@/components/polycopy/mark-trade-closed';
 import { EditCopiedTrade } from '@/components/polycopy/edit-copied-trade';
+import { OrdersScreen } from '@/app/orders/page';
 import {
   Dialog,
   DialogContent,
@@ -83,6 +84,8 @@ interface CategoryDistribution {
   percentage: number;
   color: string;
 }
+
+type ProfileTab = 'copied-trades' | 'performance' | 'settings' | 'quick-trades';
 
 // Helper: Format relative time
 function formatRelativeTime(dateString: string): string {
@@ -153,8 +156,11 @@ function ProfilePageContent() {
   
   // UI state - Check for tab query parameter
   const tabParam = searchParams?.get('tab');
-  const initialTab = (tabParam === 'settings' || tabParam === 'performance') ? tabParam : 'copied-trades';
-  const [activeTab, setActiveTab] = useState<'copied-trades' | 'performance' | 'settings'>(initialTab as any);
+  const initialTab =
+    tabParam === 'settings' || tabParam === 'performance' || tabParam === 'quick-trades'
+      ? (tabParam as ProfileTab)
+      : 'copied-trades';
+  const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   
@@ -1225,6 +1231,18 @@ function ProfilePageContent() {
               Copied Trades
             </Button>
             <Button
+              onClick={() => setActiveTab('quick-trades')}
+              variant="ghost"
+              className={cn(
+                "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
+                activeTab === 'quick-trades'
+                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+              )}
+            >
+              Quick Trades
+            </Button>
+            <Button
               onClick={() => setActiveTab('performance')}
               variant="ghost"
               className={cn(
@@ -1251,6 +1269,11 @@ function ProfilePageContent() {
           </div>
 
           {/* Tab Content */}
+          {activeTab === 'quick-trades' && (
+            <div className="space-y-4">
+              <OrdersScreen hideNavigation contentWrapperClassName="bg-transparent" />
+            </div>
+          )}
           {activeTab === 'copied-trades' && (
             <div className="space-y-4">
               {/* Filter and Refresh */}
