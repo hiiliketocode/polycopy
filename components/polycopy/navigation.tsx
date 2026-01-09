@@ -39,6 +39,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
   const [cashBalance, setCashBalance] = useState<number | null>(null)
   const [loadingBalance, setLoadingBalance] = useState(false)
   const [showUI, setShowUI] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   
   // Track previous prop values to detect when they've stabilized
   const prevPropsRef = useRef({ user, isPremium, walletAddress, profileImageUrl })
@@ -99,6 +100,40 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
       }
     }
   }, [user, isPremium, walletAddress, profileImageUrl, showUI])
+
+  // Resolve admin status so we can show admin links on desktop nav
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false)
+      return
+    }
+
+    let mounted = true
+
+    const fetchAdminFlag = async () => {
+      try {
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("is_admin")
+          .eq("id", user.id)
+          .maybeSingle()
+
+        if (!mounted) return
+        setIsAdmin(Boolean(profile?.is_admin && !error))
+      } catch (err) {
+        console.error("[Navigation] failed to load admin flag", err)
+        if (mounted) {
+          setIsAdmin(false)
+        }
+      }
+    }
+
+    fetchAdminFlag()
+
+    return () => {
+      mounted = false
+    }
+  }, [user])
 
   // Fetch wallet balance for premium users with connected wallets
   useEffect(() => {
@@ -177,17 +212,29 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
             >
               Orders
             </Link>
+          <Link
+            href="/profile"
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              isActive("/profile")
+                ? "text-slate-900 bg-slate-100"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            Profile
+          </Link>
+          {isAdmin && (
             <Link
-              href="/profile"
+              href="/admin/users"
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                isActive("/profile")
+                isActive("/admin/users")
                   ? "text-slate-900 bg-slate-100"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
               }`}
             >
-              Profile
+              Admin
             </Link>
-          </div>
+          )}
+        </div>
 
           {/* Right Side - User Menu or Auth Buttons */}
           <div className="flex items-center gap-4">

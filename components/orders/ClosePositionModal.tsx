@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowDown, ChevronDown, HelpCircle } from 'lucide-react'
+import { useEffect, useMemo, useState, type ComponentType } from 'react'
+import { ArrowDown, ChevronDown, CheckCircle2, Clock, HelpCircle, XCircle, type LucideProps } from 'lucide-react'
 import type { OrderRow } from '@/lib/orders/types'
 import type { PositionSummary } from '@/lib/orders/position'
 import { Badge } from '@/components/ui/badge'
@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 
 // Polymarket tick sizes bottom out at 0.001, but some markets use larger ticks (e.g., 0.01)
 const FALLBACK_MIN_TICK_SIZE = 0.001
+const SIZE_DECIMALS = 2
 
 type CloseTarget = {
   order: OrderRow
@@ -41,6 +42,150 @@ const ORDER_BEHAVIOR_TOOLTIP =
   'FAK fills as much as possible immediately and cancels the rest, while GTC keeps the order open until it either fills or you cancel it.'
 const SLIPPAGE_PRESETS: Array<number> = [0, 1, 3, 5]
 
+type StatusPhase =
+  | 'submitted'
+  | 'processing'
+  | 'pending'
+  | 'open'
+  | 'partial'
+  | 'filled'
+  | 'canceled'
+  | 'expired'
+  | 'rejected'
+  | 'unknown'
+
+const TERMINAL_STATUS_PHASES = new Set<StatusPhase>(['filled', 'canceled', 'expired', 'rejected'])
+const FAILED_EXECUTION_PHASES = new Set<StatusPhase>(['canceled', 'expired', 'rejected'])
+
+function normalizeStatusPhase(status?: string | null): StatusPhase {
+  if (!status) return 'pending'
+  const normalized = status.trim().toLowerCase()
+  if (normalized === 'matched' || normalized === 'filled') return 'filled'
+  if (['accepted', 'pending', 'submitted', 'unknown'].includes(normalized)) return 'pending'
+  if (normalized === 'processing') return 'processing'
+  if (normalized === 'open') return 'open'
+  if (normalized === 'partial') return 'partial'
+  if (normalized === 'canceled' || normalized === 'cancelled') return 'canceled'
+  if (normalized === 'expired') return 'expired'
+  if (
+    normalized.includes('reject') ||
+    normalized.includes('error') ||
+    normalized.includes('fail') ||
+    normalized === 'inactive'
+  ) {
+    return 'rejected'
+  }
+  return 'pending'
+}
+
+const STATUS_SIMPLE_LABELS: Record<StatusPhase, string> = {
+  submitted: 'Order Received by Polymarket',
+  processing: 'Order Received by Polymarket, Processing',
+  pending: 'Order Received by Polymarket, Pending',
+  open: 'Order open on Polymarket',
+  partial: 'Partially filled on Polymarket',
+  filled: 'Filled on Polymarket',
+  canceled: 'Canceled on Polymarket',
+  expired: 'Expired on Polymarket',
+  rejected: 'Rejected by Polymarket',
+  unknown: 'Polymarket status unknown',
+}
+
+type ExecutionStatusVariant = 'success' | 'pending' | 'failed'
+
+const STATUS_VARIANT_ICONS: Record<ExecutionStatusVariant, ComponentType<LucideProps>> = {
+  success: CheckCircle2,
+  pending: Clock,
+  failed: XCircle,
+}
+
+const STATUS_VARIANT_WRAPPER_CLASSES: Record<ExecutionStatusVariant, string> = {
+  success: 'border-emerald-200 bg-emerald-50 text-emerald-600',
+  pending: 'border-amber-200 bg-amber-50 text-amber-600',
+  failed: 'border-rose-200 bg-rose-50 text-rose-600',
+}
+
+function getExecutionStatusVariant(phase: StatusPhase): ExecutionStatusVariant {
+  if (phase === 'filled') return 'success'
+  if (FAILED_EXECUTION_PHASES.has(phase)) return 'failed'
+  return 'pending'
+}
+
+function getOrderStatusLabel(status?: string | null) {
+  const phase = normalizeStatusPhase(status)
+  return STATUS_SIMPLE_LABELS[phase] || 'Polymarket status pending'
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value.constructor === Object || Object.getPrototypeOf(value) === Object.prototype)
+  )
+}
+
+function findStatusReason(value: unknown): string | null {
+  if (!isPlainObject(value)) return null
+  const record = value
+  const candidates = [
+    'reject_reason',
+    'rejectReason',
+    'reject_msg',
+    'rejectMsg',
+    'reason',
+    'message',
+    'details',
+    'status_message',
+    'statusMessage',
+    'error',
+    'errorMessage',
+    'status_reason',
+    'statusReason',
+  ]
+  for (const key of candidates) {
+    const entry = record[key]
+    if (typeof entry === 'string' && entry.trim().length > 0) {
+      return entry.trim()
+    }
+    if (isPlainObject(entry)) {
+      const nested = findStatusReason(entry)
+      if (nested) return nested
+    }
+  }
+  if (Array.isArray(record.errors) && record.errors.length > 0) {
+    const texts = record.errors
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (isPlainObject(item)) {
+          return findStatusReason(item)
+        }
+        return null
+      })
+      .filter((text): text is string => Boolean(text))
+    if (texts.length > 0) {
+      return texts.join('; ')
+    }
+  }
+  return null
+}
+
+function getPostOrderStateLabel(
+  phase: StatusPhase,
+  orderType: 'FAK' | 'GTC',
+  filledSize: number | null
+) {
+  if (phase === 'filled') return 'Filled'
+  if (phase === 'partial') return 'Partially filled'
+  if (
+    orderType === 'FAK' &&
+    (phase === 'canceled' || phase === 'expired' || phase === 'rejected') &&
+    (!filledSize || filledSize <= 0)
+  ) {
+    return 'Not filled (FAK)'
+  }
+  return 'Order sent to Polymarket'
+}
+
 export default function ClosePositionModal({
   target,
   isSubmitting,
@@ -65,6 +210,7 @@ export default function ClosePositionModal({
     remainingSize: number | null
     price: number | null
     updatedAt: string | null
+    raw: any
   } | null>(null)
   const [orderStatusError, setOrderStatusError] = useState<string | null>(null)
   const [orderStatusLoading, setOrderStatusLoading] = useState(false)
@@ -145,6 +291,7 @@ export default function ClosePositionModal({
                 : null,
           price: typeof data.price === 'number' ? data.price : data.price ? Number(data.price) : null,
           updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : null,
+          raw: data,
         }
         setOrderStatus(normalized)
         const finalStatuses = new Set(['filled', 'canceled', 'expired', 'failed'])
@@ -243,30 +390,21 @@ export default function ClosePositionModal({
     })
   }
 
-  const normalizedStatus = orderStatus?.status ? String(orderStatus.status).toLowerCase() : null
-  const statusLabel =
-    normalizedStatus === 'open'
-      ? 'Open'
-      : normalizedStatus === 'partial'
-        ? 'Partially Filled'
-        : normalizedStatus === 'filled'
-          ? 'Filled'
-          : normalizedStatus === 'canceled'
-            ? 'Canceled'
-            : normalizedStatus === 'expired'
-              ? 'Expired'
-              : normalizedStatus === 'failed'
-                ? 'Failed'
-                : normalizedStatus
-                  ? normalizedStatus
-                  : 'Unknown'
+  const hasSubmittedOrder = Boolean(orderId)
   const submittedContracts = orderStatus?.size ?? null
   const filledContracts = orderStatus?.filledSize ?? null
-  const remainingContracts =
-    orderStatus?.remainingSize ??
-    (submittedContracts !== null && filledContracts !== null
-      ? Math.max(submittedContracts - filledContracts, 0)
-      : null)
+  const statusPhase = normalizeStatusPhase(orderStatus?.status)
+  const statusLabel = getPostOrderStateLabel(statusPhase, orderType, filledContracts)
+  const statusVariant = getExecutionStatusVariant(statusPhase)
+  const StatusIconComponent = STATUS_VARIANT_ICONS[statusVariant]
+  const orderStatusIconClasses = STATUS_VARIANT_WRAPPER_CLASSES[statusVariant]
+  const orderStatusLabel = getOrderStatusLabel(orderStatus?.status)
+  const statusReason = orderStatus ? findStatusReason(orderStatus.raw) : null
+  const isFinalStatus = TERMINAL_STATUS_PHASES.has(statusPhase)
+  const averageFillPriceLabel =
+    orderStatus?.price !== null && orderStatus?.price !== undefined
+      ? formatCurrency(orderStatus.price)
+      : formatCurrency(effectivePriceForSubmit)
   const fillProgress =
     submittedContracts && filledContracts !== null && submittedContracts > 0
       ? Math.min((filledContracts / submittedContracts) * 100, 100)
@@ -275,6 +413,8 @@ export default function ClosePositionModal({
     submittedContracts !== null && filledContracts !== null
       ? `${formatNumber(filledContracts)} / ${formatNumber(submittedContracts)}`
       : '—'
+  const showFillProgress =
+    submittedContracts !== null && filledContracts !== null && submittedContracts > 0
 
   return (
     <div
@@ -472,11 +612,20 @@ export default function ClosePositionModal({
 
                   <Button
                     onClick={handleConfirm}
-                    disabled={!amountValid || effectivePriceForSubmit === null || isSubmitting}
+                    disabled={
+                      !amountValid ||
+                      effectivePriceForSubmit === null ||
+                      isSubmitting ||
+                      hasSubmittedOrder
+                    }
                     className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
                     size="lg"
                   >
-                    {isSubmitting ? 'Submitting…' : 'Sell position'}
+                    {isSubmitting
+                      ? 'Submitting…'
+                      : hasSubmittedOrder
+                        ? 'Order sent to Polymarket'
+                        : 'Sell position'}
                   </Button>
 
                   <div className="mt-2 flex items-center justify-between gap-3">
@@ -617,53 +766,60 @@ export default function ClosePositionModal({
                     </div>
                   )}
                   {orderId && (
-                    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-semibold tracking-wide text-slate-400">Order status</p>
-                          <p className="text-base font-semibold text-slate-900">{statusLabel}</p>
-                        </div>
-                        {submittedAt && (
-                          <div className="text-xs text-slate-500">Submitted {submittedAt}</div>
-                        )}
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm space-y-4 sm:px-5 sm:py-6">
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-900">{statusLabel}</h3>
+                      </div>
+                      <div className="text-sm text-slate-600 flex items-center gap-2">
+                        <span
+                          className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${orderStatusIconClasses}`}
+                        >
+                          <StatusIconComponent className="h-3 w-3" aria-hidden />
+                        </span>
+                        <span className="text-sm font-semibold text-slate-900">{orderStatusLabel}</span>
                       </div>
                       <div className="grid gap-3 text-sm sm:grid-cols-2">
                         <div>
                           <div className="text-xs font-medium text-slate-500">Submitted contracts</div>
                           <div className="text-sm font-semibold text-slate-900">
-                            {submittedContracts !== null ? formatNumber(submittedContracts) : '—'}
+                            {formatContractsDisplay(submittedContracts, SIZE_DECIMALS)}
                           </div>
+                        </div>
+                        <div>
+                          <div className="text-xs font-medium text-slate-500">Estimated max USD</div>
+                          <div className="text-sm font-semibold text-slate-900">{proceedsLabel}</div>
                         </div>
                         <div>
                           <div className="text-xs font-medium text-slate-500">Filled contracts</div>
                           <div className="text-sm font-semibold text-slate-900">
-                            {filledContracts !== null ? formatNumber(filledContracts) : '—'}
+                            {formatContractsDisplay(filledContracts, SIZE_DECIMALS)}
                           </div>
                         </div>
                         <div>
-                          <div className="text-xs font-medium text-slate-500">Remaining contracts</div>
-                          <div className="text-sm font-semibold text-slate-900">
-                            {remainingContracts !== null ? formatNumber(remainingContracts) : '—'}
-                          </div>
+                          <div className="text-xs font-medium text-slate-500">Average fill price</div>
+                          <div className="text-sm font-semibold text-slate-900">{averageFillPriceLabel}</div>
                         </div>
+                      </div>
+                      {submittedAt && (
+                        <div className="text-xs text-slate-500 text-right">Submitted {submittedAt}</div>
+                      )}
+                      {statusReason && (
+                        <div className="text-sm text-slate-500">Reason: {statusReason}</div>
+                      )}
+                      {showFillProgress && (
                         <div>
-                          <div className="text-xs font-medium text-slate-500">Limit price</div>
-                          <div className="text-sm font-semibold text-slate-900">
-                            {orderStatus?.price !== null && orderStatus?.price !== undefined
-                              ? formatCurrency(orderStatus.price)
-                              : formatCurrency(effectivePriceForSubmit)}
+                          <div className="text-sm text-slate-500">
+                            Filled {formatContractsDisplay(filledContracts, SIZE_DECIMALS)} /{' '}
+                            {formatContractsDisplay(submittedContracts, SIZE_DECIMALS)}
+                          </div>
+                          <div className="mt-2 h-2 w-full rounded-full bg-slate-100">
+                            <div
+                              className="h-2 rounded-full bg-slate-900 transition-all duration-150"
+                              style={{ width: `${fillProgress}%` }}
+                            />
                           </div>
                         </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-slate-500">Filled {fillProgressLabel}</div>
-                        <div className="mt-2 h-2 w-full rounded-full bg-slate-100">
-                          <div
-                            className="h-2 rounded-full bg-slate-900 transition-all duration-150"
-                            style={{ width: `${fillProgress}%` }}
-                          />
-                        </div>
-                      </div>
+                      )}
                       {orderStatus?.updatedAt && (
                         <div className="text-xs text-slate-500">
                           Updated {new Date(orderStatus.updatedAt).toLocaleTimeString()}
@@ -685,6 +841,19 @@ export default function ClosePositionModal({
       </div>
     </div>
   )
+}
+
+function formatInputValue(value: number, decimals: number) {
+  const fixed = value.toFixed(decimals)
+  return fixed.replace(/\.?0+$/, '')
+}
+
+function formatContractsDisplay(value: number | null, decimals: number) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  const trimmed = formatInputValue(value, decimals)
+  const [whole, fraction] = trimmed.split('.')
+  const withCommas = Number(whole).toLocaleString('en-US')
+  return fraction ? `${withCommas}.${fraction}` : withCommas
 }
 
 function formatNumber(value: number | null | undefined) {

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { MarkTradeCopiedModal } from '@/components/polycopy/mark-trade-copied-modal';
 import { TradeCard } from '@/components/polycopy/trade-card';
@@ -102,7 +103,7 @@ export default function TraderProfilePage({
   const [loadingTrades, setLoadingTrades] = useState(true);
   const [tradesToShow, setTradesToShow] = useState(15); // Start with 15 trades for faster loading
   const [activeTab, setActiveTab] = useState<'positions' | 'performance'>('positions');
-  const [positionFilter, setPositionFilter] = useState<'all' | 'open' | 'closed' | 'resolved'>('all');
+  const [showResolvedTrades, setShowResolvedTrades] = useState(false);
   const [timePeriod, setTimePeriod] = useState<'all' | 'month' | 'week'>('all');
   
   // Modal state
@@ -796,12 +797,16 @@ export default function TraderProfilePage({
 
   // Filter trades
   const filteredTrades = trades.filter(trade => {
-    if (positionFilter === 'all') return true;
-    if (positionFilter === 'open') return trade.status === 'Open';
-    if (positionFilter === 'closed') return trade.status === 'Trader Closed';
-    if (positionFilter === 'resolved') return trade.status === 'Bonded';
-    return true;
+    if (trade.status === 'Open') return true;
+    if (!showResolvedTrades) return false;
+    return trade.status === 'Trader Closed' || trade.status === 'Bonded';
   });
+  const noTradesMessage =
+    trades.length === 0
+      ? "This trader hasn't made any trades yet"
+      : showResolvedTrades
+      ? 'No open or resolved trades to display'
+      : 'No open trades to display';
 
   if (loading) {
     return (
@@ -1034,23 +1039,15 @@ export default function TraderProfilePage({
         {/* Content */}
         {activeTab === 'positions' && (
           <div className="space-y-4">
-            {/* Filter Buttons */}
-            <div className="flex gap-2">
-              {(['all', 'open', 'closed', 'resolved'] as const).map((filter) => (
-                <Button
-                  key={filter}
-                  onClick={() => setPositionFilter(filter)}
-                  variant={positionFilter === filter ? 'default' : 'outline'}
-                  size="sm"
-                  className={cn(
-                    positionFilter === filter
-                      ? 'bg-slate-900 text-white hover:bg-slate-800'
-                      : 'border-slate-300 text-slate-700 hover:bg-slate-50'
-                  )}
-                >
-                  {filter.charAt(0).toUpperCase() + filter.slice(1)}
-                </Button>
-              ))}
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="show-resolved-trades"
+                checked={showResolvedTrades}
+                onCheckedChange={(value) => setShowResolvedTrades(value === true)}
+              />
+              <Label htmlFor="show-resolved-trades" className="text-sm font-medium text-slate-600">
+                Show closed / lost / redeemed
+              </Label>
             </div>
 
             {/* Trades */}
@@ -1063,11 +1060,7 @@ export default function TraderProfilePage({
               <Card className="p-12 text-center">
                 <div className="text-6xl mb-4">📊</div>
                 <p className="text-slate-600 text-lg font-medium mb-2">No trades found</p>
-                <p className="text-slate-500 text-sm">
-                  {positionFilter !== 'all' 
-                    ? `No ${positionFilter} trades to display`
-                    : 'This trader hasn\'t made any trades yet'}
-                </p>
+                <p className="text-slate-500 text-sm">{noTradesMessage}</p>
               </Card>
             ) : (
               <div className="space-y-3">

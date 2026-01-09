@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
 
 export default function BottomNav() {
   const pathname = usePathname();
@@ -10,6 +12,8 @@ export default function BottomNav() {
   if (pathname === '/login' || pathname?.startsWith('/login?')) {
     return null;
   }
+
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const isActive = (href: string) => {
     if (href === '/feed') {
@@ -37,6 +41,40 @@ export default function BottomNav() {
     minHeight: '24px',
     minWidth: '24px'
   };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkAdmin = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          if (isMounted) setIsAdmin(false);
+          return;
+        }
+
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('is_admin')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (isMounted) {
+          setIsAdmin(Boolean(profile?.is_admin && !error));
+        }
+      } catch (error) {
+        console.error('[BottomNav] failed to resolve admin status', error);
+        if (isMounted) {
+          setIsAdmin(false);
+        }
+      }
+    };
+
+    checkAdmin();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <nav 
@@ -123,9 +161,29 @@ export default function BottomNav() {
           <span className={`text-xs ${isActive('/profile') ? 'text-[#0F0F0F] font-semibold' : 'text-slate-500'}`}>
             Profile
           </span>
-        </Link>
-      </div>
-    </nav>
-  );
+          </Link>
+          {isAdmin && (
+            <Link 
+              href="/admin/users" 
+              className="flex-1 flex flex-col items-center justify-center gap-1"
+              style={navItemStyle}
+            >
+              <div style={iconContainerStyle} className="flex items-center justify-center">
+                <svg 
+                  className={`h-6 w-6 ${isActive('/admin/users') ? 'text-[#0F0F0F]' : 'text-slate-400'}`}
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 8a6 6 0 11-8 0 6 6 0 018 0zm-1 8h-4l-1 5h6l-1-5z" />
+                </svg>
+              </div>
+              <span className={`text-xs ${isActive('/admin/users') ? 'text-[#0F0F0F] font-semibold' : 'text-slate-500'}`}>
+                Admin
+              </span>
+            </Link>
+          )}
+        </div>
+      </nav>
+    );
 }
-

@@ -41,7 +41,7 @@ export default function OrdersPage() {
   const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null)
   const [cancelError, setCancelError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'positions' | 'openOrders' | 'history'>('positions')
-  const [showClosedPositions, setShowClosedPositions] = useState(false)
+  const [includeResolvedPositions, setIncludeResolvedPositions] = useState(false)
   const historyOrdersOnly = useMemo(() => {
     const base = orders.filter((order) => order.status !== 'open' && order.status !== 'partial')
     return showFailedOrders ? base : base.filter((order) => order.status !== 'failed')
@@ -606,18 +606,18 @@ export default function OrdersPage() {
         </div>
 
         {activeTab === 'positions' && (
-          <PositionsList
-            positions={positions}
-            loading={positionsLoading}
-            resolveOrderForPosition={resolveOrderForPosition}
-            onSellPosition={(position) => {
-              const order = resolveOrderForPosition(position)
-              if (!order) return
-              handleSellPosition(order)
-            }}
-            showClosedPositions={showClosedPositions}
-            onToggleShowClosed={setShowClosedPositions}
-          />
+            <PositionsList
+              positions={positions}
+              loading={positionsLoading}
+              resolveOrderForPosition={resolveOrderForPosition}
+              onSellPosition={(position) => {
+                const order = resolveOrderForPosition(position)
+                if (!order) return
+                handleSellPosition(order)
+              }}
+              includeResolvedPositions={includeResolvedPositions}
+              onToggleIncludeResolved={setIncludeResolvedPositions}
+            />
         )}
 
         {activeTab === 'openOrders' && (
@@ -900,8 +900,8 @@ type PositionsListProps = {
   loading: boolean
   resolveOrderForPosition: (position: PositionSummary) => OrderRow | null
   onSellPosition: (position: PositionSummary) => void
-  showClosedPositions: boolean
-  onToggleShowClosed: (value: boolean) => void
+  includeResolvedPositions: boolean
+  onToggleIncludeResolved: (value: boolean) => void
 }
 
 function PositionsList({
@@ -909,8 +909,8 @@ function PositionsList({
   loading,
   resolveOrderForPosition,
   onSellPosition,
-  showClosedPositions,
-  onToggleShowClosed,
+  includeResolvedPositions,
+  onToggleIncludeResolved,
 }: PositionsListProps) {
   const [marketMeta, setMarketMeta] = useState<
     Map<
@@ -1045,7 +1045,14 @@ function PositionsList({
     const order = resolveOrderForPosition(position)
     const state = order?.positionState ?? null
     const isClosed = state === 'closed'
-    return showClosedPositions ? true : !isClosed
+    const conditionId = deriveConditionId(position.tokenId, position.marketId)
+    const meta = conditionId ? marketMeta.get(conditionId) : null
+    const marketResolved =
+      order?.marketIsOpen === false ||
+      meta?.open === false
+    const isResolved = isClosed || marketResolved
+    if (includeResolvedPositions) return true
+    return !isResolved
   })
 
   const needsMarketMeta = visiblePositions.some((position) => {
@@ -1072,16 +1079,16 @@ function PositionsList({
 
   if (visiblePositions.length === 0) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
         No positions matching filters.
         <label className="ml-3 inline-flex items-center gap-2 text-xs text-slate-500">
           <input
             type="checkbox"
-            checked={showClosedPositions}
-            onChange={(e) => onToggleShowClosed(e.target.checked)}
+            checked={includeResolvedPositions}
+            onChange={(e) => onToggleIncludeResolved(e.target.checked)}
             className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
           />
-          <span>Show closed/lost/redeemed</span>
+          <span>Include resolved positions</span>
         </label>
       </div>
     )
@@ -1178,21 +1185,21 @@ function PositionsList({
 
   return (
     <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">Positions</h2>
-          <p className="text-xs text-slate-500">{visiblePositions.length} positions shown</p>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Positions</h2>
+            <p className="text-xs text-slate-500">{visiblePositions.length} positions shown</p>
+          </div>
+          <label className="inline-flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={includeResolvedPositions}
+              onChange={(e) => onToggleIncludeResolved(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+            />
+            <span>Include resolved positions</span>
+          </label>
         </div>
-        <label className="inline-flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={showClosedPositions}
-            onChange={(e) => onToggleShowClosed(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-          />
-          <span>Show closed / lost / redeemed</span>
-        </label>
-      </div>
 
       <div className="hidden md:block">
         <table className="w-full table-fixed text-sm">

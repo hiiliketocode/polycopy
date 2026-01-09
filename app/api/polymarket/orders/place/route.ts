@@ -8,6 +8,7 @@ import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
 import { ensureEvomiProxyAgent } from '@/lib/evomi/proxy'
 import { getBodySnippet } from '@/lib/polymarket/order-route-helpers'
 import { sanitizeError } from '@/lib/http/sanitize-error'
+import { logError, logInfo, makeRequestId, sanitizeForLogging } from '@/lib/logging/logger'
 import { resolveOrdersTableName } from '@/lib/orders/table'
 import { adjustSizeForImpliedAmount, roundDownToStep } from '@/lib/polymarket/sizing'
 
@@ -36,6 +37,15 @@ type Body = {
   autoCloseOnTraderClose?: boolean
   autoClose?: boolean
   slippagePercent?: number
+  orderIntentId?: string
+  conditionId?: string
+  inputMode?: 'usd' | 'contracts'
+  usdInput?: number | string
+  contractsInput?: number | string
+  autoCorrectApplied?: boolean
+  bestBid?: number | string
+  bestAsk?: number | string
+  minOrderSize?: number
 }
 
 function respondWithMetadata(body: Record<string, unknown>, status: number) {
@@ -106,6 +116,33 @@ function createServiceRoleClient() {
       auth: { autoRefreshToken: false, persistSession: false },
     }
   )
+}
+
+const ORDER_EVENTS_TABLE = 'order_events_log'
+const MAX_ERROR_MESSAGE_LENGTH = 500
+
+function normalizeLogInputMode(value?: string | null): 'usd' | 'contracts' {
+  return value?.toLowerCase() === 'contracts' ? 'contracts' : 'usd'
+}
+
+function truncateMessage(value?: string | null, max = MAX_ERROR_MESSAGE_LENGTH) {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (trimmed.length <= max) return trimmed
+  return trimmed.slice(0, max)
+}
+
+async function updateOrderEventStatus(
+  client: ReturnType<typeof createServiceRoleClient>,
+  orderEventId: string | null,
+  updates: Record<string, unknown>
+) {
+  if (!orderEventId) return
+  try {
+    await client.from(ORDER_EVENTS_TABLE).update(updates).eq('id', orderEventId)
+  } catch (error) {
+    console.error('[POLY-ORDER-PLACE] Failed to update order event row', error)
+  }
 }
 
 async function ensureTraderId(
@@ -320,17 +357,45 @@ export async function POST(request: NextRequest) {
     copiedTraderId,
     copiedTraderWallet,
     copiedTraderUsername,
-    marketId,
-    marketTitle,
-    marketSlug,
-    marketAvatarUrl,
-    outcome,
-    autoCloseOnTraderClose,
-    autoClose,
-    slippagePercent,
-  } = body
+  marketId,
+  marketTitle,
+  marketSlug,
+  marketAvatarUrl,
+  outcome,
+  autoCloseOnTraderClose,
+  autoClose,
+  slippagePercent,
+  orderIntentId,
+  conditionId,
+  inputMode,
+  usdInput,
+  contractsInput,
+  autoCorrectApplied,
+  bestBid,
+  bestAsk,
+  minOrderSize,
+} = body
 
-  const requestId = request.headers.get('x-request-id') ?? null
+  const requestId = request.headers.get('x-request-id') ?? makeRequestId()
+  const serviceRole = createServiceRoleClient()
+  const resolvedOrderIntentId =
+    normalizeOptionalString(orderIntentId) ?? makeRequestId()
+  const normalizedConditionId =
+    normalizeOptionalString(conditionId ?? marketId) ?? null
+  const resolvedInputMode = normalizeLogInputMode(inputMode)
+  const resolvedUsdInput = normalizeNumber(usdInput)
+  const resolvedContractsInput = normalizeNumber(contractsInput)
+  const normalizedBestBid = normalizeNumber(bestBid)
+  const normalizedBestAsk = normalizeNumber(bestAsk)
+  const resolvedMinOrderSize = normalizeNumber(minOrderSize)
+  const normalizedTokenId = normalizeOptionalString(tokenId)
+  const normalizedOutcomeValue = normalizeOptionalString(outcome)
+  const sideLower = side ? side.toLowerCase() : null
+  const resolvedSlippage =
+    typeof slippagePercent === 'number' && Number.isFinite(slippagePercent) && slippagePercent >= 0
+      ? slippagePercent
+      : null
+  const slippageBps = resolvedSlippage !== null ? Math.round(resolvedSlippage * 100) : null
 
   if (!confirm) {
     return respondWithMetadata(
@@ -364,6 +429,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  let orderEventId: string | null = null
+  let normalizedWalletAddress: string | null = null
+
   try {
     // Configure Evomi proxy BEFORE creating ClobClient to ensure axios defaults are set
     let evomiProxyUrl: string | null = null
@@ -387,6 +455,7 @@ export async function POST(request: NextRequest) {
 
     const clobBaseUrl = getValidatedPolymarketClobBaseUrl()
     const normalizedOrderType = orderType === 'IOC' ? 'FAK' : orderType
+    normalizedWalletAddress = normalizeWallet(signerAddress)
     const requestUrl = new URL(POST_ORDER, clobBaseUrl).toString()
     const upstreamHost = new URL(clobBaseUrl).hostname
     const normalizedPrice = normalizeNumber(price)
@@ -420,6 +489,65 @@ export async function POST(request: NextRequest) {
         400
       )
     }
+
+    const orderEventPayload = {
+      user_id: userId,
+      wallet_address: normalizedWalletAddress,
+      order_intent_id: resolvedOrderIntentId,
+      request_id: requestId,
+      condition_id: normalizedConditionId,
+      token_id: normalizedTokenId,
+      side: sideLower,
+      outcome: normalizedOutcomeValue,
+      order_type: normalizedOrderType,
+      slippage_bps: slippageBps,
+      limit_price: roundedPrice,
+      size: adjustedAmount,
+      min_order_size: resolvedMinOrderSize,
+      tick_size: effectiveTickSize,
+      best_bid: normalizedBestBid,
+      best_ask: normalizedBestAsk,
+      input_mode: resolvedInputMode,
+      usd_input: resolvedUsdInput,
+      contracts_input: resolvedContractsInput,
+      auto_correct_applied: Boolean(autoCorrectApplied),
+      status: 'attempted',
+      polymarket_order_id: null,
+      http_status: null,
+      error_code: null,
+      error_message: null,
+      raw_error: null,
+    }
+
+    try {
+      const { data: insertedEvent, error: eventError } = await serviceRole
+        .from(ORDER_EVENTS_TABLE)
+        .insert(orderEventPayload)
+        .select('id')
+        .single()
+      if (eventError) {
+        throw eventError
+      }
+      orderEventId = insertedEvent?.id ?? null
+    } catch (eventError) {
+      console.error('[POLY-ORDER-PLACE] Failed to persist order event', eventError)
+    }
+
+    logInfo('order_attempted', {
+      request_id: requestId,
+      order_intent_id: resolvedOrderIntentId,
+      user_id: userId,
+      wallet_address: normalizedWalletAddress,
+      condition_id: normalizedConditionId,
+      token_id: normalizedTokenId,
+      outcome: normalizedOutcomeValue,
+      side: sideLower,
+      order_type: normalizedOrderType,
+      limit_price: roundedPrice,
+      size: adjustedAmount,
+      status: 'attempted',
+      event_id: orderEventId,
+    })
 
     const order = await client.createOrder(
       { tokenID: tokenId, price: roundedPrice, size: adjustedAmount, side: side as any },
@@ -478,6 +606,34 @@ export async function POST(request: NextRequest) {
         status: upstreamStatus,
         body: sanitizedEvaluationRaw ?? evaluation.raw,
       })
+      const truncatedErrorMessage = truncateMessage(evaluation.message ?? 'Order rejected')
+      const sanitizedErrorBody =
+        sanitizedEvaluationRaw ?? sanitizeForLogging(evaluation.raw ?? null)
+      await updateOrderEventStatus(serviceRole, orderEventId, {
+        status: 'rejected',
+        http_status: upstreamStatus,
+        error_code: evaluation.errorType ?? null,
+        error_message: truncatedErrorMessage,
+        raw_error: sanitizedErrorBody ?? null,
+      })
+      logError('order_rejected', {
+        request_id: requestId,
+        order_intent_id: resolvedOrderIntentId,
+        user_id: userId,
+        wallet_address: normalizedWalletAddress,
+        condition_id: normalizedConditionId,
+        token_id: normalizedTokenId,
+        outcome: normalizedOutcomeValue,
+        side: sideLower,
+        order_type: normalizedOrderType,
+        limit_price: roundedPrice,
+        size: adjustedAmount,
+        http_status: upstreamStatus,
+        error_code: evaluation.errorType ?? null,
+        error_message: truncatedErrorMessage,
+        raw_error: sanitizedErrorBody ?? null,
+        event_id: orderEventId,
+      })
       return respondWithMetadata(
         {
           ok: false,
@@ -504,6 +660,32 @@ export async function POST(request: NextRequest) {
     }
 
     const { orderId } = evaluation
+
+    await updateOrderEventStatus(serviceRole, orderEventId, {
+      status: 'submitted',
+      http_status: upstreamStatus,
+      polymarket_order_id: orderId ?? null,
+      error_code: null,
+      error_message: null,
+      raw_error: null,
+    })
+    logInfo('order_submitted', {
+      request_id: requestId,
+      order_intent_id: resolvedOrderIntentId,
+      user_id: userId,
+      wallet_address: normalizedWalletAddress,
+      condition_id: normalizedConditionId,
+      token_id: normalizedTokenId,
+      outcome: normalizedOutcomeValue,
+      side: sideLower,
+      order_type: normalizedOrderType,
+      limit_price: roundedPrice,
+      size: adjustedAmount,
+      http_status: upstreamStatus,
+      polymarket_order_id: orderId ?? null,
+      status: 'submitted',
+      event_id: orderEventId,
+    })
 
     try {
       if (orderId) {
@@ -552,6 +734,35 @@ export async function POST(request: NextRequest) {
     )
   } catch (error: any) {
     const safeError = sanitizeError(error)
+    const truncatedErrorMessage = truncateMessage(safeError.message)
+    const sanitizedErrorBody = sanitizeForLogging(safeError)
+    const errorStatus =
+      safeError.status && Number.isInteger(safeError.status) ? safeError.status : 500
+    await updateOrderEventStatus(serviceRole, orderEventId, {
+      status: 'rejected',
+      http_status: errorStatus,
+      error_code: safeError.code ?? safeError.name,
+      error_message: truncatedErrorMessage,
+      raw_error: sanitizedErrorBody ?? null,
+    })
+    logError('order_rejected', {
+      request_id: requestId,
+      order_intent_id: resolvedOrderIntentId,
+      user_id: userId,
+      wallet_address: normalizedWalletAddress,
+      condition_id: normalizedConditionId,
+      token_id: normalizedTokenId,
+      outcome: normalizedOutcomeValue,
+      side: sideLower,
+      order_type: orderType === 'IOC' ? 'FAK' : orderType,
+      limit_price: normalizeNumber(price),
+      size: normalizeNumber(amount),
+      http_status: errorStatus,
+      error_code: safeError.code ?? safeError.name,
+      error_message: truncatedErrorMessage,
+      raw_error: sanitizedErrorBody ?? null,
+      event_id: orderEventId,
+    })
     console.error('[POLY-ORDER-PLACE] Error (sanitized):', safeError)
     return respondWithMetadata(
       {
@@ -559,7 +770,7 @@ export async function POST(request: NextRequest) {
         source: 'server',
         error: safeError,
       },
-      safeError.status && Number.isInteger(safeError.status) ? safeError.status : 500
+      errorStatus
     )
   }
 }

@@ -73,15 +73,15 @@ Create a dedicated machine that runs the cron job on a schedule using a cron sch
    APP_URL="https://${FLY_APP_NAME}.fly.dev"
    CRON_SECRET="${CRON_SECRET}"
    
-   # Run every 5 minutes
+   # Run every minute
    while true; do
      echo "$(date): Running sync-public-trades cron job..."
      curl -X GET \
        "${APP_URL}/api/cron/sync-public-trades?limit=50" \
-       -H "Authorization: Bearer ${CRON_SECRET}" \
-       -H "Content-Type: application/json" \
-       || echo "Request failed"
-     sleep 300  # 5 minutes
+     -H "Authorization: Bearer ${CRON_SECRET}" \
+     -H "Content-Type: application/json" \
+     || echo "Request failed"
+  sleep 60  # 1 minute
    done
    ```
 
@@ -107,7 +107,7 @@ Create a dedicated machine that runs the cron job on a schedule using a cron sch
      --image alpine:latest \
      --entrypoint "/bin/sh" \
      --args "-c" \
-     --args "apk add curl && while true; do curl -X GET \"https://polycopy.fly.dev/api/cron/sync-public-trades?limit=50\" -H \"Authorization: Bearer \${CRON_SECRET}\" || true; sleep 300; done"
+  --args "apk add curl && while true; do curl -X GET \"https://polycopy.fly.dev/api/cron/sync-public-trades?limit=50\" -H \"Authorization: Bearer \${CRON_SECRET}\" || true; sleep 60; done"
    ```
 
 ### Option 2: External Cron Service (Simpler)
@@ -120,7 +120,7 @@ Use an external cron service like cron-job.org, EasyCron, or GitHub Actions to c
    - **URL**: `https://your-app-name.fly.dev/api/cron/sync-public-trades?limit=50`
    - **Method**: GET
    - **Headers**: `Authorization: Bearer YOUR_CRON_SECRET`
-   - **Schedule**: Every 5 minutes (`*/5 * * * *`) or as needed
+   - **Schedule**: Every minute (`* * * * *`) or as needed
 
 3. **Test the endpoint**:
    ```bash
@@ -138,7 +138,7 @@ name: Sync Public Trades
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # Every 5 minutes
+    - cron: '* * * * *'  # Every minute
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
@@ -158,7 +158,7 @@ Set GitHub secrets:
 
 ## Recommended Schedule
 
-- **Frequency**: Every 5 minutes (`*/5 * * * *`)
+- **Frequency**: Every minute (`* * * * *`)
 - **Limit**: 50 traders per run (default)
 - **Rationale**: Balances freshness with API rate limits and cost
 
@@ -186,4 +186,3 @@ You should see output like:
 - Fly Machines: ~$0.0000044/second for shared-cpu-1x-256mb when running
 - With auto-stop enabled, machines only consume resources when running
 - External cron services may be free or low-cost alternatives
-

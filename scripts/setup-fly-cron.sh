@@ -33,7 +33,7 @@ flyctl machines create \
   --image alpine:latest \
   --entrypoint "/bin/sh" \
   --args "-c" \
-  --args "apk add --no-cache curl && while true; do curl -X GET \"\${APP_URL}/api/cron/sync-public-trades?limit=50\" -H \"Authorization: Bearer \${CRON_SECRET}\" -H \"Content-Type: application/json\" -f || echo \"Request failed at \$(date)\"; sleep 300; done" \
+  --args "apk add --no-cache curl && while true; do curl -X GET \"\${APP_URL}/api/cron/sync-public-trades?limit=50\" -H \"Authorization: Bearer \${CRON_SECRET}\" -H \"Content-Type: application/json\" -f || echo \"Request failed at \$(date)\"; sleep 60; done" \
   -a "$APP_NAME"
 
 echo ""
@@ -49,5 +49,4 @@ echo "📋 To destroy the machine:"
 echo "   flyctl machines destroy cron-sync-public-trades -a $APP_NAME"
 echo ""
 echo "💡 Recommended: Use GitHub Actions instead (see .github/workflows/sync-public-trades.yml)"
-
 

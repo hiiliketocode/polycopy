@@ -175,7 +175,7 @@ export default function OrdersTable({
                                     : null}
                                 </span>
                               )}
-                              <span className="text-slate-500">{formatShares(contractsValue)} shares</span>
+                            <span className="text-slate-500">{formatShares(contractsValue)} contracts</span>
                             </div>
                           </div>
                         </div>

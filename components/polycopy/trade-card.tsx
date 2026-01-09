@@ -357,6 +357,11 @@ export function TradeCard({
   const [orderBookError, setOrderBookError] = useState<string | null>(null)
   const [bestBidPrice, setBestBidPrice] = useState<number | null>(null)
   const [bestAskPrice, setBestAskPrice] = useState<number | null>(null)
+  const [orderIntentId] = useState<string>(() => {
+    const randomUuId = globalThis.crypto?.randomUUID?.()
+    if (randomUuId) return randomUuId
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  })
 
   const formatWallet = (value: string) => {
     const trimmed = value?.trim() || ""
@@ -755,10 +760,18 @@ export function TradeCard({
       : normalizeContractsInput(parsedAmountValue, null, null)
   const rawContractsValue = hasAmountInput ? contractsSizing.contracts : null
   const minContractsForBuffer = getMinContractsForUsd(limitPrice, resolvedSlippage, minTradeUsd)
+  const minContractsForOrder =
+    minContractsForBuffer !== null && limitPrice
+      ? finalizeContractsForOrder(minContractsForBuffer, minContractsForBuffer, limitPrice)
+      : null
+  const minUsdForOrder =
+    minContractsForOrder !== null && limitPrice ? minContractsForOrder * limitPrice : minTradeUsd
   const enforcedContracts =
-    minContractsForBuffer !== null
-      ? Math.max(rawContractsValue ?? minContractsForBuffer, minContractsForBuffer)
-      : rawContractsValue ?? 0
+    rawContractsValue === null
+      ? null
+      : minContractsForBuffer !== null
+        ? Math.max(rawContractsValue, minContractsForBuffer)
+        : rawContractsValue
   const [frozenOrder, setFrozenOrder] = useState<{ price: number; contracts: number } | null>(null)
   const displayContracts = frozenOrder?.contracts ?? enforcedContracts
   const displayPrice = frozenOrder?.price ?? limitPrice
@@ -768,16 +781,22 @@ export function TradeCard({
       : null
   const contractsValue = displayContracts
   const isBelowMinUsd =
-    minContractsForBuffer !== null && displayContracts < minContractsForBuffer
-  const minUsdErrorMessage = isBelowMinUsd
-    ? "Order must be at least $1 after slippage buffer."
-    : null
+    amountMode === "usd"
+      ? hasAmountInput && parsedAmountValue !== null && parsedAmountValue < minUsdForOrder
+      : hasAmountInput &&
+          (minContractsForOrder ?? minContractsForBuffer) !== null &&
+          (rawContractsValue ?? 0) < (minContractsForOrder ?? minContractsForBuffer!)
+  const minUsdLabel = formatInputValue(minUsdForOrder, 2)
+  const minUsdErrorMessage =
+    isBelowMinUsd ? `Minimum order is $${minUsdLabel}.` : null
   const traderSize = Number.isFinite(size) && size > 0 ? size : 0
   const sizePercent =
     traderSize > 0 && contractsValue ? (contractsValue / traderSize) * 100 : null
   const sizePercentLabel = sizePercent !== null ? `${sizePercent.toFixed(0)}%` : "--%"
   const contractLabel = displayContracts === 1 ? "contract" : "contracts"
   const statusDataRef = useRef<any | null>(null)
+  const [pendingTimeoutTriggered, setPendingTimeoutTriggered] = useState(false)
+  const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleAmountChange = useCallback((value: string) => {
     setFrozenOrder(null)
@@ -799,36 +818,6 @@ export function TradeCard({
       setAmountInput(formatInputValue(estimatedMaxCost, 2))
     }
   }, [amountInput, estimatedMaxCost])
-
-  useEffect(() => {
-    if (!hasAmountInput || !limitPrice) return
-    if (amountMode === "usd") {
-      if (parsedAmountValue !== null && parsedAmountValue < minTradeUsd) {
-        const formatted = formatInputValue(minTradeUsd, 2)
-        if (formatted !== amountInput) {
-          setAmountInput(formatted)
-        }
-      }
-      return
-    }
-    if (amountMode === "contracts" && minContractsForBuffer !== null && contractsValue < minContractsForBuffer) {
-      const formatted = formatInputValue(minContractsForBuffer, contractDecimals)
-      if (formatted !== amountInput) {
-        setAmountInput(formatted)
-      }
-    }
-  }, [
-    amountInput,
-    amountMode,
-    contractDecimals,
-    hasAmountInput,
-    limitPrice,
-    minTradeUsd,
-    parsedAmountValue,
-    resolvedSlippage,
-    minContractsForBuffer,
-    contractsValue,
-  ])
 
   useEffect(() => {
     if (!orderId || !showConfirmation) return
@@ -943,11 +932,6 @@ export function TradeCard({
         setIsSubmitting(false)
         return
       }
-      if (isBelowMinUsd) {
-        setSubmitError('Minimum trade is $1 at current price.')
-        setIsSubmitting(false)
-        return
-      }
       if (!limitPrice || limitPrice <= 0) {
         setSubmitError('Live price unavailable. Try again in a moment.')
         setIsSubmitting(false)
@@ -997,12 +981,30 @@ export function TradeCard({
         setIsSubmitting(false)
         return
       }
-      if (limitPrice && finalContracts * limitPrice < minTradeUsd) {
-        setSubmitError('Minimum trade is $1 at current price.')
+      if (limitPrice && finalContracts * limitPrice < minUsdForOrder) {
+        setSubmitError(`Minimum trade is $${minUsdLabel} at current price.`)
         setIsSubmitting(false)
         return
       }
       setFrozenOrder({ price: limitPrice, contracts: finalContracts })
+
+      const requestId =
+        globalThis.crypto?.randomUUID?.() ??
+        `${Date.now()}-${Math.random().toString(16).slice(2)}`
+      const usdInputValue =
+        amountMode === 'usd'
+          ? parsedAmountValue
+          : displayContracts !== null && displayPrice !== null
+            ? displayContracts * displayPrice
+            : null
+      const contractsInputValue =
+        amountMode === 'contracts' ? parsedAmountValue : displayContracts ?? null
+      const requestedContracts = rawContractsValue
+      const autoCorrectAppliedValue =
+        requestedContracts !== null &&
+        Math.abs(finalContracts - requestedContracts) > Number.EPSILON
+      const bestBidSnapshot = Number.isFinite(bestBidPrice ?? NaN) ? bestBidPrice : null
+      const bestAskSnapshot = Number.isFinite(bestAskPrice ?? NaN) ? bestAskPrice : null
 
       // Execute the trade via API
       const requestBody = {
@@ -1023,13 +1025,25 @@ export function TradeCard({
         outcome: position,
         autoCloseOnTraderClose: autoClose,
         slippagePercent: resolvedSlippage,
+        orderIntentId,
+        conditionId,
+        inputMode: amountMode,
+        usdInput: usdInputValue,
+        contractsInput: contractsInputValue,
+        autoCorrectApplied: autoCorrectAppliedValue,
+        bestBid: bestBidSnapshot,
+        bestAsk: bestAskSnapshot,
+        minOrderSize: minContractsForOrder ?? null,
       }
       
       console.log('🚀 Sending trade request:', requestBody)
       
       const response = await fetch('/api/polymarket/orders/place', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-request-id': requestId,
+        },
         body: JSON.stringify(requestBody),
       })
 
@@ -1120,6 +1134,9 @@ export function TradeCard({
     typeof statusData?.size === 'number' ? statusData.size : null
   const fillPrice =
     typeof statusData?.price === 'number' ? statusData.price : null
+  const pendingStatusLabel = pendingTimeoutTriggered
+    ? "Order pending at Polymarket"
+    : "Order sent to Polymarket"
   const statusLabel =
     statusPhase === "filled"
       ? "Filled"
@@ -1129,7 +1146,7 @@ export function TradeCard({
             (statusPhase === "canceled" || statusPhase === "expired" || statusPhase === "rejected") &&
             (!filledContracts || filledContracts <= 0)
           ? "Not filled (FAK)"
-          : "Order sent to Polymarket"
+          : pendingStatusLabel
   const filledAmountValue =
     filledContracts !== null && fillPrice !== null ? filledContracts * fillPrice : null
   const totalAmountValue =
@@ -1148,6 +1165,29 @@ export function TradeCard({
       : `${formatContractsDisplay(contractsValue ?? 0)} submitted`
   const isFinalStatus = TERMINAL_STATUS_PHASES.has(statusPhase)
   const isFilledStatus = statusPhase === 'filled'
+  useEffect(() => {
+    if (!orderId || !showConfirmation || isFinalStatus) {
+      if (pendingTimeoutRef.current) {
+        clearTimeout(pendingTimeoutRef.current)
+        pendingTimeoutRef.current = null
+      }
+      setPendingTimeoutTriggered(false)
+      return
+    }
+    setPendingTimeoutTriggered(false)
+    if (pendingTimeoutRef.current) {
+      clearTimeout(pendingTimeoutRef.current)
+    }
+    pendingTimeoutRef.current = setTimeout(() => {
+      setPendingTimeoutTriggered(true)
+    }, 30_000)
+    return () => {
+      if (pendingTimeoutRef.current) {
+        clearTimeout(pendingTimeoutRef.current)
+        pendingTimeoutRef.current = null
+      }
+    }
+  }, [orderId, showConfirmation, isFinalStatus])
   const resetConfirmation = () => {
     setShowConfirmation(false)
     setOrderId(null)
@@ -1342,6 +1382,17 @@ export function TradeCard({
                       {!isFinalStatus && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
                       {statusLabel}
                     </p>
+                    {!isFinalStatus && (
+                      <p
+                        className={`mt-1 text-xs ${
+                          pendingTimeoutTriggered ? "text-amber-600" : "text-slate-500"
+                        }`}
+                      >
+                        {pendingTimeoutTriggered
+                          ? "Polymarket still hasn't matched this order after 30 seconds. There may not be enough liquidity, so try widening your slippage/price or check the Orders page for updates."
+                          : "This may take a moment."}
+                      </p>
+                    )}
                   </div>
                   {isFilledStatus && (
                     <button
@@ -1434,7 +1485,7 @@ export function TradeCard({
                       <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
                         <div className="flex items-center justify-between gap-2">
                   <label htmlFor="amount" className="text-xs font-medium text-slate-700">
-                    {amountMode === "usd" ? "USD (estimated)" : "Contracts"}
+                    {amountMode === "usd" ? `USD (min $${minUsdLabel})` : "Contracts"}
                   </label>
                         </div>
                   <div className="relative">
@@ -1468,8 +1519,12 @@ export function TradeCard({
                       </button>
                       <div className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px]">
                         {amountMode === "usd"
-                          ? `≈ ${formatContractsDisplay(contractsValue, 1)} ${contractLabel}`
-                          : `≈ ${estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"} USD`}
+                          ? !hasAmountInput
+                            ? "—"
+                            : `≈ ${formatContractsDisplay(contractsValue, 1)} ${contractLabel}`
+                          : !hasAmountInput
+                            ? "—"
+                            : `≈ ${estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"} USD`}
                       </div>
                       <div className="flex h-14 items-center text-xs font-medium text-slate-500">
                         {sizePercentLabel} of original trade
@@ -1500,14 +1555,11 @@ export function TradeCard({
                     className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
                     size="lg"
                   >
-                    {isSubmitting ? (
-                      <>
-                        Order sent to Polymarket
-                      </>
-                    ) : (
-                      "Execute Trade"
-                    )}
+                    {isSubmitting ? pendingStatusLabel : "Execute Trade"}
                   </Button>
+                  {isSubmitting && (
+                    <p className="mt-2 text-center text-xs text-slate-500">This may take a moment.</p>
+                  )}
                 {/* Auto-close Checkbox */}
                   <div className="mt-4 flex items-start space-x-3 p-2.5 bg-white rounded-lg border border-slate-200">
                   <Checkbox
@@ -1672,7 +1724,7 @@ export function TradeCard({
                   )}
                   {refreshStatus === 'error' && (
                     <p className="text-xs text-rose-600 mt-2">
-                      Order sent to Polymarket, but status refresh failed. Check the Orders page for updates.
+                      Order pending at Polymarket, but status refresh failed. Check the Orders page for updates.
                     </p>
                   )}
                 </div>

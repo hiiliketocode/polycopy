@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
-import { checkAuth } from './actions'
 import AdminDashboardClient from './AdminDashboardClient'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 import {
   fetchLeaderboard,
   fetchAllCategoryLeaderboards,
@@ -876,11 +876,37 @@ async function fetchPolycopyData(): Promise<SectionBData> {
   }
 }
 
+async function getAdminSession() {
+  const supabase = await createServerClient()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error || !user) {
+    return null
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('is_admin')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (profileError || !profile?.is_admin) {
+    return null
+  }
+
+  return user
+}
+
 export default async function AdminContentDataPage() {
-  const isAuthenticated = await checkAuth()
-  
-  if (!isAuthenticated) {
-    return <AdminDashboardClient isAuthenticated={false} data={null} />
+  const adminUser = await getAdminSession()
+
+  if (!adminUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#05070E] text-white">
+        <p className="max-w-md text-center text-lg">
+          Access denied. Please log in with an admin account to view this dashboard.
+        </p>
+      </div>
+    )
   }
 
   // Fetch both data sources in parallel
@@ -895,5 +921,5 @@ export default async function AdminContentDataPage() {
     lastUpdated: formatDateTime(new Date().toISOString())
   }
 
-  return <AdminDashboardClient isAuthenticated={true} data={data} />
+  return <AdminDashboardClient data={data} />
 }

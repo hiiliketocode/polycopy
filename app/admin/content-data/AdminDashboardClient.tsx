@@ -2,7 +2,6 @@
 
 import { useState, useTransition, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { verifyPassword } from './actions'
 
 // Formatted trader from Polymarket leaderboard
 interface FormattedTrader {
@@ -178,8 +177,7 @@ interface TraderDetails {
 }
 
 interface AdminDashboardClientProps {
-  isAuthenticated: boolean
-  data: DashboardData | null
+  data: DashboardData
 }
 
 // Sort options for leaderboard
@@ -197,10 +195,8 @@ const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
   'culture': 'Pop Culture'
 }
 
-export default function AdminDashboardClient({ isAuthenticated, data }: AdminDashboardClientProps) {
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [isPending, startTransition] = useTransition()
+export default function AdminDashboardClient({ data }: AdminDashboardClientProps) {
+  const [, startTransition] = useTransition()
   const [copied, setCopied] = useState(false)
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null)
   const [traderDetails, setTraderDetails] = useState<TraderDetails | null>(null)
@@ -269,21 +265,6 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
     window.addEventListener('keydown', handleEsc)
     return () => window.removeEventListener('keydown', handleEsc)
   }, [])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    
-    startTransition(async () => {
-      const result = await verifyPassword(password)
-      if (result.success) {
-        router.refresh()
-      } else {
-        setError(result.error || 'Invalid password')
-        setPassword('')
-      }
-    })
-  }
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -354,42 +335,6 @@ export default function AdminDashboardClient({ isAuthenticated, data }: AdminDas
   }
 
   // Password Form
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-[#111827] flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-white mb-2">🔐 Admin Dashboard</h1>
-            <p className="text-gray-400">Enter password to access content data</p>
-          </div>
-          
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              className="w-full px-4 py-3 bg-[#1f2937] border border-[#374151] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
-              autoFocus
-            />
-            
-            {error && (
-              <p className="text-red-500 text-sm text-center">{error}</p>
-            )}
-            
-            <button
-              type="submit"
-              disabled={isPending || !password}
-              className="w-full py-3 bg-[#FDB022] hover:bg-[#F59E0B] text-black font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isPending ? 'Verifying...' : 'Access Dashboard'}
-            </button>
-          </form>
-        </div>
-      </div>
-    )
-  }
-
   // Dashboard
   if (!data) return null
 
