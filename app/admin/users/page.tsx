@@ -104,7 +104,7 @@ export default async function AdminUsersPage() {
       timestamp: user.created_at,
       type: 'account_created',
       userId: user.id,
-      email: user.email,
+      email: user.email ?? null,
       detail: 'New Supabase auth user created'
     })
   }
