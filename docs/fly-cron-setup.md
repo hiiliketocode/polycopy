@@ -1,5 +1,7 @@
 # Fly.io Cron Job Setup for Public Trade Sync
 
+> **Heads-up:** We no longer run this cron via Fly.io. The live cron is scheduled in `vercel.json` and calls `app/api/cron/check-notifications`, which in turn talks directly to the Polymarket APIs (`data-api.polymarket.com` + `clob.polymarket.com`). This document is now archived reference only.
+
 **⚠️ DEPRECATED: This document is deprecated in favor of the new worker system.**
 
 **See `workers/README.md` for the current implementation using always-on Fly.io workers.**

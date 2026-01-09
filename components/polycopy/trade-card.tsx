@@ -346,6 +346,8 @@ export function TradeCard({
   const [statusData, setStatusData] = useState<any | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [confirmationError, setConfirmationError] = useState<TradeErrorInfo | null>(null)
+  const [isCancelingOrder, setIsCancelingOrder] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [livePrice, setLivePrice] = useState<number | null>(
     typeof currentMarketPrice === "number" && !Number.isNaN(currentMarketPrice)
@@ -1195,8 +1197,51 @@ export function TradeCard({
     statusDataRef.current = null
     setStatusError(null)
     setConfirmationError(null)
+    setCancelError(null)
+    setIsCancelingOrder(false)
     setStatusPhase('submitted')
     setFrozenOrder(null)
+  }
+
+  const handleCancelPendingOrder = async () => {
+    if (!orderId) return
+    setIsCancelingOrder(true)
+    setCancelError(null)
+    try {
+      const response = await fetch('/api/polymarket/orders/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderHash: orderId }),
+      })
+      let payload: any = null
+      try {
+        payload = await response.json()
+      } catch {
+        payload = null
+      }
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ||
+            payload?.message ||
+            payload?.details ||
+            'Failed to cancel order on Polymarket.'
+        )
+      }
+      await refreshOrders().catch(() => {
+        /* refresh best effort */
+      })
+      resetConfirmation()
+      setSubmitError('Order canceled. Adjust your price/slippage and try again.')
+    } catch (error: any) {
+      console.error('Cancel order failed:', error)
+      const message =
+        typeof error === 'string'
+          ? error
+          : error?.message || 'Unable to cancel order. Please try again.'
+      setCancelError(message)
+    } finally {
+      setIsCancelingOrder(false)
+    }
   }
 
   return (
@@ -1383,15 +1428,36 @@ export function TradeCard({
                       {statusLabel}
                     </p>
                     {!isFinalStatus && (
-                      <p
-                        className={`mt-1 text-xs ${
-                          pendingTimeoutTriggered ? "text-amber-600" : "text-slate-500"
-                        }`}
-                      >
-                        {pendingTimeoutTriggered
-                          ? "Polymarket still hasn't matched this order after 30 seconds. There may not be enough liquidity, so try widening your slippage/price or check the Orders page for updates."
-                          : "This may take a moment."}
-                      </p>
+                      <div className="mt-1">
+                        <p
+                          className={`text-xs ${
+                            pendingTimeoutTriggered ? "text-amber-600" : "text-slate-500"
+                          }`}
+                        >
+                          {pendingTimeoutTriggered
+                            ? "Polymarket still hasn't matched this order after 30 seconds. There may not be enough liquidity, so try widening your slippage/price or check the Orders page for updates."
+                            : "This may take a moment."}
+                        </p>
+                        {pendingTimeoutTriggered && (
+                          <div className="mt-3 flex flex-col gap-2">
+                            <Button
+                              onClick={handleCancelPendingOrder}
+                              disabled={!orderId || isCancelingOrder}
+                              size="sm"
+                              variant="outline"
+                              className="border-slate-300 text-slate-700 hover:border-slate-400 hover:text-slate-900"
+                            >
+                              {isCancelingOrder ? "Canceling order…" : "Cancel and adjust order"}
+                            </Button>
+                            <p className="text-[11px] text-slate-500">
+                              Canceling will stop the pending order so you can reopen the form and resubmit with broader slippage or a new price.
+                            </p>
+                            {cancelError && (
+                              <p className="text-[11px] text-rose-600">{cancelError}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                   {isFilledStatus && (

@@ -544,11 +544,6 @@ function DiscoverPageContent() {
                             </div>
 
                             <div>
-                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">Win Rate</span>
-                              <span className="text-xl font-bold text-slate-900">{trader.winRate || 0}%</span>
-                            </div>
-
-                            <div>
                               <span className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">Volume</span>
                               <span className="text-xl font-bold text-slate-900">{formatLargeNumber(trader.volume)}</span>
                             </div>

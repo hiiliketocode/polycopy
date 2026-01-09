@@ -437,6 +437,35 @@ export async function GET(request: NextRequest) {
         null
       const marketIsOpen = deriveMarketOpenStatus(cache, order.raw, metadata)
 
+      const rawMarketForSlug = order.raw?.market ?? order.raw
+      const metadataSlug =
+        typeof metadata?.slug === 'string' && metadata.slug.trim()
+          ? metadata.slug.trim()
+          : null
+      const fallbackSlug =
+        typeof metadata?.metadataPayload?.slug === 'string' && metadata.metadataPayload.slug.trim()
+          ? metadata.metadataPayload.slug.trim()
+          : null
+      const rawSlug =
+        metadataSlug ||
+        fallbackSlug ||
+        (typeof rawMarketForSlug?.slug === 'string' && rawMarketForSlug.slug.trim()
+          ? rawMarketForSlug.slug.trim()
+          : null) ||
+        (typeof rawMarketForSlug?.market_slug === 'string' && rawMarketForSlug.market_slug.trim()
+          ? rawMarketForSlug.market_slug.trim()
+          : null) ||
+        (typeof rawMarketForSlug?.market?.slug === 'string' && rawMarketForSlug.market.slug.trim()
+          ? rawMarketForSlug.market.slug.trim()
+          : null) ||
+        (typeof rawMarketForSlug?.market?.market_slug === 'string' &&
+        rawMarketForSlug.market.market_slug.trim()
+          ? rawMarketForSlug.market.market_slug.trim()
+          : null)
+      const normalizedSlug = rawSlug
+        ? rawSlug.trim()
+        : null
+
       const sizeValue = parseNumeric(order.size)
       const filledValue = parseNumeric(order.filled_size)
       const remainingValue = parseNumeric(order.remaining_size)
@@ -513,6 +542,7 @@ export async function GET(request: NextRequest) {
         marketTitle,
         marketImageUrl,
         marketIsOpen,
+        marketSlug: normalizedSlug ?? null,
         traderId: (resolvedTraderRecord && typeof resolvedTraderRecord === 'object' ? resolvedTraderRecord.trader_id : null) ?? copiedTraderIdFromRow ?? traderId,
         traderWallet: resolvedTraderWallet ?? null,
         copiedTraderId: copiedTraderIdFromRow ?? (resolvedTraderRecord && typeof resolvedTraderRecord === 'object' ? resolvedTraderRecord.trader_id : null) ?? null,
@@ -904,13 +934,19 @@ function getMarketTitle(
   const cachedTitle = cache?.title
   if (cachedTitle) return cachedTitle
 
+  const copiedMarketTitle =
+    typeof order?.copied_market_title === 'string' && order.copied_market_title.trim()
+      ? order.copied_market_title.trim()
+      : null
+
   const rawMarket = order.raw?.market ?? order.raw
   const fallbackTitle =
-    rawMarket?.title ||
-    rawMarket?.market_title ||
-    rawMarket?.name ||
-    rawMarket?.market ||
-    marketId
+    copiedMarketTitle ??
+    (rawMarket?.title ||
+      rawMarket?.market_title ||
+      rawMarket?.name ||
+      rawMarket?.market ||
+      marketId)
 
   return fallbackTitle || 'unknown market'
 }
@@ -1535,7 +1571,7 @@ async function fetchOrdersForTrader(
   traderId: string
 ) {
   const selectWithCopied =
-    'order_id, trader_id, copied_trader_id, copied_trader_wallet, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, auto_close_order_id, raw'
+    'order_id, trader_id, copied_trader_id, copied_trader_wallet, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, auto_close_order_id, copied_market_title, raw'
   const selectLegacy =
     'order_id, trader_id, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, raw'
 

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { ExternalLink } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Navigation } from '@/components/polycopy/navigation'
 import OrdersTable from '@/components/orders/OrdersTable'
@@ -491,6 +492,7 @@ export default function OrdersPage() {
   const orderLookups = useMemo(() => {
     const byTokenId = new Map<string, OrderRow>()
     const byMarketOutcome = new Map<string, OrderRow>()
+    const byMarketId = new Map<string, OrderRow>()
     orders.forEach((order) => {
       const tokenId = extractTokenIdFromOrder(order)
       if (tokenId) {
@@ -498,27 +500,34 @@ export default function OrdersPage() {
         const existing = byTokenId.get(key)
         byTokenId.set(key, selectPreferredOrder(existing, order))
       }
-      const marketId = extractString(order.marketId)
-      if (marketId) {
+      const normalizedMarketId = normalizeMarketId(order.marketId)
+      if (normalizedMarketId) {
         const outcome = extractString(order.outcome) ?? ''
-        const key = `${marketId.toLowerCase()}::${outcome.toLowerCase()}`
-        const existing = byMarketOutcome.get(key)
-        byMarketOutcome.set(key, selectPreferredOrder(existing, order))
+        const key = `${normalizedMarketId}::${outcome.toLowerCase()}`
+        const existingOutcome = byMarketOutcome.get(key)
+        byMarketOutcome.set(key, selectPreferredOrder(existingOutcome, order))
+
+        const existingMarket = byMarketId.get(normalizedMarketId)
+        byMarketId.set(normalizedMarketId, selectPreferredOrder(existingMarket, order))
       }
     })
-    return { byTokenId, byMarketOutcome }
+    return { byTokenId, byMarketOutcome, byMarketId }
   }, [orders])
 
   const resolveOrderForPosition = useCallback(
     (position: PositionSummary): OrderRow | null => {
       const key = position.tokenId?.toLowerCase?.()
-      if (!key) return null
-      const tokenMatch = orderLookups.byTokenId.get(key) ?? null
-      if (tokenMatch) return tokenMatch
-      const marketId = extractString(position.marketId)
-      if (!marketId) return null
+      if (key) {
+        const tokenMatch = orderLookups.byTokenId.get(key) ?? null
+        if (tokenMatch) return tokenMatch
+      }
+      const normalizedMarketId = normalizeMarketId(position.marketId)
+      if (!normalizedMarketId) return null
       const outcome = extractString(position.outcome) ?? ''
-      return orderLookups.byMarketOutcome.get(`${marketId.toLowerCase()}::${outcome.toLowerCase()}`) ?? null
+      const marketOutcomeKey = `${normalizedMarketId}::${outcome.toLowerCase()}`
+      const outcomeMatch = orderLookups.byMarketOutcome.get(marketOutcomeKey)
+      if (outcomeMatch) return outcomeMatch
+      return orderLookups.byMarketId.get(normalizedMarketId) ?? null
     },
     [orderLookups]
   )
@@ -788,6 +797,22 @@ function deriveConditionId(tokenId: string | null | undefined, marketId?: string
   return null
 }
 
+function normalizeMarketId(value?: string | null): string | null {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (trimmed.startsWith('0x')) {
+    return trimmed.toLowerCase()
+  }
+  try {
+    const numeric = BigInt(trimmed)
+    if (numeric < 0) return null
+    return `0x${numeric.toString(16).toLowerCase()}`
+  } catch {
+    return trimmed.toLowerCase()
+  }
+}
+
 function computePositionPnl(position: PositionSummary, entryPrice: number | null, currentPrice: number | null): { pnl: number; pct: number } | null {
   if (!Number.isFinite(entryPrice ?? NaN) || !Number.isFinite(currentPrice ?? NaN)) return null
   const size = position.size
@@ -820,6 +845,20 @@ function truncateLabel(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value
   if (maxLength <= 3) return value.slice(0, maxLength)
   return `${value.slice(0, maxLength - 3)}...`
+}
+
+function buildPolycopyMarketUrl(marketSlug?: string | null, marketId?: string | null): string | null {
+  const slug = marketSlug?.trim() ?? ''
+  const id = marketId?.trim() ?? ''
+  if (!slug && !id) return null
+  const baseAppUrl = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://polycopy.app').replace(/\/+$/, '')
+  const params = new URLSearchParams()
+  if (slug) {
+    params.set('marketSlug', slug)
+  } else {
+    params.set('conditionId', id)
+  }
+  return `${baseAppUrl}/trade-execute?${params.toString()}`
 }
 
 function getCopiedTraderDisplay(order: OrderRow): { label: string; full: string } {
@@ -1159,12 +1198,17 @@ function PositionsList({
         ? -100
         : pnlCalc?.pct ?? null
     const contractsCount = Number.isFinite(position.size) ? position.size : 0
+    const marketPageUrl = buildPolycopyMarketUrl(
+      order?.marketSlug ?? null,
+      order?.marketId ?? position.marketId
+    )
 
     return {
       key: `${position.tokenId}-${position.size}`,
       position,
       marketTitle,
       marketImage,
+      marketPageUrl,
       outcomeLabel,
       amountUsd,
       currentPrice,
@@ -1238,7 +1282,20 @@ function PositionsList({
                       )}
                     </div>
                     <div className="flex min-w-0 flex-col">
-                      <p className="truncate text-sm font-semibold text-slate-900">{row.marketTitle}</p>
+                      <div className="flex items-center gap-1">
+                        <p className="truncate text-sm font-semibold text-slate-900">{row.marketTitle}</p>
+                        {row.marketPageUrl && (
+                          <a
+                            href={row.marketPageUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-slate-400 hover:text-slate-600"
+                            aria-label={`Open ${row.marketTitle} on Polycopy`}
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        )}
+                      </div>
                       <p className="truncate text-xs text-slate-500">{row.outcomeLabel}</p>
                     </div>
                   </div>
@@ -1301,7 +1358,20 @@ function PositionsList({
                   )}
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900">{row.marketTitle}</p>
+                  <div className="flex items-center gap-1">
+                    <p className="truncate text-sm font-semibold text-slate-900">{row.marketTitle}</p>
+                    {row.marketPageUrl && (
+                      <a
+                        href={row.marketPageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-slate-400 hover:text-slate-600"
+                        aria-label={`Open ${row.marketTitle} on Polycopy`}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    )}
+                  </div>
                   <p className="truncate text-xs text-slate-500">{row.outcomeLabel}</p>
                 </div>
               </div>

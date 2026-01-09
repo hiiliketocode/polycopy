@@ -18,6 +18,7 @@ export interface OrderRow {
   marketTitle: string
   marketImageUrl: string | null
   marketIsOpen: boolean | null
+  marketSlug?: string | null
   traderId: string
   traderWallet?: string | null
   traderName: string
