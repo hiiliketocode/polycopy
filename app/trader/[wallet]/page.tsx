@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ArrowUpRight, ChevronDown, ChevronUp, Loader2, Info } from 'lucide-react';
+import { Check, ArrowUpRight, ChevronDown, ChevronUp, Loader2, Info, ExternalLink } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Navigation } from '@/components/polycopy/navigation';
 import { SignupBanner } from '@/components/polycopy/signup-banner';
@@ -117,6 +117,8 @@ export default function TraderProfilePage({
   const [expandedTradeIndex, setExpandedTradeIndex] = useState<number | null>(null);
   const [usdAmount, setUsdAmount] = useState<string>('');
   const [autoClose, setAutoClose] = useState(true);
+  const [manualCopyTradeIndex, setManualCopyTradeIndex] = useState<number | null>(null);
+  const [manualUsdAmount, setManualUsdAmount] = useState<string>('');
   
   // Performance tab data
   const [positionSizeBuckets, setPositionSizeBuckets] = useState<PositionSizeBucket[]>([]);
