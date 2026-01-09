@@ -17,7 +17,7 @@ type OrdersScreenProps = {
   contentWrapperClassName?: string
 }
 
-export function OrdersScreen({
+function OrdersScreen({
   hideNavigation = false,
   contentWrapperClassName = 'min-h-screen bg-slate-50',
 }: OrdersScreenProps) {
