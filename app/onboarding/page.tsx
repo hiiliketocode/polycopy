@@ -101,6 +101,10 @@ export default function OnboardingPage() {
           overflow: hidden;
           background: var(--background);
         }
+        
+        .onboarding-container.premium-screen {
+          background: linear-gradient(180deg, #1E293B 0%, #0F172A 100%);
+        }
 
         .onboarding-header {
           padding: 1rem 1.5rem;
@@ -540,6 +544,20 @@ export default function OnboardingPage() {
           font-weight: 600;
           margin-bottom: 1rem;
         }
+        
+        .premium-screen .screen-content h2,
+        .premium-screen .screen-content .subtitle {
+          color: white;
+        }
+        
+        .premium-screen .skip-btn {
+          color: rgba(255, 255, 255, 0.7);
+        }
+        
+        .premium-screen .skip-btn:hover {
+          color: white;
+          background: rgba(255, 255, 255, 0.1);
+        }
 
         .features-list {
           display: flex;
@@ -613,11 +631,13 @@ export default function OnboardingPage() {
         }
 
         .onboarding-footer {
-          padding: 1.25rem 1.5rem 1.75rem;
+          padding: 1.25rem 1.5rem;
+          padding-bottom: max(1.75rem, env(safe-area-inset-bottom));
           display: flex;
           flex-direction: column;
           gap: 1rem;
           align-items: center;
+          background: var(--background);
         }
 
         .progress-nav-row {
@@ -783,7 +803,7 @@ export default function OnboardingPage() {
         }
       `}</style>
 
-      <div className="onboarding-container">
+      <div className={`onboarding-container ${currentScreen === 5 ? 'premium-screen' : ''}`}>
         {/* Header */}
         <div className="onboarding-header">
           <button className="skip-btn" onClick={handleSkip}>Skip</button>
@@ -1044,7 +1064,11 @@ export default function OnboardingPage() {
             </button>
           </div>
           
-          <button className="btn-primary" onClick={handleNext}>
+          <button 
+            className="btn-primary" 
+            onClick={handleNext}
+            style={{ display: currentScreen === 6 ? 'none' : 'block' }}
+          >
             {getPrimaryButtonText()}
           </button>
           
