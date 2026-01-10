@@ -629,6 +629,28 @@ export default function OnboardingPage() {
         .final-cta-btn:hover {
           background: var(--brand-yellow-hover);
         }
+        
+        .onboarding-buttons {
+          width: 100%;
+          max-width: 400px;
+          margin-top: 2rem;
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+          align-items: center;
+        }
+          color: var(--text-primary);
+          border: none;
+          border-radius: var(--radius);
+          font-size: 16px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .final-cta-btn:hover {
+          background: var(--brand-yellow-hover);
+        }
 
         .onboarding-footer {
           padding: 1.25rem 1.5rem;
@@ -714,16 +736,11 @@ export default function OnboardingPage() {
         .btn-secondary {
           background: none;
           border: none;
-          color: var(--text-secondary);
+          color: rgba(255, 255, 255, 0.7);
           font-size: 14px;
           font-weight: 500;
           cursor: pointer;
           padding: 0.5rem;
-          transition: color 0.2s;
-        }
-
-        .btn-secondary:hover {
-          color: var(--text-primary);
         }
 
         .modal-overlay {
@@ -862,6 +879,12 @@ export default function OnboardingPage() {
                   </div>
                 </div>
               </div>
+              
+              <div className="onboarding-buttons">
+                <button className="btn-primary" onClick={handleNext}>
+                  Get Started
+                </button>
+              </div>
             </div>
           )}
 
@@ -902,6 +925,12 @@ export default function OnboardingPage() {
                     Follow Trader
                   </button>
                 </div>
+              </div>
+              
+              <div className="onboarding-buttons">
+                <button className="btn-primary" onClick={handleNext}>
+                  Next
+                </button>
               </div>
             </div>
           )}
@@ -948,6 +977,12 @@ export default function OnboardingPage() {
                   </button>
                 </div>
               </div>
+              
+              <div className="onboarding-buttons">
+                <button className="btn-primary" onClick={handleNext}>
+                  Next
+                </button>
+              </div>
             </div>
           )}
 
@@ -983,6 +1018,12 @@ export default function OnboardingPage() {
                   </div>
                 </div>
               </div>
+              
+              <div className="onboarding-buttons">
+                <button className="btn-primary" onClick={handleNext}>
+                  Next
+                </button>
+              </div>
             </div>
           )}
 
@@ -1010,6 +1051,15 @@ export default function OnboardingPage() {
                   <div className="feature-text">Priority support</div>
                 </div>
               </div>
+              
+              <div className="onboarding-buttons">
+                <button className="btn-primary" onClick={handleNext}>
+                  Get Premium
+                </button>
+                <button className="btn-secondary" onClick={handleNext}>
+                  Maybe Later
+                </button>
+              </div>
             </div>
           )}
 
@@ -1031,53 +1081,6 @@ export default function OnboardingPage() {
           )}
         </div>
 
-        {/* Footer */}
-        <div className="onboarding-footer">
-          <div className="progress-nav-row">
-            <button 
-              className="nav-arrow" 
-              onClick={handlePrev} 
-              disabled={currentScreen === 1}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M15 18l-6-6 6-6"/>
-              </svg>
-            </button>
-            
-            <div className="progress-dots">
-              {[1, 2, 3, 4, 5, 6].map((screen) => (
-                <div 
-                  key={screen} 
-                  className={`dot ${currentScreen === screen ? 'active' : ''}`}
-                />
-              ))}
-            </div>
-            
-            <button 
-              className="nav-arrow" 
-              onClick={handleNext}
-              disabled={currentScreen === totalScreens}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M9 18l6-6-6-6"/>
-              </svg>
-            </button>
-          </div>
-          
-          <button 
-            className="btn-primary" 
-            onClick={handleNext}
-            style={{ display: currentScreen === 6 ? 'none' : 'block' }}
-          >
-            {getPrimaryButtonText()}
-          </button>
-          
-          {currentScreen === 5 && (
-            <button className="btn-secondary" onClick={handleNext}>
-              Maybe Later
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Skip Modal */}
