@@ -232,7 +232,7 @@ export async function GET(request: NextRequest) {
     }
 
     const userPolymarketUsername = accountProfile?.polymarket_username ?? null
-    const copiedTraderLookup = await fetchCopiedTraderNames(supabase, user.id)
+    const copiedTraderLookup = await fetchCopiedTraderNames(supabase, ordersTable, user.id)
 
     let ordersResult = await fetchOrdersForTrader(
       supabase,
@@ -732,6 +732,7 @@ function getCopiedTraderTitleKey(marketTitle?: string | null, outcome?: string |
 
 async function fetchCopiedTraderNames(
   client: ReturnType<typeof createServiceClient>,
+  ordersTable: OrdersTableName,
   userId: string | null
 ): Promise<CopiedTraderLookup> {
   if (!userId) {
@@ -744,10 +745,13 @@ async function fetchCopiedTraderNames(
   }
   try {
     const { data } = await client
-      .from('copied_trades')
-      .select('market_id, market_title, market_slug, outcome, trader_username, trader_wallet')
-      .eq('user_id', userId)
-      .order('copied_at', { ascending: false })
+      .from(ordersTable)
+      .select(
+        'market_id, copied_market_title, market_slug, outcome, copied_trader_username, copied_trader_wallet, created_at'
+      )
+      .eq('copy_user_id', userId)
+      .not('copied_trade_id', 'is', null)
+      .order('created_at', { ascending: false })
       .limit(1000)
 
     const lookup: CopiedTraderLookup = {
@@ -768,13 +772,13 @@ async function fetchCopiedTraderNames(
           : null
       const outcome = typeof row?.outcome === 'string' ? row.outcome : ''
       const username =
-        typeof row?.trader_username === 'string' && row.trader_username.trim()
-          ? row.trader_username.trim()
+        typeof row?.copied_trader_username === 'string' && row.copied_trader_username.trim()
+          ? row.copied_trader_username.trim()
           : null
-      const wallet = normalizeWalletAddress(row?.trader_wallet ?? null)
+      const wallet = normalizeWalletAddress(row?.copied_trader_wallet ?? null)
       const marketTitle =
-        typeof row?.market_title === 'string' && row.market_title.trim()
-          ? row.market_title.trim()
+        typeof row?.copied_market_title === 'string' && row.copied_market_title.trim()
+          ? row.copied_market_title.trim()
           : null
 
       const details: CopiedTraderDetails = {
@@ -804,7 +808,7 @@ async function fetchCopiedTraderNames(
     }
     return lookup
   } catch (error) {
-    console.warn('[orders] copied_trades lookup failed', error)
+    console.warn('[orders] copy metadata lookup failed', error)
     return {
       wallet: new Map<string, CopiedTraderDetails>(),
       marketOutcome: new Map<string, CopiedTraderDetails>(),

@@ -18,6 +18,7 @@ import {
   normalizeContractsInput,
   roundUpToStep,
 } from "@/lib/polymarket/sizing"
+import { cn } from "@/lib/utils"
 
 interface TradeCardProps {
   trader: {
@@ -359,6 +360,9 @@ export function TradeCard({
   const [orderBookError, setOrderBookError] = useState<string | null>(null)
   const [bestBidPrice, setBestBidPrice] = useState<number | null>(null)
   const [bestAskPrice, setBestAskPrice] = useState<number | null>(null)
+  const [manualDrawerOpen, setManualDrawerOpen] = useState(false)
+  const [manualUsdAmount, setManualUsdAmount] = useState("")
+  const [manualPriceInput, setManualPriceInput] = useState("")
   const [orderIntentId] = useState<string>(() => {
     const randomUuId = globalThis.crypto?.randomUUID?.()
     if (randomUuId) return randomUuId
@@ -389,6 +393,7 @@ export function TradeCard({
   const hasCurrentPrice = Number.isFinite(currentPrice)
   const priceChange = hasCurrentPrice ? ((currentPrice - price) / price) * 100 : 0
   const priceDirection = priceChange > 0 ? 'up' : priceChange < 0 ? 'down' : 'neutral'
+  const defaultManualPrice = hasCurrentPrice ? currentPrice : price
   const inferredMarketOpen =
     typeof marketIsOpen === "boolean"
       ? marketIsOpen
@@ -1125,9 +1130,49 @@ export function TradeCard({
     if (isPremium && onToggleExpand) {
       onToggleExpand()
     } else if (!isPremium) {
-      onCopyTrade?.()
+      if (!manualDrawerOpen) {
+        onCopyTrade?.()
+        setManualPriceInput(defaultManualPrice.toString())
+        setManualUsdAmount("")
+        setManualDrawerOpen(true)
+      } else {
+        closeManualDrawer()
+      }
     }
   }
+
+  const closeManualDrawer = () => {
+    setManualDrawerOpen(false)
+    setManualUsdAmount("")
+    setManualPriceInput("")
+  }
+
+  const manualAmountValue = Number.parseFloat(manualUsdAmount)
+  const manualAmountValid = !Number.isNaN(manualAmountValue) && manualAmountValue > 0
+  const parsedManualPrice = Number.parseFloat(manualPriceInput)
+  const editedPriceValid = !Number.isNaN(parsedManualPrice) && parsedManualPrice > 0
+  const manualDisplayPrice =
+    editedPriceValid
+      ? parsedManualPrice
+      : defaultManualPrice
+  const manualPriceChange =
+    price > 0 && manualDisplayPrice > 0
+      ? ((manualDisplayPrice - price) / price) * 100
+      : null
+  const manualPriceChangeColor =
+    manualPriceChange === null
+      ? 'text-slate-400'
+      : manualPriceChange >= 0
+        ? 'text-emerald-600'
+        : 'text-red-600'
+  const manualPriceChangeLabel =
+    manualPriceChange === null
+      ? '--'
+      : `${manualPriceChange >= 0 ? '+' : ''}${manualPriceChange.toFixed(2)}% from entry`
+  const manualContractsEstimate =
+    manualAmountValid && manualDisplayPrice > 0
+      ? Math.floor(manualAmountValue / manualDisplayPrice)
+      : 0
 
   const isCopyDisabled = isMarketEnded
   const filledContracts =
@@ -1367,6 +1412,98 @@ export function TradeCard({
             </div>
           </div>
         </div>
+
+        {!isPremium && manualDrawerOpen && (
+          <div className="p-4 mt-4 space-y-4 border border-slate-200 rounded-xl bg-slate-50">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-slate-900">Manual Copy</h4>
+              <button
+                type="button"
+                onClick={closeManualDrawer}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                aria-label="Close manual copy drawer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-lg p-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-600">Current Price</span>
+                <div className="text-right">
+                  <p className="text-base font-semibold text-slate-900">${manualDisplayPrice.toFixed(4)}</p>
+                  <p className={`text-xs font-medium ${manualPriceChangeColor}`}>{manualPriceChangeLabel}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="manual-copy-price" className="text-xs font-medium text-slate-700">
+                Price
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                <input
+                  id="manual-copy-price"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.0001"
+                  value={manualPriceInput}
+                  onChange={(e) => setManualPriceInput(e.target.value)}
+                  placeholder={manualDisplayPrice.toFixed(4)}
+                  className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="manual-copy-amount" className="text-xs font-medium text-slate-700">
+                Amount (USD)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                <input
+                  id="manual-copy-amount"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  value={manualUsdAmount}
+                  onChange={(e) => setManualUsdAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+              </div>
+              {manualAmountValid && (
+                <p className="text-xs text-slate-500">
+                  ≈ {manualContractsEstimate.toLocaleString()} contracts
+                </p>
+              )}
+            </div>
+
+            <Button
+              onClick={onMarkAsCopied}
+              disabled={!manualAmountValid || isCopyDisabled || isCopied}
+              variant="outline"
+              className={cn(
+                'w-full font-medium text-sm',
+                isCopied
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
+                  : isCopyDisabled || !manualAmountValid
+                    ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+              )}
+            >
+              {isCopied ? (
+                <>
+                  <Check className="h-4 w-4 mr-2" />
+                  Copied
+                </>
+              ) : (
+                'Mark as Copied'
+              )}
+            </Button>
+          </div>
+        )}
 
         {!(isPremium && isExpanded) && (
         <div className={isPremium ? "w-full" : "grid grid-cols-2 gap-2"}>

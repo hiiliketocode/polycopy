@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
+import { resolveOrdersTableName } from '@/lib/orders/table'
 
 // Create service role client
 function createServiceClient() {
@@ -210,12 +211,14 @@ export async function GET(request: NextRequest) {
       .slice(0, 10)
     
     // POLYCOPY copy metrics (internal tracking)
+    const ordersTable = await resolveOrdersTableName(supabase)
     const { data: copyData, error: copyError } = await supabase
-      .from('copied_trades')
-      .select('user_id, created_at')
-      .eq('trader_wallet', wallet)
+      .from(ordersTable)
+      .select('copy_user_id, created_at')
+      .eq('copied_trader_wallet', wallet)
+      .not('copied_trade_id', 'is', null)
     
-    const uniqueCopiers = new Set(copyData?.map(c => c.user_id) || []).size
+    const uniqueCopiers = new Set(copyData?.map(c => c.copy_user_id) || []).size
     const copyDates = copyData?.map(c => new Date(c.created_at).getTime()) || []
     
     const copyMetrics = {
@@ -243,4 +246,3 @@ export async function GET(request: NextRequest) {
     )
   }
 }
-

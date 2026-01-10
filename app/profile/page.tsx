@@ -85,7 +85,7 @@ interface CategoryDistribution {
   color: string;
 }
 
-type ProfileTab = 'copied-trades' | 'performance' | 'settings' | 'quick-trades';
+type ProfileTab = 'copied-trades' | 'performance' | 'settings' | 'manual-trades';
 
 // Helper: Format relative time
 function formatRelativeTime(dateString: string): string {
@@ -157,7 +157,7 @@ function ProfilePageContent() {
   // UI state - Check for tab query parameter
   const tabParam = searchParams?.get('tab');
   const initialTab =
-    tabParam === 'settings' || tabParam === 'performance' || tabParam === 'quick-trades'
+    tabParam === 'settings' || tabParam === 'performance' || tabParam === 'manual-trades'
       ? (tabParam as ProfileTab)
       : 'copied-trades';
   const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
@@ -323,107 +323,29 @@ function ProfilePageContent() {
     const fetchCopiedTrades = async () => {
       setLoadingCopiedTrades(true);
       try {
-        const { data: orders, error } = await supabase
-          .from('orders')
-          .select(`
-            order_id,
-            copied_trade_id,
-            copy_user_id,
-            copied_trader_wallet,
-            copied_trader_username,
-            trader_profile_image_url,
-            market_id,
-            market_title,
-            copied_market_title,
-            market_slug,
-            market_avatar_url,
-            outcome,
-            price_when_copied,
-            amount_invested,
-            trader_still_has_position,
-            trader_closed_at,
-            current_price,
-            market_resolved,
-            market_resolved_at,
-            roi,
-            notification_closed_sent,
-            notification_resolved_sent,
-            last_checked_at,
-            resolved_outcome,
-            user_closed_at,
-            user_exit_price,
-            created_at,
-            raw
-          `)
-          .eq('copy_user_id', user.id)
-          .not('copied_trade_id', 'is', null)
-          .order('created_at', { ascending: false });
-        
-        if (error) {
-          console.error('Error fetching copied trades:', error);
+        const response = await fetch(`/api/copied-trades?userId=${user.id}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Error fetching copied trades:', errorText);
           setCopiedTrades([]);
           setLoadingCopiedTrades(false);
           return;
         }
+
+        const payload = await response.json();
+        const trades = (payload?.trades || []) as CopiedTrade[];
         
         // Recalculate ROI for user-closed trades
-        const tradesWithCorrectRoi = (orders || []).map(order => {
-          const tradePrice = order.price_when_copied ?? order.raw?.price_when_copied ?? order.raw?.price;
-          if (order.user_closed_at && order.user_exit_price && tradePrice) {
-            const correctRoi = ((order.user_exit_price - tradePrice) / tradePrice) * 100;
+        const tradesWithCorrectRoi = trades.map(trade => {
+          const tradePrice = trade.price_when_copied;
+          if (trade.user_closed_at && trade.user_exit_price && tradePrice) {
+            const correctRoi = ((trade.user_exit_price - tradePrice) / tradePrice) * 100;
             return {
-              id: order.copied_trade_id || order.order_id,
-              trader_wallet: order.copied_trader_wallet || '',
-              trader_username: order.copied_trader_username,
-              trader_profile_image_url: order.trader_profile_image_url || null,
-              market_id: order.market_id,
-              market_title: order.copied_market_title || order.market_title || '',
-              market_slug: order.market_slug,
-              market_avatar_url: order.market_avatar_url || null,
-              outcome: order.outcome || '',
-              price_when_copied: tradePrice || 0,
-              amount_invested: order.amount_invested ?? null,
-              copied_at: order.created_at,
-              trader_still_has_position: order.trader_still_has_position,
-              trader_closed_at: order.trader_closed_at,
-              current_price: order.current_price,
-              market_resolved: order.market_resolved,
-              market_resolved_at: order.market_resolved_at,
+              ...trade,
               roi: parseFloat(correctRoi.toFixed(2)),
-              notification_closed_sent: order.notification_closed_sent,
-              notification_resolved_sent: order.notification_resolved_sent,
-              last_checked_at: order.last_checked_at,
-              resolved_outcome: order.resolved_outcome,
-              user_closed_at: order.user_closed_at,
-              user_exit_price: order.user_exit_price,
             };
           }
-          return {
-            id: order.copied_trade_id || order.order_id,
-            trader_wallet: order.copied_trader_wallet || '',
-            trader_username: order.copied_trader_username,
-            trader_profile_image_url: order.trader_profile_image_url || null,
-            market_id: order.market_id,
-            market_title: order.copied_market_title || order.market_title || '',
-            market_slug: order.market_slug,
-            market_avatar_url: order.market_avatar_url || null,
-            outcome: order.outcome || '',
-            price_when_copied: tradePrice || 0,
-            amount_invested: order.amount_invested ?? null,
-            copied_at: order.created_at,
-            trader_still_has_position: order.trader_still_has_position,
-            trader_closed_at: order.trader_closed_at,
-            current_price: order.current_price,
-            market_resolved: order.market_resolved,
-            market_resolved_at: order.market_resolved_at,
-            roi: order.roi,
-            notification_closed_sent: order.notification_closed_sent,
-            notification_resolved_sent: order.notification_resolved_sent,
-            last_checked_at: order.last_checked_at,
-            resolved_outcome: order.resolved_outcome,
-            user_closed_at: order.user_closed_at,
-            user_exit_price: order.user_exit_price,
-          };
+          return trade;
         });
         
         setCopiedTrades(tradesWithCorrectRoi);
@@ -1228,14 +1150,14 @@ function ProfilePageContent() {
                   : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
               )}
             >
-              Copied Trades
+              Manual Trades
             </Button>
             <Button
-              onClick={() => setActiveTab('quick-trades')}
+              onClick={() => setActiveTab('manual-trades')}
               variant="ghost"
               className={cn(
                 "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
-                activeTab === 'quick-trades'
+                activeTab === 'manual-trades'
                   ? "bg-white text-slate-900 shadow-sm border border-slate-200"
                   : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
               )}
@@ -1269,7 +1191,7 @@ function ProfilePageContent() {
           </div>
 
           {/* Tab Content */}
-          {activeTab === 'quick-trades' && (
+          {activeTab === 'manual-trades' && (
             <div className="space-y-4">
               <OrdersScreen hideNavigation contentWrapperClassName="bg-transparent" />
             </div>
@@ -1628,7 +1550,7 @@ function ProfilePageContent() {
                         variant="outline"
                         className="border-slate-300 text-slate-700 hover:bg-slate-50"
                       >
-                        View More Copied Trades ({filteredTrades.length - tradesToShow} remaining)
+                        View More Manual Trades ({filteredTrades.length - tradesToShow} remaining)
                       </Button>
                     </div>
                   )}

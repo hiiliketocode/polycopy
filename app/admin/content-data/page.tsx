@@ -11,6 +11,7 @@ import {
   getCategoryDisplayName,
   LeaderboardTrader
 } from '@/lib/polymarket-api'
+import { resolveOrdersTableName } from '@/lib/orders/table'
 
 // Force dynamic rendering - no caching
 export const dynamic = 'force-dynamic'
@@ -275,21 +276,35 @@ async function fetchPolymarketData(): Promise<SectionAData> {
   try {
     console.log('🔄 Fetching Phase 2 trader analytics from Polycopy database...')
     const supabase = createServiceClient()
+    const ordersTable = await resolveOrdersTableName(supabase)
     
     // Get all unique trader wallets from the leaderboard
     const traderWallets = topTraders.map(t => t.wallet)
     
     if (traderWallets.length > 0) {
-      // Fetch all copied_trades for these traders
+      // Fetch all copied trades for these traders (from orders)
       const { data: allTrades, error } = await supabase
-        .from('copied_trades')
-        .select('trader_wallet, trader_username, market_title, roi, market_resolved, amount_invested, copied_at')
-        .in('trader_wallet', traderWallets)
+        .from(ordersTable)
+        .select(
+          'copied_trader_wallet, copied_trader_username, copied_market_title, roi, market_resolved, amount_invested, created_at'
+        )
+        .in('copied_trader_wallet', traderWallets)
+        .not('copied_trade_id', 'is', null)
       
       if (!error && allTrades) {
+        const normalizedTrades = allTrades.map((trade: any) => ({
+          trader_wallet: trade.copied_trader_wallet || trade.trader_wallet || '',
+          trader_username: trade.copied_trader_username || null,
+          market_title: trade.copied_market_title || '',
+          roi: trade.roi,
+          market_resolved: trade.market_resolved,
+          amount_invested: trade.amount_invested,
+          copied_at: trade.created_at
+        }))
+
         // Group trades by trader
         const traderData = new Map<string, any[]>()
-        allTrades.forEach((trade: any) => {
+        normalizedTrades.forEach((trade: any) => {
           if (!traderData.has(trade.trader_wallet)) {
             traderData.set(trade.trader_wallet, [])
           }
@@ -420,6 +435,7 @@ async function fetchPolymarketData(): Promise<SectionAData> {
 
 async function fetchPolycopyData(): Promise<SectionBData> {
   const supabase = createServiceClient()
+  const ordersTable = await resolveOrdersTableName(supabase)
   const dbErrors: string[] = []
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
@@ -442,27 +458,30 @@ async function fetchPolycopyData(): Promise<SectionBData> {
   const queries = await Promise.allSettled([
     // Query 1: Most copied traders (7 days)
     supabase
-      .from('copied_trades')
-      .select('trader_username, trader_wallet')
-      .gte('created_at', sevenDaysAgo),
+      .from(ordersTable)
+      .select('copied_trader_username, copied_trader_wallet')
+      .gte('created_at', sevenDaysAgo)
+      .not('copied_trade_id', 'is', null),
 
     // Query 2: Platform stats (all time)
     supabase
-      .from('copied_trades')
-      .select('trader_username, user_id, roi, market_resolved'),
+      .from(ordersTable)
+      .select('copied_trader_username, copy_user_id, roi, market_resolved')
+      .not('copied_trade_id', 'is', null),
 
     // Query 3: Recent activity
     supabase
-      .from('copied_trades')
-      .select('trader_username, trader_wallet, market_title, outcome, created_at')
+      .from(ordersTable)
+      .select('copied_trader_username, copied_trader_wallet, copied_market_title, outcome, created_at')
       .order('created_at', { ascending: false })
       .limit(20),
 
     // Query 4: Newly tracked traders + markets (7 days)
     supabase
-      .from('copied_trades')
-      .select('trader_username, trader_wallet, market_title, roi, market_resolved, created_at')
-      .gte('created_at', sevenDaysAgo),
+      .from(ordersTable)
+      .select('copied_trader_username, copied_trader_wallet, copied_market_title, roi, market_resolved, created_at')
+      .gte('created_at', sevenDaysAgo)
+      .not('copied_trade_id', 'is', null),
   ])
 
   // Process Query 1: Most Copied Traders
@@ -471,11 +490,11 @@ async function fetchPolycopyData(): Promise<SectionBData> {
     const traderCounts = new Map<string, { username: string; wallet: string; count: number }>()
     
     data.forEach((trade: any) => {
-      const key = trade.trader_wallet
+      const key = trade.copied_trader_wallet
       if (!traderCounts.has(key)) {
         traderCounts.set(key, {
-          username: trade.trader_username,
-          wallet: trade.trader_wallet,
+          username: trade.copied_trader_username,
+          wallet: trade.copied_trader_wallet,
           count: 0
         })
       }
@@ -498,8 +517,8 @@ async function fetchPolycopyData(): Promise<SectionBData> {
   if (queries[1].status === 'fulfilled' && !queries[1].value.error) {
     const data = queries[1].value.data || []
     
-    const uniqueTraders = new Set(data.map((t: any) => t.trader_username)).size
-    const activeUsers = new Set(data.map((t: any) => t.user_id)).size
+    const uniqueTraders = new Set(data.map((t: any) => t.copied_trader_username)).size
+    const activeUsers = new Set(data.map((t: any) => t.copy_user_id)).size
     const totalCopies = data.length
 
     const resolvedTrades = data.filter((t: any) => t.market_resolved && t.roi !== null)
@@ -528,15 +547,17 @@ async function fetchPolycopyData(): Promise<SectionBData> {
 
   // Process Query 3: Recent Activity
   if (queries[2].status === 'fulfilled' && !queries[2].value.error) {
-    recentActivity = (queries[2].value.data || []).map((a: any) => ({
-      trader_username: a.trader_username,
-      trader_wallet: a.trader_wallet || '',
-      market_title: a.market_title,
-      market_title_truncated: truncate(a.market_title, 60),
+    recentActivity = (queries[2].value.data || []).map((a: any) => {
+      const marketTitle = a.copied_market_title || ''
+      return {
+      trader_username: a.copied_trader_username,
+      trader_wallet: a.copied_trader_wallet || '',
+      market_title: marketTitle,
+      market_title_truncated: truncate(marketTitle, 60),
       outcome: a.outcome,
       created_at: a.created_at,
       time_formatted: formatDateTime(a.created_at)
-    }))
+    }})
   } else {
     dbErrors.push('Failed to fetch recent activity')
   }
@@ -554,20 +575,21 @@ async function fetchPolycopyData(): Promise<SectionBData> {
     }>()
 
     data.forEach((trade: any) => {
-      const key = trade.trader_wallet
+      const key = trade.copied_trader_wallet
+      const marketTitle = trade.copied_market_title || ''
       if (!traderFirstSeen.has(key)) {
         traderFirstSeen.set(key, {
-          username: trade.trader_username,
-          wallet: trade.trader_wallet,
+          username: trade.copied_trader_username,
+          wallet: trade.copied_trader_wallet,
           firstCopied: trade.created_at,
-          markets: new Set([trade.market_title])
+          markets: new Set([marketTitle])
         })
       } else {
         const existing = traderFirstSeen.get(key)!
         if (trade.created_at && trade.created_at < existing.firstCopied) {
           existing.firstCopied = trade.created_at
         }
-        existing.markets.add(trade.market_title)
+        existing.markets.add(marketTitle)
       }
     })
 
@@ -585,7 +607,7 @@ async function fetchPolycopyData(): Promise<SectionBData> {
     // Most copied markets
     const marketData = new Map<string, { count: number; rois: number[] }>()
     data.forEach((trade: any) => {
-      const key = trade.market_title
+      const key = trade.copied_market_title || ''
       if (!marketData.has(key)) {
         marketData.set(key, { count: 0, rois: [] })
       }
@@ -646,22 +668,23 @@ async function fetchPolycopyData(): Promise<SectionBData> {
       // Get unique wallets for username lookup (lowercase for consistency)
       const uniqueWallets = Array.from(traderFollowers.keys()).map(w => w.toLowerCase())
       
-      // Query copied_trades for usernames (case-insensitive)
-      const { data: traderNames } = await supabase
-        .from('copied_trades')
-        .select('trader_wallet, trader_username')
-        .in('trader_wallet', uniqueWallets)
+      // Query copied trades for usernames (case-insensitive)
+    const { data: traderNames } = await supabase
+        .from(ordersTable)
+        .select('copied_trader_wallet, copied_trader_username')
+        .in('copied_trader_wallet', uniqueWallets)
+        .not('copied_trade_id', 'is', null)
       
       // Create username map (case-insensitive keys)
       const usernameMap = new Map<string, string>()
       traderNames?.forEach((trade: any) => {
-        const walletLower = trade.trader_wallet?.toLowerCase()
-        if (trade.trader_username && walletLower && !usernameMap.has(walletLower)) {
-          usernameMap.set(walletLower, trade.trader_username)
+        const walletLower = trade.copied_trader_wallet?.toLowerCase()
+        if (trade.copied_trader_username && walletLower && !usernameMap.has(walletLower)) {
+          usernameMap.set(walletLower, trade.copied_trader_username)
         }
       })
       
-      console.log(`📝 Found ${usernameMap.size} usernames from copied_trades`)
+      console.log(`📝 Found ${usernameMap.size} usernames from copied trades`)
       
       // For wallets still missing names, fetch from Polymarket trades API
       const walletsNeedingNames = uniqueWallets.filter(w => !usernameMap.has(w))
@@ -740,10 +763,11 @@ async function fetchPolycopyData(): Promise<SectionBData> {
   try {
     // Get all resolved trades with ROI
     const { data: resolvedTrades, error: resolvedError } = await supabase
-      .from('copied_trades')
-      .select('user_id, trader_username, roi, market_resolved')
+      .from(ordersTable)
+      .select('copy_user_id, copied_trader_username, roi, market_resolved')
       .eq('market_resolved', true)
       .not('roi', 'is', null)
+      .not('copied_trade_id', 'is', null)
 
     if (!resolvedError && resolvedTrades) {
       // Group by user
@@ -754,14 +778,14 @@ async function fetchPolycopyData(): Promise<SectionBData> {
       }>()
       
       resolvedTrades.forEach((trade: any) => {
-        if (!userStats.has(trade.user_id)) {
-          userStats.set(trade.user_id, { trades: 0, rois: [], traders: new Set() })
+        if (!userStats.has(trade.copy_user_id)) {
+          userStats.set(trade.copy_user_id, { trades: 0, rois: [], traders: new Set() })
         }
-        const stats = userStats.get(trade.user_id)!
+        const stats = userStats.get(trade.copy_user_id)!
         stats.trades++
         stats.rois.push(trade.roi)
-        if (trade.trader_username) {
-          stats.traders.add(trade.trader_username)
+        if (trade.copied_trader_username) {
+          stats.traders.add(trade.copied_trader_username)
         }
       })
       
@@ -817,10 +841,11 @@ async function fetchPolycopyData(): Promise<SectionBData> {
     
     // Get resolved trades with ROI
     const { data: resolvedTrades } = await supabase
-      .from('copied_trades')
-      .select('trader_wallet, roi, market_resolved')
+      .from(ordersTable)
+      .select('copied_trader_wallet, roi, market_resolved')
       .eq('market_resolved', true)
       .not('roi', 'is', null)
+      .not('copied_trade_id', 'is', null)
     
     // Bucket traders by follower count
     const buckets = {
@@ -832,7 +857,7 @@ async function fetchPolycopyData(): Promise<SectionBData> {
     }
     
     resolvedTrades?.forEach((trade: any) => {
-      const followers = followerCounts.get(trade.trader_wallet) || 0
+      const followers = followerCounts.get(trade.copied_trader_wallet) || 0
       let bucket: keyof typeof buckets
       
       if (followers === 0) bucket = '0 followers'
@@ -841,7 +866,7 @@ async function fetchPolycopyData(): Promise<SectionBData> {
       else if (followers <= 10) bucket = '6-10 followers'
       else bucket = '11+ followers'
       
-      buckets[bucket].traders.add(trade.trader_wallet)
+      buckets[bucket].traders.add(trade.copied_trader_wallet)
       buckets[bucket].rois.push(trade.roi)
     })
     

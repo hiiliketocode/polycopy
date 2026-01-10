@@ -86,10 +86,11 @@ export async function GET(request: NextRequest) {
     
     // Use service role client for database operations
     const supabase = createServiceClient()
+    const ordersTable = await resolveOrdersTableName(supabase)
     
     // Fetch all copied trades for this user, ordered by copied_at DESC
     const { data: orders, error: dbError } = await supabase
-      .from('orders')
+      .from(ordersTable)
       .select(`
         order_id,
         copied_trade_id,
@@ -98,7 +99,6 @@ export async function GET(request: NextRequest) {
         copied_trader_username,
         trader_profile_image_url,
         market_id,
-        market_title,
         copied_market_title,
         market_slug,
         market_avatar_url,
@@ -114,6 +114,7 @@ export async function GET(request: NextRequest) {
         market_resolved,
         market_resolved_at,
         roi,
+        trade_method,
         notification_closed_sent,
         notification_resolved_sent,
         last_checked_at,
@@ -122,7 +123,7 @@ export async function GET(request: NextRequest) {
         user_exit_price
       `)
       .eq('copy_user_id', userId)
-      .not('copied_trade_id', 'is', null)
+      .or('copied_trade_id.not.is.null,trade_method.eq.manual')
       .order('created_at', { ascending: false })
     
     if (dbError) {
@@ -138,7 +139,7 @@ export async function GET(request: NextRequest) {
       trader_username: order.copied_trader_username,
       trader_profile_image_url: order.trader_profile_image_url || null,
       market_id: order.market_id,
-      market_title: order.copied_market_title || order.market_title || '',
+      market_title: order.copied_market_title || '',
       market_slug: order.market_slug,
       market_avatar_url: order.market_avatar_url || null,
       outcome: order.outcome || '',

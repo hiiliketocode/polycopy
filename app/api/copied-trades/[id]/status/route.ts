@@ -134,7 +134,7 @@ export async function GET(
     }
 
     // Check if trade was recently copied (< 5 minutes ago)
-    const copiedAt = new Date(trade.copied_at)
+    const copiedAt = new Date(trade.copied_at ?? trade.created_at)
     const now = new Date()
     const minutesSinceCopied = (now.getTime() - copiedAt.getTime()) / (1000 * 60)
     const isRecentlyCopied = minutesSinceCopied < 5

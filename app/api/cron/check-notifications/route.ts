@@ -124,8 +124,34 @@ export async function GET(request: NextRequest) {
     // - Market is not resolved yet OR resolved notification not sent
     // - Haven't sent all notifications
     const { data: trades, error } = await supabase
-      .from('copied_trades')
-      .select('*')
+      .from(ordersTable)
+      .select(`
+        order_id,
+        copied_trade_id,
+        copy_user_id,
+        copied_trader_wallet,
+        copied_trader_username,
+        copied_market_title,
+        market_id,
+        outcome,
+        price_when_copied,
+        amount_invested,
+        trader_still_has_position,
+        trader_closed_at,
+        current_price,
+        market_resolved,
+        market_resolved_at,
+        roi,
+        notification_closed_sent,
+        notification_resolved_sent,
+        last_checked_at,
+        resolved_outcome,
+        user_closed_at,
+        user_exit_price,
+        created_at
+      `)
+      .not('copied_trade_id', 'is', null)
+      .not('copy_user_id', 'is', null)
       .or('market_resolved.eq.false,notification_resolved_sent.is.null,notification_resolved_sent.eq.false')
       .or('notification_closed_sent.is.null,notification_closed_sent.eq.false')
       .limit(100)
@@ -393,10 +419,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (!trades || trades.length === 0) {
+    const normalizedTrades = (trades || []).map((trade) => ({
+      ...trade,
+      id: trade.copied_trade_id ?? trade.order_id,
+      user_id: trade.copy_user_id,
+      trader_wallet: trade.copied_trader_wallet,
+      trader_username: trade.copied_trader_username,
+      market_title: trade.copied_market_title || '',
+      copied_at: trade.created_at,
+    }))
+
+    if (normalizedTrades.length === 0) {
       console.log('ℹ️ No copied trades to check for notifications')
     } else {
-      for (const trade of trades) {
+      for (const trade of normalizedTrades) {
         try {
           tradesChecked++
         
@@ -482,12 +518,12 @@ export async function GET(request: NextRequest) {
             console.log(`⏭️ Skipping "Trader Closed" email for trade ${trade.id} - market already resolved (DB: ${trade.market_resolved}, API: ${newMarketResolved})`)
             // Still mark as "sent" so we don't check again
             await supabase
-              .from('copied_trades')
+              .from(ordersTable)
               .update({ 
                 notification_closed_sent: true,
                 trader_still_has_position: false
               })
-              .eq('id', trade.id)
+              .eq('copied_trade_id', trade.id)
           } else {
             console.log(`📧 Sending "Trader Closed" email for trade ${trade.id}`)
 
@@ -523,12 +559,12 @@ export async function GET(request: NextRequest) {
             
             // Mark notification as sent
             await supabase
-              .from('copied_trades')
+              .from(ordersTable)
               .update({ 
                 notification_closed_sent: true,
                 trader_still_has_position: false
               })
-              .eq('id', trade.id)
+              .eq('copied_trade_id', trade.id)
             
             notificationsSent++
             console.log(`✅ Sent "Trader Closed" email for trade ${trade.id} to ${profile.email}`)
@@ -572,9 +608,9 @@ export async function GET(request: NextRequest) {
             console.log(`⚠️ Skipping email for trade ${trade.id} - no resolved outcome yet`)
             // Update market_resolved but don't mark notification as sent
             await supabase
-              .from('copied_trades')
+              .from(ordersTable)
               .update({ market_resolved: true })
-              .eq('id', trade.id)
+              .eq('copied_trade_id', trade.id)
             continue
           }
           
@@ -604,12 +640,12 @@ export async function GET(request: NextRequest) {
             
             // Mark notification as sent and market as resolved
             await supabase
-              .from('copied_trades')
+              .from(ordersTable)
               .update({ 
                 notification_resolved_sent: true,
                 market_resolved: true
               })
-              .eq('id', trade.id)
+              .eq('copied_trade_id', trade.id)
             
             notificationsSent++
             console.log(`✅ Sent "Market Resolved" email for trade ${trade.id} to ${profile.email}`, {
@@ -629,9 +665,9 @@ export async function GET(request: NextRequest) {
         
         // Update last_checked_at timestamp
         await supabase
-          .from('copied_trades')
+          .from(ordersTable)
           .update({ last_checked_at: new Date().toISOString() })
-          .eq('id', trade.id)
+          .eq('copied_trade_id', trade.id)
         
       } catch (err) {
         console.error(`Error processing trade ${trade.id}:`, err)

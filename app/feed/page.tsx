@@ -197,24 +197,23 @@ export default function FeedPage() {
   useEffect(() => {
     if (!user) return;
     
-    const fetchCopiedTrades = async () => {
+const fetchCopiedTrades = async () => {
       setLoadingCopiedTrades(true);
       try {
         const { data: trades, error } = await supabase
           .from('orders')
-          .select('market_id, copied_trader_wallet, market_slug, copied_market_title, market_title')
-          .eq('copy_user_id', user.id)
-          .not('copied_trade_id', 'is', null);
+          .select('market_id, copied_trader_wallet, market_slug, copied_market_title')
+          .eq('copy_user_id', user.id);
         
         if (error) {
           console.error('Error fetching copied trades:', error);
           setCopiedTradeIds(new Set());
         } else {
           const copiedIds = new Set<string>();
-        trades?.forEach((t: { market_id?: string; copied_trader_wallet?: string; market_slug?: string; copied_market_title?: string; market_title?: string }) => {
+        trades?.forEach((t: { market_id?: string; copied_trader_wallet?: string; market_slug?: string; copied_market_title?: string }) => {
           const walletKey = normalizeKeyPart(t.copied_trader_wallet);
           if (!walletKey) return;
-          const marketKeys = [t.market_id, t.market_slug, t.copied_market_title, t.market_title]
+          const marketKeys = [t.market_id, t.market_slug, t.copied_market_title]
             .map(normalizeKeyPart)
             .filter(Boolean);
             if (marketKeys.length === 0) return;

@@ -27,12 +27,16 @@ let ordersTableName: 'trades' | 'orders' | null = null
 
 async function resolveOrdersTableName(): Promise<'trades' | 'orders'> {
   if (ordersTableName) return ordersTableName
-  const { error } = await supabase.from('trades').select('order_id').limit(1)
-  if (error && (error as any).code === 'PGRST205') {
+  const { error } = await supabase.from('orders').select('order_id').limit(1)
+  if (!error) {
     ordersTableName = 'orders'
-  } else {
-    ordersTableName = 'trades'
+    return ordersTableName
   }
+  if ((error as any).code === 'PGRST205') {
+    ordersTableName = 'trades'
+    return ordersTableName
+  }
+  throw error
   return ordersTableName
 }
 

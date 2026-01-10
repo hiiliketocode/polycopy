@@ -17,7 +17,7 @@ type OrdersScreenProps = {
   contentWrapperClassName?: string
 }
 
-function OrdersScreen({
+export function OrdersScreen({
   hideNavigation = false,
   contentWrapperClassName = 'min-h-screen bg-slate-50',
 }: OrdersScreenProps) {
@@ -685,8 +685,10 @@ function OrdersScreen({
     </>
   )
 }
-export default function OrdersPage() {
-  return <OrdersScreen />
+export type OrdersPageProps = OrdersScreenProps
+
+export default function OrdersPage(props: OrdersPageProps = {}) {
+  return <OrdersScreen {...props} />
 }
 
 function formatCurrency(value: number | null | undefined) {

@@ -1,7 +1,7 @@
 # Profile Page Trade Cards Update
 
 ## Summary
-Updated the Copied Trades section on the profile page to match the visual style of the feed page trade cards, including trader profile icons and market avatars.
+Updated the Manual Trades section on the profile page to match the visual style of the feed page trade cards, including trader profile icons and market avatars.
 
 ## Changes Made
 
@@ -76,7 +76,7 @@ node scripts/backfill-copied-trades-avatars.js
 
 ### 3. Test the Changes
 1. Navigate to the profile page
-2. View the Copied Trades tab
+2. View the Manual Trades tab
 3. Verify that trader avatars and market icons are displayed
 4. Compare with the feed page to ensure visual consistency
 
@@ -103,4 +103,3 @@ Consider these optional improvements:
 2. Implement lazy loading for images in long lists
 3. Add image error handling with retry logic
 4. Cache trader profile images at the application level for better performance
-

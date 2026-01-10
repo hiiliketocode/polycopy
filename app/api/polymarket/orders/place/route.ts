@@ -264,7 +264,7 @@ async function persistCopiedTraderMetadata({
       ? slippagePercent
       : null
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     order_id: orderId,
     trader_id: traderId,
     copied_trader_id: normalizedCopiedTraderId,
@@ -296,30 +296,18 @@ async function persistCopiedTraderMetadata({
     },
   }
 
-  await service.from(ordersTable).upsert(payload, { onConflict: 'order_id' })
-
-  const resolvedMarketTitle = normalizedMarketTitle || normalizedMarketId
-  if (
-    normalizedCopiedTraderWallet &&
-    normalizedMarketId &&
-    resolvedMarketTitle &&
-    normalizedPrice !== null
-  ) {
-    await service
-      .from('copied_trades')
-      .insert({
-        user_id: userId,
-        trader_wallet: normalizedCopiedTraderWallet,
-        trader_username: normalizedCopiedTraderUsername || normalizedCopiedTraderWallet.slice(0, 8),
-        market_id: normalizedMarketId,
-        market_title: resolvedMarketTitle,
-        market_slug: normalizedMarketSlug,
-        outcome: normalizeOptionalString(outcome),
-        price_when_copied: normalizedPrice,
-        amount_invested: normalizedAmountInvested ?? null,
-        market_avatar_url: normalizedMarketAvatarUrl ?? null,
-      })
+  if (normalizedCopiedTraderWallet) {
+    payload.copy_user_id = userId
+    payload.copied_trader_username = normalizedCopiedTraderUsername
+    payload.copied_market_title = normalizedMarketTitle
+    payload.price_when_copied = normalizedPrice
+    payload.amount_invested = normalizedAmountInvested
+    payload.market_slug = normalizedMarketSlug
+    payload.market_avatar_url = normalizedMarketAvatarUrl
+    payload.trade_method = 'quick'
   }
+
+  await service.from(ordersTable).upsert(payload, { onConflict: 'order_id' })
 }
 
 export async function POST(request: NextRequest) {

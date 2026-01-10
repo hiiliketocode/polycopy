@@ -1,6 +1,6 @@
 /**
  * Backfill script to populate trader_profile_image_url and market_avatar_url
- * for existing copied_trades records
+ * for existing orders records with copy metadata
  * 
  * Usage:
  *   node scripts/backfill-copied-trades-avatars.js
@@ -99,12 +99,13 @@ async function backfillAvatars() {
   console.log('🚀 Starting backfill of trader profile images and market avatars...\n')
   
   try {
-    // Fetch all copied trades that don't have profile images or market avatars
+    // Fetch all orders with copy metadata that don't have profile images or market avatars
     const { data: trades, error: fetchError } = await supabase
-      .from('copied_trades')
-      .select('id, trader_wallet, trader_profile_image_url, market_id, market_slug, market_avatar_url')
+      .from('orders')
+      .select('order_id, copied_trade_id, copied_trader_wallet, trader_profile_image_url, market_id, market_slug, market_avatar_url, created_at')
+      .not('copied_trade_id', 'is', null)
       .or('trader_profile_image_url.is.null,market_avatar_url.is.null')
-      .order('copied_at', { ascending: false })
+      .order('created_at', { ascending: false })
     
     if (fetchError) {
       console.error('❌ Error fetching trades:', fetchError)
@@ -123,8 +124,8 @@ async function backfillAvatars() {
     const tradesNeedingMarketAvatars = []
     
     for (const trade of trades) {
-      if (!trade.trader_profile_image_url && trade.trader_wallet) {
-        traderWallets.add(trade.trader_wallet)
+      if (!trade.trader_profile_image_url && trade.copied_trader_wallet) {
+        traderWallets.add(trade.copied_trader_wallet)
       }
       if (!trade.market_avatar_url) {
         tradesNeedingMarketAvatars.push(trade)
@@ -159,7 +160,7 @@ async function backfillAvatars() {
     // Fetch market avatars by querying trader's recent trades
     // Group by trader wallet to minimize API calls
     const traderMarketAvatars = new Map() // Map<tradeId, avatarUrl>
-    const traderWalletsForMarkets = new Set(tradesNeedingMarketAvatars.map(t => t.trader_wallet))
+    const traderWalletsForMarkets = new Set(tradesNeedingMarketAvatars.map(t => t.copied_trader_wallet))
     let marketCount = 0
     
     console.log(`🎯 Fetching market avatars from ${traderWalletsForMarkets.size} traders' recent trades...\n`)
@@ -183,7 +184,7 @@ async function backfillAvatars() {
         const traderTrades = await response.json()
         
         // Find market avatars for this trader's copied trades
-        const tradesForThisWallet = tradesNeedingMarketAvatars.filter(t => t.trader_wallet === wallet)
+        const tradesForThisWallet = tradesNeedingMarketAvatars.filter(t => t.copied_trader_wallet === wallet)
         let foundCount = 0
         
         for (const copiedTrade of tradesForThisWallet) {
@@ -197,7 +198,7 @@ async function backfillAvatars() {
           if (matchingTrade) {
             const avatar = extractMarketAvatarUrl(matchingTrade)
             if (avatar) {
-              traderMarketAvatars.set(copiedTrade.id, avatar)
+              traderMarketAvatars.set(copiedTrade.copied_trade_id, avatar)
               foundCount++
             }
           }
@@ -224,8 +225,8 @@ async function backfillAvatars() {
       const updates = {}
       
       // Add trader profile image if we fetched one and it's missing
-      if (!trade.trader_profile_image_url && trade.trader_wallet) {
-        const profileImage = traderProfileImages.get(trade.trader_wallet)
+      if (!trade.trader_profile_image_url && trade.copied_trader_wallet) {
+        const profileImage = traderProfileImages.get(trade.copied_trader_wallet)
         if (profileImage) {
           updates.trader_profile_image_url = profileImage
         }
@@ -233,7 +234,7 @@ async function backfillAvatars() {
       
       // Add market avatar if we fetched one and it's missing
       if (!trade.market_avatar_url) {
-        const avatar = traderMarketAvatars.get(trade.id)
+        const avatar = traderMarketAvatars.get(trade.copied_trade_id)
         if (avatar) {
           updates.market_avatar_url = avatar
         }
@@ -242,12 +243,12 @@ async function backfillAvatars() {
       // Only update if we have something to update
       if (Object.keys(updates).length > 0) {
         const { error: updateError } = await supabase
-          .from('copied_trades')
+          .from('orders')
           .update(updates)
-          .eq('id', trade.id)
+          .eq('copied_trade_id', trade.copied_trade_id)
         
         if (updateError) {
-          console.error(`❌ Error updating trade ${trade.id}:`, updateError.message)
+          console.error(`❌ Error updating trade ${trade.copied_trade_id}:`, updateError.message)
           errorCount++
         } else {
           updatedCount++
@@ -283,4 +284,3 @@ backfillAvatars()
     console.error('\n❌ Backfill script failed:', err)
     process.exit(1)
   })
-

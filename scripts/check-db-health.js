@@ -49,7 +49,7 @@ async function checkDatabaseHealth() {
     'follows',
     'profiles',
     'traders',
-    'copied_trades',
+    'orders',
     'clob_credentials',
     'user_clob_orders'
   ]
@@ -120,4 +120,3 @@ checkDatabaseHealth()
     console.error('❌ Error:', err.message)
     process.exit(1)
   })
-
