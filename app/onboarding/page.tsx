@@ -81,11 +81,11 @@ export default function OnboardingPage() {
     <>
       <style jsx global>{`
         /* Hide any page chrome during onboarding */
-        body {
+        body:has(.onboarding-container) {
           overflow: hidden;
         }
         
-        * {
+        .onboarding-container * {
           margin: 0;
           padding: 0;
           box-sizing: border-box;
@@ -193,7 +193,7 @@ export default function OnboardingPage() {
           max-width: 500px;
         }
 
-        h1 {
+        .onboarding-container h1 {
           font-size: 36px;
           font-weight: 700;
           line-height: 1.25;
@@ -201,7 +201,7 @@ export default function OnboardingPage() {
           color: var(--text-primary);
         }
 
-        h2 {
+        .onboarding-container h2 {
           font-size: 30px;
           font-weight: 700;
           line-height: 1.3;
@@ -827,8 +827,8 @@ export default function OnboardingPage() {
         }
 
         @media (max-width: 640px) {
-          h1 { font-size: 24px; margin-bottom: 0.5rem; }
-          h2 { font-size: 20px; margin-bottom: 0.5rem; }
+          .onboarding-container h1 { font-size: 24px; margin-bottom: 0.5rem; }
+          .onboarding-container h2 { font-size: 20px; margin-bottom: 0.5rem; }
           .subtitle { font-size: 14px; margin-bottom: 0.25rem; }
           .description { font-size: 13px; }
           .welcome-logo { width: 200px; }
