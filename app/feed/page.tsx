@@ -114,7 +114,8 @@ export default function FeedPage() {
   
   // Live market data (prices, scores, and game metadata)
   const [liveMarketData, setLiveMarketData] = useState<Map<string, { 
-    price: number; 
+    outcomes?: string[];
+    outcomePrices?: number[];
     score?: string;
     gameStartTime?: string;
     eventStatus?: string;
@@ -180,14 +181,9 @@ export default function FeedPage() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
         router.push('/login');
-      } else {
-        setUser(prevUser => {
-          if (prevUser?.id === session.user.id) {
-            return prevUser;
-          }
-          return session.user;
-        });
       }
+      // Don't update user state on every auth change to prevent unnecessary re-renders
+      // The user state is already set above and will persist
     });
 
     return () => subscription.unsubscribe();
@@ -304,7 +300,8 @@ const fetchCopiedTrades = async () => {
   // Fetch live market data (prices, scores, and game metadata)
   const fetchLiveMarketData = useCallback(async (trades: FeedTrade[]) => {
     const newLiveData = new Map<string, { 
-      price: number; 
+      outcomes?: string[];
+      outcomePrices?: number[];
       score?: string;
       gameStartTime?: string;
       eventStatus?: string;
@@ -336,7 +333,6 @@ const fetchCopiedTrades = async () => {
               // Get the trade to determine which outcome we need
               const trade = trades.find(t => t.market.conditionId === conditionId);
               if (trade) {
-                const outcome = trade.trade.outcome.toUpperCase();
                 const { 
                   outcomes, 
                   outcomePrices, 
@@ -350,24 +346,22 @@ const fetchCopiedTrades = async () => {
                 
                 console.log(`✅ Got data for ${trade.market.title.slice(0, 40)}... | Status: ${eventStatus} | Score:`, liveScore);
                 
-                // Find the price for this specific outcome
-                const outcomeIndex = outcomes?.findIndex((o: string) => o.toUpperCase() === outcome);
-                if (outcomeIndex !== -1 && outcomePrices && outcomePrices[outcomeIndex]) {
-                  const price = Number(outcomePrices[outcomeIndex]);
-                  
-                  // Detect sports markets by checking for "vs." or "vs" in title, or common sports patterns
-                  const isSportsMarket = trade.market.title.includes(' vs. ') || 
-                                        trade.market.title.includes(' vs ') ||
-                                        trade.market.title.includes(' @ ') ||
-                                        trade.market.category === 'sports' ||
-                                        // Detect spread and over/under bets
-                                        trade.market.title.match(/\(-?\d+\.?\d*\)/) || // (−9.5) or (+7)
-                                        trade.market.title.includes('O/U') ||
-                                        trade.market.title.includes('Over') ||
-                                        trade.market.title.includes('Under') ||
-                                        trade.market.title.includes('Spread') ||
-                                        (outcomes?.length === 2 && 
-                                         trade.market.title.match(/\w+ (vs\.?|@) \w+/));
+                // Convert string prices to numbers
+                const numericPrices = outcomePrices?.map((p: string | number) => Number(p)) || [];
+                
+                // Detect sports markets by checking for "vs." or "vs" in title, or common sports patterns
+                const isSportsMarket = trade.market.title.includes(' vs. ') || 
+                                      trade.market.title.includes(' vs ') ||
+                                      trade.market.title.includes(' @ ') ||
+                                      trade.market.category === 'sports' ||
+                                      // Detect spread and over/under bets
+                                      trade.market.title.match(/\(-?\d+\.?\d*\)/) || // (−9.5) or (+7)
+                                      trade.market.title.includes('O/U') ||
+                                      trade.market.title.includes('Over') ||
+                                      trade.market.title.includes('Under') ||
+                                      trade.market.title.includes('Spread') ||
+                                      (outcomes?.length === 2 && 
+                                       trade.market.title.match(/\w+ (vs\.?|@) \w+/));
                   
                   let scoreDisplay: string | undefined;
                   
@@ -497,15 +491,23 @@ const fetchCopiedTrades = async () => {
                     console.log(`📊 Binary market: ${scoreDisplay}`);
                   }
                   
+                  // Mark market as closed if ESPN says game is final OR if Polymarket says it's closed
+                  const isMarketClosed = Boolean(closed) || 
+                                        espnScore?.status === 'final' ||
+                                        eventStatus === 'finished' || 
+                                        eventStatus === 'final';
+                  
+                  console.log(`🔒 Market closed status for ${trade.market.title.slice(0, 40)}... | closed=${closed} | espnStatus=${espnScore?.status} | eventStatus=${eventStatus} | final isMarketClosed=${isMarketClosed}`);
+                  
                   newLiveData.set(conditionId, { 
-                    price,
+                    outcomes: outcomes || [],
+                    outcomePrices: numericPrices,
                     score: scoreDisplay,
                     gameStartTime: gameStartTime || undefined,
                     eventStatus: eventStatus || undefined,
-                    closed: Boolean(closed),
+                    closed: isMarketClosed,
                   });
                 }
-              }
             }
           } else {
             console.warn(`❌ Price API failed for ${conditionId}: ${priceResponse.status}`);
@@ -1097,6 +1099,18 @@ const fetchCopiedTrades = async () => {
             <div className="space-y-4">
               {displayedTrades.map((trade, index) => {
                 const liveMarket = liveMarketData.get(trade.market.conditionId || '')
+                
+                // Find the price for THIS specific trade's outcome
+                let currentPrice: number | undefined = undefined;
+                if (liveMarket?.outcomes && liveMarket?.outcomePrices) {
+                  const outcomeIndex = liveMarket.outcomes.findIndex(
+                    (o: string) => o.toUpperCase() === trade.trade.outcome.toUpperCase()
+                  );
+                  if (outcomeIndex !== -1 && outcomeIndex < liveMarket.outcomePrices.length) {
+                    currentPrice = liveMarket.outcomePrices[outcomeIndex];
+                  }
+                }
+                
                 return (
                   <TradeCard
                     key={trade.id}
@@ -1124,7 +1138,7 @@ const fetchCopiedTrades = async () => {
                     isCopied={isTraceCopied(trade)}
                     conditionId={trade.market.conditionId}
                     marketSlug={trade.market.slug}
-                    currentMarketPrice={liveMarket?.price}
+                    currentMarketPrice={currentPrice}
                     marketIsOpen={liveMarket?.closed === undefined ? undefined : !liveMarket.closed}
                     liveScore={liveMarket?.score}
                     category={trade.market.category}
