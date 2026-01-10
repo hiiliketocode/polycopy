@@ -12,7 +12,7 @@ import { logError, logInfo, makeRequestId, sanitizeForLogging } from '@/lib/logg
 import { resolveOrdersTableName } from '@/lib/orders/table'
 import { adjustSizeForImpliedAmount, roundDownToStep } from '@/lib/polymarket/sizing'
 import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
-import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit/index'
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit'
 import {
   validateMarketId,
   validatePositiveNumber,
