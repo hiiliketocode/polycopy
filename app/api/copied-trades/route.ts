@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
-import { createAuthClient } from '@/lib/supabase/server'
+import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { checkRateLimit } from '@/lib/rate-limit'

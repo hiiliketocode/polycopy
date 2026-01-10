@@ -162,7 +162,7 @@ export async function checkRateLimit(
 /**
  * Create a rate-limited response
  */
-export function rateLimitedResponse(result: RateLimitResult): NextResponse {
+function rateLimitedResponse(result: RateLimitResult): NextResponse {
   const headers = new Headers()
   
   if (result.limit) {
@@ -192,6 +192,9 @@ export function rateLimitedResponse(result: RateLimitResult): NextResponse {
     }
   )
 }
+
+// Export rateLimitedResponse explicitly
+export { rateLimitedResponse }
 
 /**
  * Higher-order function to wrap API routes with rate limiting
