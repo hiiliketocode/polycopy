@@ -953,15 +953,47 @@ function getMarketTitle(
     return rawMarketTitle.trim()
   }
 
-  // Only use copied_market_title as last resort
+  // Check if copied_market_title looks like a valid market name (not a wallet address or trader name)
   const copiedMarketTitle =
     typeof order?.copied_market_title === 'string' && order.copied_market_title.trim()
       ? order.copied_market_title.trim()
       : null
 
-  const fallbackTitle = copiedMarketTitle ?? rawMarket?.market ?? marketId
+  // Get trader information to compare against
+  const traderUsername = order?.copied_trader_username || order?.raw?.copied_trader_username || null
+  const traderWallet = order?.copied_trader_wallet || order?.raw?.copied_trader_wallet || null
 
-  return fallbackTitle || 'unknown market'
+  // Only use copied_market_title if:
+  // 1. It doesn't look like a wallet address
+  // 2. It's not the same as the trader username
+  // 3. It's a reasonable length for a market title
+  const isWalletAddress = copiedMarketTitle && (
+    copiedMarketTitle.startsWith('0x') || 
+    /^[a-f0-9]{40,}$/i.test(copiedMarketTitle) ||
+    copiedMarketTitle === traderWallet
+  )
+  
+  const isTraderName = copiedMarketTitle && (
+    copiedMarketTitle === traderUsername ||
+    copiedMarketTitle === traderWallet
+  )
+
+  const isValidMarketTitle = copiedMarketTitle && 
+    !isWalletAddress &&
+    !isTraderName &&
+    copiedMarketTitle.length > 10
+
+  if (isValidMarketTitle) {
+    return copiedMarketTitle
+  }
+
+  // Check if marketId is a hex address - if so, return a fallback message
+  const isHexAddress = marketId && (marketId.startsWith('0x') || /^[a-f0-9]{40,}$/i.test(marketId))
+  if (isHexAddress) {
+    return 'Market details unavailable'
+  }
+
+  return rawMarket?.market ?? marketId || 'unknown market'
 }
 
 function deriveMarketOpenStatus(cache?: MarketCacheRow, rawOrder?: any, metadata?: MarketMetadata) {
