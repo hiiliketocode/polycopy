@@ -529,7 +529,7 @@ function ProfilePageContent() {
         
         // Don't log errors from maybeSingle() - it's expected to return no data for new users
         // Only log if there's a real error (has code, message, or details)
-        if (error?.code || (error?.message && error.message.trim() !== '')) {
+        if (error && (error.code || error.message || error.details || error.hint)) {
           console.error('Error fetching notification preferences:', error);
         }
         
