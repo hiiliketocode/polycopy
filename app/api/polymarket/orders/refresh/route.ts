@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
 import { ClobClient } from '@polymarket/clob-client'
 import type { Trade, TradeParams } from '@polymarket/clob-client/dist/types'
 import { ApiCredentials } from '@/lib/polymarket/clob'
@@ -15,10 +16,6 @@ import { resolveOrdersTableName } from '@/lib/orders/table'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-const DEV_BYPASS_AUTH =
-  process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
-  Boolean(process.env.TURNKEY_DEV_BYPASS_USER_ID)
 
 const supabaseServiceRole = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -375,25 +372,12 @@ async function refreshOrders(userId: string, limit: number): Promise<RefreshResu
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
-
-  let userId: string | null = user?.id ?? null
-  const devOverrideUserId =
-    DEV_BYPASS_AUTH ? request.headers.get('x-dev-user-id')?.trim() : null
-  if (!userId && devOverrideUserId) {
-    userId = devOverrideUserId
-  }
-  if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
-    userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
-  }
+  // Use centralized secure auth utility
+  const userId = await getAuthenticatedUserId(request)
 
   if (!userId) {
     return NextResponse.json(
-      { error: 'Unauthorized - please log in', details: authError?.message },
+      { error: 'Unauthorized - please log in' },
       { status: 401 }
     )
   }

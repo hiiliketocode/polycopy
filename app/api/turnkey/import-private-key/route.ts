@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit'
 import { TURNKEY_ENABLED } from '@/lib/turnkey/config'
 import { ApiKeyStamper } from '@turnkey/api-key-stamper'
 import { TurnkeyClient } from '@turnkey/http'
 import { createClient as createSupabaseAdminClient, createClient as createSupabaseClient } from '@supabase/supabase-js'
-
-// Dev bypass
-const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development' && process.env.TURNKEY_DEV_BYPASS_USER_ID
 
 // Security: Reject any request containing raw private key patterns
 const RAW_KEY_PATTERNS = [
@@ -214,9 +213,14 @@ export async function POST(request: NextRequest) {
     // Authenticate user
     const authHeader = request.headers.get('authorization')
     const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+    // Use centralized secure auth utility
+    // This endpoint supports both Bearer token and cookie-based auth
     let userId: string | null = null
+    const authHeader = request.headers.get('authorization')
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
 
     if (bearerToken) {
+      // Bearer token auth
       const supabaseAuth = createSupabaseClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -225,14 +229,8 @@ export async function POST(request: NextRequest) {
       const { data: { user } } = await supabaseAuth.auth.getUser(bearerToken)
       userId = user?.id ?? null
     } else {
-      const supabase = await createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      userId = user?.id ?? null
-    }
-
-    if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
-      userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
-      console.log('[TURNKEY-IMPORT-API] DEV BYPASS: Using env user:', userId)
+      // Cookie-based auth (uses centralized utility)
+      userId = await getAuthenticatedUserId(request)
     }
 
     if (!userId) {
@@ -240,6 +238,12 @@ export async function POST(request: NextRequest) {
         { error: 'Unauthorized - please log in', stage: 'auth' },
         { status: 401 }
       )
+    }
+
+    // SECURITY: Rate limit private key import (CRITICAL tier)
+    const rateLimitResult = await checkRateLimit(request, 'CRITICAL', userId, 'ip-user')
+    if (!rateLimitResult.success) {
+      return rateLimitedResponse(rateLimitResult)
     }
 
     // Parse request body

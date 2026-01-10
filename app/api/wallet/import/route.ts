@@ -1,18 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { createClient as createAuthClient } from '@/lib/supabase/server';
+import { validateEthereumAddress } from '@/lib/validation/input';
 
-// Create Supabase client with service role for database operations (bypassing RLS)
-const supabaseServiceRole = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+/**
+ * SECURITY NOTE: This endpoint previously used service role to bypass RLS.
+ * Changed to use authenticated client because:
+ * - User is updating THEIR OWN profile record
+ * - RLS policies on `profiles` table allow users to update own records
+ * - Using service role here was unnecessary and bypassed security controls
+ * 
+ * Fixed: January 10, 2025
+ */
 
 export async function POST(request: NextRequest) {
   try {
     // Get the current user's session from cookies using auth client
-    const supabaseAuth = await createAuthClient();
-    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+    const supabase = await createAuthClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
     
     if (authError || !user) {
       console.error('🔐 Auth error:', authError);
@@ -36,24 +40,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate it's a valid Ethereum address
-    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+    // SECURITY: Validate Ethereum address format
+    const addressValidation = validateEthereumAddress(walletAddress);
+    if (!addressValidation.valid) {
+      console.error('❌ Invalid wallet address:', addressValidation.error);
       return NextResponse.json(
-        { error: 'Invalid wallet address format' },
+        { error: addressValidation.error },
         { status: 400 }
       );
     }
 
+    // Use sanitized (lowercase, validated) address
+    const sanitizedAddress = addressValidation.sanitized!;
+
     console.log(`📝 Saving wallet address for user: ${user.id}`);
 
-    // Save only the wallet address to our database
-    // Turnkey stores the private key securely on their infrastructure
-    // Use service role client to bypass RLS
+    // SECURITY FIX: Use authenticated client instead of service role
+    // RLS policies allow users to update their own profiles
     const timestamp = new Date().toISOString();
-    const { error: updateError } = await supabaseServiceRole
+    const { error: updateError } = await supabase
       .from('profiles')
       .update({
-        trading_wallet_address: walletAddress,
+        trading_wallet_address: sanitizedAddress,
         wallet_connected_at: timestamp,
       })
       .eq('id', user.id);
@@ -66,11 +74,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`✅ Saved wallet address to database: ${walletAddress}`);
+    console.log(`✅ Saved wallet address to database: ${sanitizedAddress}`);
 
     return NextResponse.json({
       success: true,
-      address: walletAddress,
+      address: sanitizedAddress,
       message: 'Wallet imported successfully'
     });
 

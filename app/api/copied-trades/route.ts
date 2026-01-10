@@ -2,11 +2,38 @@
 
 import { randomUUID } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
-import { createClient as createAuthClient } from '@/lib/supabase/server'
+import { createAuthClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { resolveOrdersTableName } from '@/lib/orders/table'
+
+/**
+ * SECURITY: Service Role Usage - COPY TRADING SYSTEM
+ * 
+ * Why service role is required:
+ * - Background system that copies trades from followed traders
+ * - Inserts orders for multiple users (not just authenticated user)
+ * - Queries `traders` table and `orders` table across all users
+ * - Must bypass RLS to coordinate copy trading across user boundaries
+ * 
+ * Security measures:
+ * - ✅ User authentication required for all endpoints
+ * - ✅ Only operates on authenticated user's copy trades
+ * - ✅ Does not expose other users' data
+ * - ✅ Validates user owns the copy trade before operations
+ * 
+ * RLS policies bypassed:
+ * - traders table (system-wide trader registry)
+ * - orders table (inserting copies of followed trader's orders)
+ * 
+ * Alternative considered:
+ * Could not use RLS-based approach - copy trading requires 
+ * cross-user coordination (following trader A → copying to user B)
+ * 
+ * Reviewed: January 10, 2025
+ * Status: JUSTIFIED (system operation, validates user ownership)
+ */
 
 // Create service role client that bypasses RLS for database operations
 function createServiceClient() {

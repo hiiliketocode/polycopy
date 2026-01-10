@@ -1,12 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit'
 import { TURNKEY_ENABLED } from '@/lib/turnkey/config'
 import { getOrCreateWalletForUser } from '@/lib/turnkey/wallet-simple'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-
-const DEV_BYPASS_AUTH =
-  process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
-  Boolean(process.env.TURNKEY_DEV_BYPASS_USER_ID)
 
 /**
  * POST /api/turnkey/wallet/create
@@ -29,40 +27,37 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // Authenticate user
+  // Use centralized secure auth utility
+  // This endpoint supports both Bearer token and cookie-based auth
+  let userId: string | null = null
   const authHeader = request.headers.get('authorization')
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
 
-  let authError: Error | null = null
-  let userId: string | null = null
-
   if (bearerToken) {
+    // Bearer token auth
     const supabaseAuth = createSupabaseClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
-    const { data: { user }, error } = await supabaseAuth.auth.getUser(bearerToken)
-    authError = error ?? null
+    const { data: { user } } = await supabaseAuth.auth.getUser(bearerToken)
     userId = user?.id ?? null
   } else {
-    const supabase = await createClient()
-    const { data: { user }, error } = await supabase.auth.getUser()
-    authError = error ?? null
-    userId = user?.id ?? null
-  }
-
-  // Allow dev bypass
-  if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
-    userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
-    console.log('[TURNKEY] DEV BYPASS: Using env user:', userId)
+    // Cookie-based auth (uses centralized utility)
+    userId = await getAuthenticatedUserId(request)
   }
 
   if (!userId) {
     return NextResponse.json(
-      { error: 'Unauthorized - please log in', details: authError?.message },
+      { error: 'Unauthorized - please log in' },
       { status: 401 }
     )
+  }
+
+  // SECURITY: Rate limit wallet creation (CRITICAL tier)
+  const rateLimitResult = await checkRateLimit(request, 'CRITICAL', userId, 'ip-user')
+  if (!rateLimitResult.success) {
+    return rateLimitedResponse(rateLimitResult)
   }
 
   try {

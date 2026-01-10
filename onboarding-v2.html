@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>Polycopy Onboarding v2.1</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    :root {
+      --brand-yellow: #FDB022;
+      --brand-yellow-hover: #F59E0B;
+      --background: #F8FAFC;
+      --text-primary: #0F172A;
+      --text-secondary: #64748B;
+      --profit-green: #10B981;
+      --radius: 0.625rem;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    
+    body {
+      font-family: var(--font-sans);
+      background: var(--background);
+      color: var(--text-primary);
+      overflow: hidden;
+      height: 100vh;
+      height: 100dvh; /* Dynamic viewport height for mobile */
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    
+    /* Onboarding Container */
+    .onboarding-container {
+      width: 100%;
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      overflow: hidden;
+    }
+    
+    /* Header */
+    .onboarding-header {
+      padding: 1rem 1.5rem;
+      display: flex;
+      justify-content: flex-end;
+      position: relative;
+      z-index: 10;
+    }
+    
+    .skip-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 0.5rem 0.75rem;
+      border-radius: var(--radius);
+      transition: all 0.2s;
+    }
+    
+    .skip-btn:hover {
+      color: var(--text-primary);
+      background: rgba(0, 0, 0, 0.05);
+    }
+    
+    /* Screens Container */
+    .screens-container {
+      flex: 1;
+      display: flex;
+      flex-direction: row;
+      transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+      width: 100%;
+      min-height: 0;
+    }
+    
+    .screen {
+      min-width: 100vw;
+      width: 100vw;
+      padding: 1.5rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      flex-shrink: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      box-sizing: border-box;
+    }
+    
+    /* DEBUG: Colored backgrounds */
+    #screen1 { background: #F8FAFC; }
+    #screen2 { background: #FEF3C7; }
+    #screen3 { background: #DBEAFE; }
+    #screen4 { background: #D1FAE5; }
+    #screen5 { background: #FCE7F3; }
+    #screen6 { background: #E0E7FF; }
+    
+    .screen-content {
+      width: 100%;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+    
+    /* Footer */
+    .onboarding-footer {
+      padding: 1.5rem 1.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      align-items: center;
+    }
+    
+    /* Progress Dots */
+    .progress-dots {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #CBD5E1;
+      transition: all 0.3s;
+    }
+    
+    .dot.active {
+      background: var(--brand-yellow);
+      width: 24px;
+      border-radius: 4px;
+    }
+    
+    /* Buttons */
+    .btn-primary {
+      width: 100%;
+      max-width: 400px;
+      padding: 0.875rem 1.5rem;
+      background: var(--brand-yellow);
+      color: var(--text-primary);
+      border: none;
+      border-radius: var(--radius);
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+    
+    .btn-primary:hover {
+      background: var(--brand-yellow-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+    
+    .btn-secondary {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 0.5rem;
+      transition: color 0.2s;
+    }
+    
+    .btn-secondary:hover {
+      color: var(--text-primary);
+    }
+    
+    /* Typography */
+    h1 {
+      font-size: 36px;
+      font-weight: 700;
+      line-height: 1.25;
+      margin-bottom: 0.75rem;
+    }
+    
+    h2 {
+      font-size: 30px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin-bottom: 0.75rem;
+    }
+    
+    h3 {
+      font-size: 24px;
+      font-weight: 600;
+      line-height: 1.35;
+      margin-bottom: 0.75rem;
+    }
+    
+    .subtitle {
+      font-size: 18px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+    }
+    
+    .description {
+      font-size: 16px;
+      line-height: 1.5;
+      color: var(--text-secondary);
+      margin: 0.5rem 0 0;
+      max-width: 500px;
+    }
+    
+    /* Screen 1: Welcome */
+    .welcome-icon {
+      width: 80px;
+      height: 80px;
+      background: var(--brand-yellow);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 8px 16px rgba(253, 176, 34, 0.3);
+    }
+    
+    .value-props {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin: 1.5rem 0 0;
+      width: 100%;
+      max-width: 400px;
+    }
+    
+    .value-prop {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      background: white;
+      border-radius: var(--radius);
+      text-align: left;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    
+    .value-prop-icon {
+      width: 40px;
+      height: 40px;
+      min-width: 40px;
+      background: linear-gradient(135deg, #FDB022 0%, #F59E0B 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+    
+    .value-prop-text {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    
+    /* Mockup Containers */
+    .mockup-container {
+      width: 100%;
+      max-width: 500px;
+      margin: 1rem 0 0.5rem;
+      background: white;
+      border-radius: calc(var(--radius) * 2);
+      padding: 1.25rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+    
+    /* Trader Card Mockup */
+    .mockup-trader-card {
+      background: white;
+      border: 1px solid #E2E8F0;
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      position: relative;
+    }
+    
+    .trader-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    
+    .trader-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #FDB022 0%, #F59E0B 100%);
+    }
+    
+    .trader-info {
+      flex: 1;
+      text-align: left;
+    }
+    
+    .trader-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.25rem;
+    }
+    
+    .trader-stats {
+      display: flex;
+      gap: 1rem;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+    
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    
+    .stat.positive {
+      color: var(--profit-green);
+      font-weight: 600;
+    }
+    
+    .follow-btn {
+      position: relative;
+      background: var(--brand-yellow);
+      border: none;
+      padding: 0.625rem 1.25rem;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      cursor: pointer;
+      margin-top: 1rem;
+      width: 100%;
+    }
+    
+    .animated-cursor {
+      position: absolute;
+      top: -30px;
+      right: 50%;
+      transform: translateX(50%);
+      font-size: 32px;
+      animation: pointAndClick 2s ease-in-out infinite;
+    }
+    
+    @keyframes pointAndClick {
+      0%, 100% { transform: translateX(50%) translateY(0); }
+      50% { transform: translateX(50%) translateY(-5px); }
+    }
+    
+    /* Trade Card Mockup */
+    .mockup-trade-card {
+      background: white;
+      border: 1px solid #E2E8F0;
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      text-align: left;
+    }
+    
+    .trade-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid #E2E8F0;
+    }
+    
+    .market-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+    }
+    
+    .trade-info {
+      flex: 1;
+    }
+    
+    .market-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.25rem;
+    }
+    
+    .trader-tag {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    
+    .trade-details {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    
+    .trade-detail {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    
+    .detail-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+    }
+    
+    .detail-value {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    
+    .detail-value.buy {
+      color: var(--profit-green);
+    }
+    
+    .live-score {
+      background: #F0F9FF;
+      border: 1px solid #BAE6FD;
+      border-radius: 6px;
+      padding: 0.625rem;
+      margin-bottom: 1rem;
+      font-size: 13px;
+      color: #0369A1;
+      font-weight: 500;
+    }
+    
+    .copy-btn {
+      background: var(--brand-yellow);
+      border: none;
+      padding: 0.75rem;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      width: 100%;
+      cursor: pointer;
+    }
+    
+    /* Profile Mockup */
+    .mockup-profile {
+      background: white;
+      border: 1px solid #E2E8F0;
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      text-align: left;
+    }
+    
+    .profile-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid #E2E8F0;
+    }
+    
+    .profile-avatar {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #FDB022 0%, #F59E0B 100%);
+    }
+    
+    .profile-name {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    
+    .stat-card {
+      background: #F8FAFC;
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--profit-green);
+      margin-bottom: 0.25rem;
+    }
+    
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    /* Premium Features */
+    .premium-badge {
+      display: inline-block;
+      background: linear-gradient(135deg, #FDB022 0%, #F59E0B 100%);
+      color: var(--text-primary);
+      padding: 0.5rem 1rem;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+    
+    .features-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin: 1.5rem 0 0;
+      width: 100%;
+      max-width: 400px;
+    }
+    
+    .feature-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 1rem;
+      background: white;
+      border-radius: var(--radius);
+      text-align: left;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    
+    .feature-icon {
+      width: 24px;
+      height: 24px;
+      min-width: 24px;
+      background: var(--profit-green);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 14px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    
+    .feature-text {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    
+    /* Success Screen */
+    .success-icon {
+      width: 100px;
+      height: 100px;
+      background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 56px;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3);
+      animation: successPop 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+    
+    @keyframes successPop {
+      0% { transform: scale(0); }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+    
+    /* Responsive */
+    @media (max-width: 640px) {
+      h1 { font-size: 26px; margin-bottom: 0.5rem; }
+      h2 { font-size: 22px; margin-bottom: 0.5rem; }
+      h3 { font-size: 20px; }
+      .subtitle { font-size: 15px; margin-bottom: 0.5rem; }
+      .description { font-size: 14px; }
+      
+      .onboarding-header {
+        padding: 0.75rem 1rem;
+      }
+      
+      .screen {
+        padding: 1rem 1rem;
+      }
+      
+      .onboarding-footer {
+        padding: 1rem 1rem 1.5rem;
+      }
+      
+      .welcome-icon {
+        width: 56px;
+        height: 56px;
+        font-size: 32px;
+        margin-bottom: 1rem;
+      }
+      
+      .success-icon {
+        width: 72px;
+        height: 72px;
+        font-size: 40px;
+        margin-bottom: 1rem;
+      }
+      
+      .mockup-container {
+        padding: 1rem;
+        margin: 0.75rem 0 0;
+      }
+      
+      .value-prop {
+        padding: 0.75rem;
+      }
+      
+      .feature-item {
+        padding: 0.75rem;
+      }
+      
+      .value-props {
+        gap: 0.625rem;
+        margin: 1rem 0 0;
+      }
+      
+      .features-list {
+        gap: 0.625rem;
+        margin: 1rem 0 0;
+      }
+    }
+    
+    /* Highlight Animation */
+    .highlight-pulse {
+      animation: pulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(253, 176, 34, 0.4); }
+      50% { box-shadow: 0 0 0 8px rgba(253, 176, 34, 0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="onboarding-container">
+    <!-- Header -->
+    <div class="onboarding-header">
+      <button class="skip-btn" onclick="handleSkip()">Skip</button>
+    </div>
+    
+    <!-- Screens -->
+    <div class="screens-container" id="screensContainer">
+      <!-- Screen 1: Welcome -->
+      <div class="screen active" id="screen1">
+        <div class="screen-content">
+          <div class="welcome-icon">📊</div>
+          <h1>Welcome to Polycopy</h1>
+          <p class="subtitle">Copy trades from top Polymarket traders</p>
+          
+          <div class="value-props">
+            <div class="value-prop">
+              <div class="value-prop-icon">👥</div>
+              <div class="value-prop-text">Follow proven traders</div>
+            </div>
+            <div class="value-prop">
+              <div class="value-prop-icon">📈</div>
+              <div class="value-prop-text">Copy winning trades</div>
+            </div>
+            <div class="value-prop">
+              <div class="value-prop-icon">📊</div>
+              <div class="value-prop-text">Track your performance</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Screen 2: Follow Traders -->
+      <div class="screen" id="screen2">
+        <div class="screen-content">
+          <p style="font-size: 48px; color: red; font-weight: bold;">SCREEN 2</p>
+          <h2>Step 1: Follow Top Traders</h2>
+          <p class="description">Browse our leaderboard and follow traders you trust</p>
+          
+          <div class="mockup-container">
+            <div class="mockup-trader-card">
+              <div class="trader-header">
+                <div class="trader-avatar"></div>
+                <div class="trader-info">
+                  <div class="trader-name">ProTrader</div>
+                  <div class="trader-stats">
+                    <span class="stat positive">+45% ROI</span>
+                    <span class="stat">123 Trades</span>
+                  </div>
+                </div>
+              </div>
+              <button class="follow-btn">
+                <span class="animated-cursor">👆</span>
+                Follow
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Screen 3: Copy Trades -->
+      <div class="screen" id="screen3">
+        <div class="screen-content">
+          <p style="font-size: 48px; color: red; font-weight: bold;">SCREEN 3</p>
+          <h2>Step 2: Copy Their Trades</h2>
+          <p class="description">See trades in your feed and copy the ones you like</p>
+          
+          <div class="mockup-container">
+            <div class="mockup-trade-card">
+              <div class="trade-header">
+                <div class="market-avatar"></div>
+                <div class="trade-info">
+                  <div class="market-name">Lakers to win vs Celtics</div>
+                  <div class="trader-tag">by ProTrader</div>
+                </div>
+              </div>
+              
+              <div class="live-score">🏀 Live: Lakers 85 - 82 Celtics (Q3)</div>
+              
+              <div class="trade-details">
+                <div class="trade-detail">
+                  <span class="detail-label">Action</span>
+                  <span class="detail-value buy">Buy Yes</span>
+                </div>
+                <div class="trade-detail">
+                  <span class="detail-label">Price</span>
+                  <span class="detail-value">$0.65</span>
+                </div>
+                <div class="trade-detail">
+                  <span class="detail-label">Size</span>
+                  <span class="detail-value">$100</span>
+                </div>
+                <div class="trade-detail">
+                  <span class="detail-label">Current Price</span>
+                  <span class="detail-value">$0.68</span>
+                </div>
+              </div>
+              
+              <button class="copy-btn highlight-pulse">Manual Copy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Screen 4: Track Performance -->
+      <div class="screen" id="screen4">
+        <div class="screen-content">
+          <p style="font-size: 48px; color: red; font-weight: bold;">SCREEN 4</p>
+          <h2>Step 3: Track Your Performance</h2>
+          <p class="description">Monitor all your copied trades in one place</p>
+          
+          <div class="mockup-container">
+            <div class="mockup-profile">
+              <div class="profile-header">
+                <div class="profile-avatar"></div>
+                <div class="profile-name">Your Profile</div>
+              </div>
+              
+              <div class="stats-grid">
+                <div class="stat-card">
+                  <div class="stat-value">+32%</div>
+                  <div class="stat-label">ROI</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value">15</div>
+                  <div class="stat-label">Trades Copied</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value">73%</div>
+                  <div class="stat-label">Win Rate</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value">$1,250</div>
+                  <div class="stat-label">Profit</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Screen 5: Premium Upsell -->
+      <div class="screen" id="screen5">
+        <div class="screen-content">
+          <p style="font-size: 48px; color: red; font-weight: bold;">SCREEN 5</p>
+          <span class="premium-badge">⭐ PREMIUM</span>
+          <h2>Want More?</h2>
+          <p class="subtitle">Upgrade to Polycopy Premium</p>
+          
+          <div class="features-list">
+            <div class="feature-item">
+              <div class="feature-icon">✓</div>
+              <div class="feature-text">Auto-copy trades (no manual execution)</div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">✓</div>
+              <div class="feature-text">Real-time notifications</div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">✓</div>
+              <div class="feature-text">Advanced analytics & insights</div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">✓</div>
+              <div class="feature-text">Priority support</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Screen 6: Final CTA -->
+      <div class="screen" id="screen6">
+        <div class="screen-content">
+          <p style="font-size: 48px; color: red; font-weight: bold;">SCREEN 6</p>
+          <div class="success-icon">🎉</div>
+          <h1>You're All Set!</h1>
+          <p class="subtitle">Ready to start copying trades?</p>
+          <p class="description">Follow some traders on the Discover page to see their trades in your feed</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Footer -->
+    <div class="onboarding-footer">
+      <div class="progress-dots" id="progressDots">
+        <div class="dot active"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
+      
+      <button class="btn-primary" id="primaryBtn" onclick="handleNext()">
+        Get Started
+      </button>
+      
+      <button class="btn-secondary" id="secondaryBtn" style="display: none;" onclick="handleSecondary()">
+        Maybe Later
+      </button>
+    </div>
+  </div>
+  
+  <script>
+    let currentScreen = 1;
+    const totalScreens = 6;
+    
+    function updateScreen() {
+      // Update screen visibility
+      const screens = document.querySelectorAll('.screen');
+      screens.forEach((screen, index) => {
+        screen.classList.remove('active');
+        if (index + 1 === currentScreen) {
+          screen.classList.add('active');
+        }
+      });
+      
+      // Update progress dots
+      const dots = document.querySelectorAll('.dot');
+      dots.forEach((dot, index) => {
+        dot.classList.remove('active');
+        if (index + 1 === currentScreen) {
+          dot.classList.add('active');
+        }
+      });
+      
+      // Transform the container
+      const container = document.getElementById('screensContainer');
+      const offset = (currentScreen - 1) * window.innerWidth;
+      container.style.transform = `translateX(-${offset}px)`;
+      
+      // Update button text and visibility
+      const primaryBtn = document.getElementById('primaryBtn');
+      const secondaryBtn = document.getElementById('secondaryBtn');
+      
+      if (currentScreen === 5) {
+        // Premium screen
+        primaryBtn.textContent = 'Get Premium';
+        secondaryBtn.style.display = 'block';
+      } else if (currentScreen === 6) {
+        // Final screen
+        primaryBtn.textContent = 'Explore Traders';
+        secondaryBtn.style.display = 'none';
+      } else if (currentScreen === 1) {
+        primaryBtn.textContent = 'Get Started';
+        secondaryBtn.style.display = 'none';
+      } else {
+        primaryBtn.textContent = 'Next';
+        secondaryBtn.style.display = 'none';
+      }
+    }
+    
+    function handleNext() {
+      if (currentScreen === 5) {
+        // Get Premium button clicked
+        alert('This would open the Premium upgrade modal');
+        return;
+      }
+      
+      if (currentScreen < totalScreens) {
+        currentScreen++;
+        updateScreen();
+      } else {
+        // Final screen - go to discover page
+        handleComplete();
+      }
+    }
+    
+    function handleSecondary() {
+      // "Maybe Later" on premium screen
+      if (currentScreen === 5) {
+        currentScreen++;
+        updateScreen();
+      }
+    }
+    
+    function handleSkip() {
+      if (confirm('Are you sure you want to skip the onboarding?')) {
+        handleComplete();
+      }
+    }
+    
+    function handleComplete() {
+      alert('Onboarding complete! This would redirect to the Discover page.');
+      // In production: window.location.href = '/discover';
+    }
+    
+    // Swipe support for mobile
+    let touchStartX = 0;
+    let touchEndX = 0;
+    
+    const container = document.getElementById('screensContainer');
+    
+    container.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+    
+    container.addEventListener('touchend', (e) => {
+      touchEndX = e.changedTouches[0].screenX;
+      handleSwipe();
+    }, { passive: true });
+    
+    function handleSwipe() {
+      const swipeThreshold = 50;
+      const diff = touchStartX - touchEndX;
+      
+      if (Math.abs(diff) > swipeThreshold) {
+        if (diff > 0 && currentScreen < totalScreens) {
+          // Swipe left - next
+          handleNext();
+        } else if (diff < 0 && currentScreen > 1) {
+          // Swipe right - previous
+          currentScreen--;
+          updateScreen();
+        }
+      }
+    }
+    
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'Enter') {
+        handleNext();
+      } else if (e.key === 'ArrowLeft' && currentScreen > 1) {
+        currentScreen--;
+        updateScreen();
+      }
+    });
+    
+    // Initialize
+    updateScreen();
+  </script>
+</body>
+</html>

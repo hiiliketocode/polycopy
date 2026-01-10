@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
+import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -15,10 +16,6 @@ const supabaseAdmin = createSupabaseAdminClient(SUPABASE_URL, SUPABASE_SERVICE_R
     persistSession: false,
   },
 })
-
-const DEV_BYPASS_AUTH =
-  process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
-  Boolean(process.env.TURNKEY_DEV_BYPASS_USER_ID)
 
 export const dynamic = 'force-dynamic'
 
@@ -44,22 +41,12 @@ const normalizeAddress = (value: string | null | undefined) => {
 }
 
 export async function GET() {
-  let authError: Error | null = null
-  let userId: string | null = null
-
-  const supabase = await createClient()
-  const { data: { user }, error } = await supabase.auth.getUser()
-  authError = error ?? null
-  userId = user?.id ?? null
-
-  if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
-    userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
-    console.log('[POLY-LINK-STATUS] DEV bypass using user id:', userId)
-  }
+  // Use centralized secure auth utility
+  const userId = await getAuthenticatedUserId()
 
   if (!userId) {
     return NextResponse.json(
-      { error: 'Unauthorized - please log in', details: authError?.message },
+      { error: 'Unauthorized - please log in' },
       { status: 401, headers: { 'Cache-Control': 'no-store' } }
     )
   }

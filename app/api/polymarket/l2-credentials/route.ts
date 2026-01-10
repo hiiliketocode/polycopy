@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit'
 import {
   TURNKEY_ENABLED,
   CLOB_ENCRYPTION_KEY,
@@ -17,8 +19,28 @@ import { verifyTypedData } from 'ethers/lib/utils'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// Dev bypass for local testing
-const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development' && process.env.TURNKEY_DEV_BYPASS_USER_ID
+/**
+ * SECURITY: Service Role Usage - L2 CREDENTIALS STORAGE
+ * 
+ * Why service role is required:
+ * - Stores encrypted API credentials in `clob_credentials` table
+ * - Credentials include API key, secret, passphrase (encrypted)
+ * - Table may have restrictive RLS to prevent credential theft
+ * - Service role ensures storage succeeds regardless of RLS changes
+ * 
+ * Security measures:
+ * - ✅ User authenticated before ANY operations
+ * - ✅ Rate limited (CRITICAL tier - 10 req/min)
+ * - ✅ Credentials encrypted with AES-256-CBC before storage
+ * - ✅ Only stores authenticated user's own credentials
+ * - ✅ Validates Turnkey signatures before credential generation
+ * 
+ * RLS policies bypassed:
+ * - clob_credentials (storing user's own encrypted credentials)
+ * 
+ * Reviewed: January 10, 2025
+ * Status: JUSTIFIED (credential storage with encryption, user's own data)
+ */
 
 // Service role client for DB operations
 const supabaseServiceRole = createServiceClient(
@@ -138,38 +160,26 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Authenticate user
-    let userId: string | null = null
-    let authError: Error | null = null
-
-    const supabase = await createClient()
-    const { data: { user }, error } = await supabase.auth.getUser()
-    authError = error ?? null
-    userId = user?.id ?? null
-
-    // Allow dev bypass
-    const devOverrideUserId =
-      DEV_BYPASS_AUTH ? request.headers.get('x-dev-user-id')?.trim() : null
-    if (!userId && devOverrideUserId) {
-      userId = devOverrideUserId
-    }
-    if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
-      userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
-    }
+    // Authenticate user using centralized secure utility
+    const userId = await getAuthenticatedUserId(request)
 
     if (!userId) {
-      console.error('[POLY-CLOB] Auth failed:', authError?.message)
+      console.error('[POLY-CLOB] Auth failed: No user ID')
       return NextResponse.json(
-        { error: 'Unauthorized - please log in', details: authError?.message },
+        { error: 'Unauthorized - please log in' },
         { status: 401 }
       )
+    }
+
+    // SECURITY: Rate limit L2 credential operations (CRITICAL tier)
+    const rateLimitResult = await checkRateLimit(request, 'CRITICAL', userId, 'ip-user')
+    if (!rateLimitResult.success) {
+      return rateLimitedResponse(rateLimitResult)
     }
 
     const url = new URL(request.url)
     const dryRun = url.searchParams.get('dryRun') === '1'
     let force = url.searchParams.get('force') === '1'
-    const devForceHeader =
-      DEV_BYPASS_AUTH && request.headers.get('x-dev-force')?.toLowerCase() === 'true'
 
     let requestBody: L2CredentialsRequestBody & { force?: boolean } = {}
     try {
@@ -178,9 +188,6 @@ export async function POST(request: NextRequest) {
       requestBody = {}
     }
     if (!force && requestBody?.force) {
-      force = true
-    }
-    if (!force && devForceHeader) {
       force = true
     }
 

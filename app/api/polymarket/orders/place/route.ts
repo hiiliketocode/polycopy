@@ -11,10 +11,17 @@ import { sanitizeError } from '@/lib/http/sanitize-error'
 import { logError, logInfo, makeRequestId, sanitizeForLogging } from '@/lib/logging/logger'
 import { resolveOrdersTableName } from '@/lib/orders/table'
 import { adjustSizeForImpliedAmount, roundDownToStep } from '@/lib/polymarket/sizing'
+import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit'
+import {
+  validateMarketId,
+  validatePositiveNumber,
+  validateOrderSide,
+  validateOrderType,
+  sanitizeString,
+  validateBatch,
+} from '@/lib/validation/input'
 
-const DEV_BYPASS_AUTH =
-  process.env.TURNKEY_DEV_ALLOW_UNAUTH === 'true' &&
-  Boolean(process.env.TURNKEY_DEV_BYPASS_USER_ID)
 
 const HANDLER_FINGERPRINT = 'app/api/polymarket/orders/place/route.ts'
 
@@ -108,6 +115,33 @@ async function fetchMarketTickSize(clobBaseUrl: string, tokenId: string) {
 }
 
 
+/**
+ * SECURITY: Service Role Usage - ORDER PLACEMENT LOGGING
+ * 
+ * Why service role is required:
+ * - Inserts into `order_events_log` table (system audit log)
+ * - Inserts into `orders` table with copy trade metadata
+ * - These tables may have RLS policies that restrict user access
+ * - Logging must succeed even if RLS would block it
+ * 
+ * Security measures:
+ * - ✅ User authenticated before ANY database operations
+ * - ✅ Rate limited (CRITICAL tier - 10 req/min)
+ * - ✅ Only operates on authenticated user's data
+ * - ✅ Does not expose other users' data
+ * 
+ * RLS policies bypassed:
+ * - order_events_log (system audit log - no user RLS)
+ * - orders table (user placing their own order)
+ * - clob_credentials (reading user's own credentials)
+ * 
+ * Alternative considered:
+ * Could potentially use authenticated client, but service role ensures
+ * logging succeeds even if RLS policies change. Critical for audit trail.
+ * 
+ * Reviewed: January 10, 2025
+ * Status: JUSTIFIED (audit logging, user's own data only)
+ */
 function createServiceRoleClient() {
   return createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -311,26 +345,23 @@ async function persistCopiedTraderMetadata({
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
-
-  let userId: string | null = user?.id ?? null
-  if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
-    userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
-  }
+  // Use centralized secure auth utility
+  const userId = await getAuthenticatedUserId(request)
 
   if (!userId) {
     return respondWithMetadata(
       {
         error: 'Unauthorized - please log in',
-        details: authError?.message,
         source: 'local_guard',
       },
       401
     )
+  }
+
+  // SECURITY: Rate limit order placement (CRITICAL tier - prevents fund drainage)
+  const rateLimitResult = await checkRateLimit(request, 'CRITICAL', userId, 'ip-user')
+  if (!rateLimitResult.success) {
+    return rateLimitedResponse(rateLimitResult)
   }
 
   const body: Body = await request.json()
@@ -345,45 +376,67 @@ export async function POST(request: NextRequest) {
     copiedTraderId,
     copiedTraderWallet,
     copiedTraderUsername,
-  marketId,
-  marketTitle,
-  marketSlug,
-  marketAvatarUrl,
-  outcome,
-  autoCloseOnTraderClose,
-  autoClose,
-  slippagePercent,
-  orderIntentId,
-  conditionId,
-  inputMode,
-  usdInput,
-  contractsInput,
-  autoCorrectApplied,
-  bestBid,
-  bestAsk,
-  minOrderSize,
-} = body
+    marketId,
+    marketTitle,
+    marketSlug,
+    marketAvatarUrl,
+    outcome,
+    autoCloseOnTraderClose,
+    autoClose,
+    slippagePercent,
+    orderIntentId,
+    conditionId,
+    inputMode,
+    usdInput,
+    contractsInput,
+    autoCorrectApplied,
+    bestBid,
+    bestAsk,
+    minOrderSize,
+  } = body
 
-  const requestId = request.headers.get('x-request-id') ?? makeRequestId()
-  const serviceRole = createServiceRoleClient()
-  const resolvedOrderIntentId =
-    normalizeOptionalString(orderIntentId) ?? makeRequestId()
-  const normalizedConditionId =
-    normalizeOptionalString(conditionId ?? marketId) ?? null
-  const resolvedInputMode = normalizeLogInputMode(inputMode)
-  const resolvedUsdInput = normalizeNumber(usdInput)
-  const resolvedContractsInput = normalizeNumber(contractsInput)
-  const normalizedBestBid = normalizeNumber(bestBid)
-  const normalizedBestAsk = normalizeNumber(bestAsk)
-  const resolvedMinOrderSize = normalizeNumber(minOrderSize)
-  const normalizedTokenId = normalizeOptionalString(tokenId)
-  const normalizedOutcomeValue = normalizeOptionalString(outcome)
-  const sideLower = side ? side.toLowerCase() : null
-  const resolvedSlippage =
-    typeof slippagePercent === 'number' && Number.isFinite(slippagePercent) && slippagePercent >= 0
-      ? slippagePercent
-      : null
-  const slippageBps = resolvedSlippage !== null ? Math.round(resolvedSlippage * 100) : null
+  // SECURITY: Input validation - prevents injection attacks and invalid data
+  // Validate critical parameters before ANY processing
+  const validationResults = validateBatch([
+    { field: 'tokenId', result: validateMarketId(tokenId) },
+    { field: 'price', result: validatePositiveNumber(price, 'Price', { min: 0.01, max: 0.99 }) },
+    { field: 'amount', result: validatePositiveNumber(amount, 'Amount', { min: 0.01, max: 1000000 }) },
+    { field: 'side', result: validateOrderSide(side) },
+    { field: 'orderType', result: validateOrderType(orderType) },
+  ])
+
+  if (!validationResults.valid) {
+    const firstError = validationResults.errors[0]
+    return respondWithMetadata(
+      {
+        error: `Invalid ${firstError.field}: ${firstError.error}`,
+        source: 'validation',
+        validationErrors: validationResults.errors,
+      },
+      400
+    )
+  }
+
+  // Additional validation for optional fields
+  if (marketId) {
+    const marketIdValidation = validateMarketId(marketId)
+    if (!marketIdValidation.valid) {
+      return respondWithMetadata(
+        { error: marketIdValidation.error, source: 'validation' },
+        400
+      )
+    }
+  }
+
+  if (marketTitle) {
+    const titleValidation = sanitizeString(marketTitle, 200)
+    if (!titleValidation.valid) {
+      return respondWithMetadata(
+        { error: titleValidation.error, source: 'validation' },
+        400
+      )
+    }
+  }
 
   if (!confirm) {
     return respondWithMetadata(
@@ -392,12 +445,12 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (!tokenId || !price || !amount || !side) {
-    return respondWithMetadata(
-      { error: 'tokenId, price, amount, and side are required', source: 'local_guard' },
-      400
-    )
-  }
+  // Use validated values from this point forward
+  const validatedTokenId = validationResults.sanitized.tokenId as string
+  const validatedPrice = validationResults.sanitized.price as number
+  const validatedAmount = validationResults.sanitized.amount as number
+  const validatedSide = validationResults.sanitized.side as 'BUY' | 'SELL'
+  const validatedOrderType = validationResults.sanitized.orderType as 'GTC' | 'FOK' | 'FAK' | 'IOC'
   function sanitizeForResponse(value: unknown): unknown {
     if (value === undefined) return undefined
     if (typeof value !== 'object' || value === null) return value

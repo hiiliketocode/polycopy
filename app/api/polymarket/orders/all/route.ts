@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
 import { ClobClient } from '@polymarket/clob-client'
 import type { Trade, OpenOrderParams } from '@polymarket/clob-client/dist/types'
 import { ApiCredentials } from '@/lib/polymarket/clob'
@@ -9,9 +10,6 @@ import { createHash, createDecipheriv } from 'crypto'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-const DEV_BYPASS_AUTH =
-  process.env.NODE_ENV === 'development' && process.env.TURNKEY_DEV_BYPASS_USER_ID
 
 const supabaseServiceRole = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -122,20 +120,12 @@ function extractOrderIds(trades: Trade[]): Set<string> {
 }
 
 export async function GET(request: NextRequest) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
-
-  let userId: string | null = user?.id ?? null
-  if (!userId && DEV_BYPASS_AUTH && process.env.TURNKEY_DEV_BYPASS_USER_ID) {
-    userId = process.env.TURNKEY_DEV_BYPASS_USER_ID
-  }
+  // Use centralized secure auth utility
+  const userId = await getAuthenticatedUserId(request)
 
   if (!userId) {
     return NextResponse.json(
-      { error: 'Unauthorized - please log in', details: authError?.message },
+      { error: 'Unauthorized - please log in' },
       { status: 401 }
     )
   }
