@@ -1110,19 +1110,23 @@ export default function OnboardingPage() {
               <div className="features-list">
                 <div className="feature-item">
                   <div className="feature-icon">✓</div>
-                  <div className="feature-text">Execute copy trades directly in the Polycopy platform</div>
+                  <div className="feature-text">Execute Polymarket copy trades directly in the Polycopy platform</div>
                 </div>
                 <div className="feature-item">
                   <div className="feature-icon">✓</div>
-                  <div className="feature-text">Set trades to automatically close when the copied trader does.</div>
+                  <div className="feature-text">Set trades to automatically close when the copied trader does</div>
                 </div>
                 <div className="feature-item">
                   <div className="feature-icon">✓</div>
-                  <div className="feature-text">Advanced analytics & insights</div>
+                  <div className="feature-text">Advanced trade features, like limit orders, slippage, and more</div>
                 </div>
                 <div className="feature-item">
                   <div className="feature-icon">✓</div>
-                  <div className="feature-text">Priority support</div>
+                  <div className="feature-text">Copy portfolio performance tracking</div>
+                </div>
+                <div className="feature-item">
+                  <div className="feature-icon">✓</div>
+                  <div className="feature-text">Early access to new features</div>
                 </div>
               </div>
             </div>
