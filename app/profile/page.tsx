@@ -15,7 +15,7 @@ import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { MarkTradeClosed } from '@/components/polycopy/mark-trade-closed';
 import { EditCopiedTrade } from '@/components/polycopy/edit-copied-trade';
-import { OrdersScreen } from '@/app/orders/page';
+import { OrdersScreen } from '@/components/orders/OrdersScreen';
 import {
   Dialog,
   DialogContent,

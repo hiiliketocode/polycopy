@@ -84,7 +84,7 @@ export async function GET(
     const trade = {
       ...tradeRow,
       trader_wallet: tradeRow.copied_trader_wallet ?? tradeRow.trader_wallet,
-      market_title: tradeRow.copied_market_title || tradeRow.market_title,
+      market_title: tradeRow.copied_market_title || '',
     }
     
     // If user manually closed this trade, return existing values without updates
