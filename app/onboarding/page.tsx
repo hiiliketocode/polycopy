@@ -4,11 +4,13 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
+import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [currentScreen, setCurrentScreen] = useState(1);
   const [showSkipModal, setShowSkipModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const totalScreens = 6;
 
   useEffect(() => {
@@ -24,10 +26,12 @@ export default function OnboardingPage() {
 
   const handleNext = () => {
     if (currentScreen === 5) {
-      // Premium screen - could open upgrade modal
-      // For now, just go to next screen
-      setCurrentScreen(currentScreen + 1);
-    } else if (currentScreen < totalScreens) {
+      // Premium screen - open upgrade modal
+      setShowUpgradeModal(true);
+      return;
+    }
+    
+    if (currentScreen < totalScreens) {
       setCurrentScreen(currentScreen + 1);
     } else {
       handleComplete();
@@ -1184,7 +1188,7 @@ export default function OnboardingPage() {
           </button>
           
           {currentScreen === 5 && (
-            <button className="btn-secondary" onClick={handleNext}>
+            <button className="btn-secondary" onClick={() => setCurrentScreen(6)}>
               Maybe Later
             </button>
           )}
@@ -1208,6 +1212,12 @@ export default function OnboardingPage() {
           </div>
         </div>
       )}
+      
+      {/* Upgrade Modal */}
+      <UpgradeModal 
+        open={showUpgradeModal} 
+        onOpenChange={setShowUpgradeModal}
+      />
     </>
   );
 }
