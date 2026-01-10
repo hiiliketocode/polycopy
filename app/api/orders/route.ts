@@ -934,23 +934,32 @@ function getMarketTitle(
   cache?: MarketCacheRow | undefined,
   metadata?: MarketMetadata
 ) {
+  // Prioritize metadata and cache over copied_market_title to avoid showing trader names
   if (metadata?.question) return metadata.question
   const cachedTitle = cache?.title
   if (cachedTitle) return cachedTitle
 
+  // Get raw market data from order
+  const rawMarket = order.raw?.market ?? order.raw
+  const rawMarketTitle =
+    rawMarket?.title ||
+    rawMarket?.market_title ||
+    rawMarket?.name ||
+    rawMarket?.question ||
+    null
+
+  // Use raw market title if available
+  if (rawMarketTitle && typeof rawMarketTitle === 'string' && rawMarketTitle.trim()) {
+    return rawMarketTitle.trim()
+  }
+
+  // Only use copied_market_title as last resort
   const copiedMarketTitle =
     typeof order?.copied_market_title === 'string' && order.copied_market_title.trim()
       ? order.copied_market_title.trim()
       : null
 
-  const rawMarket = order.raw?.market ?? order.raw
-  const fallbackTitle =
-    copiedMarketTitle ??
-    (rawMarket?.title ||
-      rawMarket?.market_title ||
-      rawMarket?.name ||
-      rawMarket?.market ||
-      marketId)
+  const fallbackTitle = copiedMarketTitle ?? rawMarket?.market ?? marketId
 
   return fallbackTitle || 'unknown market'
 }

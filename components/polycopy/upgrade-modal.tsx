@@ -1,8 +1,8 @@
 "use client"
 
-import { Check, Crown } from "lucide-react"
+import { Crown, TrendingUp, Zap, Shield, LineChart, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { useUpgrade } from "@/hooks/useUpgrade"
 
 interface UpgradeModalProps {
@@ -19,70 +19,119 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
   }
 
   const premiumFeatures = [
-    "Automatically copy trades in Polycopy using your Polymarket wallet",
-    "Advanced trade features, like limit orders, slippage, and more",
-    "Receive copied trade status alerts via WhatsApp",
-    "Copy portfolio performance tracking",
-    "Early access to new features",
+    {
+      icon: TrendingUp,
+      title: "Execute trades directly",
+      description: "Copy trades in seconds with pre-filled slippage"
+    },
+    {
+      icon: Zap,
+      title: "Auto-close positions",
+      description: "Set trades to close when copied trader exits"
+    },
+    {
+      icon: Shield,
+      title: "Advanced trade controls",
+      description: "Limit orders, custom slippage, and more"
+    },
+    {
+      icon: LineChart,
+      title: "Portfolio tracking",
+      description: "Monitor your copy trading performance"
+    },
+    {
+      icon: Sparkles,
+      title: "Early access",
+      description: "Get new features before everyone else"
+    }
   ]
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[520px] p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col">
-          <DialogHeader className="relative bg-gradient-to-br from-yellow-400 via-amber-400 to-yellow-500 p-6 pb-5 text-white flex-shrink-0">
-            <div className="flex items-center gap-3 mb-1.5">
-              <div className="bg-white/20 backdrop-blur-sm rounded-full p-2">
-                <Crown className="h-5 w-5 text-white" />
-              </div>
-              <DialogTitle className="text-xl font-bold text-white">Upgrade to Premium</DialogTitle>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[480px] p-0 gap-0 overflow-hidden border-0 bg-gradient-to-b from-white to-slate-50 max-h-[90vh]">
+        <div className="p-5 pb-4 overflow-y-auto">
+          {/* Header */}
+          <div className="text-center mb-4">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-500 mb-2 shadow-lg">
+              <Crown className="h-6 w-6 text-white" />
             </div>
-            <p className="text-yellow-50 text-sm">Unlock powerful features to maximize your trading success</p>
-          </DialogHeader>
+            <h2 className="text-xl font-bold text-slate-900 mb-1">
+              Unlock All Features
+            </h2>
+            <p className="text-slate-600 text-sm">
+              The complete trading toolkit for serious Polymarket traders
+            </p>
+          </div>
 
-          <div className="p-6 space-y-5 overflow-y-auto">
-            {/* Pricing */}
-            <div className="bg-gradient-to-br from-slate-50 to-white border-2 border-yellow-400 rounded-xl p-5">
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-3xl font-bold text-slate-900">$20</span>
-                <span className="text-base text-slate-600">/month</span>
-              </div>
-              <p className="text-sm text-slate-500">Billed monthly, cancel anytime</p>
+          {/* Pricing Card */}
+          <div className="relative bg-white rounded-xl p-4 mb-4 shadow-xl overflow-hidden">
+            {/* Gradient border effect */}
+            <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-yellow-400 via-amber-500 to-yellow-500 opacity-100" style={{ padding: '2px' }}>
+              <div className="h-full w-full bg-white rounded-xl"></div>
             </div>
+            
+            {/* Content */}
+            <div className="relative z-10">
+              <div className="text-center">
+                <div className="flex items-baseline justify-center gap-2 mb-1">
+                  <span className="text-4xl font-bold text-slate-900">$20</span>
+                  <span className="text-base text-slate-600 font-medium">/month</span>
+                </div>
+                <p className="text-xs text-slate-600">
+                  Billed monthly • Cancel anytime
+                </p>
+              </div>
 
-            {/* Features List */}
-            <div className="space-y-2.5">
-              <h3 className="font-semibold text-slate-900 text-sm uppercase tracking-wide">What's Included</h3>
-              <div className="grid grid-cols-1 gap-2">
-                {premiumFeatures.map((feature, index) => (
-                  <div key={index} className="flex items-center gap-2.5">
-                    <div className="flex-shrink-0 bg-emerald-100 rounded-full p-0.5">
-                      <Check className="h-4 w-4 text-emerald-700" />
+              {/* Features in Card */}
+              <div className="mt-4 rounded-lg p-3 space-y-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                  This plan includes:
+                </p>
+                {premiumFeatures.map((feature, index) => {
+                  const Icon = feature.icon
+                  return (
+                    <div key={index} className="flex items-start gap-2.5">
+                      <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-gradient-to-br from-yellow-100 to-amber-100 flex items-center justify-center">
+                        <Icon className="h-3.5 w-3.5 text-amber-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-900 leading-tight">
+                          {feature.title}
+                        </p>
+                        <p className="text-xs text-slate-600 mt-0.5 leading-snug">
+                          {feature.description}
+                        </p>
+                      </div>
                     </div>
-                    <span className="text-sm text-slate-700">{feature}</span>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
-            </div>
-
-            {/* CTA Button */}
-            <Button
-              onClick={handleUpgrade}
-              disabled={loading}
-              className="w-full h-11 bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white font-bold text-base shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Crown className="h-5 w-5 mr-2" />
-              {loading ? "Loading..." : "Upgrade Now"}
-            </Button>
-
-            {/* Trust indicators */}
-            <div className="pt-1 text-center space-y-0.5">
-              <p className="text-xs text-slate-500">🔒 Secure payment • Cancel anytime</p>
-              <p className="text-xs text-slate-400">Join 1,000+ premium traders</p>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
-    </>
+
+          {/* CTA Button */}
+          <Button
+            onClick={handleUpgrade}
+            disabled={loading}
+            className="w-full h-11 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 hover:from-yellow-500 hover:via-amber-600 hover:to-yellow-600 text-slate-900 font-bold text-base shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed rounded-xl"
+          >
+            {loading ? (
+              "Loading..."
+            ) : (
+              <>
+                <Crown className="h-5 w-5 mr-2" />
+                Upgrade Now
+              </>
+            )}
+          </Button>
+
+          {/* Trust indicators */}
+          <div className="mt-3 text-center space-y-0.5">
+            <p className="text-xs text-slate-500">🔒 Secure payment • Cancel anytime</p>
+            <p className="text-xs text-slate-400">Join 1,000+ premium traders</p>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

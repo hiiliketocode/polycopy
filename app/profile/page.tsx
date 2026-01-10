@@ -1078,14 +1078,17 @@ function ProfilePageContent() {
                   )}
 
                   {!profile?.trading_wallet_address && (
-                    <div className="flex items-center gap-2 text-sm text-slate-600 justify-center lg:justify-start mt-2">
+                    <Link 
+                      href="/following"
+                      className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 justify-center lg:justify-start mt-2 transition-colors"
+                    >
                       <Avatar className="h-9 w-9 ring-2 ring-slate-100">
                         <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-xs font-semibold">
                           {user?.email?.charAt(0).toUpperCase() || 'U'}
                         </AvatarFallback>
                       </Avatar>
                       <span>Following {followingCount} traders</span>
-                    </div>
+                    </Link>
                   )}
 
                   {!profile?.trading_wallet_address && hasPremiumAccess && (
