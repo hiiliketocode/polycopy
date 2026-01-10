@@ -754,7 +754,7 @@ export async function POST(request: NextRequest) {
         await persistCopiedTraderMetadata({
           userId,
           orderId,
-          tokenId,
+          tokenId: validatedTokenId,
           price: roundedPrice,
           amount: adjustedAmount,
           amountInvested,
