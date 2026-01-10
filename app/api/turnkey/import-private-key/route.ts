@@ -210,9 +210,6 @@ export async function POST(request: NextRequest) {
   try {
     const importClient = getImportClient()
 
-    // Authenticate user
-    const authHeader = request.headers.get('authorization')
-    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
     // Use centralized secure auth utility
     // This endpoint supports both Bearer token and cookie-based auth
     let userId: string | null = null
