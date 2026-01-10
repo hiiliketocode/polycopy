@@ -612,7 +612,7 @@ export async function POST(request: NextRequest) {
     })
 
     const order = await client.createOrder(
-      { tokenID: tokenId, price: roundedPrice, size: adjustedAmount, side: side as any },
+      { tokenID: validatedTokenId, price: roundedPrice, size: adjustedAmount, side: side as any },
       { signatureType } as any
     )
 
