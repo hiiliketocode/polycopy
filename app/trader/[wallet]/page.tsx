@@ -1408,7 +1408,6 @@ export default function TraderProfilePage({
                               <Button
                                 type="button"
                                 onClick={() => handleManualCopyToggle(index, polymarketUrl)}
-                                disabled={trade.status === 'Trader Closed' || trade.status === 'Bonded'}
                                 className="w-full flex items-center justify-center gap-2 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm text-sm"
                               >
                                 Manual Copy
