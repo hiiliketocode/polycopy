@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
 import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit/index'
@@ -25,7 +25,7 @@ function formatUsdcFromRaw(raw: string | null) {
   return `${unitsLabel}.${centsLabel} USDC`
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   // Use centralized secure auth utility
   const userId = await getAuthenticatedUserId()
 
