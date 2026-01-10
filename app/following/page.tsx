@@ -53,6 +53,7 @@ function FollowingPageContent() {
   const [traders, setTraders] = useState<Trader[]>([]);
   const [loadingTraders, setLoadingTraders] = useState(true);
   const [followedWallets, setFollowedWallets] = useState<Set<string>>(new Set());
+  const [expectedTraderCount, setExpectedTraderCount] = useState(0);
 
   // Check auth status and redirect if not logged in
   useEffect(() => {
@@ -125,17 +126,26 @@ function FollowingPageContent() {
 
         const wallets = follows.map(f => f.trader_wallet);
         setFollowedWallets(new Set(wallets.map(w => w.toLowerCase())));
+        setExpectedTraderCount(wallets.length);
 
-        // Fetch trader data for each followed wallet
-        const traderDataPromises = wallets.map(async (wallet) => {
+        // Show loading state immediately but start loading traders progressively
+        setLoadingTraders(false);
+        setTraders([]); // Start with empty array
+
+        // Fetch trader data progressively - update UI as each trader loads
+        wallets.forEach(async (wallet, index) => {
           try {
-            const response = await fetch(`/api/trader/${wallet}`);
+            const response = await fetch(`/api/trader/${wallet}`, {
+              next: { revalidate: 60 }
+            });
+            
             if (!response.ok) {
               console.warn(`Failed to fetch data for trader ${wallet}`);
-              return null;
+              return;
             }
+            
             const data = await response.json();
-            return {
+            const traderData: Trader = {
               wallet: wallet,
               displayName: data.displayName || wallet,
               pnl: data.pnl || 0,
@@ -145,23 +155,21 @@ function FollowingPageContent() {
               roi: data.volume > 0 ? ((data.pnl / data.volume) * 100) : 0,
               profileImage: data.profileImage || null,
             };
+            
+            // Add trader to list as soon as it loads and re-sort
+            setTraders(prev => {
+              const updated = [...prev, traderData];
+              // Sort by PNL descending
+              updated.sort((a, b) => b.pnl - a.pnl);
+              return updated;
+            });
           } catch (err) {
             console.warn(`Error fetching trader ${wallet}:`, err);
-            return null;
           }
         });
-
-        const traderResults = await Promise.all(traderDataPromises);
-        const validTraders = traderResults.filter((t): t is NonNullable<typeof t> => t !== null) as Trader[];
-
-        // Sort by PNL descending
-        validTraders.sort((a, b) => b.pnl - a.pnl);
-
-        setTraders(validTraders);
       } catch (err) {
         console.error('Error fetching followed traders:', err);
         setTraders([]);
-      } finally {
         setLoadingTraders(false);
       }
     };
@@ -228,7 +236,7 @@ function FollowingPageContent() {
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Following</h1>
               <p className="text-sm text-slate-500 mt-1">
-                {traders.length} {traders.length === 1 ? 'trader' : 'traders'}
+                {traders.length} {traders.length === 1 ? 'trader' : 'traders'} • All-time performance
               </p>
             </div>
           </div>
@@ -248,8 +256,19 @@ function FollowingPageContent() {
                 </Card>
               ))}
             </div>
-          ) : traders.length > 0 ? (
+          ) : expectedTraderCount === 0 ? (
+            <Card className="p-8 text-center">
+              <p className="text-slate-600 mb-2">You're not following any traders yet.</p>
+              <Link 
+                href="/discover"
+                className="inline-flex items-center justify-center px-4 py-2 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold rounded-lg transition-colors"
+              >
+                Discover Traders
+              </Link>
+            </Card>
+          ) : (
             <div className="space-y-3">
+              {/* Show loaded traders */}
               {traders.map((trader, index) => (
                 <div key={trader.wallet} className="flex items-start sm:items-center gap-2 sm:gap-4">
                   <div className="flex-shrink-0 w-6 sm:w-8 text-center pt-4 sm:pt-0">
@@ -274,17 +293,24 @@ function FollowingPageContent() {
                   </div>
                 </div>
               ))}
+              
+              {/* Show skeleton loaders for traders still loading */}
+              {traders.length < expectedTraderCount && (
+                <>
+                  {Array.from({ length: expectedTraderCount - traders.length }).map((_, i) => (
+                    <Card key={`loading-${i}`} className="p-6 animate-pulse">
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 bg-slate-200 rounded-full"></div>
+                        <div className="flex-1 space-y-2">
+                          <div className="h-5 bg-slate-200 rounded w-32"></div>
+                          <div className="h-4 bg-slate-200 rounded w-24"></div>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </>
+              )}
             </div>
-          ) : (
-            <Card className="p-8 text-center">
-              <p className="text-slate-600 mb-2">You're not following any traders yet.</p>
-              <Link 
-                href="/discover"
-                className="inline-flex items-center justify-center px-4 py-2 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold rounded-lg transition-colors"
-              >
-                Discover Traders
-              </Link>
-            </Card>
           )}
         </div>
       </div>

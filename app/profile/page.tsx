@@ -1074,6 +1074,18 @@ function ProfilePageContent() {
                           </Button>
                         </div>
                       </div>
+                      {/* Following count for premium users */}
+                      <Link 
+                        href="/following"
+                        className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 justify-center lg:justify-start mt-3 transition-colors"
+                      >
+                        <Avatar className="h-7 w-7 ring-2 ring-slate-100">
+                          <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-xs font-semibold">
+                            {user?.email?.charAt(0).toUpperCase() || 'U'}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span>Following {followingCount} traders</span>
+                      </Link>
                     </>
                   )}
 

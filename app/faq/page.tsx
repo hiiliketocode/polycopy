@@ -1058,36 +1058,15 @@ export default function FAQPage() {
           <p className="text-black/80 mb-6">
             We're here to help! Reach out to our support team.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <div className="flex justify-center">
             <a
-              href="mailto:support@polycopy.app"
+              href="https://twitter.com/polycopyapp"
+              target="_blank"
+              rel="noopener noreferrer"
               className="px-6 py-3 bg-black text-white rounded-lg font-semibold hover:bg-slate-800 transition-colors"
             >
-              Email Support
+              DM us on X
             </a>
-            <Link
-              href="/profile"
-              className="px-6 py-3 bg-white text-black rounded-lg font-semibold hover:bg-slate-100 transition-colors"
-            >
-              Go to Your Profile
-            </Link>
-          </div>
-        </div>
-
-        {/* Quick Links */}
-        <div className="mt-8 text-center">
-          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-slate-600">
-            <Link href="/terms" className="hover:text-[#FDB022] transition-colors">
-              Terms of Service
-            </Link>
-            <span className="text-slate-400">•</span>
-            <Link href="/privacy" className="hover:text-[#FDB022] transition-colors">
-              Privacy Policy
-            </Link>
-            <span className="text-slate-400">•</span>
-            <Link href="/discover" className="hover:text-[#FDB022] transition-colors">
-              Discover Traders
-            </Link>
           </div>
         </div>
       </div>
