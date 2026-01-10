@@ -585,7 +585,7 @@ export default function OnboardingPage() {
 
         .feature-item {
           display: flex;
-          align-items: flex-start;
+          align-items: center;
           gap: 0.75rem;
           padding: 1rem;
           background: white;
@@ -609,6 +609,9 @@ export default function OnboardingPage() {
           justify-content: center;
           color: white;
           font-size: 14px;
+          font-weight: 700;
+          flex-shrink: 0;
+        }
           font-weight: 700;
           margin-top: 2px;
         }
@@ -658,6 +661,11 @@ export default function OnboardingPage() {
           gap: 1rem;
           align-items: center;
           background: var(--background);
+        }
+        
+        /* Premium screen footer should match dark background */
+        .premium-screen .onboarding-footer {
+          background: transparent;
         }
 
         .progress-nav-row {
@@ -860,6 +868,14 @@ export default function OnboardingPage() {
           
           .premium-screen .feature-item {
             padding: 0.625rem;
+            width: 100%;
+            max-width: 100%;
+          }
+          
+          .premium-screen .features-list {
+            width: 100%;
+            max-width: 100%;
+            padding: 0 0.5rem;
           }
           
           .premium-screen .feature-text {
