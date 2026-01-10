@@ -501,7 +501,7 @@ export async function POST(request: NextRequest) {
     const upstreamHost = new URL(clobBaseUrl).hostname
     const normalizedPrice = normalizeNumber(price)
     const normalizedAmount = normalizeNumber(amount)
-    const tickSize = await fetchMarketTickSize(clobBaseUrl, tokenId)
+    const tickSize = await fetchMarketTickSize(clobBaseUrl, validatedTokenId)
     const effectiveTickSize = tickSize ?? 0.01
     const roundedPrice =
       normalizedPrice ? roundDownToStep(normalizedPrice, effectiveTickSize) : normalizedPrice
