@@ -175,7 +175,7 @@ function upsertPosition(acc: Map<string, PositionAccumulator>, trade: Trade) {
   existing.lastTradeAt = trade.last_update || trade.match_time || existing.lastTradeAt
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   // Use centralized secure auth utility
   const userId = await getAuthenticatedUserId()
 

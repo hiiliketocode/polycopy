@@ -25,7 +25,7 @@ function formatUsdcFromRaw(raw: string | null) {
   return `${unitsLabel}.${centsLabel} USDC`
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   // Use centralized secure auth utility
   const userId = await getAuthenticatedUserId()
 
