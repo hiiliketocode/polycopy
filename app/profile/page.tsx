@@ -528,8 +528,8 @@ function ProfilePageContent() {
           .maybeSingle(); // Use maybeSingle() instead of single() to avoid error when no row exists
         
         // Don't log errors from maybeSingle() - it's expected to return no data for new users
-        // Only log if there's a real error (has code, message, or details)
-        if (error && (error.code || error.message || error.details || error.hint)) {
+        // Only log if there's a real error (has meaningful properties)
+        if (error && Object.keys(error).length > 0 && (error.code || error.message || error.details || error.hint)) {
           console.error('Error fetching notification preferences:', error);
         }
         
@@ -1149,8 +1149,8 @@ function ProfilePageContent() {
               className={cn(
                 "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
                 activeTab === 'copied-trades'
-                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+                  ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
+                  : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
               )}
             >
               Manual Trades
@@ -1161,8 +1161,8 @@ function ProfilePageContent() {
               className={cn(
                 "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
                 activeTab === 'manual-trades'
-                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+                  ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
+                  : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
               )}
             >
               Quick Trades
@@ -1173,8 +1173,8 @@ function ProfilePageContent() {
               className={cn(
                 "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
                 activeTab === 'performance'
-                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+                  ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
+                  : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
               )}
             >
               Performance
@@ -1185,8 +1185,8 @@ function ProfilePageContent() {
               className={cn(
                 "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
                 activeTab === 'settings'
-                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+                  ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
+                  : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
               )}
             >
               Settings
