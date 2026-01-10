@@ -566,6 +566,11 @@ export default function OnboardingPage() {
           margin: 1.5rem 0 0;
           width: 100%;
         }
+        
+        .premium-screen .features-list {
+          margin: 1rem 0 0;
+          gap: 0.625rem;
+        }
 
         .feature-item {
           display: flex;
@@ -576,6 +581,10 @@ export default function OnboardingPage() {
           border-radius: var(--radius);
           text-align: left;
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .premium-screen .feature-item {
+          padding: 0.75rem;
         }
 
         .feature-icon {
@@ -796,10 +805,50 @@ export default function OnboardingPage() {
 
         @media (max-width: 640px) {
           h1 { font-size: 26px; }
-          h2 { font-size: 22px; }
-          .subtitle { font-size: 15px; }
+          h2 { font-size: 22px; margin-bottom: 0.5rem; }
+          .subtitle { font-size: 15px; margin-bottom: 0.25rem; }
           .description { font-size: 14px; }
           .welcome-logo { width: 220px; }
+          
+          .premium-screen h2 {
+            font-size: 20px;
+            margin-bottom: 0.25rem;
+          }
+          
+          .premium-screen .subtitle {
+            font-size: 14px;
+            margin-bottom: 0.5rem;
+          }
+          
+          .premium-screen .features-list {
+            margin-top: 0.75rem;
+            gap: 0.5rem;
+          }
+          
+          .premium-screen .feature-item {
+            padding: 0.625rem;
+          }
+          
+          .premium-screen .feature-text {
+            font-size: 14px;
+            line-height: 1.4;
+          }
+          
+          .premium-screen .premium-badge {
+            font-size: 12px;
+            padding: 0.375rem 0.75rem;
+            margin-bottom: 0.75rem;
+          }
+          
+          .screens-wrapper {
+            padding: 1.5rem 1rem 1rem;
+          }
+          
+          .onboarding-footer {
+            padding: 1rem 1rem;
+            padding-bottom: max(1rem, env(safe-area-inset-bottom));
+            gap: 0.75rem;
+          }
         }
       `}</style>
 
@@ -999,7 +1048,7 @@ export default function OnboardingPage() {
                 </div>
                 <div className="feature-item">
                   <div className="feature-icon">✓</div>
-                  <div className="feature-text">Real-time trade status notifications via Whatsapp</div>
+                  <div className="feature-text">Set trades to automatically close when the copied trader does.</div>
                 </div>
                 <div className="feature-item">
                   <div className="feature-icon">✓</div>
