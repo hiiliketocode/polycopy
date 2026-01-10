@@ -37,7 +37,6 @@ async function resolveOrdersTableName(): Promise<'trades' | 'orders'> {
     return ordersTableName
   }
   throw error
-  return ordersTableName
 }
 
 export type SyncResult = {
