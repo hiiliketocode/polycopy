@@ -451,6 +451,27 @@ export async function POST(request: NextRequest) {
   const validatedAmount = validationResults.sanitized.amount as number
   const validatedSide = validationResults.sanitized.side as 'BUY' | 'SELL'
   const validatedOrderType = validationResults.sanitized.orderType as 'GTC' | 'FOK' | 'FAK' | 'IOC'
+
+  // Generate request tracking IDs
+  const requestId = request.headers.get('x-request-id') ?? makeRequestId()
+  const serviceRole = createServiceRoleClient()
+  const resolvedOrderIntentId = normalizeOptionalString(orderIntentId) ?? makeRequestId()
+  const normalizedConditionId = normalizeOptionalString(conditionId ?? marketId) ?? null
+  const resolvedInputMode = normalizeLogInputMode(inputMode)
+  const resolvedUsdInput = normalizeNumber(usdInput)
+  const resolvedContractsInput = normalizeNumber(contractsInput)
+  const normalizedBestBid = normalizeNumber(bestBid)
+  const normalizedBestAsk = normalizeNumber(bestAsk)
+  const resolvedMinOrderSize = normalizeNumber(minOrderSize)
+  const normalizedTokenId = normalizeOptionalString(tokenId)
+  const normalizedOutcomeValue = normalizeOptionalString(outcome)
+  const sideLower = side ? side.toLowerCase() : null
+  const resolvedSlippage =
+    typeof slippagePercent === 'number' && Number.isFinite(slippagePercent) && slippagePercent >= 0
+      ? slippagePercent
+      : null
+  const slippageBps = resolvedSlippage !== null ? Math.round(resolvedSlippage * 100) : null
+
   function sanitizeForResponse(value: unknown): unknown {
     if (value === undefined) return undefined
     if (typeof value !== 'object' || value === null) return value
