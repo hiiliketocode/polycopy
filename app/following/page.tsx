@@ -17,7 +17,7 @@ interface Trader {
   winRate: number;
   totalTrades: number;
   volume: number;
-  roi?: number;
+  roi: number;
   profileImage?: string | null;
 }
 
@@ -152,7 +152,7 @@ function FollowingPageContent() {
         });
 
         const traderResults = await Promise.all(traderDataPromises);
-        const validTraders = traderResults.filter((t): t is Trader => t !== null);
+        const validTraders = traderResults.filter((t): t is NonNullable<typeof t> => t !== null) as Trader[];
 
         // Sort by PNL descending
         validTraders.sort((a, b) => b.pnl - a.pnl);
