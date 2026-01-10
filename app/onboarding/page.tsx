@@ -76,6 +76,11 @@ export default function OnboardingPage() {
   return (
     <>
       <style jsx global>{`
+        /* Hide any page chrome during onboarding */
+        body {
+          overflow: hidden;
+        }
+        
         * {
           margin: 0;
           padding: 0;
@@ -100,6 +105,12 @@ export default function OnboardingPage() {
           position: relative;
           overflow: hidden;
           background: var(--background);
+        }
+        
+        /* Hide any global footer/nav during onboarding */
+        body:has(.onboarding-container) > footer,
+        body:has(.onboarding-container) > nav:not(.onboarding-header) {
+          display: none !important;
         }
         
         .onboarding-container.premium-screen {
@@ -804,11 +815,33 @@ export default function OnboardingPage() {
         }
 
         @media (max-width: 640px) {
-          h1 { font-size: 26px; }
-          h2 { font-size: 22px; margin-bottom: 0.5rem; }
-          .subtitle { font-size: 15px; margin-bottom: 0.25rem; }
-          .description { font-size: 14px; }
-          .welcome-logo { width: 220px; }
+          h1 { font-size: 24px; margin-bottom: 0.5rem; }
+          h2 { font-size: 20px; margin-bottom: 0.5rem; }
+          .subtitle { font-size: 14px; margin-bottom: 0.25rem; }
+          .description { font-size: 13px; }
+          .welcome-logo { width: 200px; }
+          
+          .welcome-text {
+            font-size: 16px;
+            margin-bottom: 0.25rem;
+          }
+          
+          .value-props {
+            gap: 0.625rem;
+            margin-top: 1rem;
+          }
+          
+          .value-prop {
+            padding: 0.75rem;
+          }
+          
+          .value-prop-title {
+            font-size: 15px;
+          }
+          
+          .value-prop-text {
+            font-size: 13px;
+          }
           
           .premium-screen h2 {
             font-size: 20px;
@@ -816,7 +849,7 @@ export default function OnboardingPage() {
           }
           
           .premium-screen .subtitle {
-            font-size: 14px;
+            font-size: 13px;
             margin-bottom: 0.5rem;
           }
           
@@ -830,24 +863,37 @@ export default function OnboardingPage() {
           }
           
           .premium-screen .feature-text {
-            font-size: 14px;
+            font-size: 13px;
             line-height: 1.4;
           }
           
           .premium-screen .premium-badge {
-            font-size: 12px;
+            font-size: 11px;
             padding: 0.375rem 0.75rem;
-            margin-bottom: 0.75rem;
+            margin-bottom: 0.5rem;
           }
           
           .screens-wrapper {
-            padding: 1.5rem 1rem 1rem;
+            padding: 1rem 1rem 0.5rem;
+          }
+          
+          .onboarding-header {
+            padding: 0.75rem 1rem;
           }
           
           .onboarding-footer {
-            padding: 1rem 1rem;
-            padding-bottom: max(1rem, env(safe-area-inset-bottom));
-            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+            gap: 0.625rem;
+          }
+          
+          .progress-nav-row {
+            margin-bottom: 0.25rem;
+          }
+          
+          .btn-primary {
+            padding: 0.75rem 1.25rem;
+            font-size: 15px;
           }
         }
       `}</style>
