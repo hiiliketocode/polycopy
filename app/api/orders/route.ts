@@ -993,7 +993,7 @@ function getMarketTitle(
     return 'Market details unavailable'
   }
 
-  return rawMarket?.market ?? marketId || 'unknown market'
+  return (rawMarket?.market ?? marketId) || 'unknown market'
 }
 
 function deriveMarketOpenStatus(cache?: MarketCacheRow, rawOrder?: any, metadata?: MarketMetadata) {
