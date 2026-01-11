@@ -1339,6 +1339,11 @@ function ProfilePageContent() {
     };
   };
 
+  const isDisplayableQuickTrade = (order: OrderRow) => {
+    // Only show orders that have matched (partial) or fully filled.
+    return order.status === 'filled' || order.status === 'partial';
+  };
+
   const convertCopiedTradeToUnified = (trade: CopiedTrade): UnifiedTrade => {
     return {
       id: `manual-${trade.id}`,
@@ -1367,7 +1372,9 @@ function ProfilePageContent() {
     // Keep trades where trade_method is 'manual' or null/undefined (older trades)
     const actualManualTrades = copiedTrades.filter(trade => trade.trade_method === 'manual' || trade.trade_method === null || trade.trade_method === undefined);
     const manualTrades = actualManualTrades.map(convertCopiedTradeToUnified);
-    const quickTradesConverted = quickTrades.map(convertOrderToUnifiedTrade);
+    const quickTradesConverted = quickTrades
+      .filter(isDisplayableQuickTrade)
+      .map(convertOrderToUnifiedTrade);
     const combined = [...manualTrades, ...quickTradesConverted];
     
     // Sort by created date, newest first
