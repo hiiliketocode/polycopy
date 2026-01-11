@@ -1136,15 +1136,15 @@ function ProfilePageContent() {
   const tabButtons: Array<{ key: ProfileTab; label: string }> = [
     ...(hasPremiumAccess
       ? [
-          { key: 'manual-trades', label: 'Quick Trades' },
-          { key: 'copied-trades', label: 'Manual Trades' },
+          { key: 'manual-trades' as ProfileTab, label: 'Quick Trades' },
+          { key: 'copied-trades' as ProfileTab, label: 'Manual Trades' },
         ]
       : [
-          { key: 'copied-trades', label: 'Manual Trades' },
-          { key: 'manual-trades', label: 'Quick Trades' },
+          { key: 'copied-trades' as ProfileTab, label: 'Manual Trades' },
+          { key: 'manual-trades' as ProfileTab, label: 'Quick Trades' },
         ]),
-    { key: 'performance', label: 'Performance' },
-    { key: 'settings', label: 'Settings' },
+    { key: 'performance' as ProfileTab, label: 'Performance' },
+    { key: 'settings' as ProfileTab, label: 'Settings' },
   ];
   const tabTooltips: Partial<Record<ProfileTab, string>> = {
     'manual-trades': 'Quick Copy trades executed through Polycopy. Manage open orders, closes, and execution history here.',
