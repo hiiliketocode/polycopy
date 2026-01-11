@@ -926,7 +926,7 @@ export function TradeCard({
           signal: controller.signal,
         })
         const data = await res.json()
-        if (statusPhaseRef.current === 'timed_out') return
+        if ((statusPhaseRef.current as StatusPhase) === 'timed_out') return
         if (!res.ok) {
           setStatusError(data?.error || data?.message || 'Status check failed')
         } else {
