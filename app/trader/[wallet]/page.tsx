@@ -752,7 +752,7 @@ export default function TraderProfilePage({
     }
     
     setIsSubmitting(false);
-    setExpandedTradeIndex(null);
+    setExpandedTradeKeys(new Set());
     setUsdAmount('');
   };
 
