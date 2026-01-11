@@ -87,7 +87,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const trades = (data || []).map((row) => {
+    const trades = (data || []).map((row: any) => {
       const entryPrice = toNumber(row.entry_price)
       const exitPrice = toNumber(row.exit_price) ?? toNumber(row.current_price)
       const pnlUsd =
