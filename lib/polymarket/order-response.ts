@@ -154,10 +154,11 @@ export function interpretClobOrderResult(raw: unknown): ClobOrderEvaluation {
 
   const record = asRecord(raw)
   const status = record ? extractStatus(record) : undefined
+  const errorMessage = record ? extractErrorMessage(record) : null
   if (status !== undefined && (status < 200 || status >= 300)) {
     return {
       success: false,
-      message: `Polymarket returned HTTP ${status}`,
+      message: errorMessage ? `Polymarket ${status}: ${errorMessage}` : `Polymarket returned HTTP ${status}`,
       status,
       errorType: 'api_error',
       raw,
@@ -176,7 +177,6 @@ export function interpretClobOrderResult(raw: unknown): ClobOrderEvaluation {
     }
   }
 
-  const errorMessage = extractErrorMessage(record)
   if (errorMessage) {
     return {
       success: false,

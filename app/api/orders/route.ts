@@ -139,8 +139,9 @@ export async function GET(request: NextRequest) {
                 }
                 
                 const originalSize = Number(fullOrder.original_size || fullOrder.size || 0)
-                const sizeMatched = Number(fullOrder.size_matched || 0)
-                const remainingSize = originalSize - sizeMatched
+                const sizeMatchedRaw = Number(fullOrder.size_matched || 0)
+                const sizeMatched = sizeMatchedRaw > originalSize ? originalSize : sizeMatchedRaw
+                const remainingSize = Math.max(originalSize - sizeMatched, 0)
 
                 const timeInForce =
                   fullOrder.time_in_force ||
@@ -239,15 +240,6 @@ export async function GET(request: NextRequest) {
       ordersTable,
       trader.id
     )
-
-    // If CLOB reported zero open orders, reconcile any stale open/partial rows in our DB.
-    const clobOrderIdsArray = Array.isArray(clobOpenOrderIds) ? clobOpenOrderIds : []
-    if (clobOrderIdsArray.length === 0) {
-      const reconciled = await reconcileMissingOpenOrders(supabase, ordersTable, trader.id)
-      if (reconciled) {
-        ordersResult = await fetchOrdersForTrader(supabase, ordersTable, trader.id)
-      }
-    }
 
     if (ordersResult.error) {
       console.error('[orders] orders query error', ordersResult.error)
@@ -467,30 +459,24 @@ export async function GET(request: NextRequest) {
         : null
 
       const sizeValue = parseNumeric(order.size)
-      const filledValue = parseNumeric(order.filled_size)
+      const filledValueRaw = parseNumeric(order.filled_size)
+      const filledValue =
+        Number.isFinite(sizeValue ?? NaN) && Number.isFinite(filledValueRaw ?? NaN)
+          ? Math.min(filledValueRaw as number, sizeValue as number)
+          : filledValueRaw
       const remainingValue = parseNumeric(order.remaining_size)
 
       const priceValue = parseNumeric(order.price ?? order.raw?.price ?? order.raw?.avg_price)
 
-      let status = normalizeOrderStatus(
+      const rawStatus =
+        typeof order.status === 'string' ? order.status.trim().toLowerCase() : null
+      const statusForLogic = normalizeOrderStatus(
         order.raw,
-        order.status,
+        rawStatus,
         filledValue,
         sizeValue,
         remainingValue
       )
-
-      // If CLOB said there are no open orders (or we have an explicit allowlist) but this row is still open/partial, mark it closed.
-      const orderIdLower = String(order.order_id ?? '').trim().toLowerCase()
-      const isStaleOpen =
-        (status === 'open' || status === 'partial') &&
-        clobOpenSet !== null &&
-        !clobOpenSet.has(orderIdLower)
-
-      if (isStaleOpen) {
-        const fullyFilled = Number.isFinite(sizeValue) && Number.isFinite(filledValue) && (sizeValue ?? 0) > 0 && (filledValue ?? 0) >= (sizeValue ?? 0)
-        status = fullyFilled ? 'filled' : 'canceled'
-      }
 
       if (marketId && metadata) {
         const existing = cacheUpsertMap.get(marketId) ?? { market_id: marketId }
@@ -529,7 +515,7 @@ export async function GET(request: NextRequest) {
       const pnlUsd = calculatePnlUsd(side, priceValue, currentPrice, filledValue)
       const positionState = resolvePositionState(order.raw)
       const positionStateLabel = getPositionStateLabel(positionState)
-      const activity = deriveOrderActivity(order.raw, status, side, positionState, pnlUsd)
+      const activity = deriveOrderActivity(order.raw, statusForLogic, side, positionState, pnlUsd)
       const isAutoClose = autoCloseOrderIds.has(orderId.toLowerCase())
       const marketResolved =
         parseBoolean(
@@ -541,7 +527,7 @@ export async function GET(request: NextRequest) {
 
       return {
         orderId,
-        status,
+        status: rawStatus ?? statusForLogic,
         activity: activity.activity,
         activityLabel: activity.activityLabel,
         activityIcon: activity.activityIcon,
@@ -1592,7 +1578,7 @@ async function reconcileMissingOpenOrders(
     const updates = rows.map((row: any) => {
       const size = Number(row?.size ?? 0)
       const filled = Number(row?.filled_size ?? 0)
-      const closedStatus = size > 0 && filled >= size ? 'filled' : 'canceled'
+      const closedStatus = size > 0 && filled >= size ? 'matched' : 'canceled'
       return {
         order_id: row.order_id,
         status: closedStatus,

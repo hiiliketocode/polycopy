@@ -6,7 +6,7 @@ import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
 import { POST_ORDER } from '@polymarket/clob-client/dist/endpoints.js'
 import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
 import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
-import { ensureEvomiProxyAgent } from '@/lib/evomi/proxy'
+import { requireEvomiProxyAgent } from '@/lib/evomi/proxy'
 import { getBodySnippet } from '@/lib/polymarket/order-route-helpers'
 import { sanitizeError } from '@/lib/http/sanitize-error'
 import { logError, logInfo, makeRequestId, sanitizeForLogging } from '@/lib/logging/logger'
@@ -500,17 +500,21 @@ export async function POST(request: NextRequest) {
     // Configure Evomi proxy BEFORE creating ClobClient to ensure axios defaults are set
     let evomiProxyUrl: string | null = null
     try {
-      evomiProxyUrl = await ensureEvomiProxyAgent()
-      if (!evomiProxyUrl) {
-        console.warn('[POLY-ORDER-PLACE] ⚠️  No Evomi proxy configured - requests will go direct (may be blocked by Cloudflare)')
-      } else {
-        const proxyEndpoint = evomiProxyUrl.split('@')[1] ?? evomiProxyUrl
-        console.log('[POLY-ORDER-PLACE] ✅ Evomi proxy enabled via', proxyEndpoint)
-        console.log('[POLY-ORDER-PLACE] Proxy note: Ensure proxy endpoint uses Finland IP for Polymarket access')
-      }
+      evomiProxyUrl = await requireEvomiProxyAgent('order placement')
+      const proxyEndpoint = evomiProxyUrl.split('@')[1] ?? evomiProxyUrl
+      console.log('[POLY-ORDER-PLACE] ✅ Evomi proxy enabled via', proxyEndpoint)
+      console.log('[POLY-ORDER-PLACE] Proxy note: Ensure proxy endpoint uses Finland IP for Polymarket access')
     } catch (error: any) {
-      console.error('[POLY-ORDER-PLACE] ❌ Evomi proxy config failed:', error?.message || error)
-      // Continue without proxy if configuration fails (will likely be blocked)
+      console.error('[POLY-ORDER-PLACE] ❌ Evomi proxy required but unavailable:', error?.message || error)
+      return respondWithMetadata(
+        {
+          ok: false,
+          source: 'proxy',
+          error: 'Evomi proxy unavailable',
+          errorType: 'evomi_unavailable',
+        },
+        503
+      )
     }
 
     const { client, proxyAddress, signerAddress, signatureType } = await getAuthedClobClientForUser(

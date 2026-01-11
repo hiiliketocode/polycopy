@@ -15,6 +15,7 @@ const STATUS_MAP: Record<string, OrderStatus> = {
   open: 'open',
   partial: 'partial',
   filled: 'filled',
+  matched: 'filled',
   canceled: 'canceled',
   cancelled: 'canceled',
   expired: 'expired',

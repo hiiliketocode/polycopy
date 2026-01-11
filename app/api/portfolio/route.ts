@@ -33,8 +33,9 @@ function toIsoTimestamp(value: number | string | null | undefined): string {
 
 function normalizeClobOrder(order: any) {
   const size = toNumber(order?.original_size ?? order?.size) ?? 0
-  const filledSize = toNumber(order?.size_matched ?? order?.filled_size) ?? 0
-  const remainingSize = Number.isFinite(size - filledSize) ? size - filledSize : null
+  const filledSizeRaw = toNumber(order?.size_matched ?? order?.filled_size) ?? 0
+  const filledSize = filledSizeRaw > size ? size : filledSizeRaw
+  const remainingSize = Number.isFinite(size - filledSize) ? Math.max(size - filledSize, 0) : null
   const createdAt = toIsoTimestamp(order?.created_at)
   const updatedAt = toIsoTimestamp(order?.last_update) || createdAt
 

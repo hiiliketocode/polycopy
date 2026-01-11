@@ -114,9 +114,13 @@ function normalizeOrder(order: any) {
     parseNumber(order?.filled_size) ??
     parseNumber(order?.filledSize) ??
     0
+  const cappedFilledSize =
+    originalSize !== null && Number.isFinite(originalSize) && filledSize > originalSize
+      ? originalSize
+      : filledSize
   const remainingSize =
-    originalSize !== null && Number.isFinite(originalSize - filledSize)
-      ? originalSize - filledSize
+    originalSize !== null && Number.isFinite(originalSize - cappedFilledSize)
+      ? Math.max(originalSize - cappedFilledSize, 0)
       : parseNumber(order?.remaining_size)
 
   const createdAt = parseTimestamp(order?.created_at)
@@ -136,7 +140,7 @@ function normalizeOrder(order: any) {
     time_in_force: timeInForce ? String(timeInForce).toUpperCase() : null,
     price: parseNumber(order?.price),
     size: originalSize ?? 0,
-    filled_size: filledSize,
+    filled_size: cappedFilledSize,
     remaining_size: remainingSize,
     status: String(order?.status || 'open').toLowerCase(),
     created_at: createdAt ? createdAt.toISOString() : new Date().toISOString(),

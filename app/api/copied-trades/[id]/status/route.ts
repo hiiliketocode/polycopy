@@ -178,6 +178,7 @@ export async function GET(
     // Initialize update fields
     let traderStillHasPosition = trade.trader_still_has_position
     let traderClosedAt = trade.trader_closed_at
+    let traderPositionSize: number | null = null
     let currentPrice: number | null = null
     let roi: number | null = null
     let priceSource: string = 'none'
@@ -238,6 +239,10 @@ export async function GET(
 
         if (matchingPosition) {
           traderStillHasPosition = true
+          if (matchingPosition.size !== undefined && matchingPosition.size !== null) {
+            const parsedSize = parseFloat(String(matchingPosition.size))
+            traderPositionSize = Number.isFinite(parsedSize) ? parsedSize : null
+          }
           
           // Capture trader's average price for ROI calculation
           if (matchingPosition.avgPrice !== undefined && matchingPosition.avgPrice !== null) {
@@ -262,6 +267,7 @@ export async function GET(
               traderStillHasPosition = false
               traderClosedAt = new Date().toISOString()
             }
+            traderPositionSize = 0
           }
         }
       }
@@ -452,6 +458,10 @@ export async function GET(
       market_resolved: marketResolved,
     }
 
+    if (traderPositionSize !== null) {
+      updateData.trader_position_size = traderPositionSize
+    }
+
     // Persist ROI only when we have a stable entry/exit pair.
     if (roi !== null && entryPrice !== null && entryPrice > 0) {
       updateData.roi = roi
@@ -488,6 +498,7 @@ export async function GET(
       status: {
         checked: true,
         traderStillHasPosition,
+        traderPositionSize,
         currentPrice,
         roi,
         traderAvgPrice,
@@ -496,6 +507,7 @@ export async function GET(
       },
       // Also expose at top level for easier access by cron
       traderStillHasPosition,
+      traderPositionSize,
       currentPrice,
       roi,
       traderAvgPrice,

@@ -7,9 +7,10 @@ import AutoCloseExecutedEmail from '@/emails/AutoCloseExecuted'
 import AutoCloseFailedEmail from '@/emails/AutoCloseFailed'
 import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client'
 import { resolveOrdersTableName } from '@/lib/orders/table'
-import { ensureEvomiProxyAgent } from '@/lib/evomi/proxy'
+import { requireEvomiProxyAgent } from '@/lib/evomi/proxy'
 import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
 import { fetchOrderWithClient } from '@/lib/polymarket/clobClient'
+import { makeRequestId } from '@/lib/logging/logger'
 
 // Create service role client
 const supabase = createClient(
@@ -25,6 +26,8 @@ const supabase = createClient(
 
 // Initialize Resend only if API key is available (prevents build errors)
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
+const ORDER_EVENTS_TABLE = 'order_events_log'
+const MAX_ERROR_MESSAGE_LENGTH = 500
 
 // Helper to calculate trader's ROI
 function calculateTraderROI(traderAvgPrice: number | null, currentPrice: number | null): number {
@@ -42,6 +45,22 @@ function roundPriceToTick(price: number, tickSize: number | null) {
   if (!tickSize || tickSize <= 0) return price
   const steps = Math.round(price / tickSize)
   return steps * tickSize
+}
+
+function truncateMessage(value?: string | null, max = MAX_ERROR_MESSAGE_LENGTH) {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (trimmed.length <= max) return trimmed
+  return trimmed.slice(0, max)
+}
+
+async function updateOrderEventStatus(orderEventId: string | null, updates: Record<string, unknown>) {
+  if (!orderEventId) return
+  try {
+    await supabase.from(ORDER_EVENTS_TABLE).update(updates).eq('id', orderEventId)
+  } catch (error) {
+    console.error('[AUTO-CLOSE] Failed to update order event row', error)
+  }
 }
 
 async function fetchMarketTokenData(conditionId: string, outcome: string) {
@@ -236,8 +255,36 @@ export async function GET(request: NextRequest) {
         order.market_id,
         order.outcome
       )
-      if (traderPositionSize && traderPositionSize > 0) {
-        return
+      const currentTraderPositionSize = Number.isFinite(Number(traderPositionSize))
+        ? Math.max(Number(traderPositionSize), 0)
+        : 0
+      const priorTraderPositionSize = Number.isFinite(Number(order.trader_position_size))
+        ? Math.max(Number(order.trader_position_size), 0)
+        : null
+      const updateTraderPositionSize = async (size: number) => {
+        await supabase.from(ordersTable).update({ trader_position_size: size }).eq('order_id', order.order_id)
+      }
+
+      let reductionFraction: number | null = null
+      if (priorTraderPositionSize === null) {
+        if (currentTraderPositionSize > 0) {
+          await updateTraderPositionSize(currentTraderPositionSize)
+          return
+        }
+        reductionFraction = 1
+      } else {
+        if (currentTraderPositionSize >= priorTraderPositionSize) {
+          await updateTraderPositionSize(currentTraderPositionSize)
+          return
+        }
+        reductionFraction =
+          priorTraderPositionSize > 0
+            ? (priorTraderPositionSize - currentTraderPositionSize) / priorTraderPositionSize
+            : 0
+        if (!Number.isFinite(reductionFraction) || reductionFraction <= 0) {
+          await updateTraderPositionSize(currentTraderPositionSize)
+          return
+        }
       }
 
       const userWallet = await resolveUserWalletByTraderId(order.trader_id)
@@ -255,6 +302,13 @@ export async function GET(request: NextRequest) {
       const positionSize = await fetchWalletPositionSize(userWallet, order.market_id, order.outcome)
       if (!positionSize || positionSize <= 0) {
         console.warn(`⚠️ Auto-close skipped: no open position for user ${userId}`)
+        return
+      }
+
+      const closeSizeRaw = Number(positionSize) * (reductionFraction ?? 0)
+      const closeSize = Number.isFinite(closeSizeRaw) ? Math.min(closeSizeRaw, positionSize) : 0
+      if (!Number.isFinite(closeSize) || closeSize <= 0) {
+        await updateTraderPositionSize(currentTraderPositionSize)
         return
       }
 
@@ -337,22 +391,86 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      try {
-        await ensureEvomiProxyAgent()
-      } catch (error) {
-        console.warn('[AUTO-CLOSE] Evomi proxy config failed:', error)
-      }
-
       const attemptedAt = new Date().toISOString()
       await supabase
         .from(ordersTable)
         .update({ auto_close_attempted_at: attemptedAt, auto_close_error: null })
         .eq('order_id', order.order_id)
 
+      const orderIntentId = makeRequestId()
+      const requestId = `auto-close-${order.order_id}-${makeRequestId()}`
+      const slippageBps = Math.round(slippagePercent * 100)
+      const orderEventPayload = {
+        user_id: userId,
+        wallet_address: userWallet.toLowerCase(),
+        order_intent_id: orderIntentId,
+        request_id: requestId,
+        condition_id: order.market_id,
+        token_id: tokenId,
+        side: closeSide.toLowerCase(),
+        outcome: order.outcome,
+        order_type: 'FAK',
+        slippage_bps: slippageBps,
+        limit_price: limitPrice,
+        size: closeSize,
+        min_order_size: null,
+        tick_size: tickSize,
+        best_bid: null,
+        best_ask: null,
+        input_mode: 'contracts',
+        usd_input: null,
+        contracts_input: closeSize,
+        auto_correct_applied: false,
+        status: 'attempted',
+        polymarket_order_id: null,
+        http_status: null,
+        error_code: null,
+        error_message: null,
+        raw_error: null,
+      }
+
+      let orderEventId: string | null = null
+      try {
+        const { data: insertedEvent, error: eventError } = await supabase
+          .from(ORDER_EVENTS_TABLE)
+          .insert(orderEventPayload)
+          .select('id')
+          .single()
+        if (eventError) {
+          throw eventError
+        }
+        orderEventId = insertedEvent?.id ?? null
+      } catch (eventError) {
+        console.error('[AUTO-CLOSE] Failed to persist order event', eventError)
+      }
+
+      try {
+        await requireEvomiProxyAgent('auto-close')
+      } catch (error: any) {
+        const message = error?.message || 'Evomi proxy unavailable'
+        await updateOrderEventStatus(orderEventId, {
+          status: 'rejected',
+          http_status: 503,
+          error_code: 'evomi_unavailable',
+          error_message: truncateMessage(message),
+          raw_error: { message },
+        })
+        await supabase
+          .from(ordersTable)
+          .update({
+            auto_close_error: message,
+            auto_close_attempted_at: attemptedAt,
+          })
+          .eq('order_id', order.order_id)
+        console.warn('[AUTO-CLOSE] Evomi proxy required but unavailable:', message)
+        await sendFailureEmail(message)
+        return
+      }
+
       try {
         const { client, signatureType } = await getAuthedClobClientForUserAnyWallet(userId, userWallet)
         const orderPayload = await client.createOrder(
-          { tokenID: tokenId, price: limitPrice, size: positionSize, side: closeSide as any },
+          { tokenID: tokenId, price: limitPrice, size: closeSize, side: closeSide as any },
           { signatureType } as any
         )
         const orderType = 'FAK'
@@ -360,6 +478,14 @@ export async function GET(request: NextRequest) {
         const evaluation = interpretClobOrderResult(rawResult)
 
         if (!evaluation.success) {
+          const upstreamStatus = evaluation.status ?? 502
+          await updateOrderEventStatus(orderEventId, {
+            status: 'rejected',
+            http_status: upstreamStatus,
+            error_code: evaluation.errorType ?? null,
+            error_message: truncateMessage(evaluation.message ?? 'Order rejected'),
+            raw_error: evaluation.raw ?? null,
+          })
           await supabase
             .from(ordersTable)
             .update({
@@ -372,19 +498,18 @@ export async function GET(request: NextRequest) {
           return
         }
 
-        await supabase
-          .from(ordersTable)
-          .update({
-            auto_close_triggered_at: attemptedAt,
-            auto_close_order_id: evaluation.orderId,
-            auto_close_error: null,
-            auto_close_attempted_at: attemptedAt,
-          })
-          .eq('order_id', order.order_id)
+        await updateOrderEventStatus(orderEventId, {
+          status: 'submitted',
+          http_status: 200,
+          polymarket_order_id: evaluation.orderId ?? null,
+          error_code: null,
+          error_message: null,
+          raw_error: null,
+        })
         console.log(`✅ Auto-close submitted for order ${order.order_id}: ${evaluation.orderId}`)
 
         const autoCloseOrderId = evaluation.orderId
-        let filledSize = positionSize
+        let filledSize = closeSize
         let executedPrice = limitPrice
         let orderLookupSucceeded = false
         try {
@@ -407,11 +532,26 @@ export async function GET(request: NextRequest) {
           console.warn(`⚠️ Auto-close order ${autoCloseOrderId} has no fills yet`)
           await supabase
             .from(ordersTable)
-            .update({ auto_close_error: 'Auto-close order submitted but did not fill' })
+            .update({
+              auto_close_order_id: autoCloseOrderId,
+              auto_close_error: 'Auto-close order submitted but did not fill',
+              auto_close_attempted_at: attemptedAt,
+            })
             .eq('order_id', order.order_id)
           await sendFailureEmail('Auto-close order submitted but did not fill. Try closing manually at the current market price.')
           return
         }
+
+        const autoCloseUpdate: Record<string, unknown> = {
+          auto_close_order_id: autoCloseOrderId,
+          auto_close_error: null,
+          auto_close_attempted_at: attemptedAt,
+          trader_position_size: currentTraderPositionSize,
+        }
+        if (currentTraderPositionSize <= 0) {
+          autoCloseUpdate.auto_close_triggered_at = attemptedAt
+        }
+        await supabase.from(ordersTable).update(autoCloseUpdate).eq('order_id', order.order_id)
 
         const context = await loadNotificationContext()
         if (!context || !resend) return
@@ -448,6 +588,13 @@ export async function GET(request: NextRequest) {
         }
       } catch (error: any) {
         const message = error?.message || 'Auto-close failed'
+        await updateOrderEventStatus(orderEventId, {
+          status: 'rejected',
+          http_status: 500,
+          error_code: error?.code ?? error?.name ?? null,
+          error_message: truncateMessage(message),
+          raw_error: error ?? null,
+        })
         await supabase
           .from(ordersTable)
           .update({
@@ -721,7 +868,7 @@ export async function GET(request: NextRequest) {
     const { data: openOrders } = await supabase
       .from(ordersTable)
       .select(
-        'order_id, trader_id, copied_trader_wallet, market_id, outcome, side, status, remaining_size, auto_close_on_trader_close, auto_close_slippage_percent, auto_close_triggered_at, auto_close_attempted_at, created_at'
+        'order_id, trader_id, copied_trader_wallet, market_id, outcome, side, status, remaining_size, trader_position_size, auto_close_on_trader_close, auto_close_slippage_percent, auto_close_triggered_at, auto_close_attempted_at, created_at'
       )
       .is('auto_close_triggered_at', null)
       .neq('auto_close_on_trader_close', false)

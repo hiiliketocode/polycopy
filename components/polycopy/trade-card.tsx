@@ -66,6 +66,7 @@ type StatusPhase =
   | 'canceled'
   | 'expired'
   | 'rejected'
+  | 'timed_out'
   | 'unknown'
 
 type ManualFlowStep = 'open-polymarket' | 'enter-details'
@@ -75,7 +76,10 @@ const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
   'canceled',
   'expired',
   'rejected',
+  'timed_out',
 ])
+
+const ORDER_STATUS_TIMEOUT_MS = 30_000
 
 const LIQUIDITY_ERROR_PHRASES = [
   'no orders found to match with fak order',
@@ -347,6 +351,7 @@ export function TradeCard({
   const [orderType, setOrderType] = useState<'FAK' | 'GTC'>('FAK')
   const [orderId, setOrderId] = useState<string | null>(null)
   const [statusPhase, setStatusPhase] = useState<StatusPhase>('submitted')
+  const statusPhaseRef = useRef<StatusPhase>('submitted')
   const [statusData, setStatusData] = useState<any | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [confirmationError, setConfirmationError] = useState<TradeErrorInfo | null>(null)
@@ -808,8 +813,13 @@ export function TradeCard({
   const sizePercentLabel = sizePercent !== null ? `${sizePercent.toFixed(0)}%` : "--%"
   const contractLabel = displayContracts === 1 ? "contract" : "contracts"
   const statusDataRef = useRef<any | null>(null)
-  const [pendingTimeoutTriggered, setPendingTimeoutTriggered] = useState(false)
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const timeoutTriggeredRef = useRef(false)
+
+  useEffect(() => {
+    statusPhaseRef.current = statusPhase
+  }, [statusPhase])
 
   const handleAmountChange = useCallback((value: string) => {
     setFrozenOrder(null)
@@ -852,6 +862,7 @@ export function TradeCard({
 
     const poll = async () => {
       if (cancelled || inFlight) return
+      if (statusPhaseRef.current === 'timed_out') return
       inFlight = true
       try {
         const res = await fetch(`/api/polymarket/orders/${encodeURIComponent(orderId)}/status`, {
@@ -886,6 +897,7 @@ export function TradeCard({
           if (TERMINAL_STATUS_PHASES.has(phase) && intervalId) {
             clearInterval(intervalId)
             intervalId = null
+            pollIntervalRef.current = null
           }
         }
       } catch (err: any) {
@@ -897,11 +909,13 @@ export function TradeCard({
 
     poll()
     intervalId = setInterval(poll, 200)
+    pollIntervalRef.current = intervalId
 
     return () => {
       cancelled = true
       if (intervalId) clearInterval(intervalId)
       if (pendingTimer) clearTimeout(pendingTimer)
+      pollIntervalRef.current = null
     }
   }, [orderId, showConfirmation])
 
@@ -1212,14 +1226,14 @@ export function TradeCard({
     typeof statusData?.size === 'number' ? statusData.size : null
   const fillPrice =
     typeof statusData?.price === 'number' ? statusData.price : null
-  const pendingStatusLabel = pendingTimeoutTriggered
-    ? "Order pending at Polymarket"
-    : "Order sent to Polymarket"
+  const pendingStatusLabel = "Order pending at Polymarket"
   const statusLabel =
     statusPhase === "filled"
       ? "Filled"
       : statusPhase === "partial"
         ? "Partially filled"
+        : statusPhase === "timed_out"
+          ? "Failed to match on Polymarket"
         : orderType === "FAK" &&
             (statusPhase === "canceled" || statusPhase === "expired" || statusPhase === "rejected") &&
             (!filledContracts || filledContracts <= 0)
@@ -1249,23 +1263,64 @@ export function TradeCard({
         clearTimeout(pendingTimeoutRef.current)
         pendingTimeoutRef.current = null
       }
-      setPendingTimeoutTriggered(false)
+      timeoutTriggeredRef.current = false
       return
     }
-    setPendingTimeoutTriggered(false)
+    timeoutTriggeredRef.current = false
     if (pendingTimeoutRef.current) {
       clearTimeout(pendingTimeoutRef.current)
     }
-    pendingTimeoutRef.current = setTimeout(() => {
-      setPendingTimeoutTriggered(true)
-    }, 30_000)
+    pendingTimeoutRef.current = setTimeout(async () => {
+      if (timeoutTriggeredRef.current) return
+      if (TERMINAL_STATUS_PHASES.has(statusPhaseRef.current)) return
+      timeoutTriggeredRef.current = true
+      setStatusPhase('timed_out')
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+      setIsCancelingOrder(true)
+      setCancelError(null)
+      try {
+        const response = await fetch('/api/polymarket/orders/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderHash: orderId }),
+        })
+        let payload: any = null
+        try {
+          payload = await response.json()
+        } catch {
+          payload = null
+        }
+        if (!response.ok) {
+          throw new Error(
+            payload?.error ||
+              payload?.message ||
+              payload?.details ||
+              'Failed to cancel order on Polymarket.'
+          )
+        }
+        await refreshOrders().catch(() => {
+          /* refresh best effort */
+        })
+      } catch (error: any) {
+        const message =
+          typeof error === 'string'
+            ? error
+            : error?.message || 'Unable to cancel order. Please try again.'
+        setCancelError(message)
+      } finally {
+        setIsCancelingOrder(false)
+      }
+    }, ORDER_STATUS_TIMEOUT_MS)
     return () => {
       if (pendingTimeoutRef.current) {
         clearTimeout(pendingTimeoutRef.current)
         pendingTimeoutRef.current = null
       }
     }
-  }, [orderId, showConfirmation, isFinalStatus])
+  }, [orderId, showConfirmation, isFinalStatus, refreshOrders])
   const resetConfirmation = () => {
     setShowConfirmation(false)
     setOrderId(null)
@@ -1279,45 +1334,9 @@ export function TradeCard({
     setFrozenOrder(null)
   }
 
-  const handleCancelPendingOrder = async () => {
-    if (!orderId) return
-    setIsCancelingOrder(true)
-    setCancelError(null)
-    try {
-      const response = await fetch('/api/polymarket/orders/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderHash: orderId }),
-      })
-      let payload: any = null
-      try {
-        payload = await response.json()
-      } catch {
-        payload = null
-      }
-      if (!response.ok) {
-        throw new Error(
-          payload?.error ||
-            payload?.message ||
-            payload?.details ||
-            'Failed to cancel order on Polymarket.'
-        )
-      }
-      await refreshOrders().catch(() => {
-        /* refresh best effort */
-      })
-      resetConfirmation()
-      setSubmitError('Order canceled. Adjust your price/slippage and try again.')
-    } catch (error: any) {
-      console.error('Cancel order failed:', error)
-      const message =
-        typeof error === 'string'
-          ? error
-          : error?.message || 'Unable to cancel order. Please try again.'
-      setCancelError(message)
-    } finally {
-      setIsCancelingOrder(false)
-    }
+  const handleTryAgain = () => {
+    resetConfirmation()
+    setSubmitError('Order failed to match. Try again with a wider spread or updated price.')
   }
 
   return (
@@ -1621,26 +1640,26 @@ export function TradeCard({
                       <div className="mt-1">
                         <p
                           className={`text-xs ${
-                            pendingTimeoutTriggered ? "text-amber-600" : "text-slate-500"
+                            statusPhase === 'timed_out' ? "text-amber-600" : "text-slate-500"
                           }`}
                         >
-                          {pendingTimeoutTriggered
-                            ? "Polymarket still hasn't matched this order after 30 seconds. There may not be enough liquidity, so try widening your slippage/price or check the Orders page for updates."
+                          {statusPhase === 'timed_out'
+                            ? "Polymarket did not match this order within 30 seconds. We canceled it so you can try again with a wider spread."
                             : "This may take a moment."}
                         </p>
-                        {pendingTimeoutTriggered && (
+                        {statusPhase === 'timed_out' && (
                           <div className="mt-3 flex flex-col gap-2">
                             <Button
-                              onClick={handleCancelPendingOrder}
-                              disabled={!orderId || isCancelingOrder}
+                              onClick={handleTryAgain}
+                              disabled={isCancelingOrder}
                               size="sm"
                               variant="outline"
                               className="border-slate-300 text-slate-700 hover:border-slate-400 hover:text-slate-900"
                             >
-                              {isCancelingOrder ? "Canceling order…" : "Cancel and adjust order"}
+                              {isCancelingOrder ? "Canceling order…" : "Try again"}
                             </Button>
                             <p className="text-[11px] text-slate-500">
-                              Canceling will stop the pending order so you can reopen the form and resubmit with broader slippage or a new price.
+                              We stopped the pending order so you can reopen the form and resubmit with broader slippage or a new price.
                             </p>
                             {cancelError && (
                               <p className="text-[11px] text-rose-600">{cancelError}</p>

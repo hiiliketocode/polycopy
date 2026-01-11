@@ -274,3 +274,17 @@ export async function ensureEvomiProxyAgent(): Promise<string | null> {
   
   return url
 }
+
+export async function requireEvomiProxyAgent(context?: string): Promise<string> {
+  try {
+    const url = await ensureEvomiProxyAgent()
+    if (!url) {
+      throw new Error('Evomi proxy not configured')
+    }
+    return url
+  } catch (error: any) {
+    const message = error?.message || error
+    const suffix = context ? ` (${context})` : ''
+    throw new Error(`Evomi proxy required${suffix}: ${message}`)
+  }
+}

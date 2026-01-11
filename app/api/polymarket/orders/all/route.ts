@@ -83,9 +83,13 @@ function normalizeOrder(order: any) {
     parseNumber(order?.filled_size) ??
     parseNumber(order?.filledSize) ??
     0
+  const cappedFilledSize =
+    originalSize !== null && Number.isFinite(originalSize) && filledSize > originalSize
+      ? originalSize
+      : filledSize
   const remainingSize =
-    originalSize !== null && Number.isFinite(originalSize - filledSize)
-      ? originalSize - filledSize
+    originalSize !== null && Number.isFinite(originalSize - cappedFilledSize)
+      ? Math.max(originalSize - cappedFilledSize, 0)
       : parseNumber(order?.remaining_size)
 
   const updated =
@@ -97,7 +101,7 @@ function normalizeOrder(order: any) {
     orderId: order?.id || order?.order_id || null,
     status: String(order?.status || 'unknown').toLowerCase(),
     size: originalSize,
-    filledSize,
+    filledSize: cappedFilledSize,
     remainingSize,
     price: parseNumber(order?.price),
     marketId: order?.market || order?.asset_id || order?.market_id || null,

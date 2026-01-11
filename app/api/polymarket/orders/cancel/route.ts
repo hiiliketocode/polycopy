@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
 import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit/index'
 import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
+import { requireEvomiProxyAgent } from '@/lib/evomi/proxy'
 
 type Body = {
   orderHash?: string
@@ -33,6 +34,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    await requireEvomiProxyAgent('order cancellation')
     const { client, proxyAddress, signerAddress } = await getAuthedClobClientForUser(userId)
     const result = await client.cancelOrders([orderHash])
     return NextResponse.json({

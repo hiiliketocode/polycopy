@@ -61,6 +61,7 @@ type StatusPhase =
   | 'canceled'
   | 'expired'
   | 'rejected'
+  | 'timed_out'
   | 'unknown'
 
 const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
@@ -68,7 +69,10 @@ const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
   'canceled',
   'expired',
   'rejected',
+  'timed_out',
 ])
+
+const ORDER_STATUS_TIMEOUT_MS = 30_000
 const EMPTY_FORM: ExecuteForm = {
   tokenId: '',
   price: '',
@@ -231,7 +235,7 @@ function normalizeStatusPhase(status?: string | null): StatusPhase {
 
 type ExecutionStatusVariant = 'success' | 'pending' | 'failed'
 
-const FAILED_EXECUTION_PHASES = new Set<StatusPhase>(['canceled', 'expired', 'rejected'])
+const FAILED_EXECUTION_PHASES = new Set<StatusPhase>(['canceled', 'expired', 'rejected', 'timed_out'])
 
 const STATUS_VARIANT_ICONS: Record<ExecutionStatusVariant, ComponentType<LucideProps>> = {
   success: CheckCircle2,
@@ -272,6 +276,7 @@ const STATUS_SIMPLE_LABELS: Record<StatusPhase, string> = {
   canceled: 'Canceled on Polymarket',
   expired: 'Expired on Polymarket',
   rejected: 'Rejected by Polymarket',
+  timed_out: 'Failed to match on Polymarket',
   unknown: 'Polymarket status unknown',
 }
 
@@ -287,6 +292,7 @@ function getPostOrderStateLabel(
 ) {
   if (phase === 'filled') return 'Filled'
   if (phase === 'partial') return 'Partially filled'
+  if (phase === 'timed_out') return 'Failed to match'
   if (
     orderType === 'FAK' &&
     (phase === 'canceled' || phase === 'expired' || phase === 'rejected') &&
@@ -497,6 +503,7 @@ function TradeExecutePageInner() {
   const [statusData, setStatusData] = useState<OrderStatusResponse | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [statusPhase, setStatusPhase] = useState<StatusPhase>('submitted')
+  const statusPhaseRef = useRef<StatusPhase>('submitted')
   const [submittedSnapshot, setSubmittedSnapshot] = useState<{
     contracts: number
     estimatedUsd: number
@@ -674,7 +681,12 @@ function TradeExecutePageInner() {
       : '—'
 
   const reportedOrderStatus = statusData?.status ? String(statusData.status).trim() : null
-  const orderStatusLabel = reportedOrderStatus ? getOrderStatusLabel(reportedOrderStatus) : null
+  const orderStatusLabel =
+    statusPhase === 'timed_out'
+      ? STATUS_SIMPLE_LABELS.timed_out
+      : reportedOrderStatus
+        ? getOrderStatusLabel(reportedOrderStatus)
+        : STATUS_SIMPLE_LABELS[statusPhase] ?? null
   const statusReason = statusData ? findStatusReason(statusData.raw) : null
   const orderStatusVariant = getExecutionStatusVariant(statusPhase)
   const StatusIconComponent = STATUS_VARIANT_ICONS[orderStatusVariant]
@@ -717,6 +729,10 @@ function TradeExecutePageInner() {
           ? 'text-emerald-600'
           : 'text-slate-700'
 
+  useEffect(() => {
+    statusPhaseRef.current = statusPhase
+  }, [statusPhase])
+
   const resetRecordState = useCallback(() => {
     setTradeRecord(null)
     setSubmitError(null)
@@ -757,6 +773,17 @@ function TradeExecutePageInner() {
       setAmountInput(formatInputValue(estimatedTotal, 2))
     }
   }, [amountInput, estimatedTotal])
+
+  const handleAdjustOrder = useCallback(() => {
+    setOrderId(null)
+    setSubmittedAt(null)
+    setStatusData(null)
+    setStatusError(null)
+    setStatusPhase('submitted')
+    setSubmitError(null)
+    setSubmitFailureDetails(null)
+    setSubmittedSnapshot(null)
+  }, [])
 
   const handleAmountChange = useCallback((value: string) => {
     setAmountInput(value)
@@ -1129,6 +1156,8 @@ function TradeExecutePageInner() {
             typeof data.snippet === 'string' ? data.snippet : JSON.stringify(data.snippet)
         }
         
+        const normalizedError = errorMessage.toLowerCase()
+
         // Add helpful context based on error type
         if (errorMessage.includes('No turnkey wallet') || errorMessage.includes('wallet not found')) {
           errorMessage = 'Trading wallet not connected. Please connect your wallet in your profile settings before executing trades.'
@@ -1136,6 +1165,12 @@ function TradeExecutePageInner() {
           errorMessage = 'Polymarket credentials not set up. Please complete wallet setup in your profile to enable trading.'
         } else if (errorMessage.includes('Unauthorized')) {
           errorMessage = 'Session expired. Please log out and log back in to continue trading.'
+        } else if (normalizedError.includes('no orders found to match with fak order') || normalizedError.includes('fak orders are partially filled') || normalizedError.includes('fak order')) {
+          errorMessage =
+            'No matching orders at your limit price. FAK orders must fill immediately, so this one was canceled. Try increasing slippage or adjusting the price.'
+        } else if (normalizedError.includes('not enough balance') || normalizedError.includes('allowance')) {
+          errorMessage =
+            'Not enough balance or allowance to place this order. Add funds or approve a higher allowance, then try again.'
         } else if (errorMessage.includes('balance') || errorMessage.includes('insufficient')) {
           errorMessage = 'Insufficient balance. Please add funds to your wallet or reduce the trade amount.'
         }
@@ -1188,6 +1223,7 @@ function TradeExecutePageInner() {
     let cancelled = false
     let intervalId: ReturnType<typeof setInterval> | null = null
     let processingTimer: ReturnType<typeof setTimeout> | null = null
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null
     let inFlight = false
 
     processingTimer = setTimeout(() => {
@@ -1196,8 +1232,37 @@ function TradeExecutePageInner() {
       }
     }, 1500)
 
+    const cancelOrder = async () => {
+      try {
+        const res = await fetch('/api/polymarket/orders/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderHash: orderId }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          setStatusError(data?.error || data?.message || 'Failed to cancel order')
+        }
+      } catch (err: any) {
+        setStatusError(err?.message || 'Failed to cancel order')
+      }
+    }
+
+    timeoutTimer = setTimeout(async () => {
+      if (cancelled) return
+      const phase = statusPhaseRef.current
+      if (TERMINAL_STATUS_PHASES.has(phase)) return
+      setStatusPhase('timed_out')
+      if (intervalId) {
+        clearInterval(intervalId)
+        intervalId = null
+      }
+      await cancelOrder()
+    }, ORDER_STATUS_TIMEOUT_MS)
+
     const poll = async () => {
       if (cancelled || inFlight) return
+      if (statusPhaseRef.current === 'timed_out') return
       inFlight = true
       try {
         const res = await fetch(`/api/polymarket/orders/${encodeURIComponent(orderId)}/status`, {
@@ -1219,6 +1284,10 @@ function TradeExecutePageInner() {
           if (TERMINAL_STATUS_PHASES.has(phase) && intervalId) {
             clearInterval(intervalId)
             intervalId = null
+            if (timeoutTimer) {
+              clearTimeout(timeoutTimer)
+              timeoutTimer = null
+            }
           }
         }
       } catch (err: any) {
@@ -1235,6 +1304,7 @@ function TradeExecutePageInner() {
       cancelled = true
       if (intervalId) clearInterval(intervalId)
       if (processingTimer) clearTimeout(processingTimer)
+      if (timeoutTimer) clearTimeout(timeoutTimer)
     }
   }, [orderId])
 
@@ -1765,6 +1835,24 @@ function TradeExecutePageInner() {
               {statusReason && (
                 <div className="text-sm text-slate-500">Reason: {statusReason}</div>
               )}
+              {statusPhase === 'timed_out' && (
+                <div className="space-y-3">
+                  <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    Polymarket did not match this order within 30 seconds. We canceled it so you can
+                    try again with a wider spread or updated price.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAdjustOrder}
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    Adjust order and try again
+                  </button>
+                </div>
+              )}
+              <div className="text-xs text-slate-500">
+                Polymarket status: {reportedOrderStatus || 'No status updates yet'}
+              </div>
               {showFillProgress && (
                 <div>
                   <div className="text-sm text-slate-500">

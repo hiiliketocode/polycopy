@@ -1,4 +1,4 @@
-export type OrderStatus = 'open' | 'partial' | 'filled' | 'canceled' | 'expired' | 'failed'
+export type OrderStatus = string
 export type OrderActivity =
   | 'bought'
   | 'sold'

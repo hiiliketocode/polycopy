@@ -139,6 +139,31 @@ function formatCompactNumber(value: number) {
   return `$${value.toFixed(0)}`;
 }
 
+function formatCurrency(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatPrice(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  const fixed = value.toFixed(4);
+  const trimmed = fixed.replace(/\.?0+$/, "");
+  return `$${trimmed}`;
+}
+
+function formatContracts(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 function ProfilePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1285,7 +1310,7 @@ function ProfilePageContent() {
     // For quick trades (OrderRow)
     const order = trade as OrderRow;
     if (order.marketResolved) return 'resolved';
-    if (order.status === 'filled' || order.status === 'partial') return 'open';
+    if (order.status === 'matched' || order.status === 'filled' || order.status === 'partial') return 'open';
     if (order.positionState === 'closed') return 'user-closed';
     return 'open';
   };
@@ -1341,7 +1366,7 @@ function ProfilePageContent() {
 
   const isDisplayableQuickTrade = (order: OrderRow) => {
     // Only show orders that have matched (partial) or fully filled.
-    return order.status === 'filled' || order.status === 'partial';
+    return order.status === 'matched' || order.status === 'filled' || order.status === 'partial';
   };
 
   const convertCopiedTradeToUnified = (trade: CopiedTrade): UnifiedTrade => {
@@ -1717,9 +1742,46 @@ function ProfilePageContent() {
                 </Card>
               ) : (
                 <div className="space-y-3">
-                  {filteredUnifiedTrades.slice(0, tradesToShow).map((trade) => (
-                    <Card key={trade.id} className="p-4 sm:p-6">
-                      <div className="space-y-4">
+                  {filteredUnifiedTrades.slice(0, tradesToShow).map((trade) => {
+                    const actionLabel =
+                      trade.type === 'quick' && trade.raw?.side?.toLowerCase() === 'sell' ? 'Sell' : 'Buy';
+                    const currentPrice = trade.price_current ?? trade.price_entry ?? null;
+                    const invested = trade.amount ?? null;
+                    const contracts = (() => {
+                      if (trade.type === 'quick' && trade.raw) {
+                        const filledSize =
+                          Number.isFinite(trade.raw.filledSize) && trade.raw.filledSize > 0
+                            ? trade.raw.filledSize
+                            : trade.raw.size;
+                        if (Number.isFinite(filledSize) && filledSize > 0) return filledSize;
+                      }
+                      if (trade.type === 'manual' && trade.copiedTrade?.entry_size) {
+                        return trade.copiedTrade.entry_size;
+                      }
+                      if (invested && trade.price_entry) {
+                        return invested / trade.price_entry;
+                      }
+                      return null;
+                    })();
+                    const roiValue =
+                      trade.roi ??
+                      (trade.price_entry && currentPrice
+                        ? (((actionLabel === 'Sell' ? trade.price_entry - currentPrice : currentPrice - trade.price_entry) /
+                            trade.price_entry) *
+                            100)
+                        : null);
+                    const roiClass =
+                      roiValue === null
+                        ? "text-slate-400"
+                        : roiValue > 0
+                          ? "text-emerald-600"
+                          : roiValue < 0
+                            ? "text-red-600"
+                            : "text-slate-600";
+
+                    return (
+                      <Card key={trade.id} className="p-4 sm:p-6">
+                        <div className="space-y-4">
                         {/* Trader Header Row - Only show for trades with trader info */}
                         {trade.trader_wallet && (
                           <div className="flex items-start justify-between gap-3">
@@ -1912,31 +1974,61 @@ function ProfilePageContent() {
                         </div>
 
                         {/* Stats Grid */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 rounded-lg p-3">
-                          <div>
-                            <p className="text-xs text-slate-500 mb-1">Entry</p>
-                            <p className="font-semibold text-slate-900">${trade.price_entry.toFixed(2)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-500 mb-1">Current</p>
-                            <p className="font-semibold text-slate-900">
-                              ${trade.price_current?.toFixed(2) || trade.price_entry.toFixed(2)}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-500 mb-1">Amount</p>
-                            <p className="font-semibold text-slate-900">
-                              ${trade.amount?.toFixed(0) || '—'}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-500 mb-1">ROI</p>
-                            <p className={cn(
-                              "font-semibold",
-                              (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
-                            )}>
-                              {(trade.roi || 0) >= 0 ? '+' : ''}{(trade.roi || 0).toFixed(1)}%
-                            </p>
+                        <div className="border border-slate-200 rounded-lg px-4 py-3 mt-3 bg-slate-50/50">
+                          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                            <div className="text-center">
+                              <p className="text-xs text-slate-500 mb-1 font-medium">Trade</p>
+                              <div className="flex flex-wrap items-center justify-center gap-1 max-w-full">
+                                <Badge
+                                  variant="secondary"
+                                  className={cn(
+                                    "font-semibold text-xs",
+                                    actionLabel === "Buy"
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      : "bg-red-50 text-red-700 border-red-200"
+                                  )}
+                                >
+                                  {actionLabel}
+                                </Badge>
+                                <span className="text-xs text-slate-400 font-semibold">|</span>
+                                <Badge
+                                  variant="secondary"
+                                  className="font-semibold text-xs bg-slate-100 text-slate-700 border-slate-200 max-w-[160px] whitespace-normal break-words text-center leading-snug"
+                                >
+                                  {trade.outcome || "Outcome"}
+                                </Badge>
+                              </div>
+                            </div>
+                            <div className="text-center md:border-l border-slate-200">
+                              <p className="text-xs text-slate-500 mb-1 font-medium">Invested</p>
+                              <p className="text-sm md:text-base font-semibold text-slate-900">
+                                {formatCurrency(invested)}
+                              </p>
+                            </div>
+                            <div className="text-center md:border-l border-slate-200">
+                              <p className="text-xs text-slate-500 mb-1 font-medium">Contracts</p>
+                              <p className="text-sm md:text-base font-semibold text-slate-900">
+                                {formatContracts(contracts)}
+                              </p>
+                            </div>
+                            <div className="text-center md:border-l border-slate-200">
+                              <p className="text-xs text-slate-500 mb-1 font-medium">Entry</p>
+                              <p className="text-sm md:text-base font-semibold text-slate-900">
+                                {formatPrice(trade.price_entry)}
+                              </p>
+                            </div>
+                            <div className="text-center md:border-l border-slate-200">
+                              <p className="text-xs text-slate-500 mb-1 font-medium">Current</p>
+                              <p className="text-sm md:text-base font-semibold text-slate-900">
+                                {formatPrice(currentPrice)}
+                              </p>
+                            </div>
+                            <div className="text-center md:border-l border-slate-200">
+                              <p className="text-xs text-slate-500 mb-1 font-medium">ROI</p>
+                              <p className={cn("text-sm md:text-base font-semibold", roiClass)}>
+                                {roiValue === null ? "—" : `${roiValue > 0 ? "+" : ""}${roiValue.toFixed(1)}%`}
+                              </p>
+                            </div>
                           </div>
                         </div>
 
@@ -2201,7 +2293,8 @@ function ProfilePageContent() {
                         )}
                       </div>
                     </Card>
-                  ))}
+                  );
+                  })}
                   
                   {/* View More Button */}
                   {filteredUnifiedTrades.length > tradesToShow && (

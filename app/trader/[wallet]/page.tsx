@@ -119,7 +119,7 @@ export default function TraderProfilePage({
   const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
   
   // Premium user expandable cards
-  const [expandedTradeIndex, setExpandedTradeIndex] = useState<number | null>(null);
+  const [expandedTradeKeys, setExpandedTradeKeys] = useState<Set<string>>(new Set());
   const [usdAmount, setUsdAmount] = useState<string>('');
   const [autoClose, setAutoClose] = useState(true);
   const [manualCopyTradeIndex, setManualCopyTradeIndex] = useState<number | null>(null);
@@ -139,6 +139,33 @@ export default function TraderProfilePage({
     closed?: boolean;
     resolved?: boolean;
   }>>(new Map());
+
+  const buildExpandedTradeKey = (trade: Trade, index: number) => {
+    const parts = [
+      trade.conditionId,
+      trade.marketSlug,
+      trade.market,
+      trade.outcome,
+      trade.side,
+      trade.timestamp ? String(trade.timestamp) : null,
+      String(index),
+    ]
+      .map((value) => value?.toString().trim())
+      .filter(Boolean);
+    return parts.join('|');
+  };
+
+  const toggleTradeExpanded = (tradeKey: string) => {
+    setExpandedTradeKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(tradeKey)) {
+        next.delete(tradeKey);
+      } else {
+        next.add(tradeKey);
+      }
+      return next;
+    });
+  };
 
   // Unwrap params
   useEffect(() => {
@@ -1163,7 +1190,8 @@ export default function TraderProfilePage({
                 {filteredTrades.slice(0, tradesToShow).map((trade, index) => {
                   const polymarketUrl = getPolymarketUrl(trade);
                   const isAlreadyCopied = isTradeCopied(trade);
-                  const isExpanded = expandedTradeIndex === index;
+                  const tradeKey = buildExpandedTradeKey(trade, index);
+                  const isExpanded = expandedTradeKeys.has(tradeKey);
                   
                   // Get live market data
                   const liveData = trade.conditionId ? liveMarketData.get(trade.conditionId) : undefined;
@@ -1269,7 +1297,7 @@ export default function TraderProfilePage({
                       }}
                       isPremium={isPremium}
                       isExpanded={isExpanded}
-                      onToggleExpand={() => setExpandedTradeIndex(isExpanded ? null : index)}
+                      onToggleExpand={() => toggleTradeExpanded(tradeKey)}
                       isCopied={isAlreadyCopied}
                       conditionId={trade.conditionId}
                       marketSlug={trade.marketSlug}
@@ -1311,7 +1339,7 @@ export default function TraderProfilePage({
                           )}
                           {!isAlreadyCopied && (
                             <button
-                              onClick={() => setExpandedTradeIndex(isExpanded ? null : index)}
+                              onClick={() => toggleTradeExpanded(tradeKey)}
                               className="text-slate-400 hover:text-slate-600 transition-colors"
                             >
                               {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}

@@ -121,7 +121,7 @@ export default function FeedPage() {
     closed?: boolean;
   }>>(new Map());
 
-  const [expandedTradeIndex, setExpandedTradeIndex] = useState<number | null>(null);
+  const [expandedTradeIds, setExpandedTradeIds] = useState<Set<string>>(new Set());
   
   // Manual refresh state
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -983,6 +983,18 @@ export default function FeedPage() {
     return tradeKey ? copiedTradeIds.has(tradeKey) : false;
   };
 
+  const toggleTradeExpanded = (tradeId: string) => {
+    setExpandedTradeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(tradeId)) {
+        next.delete(tradeId);
+      } else {
+        next.add(tradeId);
+      }
+      return next;
+    });
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -1109,7 +1121,7 @@ export default function FeedPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {displayedTrades.map((trade, index) => {
+              {displayedTrades.map((trade) => {
                 const liveMarket = liveMarketData.get(trade.market.conditionId || '')
                 
                 // Find the price for THIS specific trade's outcome
@@ -1123,6 +1135,8 @@ export default function FeedPage() {
                   }
                 }
                 
+                const tradeKey = String(trade.id);
+
                 return (
                   <TradeCard
                     key={trade.id}
@@ -1145,10 +1159,8 @@ export default function FeedPage() {
                     }
                     onAdvancedCopy={() => handleRealCopy(trade)}
                     isPremium={tierHasPremiumAccess(userTier)}
-                    isExpanded={expandedTradeIndex === index}
-                    onToggleExpand={() => {
-                      setExpandedTradeIndex(expandedTradeIndex === index ? null : index);
-                    }}
+                    isExpanded={expandedTradeIds.has(tradeKey)}
+                    onToggleExpand={() => toggleTradeExpanded(tradeKey)}
                     isCopied={isTraceCopied(trade)}
                     conditionId={trade.market.conditionId}
                     marketSlug={trade.market.slug}
