@@ -324,6 +324,7 @@ export default function FeedPage() {
       gameStartTime?: string;
       eventStatus?: string;
       closed?: boolean;
+      updatedAt?: number;
     }>();
     
     // Group trades by condition ID to avoid duplicate API calls
