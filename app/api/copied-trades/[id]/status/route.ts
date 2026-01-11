@@ -33,6 +33,23 @@ function createServiceClient() {
   )
 }
 
+async function resolveTraderWallet(
+  client: ReturnType<typeof createServiceClient>,
+  traderId: string | null | undefined
+): Promise<string | null> {
+  if (!traderId) return null
+  const { data, error } = await client
+    .from('traders')
+    .select('wallet_address')
+    .eq('id', traderId)
+    .maybeSingle()
+  if (error) {
+    console.warn('[copy-status] failed to resolve trader wallet', { traderId, error })
+    return null
+  }
+  return data?.wallet_address ?? null
+}
+
 /**
  * GET /api/copied-trades/[id]/status?userId=xxx
  * Check and update the status of a copied trade
@@ -66,11 +83,17 @@ export async function GET(
     // Use service role client to bypass RLS
     const supabase = createServiceClient()
     const ordersTable = await resolveOrdersTableName(supabase)
+    if (ordersTable !== 'orders') {
+      console.error('❌ Orders table unavailable for copy trade status (resolved to', ordersTable, ')')
+      return NextResponse.json({ error: 'Orders table unavailable' }, { status: 503 })
+    }
 
     // SECURITY: Fetch the copied trade and verify ownership
     // This ensures the user owns the trade before returning any data
+    // Read from the enriched view to get derived entry/exit fields for PnL,
+    // while still updating the base orders table later.
     const { data: tradeRow, error: fetchError } = await supabase
-      .from(ordersTable)
+      .from('orders_copy_enriched')
       .select('*')
       .eq('copied_trade_id', id)
       .eq('copy_user_id', userId)
@@ -85,16 +108,29 @@ export async function GET(
       ...tradeRow,
       trader_wallet: tradeRow.copied_trader_wallet ?? tradeRow.trader_wallet,
       market_title: tradeRow.copied_market_title || '',
+      entry_price: tradeRow.entry_price ?? tradeRow.price_when_copied ?? tradeRow.price ?? null,
+    }
+
+    // Choose whose position to track for PnL: follower for quick, source trader for manual.
+    let walletForStatus = trade.trader_wallet
+    if (trade.trade_method === 'quick') {
+      const followerWallet = await resolveTraderWallet(supabase, trade.trader_id)
+      walletForStatus = followerWallet ?? trade.trader_wallet
     }
     
     // If user manually closed this trade, return existing values without updates
     if (trade.user_closed_at) {
       console.log(`⏭️ User-closed trade ${id} - returning locked values (user_exit_price: ${trade.user_exit_price})`);
+      const lockedRoi =
+        trade.entry_price && trade.user_exit_price
+          ? ((trade.user_exit_price - trade.entry_price) / trade.entry_price) * 100
+          : trade.pnl_pct ?? trade.roi ?? null
+
       return NextResponse.json({
         traderStillHasPosition: trade.trader_still_has_position,
         traderClosedAt: trade.trader_closed_at,
         currentPrice: trade.user_exit_price, // Use user's exit price
-        roi: trade.roi, // Use locked ROI
+        roi: lockedRoi, // Use locked ROI
         marketResolved: trade.market_resolved,
         resolvedOutcome: trade.resolved_outcome,
         priceSource: 'user-closed'
@@ -149,7 +185,7 @@ export async function GET(
     let marketResolved: boolean = trade.market_resolved || false
     let resolvedOutcome: string | null = null
 
-    // STEP 1: Fetch trader's current positions from Polymarket (with pagination)
+    // STEP 1: Fetch current positions from Polymarket (with pagination)
     try {
       let positions: PolymarketPosition[] = [];
       let offset = 0;
@@ -158,7 +194,7 @@ export async function GET(
       
       // Fetch ALL positions using pagination
       while (hasMore) {
-        const positionsUrl = `https://data-api.polymarket.com/positions?user=${trade.trader_wallet}&limit=${limit}&offset=${offset}`
+        const positionsUrl = `https://data-api.polymarket.com/positions?user=${walletForStatus}&limit=${limit}&offset=${offset}`
         const positionsResponse = await fetch(positionsUrl, { cache: 'no-store' })
 
         if (positionsResponse.ok) {
@@ -379,12 +415,10 @@ export async function GET(
     }
 
     // STEP 4: Calculate ROI
-    if (currentPrice !== null && trade.price_when_copied) {
-      const entryPrice = parseFloat(String(trade.price_when_copied))
-      if (entryPrice > 0) {
-        roi = ((currentPrice - entryPrice) / entryPrice) * 100
-        roi = parseFloat(roi.toFixed(2))
-      }
+    const entryPrice = trade.entry_price ? parseFloat(String(trade.entry_price)) : null
+    if (currentPrice !== null && entryPrice && entryPrice > 0) {
+      roi = ((currentPrice - entryPrice) / entryPrice) * 100
+      roi = parseFloat(roi.toFixed(2))
     }
     
     // ADDITIONAL: Check if current price indicates resolution
@@ -414,9 +448,13 @@ export async function GET(
       trader_still_has_position: traderStillHasPosition,
       trader_closed_at: traderClosedAt,
       current_price: currentPrice,
-      roi: roi,
       last_checked_at: new Date().toISOString(),
       market_resolved: marketResolved,
+    }
+
+    // Persist ROI only when we have a stable entry/exit pair.
+    if (roi !== null && entryPrice !== null && entryPrice > 0) {
+      updateData.roi = roi
     }
     
     // Only set resolved_outcome if we have one
@@ -441,7 +479,9 @@ export async function GET(
     }
 
     // Log summary for debugging
-    console.log(`✅ Status updated: ${trade.market_title?.slice(0, 30)}... | ${trade.outcome} | ${currentPrice !== null ? Math.round(currentPrice * 100) + '¢' : 'no price'} | ROI: ${roi !== null ? roi + '%' : 'n/a'} | source: ${priceSource}`)
+        console.log(
+          `✅ Status updated: ${trade.market_title?.slice(0, 30)}... | ${trade.outcome} | wallet=${walletForStatus} | ${currentPrice !== null ? Math.round(currentPrice * 100) + '¢' : 'no price'} | ROI: ${roi !== null ? roi + '%' : 'n/a'} | source: ${priceSource}`
+        )
 
     return NextResponse.json({
       trade: updatedTrade,

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Compass, User, LogOut, Settings, Home, Crown, FileText } from "lucide-react"
+import { Compass, User, LogOut, Settings, Home, Crown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -203,38 +203,28 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
               Discover
             </Link>
             <Link
-              href="/orders"
+              href="/profile"
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                isActive("/orders")
+                isActive("/profile")
                   ? "text-slate-900 bg-slate-100"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
               }`}
             >
-              Orders
+              Profile
             </Link>
-          <Link
-            href="/profile"
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              isActive("/profile")
-                ? "text-slate-900 bg-slate-100"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-            }`}
-          >
-            Profile
-          </Link>
-          {isAdmin && (
-            <Link
-              href="/admin/users"
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                isActive("/admin/users")
-                  ? "text-slate-900 bg-slate-100"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-              }`}
-            >
-              Admin
-            </Link>
-          )}
-        </div>
+            {isAdmin && (
+              <Link
+                href="/admin/users"
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  isActive("/admin/users")
+                    ? "text-slate-900 bg-slate-100"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                }`}
+              >
+                Admin
+              </Link>
+            )}
+          </div>
 
           {/* Right Side - User Menu or Auth Buttons */}
           <div className="flex items-center gap-4">
@@ -362,16 +352,6 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
             >
               <Compass className={`w-5 h-5 ${isActive("/discover") ? "stroke-[2.5]" : "stroke-2"}`} />
               <span className={`text-[10px] ${isActive("/discover") ? "font-semibold" : "font-medium"}`}>Discover</span>
-            </Link>
-
-            <Link
-              href="/orders"
-              className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors min-w-[64px] ${
-                isActive("/orders") ? "bg-slate-100 text-[#FDB022]" : "text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <FileText className={`w-5 h-5 ${isActive("/orders") ? "stroke-[2.5]" : "stroke-2"}`} />
-              <span className={`text-[10px] ${isActive("/orders") ? "font-semibold" : "font-medium"}`}>Orders</span>
             </Link>
 
             <Link

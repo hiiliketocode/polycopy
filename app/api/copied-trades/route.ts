@@ -113,11 +113,16 @@ export async function GET(request: NextRequest) {
     
     // Use service role client for database operations
     const supabase = createServiceClient()
+    // Ensure the base table exists before querying the derived view.
     const ordersTable = await resolveOrdersTableName(supabase)
+    if (ordersTable !== 'orders') {
+      console.error('❌ Orders table unavailable for copy trades (resolved to', ordersTable, ')')
+      return NextResponse.json({ error: 'Orders table unavailable' }, { status: 503 })
+    }
     
-    // Fetch all copied trades for this user, ordered by copied_at DESC
+    // Fetch all copied trades for this user, with derived PnL fields from the view
     const { data: orders, error: dbError } = await supabase
-      .from(ordersTable)
+      .from('orders_copy_enriched')
       .select(`
         order_id,
         copied_trade_id,
@@ -133,6 +138,7 @@ export async function GET(request: NextRequest) {
         price_when_copied,
         price,
         size,
+        filled_size,
         amount_invested,
         created_at,
         trader_still_has_position,
@@ -147,7 +153,13 @@ export async function GET(request: NextRequest) {
         last_checked_at,
         resolved_outcome,
         user_closed_at,
-        user_exit_price
+        user_exit_price,
+        entry_price,
+        entry_size,
+        invested_usd,
+        exit_price,
+        pnl_pct,
+        pnl_usd
       `)
       .eq('copy_user_id', userId)
       .or('copied_trade_id.not.is.null,trade_method.eq.manual')
@@ -160,32 +172,42 @@ export async function GET(request: NextRequest) {
     
     console.log('✅ Fetched', orders?.length || 0, 'cached copies for user', userId)
     
-    const normalizedTrades = (orders || []).map((order) => ({
-      id: order.copied_trade_id || order.order_id,
-      trader_wallet: order.copied_trader_wallet || '',
-      trader_username: order.copied_trader_username,
-      trader_profile_image_url: order.trader_profile_image_url || null,
-      market_id: order.market_id,
-      market_title: order.copied_market_title || '',
-      market_slug: order.market_slug,
-      market_avatar_url: order.market_avatar_url || null,
-      outcome: order.outcome || '',
-      price_when_copied: order.price_when_copied ?? order.price ?? 0,
-      amount_invested: order.amount_invested ?? null,
-      copied_at: order.created_at,
-      trader_still_has_position: order.trader_still_has_position,
-      trader_closed_at: order.trader_closed_at,
-      current_price: order.current_price,
-      market_resolved: order.market_resolved,
-      market_resolved_at: order.market_resolved_at,
-      roi: order.roi,
-      notification_closed_sent: order.notification_closed_sent,
-      notification_resolved_sent: order.notification_resolved_sent,
-      last_checked_at: order.last_checked_at,
-      resolved_outcome: order.resolved_outcome,
-      user_closed_at: order.user_closed_at,
-      user_exit_price: order.user_exit_price,
-    }))
+    const normalizedTrades = (orders || []).map((order) => {
+      const entryPrice = order.entry_price ?? order.price_when_copied ?? order.price ?? null
+      const exitPrice = order.exit_price ?? null
+      const computedRoi =
+        entryPrice && exitPrice
+          ? ((exitPrice - entryPrice) / entryPrice) * 100
+          : order.pnl_pct ?? order.roi ?? null
+
+      return {
+        id: order.copied_trade_id || order.order_id,
+        trader_wallet: order.copied_trader_wallet || '',
+        trader_username: order.copied_trader_username,
+        trader_profile_image_url: order.trader_profile_image_url || null,
+        market_id: order.market_id,
+        market_title: order.copied_market_title || '',
+        market_slug: order.market_slug,
+        market_avatar_url: order.market_avatar_url || null,
+        outcome: order.outcome || '',
+        price_when_copied: entryPrice ?? 0,
+        amount_invested: order.invested_usd ?? order.amount_invested ?? null,
+        copied_at: order.created_at,
+        trader_still_has_position: order.trader_still_has_position,
+        trader_closed_at: order.trader_closed_at,
+        current_price: exitPrice ?? order.current_price,
+        market_resolved: order.market_resolved,
+        market_resolved_at: order.market_resolved_at,
+        roi: computedRoi,
+        notification_closed_sent: order.notification_closed_sent,
+        notification_resolved_sent: order.notification_resolved_sent,
+        last_checked_at: order.last_checked_at,
+        resolved_outcome: order.resolved_outcome,
+        user_closed_at: order.user_closed_at,
+        user_exit_price: order.user_exit_price,
+        trade_method: order.trade_method ?? null,
+      }
+    })
 
     return NextResponse.json({
       trades: normalizedTrades,
@@ -323,6 +345,10 @@ export async function POST(request: NextRequest) {
     
     const service = createServiceClient()
     const ordersTable = await resolveOrdersTableName(service)
+    if (ordersTable !== 'orders') {
+      console.error('❌ Orders table unavailable for manual copies (resolved to', ordersTable, ')')
+      return NextResponse.json({ error: 'Orders table unavailable' }, { status: 503 })
+    }
     const copiedTradeId = randomUUID()
     const traderId = await ensureTraderId(service, tradeData.traderWallet)
     const normalizedPrice = tradeData.priceWhenCopied

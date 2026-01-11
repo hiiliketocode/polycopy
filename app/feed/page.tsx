@@ -9,7 +9,6 @@ import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { TradeCard } from '@/components/polycopy/trade-card';
-import { MarkTradeCopiedModal } from '@/components/polycopy/mark-trade-copied-modal';
 import { EmptyState } from '@/components/polycopy/empty-state';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Activity } from 'lucide-react';
@@ -122,10 +121,6 @@ export default function FeedPage() {
     closed?: boolean;
   }>>(new Map());
 
-  // Modal state
-  const [showCopiedModal, setShowCopiedModal] = useState(false);
-  const [selectedTrade, setSelectedTrade] = useState<FeedTrade | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [expandedTradeIndex, setExpandedTradeIndex] = useState<number | null>(null);
   
   // Manual refresh state
@@ -189,46 +184,68 @@ export default function FeedPage() {
     return () => subscription.unsubscribe();
   }, [router]);
 
-  // Fetch copied trades
-  useEffect(() => {
-    if (!user) return;
-    
-const fetchCopiedTrades = async () => {
-      setLoadingCopiedTrades(true);
-      try {
-        const { data: trades, error } = await supabase
-          .from('orders')
-          .select('market_id, copied_trader_wallet, market_slug, copied_market_title')
-          .eq('copy_user_id', user.id);
-        
-        if (error) {
-          console.error('Error fetching copied trades:', error);
-          setCopiedTradeIds(new Set());
-        } else {
-          const copiedIds = new Set<string>();
+  const fetchCopiedTrades = useCallback(async () => {
+    if (!user) {
+      setCopiedTradeIds(new Set());
+      return;
+    }
+
+    setLoadingCopiedTrades(true);
+    try {
+      const apiResponse = await fetch(`/api/copied-trades?userId=${user.id}`);
+      if (apiResponse.ok) {
+        const payload = await apiResponse.json();
+        const copiedIds = new Set<string>();
+        payload?.trades?.forEach(
+          (t: { market_id?: string; market_slug?: string; market_title?: string; trader_wallet?: string }) => {
+            const walletKey = normalizeKeyPart(t.trader_wallet);
+            if (!walletKey) return;
+            const marketKeys = [t.market_id, t.market_slug, t.market_title]
+              .map(normalizeKeyPart)
+              .filter(Boolean);
+            if (marketKeys.length === 0) return;
+            for (const key of new Set(marketKeys)) {
+              copiedIds.add(`${key}-${walletKey}`);
+            }
+          }
+        );
+        setCopiedTradeIds(copiedIds);
+        return;
+      }
+
+      console.warn('Falling back to direct Supabase query for copied trades');
+      const { data: trades, error } = await supabase
+        .from('orders')
+        .select('market_id, copied_trader_wallet, market_slug, copied_market_title')
+        .eq('copy_user_id', user.id);
+
+      if (error) {
+        console.error('Error fetching copied trades:', error);
+      } else {
+        const copiedIds = new Set<string>();
         trades?.forEach((t: { market_id?: string; copied_trader_wallet?: string; market_slug?: string; copied_market_title?: string }) => {
           const walletKey = normalizeKeyPart(t.copied_trader_wallet);
           if (!walletKey) return;
           const marketKeys = [t.market_id, t.market_slug, t.copied_market_title]
             .map(normalizeKeyPart)
             .filter(Boolean);
-            if (marketKeys.length === 0) return;
-            for (const key of new Set(marketKeys)) {
-              copiedIds.add(`${key}-${walletKey}`);
-            }
-          });
-          setCopiedTradeIds(copiedIds);
-        }
-      } catch (err) {
-        console.error('Error fetching copied trades:', err);
-        setCopiedTradeIds(new Set());
-      } finally {
-        setLoadingCopiedTrades(false);
+          if (marketKeys.length === 0) return;
+          for (const key of new Set(marketKeys)) {
+            copiedIds.add(`${key}-${walletKey}`);
+          }
+        });
+        setCopiedTradeIds(copiedIds);
       }
-    };
-
-    fetchCopiedTrades();
+    } catch (err) {
+      console.error('Error fetching copied trades:', err);
+    } finally {
+      setLoadingCopiedTrades(false);
+    }
   }, [user]);
+
+  useEffect(() => {
+    fetchCopiedTrades();
+  }, [fetchCopiedTrades]);
 
   // Fetch feature tier and wallet
   useEffect(() => {
@@ -856,10 +873,78 @@ const fetchCopiedTrades = async () => {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  // Mark as copied handler
-  const handleMarkAsCopied = (trade: FeedTrade) => {
-    setSelectedTrade(trade);
-    setShowCopiedModal(true);
+  const handleMarkAsCopied = async (
+    trade: FeedTrade,
+    entryPrice: number,
+    amountInvested?: number
+  ) => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    try {
+      let traderProfileImage: string | null = null;
+      try {
+        console.log('🖼️ Fetching trader profile image for wallet:', trade.trader.wallet);
+        const leaderboardResponse = await fetch(
+          `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${trade.trader.wallet}`
+        );
+        if (leaderboardResponse.ok) {
+          const leaderboardData = await leaderboardResponse.json();
+          if (Array.isArray(leaderboardData) && leaderboardData.length > 0) {
+            traderProfileImage = leaderboardData[0].profileImage || null;
+            console.log('✅ Found trader profile image:', traderProfileImage ? 'yes' : 'no');
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ Failed to fetch trader profile image:', err);
+      }
+
+      const marketId =
+        trade.market.conditionId ||
+        trade.market.slug ||
+        trade.market.title;
+      const response = await fetch('/api/copied-trades', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          traderWallet: trade.trader.wallet,
+          traderUsername: trade.trader.displayName,
+          marketId,
+          marketTitle: trade.market.title,
+          marketSlug: trade.market.slug || null,
+          outcome: trade.trade.outcome.toUpperCase(),
+          priceWhenCopied: entryPrice,
+          amountInvested: amountInvested || null,
+          traderProfileImage,
+          marketAvatarUrl: trade.market.avatarUrl || null,
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        console.error('Copy trade API error:', payload);
+        throw new Error(payload.error || 'Failed to save copied trade');
+      }
+
+      const tradeKey = buildCopiedTradeKey(marketId, trade.trader.wallet);
+      if (tradeKey) {
+        setCopiedTradeIds((prev) => {
+          const next = new Set(prev);
+          next.add(tradeKey);
+          return next;
+        });
+      }
+
+      await fetchCopiedTrades();
+    } catch (err: any) {
+      console.error('Error saving copied trade:', err);
+      alert(err.message || 'Failed to save copied trade');
+    }
   };
 
   const handleRealCopy = (trade: FeedTrade) => {
@@ -879,87 +964,6 @@ const fetchCopiedTrades = async () => {
     if (trade.trader.wallet) params.set('traderWallet', trade.trader.wallet);
 
     router.push(`/trade-execute?${params.toString()}`);
-  };
-
-  // Confirm mark as copied
-  const handleConfirmCopy = async (entryPrice: number, amountInvested?: number) => {
-    if (!selectedTrade || !user) return;
-
-    setIsSubmitting(true);
-
-    try {
-      // Fetch trader profile image from Polymarket leaderboard
-      let traderProfileImage: string | null = null
-      try {
-        console.log('🖼️ Fetching trader profile image for wallet:', selectedTrade.trader.wallet)
-        const leaderboardResponse = await fetch(
-          `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${selectedTrade.trader.wallet}`
-        )
-        
-        if (leaderboardResponse.ok) {
-          const leaderboardData = await leaderboardResponse.json()
-          if (Array.isArray(leaderboardData) && leaderboardData.length > 0) {
-            traderProfileImage = leaderboardData[0].profileImage || null
-            console.log('✅ Found trader profile image:', traderProfileImage ? 'yes' : 'no')
-          }
-        }
-      } catch (err) {
-        console.warn('⚠️ Failed to fetch trader profile image:', err)
-        // Continue without image - not critical
-      }
-      
-      const marketId =
-        selectedTrade.market.conditionId ||
-        selectedTrade.market.slug ||
-        selectedTrade.market.title;
-      const response = await fetch('/api/copied-trades', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: user.id,
-          traderWallet: selectedTrade.trader.wallet,
-          traderUsername: selectedTrade.trader.displayName,
-          marketId,
-          marketTitle: selectedTrade.market.title,
-          marketSlug: selectedTrade.market.slug || null,
-          outcome: selectedTrade.trade.outcome.toUpperCase(),
-          priceWhenCopied: entryPrice,
-          amountInvested: amountInvested || null,
-          traderProfileImage: traderProfileImage,
-          marketAvatarUrl: selectedTrade.market.avatarUrl || null,
-        }),
-      });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        console.error('Copy trade API error:', payload);
-        throw new Error(payload.error || 'Failed to save copied trade');
-      }
-
-      const createdTrade = payload.trade;
-
-      console.log('Trade copied successfully:', createdTrade?.id || createdTrade?.copiedTradeId);
-
-      const tradeKey = buildCopiedTradeKey(marketId, selectedTrade.trader.wallet);
-      if (tradeKey) {
-        setCopiedTradeIds(prev => {
-          const next = new Set(prev);
-          next.add(tradeKey);
-          return next;
-        });
-      }
-
-      setShowCopiedModal(false);
-      setSelectedTrade(null);
-
-    } catch (err: any) {
-      console.error('Error saving copied trade:', err);
-      alert(err.message || 'Failed to save copied trade');
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   // Check if a trade is copied
@@ -1128,7 +1132,9 @@ const fetchCopiedTrades = async () => {
                     total={trade.trade.price * trade.trade.size}
                     timestamp={getRelativeTime(trade.trade.timestamp)}
                     onCopyTrade={() => handleCopyTrade(trade)}
-                    onMarkAsCopied={() => handleMarkAsCopied(trade)}
+                    onMarkAsCopied={(entryPrice, amountInvested) =>
+                      handleMarkAsCopied(trade, entryPrice, amountInvested)
+                    }
                     onAdvancedCopy={() => handleRealCopy(trade)}
                     isPremium={tierHasPremiumAccess(userTier)}
                     isExpanded={expandedTradeIndex === index}
@@ -1170,23 +1176,6 @@ const fetchCopiedTrades = async () => {
         </div>
       </div>
 
-      {/* Modals */}
-      {selectedTrade && (
-        <>
-          <MarkTradeCopiedModal
-            open={showCopiedModal}
-            onOpenChange={setShowCopiedModal}
-            trade={{
-              market: selectedTrade.market.title,
-              traderName: selectedTrade.trader.displayName,
-              position: selectedTrade.trade.outcome.toUpperCase() as "YES" | "NO",
-              traderPrice: selectedTrade.trade.price,
-            }}
-            isPremium={tierHasPremiumAccess(userTier)}
-            onConfirm={handleConfirmCopy}
-          />
-        </>
-      )}
     </>
   );
 }

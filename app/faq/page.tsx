@@ -23,9 +23,24 @@ const faqs: FAQ[] = [
           successful Polymarket traders, allowing you to mirror their strategies and potentially benefit from their expertise.
         </p>
         <p>
+          We surface trades in your feed in near real-time so you can copy almost instantly and reduce slippage risk in fast-moving markets. 
           Think of it like following expert investors on the stock market - except for prediction markets. You can see what 
           the top performers are betting on and either manually copy their trades (free) or automatically execute them with 
           one click (premium).
+        </p>
+      </div>
+    ),
+  },
+  {
+    category: 'Getting Started',
+    question: 'Do I need a Polymarket account to use Polycopy?',
+    answer: (
+      <div className="space-y-3">
+        <p>
+          Yes. You need a funded Polymarket account (with USDC) to place trades via Polycopy. Free users can still browse, follow, and manually copy, but executing trades requires a funded Polymarket wallet.
+        </p>
+        <p className="text-sm text-slate-600">
+          Quick Copy (premium) also requires connecting your Polymarket wallet to Polycopy.
         </p>
       </div>
     ),
@@ -114,11 +129,15 @@ const faqs: FAQ[] = [
           <li>Click "Execute Trade" - done!</li>
         </ol>
 
+        <p className="text-sm text-slate-600">
+          We show the current fill price automatically; only update it if it has changed.
+        </p>
+
         <p className="font-semibold mt-4">Advanced Features Available:</p>
         <ul className="list-disc list-inside space-y-2 ml-4">
           <li><strong>Custom Slippage:</strong> Set how much price movement you'll tolerate (default is optimized for you)</li>
           <li><strong>Fill or Kill (FoK):</strong> Execute the trade fully at your price or cancel it entirely</li>
-          <li><strong>Limit Orders:</strong> Set a maximum price you're willing to pay</li>
+          <li><strong>Limit Orders:</strong> Set a maximum price you're willing to pay (full manual controls coming soon)</li>
           <li><strong>Auto-Close Positions:</strong> Automatically close your position when the trader you copied exits</li>
           <li><strong>Position Sizing:</strong> Customize how much you want to invest per trade</li>
         </ul>
@@ -126,6 +145,31 @@ const faqs: FAQ[] = [
         <p className="text-sm bg-amber-50 border border-amber-200 rounded-lg p-3 mt-3">
           <strong>Requirements:</strong> Quick Copy requires a Premium subscription ($20/month) and connecting your Polymarket 
           wallet to Polycopy.
+        </p>
+      </div>
+    ),
+  },
+  {
+    category: 'Copy Trading',
+    question: 'How do I pick which trades to copy?',
+    answer: (
+      <div className="space-y-3">
+        <p>
+          Check the market context before copying: look at the market, the trader’s score, and what’s happening right now. Make sure the trade fits your strategy and risk tolerance.
+        </p>
+        <p>
+          Compare the original price to the live price and note when the trade was placed—fast markets move, so confirm it still makes sense for you before copying.
+        </p>
+      </div>
+    ),
+  },
+  {
+    category: 'Copy Trading',
+    question: 'Can I auto copy trades?',
+    answer: (
+      <div className="space-y-3">
+        <p>
+          Not yet. Auto copy is on our roadmap—we're building it so you can mirror trades automatically as they hit the feed.
         </p>
       </div>
     ),
@@ -158,6 +202,114 @@ const faqs: FAQ[] = [
         <p className="text-sm text-slate-600 mt-3">
           <strong>Without Auto-Close:</strong> Your position stays open until you manually close it or the market resolves. 
           You can close anytime on Polymarket or through Polycopy's interface.
+        </p>
+      </div>
+    ),
+  },
+  // TRADING & ORDERS
+  {
+    category: 'Trading & Orders',
+    question: 'What is slippage?',
+    answer: (
+      <div className="space-y-3">
+        <p>
+          Slippage is the difference between the price you expect and the price you actually get. In fast-moving Polymarket markets, prices can change quickly while your order is being placed.
+        </p>
+        <p className="text-sm text-slate-600">
+          Polycopy focuses on speed to help reduce slippage, but it can still happen when liquidity is thin or the market moves fast.
+        </p>
+      </div>
+    ),
+  },
+  {
+    category: 'Trading & Orders',
+    question: 'Why did my order fill?',
+    answer: (
+      <div className="space-y-3">
+        <p>
+          Your order fills when there’s enough liquidity at your limit price (or better). If the market price reaches your limit, the order can fill immediately.
+        </p>
+        <p className="text-sm text-slate-600">
+          In fast markets, prices can move between the time you submit and when it executes.
+        </p>
+      </div>
+    ),
+  },
+  {
+    category: 'Trading & Orders',
+    question: 'What is the minimum order size?',
+    answer: (
+      <div className="space-y-3">
+        <p>
+          The minimum is usually $1, but it may vary by market conditions. If your order is below the minimum, Polycopy will show you the exact minimum for that market.
+        </p>
+      </div>
+    ),
+  },
+  {
+    category: 'Trading & Orders',
+    question: 'Why is the contract amount different from the one I entered?',
+    answer: (
+      <div className="space-y-3">
+        <p>
+          Prices move quickly, so we may adjust the contract amount to stay close to the live price, keep it above the market minimum, and round to valid contract increments.
+        </p>
+        <p className="text-sm text-slate-600">
+          The goal is to place the closest valid order without it being rejected by the market.
+        </p>
+      </div>
+    ),
+  },
+  {
+    category: 'Trading & Orders',
+    question: "What's the difference between Fill or Kill (FoK) and Good to Cancel (GTC)?",
+    answer: (
+      <div className="space-y-3">
+        <p>
+          <strong>Fill or Kill</strong> means the order must fill completely right away or it cancels. <strong>Good to Cancel</strong> keeps the order open until it fills or you cancel it.
+        </p>
+        <p className="text-sm text-slate-600">
+          Most users prefer FoK because Polymarket markets move fast and they want to avoid stale orders.
+        </p>
+      </div>
+    ),
+  },
+  {
+    category: 'Trading & Orders',
+    question: 'Can I enter limit orders?',
+    answer: (
+      <div className="space-y-3">
+        <p>
+          All Polymarket orders are limit orders by design, and Polycopy tries to get you the best available price at the time of execution.
+        </p>
+        <p className="text-sm text-slate-600">
+          Full manual limit controls are coming soon.
+        </p>
+      </div>
+    ),
+  },
+  {
+    category: 'Trading & Orders',
+    question: 'Why can I see other orders on the order screen?',
+    answer: (
+      <div className="space-y-3">
+        <p>
+          We only show orders placed via Polycopy for premium club users. This lets you compare your copied orders with other premium activity.
+        </p>
+      </div>
+    ),
+  },
+  // STRATEGY & RISK
+  {
+    category: 'Strategy & Risk',
+    question: 'What are the risks of using Polymarket Polycopy?',
+    answer: (
+      <div className="space-y-3">
+        <p>
+          Polymarket markets move quickly, and copying trades doesn’t guarantee the same results. A trader with a strong track record today can underperform tomorrow.
+        </p>
+        <p className="text-sm text-slate-600">
+          Only trade what you can afford to lose, and make sure each copy fits your strategy and risk tolerance.
         </p>
       </div>
     ),
@@ -477,8 +629,8 @@ const faqs: FAQ[] = [
               </tr>
               <tr className="bg-amber-50">
                 <td className="border border-slate-300 px-4 py-3">Limit Orders</td>
-                <td className="border border-slate-300 px-4 py-3 text-center">✗</td>
-                <td className="border border-slate-300 px-4 py-3 text-center">✓</td>
+                <td className="border border-slate-300 px-4 py-3 text-center">Coming soon</td>
+                <td className="border border-slate-300 px-4 py-3 text-center">Coming soon</td>
               </tr>
               <tr className="bg-amber-50">
                 <td className="border border-slate-300 px-4 py-3">Fill or Kill (FoK)</td>
@@ -540,7 +692,7 @@ const faqs: FAQ[] = [
             <ul className="list-disc list-inside space-y-1 text-sm text-amber-900">
               <li><strong>Speed:</strong> Execute copy trades in seconds without switching tabs</li>
               <li><strong>Pre-filled Parameters:</strong> Trade details auto-populate based on the trader you're copying</li>
-              <li><strong>Advanced Controls:</strong> Access limit orders, custom slippage, and Fill or Kill options</li>
+              <li><strong>Advanced Controls:</strong> Custom slippage and Fill or Kill options (full limit order controls coming soon)</li>
               <li><strong>Auto-Close:</strong> Set positions to automatically close when copied traders exit</li>
               <li><strong>Portfolio Tracking:</strong> All trades automatically logged and tracked in your dashboard</li>
               <li><strong>Seamless Experience:</strong> Stay in one platform for discovery, analysis, and execution</li>
@@ -682,6 +834,17 @@ const faqs: FAQ[] = [
         <p>
           To trade on Polymarket (and use Polycopy's copy trading features), you need USDC in your Polymarket wallet. 
           Here's how to fund it:
+        </p>
+        <p className="text-sm">
+          For Polymarket's own funding guide, see{' '}
+          <a
+            href="https://legacy-docs.polymarket.com/faq"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#FDB022] hover:text-[#E69E1A] underline"
+          >
+            the Polymarket FAQ
+          </a>.
         </p>
 
         <div className="space-y-3 mt-4">

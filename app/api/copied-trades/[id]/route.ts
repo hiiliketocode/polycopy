@@ -62,6 +62,10 @@ export async function DELETE(
 
     const supabase = createServiceClient()
     const ordersTable = await resolveOrdersTableName(supabase)
+    if (ordersTable !== 'orders') {
+      console.error('❌ Orders table unavailable for copy trade deletes (resolved to', ordersTable, ')')
+      return NextResponse.json({ error: 'Orders table unavailable' }, { status: 503 })
+    }
     
     // Verify the trade belongs to this user before deleting
     const { data: order, error: fetchError } = await supabase

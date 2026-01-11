@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
@@ -59,6 +59,7 @@ interface CopiedTrade {
   market_avatar_url: string | null;
   outcome: string;
   price_when_copied: number;
+  entry_size?: number | null;
   amount_invested: number | null;
   copied_at: string;
   trader_still_has_position: boolean;
@@ -67,9 +68,11 @@ interface CopiedTrade {
   market_resolved: boolean;
   market_resolved_at: string | null;
   roi: number | null;
+  pnl_usd?: number | null;
   user_closed_at: string | null;
   user_exit_price: number | null;
   resolved_outcome?: string | null;
+  trade_method?: 'quick' | 'manual' | null;
 }
 
 interface PositionSizeBucket {
@@ -86,6 +89,18 @@ interface CategoryDistribution {
 }
 
 type ProfileTab = 'copied-trades' | 'performance' | 'settings' | 'manual-trades';
+
+interface PortfolioStats {
+  totalPnl: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  totalVolume: number;
+  roi: number;
+  winRate: number;
+  totalTrades: number;
+  openTrades: number;
+  closedTrades: number;
+}
 
 // Helper: Format relative time
 function formatRelativeTime(dateString: string): string {
@@ -138,6 +153,9 @@ function ProfilePageContent() {
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved'>('all');
+  const [portfolioStats, setPortfolioStats] = useState<PortfolioStats | null>(null);
+  const [portfolioStatsLoading, setPortfolioStatsLoading] = useState(false);
+  const [portfolioStatsError, setPortfolioStatsError] = useState<string | null>(null);
   
   // Performance tab data
   const [positionSizeBuckets, setPositionSizeBuckets] = useState<PositionSizeBucket[]>([]);
@@ -156,11 +174,13 @@ function ProfilePageContent() {
   
   // UI state - Check for tab query parameter
   const tabParam = searchParams?.get('tab');
+  const preferredDefaultTab: ProfileTab = hasPremiumAccess ? 'manual-trades' : 'copied-trades';
   const initialTab =
-    tabParam === 'settings' || tabParam === 'performance' || tabParam === 'manual-trades'
+    tabParam === 'settings' || tabParam === 'performance' || tabParam === 'manual-trades' || tabParam === 'copied-trades'
       ? (tabParam as ProfileTab)
-      : 'copied-trades';
+      : preferredDefaultTab;
   const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
+  const hasAppliedPreferredTab = useRef(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   
@@ -288,6 +308,13 @@ function ProfilePageContent() {
     fetchStats();
   }, [user]);
 
+  useEffect(() => {
+    if (tabParam || hasAppliedPreferredTab.current || loadingStats) return;
+
+    setActiveTab(preferredDefaultTab);
+    hasAppliedPreferredTab.current = true;
+  }, [preferredDefaultTab, tabParam, loadingStats]);
+
   // Fetch Polymarket username when wallet is connected
   useEffect(() => {
     if (!profile?.trading_wallet_address) {
@@ -323,20 +350,29 @@ function ProfilePageContent() {
     const fetchCopiedTrades = async () => {
       setLoadingCopiedTrades(true);
       try {
-        const response = await fetch(`/api/copied-trades?userId=${user.id}`);
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Error fetching copied trades:', errorText);
-          setCopiedTrades([]);
-          setLoadingCopiedTrades(false);
-          return;
+        const allTrades: CopiedTrade[] = [];
+        let page = 1;
+        let hasMore = true;
+        const MAX_PAGES = 10; // cap to avoid runaway fetch
+
+        while (hasMore && page <= MAX_PAGES) {
+          const response = await fetch(`/api/portfolio/trades?userId=${user.id}&page=${page}&pageSize=50`);
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Error fetching portfolio trades:', errorText);
+            throw new Error(errorText || 'Failed to fetch portfolio trades');
+          }
+
+          const payload = await response.json();
+          const trades = (payload?.trades || []) as CopiedTrade[];
+          allTrades.push(...trades);
+
+          hasMore = Boolean(payload?.hasMore);
+          page += 1;
         }
 
-        const payload = await response.json();
-        const trades = (payload?.trades || []) as CopiedTrade[];
-        
-        // Recalculate ROI for user-closed trades
-        const tradesWithCorrectRoi = trades.map(trade => {
+        // Normalize ROI for user-closed trades if missing
+        const tradesWithCorrectRoi = allTrades.map(trade => {
           const tradePrice = trade.price_when_copied;
           if (trade.user_closed_at && trade.user_exit_price && tradePrice) {
             const correctRoi = ((trade.user_exit_price - tradePrice) / tradePrice) * 100;
@@ -347,13 +383,13 @@ function ProfilePageContent() {
           }
           return trade;
         });
-        
+
         setCopiedTrades(tradesWithCorrectRoi);
-        
+
         // Fetch live market data for the trades
         fetchLiveMarketData(tradesWithCorrectRoi);
       } catch (err) {
-        console.error('Error fetching copied trades:', err);
+        console.error('Error fetching portfolio trades:', err);
         setCopiedTrades([]);
       } finally {
         setLoadingCopiedTrades(false);
@@ -362,13 +398,57 @@ function ProfilePageContent() {
 
     fetchCopiedTrades();
   }, [user]);
-  
+
+  // Fetch aggregated portfolio stats (realized + unrealized PnL)
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchPortfolioStats = async () => {
+      setPortfolioStatsLoading(true);
+      setPortfolioStatsError(null);
+      try {
+        const response = await fetch(`/api/portfolio/stats?userId=${user.id}`);
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || 'Failed to fetch portfolio stats');
+        }
+
+        const data = await response.json();
+        setPortfolioStats({
+          totalPnl: data.totalPnl ?? 0,
+          realizedPnl: data.realizedPnl ?? 0,
+          unrealizedPnl: data.unrealizedPnl ?? 0,
+          totalVolume: data.totalVolume ?? 0,
+          roi: data.roi ?? 0,
+          winRate: data.winRate ?? 0,
+          totalTrades: data.totalTrades ?? 0,
+          openTrades: data.openTrades ?? 0,
+          closedTrades: data.closedTrades ?? 0,
+        });
+      } catch (err: any) {
+        console.error('Error fetching portfolio stats:', err);
+        setPortfolioStatsError(err?.message || 'Failed to load portfolio stats');
+      } finally {
+        setPortfolioStatsLoading(false);
+      }
+    };
+
+    fetchPortfolioStats();
+  }, [user]);
+
   // Fetch live market data (prices and scores)
   const fetchLiveMarketData = async (trades: CopiedTrade[]) => {
+    // Only fetch for open/unresolved markets to keep calls light
+    const priceTargets = trades.filter(
+      (t) => !t.user_closed_at && !t.market_resolved && t.market_id
+    );
+    const uniqueMarketIds = [...new Set(priceTargets.map((t) => t.market_id).filter(Boolean))];
+    if (uniqueMarketIds.length === 0) {
+      setLiveMarketData(new Map());
+      return;
+    }
+
     const newLiveData = new Map<string, { price: number; score?: string; closed?: boolean }>();
-    
-    // Get unique market IDs
-    const uniqueMarketIds = [...new Set(trades.map(t => t.market_id).filter(Boolean))];
     
     console.log(`📊 Fetching live data for ${uniqueMarketIds.length} markets`);
     
@@ -404,6 +484,21 @@ function ProfilePageContent() {
     
     console.log(`💾 Stored live data for ${newLiveData.size} markets`);
     setLiveMarketData(newLiveData);
+
+    // Apply live prices to open trades so PnL is mark-to-market
+    if (newLiveData.size > 0) {
+      setCopiedTrades((prev) =>
+        prev.map((trade) => {
+          if (!trade.market_id || trade.user_closed_at || trade.market_resolved) return trade;
+          const live = newLiveData.get(trade.market_id);
+          if (!live) return trade;
+          return {
+            ...trade,
+            current_price: live.price,
+          };
+        })
+      );
+    }
   };
 
   // Process copied trades for performance metrics
@@ -529,7 +624,9 @@ function ProfilePageContent() {
         
         // Don't log errors from maybeSingle() - it's expected to return no data for new users
         // Only log if there's a real error (has meaningful properties)
-        if (error && Object.keys(error).length > 0 && (error.code || error.message || error.details || error.hint)) {
+        const hasMeaningfulError =
+          error && (error.code || error.message || error.details || error.hint);
+        if (hasMeaningfulError) {
           console.error('Error fetching notification preferences:', error);
         }
         
@@ -537,8 +634,12 @@ function ProfilePageContent() {
           setNotificationsEnabled(data.trader_closes_position || false);
         }
         // If no data and no error, user has no preferences yet - that's fine, use default
-      } catch (err) {
-        console.error('Error fetching notification preferences:', err);
+      } catch (err: any) {
+        const hasMeaningfulError =
+          err && (err.code || err.message || err.details || err.hint);
+        if (hasMeaningfulError) {
+          console.error('Error fetching notification preferences:', err);
+        }
       } finally {
         setLoadingNotificationPrefs(false);
       }
@@ -548,47 +649,75 @@ function ProfilePageContent() {
   }, [user]);
 
   // Calculate stats
-  const calculateStats = () => {
+  const calculateStats = (): PortfolioStats => {
+    const invested = (trade: CopiedTrade) => {
+      if (trade.amount_invested !== null && trade.amount_invested !== undefined) {
+        return trade.amount_invested;
+      }
+      if (trade.entry_size && trade.price_when_copied) {
+        return trade.entry_size * trade.price_when_copied;
+      }
+      return 0;
+    };
+
+    const pnlValue = (trade: CopiedTrade) => {
+      if (trade.pnl_usd !== null && trade.pnl_usd !== undefined) return trade.pnl_usd;
+
+      const entryPrice = trade.price_when_copied || null;
+      const exitPrice =
+        trade.user_exit_price ??
+        trade.current_price ??
+        null;
+      const size = trade.entry_size ?? null;
+
+      if (entryPrice !== null && exitPrice !== null && size !== null) {
+        return (exitPrice - entryPrice) * size;
+      }
+
+      if (trade.roi !== null && trade.roi !== undefined) {
+        return invested(trade) * (trade.roi / 100);
+      }
+
+      return 0;
+    };
+
     const openTrades = copiedTrades.filter(t => !t.user_closed_at && !t.market_resolved);
     const closedTrades = copiedTrades.filter(t => t.user_closed_at || t.market_resolved);
-    
-    const totalPnl = closedTrades.reduce((sum, trade) => {
-      if (trade.roi !== null && trade.amount_invested) {
-        return sum + (trade.amount_invested * (trade.roi / 100));
-      }
-      return sum;
-    }, 0);
-    
-    const totalVolume = copiedTrades.reduce((sum, trade) => {
-      return sum + (trade.amount_invested || 0);
-    }, 0);
-    
-    // Calculate total invested amount for closed trades
-    const totalInvestedInClosedTrades = closedTrades.reduce((sum, trade) => {
-      return sum + (trade.amount_invested || 0);
-    }, 0);
-    
-    // Calculate actual ROI: (total P&L / total invested) * 100
-    // This gives the true return on investment, not just an average of percentages
-    const actualRoi = totalInvestedInClosedTrades > 0
-      ? (totalPnl / totalInvestedInClosedTrades) * 100
-      : 0;
-    
-    const winningTrades = closedTrades.filter(t => (t.roi || 0) > 0).length;
+
+    const realizedPnl = closedTrades.reduce((sum, trade) => sum + pnlValue(trade), 0);
+    const unrealizedPnl = openTrades.reduce((sum, trade) => sum + pnlValue(trade), 0);
+    const totalPnl = realizedPnl + unrealizedPnl;
+
+    const totalVolume = copiedTrades.reduce((sum, trade) => sum + invested(trade), 0);
+
+    const actualRoi = totalVolume > 0 ? (totalPnl / totalVolume) * 100 : 0;
+
+    const winningTrades = closedTrades.filter(t => pnlValue(t) > 0).length;
     const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
-    
+
     return {
       totalPnl,
       roi: actualRoi,
       totalVolume,
       winRate: Math.round(winRate),
+      realizedPnl,
+      unrealizedPnl,
+      totalTrades: copiedTrades.length,
+      openTrades: openTrades.length,
+      closedTrades: closedTrades.length,
     };
   };
 
-  const userStats = calculateStats();
+  const fallbackStats = calculateStats();
+  const userStats = portfolioStats ?? fallbackStats;
 
   // Filter trades
-  const filteredTrades = copiedTrades.filter(trade => {
+  const manualTrades = useMemo(
+    () => copiedTrades.filter((trade) => trade.trade_method !== 'quick'),
+    [copiedTrades]
+  );
+
+  const filteredTrades = manualTrades.filter(trade => {
     if (tradeFilter === 'all') return true;
     if (tradeFilter === 'open') return !trade.user_closed_at && !trade.market_resolved;
     if (tradeFilter === 'closed') return Boolean(trade.user_closed_at);
@@ -996,6 +1125,24 @@ function ProfilePageContent() {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
+  const tabButtons: Array<{ key: ProfileTab; label: string }> = [
+    ...(hasPremiumAccess
+      ? [
+          { key: 'manual-trades', label: 'Quick Trades' },
+          { key: 'copied-trades', label: 'Manual Trades' },
+        ]
+      : [
+          { key: 'copied-trades', label: 'Manual Trades' },
+          { key: 'manual-trades', label: 'Quick Trades' },
+        ]),
+    { key: 'performance', label: 'Performance' },
+    { key: 'settings', label: 'Settings' },
+  ];
+  const tabTooltips: Partial<Record<ProfileTab, string>> = {
+    'manual-trades': 'Quick Copy trades executed through Polycopy. Manage open orders, closes, and execution history here.',
+    'copied-trades': 'Trades you copied manually on Polymarket and logged yourself. Update status and outcomes as they change.',
+  };
+
   return (
     <>
       <Navigation 
@@ -1150,59 +1297,51 @@ function ProfilePageContent() {
                   <div className="text-2xl font-bold text-slate-900">{userStats.winRate}%</div>
                 </div>
               </div>
+              {portfolioStatsLoading && (
+                <p className="text-xs text-slate-500 mt-2">Refreshing P&L with live prices…</p>
+              )}
+              {portfolioStatsError && (
+                <p className="text-xs text-red-600 mt-2">Stats unavailable: {portfolioStatsError}</p>
+              )}
             </div>
           </Card>
 
           {/* Tab Navigation */}
-          <div className="flex gap-2 mb-6">
-            <Button
-              onClick={() => setActiveTab('copied-trades')}
-              variant="ghost"
-              className={cn(
-                "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
-                activeTab === 'copied-trades'
-                  ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
-                  : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
-              )}
-            >
-              Manual Trades
-            </Button>
-            <Button
-              onClick={() => setActiveTab('manual-trades')}
-              variant="ghost"
-              className={cn(
-                "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
-                activeTab === 'manual-trades'
-                  ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
-                  : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
-              )}
-            >
-              Quick Trades
-            </Button>
-            <Button
-              onClick={() => setActiveTab('performance')}
-              variant="ghost"
-              className={cn(
-                "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
-                activeTab === 'performance'
-                  ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
-                  : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
-              )}
-            >
-              Performance
-            </Button>
-            <Button
-              onClick={() => setActiveTab('settings')}
-              variant="ghost"
-              className={cn(
-                "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
-                activeTab === 'settings'
-                  ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
-                  : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
-              )}
-            >
-              Settings
-            </Button>
+          <div className="flex gap-2 mb-6 flex-wrap">
+            {tabButtons.map(({ key, label }) => {
+              const tooltipText = tabTooltips[key];
+              const button = (
+                <Button
+                  onClick={() => setActiveTab(key)}
+                  variant="ghost"
+                  className={cn(
+                    "w-full px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
+                    activeTab === key
+                      ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
+                      : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
+                  )}
+                >
+                  {label}
+                </Button>
+              );
+
+              return (
+                <div key={key} className="flex-1 min-w-[150px]">
+                  {tooltipText ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        {button}
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p>{tooltipText}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    button
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {/* Tab Content */}
@@ -1289,9 +1428,11 @@ function ProfilePageContent() {
                               <p className="font-medium text-slate-900 text-sm">
                                 {trade.trader_username || `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
                               </p>
-                              <p className="text-xs text-slate-500 font-mono truncate">
-                                {`${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
-                              </p>
+                  <p className="text-xs text-slate-500 font-mono truncate">
+                    {trade.trader_wallet
+                      ? `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`
+                      : 'Unknown'}
+                  </p>
                             </div>
                           </Link>
                           <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -1684,18 +1825,15 @@ function ProfilePageContent() {
                   {/* Lifetime ROI */}
                   <div className="bg-slate-50 rounded-lg p-4">
                     <p className="text-sm text-slate-500 mb-1">Lifetime ROI</p>
-                    <p className={`text-2xl font-bold ${(() => {
-                      const closedTrades = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
-                      if (closedTrades.length === 0) return 'text-slate-900';
-                      const totalROI = closedTrades.reduce((sum, t) => sum + (t.roi || 0), 0) / closedTrades.length;
-                      return totalROI > 0 ? 'text-emerald-600' : 'text-red-600';
-                    })()}`}>
-                      {(() => {
-                        const closedTrades = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
-                        if (closedTrades.length === 0) return 'N/A';
-                        const totalROI = closedTrades.reduce((sum, t) => sum + (t.roi || 0), 0) / closedTrades.length;
-                        return `${totalROI > 0 ? '+' : ''}${totalROI.toFixed(1)}%`;
-                      })()}
+                    <p
+                      className={cn(
+                        'text-2xl font-bold',
+                        userStats.roi > 0 ? 'text-emerald-600' : userStats.roi < 0 ? 'text-red-600' : 'text-slate-900'
+                      )}
+                    >
+                      {userStats.totalVolume > 0
+                        ? `${userStats.roi > 0 ? '+' : ''}${userStats.roi.toFixed(1)}%`
+                        : 'N/A'}
                     </p>
                     <p className="text-xs text-slate-500 mt-1">All time</p>
                   </div>
@@ -1703,18 +1841,13 @@ function ProfilePageContent() {
                   {/* Total P&L */}
                   <div className="bg-slate-50 rounded-lg p-4">
                     <p className="text-sm text-slate-500 mb-1">Total P&L</p>
-                    <p className={`text-2xl font-bold ${(() => {
-                      const totalPnL = copiedTrades
-                        .filter(t => t.roi !== null && t.roi !== 0)
-                        .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
-                      return totalPnL > 0 ? 'text-emerald-600' : 'text-red-600';
-                    })()}`}>
-                      {(() => {
-                        const totalPnL = copiedTrades
-                          .filter(t => t.roi !== null && t.roi !== 0)
-                          .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
-                        return `${totalPnL > 0 ? '+' : ''}$${Math.abs(totalPnL).toFixed(0)}`;
-                      })()}
+                    <p
+                      className={cn(
+                        'text-2xl font-bold',
+                        userStats.totalPnl > 0 ? 'text-emerald-600' : userStats.totalPnl < 0 ? 'text-red-600' : 'text-slate-900'
+                      )}
+                    >
+                      {`${userStats.totalPnl > 0 ? '+' : ''}$${Math.abs(userStats.totalPnl).toFixed(0)}`}
                     </p>
                     <p className="text-xs text-slate-500 mt-1">All time</p>
                   </div>
@@ -1739,25 +1872,23 @@ function ProfilePageContent() {
                   {/* Total Trades */}
                   <div className="bg-slate-50 rounded-lg p-4">
                     <p className="text-sm text-slate-500 mb-1">Total Trades</p>
-                    <p className="text-2xl font-bold text-slate-900">{copiedTrades.length}</p>
+                    <p className="text-2xl font-bold text-slate-900">{userStats.totalTrades}</p>
                     <p className="text-xs text-slate-500 mt-1">All time</p>
                   </div>
 
                   {/* Net P&L / Trade */}
                   <div className="bg-slate-50 rounded-lg p-4">
                     <p className="text-sm text-slate-500 mb-1">Net P&L / Trade</p>
-                    <p className={`text-2xl font-bold ${(() => {
-                      const totalPnL = copiedTrades
-                        .filter(t => t.roi !== null && t.roi !== 0)
-                        .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
-                      return totalPnL > 0 ? 'text-emerald-600' : 'text-red-600';
-                    })()}`}>
+                    <p
+                      className={cn(
+                        'text-2xl font-bold',
+                        userStats.totalPnl > 0 ? 'text-emerald-600' : userStats.totalPnl < 0 ? 'text-red-600' : 'text-slate-900'
+                      )}
+                    >
                       {(() => {
-                        if (copiedTrades.length === 0) return '$0';
-                        const totalPnL = copiedTrades
-                          .filter(t => t.roi !== null && t.roi !== 0)
-                          .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
-                        const avgPnL = totalPnL / copiedTrades.length;
+                        const tradesCount = userStats.totalTrades || copiedTrades.length;
+                        if (tradesCount === 0) return '$0';
+                        const avgPnL = userStats.totalPnl / tradesCount;
                         return `${avgPnL > 0 ? '+' : ''}$${Math.abs(avgPnL).toFixed(0)}`;
                       })()}
                     </p>

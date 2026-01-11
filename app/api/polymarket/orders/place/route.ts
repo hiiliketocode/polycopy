@@ -339,6 +339,7 @@ async function persistCopiedTraderMetadata({
     payload.market_slug = normalizedMarketSlug
     payload.market_avatar_url = normalizedMarketAvatarUrl
     payload.trade_method = 'quick'
+    payload.copied_trade_id = randomUUID()
   }
 
   await service.from(ordersTable).upsert(payload, { onConflict: 'order_id' })

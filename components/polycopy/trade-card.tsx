@@ -16,6 +16,7 @@ import {
   getStepDecimals,
   normalizeContractsFromUsd,
   normalizeContractsInput,
+  roundDownToStep,
   roundUpToStep,
 } from "@/lib/polymarket/sizing"
 import { cn } from "@/lib/utils"
@@ -37,7 +38,7 @@ interface TradeCardProps {
   total: number
   timestamp: string
   onCopyTrade?: () => void
-  onMarkAsCopied?: () => void
+  onMarkAsCopied?: (entryPrice: number, amountInvested?: number) => void
   onAdvancedCopy?: () => void
   isPremium?: boolean
   isExpanded?: boolean
@@ -66,6 +67,8 @@ type StatusPhase =
   | 'expired'
   | 'rejected'
   | 'unknown'
+
+type ManualFlowStep = 'open-polymarket' | 'enter-details'
 
 const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
   'filled',
@@ -363,6 +366,7 @@ export function TradeCard({
   const [manualDrawerOpen, setManualDrawerOpen] = useState(false)
   const [manualUsdAmount, setManualUsdAmount] = useState("")
   const [manualPriceInput, setManualPriceInput] = useState("")
+  const [manualFlowStep, setManualFlowStep] = useState<ManualFlowStep>('open-polymarket')
   const [orderIntentId] = useState<string>(() => {
     const randomUuId = globalThis.crypto?.randomUUID?.()
     if (randomUuId) return randomUuId
@@ -431,9 +435,11 @@ export function TradeCard({
 
   const roundPriceToTickSize = (price: number, tickSize?: number | null) => {
     if (!Number.isFinite(price)) return price
-    const step = tickSize && tickSize > 0 ? tickSize : 0.01
+    const step =
+      tickSize && Number.isFinite(tickSize) && tickSize > 0 ? tickSize : 0.01
+    const rounded = roundDownToStep(price, step)
+    if (!Number.isFinite(rounded)) return price
     const decimals = getStepDecimals(step)
-    const rounded = Math.round(price / step) * step
     return Number(rounded.toFixed(decimals))
   }
 
@@ -1125,19 +1131,27 @@ export function TradeCard({
     }
   }
 
+  const openManualDrawer = () => {
+    setManualPriceInput(defaultManualPrice.toString())
+    setManualUsdAmount("")
+    setManualDrawerOpen(true)
+  }
+
   const handleCopyTradeClick = () => {
     if (isMarketEnded) return
     if (isPremium && onToggleExpand) {
       onToggleExpand()
-    } else if (!isPremium) {
-      if (!manualDrawerOpen) {
-        onCopyTrade?.()
-        setManualPriceInput(defaultManualPrice.toString())
-        setManualUsdAmount("")
-        setManualDrawerOpen(true)
-      } else {
-        closeManualDrawer()
-      }
+      return
+    }
+
+    if (manualFlowStep === 'open-polymarket') {
+      onCopyTrade?.()
+      setManualFlowStep('enter-details')
+      return
+    }
+
+    if (!manualDrawerOpen) {
+      openManualDrawer()
     }
   }
 
@@ -1145,10 +1159,27 @@ export function TradeCard({
     setManualDrawerOpen(false)
     setManualUsdAmount("")
     setManualPriceInput("")
+    setManualFlowStep('open-polymarket')
+  }
+
+  const handleManualMarkAsCopied = () => {
+    const manualAmountHasValue = manualUsdAmount.trim().length > 0
+    const manualAmountValue = Number.parseFloat(manualUsdAmount)
+    const manualAmountPositive =
+      manualAmountHasValue && !Number.isNaN(manualAmountValue) && manualAmountValue > 0
+
+    onMarkAsCopied?.(
+      manualDisplayPrice,
+      manualAmountPositive ? manualAmountValue : undefined
+    )
+    closeManualDrawer()
   }
 
   const manualAmountValue = Number.parseFloat(manualUsdAmount)
-  const manualAmountValid = !Number.isNaN(manualAmountValue) && manualAmountValue > 0
+  const manualAmountHasValue = manualUsdAmount.trim().length > 0
+  const manualAmountPositive =
+    manualAmountHasValue && !Number.isNaN(manualAmountValue) && manualAmountValue > 0
+  const manualAmountValid = !manualAmountHasValue || manualAmountPositive
   const parsedManualPrice = Number.parseFloat(manualPriceInput)
   const editedPriceValid = !Number.isNaN(parsedManualPrice) && parsedManualPrice > 0
   const manualDisplayPrice =
@@ -1170,7 +1201,7 @@ export function TradeCard({
       ? '--'
       : `${manualPriceChange >= 0 ? '+' : ''}${manualPriceChange.toFixed(2)}% from entry`
   const manualContractsEstimate =
-    manualAmountValid && manualDisplayPrice > 0
+    manualAmountPositive && manualDisplayPrice > 0
       ? Math.floor(manualAmountValue / manualDisplayPrice)
       : 0
 
@@ -1473,7 +1504,7 @@ export function TradeCard({
                   className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
-              {manualAmountValid && (
+              {manualAmountPositive && (
                 <p className="text-xs text-slate-500">
                   ≈ {manualContractsEstimate.toLocaleString()} contracts
                 </p>
@@ -1481,16 +1512,16 @@ export function TradeCard({
             </div>
 
             <Button
-              onClick={onMarkAsCopied}
+              onClick={handleManualMarkAsCopied}
               disabled={!manualAmountValid || isCopyDisabled || isCopied}
               variant="outline"
               className={cn(
-                'w-full font-medium text-sm',
+                'w-full font-semibold text-sm',
                 isCopied
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
                   : isCopyDisabled || !manualAmountValid
                     ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                    : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                    : 'bg-[#FDB022] border-transparent hover:bg-[#FDB022]/90 text-slate-900'
               )}
             >
               {isCopied ? (
@@ -1499,51 +1530,73 @@ export function TradeCard({
                   Copied
                 </>
               ) : (
-                'Mark as Copied'
+                'Mark trade as copied'
               )}
             </Button>
           </div>
         )}
 
         {!(isPremium && isExpanded) && (
-        <div className={isPremium ? "w-full" : "grid grid-cols-2 gap-2"}>
-          <Button
-            onClick={handleCopyTradeClick}
-              disabled={isCopyDisabled}
-            className={`font-semibold shadow-sm text-sm ${
-              localCopied
-                ? "w-full bg-emerald-500 hover:bg-emerald-600 text-white"
-                  : isMarketEnded
-                    ? "w-full bg-slate-200 text-slate-500 cursor-not-allowed"
-                : isPremium
-                  ? "w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
-                  : "bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900"
-            }`}
-            size="lg"
-          >
-            {localCopied ? (
-              <>
-                <Check className="w-4 h-4 mr-2" />
-                  Copy Again
-              </>
-            ) : (
-                <>
-                  {isPremium ? "Copy Trade" : "Manual Copy"}
-                  {!isPremium && <ExternalLink className="w-4 h-4 ml-2" />}
-                </>
-            )}
-          </Button>
-          {!isPremium && (
-            <Button
-              onClick={onMarkAsCopied}
-              variant="outline"
-              className="border-slate-300 text-slate-700 hover:bg-slate-50 font-medium bg-transparent text-sm transition-all"
-              size="lg"
-            >
-              Mark as Copied
-            </Button>
-          )}
-        </div>
+          isPremium ? (
+            <div className="w-full">
+              <Button
+                onClick={handleCopyTradeClick}
+                disabled={isCopyDisabled}
+                className={`w-full font-semibold shadow-sm text-sm ${
+                  localCopied
+                    ? "bg-emerald-500 hover:bg-emerald-600 text-white"
+                    : isMarketEnded
+                      ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                      : "bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
+                }`}
+                size="lg"
+              >
+                {localCopied ? (
+                  <>
+                    <Check className="w-4 h-4 mr-2" />
+                    Copy Again
+                  </>
+                ) : (
+                  "Copy Trade"
+                )}
+              </Button>
+            </div>
+          ) : (
+            <div className="w-full">
+              {!manualDrawerOpen && (
+                isCopied ? (
+                  <Button
+                    disabled
+                    className="w-full bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
+                    size="lg"
+                  >
+                    <Check className="w-4 h-4 mr-2" />
+                    Copied
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleCopyTradeClick}
+                    disabled={isCopyDisabled}
+                    className={`w-full font-semibold shadow-sm text-sm ${
+                      isMarketEnded
+                        ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                        : "bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900"
+                    }`}
+                    size="lg"
+                  >
+                    {manualFlowStep === 'open-polymarket' ? (
+                      <>
+                        Open Polymarket to enter trade
+                        <ExternalLink className="w-4 h-4 ml-2" />
+                      </>
+                    ) : (
+                      'Enter order details'
+                    )}
+                  </Button>
+                )
+              )}
+            </div>
+          )
         )}
       </div>
 

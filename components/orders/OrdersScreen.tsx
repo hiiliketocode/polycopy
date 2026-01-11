@@ -1095,10 +1095,24 @@ function PositionsList({
     const isClosed = state === 'closed'
     const conditionId = deriveConditionId(position.tokenId, position.marketId)
     const meta = conditionId ? marketMeta.get(conditionId) : null
-    const marketResolved =
-      order?.marketIsOpen === false ||
-      meta?.open === false
-    const isResolved = isClosed || marketResolved
+    const tokenIdLower = position.tokenId?.toLowerCase?.()
+    const metaPrice =
+      tokenIdLower && meta?.prices?.has(tokenIdLower)
+        ? meta.prices.get(tokenIdLower) ?? null
+        : null
+    const currentPrice = order?.currentPrice ?? metaPrice ?? null
+    const resolvedFromOrder = order?.marketResolved === true
+    const inferredMarketOpen =
+      resolvedFromOrder
+        ? false
+        : order?.marketIsOpen ??
+          meta?.open ??
+          (currentPrice !== null
+            ? currentPrice > 0.05 && currentPrice < 0.95
+              ? true
+              : false
+            : null)
+    const isResolved = isClosed || inferredMarketOpen === false
     if (includeResolvedPositions) return true
     return !isResolved
   })
@@ -1168,14 +1182,17 @@ function PositionsList({
     const currentPrice = order?.currentPrice ?? metaPrice ?? null
     const entryPrice = position.avgEntryPrice ?? order?.priceOrAvgPrice ?? null
     const openedAt = position.firstTradeAt ?? position.lastTradeAt ?? order?.createdAt ?? null
+    const resolvedFromOrder = order?.marketResolved === true
     const inferredMarketOpen =
-      order?.marketIsOpen ??
-      meta?.open ??
-      (currentPrice !== null
-        ? currentPrice > 0.05 && currentPrice < 0.95
-          ? true
-          : false
-        : null)
+      resolvedFromOrder
+        ? false
+        : order?.marketIsOpen ??
+          meta?.open ??
+          (currentPrice !== null
+            ? currentPrice > 0.05 && currentPrice < 0.95
+              ? true
+              : false
+            : null)
     const marketStatusLabel =
       order?.positionState === 'closed'
         ? 'Market sold'

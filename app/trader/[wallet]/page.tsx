@@ -13,7 +13,6 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { MarkTradeCopiedModal } from '@/components/polycopy/mark-trade-copied-modal';
 import { TradeCard } from '@/components/polycopy/trade-card';
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
 import { getESPNScoresForTrades } from '@/lib/espn/scores';
@@ -61,6 +60,15 @@ interface CategoryDistribution {
   color: string;
 }
 
+interface TraderComputedStats {
+  totalPnl: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  volume: number;
+  roi: number;
+  winRate: number;
+}
+
 const normalizeOutcome = (value: string) => value?.trim().toLowerCase();
 
 const findOutcomeIndex = (outcomes: string[] | null | undefined, target: string) => {
@@ -106,9 +114,6 @@ export default function TraderProfilePage({
   const [showResolvedTrades, setShowResolvedTrades] = useState(false);
   const [timePeriod, setTimePeriod] = useState<'all' | 'month' | 'week'>('all');
   
-  // Modal state
-  const [showCopiedModal, setShowCopiedModal] = useState(false);
-  const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
   const [showWalletConnectModal, setShowWalletConnectModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
@@ -125,6 +130,7 @@ export default function TraderProfilePage({
   const [categoryDistribution, setCategoryDistribution] = useState<CategoryDistribution[]>([]);
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [hoveredBucket, setHoveredBucket] = useState<{ range: string; count: number; percentage: number; x: number; y: number } | null>(null);
+  const [computedStats, setComputedStats] = useState<TraderComputedStats | null>(null);
   
   // Live market data for trade cards
   const [liveMarketData, setLiveMarketData] = useState<Map<string, { 
@@ -166,26 +172,29 @@ export default function TraderProfilePage({
           setWalletAddress(walletData.polymarket_account_address || walletData.eoa_address || null);
         }
         
-        // Fetch copied trades
-        const { data: copiedTrades } = await supabase
-          .from('orders')
-          .select('market_id, copied_trader_wallet, market_slug, copied_market_title')
-          .eq('copy_user_id', user.id);
-        
-        if (copiedTrades) {
-          const ids = new Set<string>();
-          copiedTrades.forEach((t: { market_id?: string; copied_trader_wallet?: string; market_slug?: string; copied_market_title?: string }) => {
-            const walletKey = normalizeKeyPart(t.copied_trader_wallet);
-            if (!walletKey) return;
-            const marketKeys = [t.market_id, t.market_slug, t.copied_market_title]
-              .map(normalizeKeyPart)
-              .filter(Boolean);
-            if (marketKeys.length === 0) return;
-            for (const key of new Set(marketKeys)) {
-              ids.add(`${key}-${walletKey}`);
-            }
-          });
-          setCopiedTradeIds(ids);
+        // Fetch copied trades (service-backed to bypass RLS issues)
+        try {
+          const apiResponse = await fetch(`/api/copied-trades?userId=${user.id}`);
+          if (apiResponse.ok) {
+            const payload = await apiResponse.json();
+            const ids = new Set<string>();
+            payload?.trades?.forEach(
+              (t: { market_id?: string; market_slug?: string; market_title?: string; trader_wallet?: string }) => {
+                const walletKey = normalizeKeyPart(t.trader_wallet);
+                if (!walletKey) return;
+                const marketKeys = [t.market_id, t.market_slug, t.market_title]
+                  .map(normalizeKeyPart)
+                  .filter(Boolean);
+                if (marketKeys.length === 0) return;
+                for (const key of new Set(marketKeys)) {
+                  ids.add(`${key}-${walletKey}`);
+                }
+              }
+            );
+            setCopiedTradeIds(ids);
+          }
+        } catch (err) {
+          console.error('Error fetching copied trades via API:', err);
         }
       }
     };
@@ -634,25 +643,19 @@ export default function TraderProfilePage({
     }
   };
 
-  // Handle mark as copied
-  const handleMarkAsCopied = (trade: Trade) => {
+  const handleMarkAsCopied = async (
+    trade: Trade,
+    entryPrice: number,
+    amountInvested?: number
+  ) => {
     if (!user) {
       router.push('/login');
       return;
     }
-    setSelectedTrade(trade);
-    setShowCopiedModal(true);
-  };
-
-  // Confirm copy
-  const handleConfirmCopy = async (entryPrice: number, amountInvested?: number) => {
-    if (!selectedTrade || !user) return;
-
-    setIsSubmitting(true);
 
     try {
-      const marketId = selectedTrade.conditionId || selectedTrade.marketSlug || selectedTrade.market;
-      
+      const marketId = trade.conditionId || trade.marketSlug || trade.market;
+
       const response = await fetch('/api/copied-trades', {
         method: 'POST',
         headers: {
@@ -663,9 +666,9 @@ export default function TraderProfilePage({
           traderWallet: wallet,
           traderUsername: traderData?.displayName || wallet.slice(0, 8),
           marketId,
-          marketTitle: selectedTrade.market,
-          marketSlug: selectedTrade.marketSlug || selectedTrade.eventSlug || null,
-          outcome: selectedTrade.outcome.toUpperCase(),
+          marketTitle: trade.market,
+          marketSlug: trade.marketSlug || trade.eventSlug || null,
+          outcome: trade.outcome.toUpperCase(),
           priceWhenCopied: entryPrice,
           amountInvested: amountInvested || null,
         }),
@@ -680,20 +683,15 @@ export default function TraderProfilePage({
 
       const tradeKey = buildCopiedTradeKey(marketId, wallet);
       if (tradeKey) {
-        setCopiedTradeIds(prev => {
+        setCopiedTradeIds((prev) => {
           const next = new Set(prev);
           next.add(tradeKey);
           return next;
         });
       }
-
-      setShowCopiedModal(false);
-      setSelectedTrade(null);
     } catch (err: any) {
       console.error('Error saving copied trade:', err);
       alert(err.message || 'Failed to save copied trade');
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -797,30 +795,98 @@ export default function TraderProfilePage({
     return `hsl(${hue}, 65%, 50%)`;
   };
 
-  // Calculate win rate - estimate from ROI if individual trade prices not available
-  const tradesWithROI = trades.filter(t => {
-    const entryPrice = t.price;
-    const currentPrice = t.currentPrice;
-    return entryPrice && currentPrice !== undefined && currentPrice !== null && entryPrice !== 0;
-  });
-  
-  const profitableTrades = tradesWithROI.filter(t => {
-    const entryPrice = t.price;
-    const currentPrice = t.currentPrice;
-    if (entryPrice && currentPrice !== undefined && currentPrice !== null && entryPrice !== 0) {
-      const tradeROI = ((currentPrice - entryPrice) / entryPrice) * 100;
-      return tradeROI > 0;
+  // Compute PnL/ROI/WinRate from full trade history (mark-to-market with live prices)
+  useEffect(() => {
+    if (trades.length === 0) {
+      setComputedStats(null);
+      return;
     }
-    return false;
-  });
-  
-  // If we have price data for trades, calculate actual win rate
-  // Otherwise estimate from overall ROI (rough approximation)
-  const winRate = tradesWithROI.length > 0 
-    ? ((profitableTrades.length / tradesWithROI.length) * 100).toFixed(1)
-    : traderData && traderData.roi !== null && traderData.roi !== undefined && traderData.roi > 0
-    ? Math.min(50 + traderData.roi / 3, 85).toFixed(1) // Rough estimate: positive ROI suggests 60-85% win rate
-    : '--';
+
+    type Position = {
+      size: number;
+      avgCost: number;
+      realized: number;
+      buyNotional: number;
+      sellCount: number;
+      winSells: number;
+      sampleTrade: Trade | null;
+    };
+
+    const positions = new Map<string, Position>();
+
+    const priceForTrade = (trade: Trade) => {
+      const live = trade.conditionId ? liveMarketData.get(trade.conditionId) : undefined;
+      if (live && typeof live.price === 'number') return live.price;
+      return trade.currentPrice ?? null;
+    };
+
+    const keyFor = (t: Trade) => `${t.conditionId || t.market}-${t.outcome}`;
+
+    trades.forEach((trade) => {
+      const key = keyFor(trade);
+      const existing = positions.get(key) ?? {
+        size: 0,
+        avgCost: 0,
+        realized: 0,
+        buyNotional: 0,
+        sellCount: 0,
+        winSells: 0,
+        sampleTrade: null,
+      };
+
+      if (trade.side === 'BUY') {
+        const totalCost = existing.avgCost * existing.size + trade.price * trade.size;
+        const newSize = existing.size + trade.size;
+        existing.size = newSize;
+        existing.avgCost = newSize > 0 ? totalCost / newSize : 0;
+        existing.buyNotional += trade.size * trade.price;
+      } else {
+        const sellQty = trade.size;
+        const realized = (trade.price - existing.avgCost) * sellQty;
+        existing.realized += realized;
+        existing.size -= sellQty;
+        existing.sellCount += 1;
+        if (realized > 0) existing.winSells += 1;
+      }
+
+      if (!existing.sampleTrade) existing.sampleTrade = trade;
+      positions.set(key, existing);
+    });
+
+    let realizedPnl = 0;
+    let volume = 0;
+    let winSells = 0;
+    let sellTrades = 0;
+    positions.forEach((p) => {
+      realizedPnl += p.realized;
+      volume += p.buyNotional;
+      winSells += p.winSells;
+      sellTrades += p.sellCount;
+    });
+
+    let unrealizedPnl = 0;
+    positions.forEach((p, key) => {
+      if (Math.abs(p.size) < 1e-9) return;
+      const sample = p.sampleTrade || trades.find((t) => keyFor(t) === key);
+      if (!sample) return;
+      const currentPrice = priceForTrade(sample);
+      if (currentPrice === null) return;
+      unrealizedPnl += (currentPrice - p.avgCost) * p.size;
+    });
+
+    const totalPnl = realizedPnl + unrealizedPnl;
+    const roi = volume > 0 ? (totalPnl / volume) * 100 : 0;
+    const winRate = sellTrades > 0 ? (winSells / sellTrades) * 100 : 0;
+
+    setComputedStats({
+      totalPnl,
+      realizedPnl,
+      unrealizedPnl,
+      volume,
+      roi,
+      winRate,
+    });
+  }, [trades, liveMarketData]);
 
   // Filter trades
   const filteredTrades = trades.filter(trade => {
@@ -881,9 +947,10 @@ export default function TraderProfilePage({
 
   const avatarColor = getAvatarColor(wallet);
   const initials = getInitials(wallet);
-  const roi = traderData.roi !== null && traderData.roi !== undefined 
-    ? traderData.roi.toFixed(1)
-    : ((traderData.pnl / traderData.volume) * 100).toFixed(1);
+  const effectivePnl = computedStats?.totalPnl ?? traderData.pnl ?? 0;
+  const effectiveVolume = computedStats?.volume ?? traderData.volume ?? 0;
+  const effectiveRoiValue = computedStats?.roi ?? (effectiveVolume > 0 ? (effectivePnl / effectiveVolume) * 100 : 0);
+  const effectiveWinRate = computedStats?.winRate ?? 0;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -984,8 +1051,8 @@ export default function TraderProfilePage({
                   </div>
                 </div>
               </div>
-              <div className={`text-2xl font-bold ${parseFloat(roi) > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                {formatPercentage(parseFloat(roi))}
+              <div className={`text-2xl font-bold ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                {effectiveVolume > 0 ? formatPercentage(effectiveRoiValue) : 'N/A'}
               </div>
             </div>
             <div className="text-center p-4 bg-slate-50 rounded-lg relative group">
@@ -1000,8 +1067,8 @@ export default function TraderProfilePage({
                   </div>
                 </div>
               </div>
-              <div className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                {traderData.pnl >= 0 ? '+' : ''}{formatCurrency(traderData.pnl)}
+              <div className={`text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                {effectivePnl >= 0 ? '+' : ''}{formatCurrency(effectivePnl)}
               </div>
             </div>
             <div className="text-center p-4 bg-slate-50 rounded-lg relative group">
@@ -1016,7 +1083,9 @@ export default function TraderProfilePage({
                   </div>
                 </div>
               </div>
-              <div className="text-2xl font-bold text-slate-900">{winRate}%</div>
+              <div className="text-2xl font-bold text-slate-900">
+                {Number.isFinite(effectiveWinRate) ? `${effectiveWinRate.toFixed(1)}%` : 'N/A'}
+              </div>
             </div>
             <div className="text-center p-4 bg-slate-50 rounded-lg relative group">
               <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
@@ -1030,7 +1099,7 @@ export default function TraderProfilePage({
                   </div>
                 </div>
               </div>
-              <div className="text-2xl font-bold text-slate-900">{formatCurrency(traderData.volume)}</div>
+              <div className="text-2xl font-bold text-slate-900">{formatCurrency(effectiveVolume)}</div>
             </div>
           </div>
         </Card>
@@ -1175,7 +1244,7 @@ export default function TraderProfilePage({
                         avatar: undefined,
                         address: wallet,
                         id: wallet,
-                        roi: traderData.roi,
+                        roi: effectiveRoiValue,
                       }}
                       market={trade.market}
                       marketAvatar={marketAvatar || undefined}
@@ -1190,10 +1259,9 @@ export default function TraderProfilePage({
                           window.open(polymarketUrl, '_blank');
                         }
                       }}
-                      onMarkAsCopied={() => {
-                        setSelectedTrade(trade);
-                        setShowCopiedModal(true);
-                      }}
+                      onMarkAsCopied={(entryPrice, amountInvested) =>
+                        handleMarkAsCopied(trade, entryPrice, amountInvested)
+                      }
                       onAdvancedCopy={() => {
                         if (polymarketUrl) {
                           window.open(polymarketUrl, '_blank');
@@ -1527,8 +1595,8 @@ export default function TraderProfilePage({
                 {/* Lifetime ROI */}
                 <div className="bg-slate-50 rounded-lg p-4">
                   <p className="text-sm text-slate-500 mb-1">Lifetime ROI</p>
-                  <p className={`text-2xl font-bold ${(traderData.roi ?? 0) > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {(traderData.roi ?? 0) > 0 ? '+' : ''}{(traderData.roi ?? 0).toFixed(1)}%
+                  <p className={`text-2xl font-bold ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                    {effectiveVolume > 0 ? `${effectiveRoiValue > 0 ? '+' : ''}${effectiveRoiValue.toFixed(1)}%` : 'N/A'}
                   </p>
                   <p className="text-xs text-slate-500 mt-1">All time</p>
                 </div>
@@ -1536,8 +1604,8 @@ export default function TraderProfilePage({
                 {/* Total P&L */}
                 <div className="bg-slate-50 rounded-lg p-4">
                   <p className="text-sm text-slate-500 mb-1">Total P&L</p>
-                  <p className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {traderData.pnl > 0 ? '+' : ''}{formatCurrency(traderData.pnl)}
+                  <p className={`text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                    {effectivePnl > 0 ? '+' : ''}{formatCurrency(effectivePnl)}
                   </p>
                   <p className="text-xs text-slate-500 mt-1">All time</p>
                 </div>
@@ -1546,7 +1614,11 @@ export default function TraderProfilePage({
                 <div className="bg-slate-50 rounded-lg p-4">
                   <p className="text-sm text-slate-500 mb-1">Best Position</p>
                   <p className="text-2xl font-bold text-slate-900">
-                    {formatCurrency(traderData.volume)}
+                    {(() => {
+                      if (trades.length === 0) return '$0';
+                      const maxNotional = Math.max(...trades.map(t => (t.size || 0) * (t.price || 0)));
+                      return formatCurrency(maxNotional);
+                    })()}
                   </p>
                   <p className="text-xs text-slate-500 mt-1">Largest trade</p>
                 </div>
@@ -1566,9 +1638,9 @@ export default function TraderProfilePage({
                 {/* Net P&L / Trade */}
                 <div className="bg-slate-50 rounded-lg p-4">
                   <p className="text-sm text-slate-500 mb-1">Net P&L / Trade</p>
-                  <p className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  <p className={`text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                     {(() => {
-                      const avgPnL = trades.length > 0 ? traderData.pnl / trades.length : 0;
+                      const avgPnL = trades.length > 0 ? effectivePnl / trades.length : 0;
                       return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
                     })()}
                   </p>
@@ -1587,9 +1659,9 @@ export default function TraderProfilePage({
                 {/* Avg P&L / Trade */}
                 <div className="bg-slate-50 rounded-lg p-4">
                   <p className="text-sm text-slate-500 mb-1">Avg P&L / Trade</p>
-                  <p className={`text-2xl font-bold ${traderData.pnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  <p className={`text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                     {(() => {
-                      const avgPnL = trades.length > 0 ? traderData.pnl / trades.length : 0;
+                      const avgPnL = trades.length > 0 ? effectivePnl / trades.length : 0;
                       return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
                     })()}
                   </p>
@@ -1870,20 +1942,6 @@ export default function TraderProfilePage({
           </div>
         )}
       </div>
-
-      {/* Mark as Copied Modal */}
-      <MarkTradeCopiedModal
-        open={showCopiedModal}
-        onOpenChange={setShowCopiedModal}
-        trade={{
-          market: selectedTrade?.market || '',
-          traderName: traderData?.displayName || wallet,
-          position: (selectedTrade?.outcome?.toUpperCase() as 'YES' | 'NO') || 'YES',
-          traderPrice: selectedTrade?.price || 0,
-        }}
-        isPremium={isPremium}
-        onConfirm={handleConfirmCopy}
-      />
 
       {/* Wallet Connect Required Modal */}
       {showWalletConnectModal && (

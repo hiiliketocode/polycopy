@@ -4,6 +4,7 @@ import { Resend } from 'resend'
 import TraderClosedPositionEmail from '@/emails/TraderClosedPosition'
 import MarketResolvedEmail from '@/emails/MarketResolved'
 import AutoCloseExecutedEmail from '@/emails/AutoCloseExecuted'
+import AutoCloseFailedEmail from '@/emails/AutoCloseFailed'
 import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client'
 import { resolveOrdersTableName } from '@/lib/orders/table'
 import { ensureEvomiProxyAgent } from '@/lib/evomi/proxy'
@@ -119,12 +120,9 @@ export async function GET(request: NextRequest) {
   try {
     const ordersTable = await resolveOrdersTableName(supabase)
 
-    // Fetch active trades that need checking
-    // Only get trades where:
-    // - Market is not resolved yet OR resolved notification not sent
-    // - Haven't sent all notifications
+    // Fetch active trades that need checking from the enriched view for consistent PnL/entry fields.
     const { data: trades, error } = await supabase
-      .from(ordersTable)
+      .from('orders_copy_enriched')
       .select(`
         order_id,
         copied_trade_id,
@@ -136,6 +134,8 @@ export async function GET(request: NextRequest) {
         outcome,
         price_when_copied,
         amount_invested,
+        entry_price,
+        invested_usd,
         trader_still_has_position,
         trader_closed_at,
         current_price,
@@ -267,6 +267,8 @@ export async function GET(request: NextRequest) {
         return
       }
 
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'
+      const quickTradesUrl = `${appUrl}/profile?tab=manual-trades`
       const slippagePercent =
         typeof order.auto_close_slippage_percent === 'number' && order.auto_close_slippage_percent >= 0
           ? order.auto_close_slippage_percent
@@ -281,6 +283,58 @@ export async function GET(request: NextRequest) {
       if (!Number.isFinite(limitPrice) || limitPrice <= 0) {
         console.warn(`⚠️ Auto-close skipped: invalid limit price for market ${order.market_id}`)
         return
+      }
+
+      type NotificationContext = { email: string; name: string } | null
+      let notificationContext: NotificationContext | undefined
+      const loadNotificationContext = async (): Promise<NotificationContext> => {
+        if (notificationContext !== undefined) return notificationContext
+        if (!resend) {
+          console.error('Resend not configured, skipping auto-close email notification')
+          return (notificationContext = null)
+        }
+        const profile = await resolveProfile(userId)
+        if (!profile?.email) return (notificationContext = null)
+        const { data: prefs } = await supabase
+          .from('notification_preferences')
+          .select('email_notifications_enabled')
+          .eq('user_id', userId)
+          .single()
+        const notificationsEnabled = prefs?.email_notifications_enabled ?? true
+        if (!notificationsEnabled) return (notificationContext = null)
+        notificationContext = { email: profile.email, name: profile.name }
+        return notificationContext
+      }
+
+      const marketTitle = question || order.market_id
+      const sendFailureEmail = async (reason: string) => {
+        const context = await loadNotificationContext()
+        if (!context || !resend) return
+        const trimmedReason =
+          typeof reason === 'string' && reason.trim().length > 0
+            ? reason.trim().slice(0, 240)
+            : 'The limit price was not hit.'
+        try {
+          await resend.emails.send({
+            from: 'Polycopy <notifications@polycopy.app>',
+            to: context.email,
+            subject: `Auto-close failed: ${marketTitle}`,
+            react: AutoCloseFailedEmail({
+              userName: context.name,
+              marketTitle,
+              outcome: order.outcome,
+              reason: trimmedReason,
+              tradeUrl: quickTradesUrl,
+              polymarketUrl: `https://polymarket.com/event/${order.market_id}`,
+              unsubscribeUrl: quickTradesUrl,
+            }),
+          })
+        } catch (emailError: any) {
+          console.error(`❌ Failed to send auto-close failure email for order ${order.order_id}:`, {
+            error: emailError?.message || emailError,
+            to: context.email,
+          })
+        }
       }
 
       try {
@@ -314,6 +368,7 @@ export async function GET(request: NextRequest) {
             })
             .eq('order_id', order.order_id)
           console.warn(`⚠️ Auto-close failed for order ${order.order_id}:`, evaluation.message)
+          await sendFailureEmail(evaluation.message || 'Auto-close order was rejected by the exchange.')
           return
         }
 
@@ -350,44 +405,29 @@ export async function GET(request: NextRequest) {
         const hasFill = Number.isFinite(filledSize) && filledSize > 0
         if (orderLookupSucceeded && !hasFill) {
           console.warn(`⚠️ Auto-close order ${autoCloseOrderId} has no fills yet`)
+          await supabase
+            .from(ordersTable)
+            .update({ auto_close_error: 'Auto-close order submitted but did not fill' })
+            .eq('order_id', order.order_id)
+          await sendFailureEmail('Auto-close order submitted but did not fill. Try closing manually at the current market price.')
           return
         }
 
-        if (!resend) {
-          console.error('Resend not configured, skipping auto-close email notification')
-          return
-        }
-
-        const profile = await resolveProfile(userId)
-        if (!profile?.email) {
-          console.warn(`⚠️ Auto-close email skipped: missing email for user ${userId}`)
-          return
-        }
-
-        const { data: prefs } = await supabase
-          .from('notification_preferences')
-          .select('email_notifications_enabled')
-          .eq('user_id', userId)
-          .single()
-        const notificationsEnabled = prefs?.email_notifications_enabled ?? true
-        if (!notificationsEnabled) {
-          return
-        }
+        const context = await loadNotificationContext()
+        if (!context || !resend) return
 
         const estimatedProceeds =
           Number.isFinite(filledSize) && Number.isFinite(executedPrice)
             ? (filledSize as number) * (executedPrice as number)
             : null
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'
-        const marketTitle = question || order.market_id
 
         try {
           await resend.emails.send({
             from: 'Polycopy <notifications@polycopy.app>',
-            to: profile.email,
+            to: context.email,
             subject: `Auto-close ${closeSide.toLowerCase()} executed: ${marketTitle}`,
             react: AutoCloseExecutedEmail({
-              userName: profile.name,
+              userName: context.name,
               marketTitle,
               outcome: order.outcome,
               side: closeSide,
@@ -395,15 +435,15 @@ export async function GET(request: NextRequest) {
               limitPrice: executedPrice,
               estimatedProceeds,
               orderId: autoCloseOrderId,
-              tradeUrl: `${appUrl}/profile`,
+              tradeUrl: quickTradesUrl,
               polymarketUrl: `https://polymarket.com/event/${order.market_id}`,
-              unsubscribeUrl: `${appUrl}/profile`
+              unsubscribeUrl: quickTradesUrl,
             })
           })
         } catch (emailError: any) {
           console.error(`❌ Failed to send auto-close email for order ${autoCloseOrderId}:`, {
             error: emailError?.message || emailError,
-            to: profile.email,
+            to: context.email,
           })
         }
       } catch (error: any) {
@@ -416,6 +456,7 @@ export async function GET(request: NextRequest) {
           })
           .eq('order_id', order.order_id)
         console.warn(`⚠️ Auto-close error for order ${order.order_id}:`, message)
+        await sendFailureEmail(message)
       }
     }
 
@@ -427,6 +468,8 @@ export async function GET(request: NextRequest) {
       trader_username: trade.copied_trader_username,
       market_title: trade.copied_market_title || '',
       copied_at: trade.created_at,
+      entry_price: trade.entry_price ?? trade.price_when_copied ?? null,
+      invested_usd: trade.invested_usd ?? trade.amount_invested ?? null,
     }))
 
     if (normalizedTrades.length === 0) {
@@ -547,7 +590,7 @@ export async function GET(request: NextRequest) {
                 traderUsername: trade.trader_username,
                 marketTitle: trade.market_title,
                 outcome: trade.outcome,
-                userEntryPrice: trade.price_when_copied,
+                userEntryPrice: trade.entry_price ?? trade.price_when_copied,
                 traderExitPrice: statusData.currentPrice || 0,
                 userROI: statusData.roi || 0,
                 traderROI,
@@ -629,9 +672,9 @@ export async function GET(request: NextRequest) {
                 marketTitle: trade.market_title,
                 resolvedOutcome: resolvedOutcome,
                 userPosition: trade.outcome,
-                userEntryPrice: trade.price_when_copied,
+                userEntryPrice: trade.entry_price ?? trade.price_when_copied,
                 userROI: statusData.roi || 0,
-                betAmount: trade.amount_invested,
+                betAmount: trade.invested_usd ?? trade.amount_invested,
                 didUserWin,
                 tradeUrl: `${appUrl}/profile`,
                 unsubscribeUrl: `${appUrl}/profile`
