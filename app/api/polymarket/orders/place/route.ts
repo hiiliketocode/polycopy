@@ -549,7 +549,10 @@ export async function POST(request: NextRequest) {
 
     if (!roundedPrice || !roundedAmount || !adjustedAmount) {
       return respondWithMetadata(
-        { error: 'Invalid price or amount after rounding', source: 'local_guard' },
+        { 
+          error: 'Invalid price or amount after rounding. This may occur if the market price is too close to $1.00 and there is insufficient liquidity in the order book to execute your sell. You may need to wait until the market resolves or try again with different slippage settings.',
+          source: 'local_guard' 
+        },
         400
       )
     }

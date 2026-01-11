@@ -44,6 +44,7 @@ type OrdersTableProps = {
   showActions?: boolean
   onCancelOrder?: (order: OrderRow) => void
   cancelingOrderId?: string | null
+  customTitle?: string
 }
 
 export default function OrdersTable({
@@ -55,6 +56,7 @@ export default function OrdersTable({
   showActions = true,
   onCancelOrder,
   cancelingOrderId = null,
+  customTitle,
 }: OrdersTableProps) {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
@@ -74,7 +76,7 @@ export default function OrdersTable({
     return (
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
         <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold text-slate-900">Orders</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{customTitle || 'Orders'}</h2>
           <p className="text-sm text-slate-500">No orders found yet.</p>
         </div>
       </section>
@@ -85,7 +87,7 @@ export default function OrdersTable({
     <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-6">
       <div className="mb-2 flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-slate-900">Orders</h2>
+          <h2 className="text-base font-semibold text-slate-900">{customTitle || 'Orders'}</h2>
           <p className="text-sm text-slate-500">{orders.length} items</p>
         </div>
       </div>

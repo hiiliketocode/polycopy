@@ -15,11 +15,17 @@ import type { PositionSummary } from '@/lib/orders/position'
 export type OrdersScreenProps = {
   hideNavigation?: boolean
   contentWrapperClassName?: string
+  defaultTab?: 'positions' | 'openOrders' | 'history'
+  hideTabButtons?: boolean
+  historyTableTitle?: string
 }
 
 export function OrdersScreen({
   hideNavigation = false,
   contentWrapperClassName = 'min-h-screen bg-slate-50',
+  defaultTab = 'positions',
+  hideTabButtons = false,
+  historyTableTitle,
 }: OrdersScreenProps) {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
@@ -49,7 +55,7 @@ export function OrdersScreen({
   const [closeSubmittedAt, setCloseSubmittedAt] = useState<string | null>(null)
   const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null)
   const [cancelError, setCancelError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'positions' | 'openOrders' | 'history'>('positions')
+  const [activeTab, setActiveTab] = useState<'positions' | 'openOrders' | 'history'>(defaultTab)
   const [includeResolvedPositions, setIncludeResolvedPositions] = useState(false)
   const historyOrdersOnly = useMemo(() => {
     const base = orders.filter((order) => order.status !== 'open' && order.status !== 'partial')
@@ -591,38 +597,40 @@ export function OrdersScreen({
           </div>
         )}
 
-        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-700">
-          {(['positions', 'openOrders', 'history'] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveTab(tab)}
-              className={`rounded-full px-4 py-2 ${
-                activeTab === tab ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              {tab === 'positions' ? 'Positions' : tab === 'openOrders' ? 'Open orders' : 'History'}
-            </button>
-          ))}
-          {activeTab === 'history' && (
-            <div className="ml-auto flex items-center gap-2 text-xs text-slate-600">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={showFailedOrders}
-                  onChange={(event) => setShowFailedOrders(event.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                />
-                <span>Show failed</span>
-              </label>
-              {!showFailedOrders && hiddenFailedOrdersCount > 0 && (
-                <span className="text-xs text-slate-500">
-                  {hiddenFailedOrdersCount} failed hidden
-                </span>
-              )}
-            </div>
-          )}
-        </div>
+        {!hideTabButtons && (
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-700">
+            {(['positions', 'openOrders', 'history'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`rounded-full px-4 py-2 ${
+                  activeTab === tab ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
+                }`}
+              >
+                {tab === 'positions' ? 'Positions' : tab === 'openOrders' ? 'Open orders' : 'History'}
+              </button>
+            ))}
+            {activeTab === 'history' && (
+              <div className="ml-auto flex items-center gap-2 text-xs text-slate-600">
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={showFailedOrders}
+                    onChange={(event) => setShowFailedOrders(event.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                  />
+                  <span>Show failed</span>
+                </label>
+                {!showFailedOrders && hiddenFailedOrdersCount > 0 && (
+                  <span className="text-xs text-slate-500">
+                    {hiddenFailedOrdersCount} failed hidden
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {activeTab === 'positions' && (
             <PositionsList
@@ -660,6 +668,7 @@ export function OrdersScreen({
             getPositionForOrder={resolvePositionForOrder}
             onSellPosition={handleSellPosition}
             showActions={false}
+            customTitle={historyTableTitle}
           />
         )}
 

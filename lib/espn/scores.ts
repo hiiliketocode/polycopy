@@ -24,6 +24,10 @@ interface ESPNGame {
 interface ESPNScoreResult {
   homeScore: number;
   awayScore: number;
+  homeTeamName: string;
+  awayTeamName: string;
+  homeTeamAbbrev: string;
+  awayTeamAbbrev: string;
   status: 'scheduled' | 'live' | 'final';
   startTime: string;
   displayClock?: string;
@@ -49,7 +53,9 @@ function detectSportType(title: string): string | null {
     'lakers', 'clippers', 'warriors', 'kings', 'suns', 'mavericks', 'rockets', 'spurs',
     'nuggets', 'jazz', 'thunder', 'timberwolves', 'trail blazers', 'grizzlies', 'pelicans',
     'heat', 'magic', 'hawks', 'hornets', 'wizards', 'celtics', 'nets', '76ers', 'knicks',
-    'raptors', 'bucks', 'bulls', 'cavaliers', 'pistons', 'pacers'
+    'raptors', 'bucks', 'bulls', 'cavaliers', 'pistons', 'pacers',
+    // Add variations
+    'blazers', 'sixers', 'cavs', 'wolves'
   ];
   
   // MLB teams
@@ -62,7 +68,9 @@ function detectSportType(title: string): string | null {
   const nhlTeams = [
     'bruins', 'canadiens', 'maple leafs', 'senators', 'penguins', 'flyers', 'rangers',
     'islanders', 'devils', 'blackhawks', 'red wings', 'predators', 'blues', 'wild',
-    'avalanche', 'stars', 'jets', 'oilers', 'flames', 'canucks', 'golden knights'
+    'avalanche', 'stars', 'jets', 'oilers', 'flames', 'canucks', 'golden knights',
+    'hurricanes', 'panthers', 'lightning', 'capitals', 'blue jackets', 'sabres',
+    'kings', 'ducks', 'sharks', 'kraken', 'coyotes'
   ];
   
   if (nflTeams.some(team => titleLower.includes(team))) return 'nfl';
@@ -107,10 +115,10 @@ function extractTeamNames(title: string): { team1: string; team2: string } | nul
 }
 
 // Check if two team names match (flexible matching)
-function teamsMatch(marketTeam: string, espnTeamName: string, espnAbbrev: string): boolean {
-  const marketLower = marketTeam.toLowerCase();
-  const espnLower = espnTeamName.toLowerCase();
-  const abbrevLower = espnAbbrev.toLowerCase();
+export function teamsMatch(marketTeam: string, espnTeamName: string, espnAbbrev: string): boolean {
+  const marketLower = marketTeam.toLowerCase().trim();
+  const espnLower = espnTeamName.toLowerCase().trim();
+  const abbrevLower = espnAbbrev.toLowerCase().trim();
   
   // Direct match
   if (marketLower === espnLower || marketLower === abbrevLower) return true;
@@ -120,6 +128,28 @@ function teamsMatch(marketTeam: string, espnTeamName: string, espnAbbrev: string
   
   // Abbreviation match
   if (marketLower.includes(abbrevLower) || abbrevLower.includes(marketLower)) return true;
+  
+  // Special cases for common team name variations
+  const specialCases: Record<string, string[]> = {
+    'golden knights': ['vegas', 'vgk', 'vegas golden knights'],
+    'trail blazers': ['blazers', 'portland'],
+    'timberwolves': ['wolves', 't-wolves', 'minnesota'],
+    '76ers': ['sixers', 'philadelphia'],
+    'oilers': ['edmonton'],
+    'blues': ['st. louis', 'stl'],
+    'kings': ['sacramento', 'los angeles', 'la kings'],
+  };
+  
+  // Check if either team has special cases
+  for (const [canonical, variations] of Object.entries(specialCases)) {
+    const matchesCanonical = marketLower.includes(canonical) || espnLower.includes(canonical) || abbrevLower.includes(canonical);
+    const matchesVariation = variations.some(v => 
+      marketLower.includes(v) || espnLower.includes(v) || abbrevLower.includes(v)
+    );
+    
+    if (matchesCanonical && matchesVariation) return true;
+    if (variations.some(v => marketLower.includes(v) && (espnLower.includes(canonical) || abbrevLower.includes(canonical)))) return true;
+  }
   
   return false;
 }
@@ -190,6 +220,10 @@ export async function getESPNScoreForTrade(trade: FeedTrade): Promise<ESPNScoreR
   return {
     homeScore: matchingGame.homeTeam.score || 0,
     awayScore: matchingGame.awayTeam.score || 0,
+    homeTeamName: matchingGame.homeTeam.name,
+    awayTeamName: matchingGame.awayTeam.name,
+    homeTeamAbbrev: matchingGame.homeTeam.abbreviation,
+    awayTeamAbbrev: matchingGame.awayTeam.abbreviation,
     status: matchingGame.status,
     startTime: matchingGame.startTime,
     displayClock: matchingGame.displayClock,
@@ -224,7 +258,12 @@ export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<s
       
       sportTrades.forEach(trade => {
         const teams = extractTeamNames(trade.market.title);
-        if (!teams) return;
+        if (!teams) {
+          console.log(`⚠️ Could not extract teams from: ${trade.market.title}`);
+          return;
+        }
+        
+        console.log(`🔍 Searching for ${sport.toUpperCase()} game: ${teams.team1} vs ${teams.team2}`);
         
         const matchingGame = espnGames.find(game => {
           const homeMatches = teamsMatch(teams.team1, game.homeTeam.name, game.homeTeam.abbreviation) ||
@@ -237,15 +276,22 @@ export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<s
         });
         
         if (matchingGame) {
+          console.log(`✅ Found ESPN game for "${trade.market.title}": ${matchingGame.name} (${matchingGame.status})`);
           const key = trade.market.conditionId || trade.market.id || trade.market.title;
           scoreMap.set(key, {
             homeScore: matchingGame.homeTeam.score || 0,
             awayScore: matchingGame.awayTeam.score || 0,
+            homeTeamName: matchingGame.homeTeam.name,
+            awayTeamName: matchingGame.awayTeam.name,
+            homeTeamAbbrev: matchingGame.homeTeam.abbreviation,
+            awayTeamAbbrev: matchingGame.awayTeam.abbreviation,
             status: matchingGame.status,
             startTime: matchingGame.startTime,
             displayClock: matchingGame.displayClock,
             period: matchingGame.period,
           });
+        } else {
+          console.log(`❌ No ESPN game found for "${trade.market.title}". Available ${sport.toUpperCase()} games:`, espnGames.map(g => g.name));
         }
       });
     });

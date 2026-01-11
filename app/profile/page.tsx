@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
@@ -13,9 +13,14 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
+import { CancelSubscriptionModal } from '@/components/polycopy/cancel-subscription-modal';
+import { SubscriptionSuccessModal } from '@/components/polycopy/subscription-success-modal';
 import { MarkTradeClosed } from '@/components/polycopy/mark-trade-closed';
 import { EditCopiedTrade } from '@/components/polycopy/edit-copied-trade';
 import { OrdersScreen } from '@/components/orders/OrdersScreen';
+import ClosePositionModal from '@/components/orders/ClosePositionModal';
+import type { OrderRow } from '@/lib/orders/types';
+import type { PositionSummary } from '@/lib/orders/position';
 import {
   Dialog,
   DialogContent,
@@ -43,6 +48,7 @@ import {
   Check,
   Info,
   ArrowUpRight,
+  ExternalLink,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -88,7 +94,7 @@ interface CategoryDistribution {
   color: string;
 }
 
-type ProfileTab = 'copied-trades' | 'performance' | 'settings' | 'manual-trades';
+type ProfileTab = 'trades' | 'performance' | 'settings';
 
 interface PortfolioStats {
   totalPnl: number;
@@ -154,10 +160,21 @@ function ProfilePageContent() {
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(true);
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
-  const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved'>('all');
+  const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved' | 'history'>('all');
   const [portfolioStats, setPortfolioStats] = useState<PortfolioStats | null>(null);
   const [portfolioStatsLoading, setPortfolioStatsLoading] = useState(false);
   const [portfolioStatsError, setPortfolioStatsError] = useState<string | null>(null);
+  
+  // Quick trades (orders) state  
+  const [quickTrades, setQuickTrades] = useState<OrderRow[]>([]);
+  const [loadingQuickTrades, setLoadingQuickTrades] = useState(true);
+  const [positions, setPositions] = useState<PositionSummary[]>([]);
+  const [closeTarget, setCloseTarget] = useState<{ order: OrderRow; position: PositionSummary } | null>(null);
+  const [closeSubmitting, setCloseSubmitting] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
+  const [closeSuccess, setCloseSuccess] = useState<string | null>(null);
+  const [closeOrderId, setCloseOrderId] = useState<string | null>(null);
+  const [closeSubmittedAt, setCloseSubmittedAt] = useState<string | null>(null);
   
   // Performance tab data
   const [positionSizeBuckets, setPositionSizeBuckets] = useState<PositionSizeBucket[]>([]);
@@ -176,16 +193,18 @@ function ProfilePageContent() {
   
   // UI state - Check for tab query parameter
   const tabParam = searchParams?.get('tab');
-  const preferredDefaultTab: ProfileTab = hasPremiumAccess ? 'manual-trades' : 'copied-trades';
+  const preferredDefaultTab: ProfileTab = 'trades';
   const initialTab =
-    tabParam === 'settings' || tabParam === 'performance' || tabParam === 'manual-trades' || tabParam === 'copied-trades'
+    tabParam === 'settings' || tabParam === 'performance' || tabParam === 'trades'
       ? (tabParam as ProfileTab)
       : preferredDefaultTab;
   const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
   const hasAppliedPreferredTab = useRef(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
-  
+  const [showCancelSubscriptionModal, setShowCancelSubscriptionModal] = useState(false);
+  const [showSubscriptionSuccessModal, setShowSubscriptionSuccessModal] = useState(false);
+
   // Disconnect wallet confirmation modal state
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
   const [disconnectConfirmText, setDisconnectConfirmText] = useState('');
@@ -193,6 +212,17 @@ function ProfilePageContent() {
   // Notification preferences state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loadingNotificationPrefs, setLoadingNotificationPrefs] = useState(false);
+
+  // Check for upgrade success in URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('upgrade') === 'success') {
+      setShowSubscriptionSuccessModal(true);
+      // Clean up URL
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
   
   // Polymarket username state
   const [polymarketUsername, setPolymarketUsername] = useState<string | null>(null);
@@ -213,6 +243,7 @@ function ProfilePageContent() {
   // Refs to prevent re-fetching on tab focus
   const hasLoadedStatsRef = useRef(false);
   const hasLoadedTradesRef = useRef(false);
+  const hasLoadedQuickTradesRef = useRef(false);
   const hasLoadedNotificationPrefsRef = useRef(false);
 
   // Check auth status on mount
@@ -404,6 +435,49 @@ function ProfilePageContent() {
     };
 
     fetchCopiedTrades();
+  }, [user]);
+
+  // Fetch quick trades (orders) from /api/orders
+  useEffect(() => {
+    if (!user || hasLoadedQuickTradesRef.current) return;
+    hasLoadedQuickTradesRef.current = true;
+
+    const fetchQuickTrades = async () => {
+      setLoadingQuickTrades(true);
+      try {
+        const response = await fetch('/api/orders', { cache: 'no-store' });
+        const data = await response.json();
+
+        if (!response.ok) {
+          console.error('Error fetching orders:', data.error);
+          setQuickTrades([]);
+          setLoadingQuickTrades(false);
+          return;
+        }
+
+        setQuickTrades(data.orders || []);
+        
+        // Fetch positions for sell button functionality using the correct endpoint
+        if (data.orders && data.orders.length > 0) {
+          try {
+            const positionsResponse = await fetch('/api/polymarket/positions', { cache: 'no-store' });
+            if (positionsResponse.ok) {
+              const positionsData = await positionsResponse.json();
+              setPositions(positionsData.positions || []);
+            }
+          } catch (err) {
+            console.error('Error fetching positions:', err);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching quick trades:', err);
+        setQuickTrades([]);
+      } finally {
+        setLoadingQuickTrades(false);
+      }
+    };
+
+    fetchQuickTrades();
   }, [user]);
 
   // Fetch aggregated portfolio stats (realized + unrealized PnL)
@@ -1109,6 +1183,217 @@ function ProfilePageContent() {
     }
   };
 
+  // Handle confirm close for quick trades
+  const handleConfirmClose = async ({
+    tokenId,
+    amount,
+    price,
+    slippagePercent,
+    orderType,
+  }: {
+    tokenId: string;
+    amount: number;
+    price: number;
+    slippagePercent: number;
+    orderType: 'FAK' | 'GTC';
+  }) => {
+    const positionSide = closeTarget?.position.side;
+    const sideForClose: 'BUY' | 'SELL' = positionSide === 'SELL' ? 'BUY' : 'SELL';
+
+    if (!closeTarget) {
+      setCloseError('No position selected to close');
+      return;
+    }
+
+    setCloseSubmitting(true);
+    setCloseError(null);
+    try {
+      const payload = {
+        tokenId,
+        amount,
+        price,
+        side: sideForClose,
+        orderType,
+        confirm: true,
+      };
+      
+      const response = await fetch('/api/polymarket/orders/place', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        const errorMessage =
+          typeof data?.error === 'string'
+            ? data.error
+            : typeof data?.message === 'string'
+              ? data.message
+              : typeof data?.snippet === 'string'
+                ? data.snippet
+                : typeof data?.raw === 'string'
+                  ? data.raw
+                  : JSON.stringify(data);
+        throw new Error(errorMessage);
+      }
+      
+      setCloseSuccess(`Close order submitted (${slippagePercent.toFixed(1)}% slippage)`);
+      setCloseOrderId(data?.orderId ?? null);
+      setCloseSubmittedAt(data?.submittedAt ?? null);
+      
+      // Refresh quick trades to show the new sell order
+      hasLoadedQuickTradesRef.current = false;
+      const fetchQuickTrades = async () => {
+        setLoadingQuickTrades(true);
+        try {
+          const response = await fetch('/api/orders', { cache: 'no-store' });
+          const data = await response.json();
+          if (response.ok) {
+            setQuickTrades(data.orders || []);
+          }
+        } catch (err) {
+          console.error('Error refreshing quick trades:', err);
+        } finally {
+          setLoadingQuickTrades(false);
+        }
+      };
+      await fetchQuickTrades();
+      
+      setToastMessage('Sell order placed successfully!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } catch (err: any) {
+      console.error('Close position error:', err);
+      setCloseError(err?.message || 'Failed to close position');
+    } finally {
+      setCloseSubmitting(false);
+    }
+  };
+
+  // Helper: Get status for a trade
+  const getTradeStatus = (trade: CopiedTrade | OrderRow): 'open' | 'user-closed' | 'trader-closed' | 'resolved' => {
+    // For manual trades (CopiedTrade)
+    if ('trade_method' in trade) {
+      if (trade.market_resolved) return 'resolved';
+      if (trade.user_closed_at) return 'user-closed';
+      if (trade.trader_closed_at) return 'trader-closed';
+      return 'open';
+    }
+    
+    // For quick trades (OrderRow)
+    const order = trade as OrderRow;
+    if (order.marketResolved) return 'resolved';
+    if (order.status === 'filled' || order.status === 'partial') return 'open';
+    if (order.positionState === 'closed') return 'user-closed';
+    return 'open';
+  };
+
+  // Helper: Convert OrderRow to unified trade format
+  interface UnifiedTrade {
+    id: string;
+    type: 'manual' | 'quick';
+    status: 'open' | 'user-closed' | 'trader-closed' | 'resolved';
+    created_at: string;
+    market_title: string;
+    market_id: string;
+    market_slug: string | null;
+    outcome: string;
+    price_entry: number;
+    price_current: number | null | undefined;
+    amount: number | null | undefined;
+    roi: number | null | undefined;
+    trader_wallet: string | null;
+    trader_username?: string | null;
+    trader_profile_image?: string | null;
+    market_avatar_url?: string | null;
+    raw?: any; // For quick trades, we keep the full OrderRow
+    copiedTrade?: CopiedTrade; // For manual trades, keep the full CopiedTrade
+  }
+
+  const convertOrderToUnifiedTrade = (order: OrderRow): UnifiedTrade => {
+    const marketTitle = order.marketTitle || 'Unknown Market';
+    const outcome = order.side === 'BUY' ? 'YES' : 'NO';
+    
+    return {
+      id: `quick-${order.orderId}`,
+      type: 'quick',
+      status: getTradeStatus(order),
+      created_at: order.createdAt || new Date().toISOString(),
+      market_title: marketTitle,
+      market_id: order.marketId || '',
+      market_slug: order.marketSlug || null,
+      outcome: outcome,
+      price_entry: order.priceOrAvgPrice || 0,
+      price_current: order.currentPrice || order.priceOrAvgPrice || 0,
+      amount: order.size ? order.size * (order.priceOrAvgPrice || 0) : undefined,
+      roi: order.pnlUsd && order.size && order.priceOrAvgPrice 
+        ? (order.pnlUsd / (order.size * order.priceOrAvgPrice)) * 100 
+        : undefined,
+      trader_wallet: order.copiedTraderWallet || null,
+      trader_username: order.traderName || null,
+      trader_profile_image: order.traderAvatarUrl || null,
+      market_avatar_url: order.marketImageUrl || null,
+      raw: order,
+    };
+  };
+
+  const convertCopiedTradeToUnified = (trade: CopiedTrade): UnifiedTrade => {
+    return {
+      id: `manual-${trade.id}`,
+      type: 'manual',
+      status: getTradeStatus(trade),
+      created_at: trade.copied_at,
+      market_title: trade.market_title,
+      market_id: trade.market_id,
+      market_slug: trade.market_slug,
+      outcome: trade.outcome,
+      price_entry: trade.price_when_copied,
+      price_current: trade.current_price,
+      amount: trade.amount_invested,
+      roi: trade.roi,
+      trader_wallet: trade.trader_wallet,
+      trader_username: trade.trader_username,
+      trader_profile_image: trade.trader_profile_image_url,
+      market_avatar_url: trade.market_avatar_url,
+      copiedTrade: trade,
+    };
+  };
+
+  // Merge and sort all trades
+  const allUnifiedTrades = useMemo(() => {
+    // Filter out trades that are explicitly marked as 'quick' - those should only come from orders API
+    // Keep trades where trade_method is 'manual' or null/undefined (older trades)
+    const actualManualTrades = copiedTrades.filter(trade => trade.trade_method === 'manual' || trade.trade_method === null || trade.trade_method === undefined);
+    const manualTrades = actualManualTrades.map(convertCopiedTradeToUnified);
+    const quickTradesConverted = quickTrades.map(convertOrderToUnifiedTrade);
+    const combined = [...manualTrades, ...quickTradesConverted];
+    
+    // Sort by created date, newest first
+    combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    
+    return combined;
+  }, [copiedTrades, quickTrades]);
+
+  // Filter unified trades
+  const filteredUnifiedTrades = useMemo(() => {
+    if (tradeFilter === 'all') return allUnifiedTrades;
+    
+    return allUnifiedTrades.filter(trade => {
+      switch (tradeFilter) {
+        case 'open':
+          return trade.status === 'open';
+        case 'closed':
+          return trade.status === 'user-closed' || trade.status === 'trader-closed';
+        case 'resolved':
+          return trade.status === 'resolved';
+        default:
+          return true;
+      }
+    });
+  }, [allUnifiedTrades, tradeFilter]);
+
   // Loading state
   if (loading) {
     return (
@@ -1134,21 +1419,12 @@ function ProfilePageContent() {
   };
 
   const tabButtons: Array<{ key: ProfileTab; label: string }> = [
-    ...(hasPremiumAccess
-      ? [
-          { key: 'manual-trades' as ProfileTab, label: 'Quick Trades' },
-          { key: 'copied-trades' as ProfileTab, label: 'Manual Trades' },
-        ]
-      : [
-          { key: 'copied-trades' as ProfileTab, label: 'Manual Trades' },
-          { key: 'manual-trades' as ProfileTab, label: 'Quick Trades' },
-        ]),
+    { key: 'trades' as ProfileTab, label: 'Trades' },
     { key: 'performance' as ProfileTab, label: 'Performance' },
     { key: 'settings' as ProfileTab, label: 'Settings' },
   ];
   const tabTooltips: Partial<Record<ProfileTab, string>> = {
-    'manual-trades': 'Quick Copy trades executed through Polycopy. Manage open orders, closes, and execution history here.',
-    'copied-trades': 'Combined log of manual and quick copy trades. Update status and outcomes as they change.',
+    'trades': 'View all your copy trades (both manual and quick copy). Track performance and manage open positions.',
   };
 
   return (
@@ -1355,16 +1631,11 @@ function ProfilePageContent() {
           </div>
 
           {/* Tab Content */}
-          {activeTab === 'manual-trades' && (
-            <div className="space-y-4">
-              <OrdersScreen hideNavigation contentWrapperClassName="bg-transparent" />
-            </div>
-          )}
-          {activeTab === 'copied-trades' && (
+          {activeTab === 'trades' && (
             <div className="space-y-4">
               {/* Filter and Refresh */}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                   {(['all', 'open', 'closed', 'resolved'] as const).map((filter) => (
                     <button
                       key={filter}
@@ -1379,6 +1650,22 @@ function ProfilePageContent() {
                       {filter.charAt(0).toUpperCase() + filter.slice(1)}
                     </button>
                   ))}
+                  
+                  {/* Separator */}
+                  <span className="text-slate-300 text-lg mx-1">|</span>
+                  
+                  {/* History Button */}
+                  <button
+                    onClick={() => setTradeFilter('history')}
+                    className={cn(
+                      "px-4 py-2 rounded-lg font-medium text-sm transition-all",
+                      tradeFilter === 'history'
+                        ? "bg-slate-900 text-white"
+                        : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                    )}
+                  >
+                    History
+                  </button>
                 </div>
                 <Button
                   onClick={handleManualRefresh}
@@ -1392,8 +1679,18 @@ function ProfilePageContent() {
                 </Button>
               </div>
 
-              {/* Trades List */}
-              {loadingCopiedTrades ? (
+              {/* Trades List or History View */}
+              {tradeFilter === 'history' ? (
+                <div className="space-y-4">
+                  <OrdersScreen 
+                    hideNavigation 
+                    contentWrapperClassName="bg-transparent" 
+                    defaultTab="history"
+                    hideTabButtons={true}
+                    historyTableTitle="Order History - Premium Quick Copy Trades Only"
+                  />
+                </div>
+              ) : (loadingCopiedTrades || loadingQuickTrades) ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map((i) => (
                     <Card key={i} className="p-6 animate-pulse">
@@ -1402,9 +1699,9 @@ function ProfilePageContent() {
                     </Card>
                   ))}
                 </div>
-              ) : filteredTrades.length === 0 ? (
+              ) : filteredUnifiedTrades.length === 0 ? (
                 <Card className="p-8 text-center">
-                  <p className="text-slate-600">No copied trades yet.</p>
+                  <p className="text-slate-600">No trades yet.</p>
                   <Link href="/discover">
                     <Button className="mt-4 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900">
                       Discover Traders
@@ -1413,72 +1710,141 @@ function ProfilePageContent() {
                 </Card>
               ) : (
                 <div className="space-y-3">
-                  {filteredTrades.slice(0, tradesToShow).map((trade) => (
+                  {filteredUnifiedTrades.slice(0, tradesToShow).map((trade) => (
                     <Card key={trade.id} className="p-4 sm:p-6">
                       <div className="space-y-4">
-                        {/* Trader Header Row */}
-                        <div className="flex items-start justify-between gap-3">
-                          <Link
-                            href={`/trader/${trade.trader_wallet}`}
-                            className="flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
-                          >
-                            <Avatar className="h-10 w-10 ring-2 ring-slate-100">
-                              {trade.trader_profile_image_url ? (
-                                <img
-                                  src={trade.trader_profile_image_url}
-                                  alt={trade.trader_username || 'Trader'}
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : null}
-                              <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-sm font-semibold">
-                                {(trade.trader_username || trade.trader_wallet).slice(0, 2).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="min-w-0">
-                              <p className="font-medium text-slate-900 text-sm">
-                                {trade.trader_username || `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
-                              </p>
-                              <p className="text-xs text-slate-500 font-mono truncate">
-                                {trade.trader_wallet
-                                  ? `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`
-                                  : 'Unknown'}
-                              </p>
-                            </div>
-                          </Link>
-                          <div className="flex flex-col items-end gap-1.5 shrink-0">
-                            {/* Live Price Display */}
-                            {liveMarketData.get(trade.market_id) && (
-                              <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
-                                <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Price:</span>
-                                <span className="text-xs font-bold text-slate-900">
-                                  ${liveMarketData.get(trade.market_id)!.price.toFixed(2)}
-                                </span>
-                                {(() => {
-                                  const currentPrice = liveMarketData.get(trade.market_id)!.price;
-                                  const priceChange = ((currentPrice - trade.price_when_copied) / trade.price_when_copied) * 100;
-                                  if (Math.abs(priceChange) > 0.1) {
-                                    return (
-                                      <span className={`text-xs font-semibold flex items-center ${priceChange > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                        {priceChange > 0 ? '↑' : '↓'}{Math.abs(priceChange).toFixed(1)}%
-                                      </span>
-                                    );
-                                  }
-                                })()}
+                        {/* Trader Header Row - Only show for trades with trader info */}
+                        {trade.trader_wallet && (
+                          <div className="flex items-start justify-between gap-3">
+                            <Link
+                              href={`/trader/${trade.trader_wallet}`}
+                              className="flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
+                            >
+                              <Avatar className="h-10 w-10 ring-2 ring-slate-100">
+                                {trade.trader_profile_image ? (
+                                  <img
+                                    src={trade.trader_profile_image}
+                                    alt={trade.trader_username || 'Trader'}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : null}
+                                <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-sm font-semibold">
+                                  {(trade.trader_username || trade.trader_wallet).slice(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0">
+                                <p className="font-medium text-slate-900 text-sm">
+                                  {trade.trader_username || `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
+                                </p>
+                                <p className="text-xs text-slate-500 font-mono truncate">
+                                  {`${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
+                                </p>
                               </div>
-                            )}
-                            <div className="flex items-center gap-2 flex-wrap justify-end">
+                            </Link>
+                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                              {/* Live Price Display */}
+                              {liveMarketData.get(trade.market_id) && (
+                                <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
+                                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Price:</span>
+                                  <span className="text-xs font-bold text-slate-900">
+                                    ${liveMarketData.get(trade.market_id)!.price.toFixed(2)}
+                                  </span>
+                                  {(() => {
+                                    const currentPrice = liveMarketData.get(trade.market_id)!.price;
+                                    const priceChange = ((currentPrice - trade.price_entry) / trade.price_entry) * 100;
+                                    if (Math.abs(priceChange) > 0.1) {
+                                      return (
+                                        <span className={`text-xs font-semibold flex items-center ${priceChange > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                          {priceChange > 0 ? '↑' : '↓'}{Math.abs(priceChange).toFixed(1)}%
+                                        </span>
+                                      );
+                                    }
+                                  })()}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-2 flex-wrap justify-end">
+                                {/* Trade Type Badge */}
+                                <Badge
+                                  className={cn(
+                                    "text-[10px] font-semibold uppercase tracking-wide",
+                                    trade.type === 'quick'
+                                      ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                      : "bg-amber-50 text-amber-700 border-amber-200"
+                                  )}
+                                >
+                                  {trade.type === 'quick' ? 'Quick Copy' : 'Manual Copy'}
+                                </Badge>
+                                {/* Status Badge */}
+                                <Badge
+                                  className={cn(
+                                    "text-[10px] font-semibold uppercase tracking-wide",
+                                    trade.status === 'open' && "bg-emerald-50 text-emerald-700 border-emerald-200",
+                                    trade.status === 'user-closed' && "bg-gray-50 text-gray-700 border-gray-200",
+                                    trade.status === 'trader-closed' && "bg-orange-50 text-orange-700 border-orange-200",
+                                    trade.status === 'resolved' && "bg-blue-50 text-blue-700 border-blue-200"
+                                  )}
+                                >
+                                  {trade.status === 'open' && 'Open'}
+                                  {trade.status === 'user-closed' && 'User Closed'}
+                                  {trade.status === 'trader-closed' && 'Trader Closed'}
+                                  {trade.status === 'resolved' && 'Resolved'}
+                                </Badge>
+                                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
+                                  {formatRelativeTime(trade.created_at)}
+                                </span>
+                                <button
+                                  onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
+                                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                                >
+                                  {expandedTradeId === trade.id ? (
+                                    <ChevronUp className="h-5 w-5" />
+                                  ) : (
+                                    <ChevronDown className="h-5 w-5" />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* For manual trades without trader info, show badges in a simpler header */}
+                        {!trade.trader_wallet && (
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
                               <Badge
                                 className={cn(
                                   "text-[10px] font-semibold uppercase tracking-wide",
-                                  trade.trade_method === 'quick'
-                                    ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                                    : "bg-amber-50 text-amber-700 border-amber-200"
+                                  "bg-amber-50 text-amber-700 border-amber-200"
                                 )}
                               >
-                                {trade.trade_method === 'quick' ? 'Quick Copy' : 'Manual Copy'}
+                                Manual Copy
                               </Badge>
+                              <Badge
+                                className={cn(
+                                  "text-[10px] font-semibold uppercase tracking-wide",
+                                  trade.status === 'open' && "bg-emerald-50 text-emerald-700 border-emerald-200",
+                                  trade.status === 'user-closed' && "bg-gray-50 text-gray-700 border-gray-200",
+                                  trade.status === 'trader-closed' && "bg-orange-50 text-orange-700 border-orange-200",
+                                  trade.status === 'resolved' && "bg-blue-50 text-blue-700 border-blue-200"
+                                )}
+                              >
+                                {trade.status === 'open' && 'Open'}
+                                {trade.status === 'user-closed' && 'User Closed'}
+                                {trade.status === 'trader-closed' && 'Trader Closed'}
+                                {trade.status === 'resolved' && 'Resolved'}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {liveMarketData.get(trade.market_id) && (
+                                <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
+                                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Price:</span>
+                                  <span className="text-xs font-bold text-slate-900">
+                                    ${liveMarketData.get(trade.market_id)!.price.toFixed(2)}
+                                  </span>
+                                </div>
+                              )}
                               <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
-                                {formatRelativeTime(trade.copied_at)}
+                                {formatRelativeTime(trade.created_at)}
                               </span>
                               <button
                                 onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
@@ -1492,7 +1858,7 @@ function ProfilePageContent() {
                               </button>
                             </div>
                           </div>
-                        </div>
+                        )}
 
                         {/* Market Row */}
                         <div className="flex items-center gap-3">
@@ -1512,6 +1878,19 @@ function ProfilePageContent() {
                             <h3 className="font-medium text-slate-900 leading-snug">
                               {trade.market_title}
                             </h3>
+                            {/* External link to Polymarket */}
+                            {trade.market_slug && (
+                              <a
+                                href={`https://polymarket.com/market/${trade.market_slug}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+                                title="View on Polymarket"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            )}
                             <Badge
                               className={cn(
                                 "font-semibold flex-shrink-0",
@@ -1529,18 +1908,18 @@ function ProfilePageContent() {
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 rounded-lg p-3">
                           <div>
                             <p className="text-xs text-slate-500 mb-1">Entry</p>
-                            <p className="font-semibold text-slate-900">${trade.price_when_copied.toFixed(2)}</p>
+                            <p className="font-semibold text-slate-900">${trade.price_entry.toFixed(2)}</p>
                           </div>
                           <div>
                             <p className="text-xs text-slate-500 mb-1">Current</p>
                             <p className="font-semibold text-slate-900">
-                              ${trade.current_price?.toFixed(2) || trade.price_when_copied.toFixed(2)}
+                              ${trade.price_current?.toFixed(2) || trade.price_entry.toFixed(2)}
                             </p>
                           </div>
                           <div>
                             <p className="text-xs text-slate-500 mb-1">Amount</p>
                             <p className="font-semibold text-slate-900">
-                              ${trade.amount_invested?.toFixed(0) || '—'}
+                              ${trade.amount?.toFixed(0) || '—'}
                             </p>
                           </div>
                           <div>
@@ -1554,48 +1933,29 @@ function ProfilePageContent() {
                           </div>
                         </div>
 
-                        {/* Status Badges */}
-                        <div className="flex flex-wrap gap-2">
-                          {trade.market_resolved && (
-                            <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
-                              Market Resolved: {trade.resolved_outcome || 'Unknown'}
-                            </Badge>
-                          )}
-                          {trade.user_closed_at && (
-                            <Badge variant="secondary" className="bg-gray-50 text-gray-700 border-gray-200">
-                              You Closed
-                            </Badge>
-                          )}
-                          {!trade.trader_still_has_position && !trade.market_resolved && !trade.user_closed_at && (
-                            <Badge variant="secondary" className="bg-orange-50 text-orange-700 border-orange-200">
-                              Trader Exited
-                            </Badge>
-                          )}
-                        </div>
-
                         {/* Expanded Details */}
                         {expandedTradeId === trade.id && (
                           <div className="space-y-4 pt-4 border-t border-slate-200">
-                            {/* Additional Details in 2x2 Grid */}
+                            {/* Additional Details */}
                             <div className="grid grid-cols-2 gap-4">
                               <div>
                                 <p className="text-xs text-slate-500 mb-1">Current Price</p>
                                 <p className="font-semibold text-slate-900">
-                                  ${trade.current_price?.toFixed(2) || trade.price_when_copied.toFixed(2)}
+                                  ${trade.price_current?.toFixed(2) || trade.price_entry.toFixed(2)}
                                 </p>
                               </div>
                               <div>
                                 <p className="text-xs text-slate-500 mb-1">Shares</p>
                                 <p className="font-semibold text-slate-900">
-                                  {trade.amount_invested && trade.price_when_copied 
-                                    ? Math.round(trade.amount_invested / trade.price_when_copied)
+                                  {trade.amount && trade.price_entry 
+                                    ? Math.round(trade.amount / trade.price_entry)
                                     : '—'}
                                 </p>
                               </div>
                               <div>
                                 <p className="text-xs text-slate-500 mb-1">Amount Invested</p>
                                 <p className="font-semibold text-slate-900">
-                                  ${trade.amount_invested?.toFixed(0) || '—'}
+                                  ${trade.amount?.toFixed(0) || '—'}
                                 </p>
                               </div>
                               <div>
@@ -1604,114 +1964,232 @@ function ProfilePageContent() {
                                   "font-semibold",
                                   (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
                                 )}>
-                                  {trade.amount_invested && trade.roi
-                                    ? `${(trade.roi >= 0 ? '+' : '')}$${((trade.amount_invested * trade.roi) / 100).toFixed(0)}`
+                                  {trade.amount && trade.roi
+                                    ? `${(trade.roi >= 0 ? '+' : '')}$${((trade.amount * trade.roi) / 100).toFixed(0)}`
                                     : '—'}
                                 </p>
                               </div>
                             </div>
 
-                            {/* Action Buttons */}
-                            <div className="flex gap-2">
-                              {/* Open trades: Mark as Closed, Edit, Delete */}
-                              {!trade.user_closed_at && !trade.market_resolved && (
-                                <>
-                                  <Button
-                                    onClick={() => {
-                                      setTradeToEdit(trade);
-                                      setShowCloseModal(true);
-                                    }}
-                                    variant="outline"
-                                    size="default"
-                                    className="flex-1 border-blue-600 text-blue-600 hover:bg-blue-50 gap-2"
-                                  >
-                                    <Check className="h-4 w-4" />
-                                    Mark as Closed
-                                  </Button>
-                                  <Button
-                                    onClick={() => {
-                                      setTradeToEdit(trade);
-                                      setShowEditModal(true);
-                                    }}
-                                    variant="outline"
-                                    size="default"
-                                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
-                                  >
-                                    <Edit2 className="h-4 w-4" />
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    onClick={() => handleDeleteTrade(trade)}
-                                    variant="ghost"
-                                    size="icon"
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
-                                  >
-                                    <Trash2 className="h-5 w-5" />
-                                  </Button>
-                                </>
-                              )}
-                              
-                              {/* User-closed trades: Edit, Unmark as Closed, Delete */}
-                              {trade.user_closed_at && (
-                                <>
-                                  <Button
-                                    onClick={() => {
-                                      setTradeToEdit(trade);
-                                      setShowEditModal(true);
-                                    }}
-                                    variant="outline"
-                                    size="default"
-                                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
-                                  >
-                                    <Edit2 className="h-4 w-4" />
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    onClick={() => handleUnmarkClosed(trade)}
-                                    variant="outline"
-                                    size="default"
-                                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
-                                  >
-                                    <RotateCcw className="h-4 w-4" />
-                                    Unmark as Closed
-                                  </Button>
-                                  <Button
-                                    onClick={() => handleDeleteTrade(trade)}
-                                    variant="ghost"
-                                    size="icon"
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
-                                  >
-                                    <Trash2 className="h-5 w-5" />
-                                  </Button>
-                                </>
-                              )}
-                              
-                              {/* Market-resolved trades: Edit, Delete */}
-                              {trade.market_resolved && !trade.user_closed_at && (
-                                <>
-                                  <Button
-                                    onClick={() => {
-                                      setTradeToEdit(trade);
-                                      setShowEditModal(true);
-                                    }}
-                                    variant="outline"
-                                    size="default"
-                                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
-                                  >
-                                    <Edit2 className="h-4 w-4" />
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    onClick={() => handleDeleteTrade(trade)}
-                                    variant="ghost"
-                                    size="icon"
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
-                                  >
-                                    <Trash2 className="h-5 w-5" />
-                                  </Button>
-                                </>
-                              )}
-                            </div>
+                            {/* Action Buttons - Different for Manual vs Quick */}
+                            {trade.type === 'manual' && trade.copiedTrade && (
+                              <div className="flex gap-2">
+                                {/* Manual Copy: Show Edit/Delete/Mark as Closed buttons */}
+                                {!trade.copiedTrade.user_closed_at && !trade.copiedTrade.market_resolved && (
+                                  <>
+                                    <Button
+                                      onClick={() => {
+                                        setTradeToEdit(trade.copiedTrade!);
+                                        setShowCloseModal(true);
+                                      }}
+                                      variant="outline"
+                                      size="default"
+                                      className="flex-1 border-blue-600 text-blue-600 hover:bg-blue-50 gap-2"
+                                    >
+                                      <Check className="h-4 w-4" />
+                                      Mark as Closed
+                                    </Button>
+                                    <Button
+                                      onClick={() => {
+                                        setTradeToEdit(trade.copiedTrade!);
+                                        setShowEditModal(true);
+                                      }}
+                                      variant="outline"
+                                      size="default"
+                                      className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                    >
+                                      <Edit2 className="h-4 w-4" />
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      onClick={() => handleDeleteTrade(trade.copiedTrade!)}
+                                      variant="ghost"
+                                      size="icon"
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                                    >
+                                      <Trash2 className="h-5 w-5" />
+                                    </Button>
+                                  </>
+                                )}
+                                
+                                {trade.copiedTrade.user_closed_at && (
+                                  <>
+                                    <Button
+                                      onClick={() => {
+                                        setTradeToEdit(trade.copiedTrade!);
+                                        setShowEditModal(true);
+                                      }}
+                                      variant="outline"
+                                      size="default"
+                                      className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                    >
+                                      <Edit2 className="h-4 w-4" />
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      onClick={() => handleUnmarkClosed(trade.copiedTrade!)}
+                                      variant="outline"
+                                      size="default"
+                                      className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                    >
+                                      <RotateCcw className="h-4 w-4" />
+                                      Unmark as Closed
+                                    </Button>
+                                    <Button
+                                      onClick={() => handleDeleteTrade(trade.copiedTrade!)}
+                                      variant="ghost"
+                                      size="icon"
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                                    >
+                                      <Trash2 className="h-5 w-5" />
+                                    </Button>
+                                  </>
+                                )}
+                                
+                                {trade.copiedTrade.market_resolved && !trade.copiedTrade.user_closed_at && (
+                                  <>
+                                    <Button
+                                      onClick={() => {
+                                        setTradeToEdit(trade.copiedTrade!);
+                                        setShowEditModal(true);
+                                      }}
+                                      variant="outline"
+                                      size="default"
+                                      className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                    >
+                                      <Edit2 className="h-4 w-4" />
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      onClick={() => handleDeleteTrade(trade.copiedTrade!)}
+                                      variant="ghost"
+                                      size="icon"
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                                    >
+                                      <Trash2 className="h-5 w-5" />
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Quick Copy: Show Sell button */}
+                            {trade.type === 'quick' && trade.raw && (
+                              <div className="flex gap-2">
+                                <Button
+                                  onClick={async () => {
+                                    const order = trade.raw!;
+                                    
+                                    // First, try to find the position in our current positions array
+                                    let position = positions.find(p => 
+                                      p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
+                                    );
+                                    
+                                    // If not found, try to fetch fresh positions data from the correct endpoint
+                                    if (!position) {
+                                      try {
+                                        const positionsResponse = await fetch('/api/polymarket/positions', { cache: 'no-store' });
+                                        if (positionsResponse.ok) {
+                                          const positionsData = await positionsResponse.json();
+                                          const freshPositions = positionsData.positions || [];
+                                          
+                                          // Update our positions state
+                                          setPositions(freshPositions);
+                                          
+                                          // Try to find it again
+                                          position = freshPositions.find((p: PositionSummary) => 
+                                            p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
+                                          );
+                                        }
+                                      } catch (err) {
+                                        console.error('Error fetching positions:', err);
+                                      }
+                                    }
+                                    
+                                    // If still not found, build position from order data (fallback like OrdersScreen)
+                                    if (!position) {
+                                      console.log('[PROFILE] Building position from order:', order);
+                                      
+                                      // Extract token ID from order raw data - try multiple fields
+                                      const raw = order.raw ?? {};
+                                      let tokenId: string | null = null;
+                                      
+                                      // Try common token ID fields
+                                      const tokenIdCandidates = [
+                                        raw.token_id,
+                                        raw.tokenId,
+                                        raw.tokenID,
+                                        raw.asset_id,
+                                        raw.assetId,
+                                        raw.asset,
+                                        raw.market?.token_id,
+                                        raw.market?.asset_id,
+                                      ];
+                                      
+                                      for (const candidate of tokenIdCandidates) {
+                                        if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
+                                          tokenId = candidate.trim();
+                                          break;
+                                        }
+                                      }
+                                      
+                                      // Use the order's own size and pricing data
+                                      const size = order.filledSize && order.filledSize > 0 ? order.filledSize : order.size;
+                                      const normalizedSide = order.side?.trim().toUpperCase() ?? 'BUY';
+                                      
+                                      // For selling a position, we need to know what we're holding
+                                      // If the original order was a BUY, we're LONG. If SELL, we're SHORT.
+                                      const direction = normalizedSide === 'SELL' ? 'SHORT' : 'LONG';
+                                      const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
+                                      
+                                      console.log('[PROFILE] Built position data:', {
+                                        tokenId,
+                                        size,
+                                        side,
+                                        direction,
+                                        marketId: order.marketId,
+                                        avgEntryPrice: order.priceOrAvgPrice,
+                                      });
+                                      
+                                      if (tokenId && size && size > 0) {
+                                        position = {
+                                          tokenId,
+                                          marketId: order.marketId ?? null,
+                                          outcome: order.outcome ?? null,
+                                          direction: direction as 'LONG' | 'SHORT',
+                                          side: side as 'BUY' | 'SELL',
+                                          size,
+                                          avgEntryPrice: order.priceOrAvgPrice ?? null,
+                                          firstTradeAt: order.createdAt ?? null,
+                                          lastTradeAt: order.updatedAt ?? null,
+                                        };
+                                      } else {
+                                        console.error('[PROFILE] Could not build position - missing critical data:', {
+                                          tokenId,
+                                          size,
+                                          order,
+                                        });
+                                      }
+                                    }
+                                    
+                                    if (position) {
+                                      console.log('[PROFILE] Opening sell modal with position:', position);
+                                      // We have a position, open the modal
+                                      setCloseTarget({ order, position });
+                                    } else {
+                                      // This should be very rare now
+                                      setToastMessage('Unable to load position data for selling. Please try from the History tab.');
+                                      setShowToast(true);
+                                      setTimeout(() => setShowToast(false), 4000);
+                                    }
+                                  }}
+                                  style={{ backgroundColor: '#EF4444' }}
+                                  className="flex-1 text-white hover:opacity-90 transition-opacity"
+                                >
+                                  Sell
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1719,14 +2197,14 @@ function ProfilePageContent() {
                   ))}
                   
                   {/* View More Button */}
-                  {filteredTrades.length > tradesToShow && (
+                  {filteredUnifiedTrades.length > tradesToShow && (
                     <div className="flex justify-center pt-4">
                       <Button
                         onClick={() => setTradesToShow(prev => prev + 15)}
                         variant="outline"
                         className="border-slate-300 text-slate-700 hover:bg-slate-50"
                       >
-                        View More Trades ({filteredTrades.length - tradesToShow} remaining)
+                        View More Trades ({filteredUnifiedTrades.length - tradesToShow} remaining)
                       </Button>
                     </div>
                   )}
@@ -2133,14 +2611,29 @@ function ProfilePageContent() {
               <div>
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Premium</h3>
                 {isPremium ? (
-                  <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Crown className="h-5 w-5 text-yellow-600" />
-                      <p className="font-semibold text-yellow-900">Premium Member</p>
+                  <div className="space-y-3">
+                    <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Crown className="h-5 w-5 text-yellow-600" />
+                        <p className="font-semibold text-yellow-900">Premium Member</p>
+                      </div>
+                      <p className="text-sm text-yellow-700">
+                        You have access to all premium features including Real Copy trading.
+                      </p>
                     </div>
-                    <p className="text-sm text-yellow-700">
-                      You have access to all premium features including Real Copy trading.
-                    </p>
+                    
+                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                      <p className="text-sm text-slate-600 mb-3">
+                        Need to cancel your subscription? You'll keep premium access until the end of your billing period.
+                      </p>
+                      <Button
+                        onClick={() => setShowCancelSubscriptionModal(true)}
+                        variant="outline"
+                        className="border-red-300 text-red-700 hover:bg-red-50"
+                      >
+                        Cancel Subscription
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
@@ -2168,6 +2661,37 @@ function ProfilePageContent() {
         open={isConnectModalOpen}
         onOpenChange={setIsConnectModalOpen}
         onConnect={handleWalletConnect}
+      />
+      <CancelSubscriptionModal
+        open={showCancelSubscriptionModal}
+        onOpenChange={setShowCancelSubscriptionModal}
+        onConfirmCancel={async () => {
+          const response = await fetch('/api/stripe/cancel-subscription', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+            },
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            const accessUntil = new Date(data.current_period_end * 1000).toLocaleDateString();
+            alert(`Your subscription has been canceled. You'll keep Premium access until ${accessUntil}.`);
+            window.location.reload();
+          } else {
+            throw new Error(data.error || 'Failed to cancel subscription');
+          }
+        }}
+      />
+      <SubscriptionSuccessModal
+        open={showSubscriptionSuccessModal}
+        onOpenChange={setShowSubscriptionSuccessModal}
+        onConnectWallet={() => {
+          setShowSubscriptionSuccessModal(false);
+          setIsConnectModalOpen(true);
+        }}
       />
       <EditCopiedTrade
         isOpen={showEditModal}
@@ -2199,6 +2723,25 @@ function ProfilePageContent() {
         } : null}
         onConfirm={handleCloseTrade}
       />
+
+      {/* Close Position Modal for Quick Trades */}
+      {closeTarget && (
+        <ClosePositionModal
+          target={closeTarget}
+          isSubmitting={closeSubmitting}
+          submitError={closeError}
+          onClose={() => {
+            setCloseTarget(null);
+            setCloseError(null);
+            setCloseSuccess(null);
+            setCloseOrderId(null);
+            setCloseSubmittedAt(null);
+          }}
+          onSubmit={handleConfirmClose}
+          orderId={closeOrderId}
+          submittedAt={closeSubmittedAt}
+        />
+      )}
 
       {/* Disconnect Wallet Confirmation Modal */}
       <Dialog open={showDisconnectModal} onOpenChange={setShowDisconnectModal}>

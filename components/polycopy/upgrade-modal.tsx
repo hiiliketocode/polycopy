@@ -22,7 +22,8 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
     {
       icon: TrendingUp,
       title: "Execute trades directly",
-      description: "Copy trades in seconds with pre-filled slippage"
+      description: "Copy trades in seconds with pre-filled slippage",
+      note: "Requires existing Polymarket account"
     },
     {
       icon: Zap,
@@ -101,6 +102,11 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
                         <p className="text-xs text-slate-600 mt-0.5 leading-snug">
                           {feature.description}
                         </p>
+                        {feature.note && (
+                          <p className="text-xs text-amber-700 mt-1 italic">
+                            {feature.note}
+                          </p>
+                        )}
                       </div>
                     </div>
                   )
