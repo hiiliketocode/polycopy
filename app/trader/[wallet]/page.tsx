@@ -1533,7 +1533,7 @@ export default function TraderProfilePage({
                                     Manual Copy
                                   </Button>
                                   <Button
-                                    onClick={() => handleMarkAsCopied(trade)}
+                                    onClick={() => handleMarkAsCopied(trade, trade.price)}
                                     disabled={isAlreadyCopied}
                                     variant="outline"
                                     className={cn(
