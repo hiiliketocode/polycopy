@@ -149,6 +149,37 @@ function normalizeOrder(order: any) {
   }
 }
 
+function normalizeOrderType(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function isGtcOrder(order: any): boolean {
+  const value =
+    order?.time_in_force ??
+    order?.timeInForce ??
+    order?.order_type ??
+    order?.orderType ??
+    ''
+  const normalized = normalizeOrderType(value)
+  return (
+    normalized === 'gtc' ||
+    normalized === 'good_til_cancelled' ||
+    normalized === 'good_til_canceled' ||
+    normalized === 'good til cancelled' ||
+    normalized === 'good til canceled'
+  )
+}
+
+function shouldPersistOrder(order: ReturnType<typeof normalizeOrder>): boolean {
+  const status = String(order.status || '').toLowerCase()
+  const filled = typeof order.filled_size === 'number' ? order.filled_size : 0
+  const openLikeStatuses = new Set(['open', 'pending', 'submitted', 'accepted', 'unknown'])
+  if (openLikeStatuses.has(status) && filled <= 0 && !isGtcOrder(order.raw)) {
+    return false
+  }
+  return true
+}
+
 function extractOrderIds(trades: Trade[]): Set<string> {
   const orderIds = new Set<string>()
   for (const trade of trades || []) {
@@ -261,7 +292,11 @@ async function refreshOrders(userId: string, limit: number): Promise<RefreshResu
   ).filter((order): order is ReturnType<typeof normalizeOrder> => Boolean(order))
 
   const filteredOrders = orders.filter(
-    (order) => order.polymarket_order_id && order.market_id && order.side
+    (order) =>
+      order.polymarket_order_id &&
+      order.market_id &&
+      order.side &&
+      shouldPersistOrder(order)
   )
   if (filteredOrders.length === 0) {
     return {

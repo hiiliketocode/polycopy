@@ -11,6 +11,27 @@ function simplifyStatus(text: string | null | undefined): string {
   return text.trim().toLowerCase()
 }
 
+function normalizeOrderType(rawOrder: any): string {
+  const value =
+    rawOrder?.time_in_force ??
+    rawOrder?.timeInForce ??
+    rawOrder?.order_type ??
+    rawOrder?.orderType ??
+    ''
+  return String(value || '').trim().toLowerCase()
+}
+
+function isGtcOrder(typeValue: string): boolean {
+  if (!typeValue) return false
+  return (
+    typeValue === 'gtc' ||
+    typeValue === 'good_til_cancelled' ||
+    typeValue === 'good_til_canceled' ||
+    typeValue === 'good til cancelled' ||
+    typeValue === 'good til canceled'
+  )
+}
+
 const STATUS_MAP: Record<string, OrderStatus> = {
   open: 'open',
   partial: 'partial',
@@ -34,10 +55,14 @@ export function normalizeOrderStatus(
   remainingSize?: number | null
 ): OrderStatus {
   const normalizedInput = simplifyStatus(statusText) || simplifyStatus(rawOrder?.status)
+  const normalizedOrderType = normalizeOrderType(rawOrder)
+  const openLikeStatuses = new Set(['open', 'pending', 'submitted', 'accepted', 'unknown'])
   const parsedSize = size ?? toNumber(rawOrder?.size ?? rawOrder?.original_size)
   const parsedFilled = filledSize ?? toNumber(rawOrder?.filled_size ?? rawOrder?.size_matched ?? rawOrder?.filledSize)
   const parsedRemaining =
     remainingSize ?? toNumber(rawOrder?.remaining_size ?? rawOrder?.size_remaining ?? rawOrder?.remainingSize)
+  const noFill = !parsedFilled || parsedFilled <= 0
+  const isGtc = isGtcOrder(normalizedOrderType)
 
   const isPartial =
     parsedFilled !== null &&
@@ -57,6 +82,10 @@ export function normalizeOrderStatus(
 
   if (isPartial) {
     return 'partial'
+  }
+
+  if (!isGtc && openLikeStatuses.has(normalizedInput) && noFill) {
+    return 'failed'
   }
 
   const mapped = STATUS_MAP[normalizedInput]

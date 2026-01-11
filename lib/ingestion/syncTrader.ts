@@ -25,6 +25,21 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 
 let ordersTableName: 'trades' | 'orders' | null = null
 
+function normalizeOrderType(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function isGtcOrder(order: NormalizedOrder): boolean {
+  const normalized = normalizeOrderType(order.timeInForce ?? order.orderType ?? '')
+  return (
+    normalized === 'gtc' ||
+    normalized === 'good_til_cancelled' ||
+    normalized === 'good_til_canceled' ||
+    normalized === 'good til cancelled' ||
+    normalized === 'good til canceled'
+  )
+}
+
 async function resolveOrdersTableName(): Promise<'trades' | 'orders'> {
   if (ordersTableName) return ordersTableName
   const { error } = await supabase.from('orders').select('order_id').limit(1)
@@ -108,10 +123,17 @@ async function upsertSyncState(traderId: string, lastSyncedAt: Date, lastSeenOrd
 }
 
 async function upsertOrders(orders: NormalizedOrder[], traderId: string) {
-  if (orders.length === 0) return 0
+  const filteredOrders = orders.filter((order) => {
+    const status = String(order.status || '').toLowerCase()
+    const openLikeStatuses = new Set(['open', 'pending', 'submitted', 'accepted', 'unknown'])
+    if (!openLikeStatuses.has(status)) return true
+    if (order.filledSize > 0) return true
+    return isGtcOrder(order)
+  })
+  if (filteredOrders.length === 0) return 0
 
   const table = await resolveOrdersTableName()
-  const orderIds = orders.map((o) => o.orderId)
+  const orderIds = filteredOrders.map((o) => o.orderId)
   let supportsCopiedColumns = true
   let existingRows: Array<{
     order_id: string
@@ -164,7 +186,7 @@ async function upsertOrders(orders: NormalizedOrder[], traderId: string) {
 
   const existingMap = new Map(existingRows.map((row) => [row.order_id, row]))
 
-  const payload = orders.map((o) => {
+  const payload = filteredOrders.map((o) => {
     const existing = existingMap.get(o.orderId)
     const resolvedOrderType = existing?.order_type ?? o.orderType
     const resolvedTimeInForce = existing?.time_in_force ?? o.timeInForce
@@ -200,7 +222,7 @@ async function upsertOrders(orders: NormalizedOrder[], traderId: string) {
     .upsert(payload, { onConflict: 'order_id', ignoreDuplicates: false, count: 'exact' })
 
   if (error) throw error
-  return count ?? orders.length
+  return count ?? filteredOrders.length
 }
 
 async function upsertFills(fills: NormalizedFill[], traderId: string) {

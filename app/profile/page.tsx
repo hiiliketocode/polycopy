@@ -1960,16 +1960,6 @@ function ProfilePageContent() {
                                 <ExternalLink className="w-4 h-4" />
                               </a>
                             )}
-                            <Badge
-                              className={cn(
-                                "font-semibold flex-shrink-0",
-                                trade.outcome === 'YES'
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                  : "bg-red-50 text-red-700 border-red-200"
-                              )}
-                            >
-                              {trade.outcome}
-                            </Badge>
                           </div>
                         </div>
 

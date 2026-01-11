@@ -11,6 +11,21 @@ import {
 } from '@/lib/trader-name'
 import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
 
+function normalizeOrderType(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function isGtcOrder(value: unknown): boolean {
+  const normalized = normalizeOrderType(value)
+  return (
+    normalized === 'gtc' ||
+    normalized === 'good_til_cancelled' ||
+    normalized === 'good_til_canceled' ||
+    normalized === 'good til cancelled' ||
+    normalized === 'good til canceled'
+  )
+}
+
 function createServiceClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -178,11 +193,22 @@ export async function GET(request: NextRequest) {
             .filter((result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled' && result.value !== null)
             .map(result => result.value)
 
-          if (validOrders.length > 0) {
+          const filteredValidOrders = validOrders.filter((order) => {
+            const status = String(order?.status || '').toLowerCase()
+            const filled = Number(order?.filled_size || 0)
+            const orderType = order?.time_in_force || order?.order_type || ''
+            const openLikeStatuses = new Set(['open', 'pending', 'submitted', 'accepted', 'unknown'])
+            if (openLikeStatuses.has(status) && filled <= 0 && !isGtcOrder(orderType)) {
+              return false
+            }
+            return true
+          })
+
+          if (filteredValidOrders.length > 0) {
             await supabaseService
               .from(ordersTableForRefresh)
-              .upsert(validOrders, { onConflict: 'order_id' })
-            console.log('[orders] Refreshed', validOrders.length, 'orders from CLOB')
+              .upsert(filteredValidOrders, { onConflict: 'order_id' })
+            console.log('[orders] Refreshed', filteredValidOrders.length, 'orders from CLOB')
           }
         } catch (error) {
           // Non-fatal - continue with database query even if refresh fails
@@ -527,7 +553,7 @@ export async function GET(request: NextRequest) {
 
       return {
         orderId,
-        status: rawStatus ?? statusForLogic,
+        status: statusForLogic,
         activity: activity.activity,
         activityLabel: activity.activityLabel,
         activityIcon: activity.activityIcon,

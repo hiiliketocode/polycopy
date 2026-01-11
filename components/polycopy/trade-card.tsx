@@ -255,7 +255,7 @@ function getFriendlyLiquidityMessage(rawMessage?: string | null) {
   const normalized = rawMessage.toLowerCase()
   for (const phrase of LIQUIDITY_ERROR_PHRASES) {
     if (normalized.includes(phrase)) {
-      return 'We could not match your order due to low liquidity. Try again with wider slippage.'
+      return "We couldn’t fill this order at your price. Try increasing slippage (tap Advanced) or using a smaller amount."
     }
   }
   return null
@@ -268,7 +268,6 @@ function resolveTradeErrorInfo(value: unknown, fallbackMessage: string): TradeEr
   if (friendly) {
     return {
       message: friendly,
-      rawMessage: rawMessage ?? undefined,
     }
   }
   if (code && code in TRADE_ERROR_DETAILS) {
@@ -814,6 +813,7 @@ export function TradeCard({
   const contractLabel = displayContracts === 1 ? "contract" : "contracts"
   const statusDataRef = useRef<any | null>(null)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollAbortRef = useRef<AbortController | null>(null)
   const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const timeoutTriggeredRef = useRef(false)
 
@@ -865,10 +865,17 @@ export function TradeCard({
       if (statusPhaseRef.current === 'timed_out') return
       inFlight = true
       try {
+        if (pollAbortRef.current) {
+          pollAbortRef.current.abort()
+        }
+        const controller = new AbortController()
+        pollAbortRef.current = controller
         const res = await fetch(`/api/polymarket/orders/${encodeURIComponent(orderId)}/status`, {
           cache: 'no-store',
+          signal: controller.signal,
         })
         const data = await res.json()
+        if (statusPhaseRef.current === 'timed_out') return
         if (!res.ok) {
           setStatusError(data?.error || data?.message || 'Status check failed')
         } else {
@@ -893,6 +900,9 @@ export function TradeCard({
           ) {
             phase = 'filled'
           }
+          if (phase === 'filled' && (!filledSize || filledSize <= 0)) {
+            phase = 'canceled'
+          }
           setStatusPhase(phase)
           if (TERMINAL_STATUS_PHASES.has(phase) && intervalId) {
             clearInterval(intervalId)
@@ -901,6 +911,9 @@ export function TradeCard({
           }
         }
       } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          return
+        }
         setStatusError(err?.message || 'Network error')
       } finally {
         inFlight = false
@@ -916,10 +929,14 @@ export function TradeCard({
       if (intervalId) clearInterval(intervalId)
       if (pendingTimer) clearTimeout(pendingTimer)
       pollIntervalRef.current = null
+      if (pollAbortRef.current) {
+        pollAbortRef.current.abort()
+        pollAbortRef.current = null
+      }
     }
   }, [orderId, showConfirmation])
 
-  const refreshOrders = async () => {
+  const refreshOrders = useCallback(async () => {
     setRefreshStatus('refreshing')
     try {
       await fetch('/api/polymarket/orders/refresh', {
@@ -934,7 +951,7 @@ export function TradeCard({
     } finally {
       setTimeout(() => setRefreshStatus('idle'), 3000)
     }
-  }
+  }, [])
 
   const handleQuickCopy = async () => {
     if (!isPremium) {
@@ -1274,10 +1291,15 @@ export function TradeCard({
       if (timeoutTriggeredRef.current) return
       if (TERMINAL_STATUS_PHASES.has(statusPhaseRef.current)) return
       timeoutTriggeredRef.current = true
+      statusPhaseRef.current = 'timed_out'
       setStatusPhase('timed_out')
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
         pollIntervalRef.current = null
+      }
+      if (pollAbortRef.current) {
+        pollAbortRef.current.abort()
+        pollAbortRef.current = null
       }
       setIsCancelingOrder(true)
       setCancelError(null)
@@ -1644,11 +1666,33 @@ export function TradeCard({
                           }`}
                         >
                           {statusPhase === 'timed_out'
-                            ? "Polymarket did not match this order within 30 seconds. We canceled it so you can try again with a wider spread."
+                            ? "Polymarket did not match this order within 30 seconds. Try increasing slippage and/or using a smaller amount."
                             : "This may take a moment."}
                         </p>
                         {statusPhase === 'timed_out' && (
                           <div className="mt-3 flex flex-col gap-2">
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                              <span>Why didn&apos;t it match?</span>
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"
+                                      aria-label="Why orders fail to match"
+                                    >
+                                      ?
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs">
+                                    <p>
+                                      Orders fail to match when there isn&apos;t enough liquidity at your limit price.
+                                      Increasing slippage or reducing size widens the chance of a fill.
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </div>
                             <Button
                               onClick={handleTryAgain}
                               disabled={isCancelingOrder}

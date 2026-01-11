@@ -1167,7 +1167,7 @@ function TradeExecutePageInner() {
           errorMessage = 'Session expired. Please log out and log back in to continue trading.'
         } else if (normalizedError.includes('no orders found to match with fak order') || normalizedError.includes('fak orders are partially filled') || normalizedError.includes('fak order')) {
           errorMessage =
-            'No matching orders at your limit price. FAK orders must fill immediately, so this one was canceled. Try increasing slippage or adjusting the price.'
+            "We couldn’t fill this order at your price. Try increasing slippage (tap Advanced) or using a smaller amount."
         } else if (normalizedError.includes('not enough balance') || normalizedError.includes('allowance')) {
           errorMessage =
             'Not enough balance or allowance to place this order. Add funds or approve a higher allowance, then try again.'
