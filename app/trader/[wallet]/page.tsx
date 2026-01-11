@@ -1386,7 +1386,7 @@ export default function TraderProfilePage({
                             onClick={() => {
                               if (isAlreadyCopied) return;
                               if (trade.status === 'Trader Closed' || trade.status === 'Bonded') return;
-                              setExpandedTradeIndex(isExpanded ? null : index);
+                              toggleTradeExpanded(tradeKey);
                             }}
                             disabled={isAlreadyCopied || trade.status === 'Trader Closed' || trade.status === 'Bonded'}
                             className={cn(
