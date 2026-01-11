@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
@@ -104,7 +104,9 @@ interface PortfolioStats {
 
 // Helper: Format relative time
 function formatRelativeTime(dateString: string): string {
+  if (!dateString) return '—';
   const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '—';
   const now = new Date();
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
   
@@ -374,14 +376,19 @@ function ProfilePageContent() {
         // Normalize ROI for user-closed trades if missing
         const tradesWithCorrectRoi = allTrades.map(trade => {
           const tradePrice = trade.price_when_copied;
+          const copiedAt = trade.copied_at || (trade as any).created_at || null;
           if (trade.user_closed_at && trade.user_exit_price && tradePrice) {
             const correctRoi = ((trade.user_exit_price - tradePrice) / tradePrice) * 100;
             return {
               ...trade,
+              copied_at: copiedAt,
               roi: parseFloat(correctRoi.toFixed(2)),
             };
           }
-          return trade;
+          return {
+            ...trade,
+            copied_at: copiedAt,
+          };
         });
 
         setCopiedTrades(tradesWithCorrectRoi);
@@ -622,11 +629,17 @@ function ProfilePageContent() {
           .eq('user_id', user.id)
           .maybeSingle(); // Use maybeSingle() instead of single() to avoid error when no row exists
         
-        // Don't log errors from maybeSingle() - it's expected to return no data for new users
-        // Only log if there's a real error (has meaningful properties)
-        const hasMeaningfulError =
-          error && (error.code || error.message || error.details || error.hint);
-        if (hasMeaningfulError) {
+        // Only log meaningful errors; Supabase may return an empty PostgrestError object when no row exists
+        const isMeaningfulError = (err: any) => {
+          if (!err || typeof err !== 'object') return !!err;
+          const values = [err.code, err.message, err.details, err.hint];
+          return values.some((v) => {
+            if (typeof v === 'string') return v.trim().length > 0;
+            return Boolean(v);
+          });
+        };
+
+        if (isMeaningfulError(error)) {
           console.error('Error fetching notification preferences:', error);
         }
         
@@ -712,12 +725,7 @@ function ProfilePageContent() {
   const userStats = portfolioStats ?? fallbackStats;
 
   // Filter trades
-  const manualTrades = useMemo(
-    () => copiedTrades.filter((trade) => trade.trade_method !== 'quick'),
-    [copiedTrades]
-  );
-
-  const filteredTrades = manualTrades.filter(trade => {
+  const filteredTrades = copiedTrades.filter(trade => {
     if (tradeFilter === 'all') return true;
     if (tradeFilter === 'open') return !trade.user_closed_at && !trade.market_resolved;
     if (tradeFilter === 'closed') return Boolean(trade.user_closed_at);
@@ -1140,7 +1148,7 @@ function ProfilePageContent() {
   ];
   const tabTooltips: Partial<Record<ProfileTab, string>> = {
     'manual-trades': 'Quick Copy trades executed through Polycopy. Manage open orders, closes, and execution history here.',
-    'copied-trades': 'Trades you copied manually on Polymarket and logged yourself. Update status and outcomes as they change.',
+    'copied-trades': 'Combined log of manual and quick copy trades. Update status and outcomes as they change.',
   };
 
   return (
@@ -1294,7 +1302,9 @@ function ProfilePageContent() {
                   <div className="text-xs font-medium text-slate-500 mb-1">
                     Win Rate
                   </div>
-                  <div className="text-2xl font-bold text-slate-900">{userStats.winRate}%</div>
+                  <div className="text-2xl font-bold text-slate-900">
+                    {userStats.winRate.toFixed(1)}%
+                  </div>
                 </div>
               </div>
               {portfolioStatsLoading && (
@@ -1428,11 +1438,11 @@ function ProfilePageContent() {
                               <p className="font-medium text-slate-900 text-sm">
                                 {trade.trader_username || `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
                               </p>
-                  <p className="text-xs text-slate-500 font-mono truncate">
-                    {trade.trader_wallet
-                      ? `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`
-                      : 'Unknown'}
-                  </p>
+                              <p className="text-xs text-slate-500 font-mono truncate">
+                                {trade.trader_wallet
+                                  ? `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`
+                                  : 'Unknown'}
+                              </p>
                             </div>
                           </Link>
                           <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -1456,7 +1466,17 @@ function ProfilePageContent() {
                                 })()}
                               </div>
                             )}
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap justify-end">
+                              <Badge
+                                className={cn(
+                                  "text-[10px] font-semibold uppercase tracking-wide",
+                                  trade.trade_method === 'quick'
+                                    ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                    : "bg-amber-50 text-amber-700 border-amber-200"
+                                )}
+                              >
+                                {trade.trade_method === 'quick' ? 'Quick Copy' : 'Manual Copy'}
+                              </Badge>
                               <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
                                 {formatRelativeTime(trade.copied_at)}
                               </span>
@@ -1706,7 +1726,7 @@ function ProfilePageContent() {
                         variant="outline"
                         className="border-slate-300 text-slate-700 hover:bg-slate-50"
                       >
-                        View More Manual Trades ({filteredTrades.length - tradesToShow} remaining)
+                        View More Trades ({filteredTrades.length - tradesToShow} remaining)
                       </Button>
                     </div>
                   )}

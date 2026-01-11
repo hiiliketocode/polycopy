@@ -117,6 +117,7 @@ export async function GET(request: Request) {
         price_when_copied: entryPrice,
         entry_size: toNumber(row.entry_size),
         amount_invested: toNumber(row.invested_usd),
+        copied_at: row.created_at, // align with frontend expectations
         created_at: row.created_at,
         trader_still_has_position: row.trader_still_has_position,
         trader_closed_at: null,
