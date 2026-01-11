@@ -1410,16 +1410,24 @@ function ProfilePageContent() {
 
   // Filter unified trades
   const filteredUnifiedTrades = useMemo(() => {
+    const isSoldTrade = (trade: UnifiedTrade) => {
+      if (trade.type === 'quick') {
+        return trade.raw?.side?.toLowerCase() === 'sell';
+      }
+
+      return Boolean(trade.copiedTrade?.user_closed_at || trade.copiedTrade?.trader_closed_at);
+    };
+
     if (tradeFilter === 'all') return allUnifiedTrades;
     
     return allUnifiedTrades.filter(trade => {
       switch (tradeFilter) {
         case 'open':
-          return trade.status === 'open';
+          return trade.status === 'open' && !isSoldTrade(trade);
         case 'closed':
-          return trade.status === 'user-closed' || trade.status === 'trader-closed';
+          return isSoldTrade(trade);
         case 'resolved':
-          return trade.status === 'resolved';
+          return trade.status === 'resolved' && !isSoldTrade(trade);
         default:
           return true;
       }
@@ -1679,14 +1687,16 @@ function ProfilePageContent() {
                           : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
                       )}
                     >
-                      {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                      {filter === 'closed'
+                        ? 'Sold'
+                        : filter.charAt(0).toUpperCase() + filter.slice(1)}
                     </button>
                   ))}
                   
                   {/* Separator */}
                   <span className="text-slate-300 text-lg mx-1">|</span>
                   
-                  {/* History Button */}
+                  {/* Activity Button */}
                   <button
                     onClick={() => setTradeFilter('history')}
                     className={cn(
@@ -1696,7 +1706,7 @@ function ProfilePageContent() {
                         : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
                     )}
                   >
-                    History
+                    Activity
                   </button>
                 </div>
                 <Button

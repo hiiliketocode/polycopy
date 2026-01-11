@@ -119,6 +119,7 @@ export default function FeedPage() {
     gameStartTime?: string;
     eventStatus?: string;
     closed?: boolean;
+    updatedAt?: number;
   }>>(new Map());
 
   const [expandedTradeIds, setExpandedTradeIds] = useState<Set<string>>(new Set());
@@ -531,6 +532,7 @@ export default function FeedPage() {
                     gameStartTime: gameStartTime || undefined,
                     eventStatus: eventStatus || undefined,
                     closed: isMarketClosed,
+                    updatedAt: Date.now(),
                   });
                 }
             }
@@ -805,6 +807,8 @@ export default function FeedPage() {
 
   const hasFetchedRef = useRef(false);
   const hasAttemptedFetchRef = useRef(false);
+  const liveRefreshTimeoutRef = useRef<number | null>(null);
+  const lastLiveRefreshRef = useRef(0);
 
   // Fetch feed data ONLY ONCE on initial mount
   useEffect(() => {
@@ -865,6 +869,38 @@ export default function FeedPage() {
   
   const displayedTrades = filteredAllTrades.slice(0, displayedTradesCount);
   const hasMoreTrades = filteredAllTrades.length > displayedTradesCount;
+
+  const refreshDisplayedMarketData = useCallback(() => {
+    if (displayedTrades.length === 0) return;
+    const now = Date.now();
+    if (now - lastLiveRefreshRef.current < 15000) return;
+    lastLiveRefreshRef.current = now;
+    fetchLiveMarketData(displayedTrades);
+  }, [displayedTrades, fetchLiveMarketData]);
+
+  useEffect(() => {
+    refreshDisplayedMarketData();
+  }, [refreshDisplayedMarketData]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (liveRefreshTimeoutRef.current) {
+        window.clearTimeout(liveRefreshTimeoutRef.current);
+      }
+      liveRefreshTimeoutRef.current = window.setTimeout(() => {
+        refreshDisplayedMarketData();
+      }, 250);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      if (liveRefreshTimeoutRef.current) {
+        window.clearTimeout(liveRefreshTimeoutRef.current);
+      }
+    };
+  }, [refreshDisplayedMarketData]);
 
   // Copy trade handler
   const handleCopyTrade = (trade: FeedTrade) => {
@@ -1165,6 +1201,7 @@ export default function FeedPage() {
                     conditionId={trade.market.conditionId}
                     marketSlug={trade.market.slug}
                     currentMarketPrice={currentPrice}
+                    currentMarketUpdatedAt={liveMarket?.updatedAt}
                     marketIsOpen={liveMarket?.closed === undefined ? undefined : !liveMarket.closed}
                     liveScore={liveMarket?.score}
                     category={trade.market.category}

@@ -50,6 +50,7 @@ interface TradeCardProps {
   marketSlug?: string
   // Live data
   currentMarketPrice?: number
+  currentMarketUpdatedAt?: number
   marketIsOpen?: boolean | null
   liveScore?: string
   category?: string
@@ -331,6 +332,7 @@ export function TradeCard({
   tokenId,
   marketSlug,
   currentMarketPrice,
+  currentMarketUpdatedAt,
   marketIsOpen,
   liveScore,
   category,
@@ -367,6 +369,10 @@ export function TradeCard({
   const [orderBookError, setOrderBookError] = useState<string | null>(null)
   const [bestBidPrice, setBestBidPrice] = useState<number | null>(null)
   const [bestAskPrice, setBestAskPrice] = useState<number | null>(null)
+  const [priceFlash, setPriceFlash] = useState<"up" | "down" | "neutral" | null>(null)
+  const priceFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const previousMarketPriceRef = useRef<number | null>(null)
+  const lastMarketUpdateRef = useRef<number | null>(null)
   const [manualDrawerOpen, setManualDrawerOpen] = useState(false)
   const [manualUsdAmount, setManualUsdAmount] = useState("")
   const [manualPriceInput, setManualPriceInput] = useState("")
@@ -593,11 +599,56 @@ export function TradeCard({
     return containsIndex
   }
 
+  const triggerPriceFlash = useCallback((direction: "up" | "down" | "neutral") => {
+    if (priceFlashTimeoutRef.current) {
+      clearTimeout(priceFlashTimeoutRef.current)
+    }
+    setPriceFlash(direction)
+    priceFlashTimeoutRef.current = setTimeout(() => {
+      setPriceFlash(null)
+    }, 650)
+  }, [])
+
   useEffect(() => {
     if (typeof currentMarketPrice === "number" && !Number.isNaN(currentMarketPrice)) {
       setLivePrice(currentMarketPrice)
     }
   }, [currentMarketPrice])
+
+  useEffect(() => {
+    if (typeof currentMarketUpdatedAt !== "number") return
+    if (lastMarketUpdateRef.current === null) {
+      lastMarketUpdateRef.current = currentMarketUpdatedAt
+      if (typeof currentMarketPrice === "number" && Number.isFinite(currentMarketPrice)) {
+        previousMarketPriceRef.current = currentMarketPrice
+      }
+      return
+    }
+    if (currentMarketUpdatedAt === lastMarketUpdateRef.current) return
+    lastMarketUpdateRef.current = currentMarketUpdatedAt
+
+    const nextPrice =
+      typeof currentMarketPrice === "number" && Number.isFinite(currentMarketPrice)
+        ? currentMarketPrice
+        : null
+    if (nextPrice === null) return
+
+    const prevPrice = previousMarketPriceRef.current
+    let direction: "up" | "down" | "neutral" = "neutral"
+    if (typeof prevPrice === "number" && Number.isFinite(prevPrice) && nextPrice !== prevPrice) {
+      direction = nextPrice > prevPrice ? "up" : "down"
+    }
+    triggerPriceFlash(direction)
+    previousMarketPriceRef.current = nextPrice
+  }, [currentMarketPrice, currentMarketUpdatedAt, triggerPriceFlash])
+
+  useEffect(() => {
+    return () => {
+      if (priceFlashTimeoutRef.current) {
+        clearTimeout(priceFlashTimeoutRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     setLocalCopied(isCopied)
@@ -1468,8 +1519,19 @@ export function TradeCard({
             </div>
             <div className="text-center md:border-l border-slate-200">
               <p className="text-xs text-slate-500 mb-1 font-medium">Current</p>
-              <p className="text-sm md:text-base font-semibold text-slate-900">
-                {hasCurrentPrice ? formatPrice(currentPrice) : "--"}
+              <p className="text-sm md:text-base font-semibold">
+                <span
+                  className={cn(
+                    "inline-flex items-center justify-center rounded-md px-1.5 py-0.5 transition-colors duration-300",
+                    !hasCurrentPrice && "text-slate-400",
+                    priceFlash === "up" && "bg-emerald-50 text-emerald-700",
+                    priceFlash === "down" && "bg-red-50 text-red-700",
+                    priceFlash === "neutral" && "bg-slate-100 text-slate-700",
+                    priceFlash === null && hasCurrentPrice && "text-slate-900"
+                  )}
+                >
+                  {hasCurrentPrice ? formatPrice(currentPrice) : "--"}
+                </span>
               </p>
             </div>
             <div className="text-center md:border-l border-slate-200">
@@ -1669,46 +1731,40 @@ export function TradeCard({
                             ? "Polymarket did not match this order within 30 seconds. Try increasing slippage and/or using a smaller amount."
                             : "This may take a moment."}
                         </p>
-                        {statusPhase === 'timed_out' && (
-                          <div className="mt-3 flex flex-col gap-2">
-                            <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                              <span>Why didn&apos;t it match?</span>
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <button
-                                      type="button"
-                                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"
-                                      aria-label="Why orders fail to match"
-                                    >
-                                      ?
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="max-w-xs">
-                                    <p>
-                                      Orders fail to match when there isn&apos;t enough liquidity at your limit price.
-                                      Increasing slippage or reducing size widens the chance of a fill.
-                                    </p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            </div>
-                            <Button
-                              onClick={handleTryAgain}
-                              disabled={isCancelingOrder}
-                              size="sm"
-                              variant="outline"
-                              className="border-slate-300 text-slate-700 hover:border-slate-400 hover:text-slate-900"
-                            >
-                              {isCancelingOrder ? "Canceling order…" : "Try again"}
-                            </Button>
-                            <p className="text-[11px] text-slate-500">
-                              We stopped the pending order so you can reopen the form and resubmit with broader slippage or a new price.
-                            </p>
-                            {cancelError && (
-                              <p className="text-[11px] text-rose-600">{cancelError}</p>
-                            )}
-                          </div>
+                      </div>
+                    )}
+                    {statusPhase === 'timed_out' && (
+                      <div className="mt-3 flex flex-col gap-2">
+                        <p className="text-xs text-amber-600">
+                          We couldn’t fill this order at your price. Try increasing slippage (tap Advanced) or using a smaller amount.
+                        </p>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                          <span>Why didn&apos;t it match?</span>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"
+                                  aria-label="Why orders fail to match"
+                                >
+                                  ?
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p>
+                                  Orders fail to match when there isn&apos;t enough liquidity at your limit price.
+                                  Increasing slippage or reducing size widens the chance of a fill.
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          We stopped the pending order so you can reopen the form and resubmit with broader slippage or a new price.
+                        </p>
+                        {cancelError && (
+                          <p className="text-[11px] text-rose-600">{cancelError}</p>
                         )}
                       </div>
                     )}
