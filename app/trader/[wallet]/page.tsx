@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ArrowUpRight, ChevronDown, ChevronUp, Loader2, Info, ExternalLink } from 'lucide-react';
+import { Check, ArrowUpRight, ChevronDown, ChevronUp, Loader2, Info, ExternalLink, Copy } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Navigation } from '@/components/polycopy/navigation';
 import { SignupBanner } from '@/components/polycopy/signup-banner';
