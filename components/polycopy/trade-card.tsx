@@ -492,18 +492,24 @@ export function TradeCard({
     size: number,
     minSize: number,
     step = 0.01,
-    maxDecimals = 2
+    maxDecimals = 2,
+    roundUp = false
   ) => {
     if (!price || !Number.isFinite(price) || !Number.isFinite(size) || size <= 0) return null
     let candidate = size
     const lowerBound = Math.max(minSize, 0)
     let iterations = 0
+    
+    // When roundUp is true (USD input for BUY), we round UP to ensure user gets their full investment
+    // When roundUp is false (default), we round DOWN for safety
+    const direction = roundUp ? step : -step
+    
     while (iterations < 200) {
       const implied = Number((price * candidate).toFixed(10))
       if (countDecimalPlaces(implied) <= maxDecimals) {
         return Number(candidate.toFixed(2))
       }
-      const next = Number((candidate - step).toFixed(10))
+      const next = Number((candidate + direction).toFixed(10))
       if (next < lowerBound) break
       candidate = next
       iterations++
@@ -517,13 +523,14 @@ export function TradeCard({
   const finalizeContractsForOrder = (
     desiredContracts: number,
     minContracts: number,
-    price: number | null
+    price: number | null,
+    roundUp = false
   ) => {
     if (!price || !Number.isFinite(price)) return null
     const step = 0.01
     const baseline = Math.max(desiredContracts, minContracts)
     let candidate = roundUpToStep(baseline, step)
-    const precise = ensureImpliedAmountPrecision(price, candidate, minContracts, step)
+    const precise = ensureImpliedAmountPrecision(price, candidate, minContracts, step, 2, roundUp)
     if (precise !== null) return precise
     const implied = Number((price * candidate).toFixed(10))
     if (countDecimalPlaces(implied) <= 2 && candidate >= minContracts) {
@@ -830,7 +837,7 @@ export function TradeCard({
   const minContractsForBuffer = getMinContractsForUsd(limitPrice, resolvedSlippage, minTradeUsd)
   const minContractsForOrder =
     minContractsForBuffer !== null && limitPrice
-      ? finalizeContractsForOrder(minContractsForBuffer, minContractsForBuffer, limitPrice)
+      ? finalizeContractsForOrder(minContractsForBuffer, minContractsForBuffer, limitPrice, false)
       : null
   const minUsdForOrder =
     minContractsForOrder !== null && limitPrice ? minContractsForOrder * limitPrice : minTradeUsd
@@ -1069,8 +1076,10 @@ export function TradeCard({
 
       const targetToSend = Math.max(contractsValue ?? 0, minContractsForBuffer ?? 0)
       const minContracts = minContractsForBuffer ?? 0
+      // Round UP when user specifies USD input for BUY to ensure they get their full investment
+      const shouldRoundUp = action === 'Buy' && amountMode === 'usd'
       const finalContracts =
-        targetToSend > 0 ? finalizeContractsForOrder(targetToSend, minContracts, limitPrice) : null
+        targetToSend > 0 ? finalizeContractsForOrder(targetToSend, minContracts, limitPrice, shouldRoundUp) : null
       if (!finalContracts) {
         setSubmitError('Order amount invalid. Try increasing the size or lowering slippage.')
         setIsSubmitting(false)
