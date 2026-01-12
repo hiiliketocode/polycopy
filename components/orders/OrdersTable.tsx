@@ -8,7 +8,7 @@ const PAGE_SIZE = 12
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   open: 'Open',
-  partial: 'Partial',
+  partial: 'Partially filled',
   filled: 'Filled',
   canceled: 'Canceled',
   expired: 'Expired',

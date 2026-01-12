@@ -151,6 +151,25 @@ const faqs: FAQ[] = [
   },
   {
     category: 'Copy Trading',
+    question: 'Can I manually sell my Quick Copied order?',
+    answer: (
+      <div className="space-y-3">
+        <p>
+          Yes. Premium users can manually sell a Quick Copy position anytime (market conditions allowing).
+        </p>
+        <ol className="list-decimal list-inside space-y-2 ml-4">
+          <li>Go to your profile and open the <strong>Trades</strong> page</li>
+          <li>Find the copied trade you want to exit</li>
+          <li>Click <strong>Sell</strong> and confirm the order</li>
+        </ol>
+        <p className="text-sm text-slate-600">
+          If the market is illiquid or halted, you may need to wait for a fill or try again later.
+        </p>
+      </div>
+    ),
+  },
+  {
+    category: 'Copy Trading',
     question: 'How do I pick which trades to copy?',
     answer: (
       <div className="space-y-3">

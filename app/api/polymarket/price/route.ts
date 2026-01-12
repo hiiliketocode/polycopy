@@ -28,6 +28,15 @@ export async function GET(request: Request) {
           
           console.log(`[Price API] Outcomes: ${JSON.stringify(outcomes)}, Prices: ${JSON.stringify(prices)}`);
           
+          const resolved =
+            typeof market.resolved === 'boolean'
+              ? market.resolved
+              : typeof market.is_resolved === 'boolean'
+                ? market.is_resolved
+                : typeof market.isResolved === 'boolean'
+                  ? market.isResolved
+                  : undefined;
+
           return NextResponse.json({
             success: true,
             market: {
@@ -35,6 +44,7 @@ export async function GET(request: Request) {
               conditionId: market.condition_id,
               slug: market.market_slug,
               closed: market.closed,
+              resolved,
               outcomePrices: prices,
               outcomes: outcomes,
               // Sports/Event metadata
@@ -80,6 +90,15 @@ export async function GET(request: Request) {
             try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
           }
 
+          const resolved =
+            typeof market.resolved === 'boolean'
+              ? market.resolved
+              : typeof market.is_resolved === 'boolean'
+                ? market.is_resolved
+                : typeof market.isResolved === 'boolean'
+                  ? market.isResolved
+                  : undefined;
+
           return NextResponse.json({
             success: true,
             market: {
@@ -87,6 +106,7 @@ export async function GET(request: Request) {
               conditionId: market.conditionId,
               slug: market.slug,
               closed: market.closed,
+              resolved,
               outcomePrices: prices,
               outcomes: outcomes,
             }
@@ -132,6 +152,15 @@ export async function GET(request: Request) {
             try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
           }
 
+          const resolved =
+            typeof match.resolved === 'boolean'
+              ? match.resolved
+              : typeof match.is_resolved === 'boolean'
+                ? match.is_resolved
+                : typeof match.isResolved === 'boolean'
+                  ? match.isResolved
+                  : undefined;
+
           return NextResponse.json({
             success: true,
             market: {
@@ -139,6 +168,7 @@ export async function GET(request: Request) {
               conditionId: match.conditionId,
               slug: match.slug,
               closed: match.closed,
+              resolved,
               outcomePrices: prices,
               outcomes: outcomes,
             }
@@ -161,4 +191,3 @@ export async function GET(request: Request) {
     );
   }
 }
-

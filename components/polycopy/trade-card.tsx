@@ -412,7 +412,7 @@ export function TradeCard({
     typeof marketIsOpen === "boolean"
       ? marketIsOpen
       : hasCurrentPrice
-        ? currentPrice > 0.05 && currentPrice < 0.95
+        ? currentPrice > 0.01 && currentPrice < 0.99
         : null
   const isMarketEnded = inferredMarketOpen === false
 
@@ -1440,7 +1440,7 @@ export function TradeCard({
                   variant="secondary"
                   className="h-7 px-2 text-[10px] font-semibold bg-rose-50 text-rose-700 border-rose-200 flex items-center"
                 >
-                  Ended
+                  Resolved
                 </Badge>
               )}
               {liveScore && (

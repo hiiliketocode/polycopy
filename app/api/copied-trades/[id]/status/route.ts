@@ -94,7 +94,37 @@ export async function GET(
     // while still updating the base orders table later.
     const { data: tradeRow, error: fetchError } = await supabase
       .from('orders_copy_enriched')
-      .select('*')
+      .select(`
+        order_id,
+        trader_id,
+        created_at,
+        copied_trade_id,
+        copy_user_id,
+        copied_trader_wallet,
+        copied_trader_username,
+        market_id,
+        copied_market_title,
+        outcome,
+        price_when_copied,
+        trade_method,
+        trader_still_has_position,
+        trader_closed_at,
+        current_price,
+        market_resolved,
+        market_resolved_at,
+        notification_closed_sent,
+        notification_resolved_sent,
+        last_checked_at,
+        resolved_outcome,
+        user_closed_at,
+        user_exit_price,
+        entry_price,
+        entry_size,
+        invested_usd,
+        exit_price,
+        pnl_pct,
+        pnl_usd
+      `)
       .eq('copied_trade_id', id)
       .eq('copy_user_id', userId)
       .single()
@@ -108,8 +138,10 @@ export async function GET(
       ...tradeRow,
       trader_wallet: tradeRow.copied_trader_wallet ?? tradeRow.trader_wallet,
       market_title: tradeRow.copied_market_title || '',
-      entry_price: tradeRow.entry_price ?? tradeRow.price_when_copied ?? tradeRow.price ?? null,
+      entry_price: tradeRow.entry_price ?? tradeRow.price_when_copied ?? null,
     }
+
+    const isUserClosed = Boolean(trade.user_closed_at)
 
     // Choose whose position to track for PnL: follower for quick, source trader for manual.
     let walletForStatus = trade.trader_wallet
@@ -117,26 +149,7 @@ export async function GET(
       const followerWallet = await resolveTraderWallet(supabase, trade.trader_id)
       walletForStatus = followerWallet ?? trade.trader_wallet
     }
-    
-    // If user manually closed this trade, return existing values without updates
-    if (trade.user_closed_at) {
-      console.log(`⏭️ User-closed trade ${id} - returning locked values (user_exit_price: ${trade.user_exit_price})`);
-      const lockedRoi =
-        trade.entry_price && trade.user_exit_price
-          ? ((trade.user_exit_price - trade.entry_price) / trade.entry_price) * 100
-          : trade.pnl_pct ?? trade.roi ?? null
 
-      return NextResponse.json({
-        traderStillHasPosition: trade.trader_still_has_position,
-        traderClosedAt: trade.trader_closed_at,
-        currentPrice: trade.user_exit_price, // Use user's exit price
-        roi: lockedRoi, // Use locked ROI
-        marketResolved: trade.market_resolved,
-        resolvedOutcome: trade.resolved_outcome,
-        priceSource: 'user-closed'
-      });
-    }
-    
     // Additional auth check for non-cron requests (optional, ownership already verified)
     if (!isCronRequest) {
       try {
@@ -185,94 +198,105 @@ export async function GET(
     let traderAvgPrice: number | null = null
     let marketResolved: boolean = trade.market_resolved || false
     let resolvedOutcome: string | null = null
+    const lockedRoi =
+      trade.entry_price && trade.user_exit_price
+        ? ((trade.user_exit_price - trade.entry_price) / trade.entry_price) * 100
+        : trade.pnl_pct ?? null
+
+    if (isUserClosed) {
+      currentPrice = trade.user_exit_price ?? trade.current_price ?? null
+      priceSource = 'user-closed'
+    }
 
     // STEP 1: Fetch current positions from Polymarket (with pagination)
-    try {
-      let positions: PolymarketPosition[] = [];
-      let offset = 0;
-      const limit = 500; // API seems to cap at 500 per request
-      let hasMore = true;
-      
-      // Fetch ALL positions using pagination
-      while (hasMore) {
-        const positionsUrl = `https://data-api.polymarket.com/positions?user=${walletForStatus}&limit=${limit}&offset=${offset}`
-        const positionsResponse = await fetch(positionsUrl, { cache: 'no-store' })
+    if (!isUserClosed) {
+      try {
+        let positions: PolymarketPosition[] = [];
+        let offset = 0;
+        const limit = 500; // API seems to cap at 500 per request
+        let hasMore = true;
+        
+        // Fetch ALL positions using pagination
+        while (hasMore) {
+          const positionsUrl = `https://data-api.polymarket.com/positions?user=${walletForStatus}&limit=${limit}&offset=${offset}`
+          const positionsResponse = await fetch(positionsUrl, { cache: 'no-store' })
 
-        if (positionsResponse.ok) {
-          const batch: PolymarketPosition[] = await positionsResponse.json()
-          const batchSize = batch?.length || 0;
-          
-          if (batchSize > 0) {
-            positions = positions.concat(batch);
-            offset += batchSize;
-            hasMore = batchSize === limit;
+          if (positionsResponse.ok) {
+            const batch: PolymarketPosition[] = await positionsResponse.json()
+            const batchSize = batch?.length || 0;
+            
+            if (batchSize > 0) {
+              positions = positions.concat(batch);
+              offset += batchSize;
+              hasMore = batchSize === limit;
+            } else {
+              hasMore = false;
+            }
           } else {
             hasMore = false;
           }
-        } else {
-          hasMore = false;
         }
-      }
-      
-      if (positions.length > 0) {
+        
+        if (positions.length > 0) {
 
-        // Find ALL positions matching this market (any outcome)
-        const marketPositions = positions.filter((pos) => {
-          return pos.conditionId === trade.market_id ||
-            pos.asset === trade.market_id ||
-            (pos.conditionId && trade.market_id && trade.market_id.includes(pos.conditionId))
-        })
+          // Find ALL positions matching this market (any outcome)
+          const marketPositions = positions.filter((pos) => {
+            return pos.conditionId === trade.market_id ||
+              pos.asset === trade.market_id ||
+              (pos.conditionId && trade.market_id && trade.market_id.includes(pos.conditionId))
+          })
 
-        // Find matching position by conditionId AND outcome (case-insensitive)
-        const matchingPosition = positions.find((pos) => {
-          const idMatch = 
-            pos.conditionId === trade.market_id ||
-            pos.asset === trade.market_id ||
-            (pos.conditionId && trade.market_id && trade.market_id.includes(pos.conditionId))
-          
-          // Case-insensitive outcome comparison
-          const outcomeMatch = pos.outcome?.toUpperCase() === trade.outcome?.toUpperCase()
-          const hasSize = parseFloat(String(pos.size || 0)) > 0
-          
-          return idMatch && outcomeMatch && hasSize
-        })
+          // Find matching position by conditionId AND outcome (case-insensitive)
+          const matchingPosition = positions.find((pos) => {
+            const idMatch = 
+              pos.conditionId === trade.market_id ||
+              pos.asset === trade.market_id ||
+              (pos.conditionId && trade.market_id && trade.market_id.includes(pos.conditionId))
+            
+            // Case-insensitive outcome comparison
+            const outcomeMatch = pos.outcome?.toUpperCase() === trade.outcome?.toUpperCase()
+            const hasSize = parseFloat(String(pos.size || 0)) > 0
+            
+            return idMatch && outcomeMatch && hasSize
+          })
 
-        if (matchingPosition) {
-          traderStillHasPosition = true
-          if (matchingPosition.size !== undefined && matchingPosition.size !== null) {
-            const parsedSize = parseFloat(String(matchingPosition.size))
-            traderPositionSize = Number.isFinite(parsedSize) ? parsedSize : null
-          }
-          
-          // Capture trader's average price for ROI calculation
-          if (matchingPosition.avgPrice !== undefined && matchingPosition.avgPrice !== null) {
-            traderAvgPrice = parseFloat(String(matchingPosition.avgPrice))
-          }
-          
-          // Get current price from position
-          if (matchingPosition.curPrice !== undefined && matchingPosition.curPrice !== null) {
-            currentPrice = parseFloat(String(matchingPosition.curPrice))
-            priceSource = 'position.curPrice'
-          } else if (matchingPosition.avgPrice !== undefined && matchingPosition.avgPrice !== null) {
-            currentPrice = parseFloat(String(matchingPosition.avgPrice))
-            priceSource = 'position.avgPrice'
-          }
-        } else {
-          // No matching position found
-          if (isRecentlyCopied) {
-            // Keep current position status for recent trades
-          } else {
-            // Trader may have closed position
-            if (traderStillHasPosition !== false) {
-              traderStillHasPosition = false
-              traderClosedAt = new Date().toISOString()
+          if (matchingPosition) {
+            traderStillHasPosition = true
+            if (matchingPosition.size !== undefined && matchingPosition.size !== null) {
+              const parsedSize = parseFloat(String(matchingPosition.size))
+              traderPositionSize = Number.isFinite(parsedSize) ? parsedSize : null
             }
-            traderPositionSize = 0
+            
+            // Capture trader's average price for ROI calculation
+            if (matchingPosition.avgPrice !== undefined && matchingPosition.avgPrice !== null) {
+              traderAvgPrice = parseFloat(String(matchingPosition.avgPrice))
+            }
+            
+            // Get current price from position
+            if (matchingPosition.curPrice !== undefined && matchingPosition.curPrice !== null) {
+              currentPrice = parseFloat(String(matchingPosition.curPrice))
+              priceSource = 'position.curPrice'
+            } else if (matchingPosition.avgPrice !== undefined && matchingPosition.avgPrice !== null) {
+              currentPrice = parseFloat(String(matchingPosition.avgPrice))
+              priceSource = 'position.avgPrice'
+            }
+          } else {
+            // No matching position found
+            if (isRecentlyCopied) {
+              // Keep current position status for recent trades
+            } else {
+              // Trader may have closed position
+              if (traderStillHasPosition !== false) {
+                traderStillHasPosition = false
+                traderClosedAt = new Date().toISOString()
+              }
+              traderPositionSize = 0
+            }
           }
         }
+      } catch (err: any) {
+        console.error('❌ Error fetching positions:', err.message)
       }
-    } catch (err: any) {
-      console.error('❌ Error fetching positions:', err.message)
     }
 
     // STEP 2: Try Gamma API for price and market resolution status
@@ -355,8 +379,8 @@ export async function GET(
               marketResolved = true
             }
             
-            // Get price if we don't have one yet
-            if (currentPrice === null) {
+            // Get price if we don't have one yet (skip for user-closed trades)
+            if (!isUserClosed && currentPrice === null) {
               let prices = market.outcomePrices
               let outcomes = market.outcomes
               
@@ -399,7 +423,7 @@ export async function GET(
     }
 
     // STEP 3: Fallbacks if still no price
-    if (currentPrice === null) {
+    if (!isUserClosed && currentPrice === null) {
       if (trade.current_price !== null && trade.current_price > 0) {
         currentPrice = trade.current_price
         priceSource = 'db.last_known'
@@ -410,7 +434,7 @@ export async function GET(
     }
     
     // SAFETY: Never set price to 0 unless valid
-    if (currentPrice !== null && currentPrice === 0) {
+    if (!isUserClosed && currentPrice !== null && currentPrice === 0) {
       if (trade.current_price !== null && trade.current_price > 0) {
         currentPrice = trade.current_price
         priceSource = 'safety_fallback'
@@ -422,14 +446,14 @@ export async function GET(
 
     // STEP 4: Calculate ROI
     const entryPrice = trade.entry_price ? parseFloat(String(trade.entry_price)) : null
-    if (currentPrice !== null && entryPrice && entryPrice > 0) {
+    if (!isUserClosed && currentPrice !== null && entryPrice && entryPrice > 0) {
       roi = ((currentPrice - entryPrice) / entryPrice) * 100
       roi = parseFloat(roi.toFixed(2))
     }
     
     // ADDITIONAL: Check if current price indicates resolution
     // If this trade's outcome is at $0 or $1, the market is likely resolved
-    if (!marketResolved && currentPrice !== null) {
+    if (!isUserClosed && !marketResolved && currentPrice !== null) {
       if (currentPrice >= 0.99 || currentPrice <= 0.01) {
         marketResolved = true;
         
@@ -451,20 +475,23 @@ export async function GET(
 
     // STEP 5: Update the database
     const updateData: Record<string, any> = {
-      trader_still_has_position: traderStillHasPosition,
-      trader_closed_at: traderClosedAt,
-      current_price: currentPrice,
       last_checked_at: new Date().toISOString(),
       market_resolved: marketResolved,
     }
 
-    if (traderPositionSize !== null) {
-      updateData.trader_position_size = traderPositionSize
-    }
+    if (!isUserClosed) {
+      updateData.trader_still_has_position = traderStillHasPosition
+      updateData.trader_closed_at = traderClosedAt
+      updateData.current_price = currentPrice
 
-    // Persist ROI only when we have a stable entry/exit pair.
-    if (roi !== null && entryPrice !== null && entryPrice > 0) {
-      updateData.roi = roi
+      if (traderPositionSize !== null) {
+        updateData.trader_position_size = traderPositionSize
+      }
+
+      // Persist ROI only when we have a stable entry/exit pair.
+      if (roi !== null && entryPrice !== null && entryPrice > 0) {
+        updateData.roi = roi
+      }
     }
     
     // Only set resolved_outcome if we have one
@@ -499,8 +526,8 @@ export async function GET(
         checked: true,
         traderStillHasPosition,
         traderPositionSize,
-        currentPrice,
-        roi,
+        currentPrice: isUserClosed ? (trade.user_exit_price ?? currentPrice) : currentPrice,
+        roi: isUserClosed ? lockedRoi : roi,
         traderAvgPrice,
         marketResolved,
         resolvedOutcome,
@@ -508,8 +535,8 @@ export async function GET(
       // Also expose at top level for easier access by cron
       traderStillHasPosition,
       traderPositionSize,
-      currentPrice,
-      roi,
+      currentPrice: isUserClosed ? (trade.user_exit_price ?? currentPrice) : currentPrice,
+      roi: isUserClosed ? lockedRoi : roi,
       traderAvgPrice,
       marketResolved,
       resolvedOutcome,

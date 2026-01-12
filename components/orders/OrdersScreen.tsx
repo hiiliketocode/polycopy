@@ -428,6 +428,9 @@ export function OrdersScreen({
       setCloseSubmitting(true)
       setCloseError(null)
       try {
+        const requestId =
+          globalThis.crypto?.randomUUID?.() ??
+          `${Date.now()}-${Math.random().toString(16).slice(2)}`
         const payload = {
           tokenId,
           amount,
@@ -438,10 +441,18 @@ export function OrdersScreen({
         }
         const response = await fetch('/api/polymarket/orders/place', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-request-id': requestId,
+          },
           body: JSON.stringify(payload),
         })
-        const data = await response.json()
+        let data: any = null
+        try {
+          data = await response.json()
+        } catch {
+          data = null
+        }
         if (!response.ok) {
           const errorMessage =
             typeof data?.error === 'string'
@@ -452,7 +463,9 @@ export function OrdersScreen({
                   ? data.snippet
                   : typeof data?.raw === 'string'
                     ? data.raw
-                    : JSON.stringify(data)
+                    : data
+                      ? JSON.stringify(data)
+                      : 'Failed to place close order.'
           throw new Error(errorMessage)
         }
         setCloseSuccess(`Close order submitted (${slippagePercent.toFixed(1)}% slippage)`)

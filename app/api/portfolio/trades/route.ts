@@ -72,6 +72,7 @@ export async function GET(request: Request) {
       'resolved_outcome',
       'trader_still_has_position',
       'trade_method',
+      'side',
       'created_at',
     ].join(',')
 
@@ -129,6 +130,7 @@ export async function GET(request: Request) {
         user_exit_price: toNumber(row.user_exit_price),
         resolved_outcome: row.resolved_outcome ?? null,
         trade_method: row.trade_method,
+        side: row.side ?? null,
         pnl_usd: pnlUsd,
       }
     })

@@ -6,6 +6,16 @@ const NO_STORE_HEADERS = {
   'Cache-Control': 'no-store',
 };
 
+const POLYMARKET_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (compatible; Polycopy/1.0)',
+  'Accept': 'application/json,text/html;q=0.9',
+};
+
+function extractCloudflareRayId(html: string): string | null {
+  const match = html.match(/Cloudflare Ray ID:\s*<strong[^>]*>([^<]+)<\/strong>/i);
+  return match ? match[1].trim() : null;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const walletParam = searchParams.get('wallet') || searchParams.get('user');
@@ -27,11 +37,22 @@ export async function GET(request: Request) {
   try {
     const response = await fetch(
       `https://data-api.polymarket.com/trades?user=${encodeURIComponent(wallet)}&limit=${limit}`,
-      { cache: 'no-store' }
+      { cache: 'no-store', headers: POLYMARKET_HEADERS }
     );
 
     if (!response.ok) {
       const text = await response.text();
+      const contentType = response.headers.get('content-type') || '';
+      if (response.status === 403 && contentType.includes('text/html')) {
+        const rayId = extractCloudflareRayId(text);
+        return NextResponse.json(
+          {
+            error: 'Blocked by Cloudflare while fetching Polymarket trades',
+            rayId,
+          },
+          { status: 403, headers: NO_STORE_HEADERS }
+        );
+      }
       return NextResponse.json(
         { error: `Polymarket API returned ${response.status}`, details: text },
         { status: response.status, headers: NO_STORE_HEADERS }

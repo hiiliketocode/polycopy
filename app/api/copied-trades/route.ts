@@ -136,17 +136,12 @@ export async function GET(request: NextRequest) {
         market_avatar_url,
         outcome,
         price_when_copied,
-        price,
-        size,
-        filled_size,
-        amount_invested,
         created_at,
         trader_still_has_position,
         trader_closed_at,
         current_price,
         market_resolved,
         market_resolved_at,
-        roi,
         trade_method,
         notification_closed_sent,
         notification_resolved_sent,
@@ -173,12 +168,12 @@ export async function GET(request: NextRequest) {
     console.log('✅ Fetched', orders?.length || 0, 'cached copies for user', userId)
     
     const normalizedTrades = (orders || []).map((order) => {
-      const entryPrice = order.entry_price ?? order.price_when_copied ?? order.price ?? null
+      const entryPrice = order.entry_price ?? order.price_when_copied ?? null
       const exitPrice = order.exit_price ?? null
       const computedRoi =
         entryPrice && exitPrice
           ? ((exitPrice - entryPrice) / entryPrice) * 100
-          : order.pnl_pct ?? order.roi ?? null
+          : order.pnl_pct ?? null
 
       return {
         id: order.copied_trade_id || order.order_id,
@@ -191,7 +186,7 @@ export async function GET(request: NextRequest) {
         market_avatar_url: order.market_avatar_url || null,
         outcome: order.outcome || '',
         price_when_copied: entryPrice ?? 0,
-        amount_invested: order.invested_usd ?? order.amount_invested ?? null,
+        amount_invested: order.invested_usd ?? null,
         copied_at: order.created_at,
         trader_still_has_position: order.trader_still_has_position,
         trader_closed_at: order.trader_closed_at,

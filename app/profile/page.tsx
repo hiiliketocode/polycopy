@@ -1233,6 +1233,9 @@ function ProfilePageContent() {
     setCloseSubmitting(true);
     setCloseError(null);
     try {
+      const requestId =
+        globalThis.crypto?.randomUUID?.() ??
+        `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const payload = {
         tokenId,
         amount,
@@ -1244,11 +1247,18 @@ function ProfilePageContent() {
       
       const response = await fetch('/api/polymarket/orders/place', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-request-id': requestId,
+        },
         body: JSON.stringify(payload),
       });
-      
-      const data = await response.json();
+      let data: any = null;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        data = null;
+      }
       
       if (!response.ok) {
         const errorMessage =
@@ -1260,7 +1270,9 @@ function ProfilePageContent() {
                 ? data.snippet
                 : typeof data?.raw === 'string'
                   ? data.raw
-                  : JSON.stringify(data);
+                  : data
+                    ? JSON.stringify(data)
+                    : 'Failed to place close order.';
         throw new Error(errorMessage);
       }
       
@@ -1788,6 +1800,113 @@ function ProfilePageContent() {
                           : roiValue < 0
                             ? "text-red-600"
                             : "text-slate-600";
+                    const handleQuickSell = async () => {
+                      if (!trade.raw) return;
+                      const order = trade.raw!;
+                      
+                      // First, try to find the position in our current positions array
+                      let position = positions.find(p => 
+                        p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
+                      );
+                      
+                      // If not found, try to fetch fresh positions data from the correct endpoint
+                      if (!position) {
+                        try {
+                          const positionsResponse = await fetch('/api/polymarket/positions', { cache: 'no-store' });
+                          if (positionsResponse.ok) {
+                            const positionsData = await positionsResponse.json();
+                            const freshPositions = positionsData.positions || [];
+                            
+                            // Update our positions state
+                            setPositions(freshPositions);
+                            
+                            // Try to find it again
+                            position = freshPositions.find((p: PositionSummary) => 
+                              p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
+                            );
+                          }
+                        } catch (err) {
+                          console.error('Error fetching positions:', err);
+                        }
+                      }
+                      
+                      // If still not found, build position from order data (fallback like OrdersScreen)
+                      if (!position) {
+                        console.log('[PROFILE] Building position from order:', order);
+                        
+                        // Extract token ID from order raw data - try multiple fields
+                        const raw = order.raw ?? {};
+                        let tokenId: string | null = null;
+                        
+                        // Try common token ID fields
+                        const tokenIdCandidates = [
+                          raw.token_id,
+                          raw.tokenId,
+                          raw.tokenID,
+                          raw.asset_id,
+                          raw.assetId,
+                          raw.asset,
+                          raw.market?.token_id,
+                          raw.market?.asset_id,
+                        ];
+                        
+                        for (const candidate of tokenIdCandidates) {
+                          if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
+                            tokenId = candidate.trim();
+                            break;
+                          }
+                        }
+                        
+                        // Use the order's own size and pricing data
+                        const size = order.filledSize && order.filledSize > 0 ? order.filledSize : order.size;
+                        const normalizedSide = order.side?.trim().toUpperCase() ?? 'BUY';
+                        
+                        // For selling a position, we need to know what we're holding
+                        // If the original order was a BUY, we're LONG. If SELL, we're SHORT.
+                        const direction = normalizedSide === 'SELL' ? 'SHORT' : 'LONG';
+                        const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
+                        
+                        console.log('[PROFILE] Built position data:', {
+                          tokenId,
+                          size,
+                          side,
+                          direction,
+                          marketId: order.marketId,
+                          avgEntryPrice: order.priceOrAvgPrice,
+                        });
+                        
+                        if (tokenId && size && size > 0) {
+                          position = {
+                            tokenId,
+                            marketId: order.marketId ?? null,
+                            outcome: order.outcome ?? null,
+                            direction: direction as 'LONG' | 'SHORT',
+                            side: side as 'BUY' | 'SELL',
+                            size,
+                            avgEntryPrice: order.priceOrAvgPrice ?? null,
+                            firstTradeAt: order.createdAt ?? null,
+                            lastTradeAt: order.updatedAt ?? null,
+                          };
+                        } else {
+                          console.error('[PROFILE] Could not build position - missing critical data:', {
+                            tokenId,
+                            size,
+                            order,
+                          });
+                        }
+                      }
+                      
+                      if (position) {
+                        console.log('[PROFILE] Opening sell modal with position:', position);
+                        // We have a position, open the modal
+                        setCloseTarget({ order, position });
+                      } else {
+                        // This should be very rare now
+                        setToastMessage('Unable to load position data for selling. Please try from the History tab.');
+                        setShowToast(true);
+                        setTimeout(() => setShowToast(false), 4000);
+                      }
+                    };
 
                     return (
                       <Card key={trade.id} className="p-4 sm:p-6">
@@ -1871,16 +1990,16 @@ function ProfilePageContent() {
                                 <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
                                   {formatRelativeTime(trade.created_at)}
                                 </span>
-                                <button
-                                  onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
-                                  className="text-slate-400 hover:text-slate-600 transition-colors"
-                                >
-                                  {expandedTradeId === trade.id ? (
-                                    <ChevronUp className="h-5 w-5" />
-                                  ) : (
-                                    <ChevronDown className="h-5 w-5" />
-                                  )}
-                                </button>
+                                {trade.type === 'manual' && (
+                                  <Button
+                                    onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 px-2 text-xs font-semibold"
+                                  >
+                                    Edit Trade
+                                  </Button>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1925,16 +2044,16 @@ function ProfilePageContent() {
                               <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
                                 {formatRelativeTime(trade.created_at)}
                               </span>
-                              <button
-                                onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
-                                className="text-slate-400 hover:text-slate-600 transition-colors"
-                              >
-                                {expandedTradeId === trade.id ? (
-                                  <ChevronUp className="h-5 w-5" />
-                                ) : (
-                                  <ChevronDown className="h-5 w-5" />
-                                )}
-                              </button>
+                              {trade.type === 'manual' && (
+                                <Button
+                                  onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs font-semibold"
+                                >
+                                  Edit Trade
+                                </Button>
+                              )}
                             </div>
                           </div>
                         )}
@@ -1975,65 +2094,77 @@ function ProfilePageContent() {
 
                         {/* Stats Grid */}
                         <div className="border border-slate-200 rounded-lg px-4 py-3 mt-3 bg-slate-50/50">
-                          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-                            <div className="text-center">
-                              <p className="text-xs text-slate-500 mb-1 font-medium">Trade</p>
-                              <div className="flex flex-wrap items-center justify-center gap-1 max-w-full">
-                                <Badge
-                                  variant="secondary"
-                                  className={cn(
-                                    "font-semibold text-xs",
-                                    actionLabel === "Buy"
-                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                      : "bg-red-50 text-red-700 border-red-200"
-                                  )}
-                                >
-                                  {actionLabel}
-                                </Badge>
-                                <span className="text-xs text-slate-400 font-semibold">|</span>
-                                <Badge
-                                  variant="secondary"
-                                  className="font-semibold text-xs bg-slate-100 text-slate-700 border-slate-200 max-w-[160px] whitespace-normal break-words text-center leading-snug"
-                                >
-                                  {trade.outcome || "Outcome"}
-                                </Badge>
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                            <div className="flex-1 grid grid-cols-2 md:grid-cols-6 gap-3">
+                              <div className="text-center">
+                                <p className="text-xs text-slate-500 mb-1 font-medium">Trade</p>
+                                <div className="flex flex-wrap items-center justify-center gap-1 max-w-full">
+                                  <Badge
+                                    variant="secondary"
+                                    className={cn(
+                                      "font-semibold text-xs",
+                                      actionLabel === "Buy"
+                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                        : "bg-red-50 text-red-700 border-red-200"
+                                    )}
+                                  >
+                                    {actionLabel}
+                                  </Badge>
+                                  <span className="text-xs text-slate-400 font-semibold">|</span>
+                                  <Badge
+                                    variant="secondary"
+                                    className="font-semibold text-xs bg-slate-100 text-slate-700 border-slate-200 max-w-[160px] whitespace-normal break-words text-center leading-snug"
+                                  >
+                                    {trade.outcome || "Outcome"}
+                                  </Badge>
+                                </div>
+                              </div>
+                              <div className="text-center md:border-l border-slate-200">
+                                <p className="text-xs text-slate-500 mb-1 font-medium">Invested</p>
+                                <p className="text-sm md:text-base font-semibold text-slate-900">
+                                  {formatCurrency(invested)}
+                                </p>
+                              </div>
+                              <div className="text-center md:border-l border-slate-200">
+                                <p className="text-xs text-slate-500 mb-1 font-medium">Contracts</p>
+                                <p className="text-sm md:text-base font-semibold text-slate-900">
+                                  {formatContracts(contracts)}
+                                </p>
+                              </div>
+                              <div className="text-center md:border-l border-slate-200">
+                                <p className="text-xs text-slate-500 mb-1 font-medium">Entry</p>
+                                <p className="text-sm md:text-base font-semibold text-slate-900">
+                                  {formatPrice(trade.price_entry)}
+                                </p>
+                              </div>
+                              <div className="text-center md:border-l border-slate-200">
+                                <p className="text-xs text-slate-500 mb-1 font-medium">Current</p>
+                                <p className="text-sm md:text-base font-semibold text-slate-900">
+                                  {formatPrice(currentPrice)}
+                                </p>
+                              </div>
+                              <div className="text-center md:border-l border-slate-200">
+                                <p className="text-xs text-slate-500 mb-1 font-medium">ROI</p>
+                                <p className={cn("text-sm md:text-base font-semibold", roiClass)}>
+                                  {roiValue === null ? "—" : `${roiValue > 0 ? "+" : ""}${roiValue.toFixed(1)}%`}
+                                </p>
                               </div>
                             </div>
-                            <div className="text-center md:border-l border-slate-200">
-                              <p className="text-xs text-slate-500 mb-1 font-medium">Invested</p>
-                              <p className="text-sm md:text-base font-semibold text-slate-900">
-                                {formatCurrency(invested)}
-                              </p>
-                            </div>
-                            <div className="text-center md:border-l border-slate-200">
-                              <p className="text-xs text-slate-500 mb-1 font-medium">Contracts</p>
-                              <p className="text-sm md:text-base font-semibold text-slate-900">
-                                {formatContracts(contracts)}
-                              </p>
-                            </div>
-                            <div className="text-center md:border-l border-slate-200">
-                              <p className="text-xs text-slate-500 mb-1 font-medium">Entry</p>
-                              <p className="text-sm md:text-base font-semibold text-slate-900">
-                                {formatPrice(trade.price_entry)}
-                              </p>
-                            </div>
-                            <div className="text-center md:border-l border-slate-200">
-                              <p className="text-xs text-slate-500 mb-1 font-medium">Current</p>
-                              <p className="text-sm md:text-base font-semibold text-slate-900">
-                                {formatPrice(currentPrice)}
-                              </p>
-                            </div>
-                            <div className="text-center md:border-l border-slate-200">
-                              <p className="text-xs text-slate-500 mb-1 font-medium">ROI</p>
-                              <p className={cn("text-sm md:text-base font-semibold", roiClass)}>
-                                {roiValue === null ? "—" : `${roiValue > 0 ? "+" : ""}${roiValue.toFixed(1)}%`}
-                              </p>
-                            </div>
+                            {trade.type === 'quick' && trade.status === 'open' && trade.raw && (
+                              <Button
+                                onClick={handleQuickSell}
+                                size="sm"
+                                style={{ backgroundColor: '#EF4444' }}
+                                className="h-8 px-3 text-xs font-semibold text-white hover:opacity-90 transition-opacity sm:self-stretch"
+                              >
+                                Sell
+                              </Button>
+                            )}
                           </div>
                         </div>
 
                         {/* Expanded Details */}
-                        {expandedTradeId === trade.id && (
+                        {trade.type === 'manual' && expandedTradeId === trade.id && (
                           <div className="space-y-4 pt-4 border-t border-slate-200">
                             {/* Additional Details */}
                             <div className="grid grid-cols-2 gap-4">
@@ -2176,112 +2307,7 @@ function ProfilePageContent() {
                             {trade.type === 'quick' && trade.raw && (
                               <div className="flex gap-2">
                                 <Button
-                                  onClick={async () => {
-                                    const order = trade.raw!;
-                                    
-                                    // First, try to find the position in our current positions array
-                                    let position = positions.find(p => 
-                                      p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
-                                    );
-                                    
-                                    // If not found, try to fetch fresh positions data from the correct endpoint
-                                    if (!position) {
-                                      try {
-                                        const positionsResponse = await fetch('/api/polymarket/positions', { cache: 'no-store' });
-                                        if (positionsResponse.ok) {
-                                          const positionsData = await positionsResponse.json();
-                                          const freshPositions = positionsData.positions || [];
-                                          
-                                          // Update our positions state
-                                          setPositions(freshPositions);
-                                          
-                                          // Try to find it again
-                                          position = freshPositions.find((p: PositionSummary) => 
-                                            p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
-                                          );
-                                        }
-                                      } catch (err) {
-                                        console.error('Error fetching positions:', err);
-                                      }
-                                    }
-                                    
-                                    // If still not found, build position from order data (fallback like OrdersScreen)
-                                    if (!position) {
-                                      console.log('[PROFILE] Building position from order:', order);
-                                      
-                                      // Extract token ID from order raw data - try multiple fields
-                                      const raw = order.raw ?? {};
-                                      let tokenId: string | null = null;
-                                      
-                                      // Try common token ID fields
-                                      const tokenIdCandidates = [
-                                        raw.token_id,
-                                        raw.tokenId,
-                                        raw.tokenID,
-                                        raw.asset_id,
-                                        raw.assetId,
-                                        raw.asset,
-                                        raw.market?.token_id,
-                                        raw.market?.asset_id,
-                                      ];
-                                      
-                                      for (const candidate of tokenIdCandidates) {
-                                        if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
-                                          tokenId = candidate.trim();
-                                          break;
-                                        }
-                                      }
-                                      
-                                      // Use the order's own size and pricing data
-                                      const size = order.filledSize && order.filledSize > 0 ? order.filledSize : order.size;
-                                      const normalizedSide = order.side?.trim().toUpperCase() ?? 'BUY';
-                                      
-                                      // For selling a position, we need to know what we're holding
-                                      // If the original order was a BUY, we're LONG. If SELL, we're SHORT.
-                                      const direction = normalizedSide === 'SELL' ? 'SHORT' : 'LONG';
-                                      const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
-                                      
-                                      console.log('[PROFILE] Built position data:', {
-                                        tokenId,
-                                        size,
-                                        side,
-                                        direction,
-                                        marketId: order.marketId,
-                                        avgEntryPrice: order.priceOrAvgPrice,
-                                      });
-                                      
-                                      if (tokenId && size && size > 0) {
-                                        position = {
-                                          tokenId,
-                                          marketId: order.marketId ?? null,
-                                          outcome: order.outcome ?? null,
-                                          direction: direction as 'LONG' | 'SHORT',
-                                          side: side as 'BUY' | 'SELL',
-                                          size,
-                                          avgEntryPrice: order.priceOrAvgPrice ?? null,
-                                          firstTradeAt: order.createdAt ?? null,
-                                          lastTradeAt: order.updatedAt ?? null,
-                                        };
-                                      } else {
-                                        console.error('[PROFILE] Could not build position - missing critical data:', {
-                                          tokenId,
-                                          size,
-                                          order,
-                                        });
-                                      }
-                                    }
-                                    
-                                    if (position) {
-                                      console.log('[PROFILE] Opening sell modal with position:', position);
-                                      // We have a position, open the modal
-                                      setCloseTarget({ order, position });
-                                    } else {
-                                      // This should be very rare now
-                                      setToastMessage('Unable to load position data for selling. Please try from the History tab.');
-                                      setShowToast(true);
-                                      setTimeout(() => setShowToast(false), 4000);
-                                    }
-                                  }}
+                                  onClick={handleQuickSell}
                                   style={{ backgroundColor: '#EF4444' }}
                                   className="flex-1 text-white hover:opacity-90 transition-opacity"
                                 >

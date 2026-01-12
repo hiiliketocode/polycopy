@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ComponentType } from 'react'
-import { ArrowDown, ChevronDown, CheckCircle2, Clock, HelpCircle, XCircle, type LucideProps } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
+import { ArrowDown, ArrowLeftRight, ChevronDown, CheckCircle2, Clock, HelpCircle, Loader2, XCircle, type LucideProps } from 'lucide-react'
 import type { OrderRow } from '@/lib/orders/types'
 import type { PositionSummary } from '@/lib/orders/position'
 import { Badge } from '@/components/ui/badge'
@@ -41,6 +41,7 @@ const SLIPPAGE_TOOLTIP =
 const ORDER_BEHAVIOR_TOOLTIP =
   'FAK fills as much as possible immediately and cancels the rest, while GTC keeps the order open until it either fills or you cancel it.'
 const SLIPPAGE_PRESETS: Array<number> = [0, 1, 3, 5]
+const ORDER_STATUS_TIMEOUT_MS = 30_000
 
 type StatusPhase =
   | 'submitted'
@@ -52,12 +53,31 @@ type StatusPhase =
   | 'canceled'
   | 'expired'
   | 'rejected'
+  | 'timed_out'
   | 'unknown'
 
-const TERMINAL_STATUS_PHASES = new Set<StatusPhase>(['filled', 'canceled', 'expired', 'rejected'])
+const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
+  'filled',
+  'canceled',
+  'expired',
+  'rejected',
+  'timed_out',
+])
 const FAILED_EXECUTION_PHASES = new Set<StatusPhase>(['canceled', 'expired', 'rejected'])
 
-function normalizeStatusPhase(status?: string | null): StatusPhase {
+function normalizeStatusPhase(
+  status?: string | null,
+  filledSize?: number | null,
+  totalSize?: number | null
+): StatusPhase {
+  const hasSizes =
+    Number.isFinite(filledSize) && Number.isFinite(totalSize) && (totalSize ?? 0) > 0
+  if (hasSizes) {
+    const filled = filledSize as number
+    const total = totalSize as number
+    if (filled > 0 && filled < total) return 'partial'
+    if (filled >= total) return 'filled'
+  }
   if (!status) return 'pending'
   const normalized = status.trim().toLowerCase()
   if (normalized === 'matched' || normalized === 'filled') return 'filled'
@@ -111,8 +131,8 @@ function getExecutionStatusVariant(phase: StatusPhase): ExecutionStatusVariant {
   return 'pending'
 }
 
-function getOrderStatusLabel(status?: string | null) {
-  const phase = normalizeStatusPhase(status)
+function getOrderStatusLabel(status?: string | null, filledSize?: number | null, totalSize?: number | null) {
+  const phase = normalizeStatusPhase(status, filledSize, totalSize)
   return STATUS_SIMPLE_LABELS[phase] || 'Polymarket status pending'
 }
 
@@ -174,6 +194,7 @@ function getPostOrderStateLabel(
   orderType: 'FAK' | 'GTC',
   filledSize: number | null
 ) {
+  if (phase === 'timed_out') return 'Failed to match on Polymarket'
   if (phase === 'filled') return 'Filled'
   if (phase === 'partial') return 'Partially filled'
   if (
@@ -203,6 +224,7 @@ export default function ClosePositionModal({
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [orderType, setOrderType] = useState<'FAK' | 'GTC'>('FAK')
   const [minTickSize, setMinTickSize] = useState<number>(FALLBACK_MIN_TICK_SIZE)
+  const [statusPhase, setStatusPhase] = useState<StatusPhase>('submitted')
   const [orderStatus, setOrderStatus] = useState<{
     status: string
     size: number | null
@@ -214,6 +236,18 @@ export default function ClosePositionModal({
   } | null>(null)
   const [orderStatusError, setOrderStatusError] = useState<string | null>(null)
   const [orderStatusLoading, setOrderStatusLoading] = useState(false)
+  const [isCancelingOrder, setIsCancelingOrder] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
+  const statusPhaseRef = useRef<StatusPhase>('submitted')
+  const orderStatusRef = useRef<typeof orderStatus | null>(null)
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollAbortRef = useRef<AbortController | null>(null)
+  const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const timeoutTriggeredRef = useRef(false)
+
+  useEffect(() => {
+    statusPhaseRef.current = statusPhase
+  }, [statusPhase])
 
   useEffect(() => {
     let canceled = false
@@ -256,19 +290,52 @@ export default function ClosePositionModal({
   useEffect(() => {
     if (!orderId) {
       setOrderStatus(null)
+      orderStatusRef.current = null
       setOrderStatusError(null)
       setOrderStatusLoading(false)
+      setStatusPhase('submitted')
+      statusPhaseRef.current = 'submitted'
+      setIsCancelingOrder(false)
+      setCancelError(null)
       return
     }
 
     let canceled = false
     let intervalId: ReturnType<typeof setInterval> | null = null
+    let pendingTimer: ReturnType<typeof setTimeout> | null = null
+    let inFlight = false
+
+    setOrderStatus(null)
+    orderStatusRef.current = null
+    setOrderStatusError(null)
+    setStatusPhase('submitted')
+    statusPhaseRef.current = 'submitted'
+    setCancelError(null)
+    setIsCancelingOrder(false)
+
+    pendingTimer = setTimeout(() => {
+      if (!canceled && !orderStatusRef.current) {
+        setStatusPhase('pending')
+        statusPhaseRef.current = 'pending'
+      }
+    }, 300)
 
     const fetchStatus = async (showLoading: boolean) => {
+      if (canceled || inFlight) return
+      if (statusPhaseRef.current === 'timed_out') return
       if (showLoading) setOrderStatusLoading(true)
       setOrderStatusError(null)
       try {
-        const response = await fetch(`/api/polymarket/orders/${orderId}/status`, { cache: 'no-store' })
+        inFlight = true
+        if (pollAbortRef.current) {
+          pollAbortRef.current.abort()
+        }
+        const controller = new AbortController()
+        pollAbortRef.current = controller
+        const response = await fetch(`/api/polymarket/orders/${orderId}/status`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        })
         const data = await response.json()
         if (canceled) return
         if (!response.ok || !data?.ok) {
@@ -294,16 +361,42 @@ export default function ClosePositionModal({
           raw: data,
         }
         setOrderStatus(normalized)
-        const finalStatuses = new Set(['filled', 'canceled', 'expired', 'failed'])
+        orderStatusRef.current = normalized
+        if (pendingTimer) {
+          clearTimeout(pendingTimer)
+          pendingTimer = null
+        }
+        const rawStatus = normalized.status ? String(normalized.status) : ''
+        let phase = normalizeStatusPhase(rawStatus, normalized.filledSize, normalized.size)
+        const filledSize =
+          typeof data?.filledSize === 'number' ? data.filledSize : normalized.filledSize
+        const remainingSize =
+          typeof data?.remainingSize === 'number' ? data.remainingSize : normalized.remainingSize
+        if (
+          remainingSize !== null &&
+          remainingSize <= 0 &&
+          filledSize !== null &&
+          filledSize > 0
+        ) {
+          phase = 'filled'
+        }
+        if (phase === 'filled' && (!filledSize || filledSize <= 0)) {
+          phase = 'canceled'
+        }
+        setStatusPhase(phase)
+        statusPhaseRef.current = phase
+        const finalStatuses = new Set(['filled', 'canceled', 'expired', 'failed', 'rejected'])
         if (finalStatuses.has(String(normalized.status).toLowerCase()) && intervalId) {
           clearInterval(intervalId)
           intervalId = null
+          pollIntervalRef.current = null
         }
       } catch (err: any) {
-        if (!canceled) {
+        if (!canceled && err?.name !== 'AbortError') {
           setOrderStatusError(err?.message || 'Failed to fetch order status')
         }
       } finally {
+        inFlight = false
         if (!canceled && showLoading) setOrderStatusLoading(false)
       }
     }
@@ -312,10 +405,17 @@ export default function ClosePositionModal({
     intervalId = setInterval(() => {
       fetchStatus(false)
     }, 2000)
+    pollIntervalRef.current = intervalId
 
     return () => {
       canceled = true
       if (intervalId) clearInterval(intervalId)
+      if (pendingTimer) clearTimeout(pendingTimer)
+      pollIntervalRef.current = null
+      if (pollAbortRef.current) {
+        pollAbortRef.current.abort()
+        pollAbortRef.current = null
+      }
     }
   }, [orderId])
 
@@ -358,14 +458,7 @@ export default function ClosePositionModal({
     entryPrice !== null ? formatCurrency(entryPrice * position.size) : '—'
   const sizePercent =
     amountValid && position.size > 0 ? (contractsValue / position.size) * 100 : null
-  const sizePercentLabel = sizePercent !== null ? `${sizePercent.toFixed(0)}% of position` : '—'
-  const handleSellAll = () => {
-    if (amountMode === 'usd') {
-      setAmountInput((position.size * effectivePriceForSubmit).toFixed(2))
-      return
-    }
-    setAmountInput(position.size.toFixed(6))
-  }
+  const sizePercentLabel = sizePercent !== null ? `${sizePercent.toFixed(0)}%` : null
 
   const handleSwitchToUsd = () => {
     if (!Number.isFinite(contractsValue) || contractsValue <= 0) return
@@ -391,16 +484,21 @@ export default function ClosePositionModal({
   }
 
   const hasSubmittedOrder = Boolean(orderId)
+  const showConfirmation = isSubmitting || hasSubmittedOrder
   const submittedContracts = orderStatus?.size ?? null
   const filledContracts = orderStatus?.filledSize ?? null
-  const statusPhase = normalizeStatusPhase(orderStatus?.status)
+  const pendingStatusLabel = 'Order pending at Polymarket'
   const statusLabel = getPostOrderStateLabel(statusPhase, orderType, filledContracts)
   const statusVariant = getExecutionStatusVariant(statusPhase)
   const StatusIconComponent = STATUS_VARIANT_ICONS[statusVariant]
   const orderStatusIconClasses = STATUS_VARIANT_WRAPPER_CLASSES[statusVariant]
-  const orderStatusLabel = getOrderStatusLabel(orderStatus?.status)
+  const orderStatusLabel =
+    statusPhase === 'timed_out'
+      ? pendingStatusLabel
+      : getOrderStatusLabel(orderStatus?.status, filledContracts, submittedContracts)
   const statusReason = orderStatus ? findStatusReason(orderStatus.raw) : null
   const isFinalStatus = TERMINAL_STATUS_PHASES.has(statusPhase)
+  const isFilledStatus = statusPhase === 'filled'
   const averageFillPriceLabel =
     orderStatus?.price !== null && orderStatus?.price !== undefined
       ? formatCurrency(orderStatus.price)
@@ -415,6 +513,73 @@ export default function ClosePositionModal({
       : '—'
   const showFillProgress =
     submittedContracts !== null && filledContracts !== null && submittedContracts > 0
+
+  useEffect(() => {
+    if (!orderId || isFinalStatus) {
+      if (pendingTimeoutRef.current) {
+        clearTimeout(pendingTimeoutRef.current)
+        pendingTimeoutRef.current = null
+      }
+      timeoutTriggeredRef.current = false
+      return
+    }
+    timeoutTriggeredRef.current = false
+    if (pendingTimeoutRef.current) {
+      clearTimeout(pendingTimeoutRef.current)
+    }
+    pendingTimeoutRef.current = setTimeout(async () => {
+      if (timeoutTriggeredRef.current) return
+      if (TERMINAL_STATUS_PHASES.has(statusPhaseRef.current)) return
+      timeoutTriggeredRef.current = true
+      statusPhaseRef.current = 'timed_out'
+      setStatusPhase('timed_out')
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+      if (pollAbortRef.current) {
+        pollAbortRef.current.abort()
+        pollAbortRef.current = null
+      }
+      setIsCancelingOrder(true)
+      setCancelError(null)
+      try {
+        const response = await fetch('/api/polymarket/orders/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderHash: orderId }),
+        })
+        let payload: any = null
+        try {
+          payload = await response.json()
+        } catch {
+          payload = null
+        }
+        if (!response.ok) {
+          throw new Error(
+            payload?.error ||
+              payload?.message ||
+              payload?.details ||
+              'Failed to cancel order on Polymarket.'
+          )
+        }
+      } catch (error: any) {
+        const message =
+          typeof error === 'string'
+            ? error
+            : error?.message || 'Unable to cancel order. Please try again.'
+        setCancelError(message)
+      } finally {
+        setIsCancelingOrder(false)
+      }
+    }, ORDER_STATUS_TIMEOUT_MS)
+    return () => {
+      if (pendingTimeoutRef.current) {
+        clearTimeout(pendingTimeoutRef.current)
+        pendingTimeoutRef.current = null
+      }
+    }
+  }, [orderId, isFinalStatus])
 
   return (
     <div
@@ -545,41 +710,12 @@ export default function ClosePositionModal({
                       <span className="w-[52px]" aria-hidden="true" />
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                      <span>Live price:</span>
-                      <span className="font-semibold text-slate-900">{currentPriceLabel}</span>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        Live price
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-500">Estimates update with live market prices.</div>
-
                     <div className="space-y-2 mb-4">
                       <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
                         <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
-                          <div className="flex items-center justify-between gap-2">
-                            <label htmlFor="close-amount" className="text-xs font-medium text-slate-700">
-                              {amountMode === 'usd' ? 'USD to sell' : 'Contracts to sell'}
-                            </label>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={handleSellAll}
-                                className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
-                              >
-                                Sell all
-                              </button>
-                              <button
-                                type="button"
-                                onClick={amountMode === 'usd' ? handleSwitchToContracts : handleSwitchToUsd}
-                                className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
-                                disabled={!amountValid}
-                              >
-                                Switch to {amountMode === 'usd' ? 'contracts' : 'USD'}
-                              </button>
-                            </div>
-                          </div>
+                          <label htmlFor="close-amount" className="text-xs font-medium text-slate-700">
+                            {amountMode === 'usd' ? 'USD' : 'Contracts'}
+                          </label>
                           <div className="relative">
                             {amountMode === 'usd' && (
                               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
@@ -596,13 +732,32 @@ export default function ClosePositionModal({
                               className={`w-full h-14 border border-slate-300 rounded-lg text-base font-semibold text-slate-700 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${amountMode === 'usd' ? 'pl-7 pr-3' : 'pl-3 pr-3'}`}
                             />
                           </div>
-                          <div className="text-xs font-medium text-slate-500">
-                            {amountMode === 'usd'
-                              ? `≈ ${contractsValueLabel} contracts`
-                              : `≈ ${proceedsLabel} USD`} {sizePercentLabel !== '—' ? `· ${sizePercentLabel}` : ''}
-                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={amountMode === 'usd' ? handleSwitchToContracts : handleSwitchToUsd}
+                          className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:border-slate-300 sm:h-12 sm:w-12 disabled:opacity-50 disabled:cursor-not-allowed"
+                          disabled={!amountInput.trim()}
+                          aria-label={`Switch to ${amountMode === 'usd' ? 'contracts' : 'USD'}`}
+                        >
+                          <ArrowLeftRight className="h-4 w-4" />
+                        </button>
+                        <div className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px]">
+                          {amountMode === 'usd'
+                            ? !amountValid
+                              ? '—'
+                              : `≈ ${contractsValueLabel} contracts`
+                            : !amountValid
+                              ? '—'
+                              : `≈ ${proceedsLabel} USD`}
+                        </div>
+                        <div className="flex h-14 items-center text-xs font-medium text-slate-500">
+                          {sizePercentLabel ? `Estimated · ${sizePercentLabel} of position` : 'Estimated'}
                         </div>
                       </div>
+                      <p className="text-xs text-slate-500 text-center">
+                        Estimates use current market prices.
+                      </p>
                     </div>
 
                     {submitError && (
@@ -622,7 +777,7 @@ export default function ClosePositionModal({
                     size="lg"
                   >
                     {isSubmitting
-                      ? 'Submitting…'
+                      ? pendingStatusLabel
                       : hasSubmittedOrder
                         ? 'Order sent to Polymarket'
                         : 'Sell position'}
@@ -765,10 +920,41 @@ export default function ClosePositionModal({
                       </div>
                     </div>
                   )}
-                  {orderId && (
+                  {showConfirmation && (
                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm space-y-4 sm:px-5 sm:py-6">
                       <div>
-                        <h3 className="text-lg font-semibold text-slate-900">{statusLabel}</h3>
+                        <p className="text-xs font-semibold tracking-wide text-slate-400">Status</p>
+                        <p className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                          {!isFinalStatus && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
+                          {statusLabel}
+                        </p>
+                        {!isFinalStatus && (
+                          <p
+                            className={`text-xs ${
+                              statusPhase === 'timed_out' ? 'text-amber-600' : 'text-slate-500'
+                            }`}
+                          >
+                            {statusPhase === 'timed_out'
+                              ? 'Polymarket did not match this order within 30 seconds. Try increasing slippage and/or using a smaller amount.'
+                              : 'This may take a moment.'}
+                          </p>
+                        )}
+                        {statusPhase === 'timed_out' && (
+                          <div className="mt-3 space-y-2">
+                            <p className="text-xs text-amber-600">
+                              We couldn’t fill this order at your price. Try increasing slippage (tap Advanced) or using a smaller amount.
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              We stopped the pending order so you can reopen the form and resubmit with broader slippage or a new price.
+                            </p>
+                            {isCancelingOrder && (
+                              <p className="text-[11px] text-slate-500">Canceling pending order…</p>
+                            )}
+                            {cancelError && (
+                              <p className="text-[11px] text-rose-600">{cancelError}</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="text-sm text-slate-600 flex items-center gap-2">
                         <span
@@ -777,6 +963,16 @@ export default function ClosePositionModal({
                           <StatusIconComponent className="h-3 w-3" aria-hidden />
                         </span>
                         <span className="text-sm font-semibold text-slate-900">{orderStatusLabel}</span>
+                        {isFilledStatus && (
+                          <button
+                            type="button"
+                            onClick={onClose}
+                            className="ml-auto inline-flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 h-7 w-7"
+                            aria-label="Close order confirmation"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                       <div className="grid gap-3 text-sm sm:grid-cols-2">
                         <div>

@@ -1,11 +1,85 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
+import { resolveOrdersTableName } from '@/lib/orders/table'
 
 const toNumber = (value: number | string | null | undefined) => {
   if (value === null || value === undefined) return 0
   const n = Number(value)
   return Number.isFinite(n) ? n : 0
+}
+
+const toNullableNumber = (value: number | string | null | undefined) => {
+  if (value === null || value === undefined) return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+const normalizeSide = (value?: string | null) => String(value ?? '').trim().toLowerCase()
+
+const resolveFilledSize = (row: any) => {
+  const filled = toNullableNumber(row?.filled_size)
+  if (filled !== null && filled > 0) return filled
+  const size = toNullableNumber(row?.size)
+  if (filled === null && size !== null && size > 0) return size
+  return null
+}
+
+const normalize = (value?: string | null) => value?.trim().toLowerCase() || ''
+const PRICE_FETCH_TIMEOUT_MS = 6000
+const MAX_MARKETS_TO_REFRESH = 40
+
+type MarketPrice = {
+  outcomes?: string[]
+  outcomePrices?: number[]
+}
+
+const findOutcomePrice = (market: MarketPrice | undefined, outcome: string | null) => {
+  if (!market || !market.outcomes || !market.outcomePrices || outcome === null) return null
+  const target = normalize(outcome)
+  const idx = market.outcomes.findIndex((o) => normalize(o) === target)
+  if (idx >= 0 && market.outcomePrices[idx] !== undefined && market.outcomePrices[idx] !== null) {
+    const price = Number(market.outcomePrices[idx])
+    return Number.isFinite(price) ? price : null
+  }
+  return null
+}
+
+const fetchMarketPrices = async (marketIds: string[]) => {
+  const priceMap = new Map<string, MarketPrice>()
+  if (marketIds.length === 0) return priceMap
+
+  const baseUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    'http://localhost:3000'
+
+  await Promise.all(
+    marketIds.map(async (marketId) => {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), PRICE_FETCH_TIMEOUT_MS)
+      try {
+        const res = await fetch(
+          `${baseUrl}/api/polymarket/price?conditionId=${marketId}`,
+          { signal: controller.signal }
+        )
+        if (!res.ok) return
+        const json = await res.json()
+        if (json?.success && json.market) {
+          priceMap.set(marketId, {
+            outcomes: json.market.outcomes,
+            outcomePrices: json.market.outcomePrices,
+          })
+        }
+      } catch (error) {
+        // Best-effort price refresh; ignore failures.
+      } finally {
+        clearTimeout(timeout)
+      }
+    })
+  )
+
+  return priceMap
 }
 
 const createService = () =>
@@ -38,6 +112,7 @@ export async function GET(request: Request) {
     }
 
     const supabase = createService()
+    const ordersTable = await resolveOrdersTableName(supabase)
 
     // Realized = resolved OR user closed
     const { data: realizedRows, error: realizedError, count: realizedCount } = await supabase
@@ -54,7 +129,10 @@ export async function GET(request: Request) {
     // Unrealized = open positions (not resolved, not user closed)
     const { data: openRows, error: openError, count: openCount } = await supabase
       .from('orders_copy_enriched')
-      .select('pnl_usd, invested_usd', { count: 'exact' })
+      .select(
+        'order_id, market_id, outcome, entry_price, entry_size, current_price, pnl_usd, invested_usd',
+        { count: 'exact' }
+      )
       .eq('copy_user_id', requestedUserId)
       .is('market_resolved', false)
       .is('user_exit_price', null)
@@ -91,18 +169,53 @@ export async function GET(request: Request) {
       (sum, row: any) => sum + toNumber(row.pnl_usd),
       0
     )
-    const unrealizedPnl = (openRows || []).reduce((sum, row: any) => sum + toNumber(row.pnl_usd), 0)
-    const realizedInvested = (realizedRows || []).reduce(
-      (sum, row: any) => sum + toNumber(row.invested_usd),
-      0
-    )
-    const unrealizedInvested = (openRows || []).reduce(
-      (sum, row: any) => sum + toNumber(row.invested_usd),
-      0
-    )
+    const openMarketIds = Array.from(
+      new Set(
+        (openRows || [])
+          .map((row: any) => row.market_id)
+          .filter((marketId: any): marketId is string => Boolean(marketId))
+      )
+    ).slice(0, MAX_MARKETS_TO_REFRESH)
+
+    const priceMap = await fetchMarketPrices(openMarketIds)
+
+    const unrealizedPnl = (openRows || []).reduce((sum, row: any) => {
+      const entryPrice = toNullableNumber(row.entry_price)
+      const entrySize = toNullableNumber(row.entry_size)
+      const storedPnl = toNullableNumber(row.pnl_usd)
+      const storedPrice = toNullableNumber(row.current_price)
+      const marketPrice = findOutcomePrice(priceMap.get(row.market_id), row.outcome)
+      const currentPrice = marketPrice ?? storedPrice
+
+      if (entryPrice !== null && entrySize !== null && currentPrice !== null) {
+        return sum + (currentPrice - entryPrice) * entrySize
+      }
+      return sum + (storedPnl ?? 0)
+    }, 0)
+    const { data: volumeRows, error: volumeError } = await supabase
+      .from(ordersTable)
+      .select('price, price_when_copied, amount_invested, filled_size, size, side')
+      .eq('copy_user_id', requestedUserId)
+
+    if (volumeError) {
+      console.error('Error aggregating volume:', volumeError)
+      return NextResponse.json({ error: volumeError.message }, { status: 500 })
+    }
+
+    const totalVolume = (volumeRows || []).reduce((sum, row: any) => {
+      const side = normalizeSide(row?.side)
+      if (side === 'sell') return sum
+
+      const entryPrice = toNullableNumber(row?.price_when_copied) ?? toNullableNumber(row?.price)
+      const filledSize = resolveFilledSize(row)
+      const invested = toNullableNumber(row?.amount_invested)
+
+      if (invested !== null && invested > 0) return sum + invested
+      if (entryPrice !== null && filledSize !== null) return sum + entryPrice * filledSize
+      return sum
+    }, 0)
 
     const totalPnl = realizedPnl + unrealizedPnl
-    const totalVolume = realizedInvested + unrealizedInvested
     const roi = totalVolume > 0 ? (totalPnl / totalVolume) * 100 : 0
 
     const resolvedTradesCount = toNumber(realizedCount)

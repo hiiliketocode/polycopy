@@ -299,7 +299,7 @@ export async function GET(request: NextRequest) {
     const marketIds = Array.from(
       new Set(
         ordersList
-          .map((order: any) => order.market_id)
+          .map((order: any) => resolveOrderMarketId(order))
           .filter(Boolean) as string[]
       )
     )
@@ -375,7 +375,7 @@ export async function GET(request: NextRequest) {
 
     const enrichedOrders: OrderRow[] = (ordersList as any[]).map((order: any) => {
       const orderId = String(order.order_id ?? '')
-      const marketId = String(order.market_id ?? '')
+      const marketId = resolveOrderMarketId(order)
       const traderId = String(order.trader_id ?? '')
       const copiedTraderIdFromRow =
         typeof order.copied_trader_id === 'string' && order.copied_trader_id.trim()
@@ -392,7 +392,7 @@ export async function GET(request: NextRequest) {
       const marketTitle = getMarketTitle(order, marketId, cache, metadata)
       const copiedTrader = resolveCopiedTraderForOrder(
         copiedTraderLookup,
-        marketId,
+        marketId || extractRawMarketId(order),
         marketTitle,
         order.outcome,
         metadata,
@@ -702,6 +702,83 @@ async function fetchTraderRecordsByWallets(
   }
 }
 
+function extractRawMarketId(order: any): string | null {
+  const candidates = [
+    order?.market_id,
+    order?.market,
+    order?.asset_id,
+    order?.condition_id,
+    order?.conditionId,
+    order?.raw?.market_id,
+    order?.raw?.market,
+    order?.raw?.asset_id,
+    order?.raw?.condition_id,
+    order?.raw?.conditionId,
+    order?.raw?.token_id,
+    order?.raw?.tokenId,
+    order?.raw?.market?.condition_id,
+    order?.raw?.market?.conditionId,
+  ]
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue
+    const trimmed = candidate.trim()
+    if (trimmed) return trimmed
+  }
+  return null
+}
+
+function resolveOrderMarketId(order: any): string {
+  const normalized = deriveConditionIdFromCandidates([
+    order?.market_id,
+    order?.market,
+    order?.asset_id,
+    order?.condition_id,
+    order?.conditionId,
+    order?.raw?.market_id,
+    order?.raw?.market,
+    order?.raw?.asset_id,
+    order?.raw?.condition_id,
+    order?.raw?.conditionId,
+    order?.raw?.token_id,
+    order?.raw?.tokenId,
+    order?.raw?.market?.condition_id,
+    order?.raw?.market?.conditionId,
+  ])
+  if (normalized) return normalized
+  return extractRawMarketId(order) ?? ''
+}
+
+function deriveConditionIdFromCandidates(candidates: Array<string | null | undefined>): string | null {
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue
+    const trimmed = candidate.trim()
+    const normalized = normalizeConditionId(trimmed)
+    if (normalized) return normalized
+  }
+  return null
+}
+
+function normalizeConditionId(value: string): string | null {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (trimmed.startsWith('0x')) {
+    if (trimmed.length >= 66) {
+      return trimmed.slice(0, 66).toLowerCase()
+    }
+    return null
+  }
+  if (!/^\d+$/.test(trimmed)) return null
+  try {
+    const numeric = BigInt(trimmed)
+    if (numeric < 0n) return null
+    const hex = numeric.toString(16).padStart(64, '0')
+    return `0x${hex}`
+  } catch {
+    return null
+  }
+}
+
 type CopiedTraderDetails = {
   id?: string | null
   username: string | null
@@ -958,6 +1035,13 @@ function getMarketTitle(
   if (metadata?.question) return metadata.question
   const cachedTitle = cache?.title
   if (cachedTitle) return cachedTitle
+  const cachedMetadataTitle =
+    (typeof cache?.metadata?.question === 'string' && cache.metadata.question.trim()) ||
+    (typeof cache?.metadata?.market_title === 'string' && cache.metadata.market_title.trim()) ||
+    (typeof cache?.metadata?.title === 'string' && cache.metadata.title.trim()) ||
+    (typeof cache?.metadata?.name === 'string' && cache.metadata.name.trim()) ||
+    null
+  if (cachedMetadataTitle) return cachedMetadataTitle
 
   // Get raw market data from order
   const rawMarket = order.raw?.market ?? order.raw
@@ -1001,7 +1085,7 @@ function getMarketTitle(
   const isValidMarketTitle = copiedMarketTitle && 
     !isWalletAddress &&
     !isTraderName &&
-    copiedMarketTitle.length > 10
+    copiedMarketTitle.length > 3
 
   if (isValidMarketTitle) {
     return copiedMarketTitle
@@ -1010,10 +1094,10 @@ function getMarketTitle(
   // Check if marketId is a hex address - if so, return a fallback message
   const isHexAddress = marketId && (marketId.startsWith('0x') || /^[a-f0-9]{40,}$/i.test(marketId))
   if (isHexAddress) {
-    return 'Market details unavailable'
+    return 'Unknown Market'
   }
 
-  return (rawMarket?.market ?? marketId) || 'unknown market'
+  return (rawMarket?.market ?? marketId) || 'Unknown Market'
 }
 
 function deriveMarketOpenStatus(cache?: MarketCacheRow, rawOrder?: any, metadata?: MarketMetadata) {
@@ -1196,9 +1280,13 @@ async function fetchWithTimeout(url: string, timeoutMs = MARKET_METADATA_REQUEST
 
 async function fetchMarketMetadataFromClob(conditionIds: string[]) {
   const metadataMap: Record<string, MarketMetadata> = {}
-  const uniqueIds = Array.from(
-    new Set(conditionIds.filter(Boolean))
-  ).filter((id) => typeof id === 'string' && id.startsWith('0x'))
+  const uniqueIds = Array.from(new Set(conditionIds.filter(Boolean)))
+    .map((id) =>
+      typeof id === 'string' && id.startsWith('0x') && id.length >= 66
+        ? id.slice(0, 66).toLowerCase()
+        : id
+    )
+    .filter((id) => typeof id === 'string' && id.startsWith('0x'))
 
   const limitedIds = uniqueIds.slice(0, MARKET_METADATA_FETCH_LIMIT)
 

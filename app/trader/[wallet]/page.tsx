@@ -533,12 +533,12 @@ export default function TraderProfilePage({
     
     // Define buckets based on the data
     const buckets = [
-      { min: 0, max: 100, label: '$0-$100' },
-      { min: 100, max: 500, label: '$100-$500' },
-      { min: 500, max: 1000, label: '$500-$1K' },
-      { min: 1000, max: 5000, label: '$1K-$5K' },
-      { min: 5000, max: 10000, label: '$5K-$10K' },
-      { min: 10000, max: Infinity, label: '$10K+' },
+      { min: 0, max: 10, label: '0-9' },
+      { min: 10, max: 50, label: '10-49' },
+      { min: 50, max: 100, label: '50-99' },
+      { min: 100, max: 250, label: '100-249' },
+      { min: 250, max: 499, label: '250-499' },
+      { min: 499, max: Infinity, label: '499+' },
     ];
     
     const bucketCounts = buckets.map(bucket => ({
@@ -553,12 +553,9 @@ export default function TraderProfilePage({
       bucket.percentage = (bucket.count / totalTradesForBuckets) * 100;
     });
     
-    // Filter out empty buckets
-    const nonEmptyBuckets = bucketCounts.filter(b => b.count > 0);
-    
-    console.log('✅ Position size buckets:', nonEmptyBuckets);
+    console.log('✅ Position size buckets:', bucketCounts);
 
-    setPositionSizeBuckets(nonEmptyBuckets);
+    setPositionSizeBuckets(bucketCounts);
 
     // Calculate Category Distribution
     const categoryMap: { [key: string]: number } = {};
@@ -1732,7 +1729,7 @@ export default function TraderProfilePage({
                   
                   {/* Chart area */}
                   <div className="ml-12 h-full border-l border-b border-slate-200 relative">
-                    <svg className="w-full h-full" viewBox="0 0 600 200" preserveAspectRatio="xMidYMid meet">
+                    <svg className="w-full h-full" viewBox="0 0 600 200" preserveAspectRatio="none">
                         {/* Bar chart */}
                         {positionSizeBuckets.map((bucket, i) => {
                           const maxCount = Math.max(...positionSizeBuckets.map(b => b.count), 1);
@@ -1779,16 +1776,12 @@ export default function TraderProfilePage({
 
                     
                     {/* X-axis labels */}
-                    <div className="absolute -bottom-6 left-0 right-0 flex text-xs text-slate-500">
+                    <div
+                      className="absolute -bottom-6 left-0 right-0 grid text-xs text-slate-500"
+                      style={{ gridTemplateColumns: `repeat(${positionSizeBuckets.length}, minmax(0, 1fr))` }}
+                    >
                       {positionSizeBuckets.map((bucket, i) => (
-                        <span 
-                          key={i} 
-                          className="text-center" 
-                          style={{ 
-                            width: `${100 / positionSizeBuckets.length}%`,
-                            display: 'inline-block'
-                          }}
-                        >
+                        <span key={i} className="text-center">
                           {bucket.range}
                         </span>
                       ))}

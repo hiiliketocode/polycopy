@@ -118,7 +118,7 @@ export default function FeedPage() {
     score?: string;
     gameStartTime?: string;
     eventStatus?: string;
-    closed?: boolean;
+    resolved?: boolean;
     updatedAt?: number;
   }>>(new Map());
 
@@ -323,7 +323,7 @@ export default function FeedPage() {
       score?: string;
       gameStartTime?: string;
       eventStatus?: string;
-      closed?: boolean;
+      resolved?: boolean;
       updatedAt?: number;
     }>();
     
@@ -360,7 +360,8 @@ export default function FeedPage() {
                   score: liveScore,
                   homeTeam,
                   awayTeam,
-                  closed 
+                  closed,
+                  resolved
                 } = priceData.market;
                 
                 console.log(`✅ Got data for ${trade.market.title.slice(0, 40)}... | Status: ${eventStatus} | Score:`, liveScore);
@@ -478,7 +479,7 @@ export default function FeedPage() {
                       const away = liveScore.away ?? liveScore.awayScore ?? 0;
                       scoreDisplay = `${outcomes[0]} ${home} - ${away} ${outcomes[1]}`;
                       console.log(`🏀 Polymarket score: ${scoreDisplay}`);
-                    } else if (closed || eventStatus === 'finished' || eventStatus === 'final') {
+                    } else if (eventStatus === 'finished' || eventStatus === 'final') {
                       // Game finished
                       scoreDisplay = '🏁 Final';
                     } else if (eventStatus === 'live' || eventStatus === 'in_progress') {
@@ -518,13 +519,17 @@ export default function FeedPage() {
                     console.log(`📊 Binary market: ${scoreDisplay}`);
                   }
                   
-                  // Mark market as closed if ESPN says game is final OR if Polymarket says it's closed
-                  const isMarketClosed = Boolean(closed) || 
-                                        espnScore?.status === 'final' ||
-                                        eventStatus === 'finished' || 
-                                        eventStatus === 'final';
-                  
-                  console.log(`🔒 Market closed status for ${trade.market.title.slice(0, 40)}... | closed=${closed} | espnStatus=${espnScore?.status} | eventStatus=${eventStatus} | final isMarketClosed=${isMarketClosed}`);
+                  const priceSamples = numericPrices.filter(Number.isFinite);
+                  const maxPrice = priceSamples.length > 0 ? Math.max(...priceSamples) : null;
+                  const minPrice = priceSamples.length > 0 ? Math.min(...priceSamples) : null;
+                  const isMarketResolved =
+                    typeof resolved === 'boolean'
+                      ? resolved
+                      : maxPrice !== null && minPrice !== null && maxPrice >= 0.99 && minPrice <= 0.01;
+
+                  console.log(
+                    `🔒 Market resolved status for ${trade.market.title.slice(0, 40)}... | closed=${closed} | apiResolved=${resolved} | max=${maxPrice} | min=${minPrice} | resolved=${isMarketResolved}`
+                  );
                   
                   newLiveData.set(conditionId, { 
                     outcomes: outcomes || [],
@@ -532,7 +537,7 @@ export default function FeedPage() {
                     score: scoreDisplay,
                     gameStartTime: gameStartTime || undefined,
                     eventStatus: eventStatus || undefined,
-                    closed: isMarketClosed,
+                    resolved: isMarketResolved,
                     updatedAt: Date.now(),
                   });
                 }
@@ -1203,7 +1208,7 @@ export default function FeedPage() {
                     marketSlug={trade.market.slug}
                     currentMarketPrice={currentPrice}
                     currentMarketUpdatedAt={liveMarket?.updatedAt}
-                    marketIsOpen={liveMarket?.closed === undefined ? undefined : !liveMarket.closed}
+                    marketIsOpen={liveMarket?.resolved === undefined ? undefined : !liveMarket.resolved}
                     liveScore={liveMarket?.score}
                     category={trade.market.category}
                     polymarketUrl={

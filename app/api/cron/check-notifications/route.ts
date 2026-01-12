@@ -152,7 +152,6 @@ export async function GET(request: NextRequest) {
         market_id,
         outcome,
         price_when_copied,
-        amount_invested,
         entry_price,
         invested_usd,
         trader_still_has_position,
@@ -160,7 +159,6 @@ export async function GET(request: NextRequest) {
         current_price,
         market_resolved,
         market_resolved_at,
-        roi,
         notification_closed_sent,
         notification_resolved_sent,
         last_checked_at,
@@ -616,7 +614,7 @@ export async function GET(request: NextRequest) {
       market_title: trade.copied_market_title || '',
       copied_at: trade.created_at,
       entry_price: trade.entry_price ?? trade.price_when_copied ?? null,
-      invested_usd: trade.invested_usd ?? trade.amount_invested ?? null,
+      invested_usd: trade.invested_usd ?? null,
     }))
 
     if (normalizedTrades.length === 0) {
@@ -821,7 +819,7 @@ export async function GET(request: NextRequest) {
                 userPosition: trade.outcome,
                 userEntryPrice: trade.entry_price ?? trade.price_when_copied,
                 userROI: statusData.roi || 0,
-                betAmount: trade.invested_usd ?? trade.amount_invested,
+                betAmount: trade.invested_usd ?? 0,
                 didUserWin,
                 tradeUrl: `${appUrl}/profile`,
                 unsubscribeUrl: `${appUrl}/profile`
