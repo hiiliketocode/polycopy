@@ -6,6 +6,7 @@ import { TURNKEY_ENABLED } from '@/lib/turnkey/config'
 import { ApiKeyStamper } from '@turnkey/api-key-stamper'
 import { TurnkeyClient } from '@turnkey/http'
 import { createClient as createSupabaseAdminClient, createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { logInfo, logError } from '@/lib/logging/logger'
 
 // Security: Reject any request containing raw private key patterns
 const RAW_KEY_PATTERNS = [
@@ -173,7 +174,8 @@ export async function GET() {
  * - Uses org API key auth to import to Turnkey
  */
 export async function POST(request: NextRequest) {
-  console.log('[TURNKEY-IMPORT-API] Import request received')
+  // SECURITY: Using secure logger - no sensitive data logged
+  logInfo('turnkey_import_request', { endpoint: 'import-private-key' })
 
   if (!TURNKEY_ENABLED) {
     return NextResponse.json(
@@ -184,10 +186,10 @@ export async function POST(request: NextRequest) {
 
   // Step 1: Validate TURNKEY_IMPORT_USER_ID is set (deterministic env check)
   const importUserIdPresent = !!TURNKEY_IMPORT_USER_ID
-  console.log('[TURNKEY-ENV] importUserIdPresent=' + importUserIdPresent)
+  logInfo('turnkey_env_check', { import_user_id_present: importUserIdPresent })
   
   if (!importUserIdPresent) {
-    console.error('[TURNKEY-IMPORT-API] TURNKEY_IMPORT_USER_ID is not defined')
+    logError('turnkey_import_config_missing', { missing_var: 'TURNKEY_IMPORT_USER_ID' })
     return NextResponse.json(
       { ok: false, error: 'TURNKEY_IMPORT_USER_ID missing' },
       { status: 500 }
@@ -200,7 +202,7 @@ export async function POST(request: NextRequest) {
   if (!TURNKEY_ORGANIZATION_ID) missingEnv.push('TURNKEY_ORGANIZATION_ID')
 
   if (missingEnv.length > 0) {
-    console.error('[TURNKEY-IMPORT-API] Missing env:', missingEnv.join(', '))
+    logError('turnkey_import_missing_env', { missing_vars: missingEnv })
     return NextResponse.json(
       { ok: false, error: 'Missing env: ' + missingEnv.join(', ') },
       { status: 500 }
@@ -263,7 +265,11 @@ export async function POST(request: NextRequest) {
 
     // Security check: reject requests containing raw private keys
     if (containsRawPrivateKey(body)) {
-      console.error('[TURNKEY-IMPORT-API] SECURITY ALERT: Request contains raw private key pattern')
+      // SECURITY ALERT: Attempted to send raw private key
+      logError('security_alert_raw_private_key', { 
+        user_id: userId,
+        pattern_detected: 'raw_key_pattern'
+      })
       return NextResponse.json(
         { error: 'Invalid request: raw private keys are not allowed' },
         { status: 400 }
@@ -312,7 +318,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('[TURNKEY-IMPORT-API] Importing encrypted bundle for user:', userId)
+    // SECURITY: Only log user ID, not bundle contents
+    logInfo('turnkey_import_start', { user_id: userId })
     // DO NOT log the encrypted bundle or any request body data
 
     // Idempotency: Check if already imported in DB before calling Turnkey
@@ -324,7 +331,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (existingWallet?.wallet_type === 'imported_magic') {
-      console.log('[TURNKEY-IMPORT-API] Wallet already imported (DB), returning existing')
+      logInfo('turnkey_wallet_already_exists', { user_id: userId })
       return NextResponse.json({
         ok: true,
         status: 'already_imported',
@@ -419,11 +426,15 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (upsertError) {
-      console.error('[TURNKEY-IMPORT-API] Failed to store wallet row:', upsertError)
+      logError('turnkey_wallet_store_failed', { 
+        user_id: userId,
+        error_code: upsertError.code,
+        error_message: upsertError.message 
+      })
       throw new StageError('db_upsert', upsertError.message || 'Failed to store wallet reference')
     }
 
-    console.log('[TURNKEY-IMPORT-API] Import successful and stored')
+    logInfo('turnkey_import_success', { user_id: userId, wallet_address: walletAddress })
 
     const alreadyImported = importStatus === 'already_imported'
 
@@ -437,7 +448,13 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     const stage = error?.stage || 'turnkey_import'
     const status = error?.status || 500
-    console.error(`[TURNKEY-IMPORT-API] Import error (${stage}):`, error.message || error)
+    // SECURITY: Log error without exposing sensitive details
+    logError('turnkey_import_failed', { 
+      stage,
+      error_type: error.name,
+      error_message: error.message,
+      user_id: userId 
+    })
     // DO NOT log error.stack as it might contain sensitive data
     return NextResponse.json(
       { error: error.message || 'Failed to import private key', stage },

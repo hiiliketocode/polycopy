@@ -26,7 +26,8 @@ export async function GET(request: Request) {
           const outcomes = market.tokens.map((t: any) => t.outcome);
           const prices = market.tokens.map((t: any) => t.price.toString());
           
-          console.log(`[Price API] Outcomes: ${JSON.stringify(outcomes)}, Prices: ${JSON.stringify(prices)}`);
+          // Market prices are public data - safe to log summary
+          console.log(`[Price API] Fetched ${prices?.length || 0} prices for ${outcomes?.length || 0} outcomes`);
           
           const resolved =
             typeof market.resolved === 'boolean'

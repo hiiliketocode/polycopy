@@ -85,7 +85,8 @@ export async function GET(request: Request) {
     console.log('✅ Leaderboard data fetched:', data?.length || 0, 'traders');
     
     // Log raw sample to see exact structure
-    console.log('📦 Raw leaderboard sample:', JSON.stringify(data?.slice(0, 2), null, 2));
+    // SECURITY: Removed full data logging (contains user trading data)
+    // Use logInfo for safe logging instead
 
     // Check if data is an array
     if (!Array.isArray(data)) {

@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import Stripe from 'stripe'
+import { logInfo, logError } from '@/lib/logging/logger'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-11-17.clover',
@@ -23,8 +24,8 @@ function createServiceClient() {
 }
 
 export async function POST(request: NextRequest) {
-  console.log('=== Stripe Checkout Debug ===')
-  console.log('🔍 POST /api/stripe/checkout called')
+  // SECURITY: Using secure logger
+  logInfo('stripe_checkout_start', { endpoint: '/api/stripe/checkout' })
   
   try {
     // Debug: Log available cookies
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    console.log('✅ User authenticated:', user.id)
+    logInfo('stripe_checkout_authenticated', { user_id: user.id })
     
     // Use service role client for database operations
     const supabase = createServiceClient()
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (profileError) {
-      console.error('❌ Error fetching profile:', profileError)
+      logError('profile_fetch_failed', { user_id: user.id, error_code: profileError.code })
     }
 
     console.log('Profile data:', { exists: !!profile, hasCustomerId: !!profile?.stripe_customer_id })
@@ -155,8 +156,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url: session.url })
   } catch (error: any) {
-    console.error('❌ Stripe checkout error:', error)
-    console.error('Error details:', error.message, error.stack)
+    logError('stripe_checkout_failed', { 
+      error_type: error.name,
+      error_message: error.message,
+      user_id: user?.id 
+    })
     return NextResponse.json({ 
       error: 'Failed to create checkout session',
       details: error.message 

@@ -55,7 +55,7 @@ export async function GET(
       
       if (leaderboardResponse.ok) {
         const leaderboardData = await leaderboardResponse.json();
-        console.log('✅ V1 Leaderboard response:', JSON.stringify(leaderboardData, null, 2));
+        // SECURITY: Removed full response logging (contains trading data)
         
         // API returns array - get first result
         const trader = Array.isArray(leaderboardData) && leaderboardData.length > 0 ? leaderboardData[0] : null;
@@ -63,14 +63,8 @@ export async function GET(
         if (trader) {
           foundInLeaderboard = true;
           
-          // Log raw trader object to verify field names
-          console.log('🔍 Raw V1 trader data:', JSON.stringify({
-            userName: trader.userName,
-            proxyWallet: trader.proxyWallet,
-            pnl: trader.pnl,
-            vol: trader.vol,
-            rank: trader.rank
-          }));
+          // SECURITY: Log only non-sensitive summary
+          console.log('🔍 V1 trader data loaded:', trader.userName || 'unknown')
           
           // Map V1 API response fields (CORRECT mapping):
           // - userName (not username!)

@@ -1160,7 +1160,8 @@ export function TradeCard({
         return
       }
 
-      console.log('Response data:', JSON.parse(JSON.stringify(data)))
+      // SECURITY: Removed - do not log full API response (may contain secrets)
+      // Use browser DevTools Network tab for debugging instead
 
       if (!response.ok) {
         const errorInfo = resolveTradeErrorInfo(

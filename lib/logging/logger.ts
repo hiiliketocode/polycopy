@@ -1,11 +1,50 @@
 import { randomUUID } from 'crypto'
 
 const SENSITIVE_KEYS = new Set([
+  // Authentication & Authorization
   'signature',
   'privatekey',
+  'private_key',
   'token',
   'authorization',
   'cookie',
+  'session',
+  'bearer',
+  
+  // API Keys & Secrets
+  'apikey',
+  'api_key',
+  'secret',
+  'passphrase',
+  'password',
+  'pwd',
+  'key',
+  
+  // Credentials
+  'credential',
+  'credentials',
+  'auth',
+  'access_token',
+  'refresh_token',
+  'id_token',
+  
+  // Wallet & Crypto
+  'mnemonic',
+  'seed',
+  'seedphrase',
+  'wallet',
+  'address', // Be cautious - might be too broad
+  
+  // Payment
+  'card',
+  'cvv',
+  'ssn',
+  'stripe',
+  
+  // Encryption
+  'encrypted',
+  'cipher',
+  'iv',
 ])
 const MAX_STRING_LENGTH = 500
 const MAX_ARRAY_ITEMS = 10
