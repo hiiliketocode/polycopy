@@ -522,10 +522,15 @@ export default function FeedPage() {
                   const priceSamples = numericPrices.filter(Number.isFinite);
                   const maxPrice = priceSamples.length > 0 ? Math.max(...priceSamples) : null;
                   const minPrice = priceSamples.length > 0 ? Math.min(...priceSamples) : null;
+                  
+                  // Market is resolved ONLY if:
+                  // 1. API explicitly says it's resolved, OR
+                  // 2. Market is closed AND prices are at extremes (>=99.5%/<=0.5%)
+                  // This prevents false positives from heavy favorites (e.g., 99%/1% markets that are still live)
                   const isMarketResolved =
-                    typeof resolved === 'boolean'
-                      ? resolved
-                      : maxPrice !== null && minPrice !== null && maxPrice >= 0.99 && minPrice <= 0.01;
+                    typeof resolved === 'boolean' && resolved === true
+                      ? true
+                      : closed === true && maxPrice !== null && minPrice !== null && maxPrice >= 0.995 && minPrice <= 0.005;
 
                   console.log(
                     `🔒 Market resolved status for ${trade.market.title.slice(0, 40)}... | closed=${closed} | apiResolved=${resolved} | max=${maxPrice} | min=${minPrice} | resolved=${isMarketResolved}`

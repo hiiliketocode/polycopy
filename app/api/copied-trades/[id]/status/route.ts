@@ -332,7 +332,8 @@ export async function GET(
             
             // Method 3: Check if prices show clear resolution
             // A truly resolved market has one outcome at ~$1.00 and others at ~$0.00
-            if (!isActuallyResolved) {
+            // IMPORTANT: Only check prices if market is closed to avoid false positives from heavy favorites
+            if (!isActuallyResolved && market.closed === true) {
               try {
                 let outcomes = market.outcomes
                 let prices = market.outcomePrices
@@ -351,9 +352,10 @@ export async function GET(
                   const minPrice = Math.min(...priceNumbers)
                   
                   // Market is resolved ONLY if:
-                  // - One outcome is at 99%+ ($0.99+) AND another is at 1% or less ($0.01-)
-                  // This ensures we only catch truly resolved markets, not just heavy favorites
-                  if (maxPrice >= 0.99 && minPrice <= 0.01) {
+                  // - Market is closed AND
+                  // - One outcome is at 99.5%+ ($0.995+) AND another is at 0.5% or less ($0.005-)
+                  // This prevents false positives from heavy favorites that are still live
+                  if (maxPrice >= 0.995 && minPrice <= 0.005) {
                     isActuallyResolved = true
                     const winningIndex = priceNumbers.indexOf(maxPrice)
                     if (winningIndex >= 0 && winningIndex < outcomes.length) {
@@ -361,8 +363,9 @@ export async function GET(
                     }
                     
                     // Log resolution detection
-                    console.log('✅ Market resolved detected:', {
+                    console.log('✅ Market resolved detected (closed + extreme prices):', {
                       marketId: trade.market_id?.substring(0, 10),
+                      closed: market.closed,
                       maxPrice,
                       minPrice,
                       resolvedOutcome
