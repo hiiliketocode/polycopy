@@ -132,6 +132,9 @@ export default function TraderProfilePage({
   const [hoveredBucket, setHoveredBucket] = useState<{ range: string; count: number; percentage: number; x: number; y: number } | null>(null);
   const [computedStats, setComputedStats] = useState<TraderComputedStats | null>(null);
   
+  // Copy wallet address state
+  const [walletCopied, setWalletCopied] = useState(false);
+  
   // Live market data for trade cards
   const [liveMarketData, setLiveMarketData] = useState<Map<string, { 
     price: number; 
@@ -1000,9 +1003,26 @@ export default function TraderProfilePage({
 
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl font-bold text-slate-900 mb-1">{traderData.displayName}</h1>
-              <p className="text-sm font-mono text-slate-500 mb-3">
-                {wallet.slice(0, 6)}...{wallet.slice(-4)}
-              </p>
+              <div className="flex items-center gap-2 mb-3">
+                <p className="text-sm font-mono text-slate-500">
+                  {wallet.slice(0, 6)}...{wallet.slice(-4)}
+                </p>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(wallet);
+                    setWalletCopied(true);
+                    setTimeout(() => setWalletCopied(false), 2000);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                  title={walletCopied ? "Copied!" : "Copy wallet address"}
+                >
+                  {walletCopied ? (
+                    <Check className="h-3.5 w-3.5 text-green-600" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
 
               <a
                 href={`https://polymarket.com/profile/${wallet}`}

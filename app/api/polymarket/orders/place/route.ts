@@ -11,7 +11,7 @@ import { getBodySnippet } from '@/lib/polymarket/order-route-helpers'
 import { sanitizeError } from '@/lib/http/sanitize-error'
 import { logError, logInfo, makeRequestId, sanitizeForLogging } from '@/lib/logging/logger'
 import { resolveOrdersTableName } from '@/lib/orders/table'
-import { adjustSizeForImpliedAmount, roundDownToStep } from '@/lib/polymarket/sizing'
+import { adjustSizeForImpliedAmount, adjustSizeForImpliedAmountAtLeast, roundDownToStep } from '@/lib/polymarket/sizing'
 import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
 import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit/index'
 import {
@@ -54,6 +54,7 @@ type Body = {
   bestBid?: number | string
   bestAsk?: number | string
   minOrderSize?: number
+  isClosingFullPosition?: boolean
 }
 
 function respondWithMetadata(body: Record<string, unknown>, status: number) {
@@ -395,6 +396,7 @@ export async function POST(request: NextRequest) {
     bestBid,
     bestAsk,
     minOrderSize,
+    isClosingFullPosition,
   } = body
 
   // SECURITY: Input validation - prevents injection attacks and invalid data
@@ -534,9 +536,22 @@ export async function POST(request: NextRequest) {
       normalizedPrice ? roundDownToStep(normalizedPrice, effectiveTickSize) : normalizedPrice
     const roundedAmount =
       normalizedAmount && normalizedAmount > 0 ? roundDownToStep(normalizedAmount, 0.01) : null
+    
+    // Smart rounding logic:
+    // 1. When CLOSING a full position → Round UP to ensure 100% closure
+    // 2. When user inputs USD amount → Round UP to ensure they get their full investment
+    // 3. When user inputs contracts → Round DOWN to avoid over-buying
+    const shouldRoundUp = 
+      isClosingFullPosition ||                    // Closing full position
+      (resolvedInputMode === 'usd' && validatedSide === 'BUY')  // Buying with USD input
+    
+    const adjustmentFunction = shouldRoundUp
+      ? adjustSizeForImpliedAmountAtLeast  // Round UP
+      : adjustSizeForImpliedAmount         // Round DOWN
+    
     const adjustedAmount =
       roundedPrice && roundedAmount
-        ? adjustSizeForImpliedAmount(roundedPrice, roundedAmount, effectiveTickSize, 2, 2)
+        ? adjustmentFunction(roundedPrice, roundedAmount, effectiveTickSize, 2, 2)
         : roundedAmount
     console.log('[POLY-ORDER-PLACE] CLOB order', {
       requestId,
@@ -549,6 +564,12 @@ export async function POST(request: NextRequest) {
       roundedPrice,
       roundedAmount,
       adjustedAmount,
+      inputMode: resolvedInputMode,
+      isClosingFullPosition,
+      shouldRoundUp,
+      roundingMethod: shouldRoundUp 
+        ? `ROUND_UP (${isClosingFullPosition ? 'full close' : 'USD input'})` 
+        : 'ROUND_DOWN (normal)',
     })
 
     if (!roundedPrice || !roundedAmount || !adjustedAmount) {

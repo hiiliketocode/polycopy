@@ -1215,12 +1215,14 @@ function ProfilePageContent() {
     price,
     slippagePercent,
     orderType,
+    isClosingFullPosition,
   }: {
     tokenId: string;
     amount: number;
     price: number;
     slippagePercent: number;
     orderType: 'FAK' | 'GTC';
+    isClosingFullPosition?: boolean;
   }) => {
     const positionSide = closeTarget?.position.side;
     const sideForClose: 'BUY' | 'SELL' = positionSide === 'SELL' ? 'BUY' : 'SELL';
@@ -1240,6 +1242,7 @@ function ProfilePageContent() {
         tokenId,
         amount,
         price,
+        isClosingFullPosition, // Pass flag to API
         side: sideForClose,
         orderType,
         confirm: true,

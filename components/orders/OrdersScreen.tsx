@@ -409,12 +409,14 @@ export function OrdersScreen({
       price,
       slippagePercent,
       orderType,
+      isClosingFullPosition,
     }: {
       tokenId: string
       amount: number
       price: number
       slippagePercent: number
       orderType: 'FAK' | 'GTC'
+      isClosingFullPosition?: boolean
     }) => {
       const positionSide = closeTarget?.position.side
       const sideForClose: 'BUY' | 'SELL' =
@@ -438,6 +440,7 @@ export function OrdersScreen({
           side: sideForClose,
           orderType,
           confirm: true,
+          isClosingFullPosition, // Pass flag to API
         }
         const response = await fetch('/api/polymarket/orders/place', {
           method: 'POST',

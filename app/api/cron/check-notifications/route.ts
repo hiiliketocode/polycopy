@@ -11,6 +11,7 @@ import { requireEvomiProxyAgent } from '@/lib/evomi/proxy'
 import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
 import { fetchOrderWithClient } from '@/lib/polymarket/clobClient'
 import { makeRequestId } from '@/lib/logging/logger'
+import { adjustSizeForImpliedAmountAtLeast, roundDownToStep } from '@/lib/polymarket/sizing'
 
 // Create service role client
 const supabase = createClient(
@@ -304,7 +305,7 @@ export async function GET(request: NextRequest) {
       }
 
       const closeSizeRaw = Number(positionSize) * (reductionFraction ?? 0)
-      const closeSize = Number.isFinite(closeSizeRaw) ? Math.min(closeSizeRaw, positionSize) : 0
+      let closeSize = Number.isFinite(closeSizeRaw) ? Math.min(closeSizeRaw, positionSize) : 0
       if (!Number.isFinite(closeSize) || closeSize <= 0) {
         await updateTraderPositionSize(currentTraderPositionSize)
         return
@@ -317,6 +318,27 @@ export async function GET(request: NextRequest) {
       if (!tokenId || !price || price <= 0) {
         console.warn(`⚠️ Auto-close skipped: missing price/token for market ${order.market_id}`)
         return
+      }
+      
+      // Detect if auto-close is closing the full position (within 0.1% tolerance)
+      // When closing full position, round UP to ensure 100% closure and avoid leaving dust
+      const isClosingFullPosition = closeSize >= positionSize * 0.999
+      
+      // Round down the base size to 2 decimals first
+      const roundedCloseSize = roundDownToStep(closeSize, 0.01)
+      
+      // Apply smart rounding based on whether this is a full position close
+      if (isClosingFullPosition && price > 0 && tickSize) {
+        // Round UP for full position closes to ensure 100% closure
+        const adjustedSize = adjustSizeForImpliedAmountAtLeast(price, roundedCloseSize, tickSize, 2, 2)
+        if (adjustedSize && adjustedSize > 0) {
+          closeSize = adjustedSize
+          console.log(`✅ Auto-close: Rounding UP for full position close (${roundedCloseSize} → ${closeSize})`)
+        } else {
+          closeSize = roundedCloseSize
+        }
+      } else {
+        closeSize = roundedCloseSize
       }
 
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'
@@ -504,7 +526,13 @@ export async function GET(request: NextRequest) {
           error_message: null,
           raw_error: null,
         })
-        console.log(`✅ Auto-close submitted for order ${order.order_id}: ${evaluation.orderId}`)
+        console.log(`✅ Auto-close submitted for order ${order.order_id}: ${evaluation.orderId}`, {
+          size: closeSize,
+          price: limitPrice,
+          isClosingFullPosition,
+          positionSize,
+          roundingMethod: isClosingFullPosition ? 'ROUND_UP (full close)' : 'ROUND_DOWN (normal)',
+        })
 
         const autoCloseOrderId = evaluation.orderId
         let filledSize = closeSize

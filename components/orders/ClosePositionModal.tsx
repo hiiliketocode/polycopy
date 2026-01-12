@@ -33,6 +33,7 @@ type ClosePositionModalProps = {
     price: number
     slippagePercent: number
     orderType: 'FAK' | 'GTC'
+    isClosingFullPosition?: boolean
   }) => void
 }
 
@@ -475,12 +476,17 @@ export default function ClosePositionModal({
 
   const handleConfirm = () => {
     if (!amountValid || effectivePriceForSubmit === null || !position.tokenId) return
+    
+    // Detect if user is trying to close the full position (within 0.1% tolerance)
+    const isClosingFullPosition = contractsValue >= position.size * 0.999
+    
     onSubmit({
       tokenId: position.tokenId,
       amount: contractsValue,
       price: effectivePriceForSubmit,
       slippagePercent: normalizedSlippage,
       orderType,
+      isClosingFullPosition, // Pass this flag to the API
     })
   }
 
