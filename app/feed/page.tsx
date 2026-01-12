@@ -864,7 +864,7 @@ export default function FeedPage() {
   };
 
   // Filter trades to only show BUY trades AND by category
-  const filteredAllTrades = allTrades.filter(trade => {
+  const filteredAllTrades = useMemo(() => allTrades.filter(trade => {
     // Only show BUY trades
     if (trade.trade.side !== 'BUY') return false;
     
@@ -876,9 +876,12 @@ export default function FeedPage() {
     }
     
     return true;
-  });
+  }), [allTrades, activeCategory]);
   
-  const displayedTrades = filteredAllTrades.slice(0, displayedTradesCount);
+  const displayedTrades = useMemo(
+    () => filteredAllTrades.slice(0, displayedTradesCount),
+    [filteredAllTrades, displayedTradesCount]
+  );
   const hasMoreTrades = filteredAllTrades.length > displayedTradesCount;
 
   const refreshDisplayedMarketData = useCallback(() => {
