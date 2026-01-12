@@ -515,9 +515,7 @@ export async function GET(request: NextRequest) {
         console.log(`✅ Auto-close submitted for order ${order.order_id}: ${evaluation.orderId}`, {
           size: closeSize,
           price: limitPrice,
-          isClosingFullPosition,
-          positionSize,
-          roundingMethod: isClosingFullPosition ? 'ROUND_UP (full close)' : 'ROUND_DOWN (normal)',
+          roundingMethod: 'NO_ADJUSTMENT (exact size)',
         })
 
         const autoCloseOrderId = evaluation.orderId
