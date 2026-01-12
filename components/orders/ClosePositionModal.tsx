@@ -108,6 +108,7 @@ const STATUS_SIMPLE_LABELS: Record<StatusPhase, string> = {
   canceled: 'Canceled on Polymarket',
   expired: 'Expired on Polymarket',
   rejected: 'Rejected by Polymarket',
+  timed_out: 'Failed to match on Polymarket',
   unknown: 'Polymarket status unknown',
 }
 
