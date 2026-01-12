@@ -538,21 +538,20 @@ export async function POST(request: NextRequest) {
       normalizedAmount && normalizedAmount > 0 ? roundDownToStep(normalizedAmount, 0.01) : null
     
     // Smart rounding logic:
-    // 1. When CLOSING a full position → Round UP to ensure 100% closure
-    // 2. When user inputs USD amount → Round UP to ensure they get their full investment
-    // 3. When user inputs contracts → Round DOWN to avoid over-buying
-    const shouldRoundUp = 
-      isClosingFullPosition ||                    // Closing full position
-      (resolvedInputMode === 'usd' && validatedSide === 'BUY')  // Buying with USD input
+    // 1. When SELLING → Skip adjustment to avoid "not enough balance" errors
+    // 2. When user inputs USD amount for BUY → Round UP to ensure they get their full investment
+    // 3. Otherwise → Round DOWN for safety
+    const shouldRoundUp = resolvedInputMode === 'usd' && validatedSide === 'BUY'
+    const shouldSkipAdjustment = validatedSide === 'SELL'  // Never adjust SELL orders
     
     const adjustmentFunction = shouldRoundUp
       ? adjustSizeForImpliedAmountAtLeast  // Round UP
       : adjustSizeForImpliedAmount         // Round DOWN
     
     const adjustedAmount =
-      roundedPrice && roundedAmount
-        ? adjustmentFunction(roundedPrice, roundedAmount, effectiveTickSize, 2, 2)
-        : roundedAmount
+      shouldSkipAdjustment || !roundedPrice || !roundedAmount
+        ? roundedAmount  // For SELL: use exact amount without adjustment
+        : adjustmentFunction(roundedPrice, roundedAmount, effectiveTickSize, 2, 2)
     console.log('[POLY-ORDER-PLACE] CLOB order', {
       requestId,
       upstreamHost,
@@ -567,9 +566,12 @@ export async function POST(request: NextRequest) {
       inputMode: resolvedInputMode,
       isClosingFullPosition,
       shouldRoundUp,
-      roundingMethod: shouldRoundUp 
-        ? `ROUND_UP (${isClosingFullPosition ? 'full close' : 'USD input'})` 
-        : 'ROUND_DOWN (normal)',
+      shouldSkipAdjustment,
+      roundingMethod: shouldSkipAdjustment
+        ? 'NO_ADJUSTMENT (SELL order)'
+        : shouldRoundUp 
+          ? 'ROUND_UP (USD input)' 
+          : 'ROUND_DOWN (normal)',
     })
 
     if (!roundedPrice || !roundedAmount || !adjustedAmount) {

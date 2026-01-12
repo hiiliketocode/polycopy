@@ -320,26 +320,12 @@ export async function GET(request: NextRequest) {
         return
       }
       
-      // Detect if auto-close is closing the full position (within 0.1% tolerance)
-      // When closing full position, round UP to ensure 100% closure and avoid leaving dust
-      const isClosingFullPosition = closeSize >= positionSize * 0.999
-      
-      // Round down the base size to 2 decimals first
-      const roundedCloseSize = roundDownToStep(closeSize, 0.01)
-      
-      // Apply smart rounding based on whether this is a full position close
-      if (isClosingFullPosition && price > 0 && tickSize) {
-        // Round UP for full position closes to ensure 100% closure
-        const adjustedSize = adjustSizeForImpliedAmountAtLeast(price, roundedCloseSize, tickSize, 2, 2)
-        if (adjustedSize && adjustedSize > 0) {
-          closeSize = adjustedSize
-          console.log(`✅ Auto-close: Rounding UP for full position close (${roundedCloseSize} → ${closeSize})`)
-        } else {
-          closeSize = roundedCloseSize
-        }
-      } else {
-        closeSize = roundedCloseSize
-      }
+      // For auto-close, always use exact position size without adjustment
+      // Adjusting up could cause "not enough balance" errors
+      // Adjusting down leaves dust
+      // Solution: Use exact size and let Polymarket handle execution
+      closeSize = roundDownToStep(closeSize, 0.01)
+      console.log(`✅ Auto-close: Using exact position size (${closeSize} contracts)`)
 
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'
       const quickTradesUrl = `${appUrl}/profile?tab=manual-trades`
