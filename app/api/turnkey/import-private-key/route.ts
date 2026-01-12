@@ -434,7 +434,7 @@ export async function POST(request: NextRequest) {
       throw new StageError('db_upsert', upsertError.message || 'Failed to store wallet reference')
     }
 
-    logInfo('turnkey_import_success', { user_id: userId, wallet_address: walletAddress })
+    logInfo('turnkey_import_success', { user_id: userId, wallet_id: upsertedWallet.turnkey_private_key_id })
 
     const alreadyImported = importStatus === 'already_imported'
 
@@ -452,8 +452,7 @@ export async function POST(request: NextRequest) {
     logError('turnkey_import_failed', { 
       stage,
       error_type: error.name,
-      error_message: error.message,
-      user_id: userId 
+      error_message: error.message
     })
     // DO NOT log error.stack as it might contain sensitive data
     return NextResponse.json(

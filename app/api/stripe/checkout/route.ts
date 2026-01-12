@@ -158,8 +158,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     logError('stripe_checkout_failed', { 
       error_type: error.name,
-      error_message: error.message,
-      user_id: user?.id 
+      error_message: error.message
     })
     return NextResponse.json({ 
       error: 'Failed to create checkout session',

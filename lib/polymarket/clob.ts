@@ -73,7 +73,7 @@ export async function createOrDeriveApiCredentials(
 
     // SECURITY: Safe logging - no actual credentials logged
     console.log('[CLOB] API credentials obtained')
-    console.log('[CLOB] Has API key:', !!(creds as any).apiKey ?? !!creds.key)
+    console.log('[CLOB] Has API key:', !!((creds as any).apiKey || creds.key))
     console.log('[CLOB] Has secret:', !!creds.secret)
     console.log('[CLOB] Has passphrase:', !!creds.passphrase)
 
