@@ -2374,19 +2374,6 @@ function ProfilePageContent() {
                                 )}
                               </div>
                             )}
-
-                            {/* Quick Copy: Show Sell button */}
-                            {trade.type === 'quick' && trade.raw && (
-                              <div className="flex gap-2">
-                                <Button
-                                  onClick={handleQuickSell}
-                                  style={{ backgroundColor: '#EF4444' }}
-                                  className="flex-1 text-white hover:opacity-90 transition-opacity"
-                                >
-                                  Sell
-                                </Button>
-                              </div>
-                            )}
                           </div>
                         )}
                       </div>
