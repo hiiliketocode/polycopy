@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { badRequest, unauthorized, forbidden, databaseError } from '@/lib/http/error-response'
 
 // Create service role client that bypasses RLS
 function createServiceClient() {
@@ -64,8 +65,7 @@ export async function GET(request: NextRequest) {
     
     if (error && error.code !== 'PGRST116') {
       // PGRST116 = no rows returned, which is fine (user hasn't set preferences yet)
-      console.error('Error fetching notification preferences:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return databaseError(error, 'fetch notification preferences')
     }
     
     // Return preferences or defaults
@@ -137,8 +137,7 @@ export async function PUT(request: NextRequest) {
       .single()
     
     if (error) {
-      console.error('Error updating notification preferences:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return databaseError(error, 'update notification preferences')
     }
     
     return NextResponse.json(data)

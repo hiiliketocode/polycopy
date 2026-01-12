@@ -1,6 +1,7 @@
 // ESPN Sports Scores API Proxy
 // Fetches live scores for NFL, NBA, MLB, NHL games
 import { NextRequest, NextResponse } from 'next/server';
+import { badRequest, externalApiError } from '@/lib/http/error-response';
 
 interface ESPNGame {
   id: string;
@@ -132,11 +133,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error(`❌ ESPN API error for ${sport}:`, error.message);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to fetch ESPN scores' },
-      { status: 500 }
-    );
+    return externalApiError('ESPN', error, `fetch ${sport} scores`);
   }
 }
 

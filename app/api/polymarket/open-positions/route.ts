@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { badRequest, externalApiError } from '@/lib/http/error-response'
 
 const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/
 
@@ -35,8 +36,6 @@ export async function GET(request: Request) {
       open_positions: openPositions,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to fetch open positions'
-    console.error('[POLY-OPEN-POSITIONS] Error:', message)
-    return NextResponse.json({ error: message }, { status: 500 })
+    return externalApiError('Polymarket', error, 'fetch open positions')
   }
 }

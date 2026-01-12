@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { unauthorized, internalError } from '@/lib/http/error-response';
 
 /**
  * SECURITY NOTE: This endpoint uses authenticated client (not service role).
@@ -73,10 +74,6 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Wallet disconnect error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
+    return internalError('Wallet disconnect failed', error);
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createAuthClient } from '@/lib/supabase/server';
 import { validateEthereumAddress } from '@/lib/validation/input';
+import { unauthorized, internalError } from '@/lib/http/error-response';
 
 /**
  * SECURITY NOTE: This endpoint previously used service role to bypass RLS.
@@ -83,10 +84,6 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Wallet import error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
+    return internalError('Wallet import failed', error);
   }
 }

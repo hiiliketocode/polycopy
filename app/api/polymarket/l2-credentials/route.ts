@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
 import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit/index'
+import { unauthorized, internalError } from '@/lib/http/error-response'
 import {
   TURNKEY_ENABLED,
   CLOB_ENCRYPTION_KEY,
@@ -507,11 +508,6 @@ export async function POST(request: NextRequest) {
       isExisting: false,
     })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error'
-    console.error('[POLY-CLOB] Error:', message)
-    return NextResponse.json(
-      { error: message || 'Failed to generate L2 credentials' },
-      { status: 500 }
-    )
+    return internalError('L2 credentials generation failed', error)
   }
 }

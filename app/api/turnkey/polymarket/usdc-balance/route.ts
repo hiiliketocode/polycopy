@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { POLYGON_RPC_URL, USDC_CONTRACT_ADDRESS, USDC_E_CONTRACT_ADDRESS, USDC_DECIMALS } from '@/lib/turnkey/config'
+import { badRequest, externalApiError } from '@/lib/http/error-response'
 
 /**
  * POST /api/turnkey/polymarket/usdc-balance
@@ -102,11 +103,7 @@ export async function POST(request: Request) {
       },
     })
   } catch (error: any) {
-    console.error('[POLYMARKET-LAB] Balance fetch error:', error.message)
-    return NextResponse.json(
-      { error: error.message || 'Failed to fetch USDC balance' },
-      { status: 500 }
-    )
+    return externalApiError('Polygon', error, 'USDC balance fetch')
   }
 }
 

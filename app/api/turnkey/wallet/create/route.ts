@@ -5,6 +5,7 @@ import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit/index'
 import { TURNKEY_ENABLED } from '@/lib/turnkey/config'
 import { getOrCreateWalletForUser } from '@/lib/turnkey/wallet-simple'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { externalApiError } from '@/lib/http/error-response'
 
 /**
  * POST /api/turnkey/wallet/create
@@ -65,10 +66,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result)
 
   } catch (error: any) {
-    console.error('[TURNKEY] Wallet creation error:', error.message)
-    return NextResponse.json(
-      { error: error.message || 'Failed to create wallet' },
-      { status: 500 }
-    )
+    return externalApiError('Turnkey', error, 'wallet creation')
   }
 }

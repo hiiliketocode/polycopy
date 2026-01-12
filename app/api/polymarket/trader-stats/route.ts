@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { badRequest, externalApiError } from '@/lib/http/error-response'
 
 // Helper function to validate Ethereum address
 function isValidEthereumAddress(address: string): boolean {
@@ -148,8 +149,7 @@ export async function GET(request: Request) {
     return NextResponse.json(stats);
 
   } catch (error: any) {
-    console.error('❌ Error fetching trader stats:', error);
-
+    // Check for timeout errors
     if (error.message === 'API request timeout') {
       return NextResponse.json(
         { error: 'Request timeout - Polymarket API is slow or unavailable' },
@@ -157,13 +157,7 @@ export async function GET(request: Request) {
       );
     }
 
-    return NextResponse.json(
-      {
-        error: 'Failed to fetch trader stats',
-        details: error.message || 'Unknown error'
-      },
-      { status: 500 }
-    );
+    return externalApiError('Polymarket', error, 'fetch trader stats');
   }
 }
 
