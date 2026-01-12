@@ -1285,7 +1285,7 @@ function ProfilePageContent() {
       const fetchQuickTrades = async () => {
         setLoadingQuickTrades(true);
         try {
-          const response = await fetch('/api/orders', { cache: 'no-store' });
+          const response = await fetch('/api/orders?refresh=true', { cache: 'no-store' });
           const data = await response.json();
           if (response.ok) {
             setQuickTrades(data.orders || []);
@@ -1297,6 +1297,15 @@ function ProfilePageContent() {
         }
       };
       await fetchQuickTrades();
+      try {
+        await fetch('/api/polymarket/orders/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+      } catch (err) {
+        console.error('Error refreshing orders status:', err);
+      }
       
       setToastMessage('Sell order placed successfully!');
       setShowToast(true);
@@ -1349,14 +1358,17 @@ function ProfilePageContent() {
     copiedTrade?: CopiedTrade; // For manual trades, keep the full CopiedTrade
   }
 
-  const convertOrderToUnifiedTrade = (order: OrderRow): UnifiedTrade => {
+  const convertOrderToUnifiedTrade = (
+    order: OrderRow,
+    statusOverride?: UnifiedTrade['status'] | null
+  ): UnifiedTrade => {
     const marketTitle = order.marketTitle || 'Unknown Market';
-    const outcome = order.side === 'BUY' ? 'YES' : 'NO';
+    const outcome = order.outcome || (order.side === 'BUY' ? 'YES' : 'NO');
     
     return {
       id: `quick-${order.orderId}`,
       type: 'quick',
-      status: getTradeStatus(order),
+      status: statusOverride ?? getTradeStatus(order),
       created_at: order.createdAt || new Date().toISOString(),
       market_title: marketTitle,
       market_id: order.marketId || '',
@@ -1403,6 +1415,45 @@ function ProfilePageContent() {
     };
   };
 
+  const quickCloseIndex = useMemo(() => {
+    const latestSellByKey = new Map<string, number>();
+    const latestSellByMarket = new Map<string, number>();
+
+    const isSellOrder = (order: OrderRow) => {
+      const side = order.side?.toLowerCase();
+      return side === 'sell' || order.activity === 'sold' || order.positionState === 'closed';
+    };
+
+    quickTrades.forEach((order) => {
+      if (!isSellOrder(order)) return;
+      const createdAt = Date.parse(order.createdAt || '');
+      const timestamp = Number.isFinite(createdAt) ? createdAt : 0;
+      if (order.marketId) {
+        const prevMarket = latestSellByMarket.get(order.marketId) ?? 0;
+        if (timestamp > prevMarket) latestSellByMarket.set(order.marketId, timestamp);
+      }
+      const outcomeKey = order.outcome ? order.outcome.toUpperCase() : '';
+      const key = `${order.marketId}::${outcomeKey}`;
+      const prevKey = latestSellByKey.get(key) ?? 0;
+      if (timestamp > prevKey) latestSellByKey.set(key, timestamp);
+    });
+
+    return { latestSellByKey, latestSellByMarket };
+  }, [quickTrades]);
+
+  const getQuickCloseTimestamp = (order: OrderRow) => {
+    const outcomeKey = order.outcome ? order.outcome.toUpperCase() : '';
+    const key = `${order.marketId}::${outcomeKey}`;
+    const keyTimestamp = quickCloseIndex.latestSellByKey.get(key);
+    if (keyTimestamp) return keyTimestamp;
+    return quickCloseIndex.latestSellByMarket.get(order.marketId) ?? null;
+  };
+
+  const isQuickSellOrder = (order: OrderRow) => {
+    const side = order.side?.toLowerCase();
+    return side === 'sell' || order.activity === 'sold' || order.positionState === 'closed';
+  };
+
   // Merge and sort all trades
   const allUnifiedTrades = useMemo(() => {
     // Filter out trades that are explicitly marked as 'quick' - those should only come from orders API
@@ -1411,7 +1462,22 @@ function ProfilePageContent() {
     const manualTrades = actualManualTrades.map(convertCopiedTradeToUnified);
     const quickTradesConverted = quickTrades
       .filter(isDisplayableQuickTrade)
-      .map(convertOrderToUnifiedTrade);
+      .map((order) => {
+        const createdAt = Date.parse(order.createdAt || '');
+        const createdAtMs = Number.isFinite(createdAt) ? createdAt : 0;
+        const closeTimestamp = getQuickCloseTimestamp(order);
+        const isClosedBySell =
+          !isQuickSellOrder(order) &&
+          closeTimestamp !== null &&
+          createdAtMs > 0 &&
+          createdAtMs <= closeTimestamp;
+        const statusOverride = order.marketResolved
+          ? 'resolved'
+          : isQuickSellOrder(order) || isClosedBySell
+            ? 'user-closed'
+            : null;
+        return convertOrderToUnifiedTrade(order, statusOverride);
+      });
     const combined = [...manualTrades, ...quickTradesConverted];
     
     // Sort by created date, newest first
@@ -1424,7 +1490,13 @@ function ProfilePageContent() {
   const filteredUnifiedTrades = useMemo(() => {
     const isSoldTrade = (trade: UnifiedTrade) => {
       if (trade.type === 'quick') {
-        return trade.raw?.side?.toLowerCase() === 'sell';
+        const order = trade.raw as OrderRow | undefined;
+        if (!order) return false;
+        if (isQuickSellOrder(order)) return true;
+        const createdAt = Date.parse(order.createdAt || '');
+        const createdAtMs = Number.isFinite(createdAt) ? createdAt : 0;
+        const closeTimestamp = getQuickCloseTimestamp(order);
+        return closeTimestamp !== null && createdAtMs > 0 && createdAtMs <= closeTimestamp;
       }
 
       return Boolean(trade.copiedTrade?.user_closed_at || trade.copiedTrade?.trader_closed_at);

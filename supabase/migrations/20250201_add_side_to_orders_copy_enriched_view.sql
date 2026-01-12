@@ -1,6 +1,8 @@
 -- Add side column to orders_copy_enriched for accurate volume calculations.
 
-CREATE OR REPLACE VIEW public.orders_copy_enriched AS
+DROP VIEW IF EXISTS public.orders_copy_enriched;
+
+CREATE VIEW public.orders_copy_enriched AS
 WITH base AS (
   SELECT
     o.trader_id,
@@ -59,6 +61,10 @@ WITH base AS (
     ) AS invested_usd,
     COALESCE(o.user_exit_price, o.current_price) AS exit_price
   FROM public.orders o
+  WHERE NOT (
+    lower(coalesce(o.status, '')) = 'open'
+    AND coalesce(o.filled_size, 0) = 0
+  )
 )
 SELECT
   base.trader_id,
@@ -107,10 +113,7 @@ SELECT
     ELSE NULL
   END AS pnl_usd
 FROM base
-WHERE NOT (
-  lower(coalesce(base.status, '')) = 'open'
-  AND coalesce(base.filled_size, 0) = 0
-);
+;
 
 COMMENT ON VIEW public.orders_copy_enriched IS
   'Normalized copy-trade view with canonical entry/exit/invested/side and derived PnL fields.';
