@@ -136,7 +136,7 @@ export async function GET(
     
     const trade = {
       ...tradeRow,
-      trader_wallet: tradeRow.copied_trader_wallet ?? tradeRow.trader_wallet,
+      trader_wallet: tradeRow.copied_trader_wallet ?? null,
       market_title: tradeRow.copied_market_title || '',
       entry_price: tradeRow.entry_price ?? tradeRow.price_when_copied ?? null,
     }
