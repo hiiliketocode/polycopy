@@ -10,11 +10,11 @@ function applySecurityHeaders(response: NextResponse) {
   // Allows resources only from trusted sources
   const cspDirectives = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://va.vercel-scripts.com",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://va.vercel-scripts.com https://www.googletagmanager.com",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https: blob:",
     "font-src 'self' data:",
-    "connect-src 'self' https://*.supabase.co https://*.polymarket.com https://api.turnkey.com https://api.stripe.com wss://*.supabase.co",
+    "connect-src 'self' https://*.supabase.co https://*.polymarket.com https://api.turnkey.com https://api.stripe.com https://www.google-analytics.com https://analytics.google.com wss://*.supabase.co",
     "frame-src 'self' https://js.stripe.com https://checkout.stripe.com",
     "object-src 'none'",
     "base-uri 'self'",
