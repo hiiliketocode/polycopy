@@ -2230,7 +2230,7 @@ function ProfilePageContent() {
                                 onClick={handleQuickSell}
                                 size="sm"
                                 style={{ backgroundColor: '#EF4444' }}
-                                className="h-8 px-3 text-xs font-semibold text-white hover:opacity-90 transition-opacity sm:self-stretch"
+                                className="h-8 px-3 text-xs font-semibold text-white hover:opacity-90 transition-opacity self-center"
                               >
                                 Sell
                               </Button>
