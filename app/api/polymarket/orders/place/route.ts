@@ -459,7 +459,109 @@ export async function POST(request: NextRequest) {
   // Generate request tracking IDs
   const requestId = request.headers.get('x-request-id') ?? makeRequestId()
   const serviceRole = createServiceRoleClient()
+  
+  // SECURITY: Idempotency check - Prevent duplicate orders (Race Condition Fix)
+  // If orderIntentId is provided, it MUST be unique. If not provided, generate one.
+  // This prevents double-clicks, network retries, and race conditions from creating duplicate orders.
   const resolvedOrderIntentId = normalizeOptionalString(orderIntentId) ?? makeRequestId()
+  
+  // Check idempotency BEFORE any processing
+  try {
+    const { data: idempotencyCheck, error: idempotencyError } = await serviceRole
+      .rpc('check_and_record_order_intent', {
+        p_order_intent_id: resolvedOrderIntentId,
+        p_user_id: userId,
+      })
+    
+    if (idempotencyError) {
+      console.error('[POLY-ORDER-PLACE] Idempotency check failed:', idempotencyError)
+      // Allow order to proceed (fail-open for availability)
+      // But log the error for monitoring
+      logError('idempotency_check_failed', {
+        request_id: requestId,
+        order_intent_id: resolvedOrderIntentId,
+        user_id: userId,
+        error: idempotencyError,
+      })
+    } else if (idempotencyCheck) {
+      const { allowed, reason, existing_order_id, status, result_data } = idempotencyCheck as any
+      
+      if (!allowed) {
+        // Duplicate request detected
+        if (reason === 'duplicate' && result_data) {
+          // Return cached result for idempotent response
+          logInfo('order_duplicate_detected', {
+            request_id: requestId,
+            order_intent_id: resolvedOrderIntentId,
+            user_id: userId,
+            existing_order_id,
+            status,
+          })
+          
+          return respondWithMetadata(
+            {
+              ok: true,
+              ...result_data,
+              idempotent: true,
+              cached: true,
+              originalStatus: status,
+            },
+            200
+          )
+        } else if (reason === 'race_detected') {
+          // Rare: Race condition between check and insert
+          logError('order_race_detected', {
+            request_id: requestId,
+            order_intent_id: resolvedOrderIntentId,
+            user_id: userId,
+          })
+          
+          return respondWithMetadata(
+            {
+              error: 'Order already in progress. Please wait.',
+              source: 'idempotency_check',
+              reason: 'duplicate_detected',
+            },
+            429
+          )
+        } else if (reason === 'intent_id_taken') {
+          // Different user trying to use same intent ID (malicious?)
+          logError('order_intent_id_conflict', {
+            request_id: requestId,
+            order_intent_id: resolvedOrderIntentId,
+            user_id: userId,
+          })
+          
+          return respondWithMetadata(
+            {
+              error: 'Invalid order intent ID',
+              source: 'idempotency_check',
+            },
+            400
+          )
+        }
+      } else {
+        // Order is new and recorded, proceed
+        logInfo('order_idempotency_recorded', {
+          request_id: requestId,
+          order_intent_id: resolvedOrderIntentId,
+          user_id: userId,
+          reason,
+        })
+      }
+    }
+  } catch (error) {
+    // Idempotency check failed (database error, etc.)
+    console.error('[POLY-ORDER-PLACE] Idempotency check exception:', error)
+    logError('idempotency_check_exception', {
+      request_id: requestId,
+      order_intent_id: resolvedOrderIntentId,
+      user_id: userId,
+      error,
+    })
+    // Fail-open: Allow order to proceed
+  }
+  
   const normalizedConditionId = normalizeOptionalString(conditionId ?? marketId) ?? null
   const resolvedInputMode = normalizeLogInputMode(inputMode)
   const resolvedUsdInput = normalizeNumber(usdInput)
@@ -710,6 +812,24 @@ export async function POST(request: NextRequest) {
         error_message: truncatedErrorMessage,
         raw_error: sanitizedErrorBody ?? null,
       })
+      
+      // Update idempotency record with failure
+      try {
+        await serviceRole.rpc('update_order_idempotency_result', {
+          p_order_intent_id: resolvedOrderIntentId,
+          p_status: 'failed',
+          p_error_code: evaluation.errorType ?? null,
+          p_error_message: truncatedErrorMessage,
+          p_result_data: {
+            ok: false,
+            error: evaluation.message,
+            errorType: evaluation.errorType,
+            source: 'upstream',
+          },
+        })
+      } catch (error) {
+        console.warn('[POLY-ORDER-PLACE] Failed to update idempotency record (rejection)', error)
+      }
       logError('order_rejected', {
         request_id: requestId,
         order_intent_id: resolvedOrderIntentId,
@@ -763,6 +883,25 @@ export async function POST(request: NextRequest) {
       error_message: null,
       raw_error: null,
     })
+    
+    // Update idempotency record with success
+    try {
+      await serviceRole.rpc('update_order_idempotency_result', {
+        p_order_intent_id: resolvedOrderIntentId,
+        p_status: 'completed',
+        p_polymarket_order_id: orderId ?? null,
+        p_result_data: {
+          ok: true,
+          orderId,
+          submittedAt: new Date().toISOString(),
+          source: 'upstream',
+          upstreamHost,
+          upstreamStatus,
+        },
+      })
+    } catch (error) {
+      console.warn('[POLY-ORDER-PLACE] Failed to update idempotency record (success)', error)
+    }
     logInfo('order_submitted', {
       request_id: requestId,
       order_intent_id: resolvedOrderIntentId,
@@ -839,6 +978,23 @@ export async function POST(request: NextRequest) {
       error_message: truncatedErrorMessage,
       raw_error: sanitizedErrorBody ?? null,
     })
+    
+    // Update idempotency record with error
+    try {
+      await serviceRole.rpc('update_order_idempotency_result', {
+        p_order_intent_id: resolvedOrderIntentId,
+        p_status: 'failed',
+        p_error_code: safeError.code ?? safeError.name,
+        p_error_message: truncatedErrorMessage,
+        p_result_data: {
+          ok: false,
+          source: 'server',
+          error: safeError,
+        },
+      })
+    } catch (error) {
+      console.warn('[POLY-ORDER-PLACE] Failed to update idempotency record (error)', error)
+    }
     logError('order_rejected', {
       request_id: requestId,
       order_intent_id: resolvedOrderIntentId,
