@@ -73,6 +73,8 @@ const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
 ])
 
 const ORDER_STATUS_TIMEOUT_MS = 30_000
+const EXIT_TRADE_WARNING =
+  'Are you sure you want to leave? You have trades in progress that may fail.'
 const EMPTY_FORM: ExecuteForm = {
   tokenId: '',
   price: '',
@@ -732,6 +734,20 @@ function TradeExecutePageInner() {
   useEffect(() => {
     statusPhaseRef.current = statusPhase
   }, [statusPhase])
+
+  const hasInFlightTrade =
+    submitLoading || (Boolean(orderId) && !TERMINAL_STATUS_PHASES.has(statusPhase))
+
+  useEffect(() => {
+    if (!hasInFlightTrade) return
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = EXIT_TRADE_WARNING
+      return EXIT_TRADE_WARNING
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasInFlightTrade])
 
   const resetRecordState = useCallback(() => {
     setTradeRecord(null)

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ArrowDown, ArrowLeftRight, ChevronDown, ChevronUp, Check, HelpCircle, ExternalLink, X, Loader2 } from "lucide-react"
 import Link from "next/link"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -55,6 +55,8 @@ interface TradeCardProps {
   liveScore?: string
   category?: string
   polymarketUrl?: string
+  defaultBuySlippage?: number
+  defaultSellSlippage?: number
 }
 
 type StatusPhase =
@@ -79,8 +81,21 @@ const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
   'rejected',
   'timed_out',
 ])
+const CANCELABLE_PHASES = new Set<StatusPhase>([
+  'submitted',
+  'processing',
+  'pending',
+  'unknown',
+])
+
+type CancelStatus = {
+  message: string
+  variant: 'info' | 'success' | 'error'
+}
 
 const ORDER_STATUS_TIMEOUT_MS = 30_000
+const EXIT_TRADE_WARNING =
+  'Are you sure you want to leave? You have trades in progress that may fail.'
 
 const LIQUIDITY_ERROR_PHRASES = [
   'no orders found to match with fak order',
@@ -337,7 +352,17 @@ export function TradeCard({
   liveScore,
   category,
   polymarketUrl,
+  defaultBuySlippage,
+  defaultSellSlippage,
 }: TradeCardProps) {
+  const resolvedDefaultSlippage =
+    action === "Buy"
+      ? typeof defaultBuySlippage === "number"
+        ? defaultBuySlippage
+        : 3
+      : typeof defaultSellSlippage === "number"
+        ? defaultSellSlippage
+        : 3
   const [amountMode, setAmountMode] = useState<"usd" | "contracts">("usd")
   const [amountInput, setAmountInput] = useState<string>("")
   const [autoClose, setAutoClose] = useState(true)
@@ -347,7 +372,8 @@ export function TradeCard({
   const [refreshStatus, setRefreshStatus] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle')
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [slippagePreset, setSlippagePreset] = useState<number | 'custom'>(2)
+  const userUpdatedSlippageRef = useRef(false)
+  const [slippagePreset, setSlippagePreset] = useState<number | 'custom'>(() => resolvedDefaultSlippage)
   const [customSlippage, setCustomSlippage] = useState("")
   const [orderType, setOrderType] = useState<'FAK' | 'GTC'>('FAK')
   const [orderId, setOrderId] = useState<string | null>(null)
@@ -357,8 +383,9 @@ export function TradeCard({
   const [statusError, setStatusError] = useState<string | null>(null)
   const [confirmationError, setConfirmationError] = useState<TradeErrorInfo | null>(null)
   const [isCancelingOrder, setIsCancelingOrder] = useState(false)
-  const [cancelError, setCancelError] = useState<string | null>(null)
+  const [cancelStatus, setCancelStatus] = useState<CancelStatus | null>(null)
   const [showConfirmation, setShowConfirmation] = useState(false)
+  const [showTradeDetails, setShowTradeDetails] = useState(false)
   const [livePrice, setLivePrice] = useState<number | null>(
     typeof currentMarketPrice === "number" && !Number.isNaN(currentMarketPrice)
       ? currentMarketPrice
@@ -415,6 +442,16 @@ export function TradeCard({
         ? currentPrice > 0.01 && currentPrice < 0.99
         : null
   const isMarketEnded = inferredMarketOpen === false
+
+  useEffect(() => {
+    if (userUpdatedSlippageRef.current) return
+    setSlippagePreset(resolvedDefaultSlippage)
+  }, [resolvedDefaultSlippage])
+
+  const handleSlippagePresetChange = (value: number | 'custom') => {
+    userUpdatedSlippageRef.current = true
+    setSlippagePreset(value)
+  }
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -805,7 +842,7 @@ export function TradeCard({
         ? "bg-red-50 text-red-700 border-red-200"
         : "bg-slate-100 text-slate-700 border-slate-200"
 
-  const defaultSlippagePercent = 2
+  const defaultSlippagePercent = resolvedDefaultSlippage
   const minTradeUsd = 1
   const slippagePercent =
     slippagePreset === "custom" ? Number(customSlippage) : Number(slippagePreset)
@@ -874,6 +911,20 @@ export function TradeCard({
   useEffect(() => {
     statusPhaseRef.current = statusPhase
   }, [statusPhase])
+
+  const hasInFlightTrade =
+    isSubmitting || (showConfirmation && !TERMINAL_STATUS_PHASES.has(statusPhase))
+
+  useEffect(() => {
+    if (!hasInFlightTrade) return
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = EXIT_TRADE_WARNING
+      return EXIT_TRADE_WARNING
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasInFlightTrade])
 
   const handleAmountChange = useCallback((value: string) => {
     setFrozenOrder(null)
@@ -1073,6 +1124,7 @@ export function TradeCard({
       setStatusPhase('submitted')
       setStatusError(null)
       setConfirmationError(null)
+      setCancelStatus(null)
       showedConfirmation = true
 
       const targetToSend = Math.max(contractsValue ?? 0, minContractsForBuffer ?? 0)
@@ -1334,6 +1386,81 @@ export function TradeCard({
       : `${formatContractsDisplay(contractsValue ?? 0)} submitted`
   const isFinalStatus = TERMINAL_STATUS_PHASES.has(statusPhase)
   const isFilledStatus = statusPhase === 'filled'
+  const canCancelPendingOrder =
+    showConfirmation && (isSubmitting || (Boolean(orderId) && CANCELABLE_PHASES.has(statusPhase)))
+
+  const handleCancelOrder = useCallback(async () => {
+    if (isCancelingOrder) return
+    if (!orderId) {
+      setCancelStatus({
+        message: 'Waiting for the Polymarket order ID…',
+        variant: 'info',
+      })
+      return
+    }
+    if (!CANCELABLE_PHASES.has(statusPhase)) {
+      setCancelStatus({
+        message: 'Order has already reached a final state.',
+        variant: 'error',
+      })
+      return
+    }
+      setIsCancelingOrder(true)
+      setCancelStatus({
+        message: 'Attempting to cancel. If it already executed, the status will update.',
+        variant: 'info',
+      })
+    if (pendingTimeoutRef.current) {
+      clearTimeout(pendingTimeoutRef.current)
+      pendingTimeoutRef.current = null
+    }
+    try {
+      const response = await fetch('/api/polymarket/orders/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderHash: orderId }),
+      })
+      let payload: any = null
+      try {
+        payload = await response.json()
+      } catch {
+        payload = null
+      }
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ||
+            payload?.message ||
+            payload?.details ||
+            'Failed to cancel order on Polymarket.'
+          )
+      }
+      statusPhaseRef.current = 'canceled'
+      setStatusPhase('canceled')
+      setCancelStatus({
+        message: 'Cancel request confirmed by Polymarket.',
+        variant: 'success',
+      })
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+      if (pollAbortRef.current) {
+        pollAbortRef.current.abort()
+        pollAbortRef.current = null
+      }
+      await refreshOrders().catch(() => {
+        /* best effort */
+      })
+    } catch (error: any) {
+      const message =
+        typeof error === 'string'
+          ? error
+          : error?.message || 'Unable to cancel order. Please try again.'
+      setCancelStatus({ message, variant: 'error' })
+    } finally {
+      setIsCancelingOrder(false)
+    }
+  }, [orderId, isCancelingOrder, statusPhase, refreshOrders, isSubmitting])
   useEffect(() => {
     if (!orderId || !showConfirmation || isFinalStatus) {
       if (pendingTimeoutRef.current) {
@@ -1362,7 +1489,7 @@ export function TradeCard({
         pollAbortRef.current = null
       }
       setIsCancelingOrder(true)
-      setCancelError(null)
+      setCancelStatus({ message: 'Attempting to cancel. If it already executed, the status will update.', variant: 'info' })
       try {
         const response = await fetch('/api/polymarket/orders/cancel', {
           method: 'POST',
@@ -1383,6 +1510,10 @@ export function TradeCard({
               'Failed to cancel order on Polymarket.'
           )
         }
+        setCancelStatus({
+          message: 'Cancel request confirmed by Polymarket.',
+          variant: 'success',
+        })
         await refreshOrders().catch(() => {
           /* refresh best effort */
         })
@@ -1391,7 +1522,7 @@ export function TradeCard({
           typeof error === 'string'
             ? error
             : error?.message || 'Unable to cancel order. Please try again.'
-        setCancelError(message)
+        setCancelStatus({ message, variant: 'error' })
       } finally {
         setIsCancelingOrder(false)
       }
@@ -1410,11 +1541,23 @@ export function TradeCard({
     statusDataRef.current = null
     setStatusError(null)
     setConfirmationError(null)
-    setCancelError(null)
+    setCancelStatus(null)
     setIsCancelingOrder(false)
     setStatusPhase('submitted')
     setFrozenOrder(null)
+    setShowTradeDetails(false)
   }
+
+  const tradeDetailsJson = useMemo(() => {
+    if (!statusData) return null
+    try {
+      const payload = statusData?.raw ?? statusData
+      return JSON.stringify(payload, null, 2)
+    } catch (error) {
+      console.warn("Unable to render trade details payload", error)
+      return null
+    }
+  }, [statusData])
 
   const handleTryAgain = () => {
     resetConfirmation()
@@ -1722,7 +1865,7 @@ export function TradeCard({
           <div className="mt-0.5 rounded-xl border border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
             {showConfirmation ? (
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold tracking-wide text-slate-400">Status</p>
                     <p className="flex items-center gap-2 text-lg font-semibold text-slate-900">
@@ -1733,17 +1876,17 @@ export function TradeCard({
                       <div className="mt-1">
                         <p
                           className={`text-xs ${
-                            statusPhase === 'timed_out' ? "text-amber-600" : "text-slate-500"
+                            statusPhase === 'timed_out' ? 'text-amber-600' : 'text-slate-500'
                           }`}
                         >
                           {statusPhase === 'timed_out'
-                            ? "Polymarket did not match this order within 30 seconds. Try increasing slippage and/or using a smaller amount."
-                            : "This may take a moment."}
+                            ? 'Polymarket did not match this order within 30 seconds. Try increasing slippage and/or using a smaller amount.'
+                            : 'This may take a moment.'}
                         </p>
                       </div>
                     )}
                     {statusPhase === 'timed_out' && (
-                      <div className="mt-3 flex flex-col gap-2">
+                      <div className="mt-3 space-y-2">
                         <p className="text-xs text-amber-600">
                           We couldn’t fill this order at your price. Try increasing slippage (tap Advanced) or using a smaller amount.
                         </p>
@@ -1769,25 +1912,40 @@ export function TradeCard({
                             </Tooltip>
                           </TooltipProvider>
                         </div>
-                        <p className="text-[11px] text-slate-500">
-                          We stopped the pending order so you can reopen the form and resubmit with broader slippage or a new price.
-                        </p>
-                        {cancelError && (
-                          <p className="text-[11px] text-rose-600">{cancelError}</p>
-                        )}
                       </div>
                     )}
+                    {cancelStatus && (
+                      <p className={`text-xs ${getCancelStatusClass(cancelStatus.variant)}`}>
+                        {cancelStatus.message}
+                      </p>
+                    )}
                   </div>
-                  {isFilledStatus && (
-                    <button
-                      type="button"
-                      onClick={resetConfirmation}
-                      className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 h-8 w-8"
-                      aria-label="Close order confirmation"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {canCancelPendingOrder && (
+                      <button
+                        type="button"
+                        onClick={handleCancelOrder}
+                        disabled={isCancelingOrder}
+                        className={`inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
+                          isCancelingOrder
+                            ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                            : 'border-rose-200 bg-white text-rose-700 hover:bg-rose-50'
+                        }`}
+                      >
+                        {isCancelingOrder ? 'Canceling…' : 'Cancel'}
+                      </button>
+                    )}
+                    {isFilledStatus && (
+                      <button
+                        type="button"
+                        onClick={resetConfirmation}
+                        className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 h-8 w-8"
+                        aria-label="Close order confirmation"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {confirmationError && (
                   <div
@@ -1817,9 +1975,9 @@ export function TradeCard({
                       <label className="text-xs font-medium text-slate-700">
                         {filledAmountValue !== null ? "Filled USD" : "Estimated max USD"}
                       </label>
-                      <div className="flex h-14 items-center rounded-lg border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700">
-                        {formatCurrency(Number.isFinite(statusAmountValue) ? statusAmountValue : 0)}
-                  </div>
+                    <div className="flex h-14 items-center rounded-lg border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700">
+                      {formatCurrency(Number.isFinite(statusAmountValue) ? statusAmountValue : 0)}
+                    </div>
                     </div>
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
                       <span className="text-xs font-medium text-slate-700 text-center sm:text-left">
@@ -1842,6 +2000,39 @@ export function TradeCard({
                 {statusError && (
                   <p className="text-xs text-rose-600">Status error: {statusError}</p>
                 )}
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowTradeDetails((current) => !current)}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+                  >
+                    Trade Details
+                    {showTradeDetails ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </div>
+                {showTradeDetails && (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold text-slate-400">Polymarket Response</p>
+                  {tradeDetailsJson ? (
+                    <pre className="mt-2 max-h-56 overflow-auto rounded-lg border border-slate-100 bg-white p-3 text-[11px] leading-relaxed text-slate-600">
+                      {tradeDetailsJson}
+                    </pre>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Waiting for confirmation details...
+                    </p>
+                  )}
+                  {cancelStatus && (
+                    <p className={`mt-2 text-[11px] ${getCancelStatusClass(cancelStatus.variant)}`}>
+                      {cancelStatus.message}
+                    </p>
+                  )}
+                </div>
+              )}
               </div>
             ) : !isSuccess ? (
               <div className="space-y-5">
@@ -2039,7 +2230,7 @@ export function TradeCard({
                               variant={slippagePreset === value ? "default" : "outline"}
                               size="sm"
                               onClick={() => {
-                                setSlippagePreset(value)
+                                handleSlippagePresetChange(value)
                                 setCustomSlippage("")
                               }}
                               className={
@@ -2051,14 +2242,14 @@ export function TradeCard({
                               {value}%
                   </Button>
                           ))}
-                          <Input
-                            type="number"
-                            placeholder="Custom"
-                            value={customSlippage}
-                            onChange={(e) => {
-                              setCustomSlippage(e.target.value)
-                              setSlippagePreset("custom")
-                            }}
+                            <Input
+                              type="number"
+                              placeholder="Custom"
+                              value={customSlippage}
+                              onChange={(e) => {
+                                setCustomSlippage(e.target.value)
+                                handleSlippagePresetChange("custom")
+                              }}
                             onWheel={(e) => e.currentTarget.blur()}
                             className="w-20 h-8 text-xs border-slate-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
@@ -2144,4 +2335,10 @@ export function TradeCard({
       )}
     </div>
   )
+}
+
+function getCancelStatusClass(variant: CancelStatus['variant']) {
+  if (variant === 'success') return 'text-emerald-600'
+  if (variant === 'error') return 'text-rose-600'
+  return 'text-slate-500'
 }

@@ -124,6 +124,8 @@ export default function TraderProfilePage({
   const [autoClose, setAutoClose] = useState(true);
   const [manualCopyTradeIndex, setManualCopyTradeIndex] = useState<number | null>(null);
   const [manualUsdAmount, setManualUsdAmount] = useState<string>('');
+  const [defaultBuySlippage, setDefaultBuySlippage] = useState(3);
+  const [defaultSellSlippage, setDefaultSellSlippage] = useState(3);
   
   // Performance tab data
   const [positionSizeBuckets, setPositionSizeBuckets] = useState<PositionSizeBucket[]>([]);
@@ -182,6 +184,27 @@ export default function TraderProfilePage({
       setUser(user);
       
       if (user) {
+        const isMeaningfulError = (err: any) => {
+          if (!err || typeof err !== 'object') return !!err;
+          if (err.code === 'PGRST116') return false;
+          const values = [err.code, err.message, err.details, err.hint, err.status];
+          return values.some((value) => {
+            if (typeof value === 'string') return value.trim().length > 0;
+            return Boolean(value);
+          });
+        };
+
+        const formatSupabaseError = (err: any) => {
+          if (!err || typeof err !== 'object') return err;
+          return {
+            code: err.code,
+            message: err.message,
+            details: err.details,
+            hint: err.hint,
+            status: err.status,
+          };
+        };
+
         // Fetch premium status
         const { data: profile } = await supabase
           .from('profiles')
@@ -200,6 +223,27 @@ export default function TraderProfilePage({
         
         if (walletData) {
           setWalletAddress(walletData.polymarket_account_address || walletData.eoa_address || null);
+        }
+
+        try {
+          const { data, error } = await supabase
+            .from('notification_preferences')
+            .select('default_buy_slippage, default_sell_slippage')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (isMeaningfulError(error)) {
+            console.error('Error fetching slippage preferences:', formatSupabaseError(error));
+          }
+
+          if (data) {
+            setDefaultBuySlippage(data.default_buy_slippage ?? 3);
+            setDefaultSellSlippage(data.default_sell_slippage ?? 3);
+          }
+        } catch (err) {
+          if (isMeaningfulError(err)) {
+            console.error('Error fetching slippage preferences:', formatSupabaseError(err));
+          }
         }
         
         // Fetch copied trades (service-backed to bypass RLS issues)
@@ -1352,6 +1396,8 @@ export default function TraderProfilePage({
                       liveScore={liveScore}
                       category={trade.category}
                       polymarketUrl={polymarketUrl}
+                      defaultBuySlippage={defaultBuySlippage}
+                      defaultSellSlippage={defaultSellSlippage}
                     />
                   ) : (
                     <Card key={`${trade.timestamp}-${index}`} className="p-6">

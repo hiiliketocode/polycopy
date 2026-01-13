@@ -93,6 +93,8 @@ export default function FeedPage() {
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [activeCategory, setActiveCategory] = useState<Category>('all');
+  const [defaultBuySlippage, setDefaultBuySlippage] = useState(3);
+  const [defaultSellSlippage, setDefaultSellSlippage] = useState(3);
   
   // Data state
   const [allTrades, setAllTrades] = useState<FeedTrade[]>([]);
@@ -184,6 +186,76 @@ export default function FeedPage() {
 
     return () => subscription.unsubscribe();
   }, [router]);
+
+  useEffect(() => {
+    if (!user) return;
+    let isMounted = true;
+
+    const isMeaningfulError = (err: any) => {
+      if (!err || typeof err !== 'object') return !!err;
+      if (err.code === 'PGRST116') return false;
+      const values = [err.code, err.message, err.details, err.hint, err.status];
+      return values.some((value) => {
+        if (typeof value === 'string') return value.trim().length > 0;
+        return Boolean(value);
+      });
+    };
+
+    const formatSupabaseError = (err: any) => {
+      if (!err || typeof err !== 'object') return err;
+      return {
+        code: err.code,
+        message: err.message,
+        details: err.details,
+        hint: err.hint,
+        status: err.status,
+      };
+    };
+    const hasStructuredDetails = (payload: any) => {
+      if (!payload || typeof payload !== 'object') return Boolean(payload);
+      return Object.values(payload).some((value) => {
+        if (typeof value === 'string') {
+          return value.trim().length > 0;
+        }
+        return Boolean(value);
+      });
+    };
+
+    const fetchSlippageDefaults = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('notification_preferences')
+          .select('default_buy_slippage, default_sell_slippage')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (isMeaningfulError(error)) {
+          const payload = formatSupabaseError(error);
+          if (hasStructuredDetails(payload)) {
+            console.error('Error fetching slippage preferences:', payload);
+          }
+        }
+
+        if (data && isMounted) {
+          setDefaultBuySlippage(data.default_buy_slippage ?? 3);
+          setDefaultSellSlippage(data.default_sell_slippage ?? 3);
+        }
+      } catch (err) {
+        if (isMeaningfulError(err)) {
+          const payload = formatSupabaseError(err);
+          if (hasStructuredDetails(payload)) {
+            console.error('Error fetching slippage preferences:', payload);
+          }
+        }
+      }
+    };
+
+    fetchSlippageDefaults();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   const fetchCopiedTrades = useCallback(async () => {
     if (!user) {
@@ -1258,6 +1330,8 @@ export default function FeedPage() {
                         ? `https://polymarket.com/market/${trade.market.slug}`
                         : undefined
                     }
+                    defaultBuySlippage={defaultBuySlippage}
+                    defaultSellSlippage={defaultSellSlippage}
                   />
                 )
               })}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { ArrowDown, ArrowLeftRight, ChevronDown, CheckCircle2, Clock, HelpCircle, Loader2, XCircle, type LucideProps } from 'lucide-react'
 import type { OrderRow } from '@/lib/orders/types'
 import type { PositionSummary } from '@/lib/orders/position'
@@ -48,6 +48,8 @@ const ORDER_BEHAVIOR_TOOLTIP =
   'FAK fills as much as possible immediately and cancels the rest, while GTC keeps the order open until it either fills or you cancel it.'
 const SLIPPAGE_PRESETS: Array<number> = [0, 1, 3, 5]
 const ORDER_STATUS_TIMEOUT_MS = 30_000
+const EXIT_TRADE_WARNING =
+  'Are you sure you want to leave? You have trades in progress that may fail.'
 
 type StatusPhase =
   | 'submitted'
@@ -70,6 +72,17 @@ const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
   'timed_out',
 ])
 const FAILED_EXECUTION_PHASES = new Set<StatusPhase>(['canceled', 'expired', 'rejected'])
+const CANCELABLE_PHASES = new Set<StatusPhase>([
+  'submitted',
+  'processing',
+  'pending',
+  'unknown',
+])
+type CancelStatusVariant = 'info' | 'success' | 'error'
+type CancelStatus = {
+  message: string
+  variant: CancelStatusVariant
+}
 
 function normalizeStatusPhase(
   status?: string | null,
@@ -230,7 +243,7 @@ export default function ClosePositionModal({
   const [amountInput, setAmountInput] = useState(() => position.size.toFixed(6))
   const [amountMode, setAmountMode] = useState<'contracts' | 'usd'>('contracts')
   const [manualPriceInput, setManualPriceInput] = useState(() => (order.currentPrice ?? order.priceOrAvgPrice ?? 0).toFixed(4))
-  const [slippagePreset, setSlippagePreset] = useState<number | 'custom'>(() => 2)
+  const [slippagePreset, setSlippagePreset] = useState<number | 'custom'>(() => 3)
   const [customSlippage, setCustomSlippage] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [orderType, setOrderType] = useState<'FAK' | 'GTC'>('FAK')
@@ -248,7 +261,7 @@ export default function ClosePositionModal({
   const [orderStatusError, setOrderStatusError] = useState<string | null>(null)
   const [orderStatusLoading, setOrderStatusLoading] = useState(false)
   const [isCancelingOrder, setIsCancelingOrder] = useState(false)
-  const [cancelError, setCancelError] = useState<string | null>(null)
+  const [cancelStatus, setCancelStatus] = useState<CancelStatus | null>(null)
   const statusPhaseRef = useRef<StatusPhase>('submitted')
   const orderStatusRef = useRef<typeof orderStatus | null>(null)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -306,8 +319,8 @@ export default function ClosePositionModal({
       setOrderStatusLoading(false)
       setStatusPhase('submitted')
       statusPhaseRef.current = 'submitted'
-      setIsCancelingOrder(false)
-      setCancelError(null)
+    setIsCancelingOrder(false)
+    setCancelStatus(null)
       return
     }
 
@@ -321,7 +334,7 @@ export default function ClosePositionModal({
     setOrderStatusError(null)
     setStatusPhase('submitted')
     statusPhaseRef.current = 'submitted'
-    setCancelError(null)
+    setCancelStatus(null)
     setIsCancelingOrder(false)
 
     pendingTimer = setTimeout(() => {
@@ -510,8 +523,70 @@ export default function ClosePositionModal({
     })
   }
 
+  const cancelPendingOrder = useCallback(async () => {
+    if (!orderId || isCancelingOrder || (!CANCELABLE_PHASES.has(statusPhase) && statusPhase !== 'timed_out')) {
+      return
+    }
+    setIsCancelingOrder(true)
+    setCancelStatus({
+      message: 'Attempting to cancel. If it already executed, the status will update.',
+      variant: 'info',
+    })
+    if (pendingTimeoutRef.current) {
+      clearTimeout(pendingTimeoutRef.current)
+      pendingTimeoutRef.current = null
+    }
+    try {
+      const response = await fetch('/api/polymarket/orders/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderHash: orderId }),
+      })
+      let payload: any = null
+      try {
+        payload = await response.json()
+      } catch {
+        payload = null
+      }
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ||
+            payload?.message ||
+            payload?.details ||
+            'Failed to cancel order on Polymarket.'
+        )
+      }
+      statusPhaseRef.current = 'canceled'
+      setStatusPhase('canceled')
+      setCancelStatus({
+        message: 'Cancel request confirmed by Polymarket.',
+        variant: 'success',
+      })
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+      if (pollAbortRef.current) {
+        pollAbortRef.current.abort()
+        pollAbortRef.current = null
+      }
+    } catch (error: any) {
+      const message =
+        typeof error === 'string'
+          ? error
+          : error?.message || 'Unable to cancel order. Please try again.'
+      setCancelStatus({ message, variant: 'error' })
+    } finally {
+      setIsCancelingOrder(false)
+    }
+  }, [orderId, isCancelingOrder, statusPhase])
+
   const hasSubmittedOrder = Boolean(orderId)
   const showConfirmation = isSubmitting || hasSubmittedOrder
+  const hasInFlightTrade =
+    isSubmitting || (hasSubmittedOrder && !TERMINAL_STATUS_PHASES.has(statusPhase))
+  const canCancelPendingOrder =
+    Boolean(orderId) && showConfirmation && CANCELABLE_PHASES.has(statusPhase)
   const submittedContracts = orderStatus?.size ?? null
   const filledContracts = orderStatus?.filledSize ?? null
   const pendingStatusLabel = 'Order pending at Polymarket'
@@ -542,6 +617,17 @@ export default function ClosePositionModal({
     submittedContracts !== null && filledContracts !== null && submittedContracts > 0
 
   useEffect(() => {
+    if (!hasInFlightTrade) return
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = EXIT_TRADE_WARNING
+      return EXIT_TRADE_WARNING
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasInFlightTrade])
+
+  useEffect(() => {
     if (!orderId || isFinalStatus) {
       if (pendingTimeoutRef.current) {
         clearTimeout(pendingTimeoutRef.current)
@@ -568,36 +654,10 @@ export default function ClosePositionModal({
         pollAbortRef.current.abort()
         pollAbortRef.current = null
       }
-      setIsCancelingOrder(true)
-      setCancelError(null)
       try {
-        const response = await fetch('/api/polymarket/orders/cancel', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderHash: orderId }),
-        })
-        let payload: any = null
-        try {
-          payload = await response.json()
-        } catch {
-          payload = null
-        }
-        if (!response.ok) {
-          throw new Error(
-            payload?.error ||
-              payload?.message ||
-              payload?.details ||
-              'Failed to cancel order on Polymarket.'
-          )
-        }
-      } catch (error: any) {
-        const message =
-          typeof error === 'string'
-            ? error
-            : error?.message || 'Unable to cancel order. Please try again.'
-        setCancelError(message)
-      } finally {
-        setIsCancelingOrder(false)
+        await cancelPendingOrder()
+      } catch {
+        /* cancel errors handled in cancelPendingOrder */
       }
     }, ORDER_STATUS_TIMEOUT_MS)
     return () => {
@@ -606,7 +666,7 @@ export default function ClosePositionModal({
         pendingTimeoutRef.current = null
       }
     }
-  }, [orderId, isFinalStatus])
+  }, [orderId, isFinalStatus, cancelPendingOrder])
 
   return (
     <div
@@ -1005,40 +1065,52 @@ export default function ClosePositionModal({
                   )}
                   {showConfirmation && (
                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm space-y-4 sm:px-5 sm:py-6">
-                      <div>
-                        <p className="text-xs font-semibold tracking-wide text-slate-400">Status</p>
-                        <p className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                          {!isFinalStatus && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
-                          {statusLabel}
-                        </p>
-                        {!isFinalStatus && (
-                          <p
-                            className={`text-xs ${
-                              statusPhase === 'timed_out' ? 'text-amber-600' : 'text-slate-500'
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-semibold tracking-wide text-slate-400">Status</p>
+                          <p className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                            {!isFinalStatus && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
+                            {statusLabel}
+                          </p>
+                          {!isFinalStatus && (
+                            <p
+                              className={`text-xs ${
+                                statusPhase === 'timed_out' ? 'text-amber-600' : 'text-slate-500'
+                              }`}
+                            >
+                              {statusPhase === 'timed_out'
+                                ? 'Polymarket did not match this order within 30 seconds. Try increasing slippage and/or using a smaller amount.'
+                                : 'This may take a moment.'}
+                            </p>
+                          )}
+                          {statusPhase === 'timed_out' && (
+                            <div className="mt-3 space-y-2">
+                              <p className="text-xs text-amber-600">
+                                We couldn’t fill this order at your price. Try increasing slippage (tap Advanced) or using a smaller amount.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        {canCancelPendingOrder && (
+                          <button
+                            type="button"
+                            onClick={cancelPendingOrder}
+                            disabled={isCancelingOrder}
+                            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-sm transition ${
+                              isCancelingOrder
+                                ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                                : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
                             }`}
                           >
-                            {statusPhase === 'timed_out'
-                              ? 'Polymarket did not match this order within 30 seconds. Try increasing slippage and/or using a smaller amount.'
-                              : 'This may take a moment.'}
-                          </p>
-                        )}
-                        {statusPhase === 'timed_out' && (
-                          <div className="mt-3 space-y-2">
-                            <p className="text-xs text-amber-600">
-                              We couldn’t fill this order at your price. Try increasing slippage (tap Advanced) or using a smaller amount.
-                            </p>
-                            <p className="text-[11px] text-slate-500">
-                              We stopped the pending order so you can reopen the form and resubmit with broader slippage or a new price.
-                            </p>
-                            {isCancelingOrder && (
-                              <p className="text-[11px] text-slate-500">Canceling pending order…</p>
-                            )}
-                            {cancelError && (
-                              <p className="text-[11px] text-rose-600">{cancelError}</p>
-                            )}
-                          </div>
+                            {isCancelingOrder ? 'Canceling…' : 'Cancel'}
+                          </button>
                         )}
                       </div>
+                      {cancelStatus && (
+                        <p className={`text-xs ${getCancelStatusClass(cancelStatus.variant)}`}>
+                          {cancelStatus.message}
+                        </p>
+                      )}
                       <div className="text-sm text-slate-600 flex items-center gap-2">
                         <span
                           className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${orderStatusIconClasses}`}
@@ -1177,4 +1249,10 @@ function deriveConditionId(tokenId: string | null | undefined): string | null {
     return trimmed.slice(0, 66)
   }
   return null
+}
+
+function getCancelStatusClass(variant: CancelStatusVariant) {
+  if (variant === 'success') return 'text-emerald-600'
+  if (variant === 'error') return 'text-rose-600'
+  return 'text-slate-500'
 }

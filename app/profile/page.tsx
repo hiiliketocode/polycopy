@@ -19,6 +19,7 @@ import { MarkTradeClosed } from '@/components/polycopy/mark-trade-closed';
 import { EditCopiedTrade } from '@/components/polycopy/edit-copied-trade';
 import { OrdersScreen } from '@/components/orders/OrdersScreen';
 import ClosePositionModal from '@/components/orders/ClosePositionModal';
+import OrderRowDetails from '@/components/orders/OrderRowDetails';
 import type { OrderRow } from '@/lib/orders/types';
 import type { PositionSummary } from '@/lib/orders/position';
 import {
@@ -29,6 +30,8 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   TrendingUp,
   Percent,
@@ -95,6 +98,8 @@ interface CategoryDistribution {
 }
 
 type ProfileTab = 'trades' | 'performance' | 'settings';
+
+const SLIPPAGE_PRESETS = [0, 1, 3, 5];
 
 interface PortfolioStats {
   totalPnl: number;
@@ -184,6 +189,7 @@ function ProfilePageContent() {
   const [copiedTrades, setCopiedTrades] = useState<CopiedTrade[]>([]);
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(true);
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null);
+  const [expandedQuickDetailsId, setExpandedQuickDetailsId] = useState<string | null>(null);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved' | 'history'>('all');
   const [portfolioStats, setPortfolioStats] = useState<PortfolioStats | null>(null);
@@ -247,8 +253,12 @@ function ProfilePageContent() {
   // Notification preferences state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loadingNotificationPrefs, setLoadingNotificationPrefs] = useState(false);
-  const [defaultBuySlippage, setDefaultBuySlippage] = useState<number>(2);
-  const [defaultSellSlippage, setDefaultSellSlippage] = useState<number>(2);
+  const [defaultBuySlippage, setDefaultBuySlippage] = useState<number>(3);
+  const [defaultSellSlippage, setDefaultSellSlippage] = useState<number>(3);
+  const [buySlippageSelection, setBuySlippageSelection] = useState<string>('3');
+  const [sellSlippageSelection, setSellSlippageSelection] = useState<string>('3');
+  const [customBuySlippage, setCustomBuySlippage] = useState<string>('');
+  const [customSellSlippage, setCustomSellSlippage] = useState<string>('');
 
   // Check for upgrade success in URL params
   useEffect(() => {
@@ -844,8 +854,8 @@ function ProfilePageContent() {
         
         if (data) {
           setNotificationsEnabled(data.trader_closes_position || false);
-          setDefaultBuySlippage(data.default_buy_slippage ?? 2);
-          setDefaultSellSlippage(data.default_sell_slippage ?? 2);
+          setDefaultBuySlippage(data.default_buy_slippage ?? 3);
+          setDefaultSellSlippage(data.default_sell_slippage ?? 3);
         }
         // If no data and no error, user has no preferences yet - that's fine, use default
       } catch (err: any) {
@@ -861,6 +871,26 @@ function ProfilePageContent() {
 
     fetchNotificationPrefs();
   }, [user]);
+
+  useEffect(() => {
+    const nextSelection = SLIPPAGE_PRESETS.includes(defaultBuySlippage)
+      ? String(defaultBuySlippage)
+      : 'custom';
+    setBuySlippageSelection(nextSelection);
+    if (nextSelection === 'custom') {
+      setCustomBuySlippage(defaultBuySlippage.toString());
+    }
+  }, [defaultBuySlippage]);
+
+  useEffect(() => {
+    const nextSelection = SLIPPAGE_PRESETS.includes(defaultSellSlippage)
+      ? String(defaultSellSlippage)
+      : 'custom';
+    setSellSlippageSelection(nextSelection);
+    if (nextSelection === 'custom') {
+      setCustomSellSlippage(defaultSellSlippage.toString());
+    }
+  }, [defaultSellSlippage]);
 
   // Calculate stats
   const calculateStats = (): PortfolioStats => {
@@ -2317,6 +2347,24 @@ function ProfilePageContent() {
                                   {trade.status === 'trader-closed' && 'Trader Closed'}
                                   {trade.status === 'resolved' && 'Resolved'}
                                 </Badge>
+                                {trade.type === 'quick' && trade.raw && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedQuickDetailsId(
+                                        expandedQuickDetailsId === trade.id ? null : trade.id
+                                      )
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-50"
+                                  >
+                                    Trade Details
+                                    {expandedQuickDetailsId === trade.id ? (
+                                      <ChevronUp className="h-3 w-3" />
+                                    ) : (
+                                      <ChevronDown className="h-3 w-3" />
+                                    )}
+                                  </button>
+                                )}
                                 <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
                                   {formatRelativeTime(trade.created_at)}
                                 </span>
@@ -2361,6 +2409,24 @@ function ProfilePageContent() {
                                 {trade.status === 'trader-closed' && 'Trader Closed'}
                                 {trade.status === 'resolved' && 'Resolved'}
                               </Badge>
+                              {trade.type === 'quick' && trade.raw && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedQuickDetailsId(
+                                      expandedQuickDetailsId === trade.id ? null : trade.id
+                                    )
+                                  }
+                                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-50"
+                                >
+                                  Trade Details
+                                  {expandedQuickDetailsId === trade.id ? (
+                                    <ChevronUp className="h-3 w-3" />
+                                  ) : (
+                                    <ChevronDown className="h-3 w-3" />
+                                  )}
+                                </button>
+                              )}
                             </div>
                             <div className="flex items-center gap-2">
                               {liveMarketData.get(trade.market_id) && (
@@ -2492,6 +2558,12 @@ function ProfilePageContent() {
                             )}
                           </div>
                         </div>
+
+                        {trade.type === 'quick' && trade.raw && expandedQuickDetailsId === trade.id && (
+                          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <OrderRowDetails order={trade.raw as OrderRow} />
+                          </div>
+                        )}
 
                         {/* Expanded Details */}
                         {trade.type === 'manual' && expandedTradeId === trade.id && (
@@ -3112,82 +3184,6 @@ function ProfilePageContent() {
               </div>
 
               <div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">Default Slippage</h3>
-                <p className="text-sm text-slate-500 mb-4">
-                  Set your preferred default slippage tolerance for buy and sell orders. These values will be pre-filled when you trade.
-                </p>
-                <div className="space-y-4">
-                  {/* Buy Slippage */}
-                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <label htmlFor="buy-slippage" className="font-medium text-slate-900">
-                        Buy Orders
-                      </label>
-                      <span className="text-sm text-slate-600">{defaultBuySlippage}%</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <input
-                        id="buy-slippage"
-                        type="range"
-                        min="0"
-                        max="10"
-                        step="0.5"
-                        value={defaultBuySlippage}
-                        onChange={(e) => handleUpdateSlippage('buy', parseFloat(e.target.value))}
-                        className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-yellow-500"
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.5"
-                        value={defaultBuySlippage}
-                        onChange={(e) => handleUpdateSlippage('buy', parseFloat(e.target.value) || 0)}
-                        className="w-20 px-2 py-1 text-sm border border-slate-300 rounded text-right"
-                      />
-                    </div>
-                    <p className="text-xs text-slate-500 mt-2">
-                      Higher slippage increases fill rate but may result in worse prices
-                    </p>
-                  </div>
-
-                  {/* Sell Slippage */}
-                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <label htmlFor="sell-slippage" className="font-medium text-slate-900">
-                        Sell Orders
-                      </label>
-                      <span className="text-sm text-slate-600">{defaultSellSlippage}%</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <input
-                        id="sell-slippage"
-                        type="range"
-                        min="0"
-                        max="10"
-                        step="0.5"
-                        value={defaultSellSlippage}
-                        onChange={(e) => handleUpdateSlippage('sell', parseFloat(e.target.value))}
-                        className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-yellow-500"
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.5"
-                        value={defaultSellSlippage}
-                        onChange={(e) => handleUpdateSlippage('sell', parseFloat(e.target.value) || 0)}
-                        className="w-20 px-2 py-1 text-sm border border-slate-300 rounded text-right"
-                      />
-                    </div>
-                    <p className="text-xs text-slate-500 mt-2">
-                      Higher slippage increases fill rate but may result in worse prices
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Premium</h3>
                 {isPremium ? (
                   <div className="space-y-3">
@@ -3199,6 +3195,151 @@ function ProfilePageContent() {
                       <p className="text-sm text-yellow-700">
                         You have access to all premium features including Real Copy trading.
                       </p>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-4">
+                      <div>
+                        <h4 className="font-semibold text-slate-900">Default Slippage</h4>
+                        <p className="text-sm text-slate-500">
+                          Set your preferred default slippage tolerance for buy and sell orders.
+                        </p>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium text-slate-900">Buy Orders</p>
+                            <span className="text-xs text-slate-600">{defaultBuySlippage}%</span>
+                          </div>
+                          <RadioGroup
+                            value={buySlippageSelection}
+                            onValueChange={(value) => {
+                              setBuySlippageSelection(value);
+                              if (value === 'custom') return;
+                              const parsed = Number(value);
+                              if (Number.isFinite(parsed)) {
+                                handleUpdateSlippage('buy', parsed);
+                              }
+                            }}
+                            className="mt-2 flex flex-wrap gap-4"
+                          >
+                            {SLIPPAGE_PRESETS.map((value) => (
+                              <div key={value} className="flex items-center space-x-2">
+                                <RadioGroupItem
+                                  value={String(value)}
+                                  id={`buy-slippage-${value}`}
+                                  className="h-4 w-4"
+                                />
+                                <Label
+                                  htmlFor={`buy-slippage-${value}`}
+                                  className="text-sm font-medium text-slate-700 cursor-pointer"
+                                >
+                                  {value}%
+                                </Label>
+                              </div>
+                            ))}
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="custom" id="buy-slippage-custom" className="h-4 w-4" />
+                              <Label
+                                htmlFor="buy-slippage-custom"
+                                className="text-sm font-medium text-slate-700 cursor-pointer"
+                              >
+                                Custom
+                              </Label>
+                            </div>
+                          </RadioGroup>
+                          {buySlippageSelection === 'custom' && (
+                            <div className="mt-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                value={customBuySlippage}
+                                onChange={(e) => {
+                                  const nextValue = e.target.value;
+                                  setCustomBuySlippage(nextValue);
+                                  setBuySlippageSelection('custom');
+                                  const parsed = Number(nextValue);
+                                  if (Number.isFinite(parsed)) {
+                                    handleUpdateSlippage('buy', parsed);
+                                  }
+                                }}
+                                className="w-28 text-sm"
+                                placeholder="0.5"
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium text-slate-900">Sell Orders</p>
+                            <span className="text-xs text-slate-600">{defaultSellSlippage}%</span>
+                          </div>
+                          <RadioGroup
+                            value={sellSlippageSelection}
+                            onValueChange={(value) => {
+                              setSellSlippageSelection(value);
+                              if (value === 'custom') return;
+                              const parsed = Number(value);
+                              if (Number.isFinite(parsed)) {
+                                handleUpdateSlippage('sell', parsed);
+                              }
+                            }}
+                            className="mt-2 flex flex-wrap gap-4"
+                          >
+                            {SLIPPAGE_PRESETS.map((value) => (
+                              <div key={value} className="flex items-center space-x-2">
+                                <RadioGroupItem
+                                  value={String(value)}
+                                  id={`sell-slippage-${value}`}
+                                  className="h-4 w-4"
+                                />
+                                <Label
+                                  htmlFor={`sell-slippage-${value}`}
+                                  className="text-sm font-medium text-slate-700 cursor-pointer"
+                                >
+                                  {value}%
+                                </Label>
+                              </div>
+                            ))}
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="custom" id="sell-slippage-custom" className="h-4 w-4" />
+                              <Label
+                                htmlFor="sell-slippage-custom"
+                                className="text-sm font-medium text-slate-700 cursor-pointer"
+                              >
+                                Custom
+                              </Label>
+                            </div>
+                          </RadioGroup>
+                          {sellSlippageSelection === 'custom' && (
+                            <div className="mt-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                value={customSellSlippage}
+                                onChange={(e) => {
+                                  const nextValue = e.target.value;
+                                  setCustomSellSlippage(nextValue);
+                                  setSellSlippageSelection('custom');
+                                  const parsed = Number(nextValue);
+                                  if (Number.isFinite(parsed)) {
+                                    handleUpdateSlippage('sell', parsed);
+                                  }
+                                }}
+                                className="w-28 text-sm"
+                                placeholder="0.5"
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          Higher slippage increases fill rate but may result in worse prices.
+                        </p>
+                      </div>
                     </div>
                     
                     <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">

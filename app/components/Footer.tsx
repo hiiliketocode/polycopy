@@ -41,7 +41,7 @@ export default function Footer() {
 
           {/* Copyright */}
           <div className="text-sm text-slate-400 text-center md:text-right">
-            © 2024 Polycopy. All rights reserved.
+            © 2026 Polycopy. All rights reserved.
           </div>
         </div>
 
