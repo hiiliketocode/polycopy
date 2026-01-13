@@ -15,9 +15,9 @@ interface FAQCardProps {
  * Parse simple markdown-style text to JSX
  * Handles: **bold**, [links](url), bullet/numbered lists, paragraphs
  */
-function parseMarkdownToJSX(text: string): JSX.Element {
+function parseMarkdownToJSX(text: string): React.ReactElement {
   const lines = text.split('\n');
-  const elements: JSX.Element[] = [];
+  const elements: React.ReactElement[] = [];
   let listItems: string[] = [];
   let listType: 'ul' | 'ol' | null = null;
   let listKey = 0;
