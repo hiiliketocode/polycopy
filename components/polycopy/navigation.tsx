@@ -176,8 +176,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <Image src="/logos/polycopy-logo-primary.svg" alt="Polycopy" width={32} height={32} className="w-8 h-8" />
-            <span className="text-xl font-bold text-slate-900">Polycopy</span>
+            <Image src="/logos/polycopy-logo-primary.svg" alt="Polycopy" width={120} height={32} className="h-8 w-auto" />
           </Link>
 
           {/* Center Navigation Links */}
