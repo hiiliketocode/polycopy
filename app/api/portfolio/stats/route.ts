@@ -316,8 +316,8 @@ export async function GET(request: Request) {
         closedPositionsCount++
       }
 
-      // Add to total volume (all buy amounts)
-      totalVolume += position.totalCost
+      // Add to total volume (buys + sells, matching Polymarket's volume calculation)
+      totalVolume += position.totalCost + position.totalProceeds
     }
 
     const totalPnl = totalRealizedPnl + totalUnrealizedPnl
