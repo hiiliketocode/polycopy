@@ -149,8 +149,8 @@ export async function GET(request: Request) {
     const ordersTable = await resolveOrdersTableName(supabase)
 
     // Query ALL orders (both BUY and SELL) for position-based P&L calculation
-    // Don't filter by copied_trade_id - we need ALL orders including sells
-    const { data: allOrders, error: ordersError } = await supabase
+    // Include orders where user_id OR copy_user_id matches (covers both quick copy and manual copy)
+    const { data: allOrders, error: ordersError} = await supabase
       .from(ordersTable)
       .select(`
         order_id,
@@ -169,7 +169,7 @@ export async function GET(request: Request) {
         user_closed_at,
         created_at
       `)
-      .eq('copy_user_id', requestedUserId)
+      .or(`user_id.eq.${requestedUserId},copy_user_id.eq.${requestedUserId}`)
       .order('created_at', { ascending: true })
 
     if (ordersError) {
