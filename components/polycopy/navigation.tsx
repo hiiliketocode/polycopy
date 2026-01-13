@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import Image from "next/image"
 import { UpgradeModal } from "@/components/polycopy/upgrade-modal"
 import { useState, useEffect, useRef } from "react"
 import { supabase } from "@/lib/supabase"
@@ -27,15 +28,6 @@ const FeedIcon = ({ className }: { className?: string }) => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className={className}>
     <rect x="4" y="7" width="11" height="11" rx="2.5" fill="currentColor" opacity="0.9" />
     <rect x="9" y="4" width="11" height="11" rx="2.5" fill="currentColor" opacity="0.6" />
-  </svg>
-)
-
-const PolycopyLogo = ({ className }: { className?: string }) => (
-  <svg width="32" height="32" viewBox="0 0 32 32" fill="none" className={className}>
-    {/* Back square - lighter yellow/orange */}
-    <rect x="10" y="3" width="19" height="19" rx="6" fill="#FDB022" opacity="0.5" />
-    {/* Front square - darker orange */}
-    <rect x="3" y="10" width="19" height="19" rx="6" fill="#F5A524" />
   </svg>
 )
 
@@ -184,7 +176,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <PolycopyLogo className="w-8 h-8" />
+            <Image src="/logos/polycopy-logo-primary.svg" alt="Polycopy" width={32} height={32} className="w-8 h-8" />
             <span className="text-xl font-bold text-slate-900">Polycopy</span>
           </Link>
 
@@ -337,7 +329,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
           <div className="flex items-center h-14 px-4">
           {/* Logo - Left side, non-clickable branding */}
           <div className="mr-auto">
-            <PolycopyLogo className="h-6 w-6" />
+            <Image src="/logos/polycopy-logo-primary.svg" alt="Polycopy" width={24} height={24} className="h-6 w-6" />
           </div>
 
           {/* Navigation Buttons - Right side with button-like styling */}
