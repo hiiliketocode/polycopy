@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { STANDARD_DISCLAIMER, type FAQItem } from '@/app/faq/faq-data';
