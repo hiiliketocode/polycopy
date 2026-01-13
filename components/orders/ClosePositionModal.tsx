@@ -76,6 +76,8 @@ const CANCELABLE_PHASES = new Set<StatusPhase>([
   'submitted',
   'processing',
   'pending',
+  'open',
+  'partial',
   'unknown',
 ])
 type CancelStatusVariant = 'info' | 'success' | 'error'
