@@ -922,7 +922,7 @@ function ProfilePageContent() {
       unrealizedPnl: unrealizedPnl.toFixed(2),
       totalPnl: totalPnl.toFixed(2),
       sampleOpenTrades: openTrades.slice(0, 5).map(t => ({
-        market: t.copied_market_title?.substring(0, 30),
+        market: t.market_title?.substring(0, 30),
         entryPrice: t.price_when_copied,
         currentPrice: t.current_price,
         size: t.entry_size,
