@@ -35,6 +35,11 @@ type ClosePositionModalProps = {
     orderType: 'FAK' | 'GTC'
     isClosingFullPosition?: boolean
   }) => void
+  onManualClose?: (payload: {
+    orderId: string
+    amount: number
+    exitPrice: number
+  }) => void
 }
 
 const SLIPPAGE_TOOLTIP =
@@ -209,6 +214,7 @@ function getPostOrderStateLabel(
   return 'Order sent to Polymarket'
 }
 
+// Force recompile - Jan 13 2026
 export default function ClosePositionModal({
   target,
   isSubmitting,
@@ -217,10 +223,13 @@ export default function ClosePositionModal({
   submittedAt,
   onClose,
   onSubmit,
+  onManualClose,
 }: ClosePositionModalProps) {
   const { order, position } = target
+  const [mode, setMode] = useState<'sell' | 'manual'>('sell')
   const [amountInput, setAmountInput] = useState(() => position.size.toFixed(6))
   const [amountMode, setAmountMode] = useState<'contracts' | 'usd'>('contracts')
+  const [manualPriceInput, setManualPriceInput] = useState(() => (order.currentPrice ?? order.priceOrAvgPrice ?? 0).toFixed(4))
   const [slippagePreset, setSlippagePreset] = useState<number | 'custom'>(() => 2)
   const [customSlippage, setCustomSlippage] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -476,10 +485,10 @@ export default function ClosePositionModal({
 
   const handleConfirm = () => {
     if (!amountValid || effectivePriceForSubmit === null || !position.tokenId) return
-    
+
     // Detect if user is trying to close the full position (within 0.1% tolerance)
     const isClosingFullPosition = contractsValue >= position.size * 0.999
-    
+
     onSubmit({
       tokenId: position.tokenId,
       amount: contractsValue,
@@ -487,6 +496,17 @@ export default function ClosePositionModal({
       slippagePercent: normalizedSlippage,
       orderType,
       isClosingFullPosition, // Pass this flag to the API
+    })
+  }
+
+  const handleManualConfirm = () => {
+    if (!onManualClose) return
+    const manualPrice = Number(manualPriceInput)
+    if (!amountValid || !Number.isFinite(manualPrice) || manualPrice <= 0) return
+    onManualClose({
+      orderId: order.orderId,
+      amount: contractsValue,
+      exitPrice: manualPrice,
     })
   }
 
@@ -710,10 +730,38 @@ export default function ClosePositionModal({
               </div>
               <div className="mt-0.5 rounded-xl border border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
                 <div className="space-y-5">
+                  {/* Mode Toggle */}
+                  {onManualClose && (
+                    <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => setMode('sell')}
+                        className={`flex-1 px-4 py-2 rounded-md text-sm font-semibold transition-all ${
+                          mode === 'sell'
+                            ? 'bg-white text-slate-900 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Sell Now
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMode('manual')}
+                        className={`flex-1 px-4 py-2 rounded-md text-sm font-semibold transition-all ${
+                          mode === 'manual'
+                            ? 'bg-white text-slate-900 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Sold on Polymarket
+                      </button>
+                    </div>
+                  )}
+
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <span className="w-[52px]" aria-hidden="true" />
-                      <h4 className="text-sm font-semibold text-slate-900">Close</h4>
+                      <h4 className="text-sm font-semibold text-slate-900">{mode === 'sell' ? 'Close' : 'Mark as Sold'}</h4>
                       <span className="w-[52px]" aria-hidden="true" />
                     </div>
 
@@ -772,13 +820,39 @@ export default function ClosePositionModal({
                     )}
                   </div>
 
+                  {/* Manual Price Input - Only in Manual Mode */}
+                  {mode === 'manual' && (
+                    <div className="space-y-2">
+                      <label htmlFor="manual-price" className="text-xs font-medium text-slate-700">
+                        Exit Price
+                      </label>
+                      <div className="relative">
+                        <input
+                          id="manual-price"
+                          type="number"
+                          step={0.0001}
+                          value={manualPriceInput}
+                          onChange={(event) => setManualPriceInput(event.target.value)}
+                          onWheel={(event) => event.currentTarget.blur()}
+                          placeholder="0.0000"
+                          disabled={isSubmitting}
+                          className="w-full h-14 border border-slate-300 rounded-lg text-base font-semibold text-slate-700 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none pl-3 pr-3"
+                        />
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        Enter the price at which you sold this position on Polymarket.
+                      </p>
+                    </div>
+                  )}
+
                   <Button
-                    onClick={handleConfirm}
+                    onClick={mode === 'sell' ? handleConfirm : handleManualConfirm}
                     disabled={
-                      !amountValid ||
-                      effectivePriceForSubmit === null ||
                       isSubmitting ||
-                      hasSubmittedOrder
+                      hasSubmittedOrder ||
+                      !amountValid ||
+                      (mode === 'sell' && effectivePriceForSubmit === null) ||
+                      (mode === 'manual' && !Number.isFinite(Number(manualPriceInput)))
                     }
                     className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
                     size="lg"
@@ -787,7 +861,9 @@ export default function ClosePositionModal({
                       ? pendingStatusLabel
                       : hasSubmittedOrder
                         ? 'Order sent to Polymarket'
-                        : 'Sell position'}
+                        : mode === 'sell'
+                          ? 'Sell position'
+                          : 'Mark as sold'}
                   </Button>
 
                   <div className="mt-2 flex items-center justify-between gap-3">

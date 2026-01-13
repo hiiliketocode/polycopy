@@ -485,6 +485,65 @@ export function OrdersScreen({
     [refreshOrders, closeTarget]
   )
 
+  const handleManualClose = useCallback(
+    async ({
+      orderId,
+      amount,
+      exitPrice,
+    }: {
+      orderId: string
+      amount: number
+      exitPrice: number
+    }) => {
+      setCloseSubmitting(true)
+      setCloseError(null)
+      try {
+        // Get the order to calculate entry price and ROI
+        const order = orders.find(o => o.orderId === orderId)
+        if (!order) {
+          throw new Error('Order not found')
+        }
+
+        const entryPrice = order.priceOrAvgPrice ?? 0
+        if (entryPrice === 0) {
+          throw new Error('Invalid entry price')
+        }
+
+        const roi = ((exitPrice - entryPrice) / entryPrice) * 100
+
+        // Update the order in the database
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          throw new Error('Not authenticated')
+        }
+
+        const { error: updateError } = await supabase
+          .from('orders')
+          .update({
+            user_closed_at: new Date().toISOString(),
+            user_exit_price: exitPrice,
+            roi: parseFloat(roi.toFixed(2)),
+          })
+          .eq('order_id', orderId)
+          .eq('copy_user_id', user.id)
+
+        if (updateError) {
+          throw updateError
+        }
+
+        setCloseSuccess(`Position marked as sold at ${exitPrice.toFixed(4)}`)
+        setCloseTarget(null)
+        await refreshOrders()
+      } catch (err: any) {
+        console.error('Manual close error:', err)
+        setCloseError(err?.message || 'Failed to mark position as sold')
+      } finally {
+        setCloseSubmitting(false)
+      }
+    },
+    [orders, refreshOrders]
+  )
+
   useEffect(() => {
     if (loadingAuth || hasLoaded || !user) return
     setHasLoaded(true)
@@ -707,6 +766,7 @@ export function OrdersScreen({
               }
             }}
             onSubmit={handleConfirmClose}
+            onManualClose={handleManualClose}
             orderId={closeOrderId}
             submittedAt={closeSubmittedAt}
           />
