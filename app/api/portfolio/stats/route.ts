@@ -26,8 +26,8 @@ const resolveFilledSize = (row: any) => {
 }
 
 const normalize = (value?: string | null) => value?.trim().toLowerCase() || ''
-const PRICE_FETCH_TIMEOUT_MS = 6000
-const MAX_MARKETS_TO_REFRESH = 40
+const PRICE_FETCH_TIMEOUT_MS = 8000 // Increased timeout
+const MAX_MARKETS_TO_REFRESH = 100 // Increased from 40 to handle more open positions
 
 type MarketPrice = {
   outcomes?: string[]
@@ -91,7 +91,41 @@ const createService = () =>
     }
   )
 
+interface Order {
+  order_id: string
+  side: string
+  filled_size: number | null
+  size: number | null
+  price: number | null
+  price_when_copied: number | null
+  amount_invested: number | null
+  market_id: string | null
+  outcome: string | null
+  current_price: number | null
+  market_resolved: boolean
+  resolved_outcome: string | null
+  user_exit_price: number | null
+  user_closed_at: string | null
+  created_at: string | null
+}
+
+interface Position {
+  tokenId: string
+  marketId: string
+  outcome: string
+  buys: Array<{ price: number; size: number; cost: number; timestamp: string }>
+  sells: Array<{ price: number; size: number; proceeds: number; timestamp: string }>
+  netSize: number
+  totalCost: number
+  totalProceeds: number
+  realizedPnl: number
+  unrealizedPnl: number
+  avgEntryPrice: number
+  currentPrice: number | null
+}
+
 export async function GET(request: Request) {
+  // Force recompilation - updated query to include ALL orders (BUY + SELL)
   try {
     const supabaseAuth = await createAuthClient()
     const { data: userData, error: authError } = await supabaseAuth.auth.getUser()
@@ -114,125 +148,223 @@ export async function GET(request: Request) {
     const supabase = createService()
     const ordersTable = await resolveOrdersTableName(supabase)
 
-    // Realized = resolved OR user closed
-    const { data: realizedRows, error: realizedError, count: realizedCount } = await supabase
-      .from('orders_copy_enriched')
-      .select('pnl_usd, invested_usd', { count: 'exact' })
+    // Query ALL orders (both BUY and SELL) for position-based P&L calculation
+    // Don't filter by copied_trade_id - we need ALL orders including sells
+    const { data: allOrders, error: ordersError } = await supabase
+      .from(ordersTable)
+      .select(`
+        order_id,
+        side,
+        filled_size,
+        size,
+        price,
+        price_when_copied,
+        amount_invested,
+        market_id,
+        outcome,
+        current_price,
+        market_resolved,
+        resolved_outcome,
+        user_exit_price,
+        user_closed_at,
+        created_at
+      `)
       .eq('copy_user_id', requestedUserId)
-      .or('market_resolved.eq.true,user_exit_price.not.is.null')
+      .order('created_at', { ascending: true })
 
-    if (realizedError) {
-      console.error('Error aggregating realized PnL:', realizedError)
-      return NextResponse.json({ error: realizedError.message }, { status: 500 })
+    if (ordersError) {
+      console.error('Error fetching orders:', ordersError)
+      return NextResponse.json({ error: ordersError.message }, { status: 500 })
     }
 
-    // Unrealized = open positions (not resolved, not user closed)
-    const { data: openRows, error: openError, count: openCount } = await supabase
-      .from('orders_copy_enriched')
-      .select(
-        'order_id, market_id, outcome, entry_price, entry_size, current_price, pnl_usd, invested_usd',
-        { count: 'exact' }
-      )
-      .eq('copy_user_id', requestedUserId)
-      .is('market_resolved', false)
-      .is('user_exit_price', null)
+    const orders = (allOrders || []) as Order[]
 
-    if (openError) {
-      console.error('Error aggregating unrealized PnL:', openError)
-      return NextResponse.json({ error: openError.message }, { status: 500 })
+    // Group orders by position (token_id, or fallback to market_id + outcome)
+    const positionsMap = new Map<string, Position>()
+
+    for (const order of orders) {
+      const side = normalizeSide(order.side)
+      const price = toNullableNumber(order.price_when_copied) ?? toNullableNumber(order.price)
+      const filledSize = resolveFilledSize(order)
+      
+      if (!price || !filledSize || filledSize <= 0) continue
+
+      // Create position key using market_id + outcome
+      const marketId = order.market_id?.trim() || ''
+      const outcome = normalize(order.outcome)
+      const positionKey = `${marketId}::${outcome}`
+
+      if (!positionKey || positionKey === '::' || !marketId) continue
+
+      // Get or create position
+      let position = positionsMap.get(positionKey)
+      if (!position) {
+        position = {
+          tokenId: positionKey,
+          marketId: marketId,
+          outcome: order.outcome || '',
+          buys: [],
+          sells: [],
+          netSize: 0,
+          totalCost: 0,
+          totalProceeds: 0,
+          realizedPnl: 0,
+          unrealizedPnl: 0,
+          avgEntryPrice: 0,
+          currentPrice: toNullableNumber(order.current_price)
+        }
+        positionsMap.set(positionKey, position)
+      }
+
+      // Update current price if we have a newer one
+      const orderCurrentPrice = toNullableNumber(order.current_price)
+      if (orderCurrentPrice !== null) {
+        position.currentPrice = orderCurrentPrice
+      }
+
+      // Record the trade
+      const timestamp = order.created_at || new Date().toISOString()
+      if (side === 'buy') {
+        position.buys.push({
+          price,
+          size: filledSize,
+          cost: price * filledSize,
+          timestamp
+        })
+        position.totalCost += price * filledSize
+        position.netSize += filledSize
+      } else if (side === 'sell') {
+        position.sells.push({
+          price,
+          size: filledSize,
+          proceeds: price * filledSize,
+          timestamp
+        })
+        position.totalProceeds += price * filledSize
+        position.netSize -= filledSize
+      }
     }
 
-    // Win rate uses resolved/user-closed only
-    const { count: winningTrades, error: winError } = await supabase
-      .from('orders_copy_enriched')
-      .select('order_id', { count: 'exact', head: true })
-      .eq('copy_user_id', requestedUserId)
-      .or('market_resolved.eq.true,user_exit_price.not.is.null')
-      .gt('pnl_usd', 0)
-
-    if (winError) {
-      console.error('Error counting winning trades:', winError)
-      return NextResponse.json({ error: winError.message }, { status: 500 })
-    }
-
-    const { count: totalTrades, error: totalError } = await supabase
-      .from('orders_copy_enriched')
-      .select('order_id', { count: 'exact', head: true })
-      .eq('copy_user_id', requestedUserId)
-
-    if (totalError) {
-      console.error('Error counting total trades:', totalError)
-      return NextResponse.json({ error: totalError.message }, { status: 500 })
-    }
-
-    const realizedPnl = (realizedRows || []).reduce(
-      (sum, row: any) => sum + toNumber(row.pnl_usd),
-      0
-    )
-    const openMarketIds = Array.from(
+    // Fetch fresh prices for all positions
+    const allMarketIds = Array.from(
       new Set(
-        (openRows || [])
-          .map((row: any) => row.market_id)
-          .filter((marketId: any): marketId is string => Boolean(marketId))
+        Array.from(positionsMap.values())
+          .map(p => p.marketId)
+          .filter(Boolean)
       )
     ).slice(0, MAX_MARKETS_TO_REFRESH)
 
-    const priceMap = await fetchMarketPrices(openMarketIds)
+    const priceMap = await fetchMarketPrices(allMarketIds)
 
-    const unrealizedPnl = (openRows || []).reduce((sum, row: any) => {
-      const entryPrice = toNullableNumber(row.entry_price)
-      const entrySize = toNullableNumber(row.entry_size)
-      const storedPnl = toNullableNumber(row.pnl_usd)
-      const storedPrice = toNullableNumber(row.current_price)
-      const marketPrice = findOutcomePrice(priceMap.get(row.market_id), row.outcome)
-      const currentPrice = marketPrice ?? storedPrice
+    // Calculate P&L for each position using FIFO cost basis
+    let totalRealizedPnl = 0
+    let totalUnrealizedPnl = 0
+    let totalVolume = 0
+    let openPositionsCount = 0
+    let closedPositionsCount = 0
 
-      if (entryPrice !== null && entrySize !== null && currentPrice !== null) {
-        return sum + (currentPrice - entryPrice) * entrySize
+    for (const position of positionsMap.values()) {
+      // Update current price if we fetched a fresh one
+      const freshPrice = findOutcomePrice(priceMap.get(position.marketId), position.outcome)
+      if (freshPrice !== null) {
+        position.currentPrice = freshPrice
       }
-      return sum + (storedPnl ?? 0)
-    }, 0)
-    const { data: volumeRows, error: volumeError } = await supabase
-      .from(ordersTable)
-      .select('price, price_when_copied, amount_invested, filled_size, size, side')
-      .eq('copy_user_id', requestedUserId)
 
-    if (volumeError) {
-      console.error('Error aggregating volume:', volumeError)
-      return NextResponse.json({ error: volumeError.message }, { status: 500 })
+      // Calculate average entry price for remaining shares
+      if (position.totalCost > 0) {
+        position.avgEntryPrice = position.totalCost / position.buys.reduce((sum, b) => sum + b.size, 0)
+      }
+
+      // FIFO matching: Match sells to buys chronologically
+      let remainingBuys = [...position.buys]
+      let realizedPnl = 0
+
+      for (const sell of position.sells) {
+        let remainingSellSize = sell.size
+        
+        while (remainingSellSize > 0 && remainingBuys.length > 0) {
+          const buy = remainingBuys[0]
+          const matchSize = Math.min(remainingSellSize, buy.size)
+          const matchCost = (buy.cost / buy.size) * matchSize
+          const matchProceeds = (sell.proceeds / sell.size) * matchSize
+          
+          realizedPnl += matchProceeds - matchCost
+          
+          remainingSellSize -= matchSize
+          buy.size -= matchSize
+          buy.cost -= matchCost
+          
+          if (buy.size <= 0.00001) { // Account for floating point precision
+            remainingBuys.shift()
+          }
+        }
+      }
+
+      position.realizedPnl = realizedPnl
+      totalRealizedPnl += realizedPnl
+
+      // Calculate unrealized P&L on remaining position
+      const remainingSize = remainingBuys.reduce((sum, b) => sum + b.size, 0)
+      const remainingCost = remainingBuys.reduce((sum, b) => sum + b.cost, 0)
+
+      if (remainingSize > 0 && position.currentPrice !== null) {
+        const currentValue = remainingSize * position.currentPrice
+        position.unrealizedPnl = currentValue - remainingCost
+        totalUnrealizedPnl += position.unrealizedPnl
+        openPositionsCount++
+      } else if (remainingSize <= 0.00001) {
+        closedPositionsCount++
+      }
+
+      // Add to total volume (all buy amounts)
+      totalVolume += position.totalCost
     }
 
-    const totalVolume = (volumeRows || []).reduce((sum, row: any) => {
-      const side = normalizeSide(row?.side)
-      if (side === 'sell') return sum
-
-      const entryPrice = toNullableNumber(row?.price_when_copied) ?? toNullableNumber(row?.price)
-      const filledSize = resolveFilledSize(row)
-      const invested = toNullableNumber(row?.amount_invested)
-
-      if (invested !== null && invested > 0) return sum + invested
-      if (entryPrice !== null && filledSize !== null) return sum + entryPrice * filledSize
-      return sum
-    }, 0)
-
-    const totalPnl = realizedPnl + unrealizedPnl
+    const totalPnl = totalRealizedPnl + totalUnrealizedPnl
     const roi = totalVolume > 0 ? (totalPnl / totalVolume) * 100 : 0
 
-    const resolvedTradesCount = toNumber(realizedCount)
-    const openTradesCount = toNumber(openCount)
-    const winRate =
-      resolvedTradesCount > 0 ? (toNumber(winningTrades) / resolvedTradesCount) * 100 : 0
+    // Calculate win rate (closed positions that made profit)
+    const closedPositions = Array.from(positionsMap.values()).filter(p => 
+      p.netSize <= 0.00001 && p.sells.length > 0
+    )
+    const winningPositions = closedPositions.filter(p => p.realizedPnl > 0).length
+    const winRate = closedPositions.length > 0 ? (winningPositions / closedPositions.length) * 100 : 0
+
+    console.log('🎯 Position-Based P&L Calculated:', {
+      userId: requestedUserId.substring(0, 8),
+      method: 'FIFO Cost Basis (Polymarket-style)',
+      totalPositions: positionsMap.size,
+      openPositions: openPositionsCount,
+      closedPositions: closedPositionsCount,
+      totalVolume: totalVolume.toFixed(2),
+      realizedPnl: totalRealizedPnl.toFixed(2),
+      unrealizedPnl: totalUnrealizedPnl.toFixed(2),
+      totalPnl: totalPnl.toFixed(2),
+      roi: roi.toFixed(2),
+      winRate: winRate.toFixed(1),
+      freshPricesFetched: priceMap.size,
+      samplePositions: Array.from(positionsMap.values()).slice(0, 3).map(p => ({
+        tokenId: p.tokenId.substring(0, 12),
+        outcome: p.outcome,
+        buys: p.buys.length,
+        sells: p.sells.length,
+        netSize: p.netSize.toFixed(2),
+        realizedPnl: p.realizedPnl.toFixed(2),
+        unrealizedPnl: p.unrealizedPnl.toFixed(2),
+        currentPrice: p.currentPrice?.toFixed(2) || 'N/A'
+      }))
+    })
 
     return NextResponse.json({
       totalPnl,
-      realizedPnl,
-      unrealizedPnl,
+      realizedPnl: totalRealizedPnl,
+      unrealizedPnl: totalUnrealizedPnl,
       totalVolume,
       roi,
       winRate,
-      totalTrades: toNumber(totalTrades),
-      openTrades: openTradesCount,
-      closedTrades: resolvedTradesCount,
+      totalTrades: orders.filter(o => normalizeSide(o.side) === 'buy').length,
+      openTrades: openPositionsCount,
+      closedTrades: closedPositions.length,
       freshness: new Date().toISOString(),
     })
   } catch (error: any) {

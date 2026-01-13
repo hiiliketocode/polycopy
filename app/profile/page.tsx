@@ -206,6 +206,16 @@ function ProfilePageContent() {
   const [categoryDistribution, setCategoryDistribution] = useState<CategoryDistribution[]>([]);
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [hoveredBucket, setHoveredBucket] = useState<{ range: string; count: number; percentage: number; x: number; y: number } | null>(null);
+  const [topTradersStats, setTopTradersStats] = useState<Array<{
+    trader_id: string;
+    trader_name: string;
+    trader_wallet: string;
+    copy_count: number;
+    total_invested: number;
+    pnl: number;
+    roi: number;
+    win_rate: number;
+  }>>([]);
   
   // Edit/Close trade modal state
   const [showEditModal, setShowEditModal] = useState(false);
@@ -237,6 +247,8 @@ function ProfilePageContent() {
   // Notification preferences state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loadingNotificationPrefs, setLoadingNotificationPrefs] = useState(false);
+  const [defaultBuySlippage, setDefaultBuySlippage] = useState<number>(2);
+  const [defaultSellSlippage, setDefaultSellSlippage] = useState<number>(2);
 
   // Check for upgrade success in URL params
   useEffect(() => {
@@ -712,6 +724,94 @@ function ProfilePageContent() {
       .sort((a, b) => b.count - a.count);
 
     setCategoryDistribution(categoryData);
+
+    // Calculate Top Traders Stats
+    const traderMap = new Map<string, {
+      trader_id: string;
+      trader_name: string;
+      trader_wallet: string;
+      trades: CopiedTrade[];
+    }>();
+
+    copiedTrades.forEach(trade => {
+      const key = trade.trader_wallet || '';
+      if (!key) return;
+      
+      if (!traderMap.has(key)) {
+        traderMap.set(key, {
+          trader_id: trade.trader_wallet || '', // Use wallet as ID
+          trader_name: trade.trader_username || 'Unknown',
+          trader_wallet: trade.trader_wallet || '',
+          trades: []
+        });
+      }
+      
+      traderMap.get(key)!.trades.push(trade);
+    });
+
+    const topTraders = Array.from(traderMap.values()).map(trader => {
+      const totalInvested = trader.trades.reduce((sum, t) => sum + (t.amount_invested || 0), 0);
+      const entryPrice = (t: CopiedTrade) => t.price_when_copied;
+      
+      const pnl = trader.trades.reduce((sum, t) => {
+        const entry = entryPrice(t);
+        if (!entry) return sum;
+        
+        // Calculate P&L for each trade
+        if (t.user_closed_at && t.user_exit_price) {
+          const tradeResult = ((t.user_exit_price - entry) / entry) * (t.amount_invested || 0);
+          return sum + tradeResult;
+        } else if (t.market_resolved && t.current_price !== null) {
+          const tradeResult = ((t.current_price - entry) / entry) * (t.amount_invested || 0);
+          return sum + tradeResult;
+        } else if (t.current_price !== null && !t.market_resolved) {
+          const unrealizedPnl = ((t.current_price - entry) / entry) * (t.amount_invested || 0);
+          return sum + unrealizedPnl;
+        }
+        return sum;
+      }, 0);
+      
+      const roi = totalInvested > 0 ? (pnl / totalInvested) * 100 : 0;
+      
+      const closedTrades = trader.trades.filter(t => t.user_closed_at || t.market_resolved);
+      const wins = closedTrades.filter(t => {
+        const entry = entryPrice(t);
+        if (!entry) return false;
+        
+        if (t.user_closed_at && t.user_exit_price) {
+          return t.user_exit_price > entry;
+        } else if (t.market_resolved && t.current_price !== null) {
+          return t.current_price > entry;
+        }
+        return false;
+      }).length;
+      const winRate = closedTrades.length > 0 ? (wins / closedTrades.length) * 100 : 0;
+
+      return {
+        trader_id: trader.trader_id,
+        trader_name: trader.trader_name,
+        trader_wallet: trader.trader_wallet,
+        copy_count: trader.trades.length,
+        total_invested: totalInvested,
+        pnl,
+        roi,
+        win_rate: winRate
+      };
+    }).sort((a, b) => b.total_invested - a.total_invested).slice(0, 10);
+
+    console.log('📊 Top Traders Stats Calculated:', {
+      tradersCount: topTraders.length,
+      topTrader: topTraders[0] ? {
+        name: topTraders[0].trader_name,
+        copies: topTraders[0].copy_count,
+        invested: topTraders[0].total_invested.toFixed(2),
+        pnl: topTraders[0].pnl.toFixed(2),
+        roi: topTraders[0].roi.toFixed(1) + '%',
+        winRate: topTraders[0].win_rate.toFixed(1) + '%'
+      } : 'none'
+    });
+
+    setTopTradersStats(topTraders);
   }, [copiedTrades]);
 
   // Fetch notification preferences
@@ -744,6 +844,8 @@ function ProfilePageContent() {
         
         if (data) {
           setNotificationsEnabled(data.trader_closes_position || false);
+          setDefaultBuySlippage(data.default_buy_slippage ?? 2);
+          setDefaultSellSlippage(data.default_sell_slippage ?? 2);
         }
         // If no data and no error, user has no preferences yet - that's fine, use default
       } catch (err: any) {
@@ -807,6 +909,27 @@ function ProfilePageContent() {
     const winningTrades = closedTrades.filter(t => pnlValue(t) > 0).length;
     const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
 
+    // Debug: Check how many open trades have prices
+    const openTradesWithPrices = openTrades.filter(t => t.current_price !== null).length;
+    const openTradesWithoutPrices = openTrades.length - openTradesWithPrices;
+    
+    console.log('📊 Fallback Calculation Detail:', {
+      openTrades: openTrades.length,
+      openWithPrices: openTradesWithPrices,
+      openWithoutPrices: openTradesWithoutPrices,
+      closedTrades: closedTrades.length,
+      realizedPnl: realizedPnl.toFixed(2),
+      unrealizedPnl: unrealizedPnl.toFixed(2),
+      totalPnl: totalPnl.toFixed(2),
+      sampleOpenTrades: openTrades.slice(0, 5).map(t => ({
+        market: t.copied_market_title?.substring(0, 30),
+        entryPrice: t.price_when_copied,
+        currentPrice: t.current_price,
+        size: t.entry_size,
+        pnl: pnlValue(t).toFixed(2)
+      }))
+    });
+
     return {
       totalPnl,
       roi: actualRoi,
@@ -822,6 +945,23 @@ function ProfilePageContent() {
 
   const fallbackStats = calculateStats();
   const userStats = portfolioStats ?? fallbackStats;
+  
+  // Debug logging to see which stats are being used
+  console.log('📊 Stats Source:', {
+    usingAPI: portfolioStats !== null,
+    usingFallback: portfolioStats === null,
+    apiStats: portfolioStats ? {
+      totalPnl: portfolioStats.totalPnl.toFixed(2),
+      realizedPnl: portfolioStats.realizedPnl.toFixed(2),
+      unrealizedPnl: portfolioStats.unrealizedPnl.toFixed(2),
+      volume: portfolioStats.totalVolume.toFixed(2)
+    } : 'null',
+    fallbackStats: {
+      totalPnl: fallbackStats.totalPnl.toFixed(2),
+      volume: fallbackStats.totalVolume.toFixed(2)
+    },
+    displayedPnl: userStats.totalPnl.toFixed(2)
+  });
 
   // Filter trades
   const filteredTrades = copiedTrades.filter(trade => {
@@ -1205,6 +1345,44 @@ function ProfilePageContent() {
     } catch (err) {
       console.error('Error updating notification preferences:', err);
       setNotificationsEnabled(!newValue);
+    }
+  };
+
+  // Update slippage settings
+  const handleUpdateSlippage = async (type: 'buy' | 'sell', value: number) => {
+    if (!user) return;
+    
+    // Validate slippage value (0-100)
+    const validatedValue = Math.max(0, Math.min(100, value));
+    
+    if (type === 'buy') {
+      setDefaultBuySlippage(validatedValue);
+    } else {
+      setDefaultSellSlippage(validatedValue);
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('notification_preferences')
+        .upsert({
+          user_id: user.id,
+          default_buy_slippage: type === 'buy' ? validatedValue : defaultBuySlippage,
+          default_sell_slippage: type === 'sell' ? validatedValue : defaultSellSlippage,
+        });
+      
+      if (error) throw error;
+      
+      setToastMessage(`Default ${type} slippage updated to ${validatedValue}%`);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error updating slippage preferences:', err);
+      // Revert on error
+      if (type === 'buy') {
+        setDefaultBuySlippage(defaultBuySlippage);
+      } else {
+        setDefaultSellSlippage(defaultSellSlippage);
+      }
     }
   };
 
@@ -2489,9 +2667,14 @@ function ProfilePageContent() {
                       )}
                       
                       {/* X-axis labels */}
-                      <div className="absolute -bottom-6 left-0 right-0 flex justify-between text-xs text-slate-500">
+                      <div
+                        className="absolute -bottom-6 left-0 right-0 grid text-xs text-slate-500"
+                        style={{ gridTemplateColumns: `repeat(${positionSizeBuckets.length}, minmax(0, 1fr))` }}
+                      >
                         {positionSizeBuckets.map((bucket, i) => (
-                          <span key={i} className="text-center">{bucket.range}</span>
+                          <span key={i} className="text-center">
+                            {bucket.range}
+                          </span>
                         ))}
                       </div>
                     </div>
@@ -2726,6 +2909,61 @@ function ProfilePageContent() {
                 )}
               </Card>
 
+              {/* Top Traders Copied */}
+              {topTradersStats.length > 0 && (
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold text-slate-900 mb-2">Top Traders Copied</h3>
+                  <p className="text-sm text-slate-500 mb-6">Performance of trades copied from your top 10 most-copied traders</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="text-left py-3 px-2 font-semibold text-slate-700">Trader</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Copies</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Invested</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">P&L</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">ROI</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Win Rate</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {topTradersStats.map((trader) => (
+                          <tr key={trader.trader_wallet} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="py-3 px-2">
+                              <Link 
+                                href={`/trader/${trader.trader_wallet}`}
+                                className="font-medium text-slate-900 hover:text-yellow-600 transition-colors"
+                              >
+                                {trader.trader_name}
+                              </Link>
+                            </td>
+                            <td className="text-right py-3 px-2 text-slate-700">{trader.copy_count}</td>
+                            <td className="text-right py-3 px-2 text-slate-700">
+                              {formatCurrency(trader.total_invested)}
+                            </td>
+                            <td className={cn(
+                              "text-right py-3 px-2 font-semibold",
+                              trader.pnl >= 0 ? "text-emerald-600" : "text-red-600"
+                            )}>
+                              {trader.pnl >= 0 ? '+' : ''}{formatCurrency(trader.pnl)}
+                            </td>
+                            <td className={cn(
+                              "text-right py-3 px-2 font-semibold",
+                              trader.roi >= 0 ? "text-emerald-600" : "text-red-600"
+                            )}>
+                              {trader.roi >= 0 ? '+' : ''}{trader.roi.toFixed(1)}%
+                            </td>
+                            <td className="text-right py-3 px-2 text-slate-700">
+                              {trader.win_rate.toFixed(0)}%
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              )}
+
               <Card className="p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Performing Trades</h3>
                 <div className="space-y-3">
@@ -2793,6 +3031,82 @@ function ProfilePageContent() {
                   >
                     {notificationsEnabled ? 'Enabled' : 'Disabled'}
                   </Button>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Default Slippage</h3>
+                <p className="text-sm text-slate-500 mb-4">
+                  Set your preferred default slippage tolerance for buy and sell orders. These values will be pre-filled when you trade.
+                </p>
+                <div className="space-y-4">
+                  {/* Buy Slippage */}
+                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <label htmlFor="buy-slippage" className="font-medium text-slate-900">
+                        Buy Orders
+                      </label>
+                      <span className="text-sm text-slate-600">{defaultBuySlippage}%</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        id="buy-slippage"
+                        type="range"
+                        min="0"
+                        max="10"
+                        step="0.5"
+                        value={defaultBuySlippage}
+                        onChange={(e) => handleUpdateSlippage('buy', parseFloat(e.target.value))}
+                        className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={defaultBuySlippage}
+                        onChange={(e) => handleUpdateSlippage('buy', parseFloat(e.target.value) || 0)}
+                        className="w-20 px-2 py-1 text-sm border border-slate-300 rounded text-right"
+                      />
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">
+                      Higher slippage increases fill rate but may result in worse prices
+                    </p>
+                  </div>
+
+                  {/* Sell Slippage */}
+                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <label htmlFor="sell-slippage" className="font-medium text-slate-900">
+                        Sell Orders
+                      </label>
+                      <span className="text-sm text-slate-600">{defaultSellSlippage}%</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        id="sell-slippage"
+                        type="range"
+                        min="0"
+                        max="10"
+                        step="0.5"
+                        value={defaultSellSlippage}
+                        onChange={(e) => handleUpdateSlippage('sell', parseFloat(e.target.value))}
+                        className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={defaultSellSlippage}
+                        onChange={(e) => handleUpdateSlippage('sell', parseFloat(e.target.value) || 0)}
+                        className="w-20 px-2 py-1 text-sm border border-slate-300 rounded text-right"
+                      />
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">
+                      Higher slippage increases fill rate but may result in worse prices
+                    </p>
+                  </div>
                 </div>
               </div>
 

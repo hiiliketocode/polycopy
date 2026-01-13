@@ -903,7 +903,20 @@ export default function TraderProfilePage({
 
     const totalPnl = realizedPnl + unrealizedPnl;
     const roi = volume > 0 ? (totalPnl / volume) * 100 : 0;
-    const winRate = sellTrades > 0 ? (winSells / sellTrades) * 100 : 0;
+    // Win rate: only meaningful if there are sell trades
+    // If sellTrades === 0, we can't calculate win rate (not enough data)
+    const winRate = sellTrades > 0 ? (winSells / sellTrades) * 100 : null;
+
+    console.log('🧮 Computed stats from trades:', {
+      tradesCount: trades.length,
+      totalPnl: totalPnl.toFixed(2),
+      volume: volume.toFixed(2),
+      roi: roi.toFixed(1) + '%',
+      winRate: winRate !== null ? winRate.toFixed(1) + '%' : 'N/A (no sells yet)',
+      sellTrades,
+      winSells,
+      note: 'Win rate is based on SELL trades only. Traders with all open positions show N/A.'
+    });
 
     setComputedStats({
       totalPnl,
@@ -911,7 +924,7 @@ export default function TraderProfilePage({
       unrealizedPnl,
       volume,
       roi,
-      winRate,
+      winRate: winRate ?? 0, // Store 0 if null, but we'll display N/A in UI
     });
   }, [trades, liveMarketData]);
 
@@ -974,10 +987,26 @@ export default function TraderProfilePage({
 
   const avatarColor = getAvatarColor(wallet);
   const initials = getInitials(wallet);
-  const effectivePnl = computedStats?.totalPnl ?? traderData.pnl ?? 0;
-  const effectiveVolume = computedStats?.volume ?? traderData.volume ?? 0;
-  const effectiveRoiValue = computedStats?.roi ?? (effectiveVolume > 0 ? (effectivePnl / effectiveVolume) * 100 : 0);
-  const effectiveWinRate = computedStats?.winRate ?? 0;
+  // CRITICAL: Prioritize traderData (Polymarket leaderboard) over computedStats (calculated from limited trades)
+  // Polymarket has the accurate all-time stats; computedStats is based on max 100 recent trades
+  const effectivePnl = traderData.pnl ?? computedStats?.totalPnl ?? 0;
+  const effectiveVolume = traderData.volume ?? computedStats?.volume ?? 0;
+  const effectiveRoiValue = traderData.roi ?? computedStats?.roi ?? (effectiveVolume > 0 ? (effectivePnl / effectiveVolume) * 100 : 0);
+  // Win rate: Polymarket doesn't provide it, so we calculate from trade history
+  // Only show if we have sell trades (winRate calculation requires realized trades)
+  // Show N/A if winRate is 0 or null (no sell trades yet)
+  const effectiveWinRate = (computedStats && computedStats.winRate && computedStats.winRate > 0) ? computedStats.winRate : null;
+
+  console.log('📊 Trader Profile Stats Priority:', {
+    wallet: wallet.substring(0, 8),
+    leaderboardPnl: traderData.pnl,
+    computedPnl: computedStats?.totalPnl,
+    effectivePnl,
+    leaderboardRoi: traderData.roi,
+    computedRoi: computedStats?.roi,
+    effectiveRoiValue,
+    source: traderData.pnl ? 'leaderboard' : computedStats ? 'computed' : 'none'
+  });
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -1128,7 +1157,7 @@ export default function TraderProfilePage({
                 </div>
               </div>
               <div className="text-2xl font-bold text-slate-900">
-                {Number.isFinite(effectiveWinRate) ? `${effectiveWinRate.toFixed(1)}%` : 'N/A'}
+                {effectiveWinRate !== null && Number.isFinite(effectiveWinRate) ? `${effectiveWinRate.toFixed(1)}%` : 'N/A'}
               </div>
             </div>
             <div className="text-center p-4 bg-slate-50 rounded-lg relative group">

@@ -946,15 +946,20 @@ export function TradeCard({
             typeof data?.filledSize === 'number' ? data.filledSize : null
           const remainingSize =
             typeof data?.remainingSize === 'number' ? data.remainingSize : null
-          if (
-            remainingSize !== null &&
-            remainingSize <= 0 &&
-            filledSize !== null &&
-            filledSize > 0
-          ) {
-            phase = 'filled'
-          }
-          if (phase === 'filled' && (!filledSize || filledSize <= 0)) {
+          const totalSize =
+            typeof data?.size === 'number' ? data.size : null
+          
+          // Determine if order is filled, partially filled, or canceled
+          if (filledSize !== null && filledSize > 0) {
+            if (totalSize !== null && filledSize < totalSize) {
+              // Has fills but not all - partially filled
+              phase = 'partial'
+            } else if (remainingSize !== null && remainingSize <= 0) {
+              // Fully filled (no remaining)
+              phase = 'filled'
+            }
+          } else if (phase === 'filled' && (!filledSize || filledSize <= 0)) {
+            // Marked as filled but no actual fills - treat as canceled
             phase = 'canceled'
           }
           setStatusPhase(phase)

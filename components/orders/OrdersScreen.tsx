@@ -695,10 +695,16 @@ export function OrdersScreen({
             isSubmitting={closeSubmitting}
             submitError={closeError}
             onClose={() => {
+              // If there was a successful close (orderId is set), refresh the page
+              const wasSuccessful = closeOrderId !== null
               setCloseTarget(null)
               setCloseError(null)
               setCloseOrderId(null)
               setCloseSubmittedAt(null)
+              if (wasSuccessful) {
+                // Refresh the page to show updated data
+                window.location.reload()
+              }
             }}
             onSubmit={handleConfirmClose}
             orderId={closeOrderId}

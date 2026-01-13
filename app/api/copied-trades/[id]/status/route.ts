@@ -449,10 +449,6 @@ export async function GET(
 
     // STEP 4: Calculate ROI
     const entryPrice = trade.entry_price ? parseFloat(String(trade.entry_price)) : null
-    if (!isUserClosed && currentPrice !== null && entryPrice && entryPrice > 0) {
-      roi = ((currentPrice - entryPrice) / entryPrice) * 100
-      roi = parseFloat(roi.toFixed(2))
-    }
     
     // ADDITIONAL: Check if current price indicates resolution
     // If this trade's outcome is at $0 or $1, the market is likely resolved
@@ -473,6 +469,25 @@ export async function GET(
           isResolved: currentPrice >= 0.99 || currentPrice <= 0.01,
           marketResolved
         });
+      }
+    }
+    
+    // Calculate ROI - use final outcome prices for resolved markets
+    if (!isUserClosed && entryPrice && entryPrice > 0) {
+      let priceForRoi = currentPrice;
+      
+      // For resolved markets, use the final outcome (1.00 for win, 0.00 for loss)
+      if (marketResolved && currentPrice !== null) {
+        if (currentPrice >= 0.99) {
+          priceForRoi = 1.00; // Winner gets 1.00
+        } else if (currentPrice <= 0.01) {
+          priceForRoi = 0.00; // Loser gets 0.00
+        }
+      }
+      
+      if (priceForRoi !== null) {
+        roi = ((priceForRoi - entryPrice) / entryPrice) * 100
+        roi = parseFloat(roi.toFixed(2))
       }
     }
 
