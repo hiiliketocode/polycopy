@@ -128,12 +128,12 @@ function FollowingPageContent() {
         setFollowedWallets(new Set(wallets.map(w => w.toLowerCase())));
         setExpectedTraderCount(wallets.length);
 
-        // Show loading state immediately but start loading traders progressively
+        // Show loading state immediately
         setLoadingTraders(false);
         setTraders([]); // Start with empty array
 
-        // Fetch trader data progressively - update UI as each trader loads
-        wallets.forEach(async (wallet, index) => {
+        // Fetch all traders in parallel for faster loading
+        const traderPromises = wallets.map(async (wallet) => {
           try {
             const response = await fetch(`/api/trader/${wallet}`, {
               next: { revalidate: 60 }
@@ -141,7 +141,7 @@ function FollowingPageContent() {
             
             if (!response.ok) {
               console.warn(`Failed to fetch data for trader ${wallet}`);
-              return;
+              return null;
             }
             
             const data = await response.json();
@@ -156,17 +156,30 @@ function FollowingPageContent() {
               profileImage: data.profileImage || null,
             };
             
-            // Add trader to list as soon as it loads and re-sort
-            setTraders(prev => {
-              const updated = [...prev, traderData];
-              // Sort by PNL descending
-              updated.sort((a, b) => b.pnl - a.pnl);
-              return updated;
-            });
+            return traderData;
           } catch (err) {
             console.warn(`Error fetching trader ${wallet}:`, err);
+            return null;
           }
         });
+
+        // Wait for all traders to load in parallel
+        const results = await Promise.allSettled(traderPromises);
+        const loadedTraders = results
+          .filter((result): result is PromiseFulfilledResult<Trader> => 
+            result.status === 'fulfilled' && result.value !== null
+          )
+          .map(result => result.value);
+
+        // Remove duplicates by wallet address (case-insensitive)
+        const uniqueTraders = Array.from(
+          new Map(loadedTraders.map(t => [t.wallet.toLowerCase(), t])).values()
+        );
+
+        // Sort by PNL descending
+        uniqueTraders.sort((a, b) => b.pnl - a.pnl);
+        
+        setTraders(uniqueTraders);
       } catch (err) {
         console.error('Error fetching followed traders:', err);
         setTraders([]);

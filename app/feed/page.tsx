@@ -916,6 +916,38 @@ export default function FeedPage() {
     };
   }, [refreshDisplayedMarketData]);
 
+  // Real-time polling for expanded trade cards (Priority 2 enhancement)
+  useEffect(() => {
+    if (expandedTradeIds.size === 0) return;
+
+    console.log(`🔄 Starting real-time polling for ${expandedTradeIds.size} expanded trades`);
+
+    // Get trades that are currently expanded
+    const expandedTrades = displayedTrades.filter(trade => {
+      const tradeKey = buildCopiedTradeKey(
+        getMarketKeyForTrade(trade),
+        trade.trader.wallet
+      );
+      return tradeKey && expandedTradeIds.has(tradeKey);
+    });
+
+    if (expandedTrades.length === 0) return;
+
+    // Fetch immediately
+    fetchLiveMarketData(expandedTrades);
+
+    // Then poll every 1 second for real-time updates
+    const intervalId = setInterval(() => {
+      console.log(`📡 Polling ${expandedTrades.length} expanded markets`);
+      fetchLiveMarketData(expandedTrades);
+    }, 1000);
+
+    return () => {
+      console.log(`⏹️ Stopped real-time polling for expanded trades`);
+      clearInterval(intervalId);
+    };
+  }, [expandedTradeIds, displayedTrades, fetchLiveMarketData]);
+
   // Copy trade handler
   const handleCopyTrade = (trade: FeedTrade) => {
     let url = 'https://polymarket.com';
