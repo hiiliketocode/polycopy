@@ -525,13 +525,15 @@ export default function ClosePositionModal({
     })
   }
 
-  const cancelPendingOrder = useCallback(async () => {
+  const cancelPendingOrder = useCallback(async (wasUserInitiated = false) => {
     if (!orderId || isCancelingOrder || (!CANCELABLE_PHASES.has(statusPhase) && statusPhase !== 'timed_out')) {
       return
     }
     setIsCancelingOrder(true)
     setCancelStatus({
-      message: 'Attempting to cancel. If it already executed, the status will update.',
+      message: wasUserInitiated
+        ? 'Attempting to cancel. If it already executed, the status will update.'
+        : 'Order timed out. Attempting to cancel automatically.',
       variant: 'info',
     })
     if (pendingTimeoutRef.current) {
@@ -560,10 +562,17 @@ export default function ClosePositionModal({
       }
       statusPhaseRef.current = 'canceled'
       setStatusPhase('canceled')
-      setCancelStatus({
-        message: 'Cancel request confirmed by Polymarket.',
-        variant: 'success',
-      })
+      setCancelStatus(
+        wasUserInitiated
+          ? {
+              message: 'Cancel request confirmed by Polymarket.',
+              variant: 'success',
+            }
+          : {
+              message: 'Order timed out. We asked Polymarket to cancel automatically.',
+              variant: 'info',
+            }
+      )
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
         pollIntervalRef.current = null
@@ -1096,7 +1105,7 @@ export default function ClosePositionModal({
                         {canCancelPendingOrder && (
                           <button
                             type="button"
-                            onClick={cancelPendingOrder}
+                            onClick={() => cancelPendingOrder(true)}
                             disabled={isCancelingOrder}
                             className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-sm transition ${
                               isCancelingOrder

@@ -82,6 +82,17 @@ const fetchMarketPrices = async (marketIds: string[]) => {
   return priceMap
 }
 
+const inferResolutionPrice = (position: Position) => {
+  if (!position.marketResolved) return null
+  if (position.currentPrice !== null && position.currentPrice !== undefined) {
+    return position.currentPrice
+  }
+  if (!position.resolvedOutcome) return null
+  const targetOutcome = normalize(position.outcome)
+  const resolved = normalize(position.resolvedOutcome)
+  return targetOutcome === resolved ? 1 : 0
+}
+
 const createService = () =>
   createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -113,6 +124,8 @@ interface Position {
   tokenId: string
   marketId: string
   outcome: string
+  marketResolved: boolean
+  resolvedOutcome: string | null
   buys: Array<{ price: number; size: number; cost: number; timestamp: string }>
   sells: Array<{ price: number; size: number; proceeds: number; timestamp: string }>
   netSize: number
@@ -122,6 +135,9 @@ interface Position {
   unrealizedPnl: number
   avgEntryPrice: number
   currentPrice: number | null
+  remainingSize: number
+  remainingCost: number
+  closedByResolution: boolean
 }
 
 export async function GET(request: Request) {
@@ -203,6 +219,8 @@ export async function GET(request: Request) {
           tokenId: positionKey,
           marketId: marketId,
           outcome: order.outcome || '',
+          marketResolved: Boolean(order.market_resolved),
+          resolvedOutcome: order.resolved_outcome || null,
           buys: [],
           sells: [],
           netSize: 0,
@@ -211,13 +229,22 @@ export async function GET(request: Request) {
           realizedPnl: 0,
           unrealizedPnl: 0,
           avgEntryPrice: 0,
-          currentPrice: toNullableNumber(order.current_price)
+          currentPrice: toNullableNumber(order.current_price),
+          remainingSize: 0,
+          remainingCost: 0,
+          closedByResolution: false,
         }
         positionsMap.set(positionKey, position)
+      } else {
+        position.marketResolved = position.marketResolved || Boolean(order.market_resolved)
+        if (order.resolved_outcome) {
+          position.resolvedOutcome = order.resolved_outcome
+        }
       }
 
       // Update current price if we have a newer one
-      const orderCurrentPrice = toNullableNumber(order.current_price)
+      const orderCurrentPrice =
+        toNullableNumber(order.user_exit_price) ?? toNullableNumber(order.current_price)
       if (orderCurrentPrice !== null) {
         position.currentPrice = orderCurrentPrice
       }
@@ -261,7 +288,6 @@ export async function GET(request: Request) {
     let totalUnrealizedPnl = 0
     let totalVolume = 0
     let openPositionsCount = 0
-    let closedPositionsCount = 0
 
     for (const position of positionsMap.values()) {
       // Update current price if we fetched a fresh one
@@ -300,20 +326,30 @@ export async function GET(request: Request) {
         }
       }
 
+      position.remainingSize = remainingBuys.reduce((sum, b) => sum + b.size, 0)
+      position.remainingCost = remainingBuys.reduce((sum, b) => sum + b.cost, 0)
+      position.netSize = position.remainingSize
+
+      const resolutionPrice = inferResolutionPrice(position)
+      if (position.remainingSize > 0 && resolutionPrice !== null) {
+        const resolutionValue = position.remainingSize * resolutionPrice
+        const resolutionPnl = resolutionValue - position.remainingCost
+        realizedPnl += resolutionPnl
+        position.closedByResolution = true
+        position.remainingSize = 0
+        position.remainingCost = 0
+        position.netSize = 0
+      }
+
       position.realizedPnl = realizedPnl
       totalRealizedPnl += realizedPnl
 
       // Calculate unrealized P&L on remaining position
-      const remainingSize = remainingBuys.reduce((sum, b) => sum + b.size, 0)
-      const remainingCost = remainingBuys.reduce((sum, b) => sum + b.cost, 0)
-
-      if (remainingSize > 0 && position.currentPrice !== null) {
-        const currentValue = remainingSize * position.currentPrice
-        position.unrealizedPnl = currentValue - remainingCost
+      if (!position.closedByResolution && position.remainingSize > 0 && position.currentPrice !== null) {
+        const currentValue = position.remainingSize * position.currentPrice
+        position.unrealizedPnl = currentValue - position.remainingCost
         totalUnrealizedPnl += position.unrealizedPnl
         openPositionsCount++
-      } else if (remainingSize <= 0.00001) {
-        closedPositionsCount++
       }
 
       // Add to total volume (buys + sells, matching Polymarket's volume calculation)
@@ -324,8 +360,8 @@ export async function GET(request: Request) {
     const roi = totalVolume > 0 ? (totalPnl / totalVolume) * 100 : 0
 
     // Calculate win rate (closed positions that made profit)
-    const closedPositions = Array.from(positionsMap.values()).filter(p => 
-      p.netSize <= 0.00001 && p.sells.length > 0
+    const closedPositions = Array.from(positionsMap.values()).filter(
+      (p) => p.closedByResolution || p.netSize <= 0.00001
     )
     const winningPositions = closedPositions.filter(p => p.realizedPnl > 0).length
     const winRate = closedPositions.length > 0 ? (winningPositions / closedPositions.length) * 100 : 0
@@ -335,7 +371,7 @@ export async function GET(request: Request) {
       method: 'FIFO Cost Basis (Polymarket-style)',
       totalPositions: positionsMap.size,
       openPositions: openPositionsCount,
-      closedPositions: closedPositionsCount,
+      closedPositions: closedPositions.length,
       totalVolume: totalVolume.toFixed(2),
       realizedPnl: totalRealizedPnl.toFixed(2),
       unrealizedPnl: totalUnrealizedPnl.toFixed(2),
@@ -351,7 +387,9 @@ export async function GET(request: Request) {
         netSize: p.netSize.toFixed(2),
         realizedPnl: p.realizedPnl.toFixed(2),
         unrealizedPnl: p.unrealizedPnl.toFixed(2),
-        currentPrice: p.currentPrice?.toFixed(2) || 'N/A'
+        currentPrice: p.currentPrice?.toFixed(2) || 'N/A',
+        closedByResolution: p.closedByResolution,
+        resolvedOutcome: p.resolvedOutcome
       }))
     })
 

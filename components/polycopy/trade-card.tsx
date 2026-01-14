@@ -1491,7 +1491,10 @@ export function TradeCard({
         pollAbortRef.current = null
       }
       setIsCancelingOrder(true)
-      setCancelStatus({ message: 'Attempting to cancel. If it already executed, the status will update.', variant: 'info' })
+      setCancelStatus({
+        message: 'Order timed out. Attempting to cancel automatically.',
+        variant: 'info',
+      })
       try {
         const response = await fetch('/api/polymarket/orders/cancel', {
           method: 'POST',
@@ -1513,8 +1516,8 @@ export function TradeCard({
           )
         }
         setCancelStatus({
-          message: 'Cancel request confirmed by Polymarket.',
-          variant: 'success',
+          message: 'Order timed out. We asked Polymarket to cancel automatically.',
+          variant: 'info',
         })
         await refreshOrders().catch(() => {
           /* refresh best effort */
