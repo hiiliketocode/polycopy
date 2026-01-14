@@ -664,7 +664,8 @@ async function fetchPolycopyData(): Promise<SectionBData> {
       .from(ordersTable)
       .select('copied_trader_username, copied_trader_wallet')
       .gte('created_at', sevenDaysAgo)
-      .not('copied_trade_id', 'is', null),
+      .not('copied_trade_id', 'is', null)
+      .not('copied_trader_wallet', 'is', null),
 
     // Query 2: Platform stats (all time)
     supabase
@@ -677,6 +678,7 @@ async function fetchPolycopyData(): Promise<SectionBData> {
       .from(ordersTable)
       .select('copied_trader_username, copied_trader_wallet, copied_market_title, outcome, created_at')
       .not('copied_trade_id', 'is', null)
+      .not('copied_trader_wallet', 'is', null)
       .order('created_at', { ascending: false })
       .limit(20),
 
@@ -685,7 +687,8 @@ async function fetchPolycopyData(): Promise<SectionBData> {
       .from(ordersTable)
       .select('copied_trader_username, copied_trader_wallet, copied_market_title, roi, market_resolved, created_at')
       .gte('created_at', sevenDaysAgo)
-      .not('copied_trade_id', 'is', null),
+      .not('copied_trade_id', 'is', null)
+      .not('copied_trader_wallet', 'is', null),
   ])
 
   // Process Query 1: Most Copied Traders
@@ -878,6 +881,7 @@ async function fetchPolycopyData(): Promise<SectionBData> {
         .select('copied_trader_wallet, copied_trader_username')
         .in('copied_trader_wallet', uniqueWallets)
         .not('copied_trade_id', 'is', null)
+        .not('copied_trader_wallet', 'is', null)
       
       // Create username map (case-insensitive keys)
       const usernameMap = new Map<string, string>()
@@ -1050,6 +1054,7 @@ async function fetchPolycopyData(): Promise<SectionBData> {
       .eq('market_resolved', true)
       .not('roi', 'is', null)
       .not('copied_trade_id', 'is', null)
+      .not('copied_trader_wallet', 'is', null)
     
     // Bucket traders by follower count
     const buckets = {
@@ -1103,6 +1108,7 @@ async function fetchPolycopyData(): Promise<SectionBData> {
       .select('copied_trader_wallet, copied_trader_username, created_at')
       .gte('created_at', sevenDaysAgo)
       .not('copied_trade_id', 'is', null)
+      .not('copied_trader_wallet', 'is', null)
     
     if (velocityData) {
       const traderVelocity = new Map<string, { username: string; today: number; yesterday: number; total7d: number }>()
