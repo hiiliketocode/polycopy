@@ -42,6 +42,7 @@ interface Trade {
   marketSlug?: string;
   conditionId?: string;
   eventSlug?: string;
+  tokenId?: string;
   status: 'Open' | 'Trader Closed' | 'Bonded';
   category?: string;
 }
@@ -379,6 +380,24 @@ export default function TraderProfilePage({
       setTrades((prev) => mergeTrades(prev, incoming));
     };
 
+    const extractTokenId = (rawTrade: any): string | undefined => {
+      const candidates = [
+        rawTrade.token_id,
+        rawTrade.tokenId,
+        rawTrade.tokenID,
+        rawTrade.asset_id,
+        rawTrade.assetId,
+        rawTrade.asset,
+      ];
+      for (const candidate of candidates) {
+        if (candidate === undefined || candidate === null) continue;
+        const value =
+          typeof candidate === 'number' ? candidate.toString() : String(candidate).trim();
+        if (value) return value;
+      }
+      return undefined;
+    };
+
     const fetchPolycopyTrades = async () => {
       try {
         const response = await fetch(`/api/trader/${wallet}/copy-trades`, { cache: 'no-store' });
@@ -416,6 +435,7 @@ export default function TraderProfilePage({
             formattedDate: formatDate(Number.isFinite(timestampMs) ? timestampMs : Date.now()),
             marketSlug: trade.market_slug || undefined,
             conditionId: trade.market_id || undefined,
+            tokenId: extractTokenId(trade),
             status,
           };
         });
@@ -471,17 +491,18 @@ export default function TraderProfilePage({
                 timestamp: timestampMs,
                 market: trade.title || trade.question || trade.market || trade.marketTitle || 'Unknown Market',
                 side: trade.side || 'BUY',
-                outcome: trade.outcome || '',
-                size: parseFloat(trade.size || 0),
-                price: parseFloat(trade.price || 0),
-                currentPrice: trade.closedPrice || trade.resolvedPrice || trade.exitPrice ? parseFloat(trade.closedPrice || trade.resolvedPrice || trade.exitPrice) : undefined,
-                formattedDate,
-                marketSlug: trade.marketSlug || trade.slug || '',
-                eventSlug: trade.eventSlug || trade.event_slug || '',
-                conditionId: trade.conditionId || trade.condition_id || '',
-                status: status,
-              };
-            });
+              outcome: trade.outcome || '',
+              size: parseFloat(trade.size || 0),
+              price: parseFloat(trade.price || 0),
+              currentPrice: trade.closedPrice || trade.resolvedPrice || trade.exitPrice ? parseFloat(trade.closedPrice || trade.resolvedPrice || trade.exitPrice) : undefined,
+              formattedDate,
+              marketSlug: trade.marketSlug || trade.slug || '',
+              eventSlug: trade.eventSlug || trade.event_slug || '',
+              conditionId: trade.conditionId || trade.condition_id || '',
+              tokenId: extractTokenId(trade),
+              status: status,
+            };
+          });
 
             formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
             if (!cancelled) {
@@ -535,6 +556,7 @@ export default function TraderProfilePage({
               marketSlug: trade.slug || trade.marketSlug || trade.market?.slug || '',
               eventSlug: trade.eventSlug || trade.event_slug || '',
               conditionId: trade.conditionId || trade.condition_id || '',
+              tokenId: extractTokenId(trade),
               status: status,
             };
           });
@@ -1516,6 +1538,7 @@ export default function TraderProfilePage({
                       onToggleExpand={() => toggleTradeExpanded(tradeKey)}
                       isCopied={isAlreadyCopied}
                       conditionId={trade.conditionId}
+                      tokenId={trade.tokenId}
                       marketSlug={trade.marketSlug}
                       currentMarketPrice={currentPrice}
                       marketIsOpen={marketIsOpen}

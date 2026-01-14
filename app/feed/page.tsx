@@ -39,6 +39,7 @@ export interface FeedTrade {
     price: number;
     timestamp: number;
     tradeId?: string;
+    tokenId?: string;
   };
 }
 
@@ -795,6 +796,24 @@ export default function FeedPage() {
         allTradesRaw.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
 
         // 4. Format trades
+        const extractTokenId = (rawTrade: any): string | undefined => {
+          const candidates = [
+            rawTrade.asset,
+            rawTrade.asset_id,
+            rawTrade.assetId,
+            rawTrade.token_id,
+            rawTrade.tokenId,
+            rawTrade.tokenID,
+          ];
+          for (const candidate of candidates) {
+            if (candidate === undefined || candidate === null) continue;
+            const value =
+              typeof candidate === 'number' ? candidate.toString() : String(candidate).trim();
+            if (value) return value;
+          }
+          return undefined;
+        };
+
         const formattedTrades: FeedTrade[] = allTradesRaw.map((trade: any) => {
           const wallet = trade._followedWallet || trade.user || trade.wallet || '';
           const walletKey = wallet.toLowerCase();
@@ -810,6 +829,7 @@ export default function FeedPage() {
             trade.market ||
             trade.title ||
             '';
+          const conditionId = trade.conditionId || trade.condition_id || '';
           return {
             id: `${trade.id || trade.timestamp}-${Math.random()}`,
             trader: {
@@ -818,7 +838,7 @@ export default function FeedPage() {
             },
             market: {
               id: marketId,
-              conditionId: trade.conditionId || trade.condition_id || '',
+              conditionId,
               title: trade.market || trade.title || 'Unknown Market',
               slug: trade.market_slug || trade.slug || '',
               eventSlug: trade.eventSlug || trade.event_slug || '',
@@ -832,6 +852,7 @@ export default function FeedPage() {
               price: parseFloat(trade.price || 0),
               timestamp: (trade.timestamp || Date.now() / 1000) * 1000,
               tradeId: trade.trade_id || trade.id || trade.tx_hash || trade.transactionHash || '',
+              tokenId: extractTokenId(trade),
             },
           };
         });
@@ -1354,6 +1375,7 @@ export default function FeedPage() {
                     onToggleExpand={() => toggleTradeExpanded(tradeKey)}
                     isCopied={isTraceCopied(trade)}
                     conditionId={trade.market.conditionId}
+                    tokenId={trade.trade.tokenId}
                     marketSlug={trade.market.slug}
                     currentMarketPrice={currentPrice}
                     currentMarketUpdatedAt={liveMarket?.updatedAt}

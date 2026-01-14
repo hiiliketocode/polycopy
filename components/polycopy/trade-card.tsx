@@ -654,6 +654,45 @@ export function TradeCard({
     return containsIndex
   }
 
+  const extractTokenId = (token: any): string | null => {
+    if (!token) return null
+    const candidates = [
+      token?.token_id,
+      token?.tokenId,
+      token?.tokenID,
+      token?.asset_id,
+      token?.assetId,
+      token?.asset,
+    ]
+    for (const candidate of candidates) {
+      if (candidate === undefined || candidate === null) continue
+      const value = typeof candidate === "number" ? candidate.toString() : String(candidate).trim()
+      if (value) return value
+    }
+    return null
+  }
+
+  const findTokenIdForOutcome = (tokens: any[], outcomeLabel: string): string | null => {
+    if (!Array.isArray(tokens) || !outcomeLabel) return null
+    const exactMatch = tokens.find(
+      (t: any) =>
+        typeof t?.outcome === "string" &&
+        t.outcome.trim().toUpperCase() === outcomeLabel.trim().toUpperCase()
+    )
+    const exactMatchId = extractTokenId(exactMatch)
+    if (exactMatchId) return exactMatchId
+
+    const outcomes = tokens
+      .map((t: any) => (typeof t?.outcome === "string" ? t.outcome : ""))
+      .filter(Boolean)
+    const outcomeIndex = outcomes.length ? findOutcomeIndex(outcomes, outcomeLabel) : -1
+    if (outcomeIndex >= 0 && tokens[outcomeIndex]) {
+      const fuzzyId = extractTokenId(tokens[outcomeIndex])
+      if (fuzzyId) return fuzzyId
+    }
+    return null
+  }
+
   const triggerPriceFlash = useCallback((direction: "up" | "down" | "neutral") => {
     if (priceFlashTimeoutRef.current) {
       clearTimeout(priceFlashTimeoutRef.current)
@@ -1116,12 +1155,10 @@ export function TradeCard({
           if (marketResponse.ok) {
             const marketData = await marketResponse.json()
             // Find the token matching the outcome
-            const tokens = marketData.tokens || []
-            const matchingToken = tokens.find((t: any) => 
-              t.outcome?.toUpperCase() === position.toUpperCase()
-            )
-            if (matchingToken?.token_id) {
-              finalTokenId = matchingToken.token_id
+            const tokens = Array.isArray(marketData.tokens) ? marketData.tokens : []
+            const matchedTokenId = findTokenIdForOutcome(tokens, position)
+            if (matchedTokenId) {
+              finalTokenId = matchedTokenId
             }
           }
         } catch (error) {
