@@ -1001,12 +1001,8 @@ export async function POST(request: NextRequest) {
     if (orderId && normalizedOrderType === 'FAK') {
       try {
         const clobOrder = await client.getOrder(orderId)
-        const fetchedSize = normalizeNumber(
-          clobOrder?.original_size ?? clobOrder?.size ?? clobOrder?.amount
-        )
-        const fetchedFilled = normalizeNumber(
-          clobOrder?.size_matched ?? clobOrder?.filled_size ?? clobOrder?.filledSize
-        )
+        const fetchedSize = normalizeNumber(clobOrder?.original_size)
+        const fetchedFilled = normalizeNumber(clobOrder?.size_matched)
         const fetchedRemaining =
           normalizeNumber(clobOrder?.remaining_size) ??
           (fetchedSize !== null && fetchedFilled !== null
