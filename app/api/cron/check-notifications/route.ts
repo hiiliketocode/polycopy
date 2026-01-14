@@ -332,7 +332,15 @@ export async function GET(request: NextRequest) {
         return
       }
 
-      const positionSize = await fetchWalletPositionSize(userWallet, order.market_id, order.outcome)
+      let positionSize: number | null = null
+      try {
+        positionSize = await fetchWalletPositionSize(userWallet, order.market_id, order.outcome)
+      } catch (error: any) {
+        console.error(`[AUTO-CLOSE] Order ${order.order_id}: Failed to fetch user position size:`, error.message || error)
+        await updateTraderPositionSize(currentTraderPositionSize)
+        return
+      }
+      
       console.log(`[AUTO-CLOSE] Order ${order.order_id}: User position size = ${positionSize}, reductionFraction = ${reductionFraction}`)
       if (!positionSize || positionSize <= 0) {
         console.warn(`⚠️ Auto-close skipped: no open position for user ${userId} (wallet: ${userWallet})`)
