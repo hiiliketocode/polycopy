@@ -1280,8 +1280,8 @@ export default function TraderProfilePage({
           </div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-slate-50 rounded-lg relative group">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <div className="text-center p-4 bg-slate-50 rounded-lg relative group min-w-0">
               <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
                 ROI
                 <div className="relative">
@@ -1293,11 +1293,11 @@ export default function TraderProfilePage({
                   </div>
                 </div>
               </div>
-              <div className={`text-2xl font-bold ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+              <div className={`text-xl sm:text-2xl font-bold ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                 {effectiveVolume > 0 ? formatPercentage(effectiveRoiValue) : 'N/A'}
               </div>
             </div>
-            <div className="text-center p-4 bg-slate-50 rounded-lg relative group">
+            <div className="text-center p-4 bg-slate-50 rounded-lg relative group min-w-0">
               <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
                 P&L
                 <div className="relative">
@@ -1309,11 +1309,11 @@ export default function TraderProfilePage({
                   </div>
                 </div>
               </div>
-              <div className={`text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+              <div className={`text-xl sm:text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                 {effectivePnl >= 0 ? '+' : ''}{formatCurrency(effectivePnl)}
               </div>
             </div>
-            <div className="text-center p-4 bg-slate-50 rounded-lg relative group">
+            <div className="text-center p-4 bg-slate-50 rounded-lg relative group min-w-0">
               <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
                 Win Rate
                 <div className="relative">
@@ -1325,11 +1325,11 @@ export default function TraderProfilePage({
                   </div>
                 </div>
               </div>
-              <div className="text-2xl font-bold text-slate-900">
+              <div className="text-xl sm:text-2xl font-bold text-slate-900">
                 {effectiveWinRate !== null && Number.isFinite(effectiveWinRate) ? `${effectiveWinRate.toFixed(1)}%` : 'N/A'}
               </div>
             </div>
-            <div className="text-center p-4 bg-slate-50 rounded-lg relative group">
+            <div className="text-center p-4 bg-slate-50 rounded-lg relative group min-w-0">
               <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
                 Volume
                 <div className="relative">
@@ -1341,7 +1341,7 @@ export default function TraderProfilePage({
                   </div>
                 </div>
               </div>
-              <div className="text-2xl font-bold text-slate-900">{formatCurrency(effectiveVolume)}</div>
+              <div className="text-xl sm:text-2xl font-bold text-slate-900">{formatCurrency(effectiveVolume)}</div>
             </div>
           </div>
         </Card>

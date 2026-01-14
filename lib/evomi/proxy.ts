@@ -3,6 +3,8 @@ import { HttpsProxyAgent } from 'https-proxy-agent'
 
 const EVOMI_PUBLIC_ENDPOINT = 'https://api.evomi.com/public'
 const DEFAULT_PRODUCT_CODE = 'rpc'
+const DEFAULT_COUNTRY_CODE = 'IE'
+const DEFAULT_COUNTRY_LABEL = 'Ireland'
 
 type EvomiProduct = {
   username?: string
@@ -17,12 +19,27 @@ type EvomiProduct = {
 
 type EvomiProducts = Record<string, EvomiProduct>
 
+function getDesiredCountryCode(): string | null {
+  const raw = process.env.EVOMI_PROXY_COUNTRY
+  if (raw && raw.trim().toLowerCase() === 'none') {
+    return null
+  }
+  const code = raw?.trim() || DEFAULT_COUNTRY_CODE
+  return code ? code.toUpperCase() : null
+}
+
+function describeCountry(code: string | null): string | null {
+  if (!code) return null
+  if (code === DEFAULT_COUNTRY_CODE) return DEFAULT_COUNTRY_LABEL
+  return code
+}
+
 function getManualProxyUrl(): string | null {
   let manualUrl = process.env.EVOMI_PROXY_URL?.trim()
   if (manualUrl) {
     // Check if password already includes country parameter
     const hasCountryParam = /_country-/.test(manualUrl)
-    const countryCode = process.env.EVOMI_PROXY_COUNTRY?.trim()?.toUpperCase()
+    const countryCode = getDesiredCountryCode()
     
     if (!hasCountryParam && countryCode) {
       // Parse the URL and add country parameter to password
@@ -53,7 +70,9 @@ function getManualProxyUrl(): string | null {
               console.log(`[EVOMI] Added country parameter to proxy URL: _country-${countryCode}`)
             }
           } else {
-            console.warn('[EVOMI] Could not parse EVOMI_PROXY_URL to add country parameter. Please add _country-FI manually to password.')
+            console.warn(
+              `[EVOMI] Could not parse EVOMI_PROXY_URL to add country parameter. Please add _country-${countryCode} manually to password.`
+            )
           }
         } catch (fallbackError) {
           console.warn('[EVOMI] Error parsing EVOMI_PROXY_URL:', fallbackError)
@@ -74,7 +93,7 @@ function getManualProxyUrl(): string | null {
   }
 
   // Add country parameter to password if EVOMI_PROXY_COUNTRY is set and not already present
-  const countryCode = process.env.EVOMI_PROXY_COUNTRY?.trim()?.toUpperCase()
+  const countryCode = getDesiredCountryCode()
   if (countryCode && !/_country-/.test(password)) {
     password = `${password}_country-${countryCode}`
     console.log(`[EVOMI] Added country parameter: _country-${countryCode}`)
@@ -120,6 +139,17 @@ let proxyCache: { url: string; expiresAt: number } | null = null
 let inFlightFetch: Promise<string | null> | null = null
 let configuredProxyUrl: string | null = null
 let axiosInterceptorAdded = false
+
+export function clearEvomiProxyCache(reason?: string) {
+  proxyCache = null
+  configuredProxyUrl = null
+  inFlightFetch = null
+  if (reason) {
+    console.warn('[EVOMI] Proxy cache cleared:', reason)
+  } else {
+    console.warn('[EVOMI] Proxy cache cleared')
+  }
+}
 
 function chooseProduct(products: EvomiProducts): EvomiProduct | null {
   const code = getProductCode()
@@ -257,6 +287,9 @@ export async function ensureEvomiProxyAgent(): Promise<string | null> {
   const hasCountryParam = /_country-/.test(url)
   const countryMatch = url.match(/_country-([A-Z]{2})/i)
   const countryCode = countryMatch ? countryMatch[1] : null
+  const desiredCountryCode = getDesiredCountryCode()
+  const desiredCountryLabel = describeCountry(desiredCountryCode)
+  const expectedLabel = desiredCountryLabel ?? desiredCountryCode
   
   console.log('[EVOMI] Proxy configured:', {
     protocol,
@@ -264,15 +297,25 @@ export async function ensureEvomiProxyAgent(): Promise<string | null> {
     hasCountryParam,
     countryCode: countryCode || 'none',
     usingAxiosDefaults: true,
-    warning: !hasCountryParam ? '⚠️  No country parameter in proxy URL - may use random location' : null,
-    note: hasCountryParam && countryCode !== 'FI' 
-      ? `⚠️  Proxy country is ${countryCode}, not FI (Finland)` 
-      : hasCountryParam && countryCode === 'FI'
-      ? '✅ Proxy configured for Finland'
-      : 'Ensure endpoint points to Finland IP for Polymarket access'
+    warning: !hasCountryParam
+      ? '⚠️  No country parameter in proxy URL - may use random location'
+      : desiredCountryCode && countryCode && countryCode !== desiredCountryCode
+      ? `⚠️  Proxy country is ${countryCode}, expected ${expectedLabel}`
+      : null,
+    note:
+      hasCountryParam && desiredCountryCode && countryCode === desiredCountryCode
+        ? `✅ Proxy configured for ${expectedLabel}`
+        : expectedLabel
+        ? `Ensure endpoint points to ${expectedLabel} IP for Polymarket access`
+        : 'Ensure endpoint points to an allowed country IP for Polymarket access'
   })
   
   return url
+}
+
+export async function refreshEvomiProxyAgent(reason?: string): Promise<string | null> {
+  clearEvomiProxyCache(reason || 'refresh requested')
+  return ensureEvomiProxyAgent()
 }
 
 export async function requireEvomiProxyAgent(context?: string): Promise<string> {
