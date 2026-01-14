@@ -1200,7 +1200,7 @@ export default function TraderProfilePage({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Profile Header */}
         <Card className="bg-white border-slate-200 p-8">
-          <div className="flex items-start gap-4 mb-5">
+          <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6 mb-5">
             <Avatar className="h-20 w-20 border-2 border-white shadow-md flex-shrink-0" style={{ backgroundColor: avatarColor }}>
               {traderData.profileImage && (
                 <AvatarImage src={traderData.profileImage} alt={traderData.displayName} />
@@ -1245,14 +1245,14 @@ export default function TraderProfilePage({
             </div>
 
             {/* Follow Button */}
-            <div className="flex-shrink-0">
+            <div className="w-full sm:w-auto sm:ml-auto">
               {following ? (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleFollowToggle}
                   disabled={followLoading}
-                  className="border-slate-300 text-slate-700 hover:bg-slate-50 gap-1.5 px-3"
+                  className="border-slate-300 text-slate-700 hover:bg-slate-50 gap-1.5 px-3 w-full sm:w-auto justify-center"
                 >
                   <Check className="h-3.5 w-3.5" />
                   Following
@@ -1262,7 +1262,7 @@ export default function TraderProfilePage({
                   size="sm"
                   onClick={handleFollowToggle}
                   disabled={followLoading}
-                  className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm px-4"
+                  className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm px-4 w-full sm:w-auto justify-center"
                 >
                   Follow
                 </Button>
