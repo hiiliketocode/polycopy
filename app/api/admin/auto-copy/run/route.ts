@@ -87,6 +87,13 @@ async function handleAutoCopyRun(request: Request, params: { configId?: string |
   const copyUserId = params.copyUserId
   const maxTradesPerConfig = Math.max(1, Math.min(50, Number(params.maxTrades || 25)))
 
+  console.log('[auto-copy/run] start', {
+    auth: isCron ? 'cron' : 'admin',
+    configId: configId ?? null,
+    copyUserId: copyUserId ?? null,
+    maxTrades: maxTradesPerConfig,
+  })
+
   // Ensure proxy is configured for upstream Polymarket calls
   try {
     await requireEvomiProxyAgent('auto-copy runner')
@@ -277,6 +284,14 @@ async function handleAutoCopyRun(request: Request, params: { configId?: string |
 
     results.push(summary)
   }
+
+  console.log('[auto-copy/run] done', {
+    configs: configs?.length ?? 0,
+    processed: results.reduce((sum, r) => sum + (Number(r?.processed) || 0), 0),
+    placed: results.reduce((sum, r) => sum + (Number(r?.placed) || 0), 0),
+    skipped: results.reduce((sum, r) => sum + (Number(r?.skipped) || 0), 0),
+    erroredConfigs: results.filter((r) => Array.isArray(r?.errors) && r.errors.length > 0).length,
+  })
 
   return NextResponse.json({ results })
 }
