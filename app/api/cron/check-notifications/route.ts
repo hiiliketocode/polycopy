@@ -931,9 +931,12 @@ export async function GET(request: NextRequest) {
       console.log(`[AUTO-CLOSE] Sample order IDs being checked: ${orderIds.join(', ')}${openOrders.length > 10 ? '...' : ''}`)
     }
 
+    console.log(`[AUTO-CLOSE] Processing ${openOrders?.length || 0} orders for auto-close...`)
     for (const order of openOrders || []) {
+      console.log(`[AUTO-CLOSE] Processing order ${order.order_id}...`)
       await attemptAutoCloseFromOrder(order)
     }
+    console.log(`[AUTO-CLOSE] Finished processing all orders`)
     
     console.log(`✅ Notification check complete. Checked ${tradesChecked}, sent ${notificationsSent} emails.`)
     
