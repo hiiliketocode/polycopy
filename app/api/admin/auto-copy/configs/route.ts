@@ -87,8 +87,7 @@ export async function POST(request: Request) {
   const { data, error } = await supabase
     .from('auto_copy_configs')
     .upsert(payload, {
-      onConflict: 'copy_user_id,trader_wallet',
-      returning: 'representation'
+      onConflict: 'copy_user_id,trader_wallet'
     })
 
   if (error) {
