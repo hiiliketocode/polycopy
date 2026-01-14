@@ -1274,8 +1274,8 @@ export default function TraderProfilePage({
           <div className="mb-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-2">Performance Stats</h3>
             <p className="text-xs text-slate-500">
-              All-time statistics from <a href="https://polymarket.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Polymarket</a> leaderboard. 
-              Win rate calculated from available trade history.
+              Performance stats from <a href="https://polymarket.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Polymarket</a>'s official leaderboard (all-time). 
+              Win rate calculated from up to 100 recent trades.
             </p>
           </div>
 
