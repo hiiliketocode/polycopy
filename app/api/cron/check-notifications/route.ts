@@ -430,7 +430,13 @@ export async function GET(request: NextRequest) {
       }
 
       const marketTitle = question || order.market_id
-      const sendFailureEmail = async (reason: string) => {
+      const sendFailureEmail = async (reason: string, isFinalAttempt: boolean = false) => {
+        // Only send email on final attempt (5th retry)
+        if (!isFinalAttempt) {
+          console.log(`[AUTO-CLOSE] Order ${order.order_id}: Not sending failure email yet (retry ${retryCount + 1}/5)`)
+          return
+        }
+        
         const context = await loadNotificationContext()
         if (!context || !resend) return
         const trimmedReason =
@@ -452,12 +458,26 @@ export async function GET(request: NextRequest) {
               unsubscribeUrl: quickTradesUrl,
             }),
           })
+          console.log(`[AUTO-CLOSE] Order ${order.order_id}: Sent failure email after 5 retries`)
         } catch (emailError: any) {
           console.error(`❌ Failed to send auto-close failure email for order ${order.order_id}:`, {
             error: emailError?.message || emailError,
             to: context.email,
           })
         }
+      }
+      
+      const updateErrorWithRetryCount = async (errorMessage: string) => {
+        const newRetryCount = retryCount + 1
+        const errorWithRetry = `RETRY_COUNT:${newRetryCount}|${errorMessage}`
+        await supabase
+          .from(ordersTable)
+          .update({
+            auto_close_error: errorWithRetry,
+            auto_close_attempted_at: attemptedAt,
+          })
+          .eq('order_id', order.order_id)
+        console.log(`[AUTO-CLOSE] Order ${order.order_id}: Retry ${newRetryCount}/5 - ${errorMessage}`)
       }
 
       const attemptedAt = new Date().toISOString()
@@ -549,15 +569,10 @@ export async function GET(request: NextRequest) {
             error_message: truncateMessage(evaluation.message ?? 'Order rejected'),
             raw_error: evaluation.raw ?? null,
           })
-          await supabase
-            .from(ordersTable)
-            .update({
-              auto_close_error: evaluation.message,
-              auto_close_attempted_at: attemptedAt,
-            })
-            .eq('order_id', order.order_id)
-          console.warn(`⚠️ Auto-close failed for order ${order.order_id}:`, evaluation.message)
-          await sendFailureEmail(evaluation.message || 'Auto-close order was rejected by the exchange.')
+          const errorMsg = evaluation.message || 'Auto-close order was rejected by the exchange.'
+          await updateErrorWithRetryCount(errorMsg)
+          console.warn(`⚠️ Auto-close failed for order ${order.order_id}:`, errorMsg)
+          await sendFailureEmail(errorMsg, retryCount + 1 >= 5)
           return
         }
 
@@ -597,15 +612,17 @@ export async function GET(request: NextRequest) {
         const hasFill = Number.isFinite(filledSize) && filledSize > 0
         if (orderLookupSucceeded && !hasFill) {
           console.warn(`⚠️ Auto-close order ${autoCloseOrderId} has no fills yet`)
+          const errorMsg = 'Auto-close order submitted but did not fill'
           await supabase
             .from(ordersTable)
             .update({
               auto_close_order_id: autoCloseOrderId,
-              auto_close_error: 'Auto-close order submitted but did not fill',
+              auto_close_error: `RETRY_COUNT:${retryCount + 1}|${errorMsg}`,
               auto_close_attempted_at: attemptedAt,
             })
             .eq('order_id', order.order_id)
-          await sendFailureEmail('Auto-close order submitted but did not fill. Try closing manually at the current market price.')
+          console.warn(`[AUTO-CLOSE] Order ${order.order_id}: Retry ${retryCount + 1}/5 - ${errorMsg}`)
+          await sendFailureEmail('Auto-close order submitted but did not fill. Try closing manually at the current market price.', retryCount + 1 >= 5)
           return
         }
 
