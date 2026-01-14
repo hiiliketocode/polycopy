@@ -17,6 +17,10 @@ export type AutoCopyConfig = {
   trader_profile_image_url: string | null
   min_trade_size_pct: number | null
   max_trade_size_pct: number | null
+  min_trade_usd: number | null
+  max_trade_usd: number | null
+  min_price: number | null
+  max_price: number | null
   allocation_usd: number | null
   max_trades_per_day: number | null
   risk_tolerance_pct: number | null
@@ -24,6 +28,8 @@ export type AutoCopyConfig = {
   time_window_end: string | null
   paused: boolean
   last_simulation_at: string | null
+  last_trader_trade_ts: string | null
+  last_trader_trade_id: string | null
   notes: string | null
   created_at: string
   updated_at: string

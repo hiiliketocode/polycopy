@@ -58,6 +58,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid trade size range' }, { status: 400 })
   }
 
+  const minTradeUsd = Number.isFinite(Number(body.minTradeUsd)) ? Number(body.minTradeUsd) : 10
+  const maxTradeUsd = Number.isFinite(Number(body.maxTradeUsd)) ? Number(body.maxTradeUsd) : 500
+  if (minTradeUsd > maxTradeUsd) {
+    return NextResponse.json({ error: 'Min trade $ cannot exceed max trade $' }, { status: 400 })
+  }
+  const minPrice = clampNumber(Number(body.minPrice), 0, 1)
+  const maxPrice = clampNumber(Number(body.maxPrice), 0, 1)
+  if (minPrice !== null && maxPrice !== null && minPrice > maxPrice) {
+    return NextResponse.json({ error: 'Min price cannot exceed max price' }, { status: 400 })
+  }
+
   const safeAllocationUsd = Number(body.allocationUsd ?? 500)
   const safeMaxTradesPerDay = Number(body.maxTradesPerDay ?? 10)
   const riskTolerancePct = clampNumber(Number(body.riskTolerancePct ?? 5), 0, 100)
@@ -71,6 +82,10 @@ export async function POST(request: Request) {
     trader_profile_image_url: body.traderProfileImageUrl ?? null,
     min_trade_size_pct: minPct,
     max_trade_size_pct: maxPct,
+    min_trade_usd: minTradeUsd,
+    max_trade_usd: maxTradeUsd,
+    min_price: minPrice,
+    max_price: maxPrice,
     allocation_usd: Number.isFinite(safeAllocationUsd) ? safeAllocationUsd : 500,
     max_trades_per_day: Number.isFinite(safeMaxTradesPerDay)
       ? Math.max(1, Math.floor(safeMaxTradesPerDay))
@@ -135,6 +150,10 @@ export async function PATCH(request: Request) {
 
   applyNumberField('min_trade_size_pct', body.minTradeSizePct)
   applyNumberField('max_trade_size_pct', body.maxTradeSizePct)
+  applyNumberField('min_trade_usd', body.minTradeUsd)
+  applyNumberField('max_trade_usd', body.maxTradeUsd)
+  applyNumberField('min_price', body.minPrice)
+  applyNumberField('max_price', body.maxPrice)
   applyNumberField('allocation_usd', body.allocationUsd)
   applyNumberField('max_trades_per_day', body.maxTradesPerDay !== undefined ? Math.max(1, Math.floor(Number(body.maxTradesPerDay))) : undefined)
   applyNumberField('risk_tolerance_pct', body.riskTolerancePct)
@@ -164,6 +183,18 @@ export async function PATCH(request: Request) {
   if (updates.min_trade_size_pct !== undefined && updates.max_trade_size_pct !== undefined) {
     if (updates.min_trade_size_pct > updates.max_trade_size_pct) {
       return NextResponse.json({ error: 'Min cannot exceed max' }, { status: 400 })
+    }
+  }
+
+  if (updates.min_trade_usd !== undefined && updates.max_trade_usd !== undefined) {
+    if (updates.min_trade_usd > updates.max_trade_usd) {
+      return NextResponse.json({ error: 'Min trade $ cannot exceed max trade $' }, { status: 400 })
+    }
+  }
+
+  if (updates.min_price !== undefined && updates.max_price !== undefined) {
+    if (updates.min_price > updates.max_price) {
+      return NextResponse.json({ error: 'Min price cannot exceed max price' }, { status: 400 })
     }
   }
 

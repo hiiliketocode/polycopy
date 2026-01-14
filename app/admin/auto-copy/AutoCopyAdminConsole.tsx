@@ -27,8 +27,10 @@ type Props = {
 type ConfigFormState = {
   traderUsername: string
   traderProfileImageUrl: string
-  minTradeSizePct: string
-  maxTradeSizePct: string
+  minTradeUsd: string
+  maxTradeUsd: string
+  minPrice: string
+  maxPrice: string
   allocationUsd: string
   maxTradesPerDay: string
   riskTolerancePct: string
@@ -49,8 +51,10 @@ type SimulationFormState = {
 const DEFAULT_FORM_STATE: ConfigFormState = {
   traderUsername: '',
   traderProfileImageUrl: '',
-  minTradeSizePct: '2',
-  maxTradeSizePct: '25',
+  minTradeUsd: '10',
+  maxTradeUsd: '500',
+  minPrice: '',
+  maxPrice: '',
   allocationUsd: '500',
   maxTradesPerDay: '10',
   riskTolerancePct: '5',
@@ -153,8 +157,10 @@ export default function AutoCopyAdminConsole({ traders, configs, adminUser }: Pr
     setFormState({
       traderUsername: existing?.trader_username ?? trader.username ?? '',
       traderProfileImageUrl: existing?.trader_profile_image_url ?? trader.profileImage ?? '',
-      minTradeSizePct: existing?.min_trade_size_pct?.toString() ?? DEFAULT_FORM_STATE.minTradeSizePct,
-      maxTradeSizePct: existing?.max_trade_size_pct?.toString() ?? DEFAULT_FORM_STATE.maxTradeSizePct,
+      minTradeUsd: existing?.min_trade_usd?.toString() ?? DEFAULT_FORM_STATE.minTradeUsd,
+      maxTradeUsd: existing?.max_trade_usd?.toString() ?? DEFAULT_FORM_STATE.maxTradeUsd,
+      minPrice: existing?.min_price?.toString() ?? DEFAULT_FORM_STATE.minPrice,
+      maxPrice: existing?.max_price?.toString() ?? DEFAULT_FORM_STATE.maxPrice,
       allocationUsd: existing?.allocation_usd?.toString() ?? DEFAULT_FORM_STATE.allocationUsd,
       maxTradesPerDay: existing?.max_trades_per_day?.toString() ?? DEFAULT_FORM_STATE.maxTradesPerDay,
       riskTolerancePct: existing?.risk_tolerance_pct?.toString() ?? DEFAULT_FORM_STATE.riskTolerancePct,
@@ -191,8 +197,10 @@ export default function AutoCopyAdminConsole({ traders, configs, adminUser }: Pr
       traderWallet: selectedTrader.wallet,
       traderUsername: formState.traderUsername.trim() || null,
       traderProfileImageUrl: formState.traderProfileImageUrl.trim() || null,
-      minTradeSizePct: Number(formState.minTradeSizePct) || 0,
-      maxTradeSizePct: Number(formState.maxTradeSizePct) || 0,
+      minTradeUsd: Number(formState.minTradeUsd) || 0,
+      maxTradeUsd: Number(formState.maxTradeUsd) || 0,
+      minPrice: formState.minPrice ? Number(formState.minPrice) : null,
+      maxPrice: formState.maxPrice ? Number(formState.maxPrice) : null,
       allocationUsd: Number(formState.allocationUsd) || 0,
       maxTradesPerDay: Number(formState.maxTradesPerDay) || 0,
       riskTolerancePct: Number(formState.riskTolerancePct) || 0,
@@ -435,7 +443,7 @@ export default function AutoCopyAdminConsole({ traders, configs, adminUser }: Pr
                   <thead className="bg-slate-50 text-xs uppercase tracking-[0.3em] text-slate-500">
                     <tr>
                       <th className="px-6 py-3 text-left">Trader</th>
-                      <th className="px-6 py-3 text-center">Size</th>
+                      <th className="px-6 py-3 text-center">Trade $</th>
                       <th className="px-6 py-3 text-center">Allocation</th>
                       <th className="px-6 py-3 text-center">Trades/day</th>
                       <th className="px-6 py-3 text-center">Risk</th>
@@ -463,9 +471,17 @@ export default function AutoCopyAdminConsole({ traders, configs, adminUser }: Pr
                             </p>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <p className="text-sm font-semibold text-slate-900">
-                              {config.min_trade_size_pct ?? 0}% - {config.max_trade_size_pct ?? 0}%
-                            </p>
+                            <div className="space-y-1">
+                              <p className="text-sm font-semibold text-slate-900">
+                                {formatCurrency(config.min_trade_usd ?? 0)} - {formatCurrency(config.max_trade_usd ?? 0)}
+                              </p>
+                              {(config.min_price !== null && config.min_price !== undefined) ||
+                              (config.max_price !== null && config.max_price !== undefined) ? (
+                                <p className="text-xs text-slate-500">
+                                  Price {config.min_price ?? '0'} - {config.max_price ?? '1'}
+                                </p>
+                              ) : null}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-center">
                             <p className="text-sm font-semibold text-slate-900">
@@ -764,25 +780,25 @@ export default function AutoCopyAdminConsole({ traders, configs, adminUser }: Pr
             <div className="grid gap-3 sm:grid-cols-3">
               <div>
                 <Label className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                  Min trade size %
+                  Min trade ($)
                 </Label>
                 <Input
                   type="number"
-                  value={formState.minTradeSizePct}
+                  value={formState.minTradeUsd}
                   onChange={(event) =>
-                    setFormState((prev) => ({ ...prev, minTradeSizePct: event.target.value }))
+                    setFormState((prev) => ({ ...prev, minTradeUsd: event.target.value }))
                   }
                 />
               </div>
               <div>
                 <Label className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                  Max trade size %
+                  Max trade ($)
                 </Label>
                 <Input
                   type="number"
-                  value={formState.maxTradeSizePct}
+                  value={formState.maxTradeUsd}
                   onChange={(event) =>
-                    setFormState((prev) => ({ ...prev, maxTradeSizePct: event.target.value }))
+                    setFormState((prev) => ({ ...prev, maxTradeUsd: event.target.value }))
                   }
                 />
               </div>
@@ -803,6 +819,36 @@ export default function AutoCopyAdminConsole({ traders, configs, adminUser }: Pr
             <div className="grid gap-3 sm:grid-cols-3">
               <div>
                 <Label className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                  Min price (optional)
+                </Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="1"
+                  value={formState.minPrice}
+                  onChange={(event) =>
+                    setFormState((prev) => ({ ...prev, minPrice: event.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                  Max price (optional)
+                </Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="1"
+                  value={formState.maxPrice}
+                  onChange={(event) =>
+                    setFormState((prev) => ({ ...prev, maxPrice: event.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
                   Max trades/day
                 </Label>
                 <Input
@@ -813,6 +859,9 @@ export default function AutoCopyAdminConsole({ traders, configs, adminUser }: Pr
                   }
                 />
               </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
               <div>
                 <Label className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
                   Risk tolerance %
@@ -837,19 +886,18 @@ export default function AutoCopyAdminConsole({ traders, configs, adminUser }: Pr
                   }
                 />
               </div>
-            </div>
-
-            <div>
-              <Label className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                Time window end
-              </Label>
-              <Input
-                type="datetime-local"
-                value={formState.timeWindowEnd}
-                onChange={(event) =>
-                  setFormState((prev) => ({ ...prev, timeWindowEnd: event.target.value }))
-                }
-              />
+              <div>
+                <Label className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                  Time window end
+                </Label>
+                <Input
+                  type="datetime-local"
+                  value={formState.timeWindowEnd}
+                  onChange={(event) =>
+                    setFormState((prev) => ({ ...prev, timeWindowEnd: event.target.value }))
+                  }
+                />
+              </div>
             </div>
 
             <div>
