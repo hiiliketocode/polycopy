@@ -262,15 +262,22 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      const traderPositionSize = await fetchWalletPositionSize(
-        copiedTraderWallet,
-        order.market_id,
-        order.outcome
-      )
-      const currentTraderPositionSize = Number.isFinite(Number(traderPositionSize))
+      let traderPositionSize: number | null = null
+      try {
+        traderPositionSize = await fetchWalletPositionSize(
+          copiedTraderWallet,
+          order.market_id,
+          order.outcome
+        )
+      } catch (error: any) {
+        console.error(`[AUTO-CLOSE] Order ${order.order_id}: Failed to fetch trader position size:`, error.message || error)
+        return
+      }
+      
+      const currentTraderPositionSize = traderPositionSize !== null && Number.isFinite(Number(traderPositionSize))
         ? Math.max(Number(traderPositionSize), 0)
         : 0
-      const priorTraderPositionSize = Number.isFinite(Number(order.trader_position_size))
+      const priorTraderPositionSize = order.trader_position_size !== null && order.trader_position_size !== undefined && Number.isFinite(Number(order.trader_position_size))
         ? Math.max(Number(order.trader_position_size), 0)
         : null
       const updateTraderPositionSize = async (size: number) => {
