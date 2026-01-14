@@ -90,10 +90,41 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userId, email_notifications_enabled } = body
+    const {
+      userId,
+      email_notifications_enabled,
+      default_buy_slippage,
+      default_sell_slippage,
+      trader_closes_position,
+      market_resolves,
+    } = body
     
     if (!userId) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
+    }
+
+    const normalizeSlippage = (value: unknown) => {
+      if (value === null || value === undefined) return undefined
+      const numericValue = typeof value === 'string' ? parseFloat(value) : value
+      if (!Number.isFinite(numericValue)) return undefined
+      return Math.max(0, Math.min(100, Number(numericValue)))
+    }
+
+    const normalizedBuySlippage = normalizeSlippage(default_buy_slippage)
+    const normalizedSellSlippage = normalizeSlippage(default_sell_slippage)
+
+    if (
+      default_buy_slippage !== undefined &&
+      normalizedBuySlippage === undefined
+    ) {
+      return NextResponse.json({ error: 'Invalid buy slippage' }, { status: 400 })
+    }
+
+    if (
+      default_sell_slippage !== undefined &&
+      normalizedSellSlippage === undefined
+    ) {
+      return NextResponse.json({ error: 'Invalid sell slippage' }, { status: 400 })
     }
 
     // Verify authentication using server client
@@ -125,18 +156,42 @@ export async function PUT(request: NextRequest) {
     }
 
     const supabase = createServiceClient()
-    
+
+    const updates: Record<string, any> = {
+      user_id: userId,
+      updated_at: new Date().toISOString(),
+    }
+
+    if (email_notifications_enabled !== undefined) {
+      updates.email_notifications_enabled = !!email_notifications_enabled
+    }
+    if (trader_closes_position !== undefined) {
+      updates.trader_closes_position = !!trader_closes_position
+    }
+    if (market_resolves !== undefined) {
+      updates.market_resolves = !!market_resolves
+    }
+    if (normalizedBuySlippage !== undefined) {
+      updates.default_buy_slippage = normalizedBuySlippage
+    }
+    if (normalizedSellSlippage !== undefined) {
+      updates.default_sell_slippage = normalizedSellSlippage
+    }
+
     const { data, error } = await supabase
       .from('notification_preferences')
-      .upsert({
-        user_id: userId,
-        email_notifications_enabled: email_notifications_enabled ?? true,
-        updated_at: new Date().toISOString()
-      })
+      .upsert(updates, { onConflict: 'user_id' })
       .select()
       .single()
-    
+
     if (error) {
+      console.error('Notification preferences upsert error', {
+        code: (error as any)?.code,
+        message: (error as any)?.message,
+        details: (error as any)?.details,
+        hint: (error as any)?.hint,
+        updates,
+      })
       return databaseError(error, 'update notification preferences')
     }
     

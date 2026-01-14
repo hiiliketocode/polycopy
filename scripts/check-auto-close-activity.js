@@ -121,6 +121,41 @@ async function checkAutoCloseActivity() {
     console.log('')
   }
 
+  // Check if specific orders would be included in auto-close query
+  console.log('\n🔍 Checking if orders meet auto-close query criteria...\n')
+  for (const orderId of specificOrderIds) {
+    const { data: order } = await supabase
+      .from('orders')
+      .select('order_id, auto_close_triggered_at, auto_close_on_trader_close, copied_trader_wallet, status, remaining_size, created_at')
+      .eq('order_id', orderId)
+      .single()
+
+    if (!order) continue
+
+    console.log(`Order: ${orderId}`)
+    console.log(`  Meets criteria:`)
+    console.log(`    auto_close_triggered_at is null: ${order.auto_close_triggered_at === null} ✓`)
+    console.log(`    auto_close_on_trader_close is not false: ${order.auto_close_on_trader_close !== false} ✓`)
+    console.log(`    copied_trader_wallet is not null: ${order.copied_trader_wallet !== null} ✓`)
+    console.log(`    status in allowed list: ${['open', 'partial', 'pending', 'submitted', 'processing', 'matched', 'filled'].includes(order.status)} ✓`)
+    console.log(`    remaining_size > 0: ${Number(order.remaining_size) > 0} ✓`)
+    
+    // Check position in query results
+    const { count } = await supabase
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .is('auto_close_triggered_at', null)
+      .neq('auto_close_on_trader_close', false)
+      .not('copied_trader_wallet', 'is', null)
+      .in('status', ['open', 'partial', 'pending', 'submitted', 'processing', 'matched', 'filled'])
+      .gt('remaining_size', 0)
+      .gt('created_at', order.created_at)
+    
+    const position = (count || 0) + 1
+    console.log(`  Position in query (by created_at): ${position}${position > 200 ? ' (OUTSIDE LIMIT!)' : ' (within limit)'}`)
+    console.log('')
+  }
+
   // Check current trader position sizes via API
   console.log('\n🔍 Checking current trader positions via Polymarket API...\n')
   for (const orderId of specificOrderIds) {

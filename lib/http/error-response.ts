@@ -73,6 +73,28 @@ interface ErrorResponseOptions {
  * - Logs detailed error server-side
  * - Safe to use everywhere
  */
+function extractErrorInfo(error: unknown): Record<string, unknown> | null {
+  if (!error) return null
+  if (error instanceof Error) {
+    return {
+      error_name: error.name,
+      error_message: error.message,
+      stack: error.stack?.split('\n').slice(0, 5),
+    }
+  }
+  if (typeof error === 'object') {
+    const record = error as Record<string, unknown>
+    const details: Record<string, unknown> = {}
+    for (const key of ['message', 'details', 'hint', 'code', 'status', 'error']) {
+      if (record[key] !== undefined) {
+        details[key] = record[key]
+      }
+    }
+    return Object.keys(details).length > 0 ? details : null
+  }
+  return { error: String(error) }
+}
+
 export function createErrorResponse(options: ErrorResponseOptions): NextResponse {
   const {
     category,
@@ -100,14 +122,14 @@ export function createErrorResponse(options: ErrorResponseOptions): NextResponse
     error: clientMessage,
   }
 
-  // In development, add helpful debugging info (NEVER in production)
-  if (!IS_PRODUCTION && error instanceof Error) {
+  // Always attach a small, sanitized debug payload for client-side troubleshooting.
+  // Keep it minimal to avoid leaking sensitive data.
+  const devInfo = extractErrorInfo(error)
+  if (devInfo) {
     responseBody.dev_info = {
-      error_name: error.name,
-      error_message: error.message,
       error_code: errorCode,
-      internal_message: internalMessage,
-      stack: error.stack?.split('\n').slice(0, 5), // First 5 lines only
+      internal_message: IS_PRODUCTION ? undefined : internalMessage,
+      ...devInfo,
     }
   }
 

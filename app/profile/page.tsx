@@ -1490,11 +1490,14 @@ function ProfilePageContent() {
     try {
       const { error } = await supabase
         .from('notification_preferences')
-        .upsert({
-          user_id: user.id,
-          trader_closes_position: newValue,
-          market_resolves: newValue,
-        });
+        .upsert(
+          {
+            user_id: user.id,
+            trader_closes_position: newValue,
+            market_resolves: newValue,
+          },
+          { onConflict: 'user_id' }
+        );
       
       if (error) throw error;
       
@@ -1513,6 +1516,8 @@ function ProfilePageContent() {
     
     // Validate slippage value (0-100)
     const validatedValue = Math.max(0, Math.min(100, value));
+    const prevBuy = defaultBuySlippage;
+    const prevSell = defaultSellSlippage;
     
     if (type === 'buy') {
       setDefaultBuySlippage(validatedValue);
@@ -1520,29 +1525,75 @@ function ProfilePageContent() {
       setDefaultSellSlippage(validatedValue);
     }
     
+    const payload = {
+      userId: user.id,
+      default_buy_slippage: type === 'buy' ? validatedValue : defaultBuySlippage,
+      default_sell_slippage: type === 'sell' ? validatedValue : defaultSellSlippage,
+    };
+
+    const applyUpdatedState = (next: any) => {
+      if (typeof next?.default_buy_slippage === 'number') {
+        setDefaultBuySlippage(next.default_buy_slippage);
+      }
+      if (typeof next?.default_sell_slippage === 'number') {
+        setDefaultSellSlippage(next.default_sell_slippage);
+      }
+    };
+
     try {
-      const { error } = await supabase
-        .from('notification_preferences')
-        .upsert({
-          user_id: user.id,
-          default_buy_slippage: type === 'buy' ? validatedValue : defaultBuySlippage,
-          default_sell_slippage: type === 'sell' ? validatedValue : defaultSellSlippage,
-        });
-      
-      if (error) throw error;
+      const response = await fetch('/api/notification-preferences', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw payload?.error || payload?.dev_info || new Error('Failed to update slippage');
+      }
+
+      const updated = await response.json();
+      applyUpdatedState(updated);
       
       setToastMessage(`Default ${type} slippage updated to ${validatedValue}%`);
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
+      return;
     } catch (err) {
-      console.error('Error updating slippage preferences:', err);
-      // Revert on error
-      if (type === 'buy') {
-        setDefaultBuySlippage(defaultBuySlippage);
-      } else {
-        setDefaultSellSlippage(defaultSellSlippage);
+      // Fallback to client Supabase (anon) to reduce impact if API fails
+      try {
+        const { data, error } = await supabase
+          .from('notification_preferences')
+          .upsert(
+            {
+              user_id: user.id,
+              default_buy_slippage: payload.default_buy_slippage,
+              default_sell_slippage: payload.default_sell_slippage,
+            },
+            { onConflict: 'user_id' }
+          )
+          .select()
+          .maybeSingle();
+
+        if (error) throw error;
+
+        applyUpdatedState(data);
+        setToastMessage(`Default ${type} slippage updated to ${validatedValue}%`);
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2000);
+        return;
+      } catch (fallbackErr) {
+        console.error('Slippage update failed via API and fallback:', {
+          api_error: err,
+          fallback_error: fallbackErr,
+        });
       }
     }
+    // Revert on error after all attempts
+    setDefaultBuySlippage(prevBuy);
+    setDefaultSellSlippage(prevSell);
   };
 
   // Handle confirm close for quick trades
@@ -3375,6 +3426,9 @@ function ProfilePageContent() {
                         <h4 className="font-semibold text-slate-900">Default Slippage</h4>
                         <p className="text-sm text-slate-500">
                           Set your preferred default slippage tolerance for buy and sell orders.
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          This becomes the default slippage for all trades unless you change it on a specific order.
                         </p>
                       </div>
                       <div className="space-y-3">
