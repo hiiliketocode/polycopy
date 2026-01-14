@@ -237,15 +237,6 @@ export async function GET(request: NextRequest) {
       console.log(`[AUTO-CLOSE] attemptAutoCloseFromOrder called for order ${order.order_id}`)
       console.error(`[AUTO-CLOSE] attemptAutoCloseFromOrder called for order ${order.order_id}`)
       
-      // Write to database to confirm function is being called (for debugging)
-      try {
-        await supabase.from(ordersTable).update({ 
-          auto_close_error: `Function called at ${new Date().toISOString()}` 
-        }).eq('order_id', order.order_id)
-      } catch (dbError) {
-        // Ignore - this is just for debugging
-      }
-      
       const copiedTraderWallet = order.copied_trader_wallet?.toLowerCase()
       if (!copiedTraderWallet || !order.market_id || !order.outcome || !order.trader_id) {
         console.warn(`[AUTO-CLOSE] Order ${order.order_id} skipped - missing required fields:`, {
