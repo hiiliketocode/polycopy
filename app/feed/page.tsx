@@ -14,8 +14,7 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import { getESPNScoresForTrades, teamsMatch } from '@/lib/espn/scores';
-import { abbreviateTeamName } from '@/lib/utils/team-abbreviations';
+import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 
 // Types
 export interface FeedTrade {
@@ -465,25 +464,15 @@ export default function FeedPage() {
                     
                     if (espnScore) {
                       // **ESPN DATA AVAILABLE** 🎯
+                      const { team1Label, team1Score, team2Label, team2Score } = getScoreDisplaySides(
+                        trade.market.title,
+                        espnScore
+                      );
+
                       if (espnScore.status === 'final') {
-                        // Determine correct order: which outcome matches home team vs away team
-                        const outcome1MatchesHome = teamsMatch(outcomes[0], espnScore.homeTeamName, espnScore.homeTeamAbbrev);
-                        const team1Score = outcome1MatchesHome ? espnScore.homeScore : espnScore.awayScore;
-                        const team2Score = outcome1MatchesHome ? espnScore.awayScore : espnScore.homeScore;
-                        
-                        const team1Abbrev = abbreviateTeamName(outcomes[0] || '');
-                        const team2Abbrev = abbreviateTeamName(outcomes[1] || '');
-                        scoreDisplay = `🏁 ${team1Abbrev} ${team1Score} - ${team2Score} ${team2Abbrev}`;
+                        scoreDisplay = `🏁 ${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
                         console.log(`🏁 ESPN Final score: ${scoreDisplay}`);
                       } else if (espnScore.status === 'live') {
-                        // Determine correct order: which outcome matches home team vs away team
-                        const outcome1MatchesHome = teamsMatch(outcomes[0], espnScore.homeTeamName, espnScore.homeTeamAbbrev);
-                        const team1Score = outcome1MatchesHome ? espnScore.homeScore : espnScore.awayScore;
-                        const team2Score = outcome1MatchesHome ? espnScore.awayScore : espnScore.homeScore;
-                        
-                        const team1Abbrev = abbreviateTeamName(outcomes[0] || '');
-                        const team2Abbrev = abbreviateTeamName(outcomes[1] || '');
-
                         let periodContext = '';
                         if (espnScore.displayClock) {
                           // Detect sport and format period accordingly
@@ -528,7 +517,7 @@ export default function FeedPage() {
                         }
 
                         const clock = espnScore.displayClock ? ` (${periodContext}${espnScore.displayClock})` : '';
-                        scoreDisplay = `🟢 ${team1Abbrev} ${team1Score} - ${team2Score} ${team2Abbrev}${clock}`;
+                        scoreDisplay = `🟢 ${team1Label} ${team1Score} - ${team2Score} ${team2Label}${clock}`;
                         console.log(`🟢 ESPN Live score: ${scoreDisplay} | Period: ${espnScore.period}`);
                       } else if (espnScore.status === 'scheduled') {
                         // Show game start time

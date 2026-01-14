@@ -14,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 // Polymarket tick sizes bottom out at 0.001, but some markets use larger ticks (e.g., 0.01)
 const FALLBACK_MIN_TICK_SIZE = 0.001
 const SIZE_DECIMALS = 2
+const MIN_RESELL_SIZE = 1e-4
 
 type CloseTarget = {
   order: OrderRow
@@ -600,6 +601,44 @@ export default function ClosePositionModal({
     Boolean(orderId) && showConfirmation && CANCELABLE_PHASES.has(statusPhase)
   const submittedContracts = orderStatus?.size ?? null
   const filledContracts = orderStatus?.filledSize ?? null
+  const remainingContractsFromStatus =
+    typeof orderStatus?.remainingSize === 'number' && orderStatus.remainingSize >= 0
+      ? orderStatus.remainingSize
+      : null
+  const remainingContracts =
+    remainingContractsFromStatus !== null
+      ? remainingContractsFromStatus
+      : submittedContracts !== null &&
+          filledContracts !== null &&
+          submittedContracts > filledContracts
+        ? submittedContracts - filledContracts
+        : null
+  const expectedPositionRemainder =
+    filledContracts !== null && Number.isFinite(position.size)
+      ? Math.max(position.size - filledContracts, 0)
+      : null
+  const isLikelyFullRemainder =
+    remainingContracts !== null && expectedPositionRemainder !== null
+      ? remainingContracts >= expectedPositionRemainder * 0.999
+      : false
+  const showSellRemainingCta =
+    remainingContracts !== null &&
+    remainingContracts > MIN_RESELL_SIZE &&
+    (statusPhase === 'partial' || statusPhase === 'timed_out' || isFinalStatus)
+  const remainingContractsDisplay = remainingContracts ?? 0
+  const handleSellRemaining = () => {
+    if (!showSellRemainingCta || remainingContracts === null) return
+    setAmountMode('contracts')
+    setAmountInput(formatInputValue(remainingContracts, SIZE_DECIMALS))
+    onSubmit({
+      tokenId: position.tokenId,
+      amount: remainingContracts,
+      price: effectivePriceForSubmit ?? limitPrice ?? FALLBACK_MIN_TICK_SIZE,
+      slippagePercent: normalizedSlippage,
+      orderType,
+      isClosingFullPosition: isLikelyFullRemainder || remainingContracts >= position.size * 0.999,
+    })
+  }
   const pendingStatusLabel = 'Order pending at Polymarket'
   const statusLabel = getPostOrderStateLabel(statusPhase, orderType, filledContracts)
   const statusVariant = getExecutionStatusVariant(statusPhase)
@@ -1179,6 +1218,26 @@ export default function ClosePositionModal({
                               className="h-2 rounded-full bg-slate-900 transition-all duration-150"
                               style={{ width: `${fillProgress}%` }}
                             />
+                          </div>
+                        </div>
+                      )}
+                      {showSellRemainingCta && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-amber-800">Partial fill detected</p>
+                              <p className="text-xs text-amber-700">
+                                You still have {formatContractsDisplay(remainingContractsDisplay, SIZE_DECIMALS)} contracts to sell.
+                              </p>
+                            </div>
+                            <Button
+                              onClick={handleSellRemaining}
+                              disabled={isSubmitting}
+                              size="sm"
+                              className="bg-amber-600 text-white hover:bg-amber-700"
+                            >
+                              Sell remaining
+                            </Button>
                           </div>
                         </div>
                       )}

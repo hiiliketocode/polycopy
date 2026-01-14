@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
@@ -628,6 +628,17 @@ function ProfilePageContent() {
     fetchQuickTrades();
   }, [user]);
 
+  const refreshPositions = useCallback(async () => {
+    try {
+      const positionsResponse = await fetch('/api/polymarket/positions', { cache: 'no-store' });
+      if (!positionsResponse.ok) return;
+      const positionsData = await positionsResponse.json();
+      setPositions(positionsData.positions || []);
+    } catch (err) {
+      console.error('Error refreshing positions:', err);
+    }
+  }, []);
+
   // Fetch aggregated portfolio stats (realized + unrealized PnL)
   useEffect(() => {
     if (!user) return;
@@ -1142,6 +1153,7 @@ function ProfilePageContent() {
       
       // Also refresh live market data
       await fetchLiveMarketData(tradesWithFreshStatus);
+      await refreshPositions();
       
       setToastMessage('Positions refreshed!');
       setShowToast(true);
@@ -1634,6 +1646,11 @@ function ProfilePageContent() {
       } catch (err) {
         console.error('Error refreshing orders status:', err);
       }
+      try {
+        await refreshPositions();
+      } catch (err) {
+        console.error('Error refreshing positions after close:', err);
+      }
       
       setToastMessage('Sell order placed successfully!');
       setShowToast(true);
@@ -1859,6 +1876,32 @@ function ProfilePageContent() {
     return side === 'sell' || order.activity === 'sold' || order.positionState === 'closed';
   };
 
+  const netQuickPositionByKey = useMemo(() => {
+    const map = new Map<string, number>();
+    quickTrades.forEach((order) => {
+      const key = buildPositionKey(order.marketId, order.outcome);
+      if (!key) return;
+      const normalizedSide = order.side?.toLowerCase() === 'sell' ? -1 : 1;
+      const filled = Number.isFinite(order.filledSize) && order.filledSize > 0 ? order.filledSize : order.size;
+      if (!Number.isFinite(filled) || filled <= 0) return;
+      const nextNet = (map.get(key) ?? 0) + normalizedSide * filled;
+      map.set(key, nextNet);
+    });
+    return map;
+  }, [quickTrades]);
+
+  const openPositionByKey = useMemo(() => {
+    const map = new Map<string, number>();
+    positions.forEach((pos) => {
+      const key = buildPositionKey(pos.marketId, pos.outcome);
+      if (!key) return;
+      if (pos.size > MIN_OPEN_POSITION_SIZE) {
+        map.set(key, pos.size);
+      }
+    });
+    return map;
+  }, [positions]);
+
   // Merge and sort all trades
   const allUnifiedTrades = useMemo(() => {
     // Filter out trades that are explicitly marked as 'quick' - those should only come from orders API
@@ -1871,6 +1914,11 @@ function ProfilePageContent() {
         const createdAt = Date.parse(order.createdAt || '');
         const createdAtMs = Number.isFinite(createdAt) ? createdAt : 0;
         const closeTimestamp = getQuickCloseTimestamp(order);
+        const positionKey = buildPositionKey(order.marketId, order.outcome);
+        const hasOpenPosition = positionKey
+          ? openPositionByKey.has(positionKey) ||
+            Math.abs(netQuickPositionByKey.get(positionKey) ?? 0) > MIN_OPEN_POSITION_SIZE
+          : false;
         const isClosedBySell =
           !isQuickSellOrder(order) &&
           closeTimestamp !== null &&
@@ -1878,7 +1926,9 @@ function ProfilePageContent() {
           createdAtMs <= closeTimestamp;
         const statusOverride = order.marketResolved
           ? 'resolved'
-          : isQuickSellOrder(order) || isClosedBySell
+          : hasOpenPosition
+            ? 'open'
+            : isQuickSellOrder(order) || isClosedBySell
             ? 'user-closed'
             : null;
         return convertOrderToUnifiedTrade(order, statusOverride);
@@ -1889,7 +1939,7 @@ function ProfilePageContent() {
     combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     
     return combined;
-  }, [copiedTrades, quickTrades]);
+  }, [copiedTrades, quickTrades, openPositionByKey]);
 
   // Filter unified trades
   const filteredUnifiedTrades = useMemo(() => {
@@ -1897,6 +1947,12 @@ function ProfilePageContent() {
       if (trade.type === 'quick') {
         const order = trade.raw as OrderRow | undefined;
         if (!order) return false;
+        const positionKey = buildPositionKey(trade.market_id, trade.outcome);
+        const hasOpenPosition = positionKey
+          ? openPositionByKey.has(positionKey) ||
+            Math.abs(netQuickPositionByKey.get(positionKey) ?? 0) > MIN_OPEN_POSITION_SIZE
+          : false;
+        if (hasOpenPosition) return false;
         if (isQuickSellOrder(order)) return true;
         const createdAt = Date.parse(order.createdAt || '');
         const createdAtMs = Number.isFinite(createdAt) ? createdAt : 0;
@@ -1921,7 +1977,7 @@ function ProfilePageContent() {
           return true;
       }
     });
-  }, [allUnifiedTrades, tradeFilter]);
+  }, [allUnifiedTrades, tradeFilter, openPositionByKey]);
 
   // Loading state
   if (loading) {

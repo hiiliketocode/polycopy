@@ -1,5 +1,6 @@
 // Helper to fetch and match ESPN scores with Polymarket markets
 import type { FeedTrade } from '@/app/feed/page';
+import { abbreviateTeamName } from '@/lib/utils/team-abbreviations';
 
 interface ESPNGame {
   id: string;
@@ -82,7 +83,7 @@ function detectSportType(title: string): string | null {
 }
 
 // Extract team names from market title
-function extractTeamNames(title: string): { team1: string; team2: string } | null {
+export function extractTeamNames(title: string): { team1: string; team2: string } | null {
   // Remove spread/O-U indicators first: "Thunder (−9.5)" → "Thunder"
   const cleanTitle = title
     .replace(/\s*\([−+]?\d+\.?\d*\)/g, '') // Remove (−9.5) or (+7)
@@ -152,6 +153,46 @@ export function teamsMatch(marketTeam: string, espnTeamName: string, espnAbbrev:
   }
   
   return false;
+}
+
+export function getScoreDisplaySides(
+  marketTitle: string,
+  espnScore: ESPNScoreResult
+): { team1Label: string; team1Score: number; team2Label: string; team2Score: number } {
+  const teams = extractTeamNames(marketTitle);
+
+  const homeLabel = espnScore.homeTeamAbbrev || abbreviateTeamName(espnScore.homeTeamName);
+  const awayLabel = espnScore.awayTeamAbbrev || abbreviateTeamName(espnScore.awayTeamName);
+
+  if (teams) {
+    const firstIsHome = teamsMatch(teams.team1, espnScore.homeTeamName, espnScore.homeTeamAbbrev);
+    const firstIsAway = teamsMatch(teams.team1, espnScore.awayTeamName, espnScore.awayTeamAbbrev);
+
+    if (firstIsHome) {
+      return {
+        team1Label: homeLabel,
+        team1Score: espnScore.homeScore,
+        team2Label: awayLabel,
+        team2Score: espnScore.awayScore,
+      };
+    }
+
+    if (firstIsAway) {
+      return {
+        team1Label: awayLabel,
+        team1Score: espnScore.awayScore,
+        team2Label: homeLabel,
+        team2Score: espnScore.homeScore,
+      };
+    }
+  }
+
+  return {
+    team1Label: homeLabel,
+    team1Score: espnScore.homeScore,
+    team2Label: awayLabel,
+    team2Score: espnScore.awayScore,
+  };
 }
 
 // Fetch ESPN scores for a specific sport
@@ -301,4 +342,3 @@ export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<s
   console.log(`✅ Fetched ESPN scores for ${scoreMap.size} markets`);
   return scoreMap;
 }
-

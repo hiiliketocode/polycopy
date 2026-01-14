@@ -15,8 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { TradeCard } from '@/components/polycopy/trade-card';
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
-import { getESPNScoresForTrades } from '@/lib/espn/scores';
-import { abbreviateTeamName } from '@/lib/utils/team-abbreviations';
+import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 import type { User } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
 
@@ -639,14 +638,16 @@ export default function TraderProfilePage({
                                 trade.category === 'sports';
 
           if (isSportsMarket && espnScore && outcomes?.length === 2) {
+            const { team1Label, team1Score, team2Label, team2Score } = getScoreDisplaySides(
+              trade.market,
+              espnScore
+            );
+            const clock = espnScore.displayClock ? ` (${espnScore.displayClock})` : '';
+
             if (espnScore.status === 'final') {
-              const team1Abbrev = abbreviateTeamName(outcomes[0] || '');
-              const team2Abbrev = abbreviateTeamName(outcomes[1] || '');
-              scoreDisplay = `🏁 ${team1Abbrev} ${espnScore.homeScore} - ${espnScore.awayScore} ${team2Abbrev}`;
+              scoreDisplay = `🏁 ${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
             } else if (espnScore.status === 'live') {
-              const team1Abbrev = abbreviateTeamName(outcomes[0] || '');
-              const team2Abbrev = abbreviateTeamName(outcomes[1] || '');
-              scoreDisplay = `🔴 ${team1Abbrev} ${espnScore.homeScore} - ${espnScore.awayScore} ${team2Abbrev}`;
+              scoreDisplay = `🟢 ${team1Label} ${team1Score} - ${team2Score} ${team2Label}${clock}`;
             }
           }
 
