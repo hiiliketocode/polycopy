@@ -921,9 +921,15 @@ export async function GET(request: NextRequest) {
       .in('status', ['open', 'partial', 'pending', 'submitted', 'processing', 'matched', 'filled'])
       .gt('remaining_size', 0)
       .order('created_at', { ascending: false })
-      .limit(100)
+      .limit(200)
     
     console.log(`[AUTO-CLOSE] Found ${openOrders?.length || 0} orders eligible for auto-close check`)
+    
+    // Log order IDs being checked for debugging
+    if (openOrders && openOrders.length > 0) {
+      const orderIds = openOrders.map(o => o.order_id).slice(0, 10)
+      console.log(`[AUTO-CLOSE] Sample order IDs being checked: ${orderIds.join(', ')}${openOrders.length > 10 ? '...' : ''}`)
+    }
 
     for (const order of openOrders || []) {
       await attemptAutoCloseFromOrder(order)
