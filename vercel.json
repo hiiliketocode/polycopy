@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/check-notifications",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/admin/auto-copy/run",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

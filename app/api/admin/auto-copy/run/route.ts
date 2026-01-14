@@ -71,7 +71,7 @@ async function fetchRecentTrades(
   return collected.sort((a, b) => a.ts.getTime() - b.ts.getTime()).map((row) => row.trade)
 }
 
-export async function POST(request: Request) {
+async function handleAutoCopyRun(request: Request, params: { configId?: string | null; copyUserId?: string | null; maxTrades?: number }) {
   const authHeader = request.headers.get('authorization')
   const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : null
   const cronSecret = process.env.CRON_SECRET
@@ -83,10 +83,9 @@ export async function POST(request: Request) {
   }
 
   const supabase = createAdminServiceClient()
-  const body = await request.json().catch(() => ({}))
-  const configId = typeof body?.configId === 'string' ? body.configId : null
-  const copyUserId = typeof body?.copyUserId === 'string' ? body.copyUserId : null
-  const maxTradesPerConfig = Math.max(1, Math.min(50, Number(body?.maxTrades || 25)))
+  const configId = params.configId
+  const copyUserId = params.copyUserId
+  const maxTradesPerConfig = Math.max(1, Math.min(50, Number(params.maxTrades || 25)))
 
   // Ensure proxy is configured for upstream Polymarket calls
   try {
@@ -280,4 +279,24 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ results })
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const params = {
+    configId: searchParams.get('configId'),
+    copyUserId: searchParams.get('copyUserId'),
+    maxTrades: Number(searchParams.get('maxTrades') || '25'),
+  }
+  return handleAutoCopyRun(request, params)
+}
+
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => ({}))
+  const params = {
+    configId: typeof body?.configId === 'string' ? body.configId : null,
+    copyUserId: typeof body?.copyUserId === 'string' ? body.copyUserId : null,
+    maxTrades: Number(body?.maxTrades || 25),
+  }
+  return handleAutoCopyRun(request, params)
 }
