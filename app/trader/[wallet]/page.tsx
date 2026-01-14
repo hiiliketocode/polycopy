@@ -1038,6 +1038,24 @@ export default function TraderProfilePage({
       positions.set(key, existing);
     });
 
+    // Also check for resolved markets (Bonded) to count as realized wins/losses
+    positions.forEach((p, key) => {
+      const sample = p.sampleTrade || trades.find((t) => keyFor(t) === key);
+      if (!sample) return;
+      
+      // If position still has size AND market is resolved (Bonded), count it as a realized trade
+      if (Math.abs(p.size) > 1e-9 && sample.status === 'Bonded') {
+        const currentPrice = priceForTrade(sample);
+        if (currentPrice !== null) {
+          const realizedFromResolution = (currentPrice - p.avgCost) * p.size;
+          p.realized += realizedFromResolution;
+          p.sellCount += 1;
+          if (realizedFromResolution > 0) p.winSells += 1;
+          p.size = 0; // Position is now closed
+        }
+      }
+    });
+
     let realizedPnl = 0;
     let volume = 0;
     let winSells = 0;
@@ -1061,8 +1079,8 @@ export default function TraderProfilePage({
 
     const totalPnl = realizedPnl + unrealizedPnl;
     const roi = volume > 0 ? (totalPnl / volume) * 100 : 0;
-    // Win rate: only meaningful if there are sell trades
-    // If sellTrades === 0, we can't calculate win rate (not enough data)
+    // Win rate: count both manual sells AND resolved markets
+    // If no resolved trades (sells or bonded markets), we can't calculate win rate
     const winRate = sellTrades > 0 ? (winSells / sellTrades) * 100 : null;
 
     console.log('🧮 Computed stats from trades:', {
@@ -1070,10 +1088,10 @@ export default function TraderProfilePage({
       totalPnl: totalPnl.toFixed(2),
       volume: volume.toFixed(2),
       roi: roi.toFixed(1) + '%',
-      winRate: winRate !== null ? winRate.toFixed(1) + '%' : 'N/A (no sells yet)',
+      winRate: winRate !== null ? winRate.toFixed(1) + '%' : 'N/A (no resolved trades yet)',
       sellTrades,
       winSells,
-      note: 'Win rate is based on SELL trades only. Traders with all open positions show N/A.'
+      note: 'Win rate includes both manual sells AND resolved markets (Bonded). Traders with all open positions show N/A.'
     });
 
     setComputedStats({
