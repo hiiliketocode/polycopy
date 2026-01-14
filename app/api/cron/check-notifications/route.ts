@@ -246,11 +246,18 @@ export async function GET(request: NextRequest) {
         return
       }
 
-      if (order.auto_close_on_trader_close === false) return
-      if (order.auto_close_triggered_at) return
+      if (order.auto_close_on_trader_close === false) {
+        console.log(`[AUTO-CLOSE] Order ${order.order_id} skipped - auto_close_on_trader_close is false`)
+        return
+      }
+      if (order.auto_close_triggered_at) {
+        console.log(`[AUTO-CLOSE] Order ${order.order_id} skipped - already triggered at ${order.auto_close_triggered_at}`)
+        return
+      }
       if (order.auto_close_attempted_at) {
         const lastAttempt = new Date(order.auto_close_attempted_at)
         if (Date.now() - lastAttempt.getTime() < 5 * 60 * 1000) {
+          console.log(`[AUTO-CLOSE] Order ${order.order_id} skipped - attempted recently (${Math.round((Date.now() - lastAttempt.getTime()) / 1000)}s ago)`)
           return
         }
       }
