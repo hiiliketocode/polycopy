@@ -937,7 +937,8 @@ export async function GET(request: NextRequest) {
     console.log(`[AUTO-CLOSE] ========== STARTING AUTO-CLOSE CHECK ==========`)
     console.log(`[AUTO-CLOSE] Orders table: ${ordersTable}`)
     
-    const { data: openOrders, error: queryError } = await supabase
+    try {
+      const { data: openOrders, error: queryError } = await supabase
       .from(ordersTable)
       .select(
         'order_id, trader_id, copied_trader_wallet, market_id, outcome, side, status, remaining_size, trader_position_size, auto_close_on_trader_close, auto_close_slippage_percent, auto_close_triggered_at, auto_close_attempted_at, created_at'
