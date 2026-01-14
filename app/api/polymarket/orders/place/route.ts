@@ -1004,10 +1004,9 @@ export async function POST(request: NextRequest) {
         const fetchedSize = normalizeNumber(clobOrder?.original_size)
         const fetchedFilled = normalizeNumber(clobOrder?.size_matched)
         const fetchedRemaining =
-          normalizeNumber(clobOrder?.remaining_size) ??
-          (fetchedSize !== null && fetchedFilled !== null
+          fetchedSize !== null && fetchedFilled !== null
             ? Math.max(fetchedSize - fetchedFilled, 0)
-            : null)
+            : null
         const fetchedStatus =
           typeof clobOrder?.status === 'string' ? clobOrder.status.toLowerCase() : null
         const fetchedCreatedAt = normalizeTimestamp(
