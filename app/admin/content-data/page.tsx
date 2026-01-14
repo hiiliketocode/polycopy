@@ -261,10 +261,12 @@ async function fetchPolymarketData(): Promise<SectionAData> {
   if (categoriesResult.status === 'fulfilled') {
     for (const [category, traders] of Object.entries(categoriesResult.value)) {
       if (traders.length > 0) {
-        categoryLeaderboards[category] = traders.map(formatTrader)
+        // Enrich category traders with trade counts (same as overall leaderboard)
+        const enrichedCategoryTraders = await enrichTradersWithTradeCounts(traders)
+        categoryLeaderboards[category] = enrichedCategoryTraders.map(formatTrader)
       }
     }
-    console.log(`✅ Got ${Object.keys(categoryLeaderboards).length} category leaderboards`)
+    console.log(`✅ Got ${Object.keys(categoryLeaderboards).length} category leaderboards with trade counts`)
   } else {
     apiErrors.push('Failed to fetch category leaderboards')
     console.error('❌ Failed to fetch category leaderboards')
@@ -356,34 +358,60 @@ async function fetchPolymarketData(): Promise<SectionAData> {
           const lastWeekStart = now - (7 * 24 * 60 * 60 * 1000)
           const prevWeekStart = now - (14 * 24 * 60 * 60 * 1000)
           
-          const lastWeekTrades = resolvedTrades.filter(t => {
+          // Try with resolved trades first (most accurate)
+          const lastWeekResolved = resolvedTrades.filter(t => {
             const tradeTime = new Date(t.copied_at).getTime()
             return tradeTime >= lastWeekStart && tradeTime < now
           })
           
-          const prevWeekTrades = resolvedTrades.filter(t => {
+          const prevWeekResolved = resolvedTrades.filter(t => {
             const tradeTime = new Date(t.copied_at).getTime()
             return tradeTime >= prevWeekStart && tradeTime < lastWeekStart
           })
           
-          const lastWeekRoi = lastWeekTrades.length > 0
-            ? lastWeekTrades.reduce((sum, t) => sum + t.roi, 0) / lastWeekTrades.length
+          // Fall back to all trades if not enough resolved trades
+          const lastWeekAllTrades = trades.filter(t => {
+            const tradeTime = new Date(t.copied_at).getTime()
+            return tradeTime >= lastWeekStart && tradeTime < now
+          })
+          
+          const prevWeekAllTrades = trades.filter(t => {
+            const tradeTime = new Date(t.copied_at).getTime()
+            return tradeTime >= prevWeekStart && tradeTime < lastWeekStart
+          })
+          
+          // Calculate ROI change from resolved trades if possible
+          const lastWeekRoi = lastWeekResolved.length >= 2
+            ? lastWeekResolved.reduce((sum, t) => sum + t.roi, 0) / lastWeekResolved.length
             : null
           
-          const prevWeekRoi = prevWeekTrades.length > 0
-            ? prevWeekTrades.reduce((sum, t) => sum + t.roi, 0) / prevWeekTrades.length
+          const prevWeekRoi = prevWeekResolved.length >= 2
+            ? prevWeekResolved.reduce((sum, t) => sum + t.roi, 0) / prevWeekResolved.length
             : null
           
           const wowRoiChange = lastWeekRoi !== null && prevWeekRoi !== null
             ? lastWeekRoi - prevWeekRoi
             : null
           
+          // Determine status
           let wowStatus: 'heating_up' | 'cooling_down' | 'stable' | 'new' = 'new'
+          
           if (wowRoiChange !== null) {
+            // Have resolved trades data - use ROI change
             if (wowRoiChange > 5) wowStatus = 'heating_up'
             else if (wowRoiChange < -5) wowStatus = 'cooling_down'
             else wowStatus = 'stable'
-          } else if (lastWeekTrades.length > 0 && prevWeekTrades.length === 0) {
+          } else if (lastWeekAllTrades.length > prevWeekAllTrades.length && prevWeekAllTrades.length > 0) {
+            // Increasing activity (but not enough resolved trades yet)
+            wowStatus = 'heating_up'
+          } else if (prevWeekAllTrades.length > lastWeekAllTrades.length && prevWeekAllTrades.length > 0) {
+            // Decreasing activity
+            wowStatus = 'cooling_down'
+          } else if (prevWeekAllTrades.length > 0) {
+            // Similar activity
+            wowStatus = 'stable'
+          } else if (lastWeekAllTrades.length > 0) {
+            // Active this week but not previous week
             wowStatus = 'new'
           }
           
@@ -469,10 +497,11 @@ async function fetchPolycopyData(): Promise<SectionBData> {
       .select('copied_trader_username, copy_user_id, roi, market_resolved')
       .not('copied_trade_id', 'is', null),
 
-    // Query 3: Recent activity
+    // Query 3: Recent activity (only copied trades)
     supabase
       .from(ordersTable)
       .select('copied_trader_username, copied_trader_wallet, copied_market_title, outcome, created_at')
+      .not('copied_trade_id', 'is', null)
       .order('created_at', { ascending: false })
       .limit(20),
 
