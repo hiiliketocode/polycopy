@@ -919,8 +919,11 @@ export async function GET(request: NextRequest) {
       .neq('auto_close_on_trader_close', false)
       .not('copied_trader_wallet', 'is', null)
       .in('status', ['open', 'partial', 'pending', 'submitted', 'processing', 'matched', 'filled'])
+      .gt('remaining_size', 0)
       .order('created_at', { ascending: false })
       .limit(100)
+    
+    console.log(`[AUTO-CLOSE] Found ${openOrders?.length || 0} orders eligible for auto-close check`)
 
     for (const order of openOrders || []) {
       await attemptAutoCloseFromOrder(order)
