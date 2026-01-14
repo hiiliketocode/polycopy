@@ -232,7 +232,7 @@ export async function POST(request: Request) {
           { tokenID: tokenId, price: roundedPrice, size: roundedSize, side: side as any },
           { signatureType } as any
         )
-        const rawResult = await client.postOrder(order, 'GTC', false)
+        const rawResult = await client.postOrder(order, 'GTC' as any, false)
 
         await supabase.from('auto_copy_logs').insert({
           config_id: config.id,
