@@ -263,15 +263,27 @@ export async function GET(request: NextRequest) {
         await supabase.from(ordersTable).update({ trader_position_size: size }).eq('order_id', order.order_id)
       }
 
+      console.log(`[AUTO-CLOSE] Checking order ${order.order_id}:`, {
+        copiedTraderWallet,
+        marketId: order.market_id,
+        outcome: order.outcome,
+        currentTraderPositionSize,
+        priorTraderPositionSize,
+        remainingSize: order.remaining_size
+      })
+
       let reductionFraction: number | null = null
       if (priorTraderPositionSize === null) {
         if (currentTraderPositionSize > 0) {
+          console.log(`[AUTO-CLOSE] Order ${order.order_id}: No prior position size, updating to ${currentTraderPositionSize}`)
           await updateTraderPositionSize(currentTraderPositionSize)
           return
         }
+        console.log(`[AUTO-CLOSE] Order ${order.order_id}: No prior position size, trader has no position - full close`)
         reductionFraction = 1
       } else {
         if (currentTraderPositionSize >= priorTraderPositionSize) {
+          console.log(`[AUTO-CLOSE] Order ${order.order_id}: Trader position increased or unchanged (${currentTraderPositionSize} >= ${priorTraderPositionSize}), updating stored size`)
           await updateTraderPositionSize(currentTraderPositionSize)
           return
         }
@@ -280,9 +292,11 @@ export async function GET(request: NextRequest) {
             ? (priorTraderPositionSize - currentTraderPositionSize) / priorTraderPositionSize
             : 0
         if (!Number.isFinite(reductionFraction) || reductionFraction <= 0) {
+          console.log(`[AUTO-CLOSE] Order ${order.order_id}: Invalid reduction fraction (${reductionFraction}), updating stored size`)
           await updateTraderPositionSize(currentTraderPositionSize)
           return
         }
+        console.log(`[AUTO-CLOSE] Order ${order.order_id}: Trader position reduced by ${(reductionFraction * 100).toFixed(2)}% (${priorTraderPositionSize} -> ${currentTraderPositionSize})`)
       }
 
       const userWallet = await resolveUserWalletByTraderId(order.trader_id)
@@ -298,14 +312,18 @@ export async function GET(request: NextRequest) {
       }
 
       const positionSize = await fetchWalletPositionSize(userWallet, order.market_id, order.outcome)
+      console.log(`[AUTO-CLOSE] Order ${order.order_id}: User position size = ${positionSize}, reductionFraction = ${reductionFraction}`)
       if (!positionSize || positionSize <= 0) {
-        console.warn(`⚠️ Auto-close skipped: no open position for user ${userId}`)
+        console.warn(`⚠️ Auto-close skipped: no open position for user ${userId} (wallet: ${userWallet})`)
+        await updateTraderPositionSize(currentTraderPositionSize)
         return
       }
 
       const closeSizeRaw = Number(positionSize) * (reductionFraction ?? 0)
       let closeSize = Number.isFinite(closeSizeRaw) ? Math.min(closeSizeRaw, positionSize) : 0
+      console.log(`[AUTO-CLOSE] Order ${order.order_id}: Calculated close size = ${closeSize} (from user position ${positionSize} * reduction ${reductionFraction})`)
       if (!Number.isFinite(closeSize) || closeSize <= 0) {
+        console.warn(`[AUTO-CLOSE] Order ${order.order_id}: Invalid close size (${closeSize}), updating stored trader position size`)
         await updateTraderPositionSize(currentTraderPositionSize)
         return
       }
@@ -900,8 +918,7 @@ export async function GET(request: NextRequest) {
       .is('auto_close_triggered_at', null)
       .neq('auto_close_on_trader_close', false)
       .not('copied_trader_wallet', 'is', null)
-      .in('status', ['open', 'partial', 'pending', 'submitted', 'processing'])
-      .gt('remaining_size', 0)
+      .in('status', ['open', 'partial', 'pending', 'submitted', 'processing', 'matched', 'filled'])
       .order('created_at', { ascending: false })
       .limit(100)
 
