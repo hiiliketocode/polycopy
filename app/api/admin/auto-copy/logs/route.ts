@@ -71,8 +71,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Config not found' }, { status: 404 })
   }
 
-  const size = toNumber(body.size, 1)
-  const price = toNumber(body.price, 1)
+  const size = toNumber(body.size, 1) ?? 1
+  const price = toNumber(body.price, 1) ?? 1
   const amountUsd = toNumber(body.amountUsd, null) ?? (size * price)
   const executedAt = normalizeDate(body.executedAt) ?? new Date().toISOString()
 
