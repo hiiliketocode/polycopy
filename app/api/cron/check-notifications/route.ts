@@ -514,8 +514,12 @@ export async function GET(request: NextRequest) {
         polymarket_order_id: null,
         http_status: null,
         error_code: null,
-        error_message: null,
-        raw_error: null,
+        error_message: '[AUTO-CLOSE]', // Mark as auto-close in logs
+        raw_error: { 
+          is_auto_close: true,
+          original_order_id: order.order_id,
+          retry_count: retryCount + 1
+        },
       }
 
       let orderEventId: string | null = null
@@ -566,8 +570,13 @@ export async function GET(request: NextRequest) {
             status: 'rejected',
             http_status: upstreamStatus,
             error_code: evaluation.errorType ?? null,
-            error_message: truncateMessage(evaluation.message ?? 'Order rejected'),
-            raw_error: evaluation.raw ?? null,
+            error_message: `[AUTO-CLOSE] ${truncateMessage(evaluation.message ?? 'Order rejected')}`,
+            raw_error: { 
+              is_auto_close: true,
+              original_order_id: order.order_id,
+              retry_count: retryCount + 1,
+              ...(evaluation.raw || {})
+            },
           })
           const errorMsg = evaluation.message || 'Auto-close order was rejected by the exchange.'
           await updateErrorWithRetryCount(errorMsg)
@@ -581,13 +590,18 @@ export async function GET(request: NextRequest) {
           http_status: 200,
           polymarket_order_id: evaluation.orderId ?? null,
           error_code: null,
-          error_message: null,
-          raw_error: null,
+          error_message: '[AUTO-CLOSE] Submitted',
+          raw_error: { 
+            is_auto_close: true,
+            original_order_id: order.order_id,
+            retry_count: retryCount + 1
+          },
         })
-        console.log(`✅ Auto-close submitted for order ${order.order_id}: ${evaluation.orderId}`, {
+        console.log(`[AUTO-CLOSE] ✅ Auto-close submitted for order ${order.order_id}: ${evaluation.orderId}`, {
           size: closeSize,
           price: limitPrice,
           roundingMethod: 'NO_ADJUSTMENT (exact size)',
+          retryCount: retryCount + 1,
         })
 
         const autoCloseOrderId = evaluation.orderId
@@ -610,8 +624,12 @@ export async function GET(request: NextRequest) {
         }
 
         const hasFill = Number.isFinite(filledSize) && filledSize > 0
+        const fillStatus = hasFill 
+          ? (filledSize >= closeSize ? 'filled' : 'partial')
+          : 'no_fill'
+        
         if (orderLookupSucceeded && !hasFill) {
-          console.warn(`⚠️ Auto-close order ${autoCloseOrderId} has no fills yet`)
+          console.warn(`[AUTO-CLOSE] ⚠️ Auto-close order ${autoCloseOrderId} has no fills yet`)
           const errorMsg = 'Auto-close order submitted but did not fill'
           await supabase
             .from(ordersTable)
@@ -626,9 +644,22 @@ export async function GET(request: NextRequest) {
           return
         }
 
+        // Update order event with fill status
+        await updateOrderEventStatus(orderEventId, {
+          error_message: `[AUTO-CLOSE] ${fillStatus === 'filled' ? 'Filled' : fillStatus === 'partial' ? 'Partially filled' : 'No fill'}`,
+          raw_error: { 
+            is_auto_close: true,
+            original_order_id: order.order_id,
+            retry_count: retryCount + 1,
+            fill_status: fillStatus,
+            filled_size: hasFill ? filledSize : 0,
+            requested_size: closeSize
+          },
+        })
+
         const autoCloseUpdate: Record<string, unknown> = {
           auto_close_order_id: autoCloseOrderId,
-          auto_close_error: null,
+          auto_close_error: null, // Clear error and retry count on success
           auto_close_attempted_at: attemptedAt,
           trader_position_size: currentTraderPositionSize,
         }
@@ -636,6 +667,14 @@ export async function GET(request: NextRequest) {
           autoCloseUpdate.auto_close_triggered_at = attemptedAt
         }
         await supabase.from(ordersTable).update(autoCloseUpdate).eq('order_id', order.order_id)
+        
+        console.log(`[AUTO-CLOSE] ✅ Auto-close ${fillStatus === 'filled' ? 'FILLED' : fillStatus === 'partial' ? 'PARTIALLY FILLED' : 'completed'} for order ${order.order_id}`, {
+          autoCloseOrderId,
+          filledSize,
+          requestedSize: closeSize,
+          fillStatus,
+          retryCount: retryCount + 1,
+        })
 
         const context = await loadNotificationContext()
         if (!context || !resend) return
