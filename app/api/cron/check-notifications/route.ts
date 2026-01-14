@@ -956,6 +956,15 @@ export async function GET(request: NextRequest) {
     console.log(`[AUTO-CLOSE] ========== STARTING AUTO-CLOSE CHECK ==========`)
     console.log(`[AUTO-CLOSE] Orders table: ${ordersTable}`)
     
+    // Debug: Write to database to confirm we reached auto-close section
+    try {
+      await supabase.from(ordersTable).update({ 
+        auto_close_error: `Reached auto-close section at ${new Date().toISOString()}` 
+      }).eq('order_id', '0x7dd36d0ad08d9a427b0dde259495e7a1c5c57d029479d82a934842655c1e855e')
+    } catch (dbError) {
+      // Ignore
+    }
+    
     try {
       const { data: openOrders, error: queryError } = await supabase
       .from(ordersTable)
