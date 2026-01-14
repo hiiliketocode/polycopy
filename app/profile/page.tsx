@@ -102,6 +102,7 @@ interface CategoryDistribution {
 type ProfileTab = 'trades' | 'performance' | 'settings';
 
 const SLIPPAGE_PRESETS = [0, 1, 3, 5];
+const MIN_OPEN_POSITION_SIZE = 1e-4;
 
 interface PortfolioStats {
   totalPnl: number;
@@ -203,6 +204,11 @@ function resolveOrderIdentifier(trade: CopiedTrade): OrderIdentifier | null {
   }
   return null;
 }
+
+const buildPositionKey = (marketId?: string | null, outcome?: string | null) => {
+  if (!marketId || !outcome) return null;
+  return `${marketId.toLowerCase()}::${outcome.toUpperCase()}`;
+};
 
 function ProfilePageContent() {
   const router = useRouter();
@@ -476,7 +482,10 @@ function ProfilePageContent() {
         const MAX_PAGES = 10; // cap to avoid runaway fetch
 
         while (hasMore && page <= MAX_PAGES) {
-          const response = await fetch(`/api/portfolio/trades?userId=${user.id}&page=${page}&pageSize=50`);
+          const response = await fetch(
+            `/api/portfolio/trades?userId=${user.id}&page=${page}&pageSize=50`,
+            { cache: 'no-store' }
+          );
           if (!response.ok) {
             const errorText = await response.text();
             console.error('Error fetching portfolio trades:', errorText);
@@ -627,7 +636,7 @@ function ProfilePageContent() {
       setPortfolioStatsLoading(true);
       setPortfolioStatsError(null);
       try {
-        const response = await fetch(`/api/portfolio/stats?userId=${user.id}`);
+        const response = await fetch(`/api/portfolio/stats?userId=${user.id}`, { cache: 'no-store' });
         if (!response.ok) {
           const message = await response.text();
           throw new Error(message || 'Failed to fetch portfolio stats');

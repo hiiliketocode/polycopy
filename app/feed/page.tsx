@@ -666,7 +666,8 @@ export default function FeedPage() {
           
           try {
             const response = await fetch(
-              `https://data-api.polymarket.com/trades?limit=15&user=${wallet}`
+              `https://data-api.polymarket.com/trades?limit=15&user=${wallet}`,
+              { cache: 'no-store' }
             );
             
             if (!response.ok) return [];
@@ -717,7 +718,8 @@ export default function FeedPage() {
                     batch.map(async (wallet) => {
                       try {
                         const res = await fetch(
-                          `https://data-api.polymarket.com/trades?limit=1&user=${wallet}`
+                          `https://data-api.polymarket.com/trades?limit=1&user=${wallet}`,
+                          { cache: 'no-store' }
                         );
                         if (res.ok) {
                           const trades = await res.json();

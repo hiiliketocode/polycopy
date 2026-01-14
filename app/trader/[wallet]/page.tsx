@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, ArrowUpRight, ChevronDown, ChevronUp, Loader2, Info, ExternalLink, Copy } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -144,6 +144,32 @@ export default function TraderProfilePage({
     closed?: boolean;
     resolved?: boolean;
   }>>(new Map());
+
+  const mergeTrades = useCallback((existing: Trade[], incoming: Trade[]) => {
+    const all = [...incoming, ...existing];
+    const seen = new Set<string>();
+
+    const normalizeTradeKey = (trade: Trade) => {
+      const marketKey = getMarketKeyForTrade(trade);
+      const outcomeKey = normalizeKeyPart(trade.outcome);
+      const sideKey = normalizeKeyPart(trade.side);
+      const priceKey = Math.round((trade.price || 0) * 1e6);
+      const sizeKey = Math.round((trade.size || 0) * 1e6);
+      const tsKey = Math.round((trade.timestamp || 0) / 1000);
+      return [marketKey, outcomeKey, sideKey, priceKey, sizeKey, tsKey].join('|');
+    };
+
+    const deduped: Trade[] = [];
+    for (const trade of all) {
+      const key = normalizeTradeKey(trade);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(trade);
+    }
+
+    deduped.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return deduped;
+  }, []);
 
   const buildExpandedTradeKey = (trade: Trade, index: number) => {
     const parts = [
@@ -330,9 +356,74 @@ export default function TraderProfilePage({
   useEffect(() => {
     if (!wallet) return;
 
+    let cancelled = false;
+
+    const formatDate = (timestampMs: number) =>
+      new Date(timestampMs).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+
+    const mergeIntoState = (incoming: Trade[]) => {
+      if (incoming.length === 0) return;
+      setTrades((prev) => mergeTrades(prev, incoming));
+    };
+
+    const fetchPolycopyTrades = async () => {
+      try {
+        const response = await fetch(`/api/trader/${wallet}/copy-trades`, { cache: 'no-store' });
+        if (!response.ok) return;
+
+        const payload = await response.json();
+        const normalized: Trade[] = (payload?.trades || []).map((trade: any) => {
+          const timestampMs = trade.copied_at
+            ? Date.parse(trade.copied_at)
+            : trade.created_at
+              ? Date.parse(trade.created_at)
+              : Date.now();
+
+          const priceWhenCopied = Number(trade.price_when_copied ?? trade.current_price ?? 0) || 0;
+          const entrySize = Number(trade.entry_size ?? 0) || 0;
+          const amountInvested = Number(trade.amount_invested ?? 0) || 0;
+          const inferredSize =
+            entrySize || (priceWhenCopied > 0 && amountInvested > 0 ? amountInvested / priceWhenCopied : 0);
+
+          let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open';
+          if (trade.market_resolved) {
+            status = 'Bonded';
+          } else if (trade.trader_still_has_position === false || trade.user_closed_at) {
+            status = 'Trader Closed';
+          }
+
+          return {
+            timestamp: Number.isFinite(timestampMs) ? timestampMs : Date.now(),
+            market: trade.market_title || trade.market_slug || trade.market_id || 'Unknown Market',
+            side: (trade.side || 'BUY').toUpperCase(),
+            outcome: trade.outcome || '',
+            size: inferredSize,
+            price: priceWhenCopied,
+            currentPrice: trade.current_price ?? undefined,
+            formattedDate: formatDate(Number.isFinite(timestampMs) ? timestampMs : Date.now()),
+            marketSlug: trade.market_slug || undefined,
+            conditionId: trade.market_id || undefined,
+            status,
+          };
+        });
+
+        if (!cancelled) {
+          mergeIntoState(normalized);
+        }
+      } catch (err) {
+        console.error('Error fetching Polycopy trades for trader page:', err);
+      }
+    };
+
     const fetchAllTrades = async () => {
       setLoadingTrades(true);
-      
+
+      await fetchPolycopyTrades();
+
       try {
         console.log('🔗 Fetching complete trade history from blockchain for:', wallet);
         
@@ -384,15 +475,20 @@ export default function TraderProfilePage({
             });
 
             formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
-            setTrades(formattedTrades);
-            setLoadingTrades(false);
+            if (!cancelled) {
+              setTrades((prev) => mergeTrades(prev, formattedTrades));
+            }
+            if (!cancelled) setLoadingTrades(false);
             return;
           }
         }
         
         // Fallback to data-api if blockchain fails
         console.log('⚠️ Blockchain fetch failed, falling back to data-api (100 trades max)');
-        const fallbackResponse = await fetch(`https://data-api.polymarket.com/trades?user=${wallet}&limit=100`);
+        const fallbackResponse = await fetch(
+          `https://data-api.polymarket.com/trades?user=${wallet}&limit=100`,
+          { cache: 'no-store' }
+        );
         
         if (fallbackResponse.ok) {
           const fallbackData = await fallbackResponse.json();
@@ -435,18 +531,25 @@ export default function TraderProfilePage({
           });
 
           formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
-          setTrades(formattedTrades);
+          if (!cancelled) {
+            setTrades((prev) => mergeTrades(prev, formattedTrades));
+          }
         }
       } catch (err) {
         console.error('❌ Error fetching trades:', err);
-        setTrades([]);
+        if (!cancelled) {
+          setTrades([]);
+        }
       } finally {
-        setLoadingTrades(false);
+        if (!cancelled) setLoadingTrades(false);
       }
     };
 
     fetchAllTrades();
-  }, [wallet]);
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet, mergeTrades]);
 
   // Fetch live market data for trades (prices, scores, and resolution status)
   // Using progressive loading - updates state as data comes in

@@ -41,7 +41,6 @@ function createServiceClient() {
 
 const marketCacheColumns = 'market_id, title, image_url, is_open, metadata'
 const traderProfileColumns = 'trader_id, display_name, avatar_url, wallet_address'
-const MARKET_METADATA_FETCH_LIMIT = 16
 const MARKET_METADATA_FETCH_CONCURRENCY = 4
 const MARKET_METADATA_REQUEST_TIMEOUT_MS = 6000
 
@@ -348,6 +347,32 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    // Only fetch fresh metadata for markets that are missing a name or icon in cache
+    const marketIdsNeedingMetadata = marketIds.filter((id) => {
+      const cache = marketCacheMap.get(id)
+      if (!cache) return true
+      const cachedMeta = cache.metadata
+      const hasTitle = Boolean(
+        cache.title ||
+          cachedMeta?.question ||
+          cachedMeta?.market_title ||
+          cachedMeta?.title ||
+          cachedMeta?.name
+      )
+      const hasImage = Boolean(
+        cache.image_url ||
+          cachedMeta?.icon ||
+          cachedMeta?.image ||
+          cachedMeta?.market_image ||
+          cachedMeta?.market_icon
+      )
+      return !hasTitle || !hasImage
+    })
+
+    const marketMetadataMap = await fetchMarketMetadataFromClob(
+      (marketIdsNeedingMetadata.length > 0 ? marketIdsNeedingMetadata : marketIds).filter(Boolean)
+    )
+
     const traderProfileMap = new Map<string, TraderProfileRow>()
     traderRows.forEach((row) => {
       if (row?.trader_id) {
@@ -366,10 +391,6 @@ export async function GET(request: NextRequest) {
         traderRecordByWallet.set(normalizedWallet, row)
       }
     })
-
-    const marketMetadataMap = await fetchMarketMetadataFromClob(
-      [...new Set(marketIds)].filter(Boolean)
-    )
 
     const cacheUpsertMap = new Map<string, MarketCacheUpsertRow>()
 
@@ -1288,10 +1309,10 @@ async function fetchMarketMetadataFromClob(conditionIds: string[]) {
     )
     .filter((id) => typeof id === 'string' && id.startsWith('0x'))
 
-  const limitedIds = uniqueIds.slice(0, MARKET_METADATA_FETCH_LIMIT)
+  if (uniqueIds.length === 0) return metadataMap
 
-  for (let i = 0; i < limitedIds.length; i += MARKET_METADATA_FETCH_CONCURRENCY) {
-    const chunk = limitedIds.slice(i, i + MARKET_METADATA_FETCH_CONCURRENCY)
+  for (let i = 0; i < uniqueIds.length; i += MARKET_METADATA_FETCH_CONCURRENCY) {
+    const chunk = uniqueIds.slice(i, i + MARKET_METADATA_FETCH_CONCURRENCY)
     await Promise.allSettled(
       chunk.map(async (conditionId) => {
         if (!conditionId) return
