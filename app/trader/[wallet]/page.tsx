@@ -1038,33 +1038,38 @@ export default function TraderProfilePage({
       positions.set(key, existing);
     });
 
-    // Also check for resolved markets (Bonded) to count as realized wins/losses
+    let realizedPnl = 0;
+    let volume = 0;
+    let totalPositions = 0;
+    let winningPositions = 0;
+    
     positions.forEach((p, key) => {
+      realizedPnl += p.realized;
+      volume += p.buyNotional;
+      
       const sample = p.sampleTrade || trades.find((t) => keyFor(t) === key);
       if (!sample) return;
       
-      // If position still has size AND market is resolved (Bonded), count it as a realized trade
-      if (Math.abs(p.size) > 1e-9 && sample.status === 'Bonded') {
-        const currentPrice = priceForTrade(sample);
-        if (currentPrice !== null) {
-          const realizedFromResolution = (currentPrice - p.avgCost) * p.size;
-          p.realized += realizedFromResolution;
-          p.sellCount += 1;
-          if (realizedFromResolution > 0) p.winSells += 1;
-          p.size = 0; // Position is now closed
-        }
+      const currentPrice = priceForTrade(sample);
+      if (currentPrice === null) return;
+      
+      // Count this position in win rate calculation
+      totalPositions += 1;
+      
+      // Determine if this position is a winner
+      let isWinner = false;
+      
+      // For closed positions (size = 0), check realized profit
+      if (Math.abs(p.size) < 1e-9) {
+        isWinner = p.realized > 0;
+      } 
+      // For open or resolved positions, check if current price > entry price
+      else {
+        const unrealizedPnl = (currentPrice - p.avgCost) * p.size;
+        isWinner = unrealizedPnl > 0;
       }
-    });
-
-    let realizedPnl = 0;
-    let volume = 0;
-    let winSells = 0;
-    let sellTrades = 0;
-    positions.forEach((p) => {
-      realizedPnl += p.realized;
-      volume += p.buyNotional;
-      winSells += p.winSells;
-      sellTrades += p.sellCount;
+      
+      if (isWinner) winningPositions += 1;
     });
 
     let unrealizedPnl = 0;
@@ -1079,19 +1084,18 @@ export default function TraderProfilePage({
 
     const totalPnl = realizedPnl + unrealizedPnl;
     const roi = volume > 0 ? (totalPnl / volume) * 100 : 0;
-    // Win rate: count both manual sells AND resolved markets
-    // If no resolved trades (sells or bonded markets), we can't calculate win rate
-    const winRate = sellTrades > 0 ? (winSells / sellTrades) * 100 : null;
+    // Win rate: percentage of ALL positions (open + closed) with positive ROI
+    const winRate = totalPositions > 0 ? (winningPositions / totalPositions) * 100 : null;
 
     console.log('🧮 Computed stats from trades:', {
       tradesCount: trades.length,
       totalPnl: totalPnl.toFixed(2),
       volume: volume.toFixed(2),
       roi: roi.toFixed(1) + '%',
-      winRate: winRate !== null ? winRate.toFixed(1) + '%' : 'N/A (no resolved trades yet)',
-      sellTrades,
-      winSells,
-      note: 'Win rate includes both manual sells AND resolved markets (Bonded). Traders with all open positions show N/A.'
+      winRate: winRate !== null ? winRate.toFixed(1) + '%' : 'N/A (no positions yet)',
+      totalPositions,
+      winningPositions,
+      note: 'Win rate = % of ALL positions (open + closed) with positive ROI (current price > entry price)'
     });
 
     setComputedStats({
