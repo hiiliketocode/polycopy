@@ -597,6 +597,7 @@ export default function ClosePositionModal({
   const showConfirmation = isSubmitting || hasSubmittedOrder
   const hasInFlightTrade =
     isSubmitting || (hasSubmittedOrder && !TERMINAL_STATUS_PHASES.has(statusPhase))
+  const isFinalStatus = TERMINAL_STATUS_PHASES.has(statusPhase)
   const canCancelPendingOrder =
     Boolean(orderId) && showConfirmation && CANCELABLE_PHASES.has(statusPhase)
   const submittedContracts = orderStatus?.size ?? null
@@ -649,7 +650,6 @@ export default function ClosePositionModal({
       ? pendingStatusLabel
       : getOrderStatusLabel(orderStatus?.status, filledContracts, submittedContracts)
   const statusReason = orderStatus ? findStatusReason(orderStatus.raw) : null
-  const isFinalStatus = TERMINAL_STATUS_PHASES.has(statusPhase)
   const isFilledStatus = statusPhase === 'filled'
   const averageFillPriceLabel =
     orderStatus?.price !== null && orderStatus?.price !== undefined
