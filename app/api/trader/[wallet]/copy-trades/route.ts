@@ -89,7 +89,7 @@ export async function GET(
       price_when_copied: number | null
     }
 
-    const trades = ((data as OrderRow[]) || []).map((row) => ({
+    const trades = ((data as unknown as OrderRow[]) || []).map((row) => ({
       id: row.copied_trade_id || row.order_id,
       order_id: row.order_id,
       copied_trade_id: row.copied_trade_id,
