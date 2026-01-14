@@ -988,6 +988,17 @@ export async function GET(request: NextRequest) {
     console.log(`[AUTO-CLOSE] Processing ${openOrders?.length || 0} orders for auto-close...`)
     console.error(`[AUTO-CLOSE] Processing ${openOrders?.length || 0} orders for auto-close...`)
     
+    // Debug: Write to database to confirm we reached this point
+    if (openOrders && openOrders.length > 0) {
+      try {
+        await supabase.from(ordersTable).update({ 
+          auto_close_error: `Reached loop start at ${new Date().toISOString()}, ${openOrders.length} orders` 
+        }).eq('order_id', openOrders[0].order_id)
+      } catch (dbError) {
+        // Ignore
+      }
+    }
+    
     if (!openOrders || openOrders.length === 0) {
       console.log(`[AUTO-CLOSE] No orders to process`)
       console.error(`[AUTO-CLOSE] No orders to process`)
