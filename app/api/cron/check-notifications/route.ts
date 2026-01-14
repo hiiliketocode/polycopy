@@ -256,6 +256,21 @@ export async function GET(request: NextRequest) {
         console.log(`[AUTO-CLOSE] Order ${order.order_id} skipped - already triggered at ${order.auto_close_triggered_at}`)
         return
       }
+      // Check retry count from error message (format: "RETRY_COUNT:X|error message")
+      let retryCount = 0
+      if (order.auto_close_error) {
+        const retryMatch = order.auto_close_error.match(/^RETRY_COUNT:(\d+)\|/)
+        if (retryMatch) {
+          retryCount = parseInt(retryMatch[1], 10)
+        }
+      }
+      
+      // If we've already retried 5 times, skip (will send failure email on next check if still failing)
+      if (retryCount >= 5) {
+        console.log(`[AUTO-CLOSE] Order ${order.order_id} skipped - already retried 5 times`)
+        return
+      }
+      
       if (order.auto_close_attempted_at) {
         const lastAttempt = new Date(order.auto_close_attempted_at)
         if (Date.now() - lastAttempt.getTime() < 5 * 60 * 1000) {
@@ -509,15 +524,9 @@ export async function GET(request: NextRequest) {
           error_message: truncateMessage(message),
           raw_error: { message },
         })
-        await supabase
-          .from(ordersTable)
-          .update({
-            auto_close_error: message,
-            auto_close_attempted_at: attemptedAt,
-          })
-          .eq('order_id', order.order_id)
+        await updateErrorWithRetryCount(message)
         console.warn('[AUTO-CLOSE] Evomi proxy required but unavailable:', message)
-        await sendFailureEmail(message)
+        await sendFailureEmail(message, retryCount + 1 >= 5)
         return
       }
 
@@ -653,15 +662,9 @@ export async function GET(request: NextRequest) {
           error_message: truncateMessage(message),
           raw_error: error ?? null,
         })
-        await supabase
-          .from(ordersTable)
-          .update({
-            auto_close_error: message,
-            auto_close_attempted_at: attemptedAt,
-          })
-          .eq('order_id', order.order_id)
+        await updateErrorWithRetryCount(message)
         console.warn(`⚠️ Auto-close error for order ${order.order_id}:`, message)
-        await sendFailureEmail(message)
+        await sendFailureEmail(message, retryCount + 1 >= 5)
       }
     }
 
