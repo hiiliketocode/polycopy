@@ -545,8 +545,13 @@ export async function GET(request: NextRequest) {
           status: 'rejected',
           http_status: 503,
           error_code: 'evomi_unavailable',
-          error_message: truncateMessage(message),
-          raw_error: { message },
+          error_message: `[AUTO-CLOSE] ${truncateMessage(message)}`,
+          raw_error: { 
+            is_auto_close: true,
+            original_order_id: order.order_id,
+            retry_count: retryCount + 1,
+            message 
+          },
         })
         await updateErrorWithRetryCount(message)
         console.warn('[AUTO-CLOSE] Evomi proxy required but unavailable:', message)
@@ -715,8 +720,13 @@ export async function GET(request: NextRequest) {
           status: 'rejected',
           http_status: 500,
           error_code: error?.code ?? error?.name ?? null,
-          error_message: truncateMessage(message),
-          raw_error: error ?? null,
+          error_message: `[AUTO-CLOSE] ${truncateMessage(message)}`,
+          raw_error: { 
+            is_auto_close: true,
+            original_order_id: order.order_id,
+            retry_count: retryCount + 1,
+            error: error ?? null
+          },
         })
         await updateErrorWithRetryCount(message)
         console.warn(`⚠️ Auto-close error for order ${order.order_id}:`, message)
