@@ -591,6 +591,109 @@ export default function AdminDashboardClient({ data }: AdminDashboardClientProps
               </div>
             </Section>
           )}
+
+          {/* 4. New Entrants to Top 30 */}
+          {sectionA.newEntrants.length > 0 && (
+            <Section title="🆕 NEW ENTRANTS TO TOP 30 (HIGH PERFORMERS)">
+              <p className="text-sm text-gray-400 mb-4">
+                💡 Fresh faces in the leaderboard with impressive stats
+              </p>
+              <div className="space-y-1">
+                {sectionA.newEntrants.map((trader, i) => (
+                  <div key={trader.trader_wallet} className="font-mono text-sm">
+                    <button
+                      onClick={() => handleTraderClick(trader.trader_wallet)}
+                      className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors"
+                    >
+                      {trader.trader_username}
+                    </button>{' '}
+                    <span className="text-gray-500">({trader.trader_wallet.slice(0, 6)}...{trader.trader_wallet.slice(-4)})</span>{' '}
+                    — Rank #{trader.current_rank} | ROI: <span className="text-green-400">{trader.roi_formatted}</span>{' '}
+                    | P&L: <span className="text-[#FDB022]">{trader.pnl_formatted}</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* 5. Risk/Reward Profiles */}
+          {(sectionA.riskRewardProfiles.highRoiLowVolume.length > 0 || sectionA.riskRewardProfiles.highVolumeConsistent.length > 0) && (
+            <Section title="💎 RISK/REWARD TRADER PROFILES">
+              <p className="text-sm text-gray-400 mb-4">
+                💡 Different trader archetypes for different strategies
+              </p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* High ROI, Low Volume (Hidden Gems) */}
+                {sectionA.riskRewardProfiles.highRoiLowVolume.length > 0 && (
+                  <div className="border border-[#374151] rounded-lg p-4">
+                    <h4 className="text-[#FDB022] font-bold mb-3">
+                      💎 HIGH ROI, LOW VOLUME (Hidden Gems)
+                    </h4>
+                    <div className="space-y-1">
+                      {sectionA.riskRewardProfiles.highRoiLowVolume.map((trader) => (
+                        <div key={trader.trader_wallet} className="font-mono text-sm">
+                          <button
+                            onClick={() => handleTraderClick(trader.trader_wallet)}
+                            className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors"
+                          >
+                            {trader.trader_username}
+                          </button>{' '}
+                          — ROI: <span className="text-green-400">{trader.roi_formatted}</span>{' '}
+                          | Vol: <span className="text-gray-400">{trader.volume_formatted}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* High Volume, Consistent */}
+                {sectionA.riskRewardProfiles.highVolumeConsistent.length > 0 && (
+                  <div className="border border-[#374151] rounded-lg p-4">
+                    <h4 className="text-[#FDB022] font-bold mb-3">
+                      📊 HIGH VOLUME, CONSISTENT (Reliable)
+                    </h4>
+                    <div className="space-y-1">
+                      {sectionA.riskRewardProfiles.highVolumeConsistent.map((trader) => (
+                        <div key={trader.trader_wallet} className="font-mono text-sm">
+                          <button
+                            onClick={() => handleTraderClick(trader.trader_wallet)}
+                            className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors"
+                          >
+                            {trader.trader_username}
+                          </button>{' '}
+                          — ROI: <span className="text-green-400">{trader.roi_formatted}</span>{' '}
+                          | Vol: <span className="text-[#FDB022]">{trader.volume_formatted}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
+
+          {/* 6. Category Momentum */}
+          {sectionA.categoryMomentum.length > 0 && (
+            <Section title="📈 CATEGORY MOMENTUM & TRENDS">
+              <p className="text-sm text-gray-400 mb-4">
+                💡 Shows where volume and activity is moving
+              </p>
+              <div className="space-y-2">
+                {sectionA.categoryMomentum.map((cat) => (
+                  <div key={cat.category} className="font-mono text-sm">
+                    <span className="text-white font-bold">{cat.category}:</span>{' '}
+                    <span className="text-gray-400">${(cat.current_volume / 1000000).toFixed(1)}M volume</span>{' '}
+                    {cat.volume_change_pct !== null && (
+                      <span className={cat.volume_change_pct >= 0 ? 'text-green-400' : 'text-red-400'}>
+                        ({cat.volume_change_formatted})
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
           
         </div>
 
@@ -766,6 +869,133 @@ export default function AdminDashboardClient({ data }: AdminDashboardClientProps
                 ))}
               </div>
             )}
+          </Section>
+
+          {/* 9. Copy Velocity Trends */}
+          {sectionB.copyVelocity.length > 0 && (
+            <Section title="⚡ COPY VELOCITY TRENDS (Last 7 Days)">
+              <p className="text-sm text-gray-400 mb-4">
+                💡 Shows which traders are gaining momentum on the platform
+              </p>
+              <div className="space-y-2">
+                {sectionB.copyVelocity.map((trader, i) => (
+                  <div key={trader.trader_wallet} className="font-mono text-sm">
+                    {i + 1}.{' '}
+                    <button
+                      onClick={() => handleTraderClick(trader.trader_wallet)}
+                      className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors"
+                    >
+                      {trader.trader_username}
+                    </button>{' '}
+                    — <span className="text-[#FDB022]">{trader.daily_avg_7d}/day avg</span>{' '}
+                    | Today: <span className="text-white">{trader.copies_today}</span>{' '}
+                    | Total 7d: <span className="text-gray-400">{trader.copies_7d_total}</span>{' '}
+                    {trader.trend === 'accelerating' && <span className="text-green-400">🚀 +{trader.trend_pct}% trending</span>}
+                    {trader.trend === 'decelerating' && <span className="text-red-400">📉 {trader.trend_pct}% slowing</span>}
+                    {trader.trend === 'stable' && <span className="text-gray-400">➡️ Stable</span>}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* 10. Success Story Highlights */}
+          {sectionB.successStories.length > 0 && (
+            <Section title="🏆 SUCCESS STORY HIGHLIGHTS (Top Performers)">
+              <p className="text-sm text-gray-400 mb-4">
+                💡 Real user success stories for social proof & inspiration
+              </p>
+              <div className="space-y-4">
+                {sectionB.successStories.map((story, i) => (
+                  <div key={story.user_id} className="border border-[#374151] rounded-lg p-4">
+                    <div className="font-bold text-white mb-2">
+                      #{i + 1} Top Performer: {story.user_email}
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 font-mono text-sm">
+                      <div>
+                        <div className="text-gray-400 text-xs">Total Trades</div>
+                        <div className="text-[#FDB022] font-bold">{story.total_trades}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-400 text-xs">Avg ROI</div>
+                        <div className="text-green-400 font-bold">{story.avg_roi_formatted}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-400 text-xs">Win Rate</div>
+                        <div className="text-[#FDB022] font-bold">{story.win_rate_formatted}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-400 text-xs">vs Platform Avg</div>
+                        <div className="text-white font-bold">{story.vs_platform_avg}</div>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-sm text-gray-400">
+                      Following: <span className="text-white">{story.best_trader}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* 11. Market Concentration */}
+          <Section title="🎯 MARKET CONCENTRATION ANALYSIS">
+            <p className="text-sm text-gray-400 mb-4">
+              💡 Shows how diverse or concentrated copy trading activity is
+            </p>
+            <div className="font-mono text-sm space-y-2">
+              <div>
+                Concentration Score: <span className={`font-bold ${
+                  sectionB.marketConcentration.concentration_score === 'high' ? 'text-red-400' :
+                  sectionB.marketConcentration.concentration_score === 'medium' ? 'text-yellow-400' :
+                  'text-green-400'
+                }`}>{sectionB.marketConcentration.concentration_score.toUpperCase()}</span>
+              </div>
+              <div>
+                Top 3 markets: <span className="text-[#FDB022]">{sectionB.marketConcentration.top3_percentage}%</span> of all copies
+              </div>
+              <div>
+                Top 10 markets: <span className="text-[#FDB022]">{sectionB.marketConcentration.top10_percentage}%</span> of all copies
+              </div>
+              <div>
+                Total unique markets: <span className="text-white">{sectionB.marketConcentration.total_unique_markets}</span>
+              </div>
+              <div className="mt-3 pt-3 border-t border-[#374151] text-gray-400 text-xs">
+                {sectionB.marketConcentration.concentration_score === 'high' && '⚠️ High concentration: Most users copying same few markets'}
+                {sectionB.marketConcentration.concentration_score === 'medium' && '👍 Moderate diversity: Good balance of popular & diverse markets'}
+                {sectionB.marketConcentration.concentration_score === 'low' && '✅ High diversity: Users exploring many different markets'}
+              </div>
+            </div>
+          </Section>
+
+          {/* 12. Exit Strategy Analysis */}
+          <Section title="⏱️ EXIT STRATEGY ANALYSIS">
+            <p className="text-sm text-gray-400 mb-4">
+              💡 How copiers manage their exit timing vs traders
+            </p>
+            <div className="font-mono text-sm space-y-2">
+              <div>
+                Winners hold time: <span className="text-green-400 font-bold">{sectionB.exitStrategyAnalysis.avg_hold_time_winners_formatted}</span>
+              </div>
+              <div>
+                Losers hold time: <span className="text-red-400 font-bold">{sectionB.exitStrategyAnalysis.avg_hold_time_losers_formatted}</span>
+              </div>
+              <div>
+                Matches trader exits: <span className="text-[#FDB022]">{sectionB.exitStrategyAnalysis.matches_trader_exit_rate}%</span> of trades
+              </div>
+              <div className="mt-3 pt-3 border-t border-[#374151]">
+                {sectionB.exitStrategyAnalysis.avg_hold_time_losers > 0 && sectionB.exitStrategyAnalysis.avg_hold_time_losers < sectionB.exitStrategyAnalysis.avg_hold_time_winners && (
+                  <div className="text-yellow-400 text-xs">
+                    ⚠️ Users are panic-selling losers too early (hold {sectionB.exitStrategyAnalysis.early_exit_rate}% less time than winners)
+                  </div>
+                )}
+                {sectionB.exitStrategyAnalysis.avg_hold_time_winners > 0 && sectionB.exitStrategyAnalysis.avg_hold_time_losers >= sectionB.exitStrategyAnalysis.avg_hold_time_winners && (
+                  <div className="text-green-400 text-xs">
+                    ✅ Good discipline: Holding losers as long as winners
+                  </div>
+                )}
+              </div>
+            </div>
           </Section>
 
         </div>
@@ -1204,6 +1434,50 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
   }
   lines.push('')
   
+  // 4. New Entrants
+  if (sectionA.newEntrants.length > 0) {
+    lines.push('🆕 NEW ENTRANTS TO TOP 30 (HIGH PERFORMERS)')
+    lines.push('───────────────────────────────────────────────')
+    sectionA.newEntrants.forEach((trader, i) => {
+      lines.push(`${i + 1}. ${trader.trader_username} (${trader.trader_wallet}) — Rank #${trader.current_rank} | ROI: ${trader.roi_formatted} | P&L: ${trader.pnl_formatted}`)
+    })
+    lines.push('')
+    lines.push('')
+  }
+  
+  // 5. Risk/Reward Profiles
+  lines.push('💎 RISK/REWARD TRADER PROFILES')
+  lines.push('───────────────────────────────────────────────')
+  if (sectionA.riskRewardProfiles.highRoiLowVolume.length > 0) {
+    lines.push('')
+    lines.push('💎 HIGH ROI, LOW VOLUME (Hidden Gems)')
+    sectionA.riskRewardProfiles.highRoiLowVolume.forEach((trader, i) => {
+      lines.push(`${i + 1}. ${trader.trader_username} — ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted}`)
+    })
+  }
+  if (sectionA.riskRewardProfiles.highVolumeConsistent.length > 0) {
+    lines.push('')
+    lines.push('📊 HIGH VOLUME, CONSISTENT (Reliable)')
+    sectionA.riskRewardProfiles.highVolumeConsistent.forEach((trader, i) => {
+      lines.push(`${i + 1}. ${trader.trader_username} — ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted}`)
+    })
+  }
+  lines.push('')
+  lines.push('')
+  
+  // 6. Category Momentum
+  if (sectionA.categoryMomentum.length > 0) {
+    lines.push('📈 CATEGORY MOMENTUM & TRENDS')
+    lines.push('───────────────────────────────────────────────')
+    sectionA.categoryMomentum.forEach((cat) => {
+      const volFormatted = `$${(cat.current_volume / 1000000).toFixed(1)}M`
+      const change = cat.volume_change_pct !== null ? ` (${cat.volume_change_formatted})` : ''
+      lines.push(`${cat.category}: ${volFormatted} volume${change}`)
+    })
+    lines.push('')
+    lines.push('')
+  }
+  
   // ═══════════════════════════════════════════════
   // SECTION B: POLYCOPY PLATFORM DATA
   // ═══════════════════════════════════════════════
@@ -1315,6 +1589,53 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     sectionB.roiByFollowerCount.forEach((bucket) => {
       lines.push(`${bucket.follower_bucket}: ${bucket.trader_count} traders — Avg ROI: ${bucket.avg_roi_formatted}`)
     })
+  }
+  lines.push('')
+  lines.push('')
+  
+  // 9. Copy Velocity Trends
+  if (sectionB.copyVelocity.length > 0) {
+    lines.push('⚡ COPY VELOCITY TRENDS (Last 7 Days)')
+    lines.push('───────────────────────────────────────────────')
+    sectionB.copyVelocity.forEach((trader, i) => {
+      const trendIcon = trader.trend === 'accelerating' ? '🚀' : trader.trend === 'decelerating' ? '📉' : '➡️'
+      lines.push(`${i + 1}. ${trader.trader_username} — ${trader.daily_avg_7d}/day avg | Today: ${trader.copies_today} | Total 7d: ${trader.copies_7d_total} ${trendIcon}`)
+    })
+    lines.push('')
+    lines.push('')
+  }
+  
+  // 10. Success Stories
+  if (sectionB.successStories.length > 0) {
+    lines.push('🏆 SUCCESS STORY HIGHLIGHTS (Top Performers)')
+    lines.push('───────────────────────────────────────────────')
+    sectionB.successStories.forEach((story, i) => {
+      lines.push(`#${i + 1}: ${story.user_email}`)
+      lines.push(`  Total Trades: ${story.total_trades} | Avg ROI: ${story.avg_roi_formatted} | Win Rate: ${story.win_rate_formatted}`)
+      lines.push(`  Following: ${story.best_trader} | vs Platform Avg: ${story.vs_platform_avg}`)
+      lines.push('')
+    })
+    lines.push('')
+  }
+  
+  // 11. Market Concentration
+  lines.push('🎯 MARKET CONCENTRATION ANALYSIS')
+  lines.push('───────────────────────────────────────────────')
+  lines.push(`Concentration Score: ${sectionB.marketConcentration.concentration_score.toUpperCase()}`)
+  lines.push(`Top 3 markets: ${sectionB.marketConcentration.top3_percentage}% of all copies`)
+  lines.push(`Top 10 markets: ${sectionB.marketConcentration.top10_percentage}% of all copies`)
+  lines.push(`Total unique markets: ${sectionB.marketConcentration.total_unique_markets}`)
+  lines.push('')
+  lines.push('')
+  
+  // 12. Exit Strategy Analysis
+  lines.push('⏱️ EXIT STRATEGY ANALYSIS')
+  lines.push('───────────────────────────────────────────────')
+  lines.push(`Winners hold time: ${sectionB.exitStrategyAnalysis.avg_hold_time_winners_formatted}`)
+  lines.push(`Losers hold time: ${sectionB.exitStrategyAnalysis.avg_hold_time_losers_formatted}`)
+  lines.push(`Matches trader exits: ${sectionB.exitStrategyAnalysis.matches_trader_exit_rate}% of trades`)
+  if (sectionB.exitStrategyAnalysis.avg_hold_time_losers > 0 && sectionB.exitStrategyAnalysis.avg_hold_time_losers < sectionB.exitStrategyAnalysis.avg_hold_time_winners) {
+    lines.push(`⚠️ Users panic-selling losers ${sectionB.exitStrategyAnalysis.early_exit_rate}% earlier than winners`)
   }
   lines.push('')
   lines.push('')
