@@ -52,11 +52,19 @@ export async function GET(request: NextRequest) {
     }
 
     const proxyEndpoint = proxyUrl.split('@')[1] ?? proxyUrl
-    const isFinland = ipInfo?.country === 'Finland' || ipInfo?.countryCode === 'FI'
+    const targetCountryCode = (process.env.EVOMI_PROXY_COUNTRY?.trim() || 'IE').toUpperCase()
+    const targetCountryLabel = targetCountryCode === 'IE' ? 'Ireland' : targetCountryCode
+    const matchesTargetCountry =
+      (typeof ipInfo?.countryCode === 'string' &&
+        ipInfo.countryCode.toUpperCase() === targetCountryCode) ||
+      (typeof ipInfo?.country === 'string' &&
+        ipInfo.country.toLowerCase() === targetCountryLabel.toLowerCase())
 
     return NextResponse.json({
       configured: true,
       proxyEndpoint,
+      targetCountryCode,
+      targetCountryLabel,
       ipInfo: {
         ip: ipInfo.query,
         country: ipInfo.country,
@@ -66,11 +74,13 @@ export async function GET(request: NextRequest) {
         isp: ipInfo.isp,
         org: ipInfo.org,
       },
-      isFinland,
-      warning: !isFinland ? '⚠️  Proxy IP is NOT from Finland - may be blocked by Cloudflare' : null,
-      note: isFinland 
-        ? '✅ Proxy is using Finland IP - should work with Polymarket'
-        : '⚠️  Ensure proxy endpoint points to Finland-based server'
+      matchesTargetCountry,
+      warning: !matchesTargetCountry
+        ? `⚠️  Proxy IP is NOT from ${targetCountryLabel} - may be blocked by Cloudflare`
+        : null,
+      note: matchesTargetCountry
+        ? `✅ Proxy is using ${targetCountryLabel} IP - should work with Polymarket`
+        : `⚠️  Ensure proxy endpoint points to ${targetCountryLabel}-based server`
     })
   } catch (error: any) {
     return NextResponse.json({

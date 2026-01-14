@@ -3,10 +3,11 @@ import { randomUUID } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
+import type { ClobClient } from '@polymarket/clob-client'
 import { POST_ORDER } from '@polymarket/clob-client/dist/endpoints.js'
 import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
 import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
-import { requireEvomiProxyAgent } from '@/lib/evomi/proxy'
+import { refreshEvomiProxyAgent, requireEvomiProxyAgent } from '@/lib/evomi/proxy'
 import { getBodySnippet } from '@/lib/polymarket/order-route-helpers'
 import { sanitizeError } from '@/lib/http/sanitize-error'
 import { logError, logInfo, makeRequestId, sanitizeForLogging } from '@/lib/logging/logger'
@@ -179,6 +180,70 @@ async function fetchMarketTickSize(clobBaseUrl: string, tokenId: string) {
   }
 
   return null
+}
+
+type OrderEvaluation = ReturnType<typeof interpretClobOrderResult>
+
+async function postOrderWithCloudflareMitigation(params: {
+  client: ClobClient
+  order: any
+  orderType: string
+  signatureType: number
+  sanitize: (value: unknown) => unknown
+  proxyUrl: string | null
+}): Promise<{
+  evaluation: OrderEvaluation
+  safeRawResult: unknown
+  attempts: number
+  proxyUrl: string | null
+}> {
+  let attempts = 0
+  let lastEvaluation: OrderEvaluation | null = null
+  let lastSafeRawResult: unknown = null
+  let proxyUrl = params.proxyUrl ?? null
+
+  while (attempts < 2) {
+    attempts++
+
+    let rawResult: unknown
+    try {
+      rawResult = await params.client.postOrder(params.order, params.orderType as any, false)
+    } catch (error: any) {
+      const message = typeof error?.message === 'string' ? error.message : null
+      const code = typeof error?.code === 'string' ? error.code : null
+      const responseData = error?.response?.data
+      rawResult =
+        responseData && typeof responseData === 'object'
+          ? responseData
+          : {
+              error: message || 'Network error placing order',
+              code,
+            }
+    }
+
+    const safeRawResult = params.sanitize(rawResult) ?? rawResult
+    const evaluation = interpretClobOrderResult(safeRawResult)
+
+    if (evaluation.success || evaluation.errorType !== 'blocked_by_cloudflare') {
+      return { evaluation, safeRawResult, attempts, proxyUrl }
+    }
+
+    lastEvaluation = evaluation
+    lastSafeRawResult = safeRawResult
+
+    console.warn('[POLY-ORDER-PLACE] Blocked by Cloudflare, rotating Evomi proxy and retrying...', {
+      attempts,
+      rayId: evaluation.rayId,
+    })
+
+    proxyUrl = (await refreshEvomiProxyAgent('cloudflare_blocked_order')) ?? proxyUrl
+  }
+
+  if (!lastEvaluation) {
+    throw new Error('Polymarket order evaluation missing after retries')
+  }
+
+  return { evaluation: lastEvaluation, safeRawResult: lastSafeRawResult, attempts, proxyUrl }
 }
 
 
@@ -729,7 +794,11 @@ export async function POST(request: NextRequest) {
       evomiProxyUrl = await requireEvomiProxyAgent('order placement')
       const proxyEndpoint = evomiProxyUrl.split('@')[1] ?? evomiProxyUrl
       console.log('[POLY-ORDER-PLACE] ✅ Evomi proxy enabled via', proxyEndpoint)
-      console.log('[POLY-ORDER-PLACE] Proxy note: Ensure proxy endpoint uses Finland IP for Polymarket access')
+      const targetCountryCode = (process.env.EVOMI_PROXY_COUNTRY?.trim() || 'IE').toUpperCase()
+      const targetCountryLabel = targetCountryCode === 'IE' ? 'Ireland' : targetCountryCode
+      console.log(
+        `[POLY-ORDER-PLACE] Proxy note: Ensure proxy endpoint uses ${targetCountryLabel} IP for Polymarket access`
+      )
     } catch (error: any) {
       console.error('[POLY-ORDER-PLACE] ❌ Evomi proxy required but unavailable:', error?.message || error)
       return respondWithMetadata(
@@ -872,25 +941,21 @@ export async function POST(request: NextRequest) {
       { signatureType } as any
     )
 
-    let rawResult: unknown
-    try {
-      rawResult = await client.postOrder(order, normalizedOrderType as any, false)
-    } catch (error: any) {
-      // Normalize axios/network errors to avoid circular structures that break JSON serialization
-      const message = typeof error?.message === 'string' ? error.message : null
-      const code = typeof error?.code === 'string' ? error.code : null
-      // Prefer upstream data when safe, but avoid bubbling full axios response (circular)
-      const responseData = error?.response?.data
-      rawResult =
-        responseData && typeof responseData === 'object'
-          ? responseData
-          : {
-              error: message || 'Network error placing order',
-              code,
-            }
-    }
-    const safeRawResult = sanitizeForResponse(rawResult) ?? rawResult
-    const evaluation = interpretClobOrderResult(safeRawResult)
+    const {
+      evaluation,
+      safeRawResult,
+      attempts: evomiAttempts,
+      proxyUrl: finalProxyUrl,
+    } = await postOrderWithCloudflareMitigation({
+      client,
+      order,
+      orderType: normalizedOrderType,
+      signatureType,
+      sanitize: sanitizeForResponse,
+      proxyUrl: evomiProxyUrl,
+    })
+
+    evomiProxyUrl = finalProxyUrl
     const failedEvaluation = !evaluation.success
     const upstreamStatus = failedEvaluation ? evaluation.status ?? 502 : 200
     const upstreamContentType = evaluation.contentType
@@ -901,6 +966,7 @@ export async function POST(request: NextRequest) {
       contentType: upstreamContentType,
       orderId: evaluation.success ? evaluation.orderId : null,
       evomiProxyUrl,
+      evomiAttempts,
     }
     let sanitizedEvaluationRaw: unknown
     if (failedEvaluation) {

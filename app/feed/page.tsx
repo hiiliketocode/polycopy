@@ -45,6 +45,38 @@ export interface FeedTrade {
 type FilterTab = "all" | "buys" | "sells";
 type Category = "all" | "politics" | "sports" | "crypto" | "culture" | "finance" | "economics" | "tech" | "weather";
 
+const POLITICS_REGEX = /trump|biden|harris|election|president|congress|senate|governor|democrat|republican|political|vote|campaign|white house|administration|policy|parliament|prime minister|cabinet|legislation/;
+const SPORTS_REGEX = /\svs\s|\svs\.|\s@\s|spread:|o\/u\s|over\/under|moneyline|nfl|nba|wnba|nhl|mlb|mls|ncaa|ncaaf|ncaab|soccer|football|basketball|baseball|hockey|tennis|golf|pga|masters|wimbledon|french open|australian open|us open|mma|ufc|boxing|olympics|world cup|super bowl|world series|stanley cup|nba finals|playoffs|championship|final four|march madness|tournament|league|premier league|champions league|la liga|bundesliga|serie a|ligue 1|uefa|fifa|mvp|cy young|heisman|f1|formula 1|grand prix|nascar|indycar|motogp|cricket|rugby|ashes|six nations|super rugby|ipl|big bash|athlete|team|game|match|score|coach|celtics|lakers|warriors|bulls|knicks|heat|nets|bucks|raptors|76ers|sixers|pacers|pistons|cavaliers|hornets|magic|hawks|wizards|spurs|mavericks|rockets|grizzlies|pelicans|thunder|jazz|suns|trail blazers|kings|clippers|nuggets|timberwolves|chiefs|bills|bengals|ravens|browns|steelers|texans|colts|jaguars|titans|broncos|raiders|chargers|cowboys|giants|eagles|commanders|packers|bears|lions|vikings|saints|falcons|panthers|buccaneers|rams|49ers|cardinals|seahawks|yankees|red sox|dodgers|astros|mets|braves|cubs|white sox|red wings|maple leafs|canadiens|bruins|rangers|flyers|penguins|capitals|lightning|panthers|hurricanes|islanders|devils|blue jackets|predators|jets|avalanche|stars|blues|wild|blackhawks|ducks|sharks|kraken|flames|oilers|canucks|golden knights/;
+const CRYPTO_REGEX = /bitcoin|btc|ethereum|eth|crypto|blockchain|defi|nft|solana|sol|dogecoin|doge|cardano|ada|polkadot|dot|binance|bnb|ripple|xrp|litecoin|ltc|satoshi|mining|wallet|token|coin/;
+const CULTURE_REGEX = /movie|film|music|song|album|artist|celebrity|actor|actress|director|oscar|grammy|emmy|tv show|series|netflix|disney|spotify|concert|tour|premiere|box office|streaming|podcast|youtube|tiktok|instagram|social media|influencer|viral|trending|fashion|style|beauty/;
+const FINANCE_REGEX = /stock|s&p|nasdaq|dow|market|ipo|shares|trading|wall street|investor|portfolio|dividend|earnings|revenue|profit|valuation|acquisition|merger|bankruptcy|sec|ftx|robinhood|index|etf|mutual fund|hedge fund|investment|asset/;
+const ECONOMICS_REGEX = /gdp|inflation|recession|unemployment|interest rate|fed|federal reserve|central bank|cpi|ppi|economy|economic|jobs report|payroll|consumer|spending|debt|deficit|fiscal|monetary|quantitative easing|treasury|bond|yield/;
+const TECH_REGEX = /ai|artificial intelligence|tech|technology|apple|google|microsoft|amazon|meta|facebook|tesla|spacex|nvidia|amd|intel|chip|semiconductor|software|hardware|startup|silicon valley|app|platform|cloud|data|cybersecurity|robot|autonomous|electric vehicle|ev|5g|quantum|vr|ar|metaverse|openai|chatgpt|gpt/;
+const WEATHER_REGEX = /temperature|weather|climate|hurricane|storm|tornado|flood|drought|snow|rain|heat wave|cold|frost|wind|forecast|meteorolog|el nino|la nina|global warming|celsius|fahrenheit/;
+
+const inferCategoryFromTrade = (trade: FeedTrade): Category | undefined => {
+  const searchableText = [
+    trade.market.title,
+    trade.market.slug,
+    trade.market.eventSlug
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (!searchableText) return undefined;
+  if (POLITICS_REGEX.test(searchableText)) return 'politics';
+  if (SPORTS_REGEX.test(searchableText)) return 'sports';
+  if (CRYPTO_REGEX.test(searchableText)) return 'crypto';
+  if (CULTURE_REGEX.test(searchableText)) return 'culture';
+  if (FINANCE_REGEX.test(searchableText)) return 'finance';
+  if (ECONOMICS_REGEX.test(searchableText)) return 'economics';
+  if (TECH_REGEX.test(searchableText)) return 'tech';
+  if (WEATHER_REGEX.test(searchableText)) return 'weather';
+
+  return undefined;
+};
+
 const normalizeKeyPart = (value?: string | null) => value?.trim().toLowerCase() || '';
 const buildCopiedTradeKey = (marketKey?: string | null, traderWallet?: string | null) => {
   const market = normalizeKeyPart(marketKey);
@@ -838,35 +870,9 @@ export default function FeedPage() {
 
         // 5. Categorize trades
         formattedTrades.forEach(trade => {
-          const title = trade.market.title.toLowerCase();
-          
-          if (title.includes('trump') || title.includes('biden') || title.includes('election') || 
-              title.includes('senate') || title.includes('congress') || title.includes('president')) {
-            trade.market.category = 'politics';
-          }
-          else if (title.includes('nba') || title.includes('nfl') || title.includes('mlb') || title.includes('nhl') ||
-                   title.includes('soccer') || title.includes('football') || title.includes('basketball')) {
-            trade.market.category = 'sports';
-          }
-          else if (title.includes('bitcoin') || title.includes('btc') || title.includes('ethereum') || 
-                   title.includes('eth') || title.includes('crypto')) {
-            trade.market.category = 'crypto';
-          }
-          else if (title.includes('stock') || title.includes('economy') || title.includes('inflation')) {
-            trade.market.category = 'economics';
-          }
-          else if (title.includes('ai') || title.includes('tech') || title.includes('apple') || 
-                   title.includes('google') || title.includes('microsoft')) {
-            trade.market.category = 'tech';
-          }
-          else if (title.includes('weather') || title.includes('temperature')) {
-            trade.market.category = 'weather';
-          }
-          else if (title.includes('movie') || title.includes('album') || title.includes('celebrity')) {
-            trade.market.category = 'culture';
-          }
-          else if (title.includes('company') || title.includes('ceo') || title.includes('revenue')) {
-            trade.market.category = 'finance';
+          const category = inferCategoryFromTrade(trade);
+          if (category) {
+            trade.market.category = category;
           }
         });
 
