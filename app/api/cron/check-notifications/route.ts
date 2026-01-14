@@ -924,6 +924,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    console.log(`✅ Finished processing ${tradesChecked} trades. Now starting auto-close check...`)
     console.error(`[AUTO-CLOSE] ========== STARTING AUTO-CLOSE CHECK ==========`)
     console.error(`[AUTO-CLOSE] Orders table: ${ordersTable}`)
     console.log(`[AUTO-CLOSE] ========== STARTING AUTO-CLOSE CHECK ==========`)
