@@ -1072,10 +1072,7 @@ export default function TraderProfilePage({
       const sample = p.sampleTrade || trades.find((t) => keyFor(t) === key);
       if (!sample) return;
       
-      const currentPrice = priceForTrade(sample);
-      if (currentPrice === null) return;
-      
-      // Count this position in win rate calculation
+      // Always count this position in win rate calculation
       totalPositions += 1;
       
       // Determine if this position is a winner
@@ -1085,10 +1082,16 @@ export default function TraderProfilePage({
       if (Math.abs(p.size) < 1e-9) {
         isWinner = p.realized > 0;
       } 
-      // For open or resolved positions, check if current price > entry price
+      // For open positions, check if current price > entry price
       else {
-        const unrealizedPnl = (currentPrice - p.avgCost) * p.size;
-        isWinner = unrealizedPnl > 0;
+        const currentPrice = priceForTrade(sample);
+        // Only count as winner if we have current price AND it's above entry
+        // If no current price available, count as neutral (not winner, not loser)
+        if (currentPrice !== null) {
+          const unrealizedPnl = (currentPrice - p.avgCost) * p.size;
+          isWinner = unrealizedPnl > 0;
+        }
+        // If currentPrice is null, isWinner stays false (neutral position)
       }
       
       if (isWinner) winningPositions += 1;
@@ -1194,10 +1197,9 @@ export default function TraderProfilePage({
   const effectivePnl = traderData.pnl ?? computedStats?.totalPnl ?? 0;
   const effectiveVolume = traderData.volume ?? computedStats?.volume ?? 0;
   const effectiveRoiValue = traderData.roi ?? computedStats?.roi ?? (effectiveVolume > 0 ? (effectivePnl / effectiveVolume) * 100 : 0);
-  // Win rate: Polymarket doesn't provide it, so we calculate from trade history
-  // Only show if we have sell trades (winRate calculation requires realized trades)
-  // Show N/A if winRate is 0 or null (no sell trades yet)
-  const effectiveWinRate = (computedStats && computedStats.winRate && computedStats.winRate > 0) ? computedStats.winRate : null;
+  // Win rate: Calculated from ALL positions (open + closed) with positive ROI
+  // Show N/A only if we have no positions at all
+  const effectiveWinRate = (computedStats && computedStats.winRate !== null && computedStats.winRate !== undefined) ? computedStats.winRate : null;
 
   console.log('📊 Trader Profile Stats Priority:', {
     wallet: wallet.substring(0, 8),
