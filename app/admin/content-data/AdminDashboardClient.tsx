@@ -51,6 +51,56 @@ interface SectionAData {
     last_week_roi: number | null
     prev_week_roi: number | null
   }>
+  positionChanges: Array<{
+    trader_username: string
+    trader_wallet: string
+    current_rank: number
+    previous_rank: number | null
+    position_change: number
+    change_formatted: string
+    is_new_entry: boolean
+  }>
+  newEntrants: Array<{
+    trader_username: string
+    trader_wallet: string
+    current_rank: number
+    roi: number
+    roi_formatted: string
+    pnl_formatted: string
+  }>
+  categoryMomentum: Array<{
+    category: string
+    current_volume: number
+    previous_volume: number | null
+    volume_change_pct: number | null
+    volume_change_formatted: string
+    trend: 'up' | 'down' | 'stable' | 'new'
+  }>
+  winStreaks: Array<{
+    trader_username: string
+    trader_wallet: string
+    current_streak: number
+    streak_type: 'win' | 'loss'
+    total_streak_trades: number
+  }>
+  riskRewardProfiles: {
+    highRoiLowVolume: Array<{
+      trader_username: string
+      trader_wallet: string
+      roi: number
+      roi_formatted: string
+      volume: number
+      volume_formatted: string
+    }>
+    highVolumeConsistent: Array<{
+      trader_username: string
+      trader_wallet: string
+      roi: number
+      roi_formatted: string
+      volume: number
+      volume_formatted: string
+    }>
+  }
   apiErrors: string[]
 }
 
@@ -116,6 +166,42 @@ interface SectionBData {
     avg_roi: number | null
     avg_roi_formatted: string
   }>
+  copyVelocity: Array<{
+    trader_username: string
+    trader_wallet: string
+    copies_today: number
+    copies_yesterday: number
+    copies_7d_total: number
+    daily_avg_7d: number
+    trend: 'accelerating' | 'decelerating' | 'stable'
+    trend_pct: number
+  }>
+  successStories: Array<{
+    user_email: string
+    user_id: string
+    days_active: number
+    total_trades: number
+    avg_roi: number
+    avg_roi_formatted: string
+    win_rate: number
+    win_rate_formatted: string
+    best_trader: string
+    vs_platform_avg: string
+  }>
+  marketConcentration: {
+    top3_percentage: number
+    top10_percentage: number
+    total_unique_markets: number
+    concentration_score: 'high' | 'medium' | 'low'
+  }
+  exitStrategyAnalysis: {
+    avg_hold_time_winners: number
+    avg_hold_time_winners_formatted: string
+    avg_hold_time_losers: number
+    avg_hold_time_losers_formatted: string
+    early_exit_rate: number
+    matches_trader_exit_rate: number
+  }
   dbErrors: string[]
 }
 
