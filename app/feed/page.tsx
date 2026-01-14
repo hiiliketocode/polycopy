@@ -220,13 +220,59 @@ export default function FeedPage() {
       });
     };
 
+    const applySlippageDefaults = (prefs?: { default_buy_slippage?: any; default_sell_slippage?: any }) => {
+      if (!isMounted) return;
+      const normalize = (value: any) => {
+        const numericValue = typeof value === 'string' ? parseFloat(value) : value;
+        return Number.isFinite(numericValue) ? Number(numericValue) : 3;
+      };
+      setDefaultBuySlippage(normalize(prefs?.default_buy_slippage));
+      setDefaultSellSlippage(normalize(prefs?.default_sell_slippage));
+    };
+
+    const isEmptyPostgrestError = (err: any) => {
+      if (!err || typeof err !== 'object') return false;
+      return Object.values(err).every((value) => {
+        if (value === null || value === undefined) return true;
+        if (typeof value === 'string') return value.trim().length === 0;
+        return false;
+      });
+    };
+
     const fetchSlippageDefaults = async () => {
       try {
-        const { data, error } = await supabase
+        const apiResponse = await fetch(`/api/notification-preferences?userId=${user.id}`);
+        if (apiResponse.ok) {
+          const prefs = await apiResponse.json();
+          applySlippageDefaults(prefs);
+          return;
+        }
+      } catch (apiError) {
+        if (isMeaningfulError(apiError)) {
+          const payload = formatSupabaseError(apiError);
+          if (hasStructuredDetails(payload)) {
+            console.error('Error fetching slippage preferences via API:', payload);
+          }
+        }
+      }
+
+      try {
+        const { data, error, status } = await supabase
           .from('notification_preferences')
           .select('default_buy_slippage, default_sell_slippage')
           .eq('user_id', user.id)
           .maybeSingle();
+
+        const missingPreferences =
+          (!data && !error) ||
+          error?.code === 'PGRST116' ||
+          status === 406 ||
+          isEmptyPostgrestError(error);
+
+        if (missingPreferences) {
+          applySlippageDefaults();
+          return;
+        }
 
         if (isMeaningfulError(error)) {
           const payload = formatSupabaseError(error);
@@ -235,9 +281,8 @@ export default function FeedPage() {
           }
         }
 
-        if (data && isMounted) {
-          setDefaultBuySlippage(data.default_buy_slippage ?? 3);
-          setDefaultSellSlippage(data.default_sell_slippage ?? 3);
+        if (data) {
+          applySlippageDefaults(data);
         }
       } catch (err) {
         if (isMeaningfulError(err)) {
@@ -1304,6 +1349,7 @@ export default function FeedPage() {
                     }
                     onAdvancedCopy={() => handleRealCopy(trade)}
                     isPremium={tierHasPremiumAccess(userTier)}
+                    isAdmin={userTier === 'admin'}
                     isExpanded={expandedTradeIds.has(tradeKey)}
                     onToggleExpand={() => toggleTradeExpanded(tradeKey)}
                     isCopied={isTraceCopied(trade)}

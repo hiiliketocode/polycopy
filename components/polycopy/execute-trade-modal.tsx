@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { CheckCircle2, Loader2, ArrowUpRight, ArrowDownRight, HelpCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -16,6 +16,7 @@ import Link from "next/link"
 interface ExecuteTradeModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  isAdmin?: boolean
   trade: {
     market: string
     traderName: string
@@ -32,8 +33,9 @@ interface ExecuteTradeModalProps {
 
 type ExecutionState = "confirming" | "executing" | "success"
 
-export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeModalProps) {
-  const [autoClose, setAutoClose] = useState(true)
+export function ExecuteTradeModal({ open, onOpenChange, trade, isAdmin = false }: ExecuteTradeModalProps) {
+  const canUseAutoClose = Boolean(isAdmin)
+  const [autoClose, setAutoClose] = useState(() => canUseAutoClose)
   const [executionState, setExecutionState] = useState<ExecutionState>("confirming")
   const [executedPrice, setExecutedPrice] = useState<number>(0)
   const [slippage, setSlippage] = useState<number>(0)
@@ -91,7 +93,7 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
     // Reset state after modal closes
     setTimeout(() => {
       setExecutionState("confirming")
-      setAutoClose(true)
+      setAutoClose(canUseAutoClose)
       setExecutedPrice(0)
       setSlippage(0)
       setAmountUSD("100")
@@ -100,6 +102,14 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
       setCustomSlippage("")
     }, 300)
   }
+
+  useEffect(() => {
+    if (!canUseAutoClose) {
+      setAutoClose(false)
+      return
+    }
+    setAutoClose((prev) => (prev ? prev : true))
+  }, [canUseAutoClose])
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -339,18 +349,19 @@ export function ExecuteTradeModal({ open, onOpenChange, trade }: ExecuteTradeMod
                 </div>
               </div>
 
-              {/* Auto-close checkbox */}
-              <div className="flex items-start space-x-2.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <Checkbox id="auto-close" checked={autoClose} onCheckedChange={(checked) => setAutoClose(!!checked)} className="mt-0.5" />
-                <div className="flex-1">
-                  <Label htmlFor="auto-close" className="text-xs font-medium text-slate-900 cursor-pointer leading-tight">
-                    Auto-close when trader closes position
-                  </Label>
-                  <p className="text-xs text-slate-600 mt-0.5 leading-snug">
-                    Automatically close your position when {trade.traderName} closes theirs
-                  </p>
+              {canUseAutoClose && (
+                <div className="flex items-start space-x-2.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <Checkbox id="auto-close" checked={autoClose} onCheckedChange={(checked) => setAutoClose(!!checked)} className="mt-0.5" />
+                  <div className="flex-1">
+                    <Label htmlFor="auto-close" className="text-xs font-medium text-slate-900 cursor-pointer leading-tight">
+                      Auto-close when trader closes position
+                    </Label>
+                    <p className="text-xs text-slate-600 mt-0.5 leading-snug">
+                      Automatically close your position when {trade.traderName} closes theirs
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
             </>
           )}
 

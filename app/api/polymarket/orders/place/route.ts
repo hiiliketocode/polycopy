@@ -290,6 +290,7 @@ async function persistCopiedTraderMetadata({
   autoCloseOnTraderClose,
   autoClose,
   slippagePercent,
+  autoCloseAllowed,
 }: {
   userId: string
   orderId: string
@@ -310,6 +311,7 @@ async function persistCopiedTraderMetadata({
   autoCloseOnTraderClose?: boolean
   autoClose?: boolean
   slippagePercent?: number
+  autoCloseAllowed?: boolean
 },
 overrides?: {
   status?: string | null
@@ -371,14 +373,19 @@ overrides?: {
   const normalizedCopiedTraderUsername = normalizeOptionalString(copiedTraderUsername)
   const now = new Date().toISOString()
   const resolvedCreatedAt = normalizeTimestamp(overrides?.createdAt) ?? now
+  const allowAutoClose = Boolean(autoCloseAllowed)
   const resolvedAutoClose =
-    typeof autoCloseOnTraderClose === 'boolean'
+    allowAutoClose &&
+    (typeof autoCloseOnTraderClose === 'boolean'
       ? autoCloseOnTraderClose
       : typeof autoClose === 'boolean'
         ? autoClose
-        : true
+        : true)
   const normalizedSlippage =
-    typeof slippagePercent === 'number' && Number.isFinite(slippagePercent) && slippagePercent >= 0
+    allowAutoClose &&
+    typeof slippagePercent === 'number' &&
+    Number.isFinite(slippagePercent) &&
+    slippagePercent >= 0
       ? slippagePercent
       : null
 
@@ -663,6 +670,19 @@ export async function POST(request: NextRequest) {
     })
     // Fail-open: Allow order to proceed
   }
+
+  const { data: profile, error: profileError } = await serviceRole
+    .from('profiles')
+    .select('is_admin')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (profileError) {
+    console.error('[POLY-ORDER-PLACE] Failed to load profile for admin check', profileError)
+  }
+
+  const isAdminUser = Boolean(profile?.is_admin)
+  const autoCloseAllowed = isAdminUser
   
   const normalizedConditionId = normalizeOptionalString(conditionId ?? marketId) ?? null
   const resolvedInputMode = normalizeLogInputMode(inputMode)
@@ -1096,6 +1116,7 @@ export async function POST(request: NextRequest) {
           autoCloseOnTraderClose,
           autoClose,
           slippagePercent,
+          autoCloseAllowed,
         }, metadataOverrides)
       }
     } catch (error) {

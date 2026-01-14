@@ -41,6 +41,7 @@ interface TradeCardProps {
   onMarkAsCopied?: (entryPrice: number, amountInvested?: number) => void
   onAdvancedCopy?: () => void
   isPremium?: boolean
+  isAdmin?: boolean
   isExpanded?: boolean
   onToggleExpand?: () => void
   isCopied?: boolean
@@ -342,6 +343,7 @@ export function TradeCard({
   onMarkAsCopied,
   onAdvancedCopy,
   isPremium = false,
+  isAdmin = false,
   isExpanded = false,
   onToggleExpand,
   isCopied = false,
@@ -367,7 +369,8 @@ export function TradeCard({
         : 3
   const [amountMode, setAmountMode] = useState<"usd" | "contracts">("usd")
   const [amountInput, setAmountInput] = useState<string>("")
-  const [autoClose, setAutoClose] = useState(true)
+  const canUseAutoClose = Boolean(isAdmin)
+  const [autoClose, setAutoClose] = useState(() => canUseAutoClose)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [localCopied, setLocalCopied] = useState(isCopied)
@@ -411,6 +414,7 @@ export function TradeCard({
     if (randomUuId) return randomUuId
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`
   })
+  const prevCanUseAutoCloseRef = useRef(canUseAutoClose)
 
   const formatWallet = (value: string) => {
     const trimmed = value?.trim() || ""
@@ -449,6 +453,15 @@ export function TradeCard({
     if (userUpdatedSlippageRef.current) return
     setSlippagePreset(resolvedDefaultSlippage)
   }, [resolvedDefaultSlippage])
+
+  useEffect(() => {
+    if (!canUseAutoClose) {
+      setAutoClose(false)
+    } else if (!prevCanUseAutoCloseRef.current) {
+      setAutoClose(true)
+    }
+    prevCanUseAutoCloseRef.current = canUseAutoClose
+  }, [canUseAutoClose])
 
   const handleSlippagePresetChange = (value: number | 'custom') => {
     userUpdatedSlippageRef.current = true
@@ -1180,7 +1193,7 @@ export function TradeCard({
         marketAvatarUrl: marketAvatar,
         amountInvested: estimatedMaxCost ?? undefined,
         outcome: position,
-        autoCloseOnTraderClose: autoClose,
+        autoCloseOnTraderClose: canUseAutoClose ? autoClose : false,
         slippagePercent: resolvedSlippage,
         orderIntentId,
         conditionId,
@@ -2140,23 +2153,24 @@ export function TradeCard({
                   {isSubmitting && (
                     <p className="mt-2 text-center text-xs text-slate-500">This may take a moment.</p>
                   )}
-                {/* Auto-close Checkbox */}
+                {canUseAutoClose && (
                   <div className="mt-4 flex items-start space-x-3 p-2.5 bg-white rounded-lg border border-slate-200">
-                  <Checkbox
-                    id="auto-close"
-                    checked={autoClose}
-                    onCheckedChange={(checked) => setAutoClose(!!checked)}
-                    disabled={isSubmitting}
-                  />
-                  <div className="flex-1">
-                    <label
-                      htmlFor="auto-close"
-                      className="text-sm font-medium text-slate-900 cursor-pointer leading-tight"
-                    >
-                      Auto-close when trader closes
-                    </label>
+                    <Checkbox
+                      id="auto-close"
+                      checked={autoClose}
+                      onCheckedChange={(checked) => setAutoClose(!!checked)}
+                      disabled={isSubmitting}
+                    />
+                    <div className="flex-1">
+                      <label
+                        htmlFor="auto-close"
+                        className="text-sm font-medium text-slate-900 cursor-pointer leading-tight"
+                      >
+                        Auto-close when trader closes
+                      </label>
+                    </div>
                   </div>
-                </div>
+                )}
                   <div className="mt-2 flex items-center justify-between gap-3">
                     {!showAdvanced && (
                       <TooltipProvider>

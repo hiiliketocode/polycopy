@@ -783,21 +783,29 @@ function normalizeConditionId(value: string): string | null {
   if (!value) return null
   const trimmed = value.trim()
   if (!trimmed) return null
-  if (trimmed.startsWith('0x')) {
-    if (trimmed.length >= 66) {
-      return trimmed.slice(0, 66).toLowerCase()
+  const hasHexPrefix = trimmed.slice(0, 2).toLowerCase() === '0x'
+  if (hasHexPrefix) {
+    const hexBody = trimmed.slice(2)
+    if (hexBody.length >= 64 && /^[0-9a-fA-F]+$/.test(hexBody)) {
+      return `0x${hexBody.slice(0, 64).toLowerCase()}`
     }
     return null
   }
-  if (!/^\d+$/.test(trimmed)) return null
-  try {
-    const numeric = BigInt(trimmed)
-    if (numeric < 0n) return null
-    const hex = numeric.toString(16).padStart(64, '0')
-    return `0x${hex}`
-  } catch {
-    return null
+  if (/^\d+$/.test(trimmed)) {
+    try {
+      const numeric = BigInt(trimmed)
+      if (numeric < 0n) return null
+      const hex = numeric.toString(16).padStart(64, '0')
+      return `0x${hex}`
+    } catch {
+      return null
+    }
   }
+  const bareHexMatch = trimmed.match(/^[0-9a-fA-F]{64,}$/)
+  if (bareHexMatch) {
+    return `0x${trimmed.slice(0, 64).toLowerCase()}`
+  }
+  return null
 }
 
 type CopiedTraderDetails = {

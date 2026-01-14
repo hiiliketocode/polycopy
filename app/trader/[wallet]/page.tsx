@@ -100,6 +100,7 @@ export default function TraderProfilePage({
   const [wallet, setWallet] = useState<string>('');
   const [user, setUser] = useState<User | null>(null);
   const [isPremium, setIsPremium] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [traderData, setTraderData] = useState<TraderData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -120,7 +121,7 @@ export default function TraderProfilePage({
   // Premium user expandable cards
   const [expandedTradeKeys, setExpandedTradeKeys] = useState<Set<string>>(new Set());
   const [usdAmount, setUsdAmount] = useState<string>('');
-  const [autoClose, setAutoClose] = useState(true);
+  const [autoClose, setAutoClose] = useState(false);
   const [manualCopyTradeIndex, setManualCopyTradeIndex] = useState<number | null>(null);
   const [manualUsdAmount, setManualUsdAmount] = useState<string>('');
   const [defaultBuySlippage, setDefaultBuySlippage] = useState(3);
@@ -143,6 +144,14 @@ export default function TraderProfilePage({
     closed?: boolean;
     resolved?: boolean;
   }>>(new Map());
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setAutoClose(false);
+      return;
+    }
+    setAutoClose((prev) => (prev ? prev : true));
+  }, [isAdmin]);
 
   const mergeTrades = useCallback((existing: Trade[], incoming: Trade[]) => {
     const all = [...incoming, ...existing];
@@ -233,11 +242,12 @@ export default function TraderProfilePage({
         // Fetch premium status
         const { data: profile } = await supabase
           .from('profiles')
-          .select('is_premium')
+          .select('is_premium, is_admin')
           .eq('id', user.id)
           .single();
         
-        setIsPremium(profile?.is_premium || false);
+        setIsPremium(profile?.is_premium || profile?.is_admin || false);
+        setIsAdmin(profile?.is_admin || false);
         
         // Fetch wallet address
         const { data: walletData } = await supabase
@@ -1490,6 +1500,7 @@ export default function TraderProfilePage({
                         }
                       }}
                       isPremium={isPremium}
+                      isAdmin={isAdmin}
                       isExpanded={isExpanded}
                       onToggleExpand={() => toggleTradeExpanded(tradeKey)}
                       isCopied={isAlreadyCopied}
@@ -1663,26 +1674,28 @@ export default function TraderProfilePage({
                                 )}
                               </Button>
                               {/* Auto-close Checkbox */}
-                              <div className="flex items-start space-x-2.5 p-2.5 bg-white rounded-lg border border-slate-200">
-                                <Checkbox
-                                  id={`auto-close-${index}`}
-                                  checked={autoClose}
-                                  onCheckedChange={(checked) => setAutoClose(!!checked)}
-                                  disabled={isSubmitting}
-                                  className="mt-0.5"
-                                />
-                                <div className="flex-1">
-                                  <label
-                                    htmlFor={`auto-close-${index}`}
-                                    className="text-xs font-medium text-slate-900 cursor-pointer leading-tight"
-                                  >
-                                    Auto-close when trader closes
-                                  </label>
-                                  <p className="text-xs text-slate-500 mt-0.5">
-                                    Automatically close your position when {traderData?.displayName || 'trader'} closes theirs
-                                  </p>
+                              {isAdmin && (
+                                <div className="flex items-start space-x-2.5 p-2.5 bg-white rounded-lg border border-slate-200">
+                                  <Checkbox
+                                    id={`auto-close-${index}`}
+                                    checked={autoClose}
+                                    onCheckedChange={(checked) => setAutoClose(!!checked)}
+                                    disabled={isSubmitting}
+                                    className="mt-0.5"
+                                  />
+                                  <div className="flex-1">
+                                    <label
+                                      htmlFor={`auto-close-${index}`}
+                                      className="text-xs font-medium text-slate-900 cursor-pointer leading-tight"
+                                    >
+                                      Auto-close when trader closes
+                                    </label>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                      Automatically close your position when {traderData?.displayName || 'trader'} closes theirs
+                                    </p>
+                                  </div>
                                 </div>
-                              </div>
+                              )}
                             </div>
                           )}
                         </>

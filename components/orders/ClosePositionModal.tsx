@@ -486,6 +486,21 @@ export default function ClosePositionModal({
   const sizePercent =
     amountValid && position.size > 0 ? (contractsValue / position.size) * 100 : null
   const sizePercentLabel = sizePercent !== null ? `${sizePercent.toFixed(0)}%` : null
+  const lowPriceWarning =
+    referencePrice !== null && referencePrice < 0.03
+      ? 'Warning: price is under $0.03; liquidity can be thin and orders may reject.'
+      : null
+  const matchFailureMessage =
+    statusPhase === 'timed_out' ||
+    statusPhase === 'rejected' ||
+    statusPhase === 'canceled' ||
+    statusPhase === 'expired'
+      ? "Failed to match at this price. Widen slippage or switch to Good 'Til Cancel, then try again."
+      : null
+  const partialFillMessage =
+    statusPhase === 'partial'
+      ? 'Partial fill. Remaining contracts may need another attempt or more time.'
+      : null
 
   const handleSwitchToUsd = () => {
     if (!Number.isFinite(contractsValue) || contractsValue <= 0) return
@@ -830,6 +845,11 @@ export default function ClosePositionModal({
                   </div>
                 </div>
               </div>
+              {lowPriceWarning && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {lowPriceWarning}
+                </div>
+              )}
             </section>
 
             <div className="bg-white px-6 pb-3 pt-0">
@@ -975,6 +995,12 @@ export default function ClosePositionModal({
                           ? 'Sell position'
                           : 'Mark as sold'}
                   </Button>
+                  {matchFailureMessage && (
+                    <p className="mt-2 text-xs text-rose-700 text-center">{matchFailureMessage}</p>
+                  )}
+                  {partialFillMessage && (
+                    <p className="mt-1 text-xs text-amber-700 text-center">{partialFillMessage}</p>
+                  )}
 
                   <div className="mt-2 flex items-center justify-between gap-3">
                     {!showAdvanced && (
