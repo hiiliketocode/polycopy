@@ -924,6 +924,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    console.error(`[AUTO-CLOSE] ========== STARTING AUTO-CLOSE CHECK ==========`)
+    console.error(`[AUTO-CLOSE] Orders table: ${ordersTable}`)
     console.log(`[AUTO-CLOSE] ========== STARTING AUTO-CLOSE CHECK ==========`)
     console.log(`[AUTO-CLOSE] Orders table: ${ordersTable}`)
     
