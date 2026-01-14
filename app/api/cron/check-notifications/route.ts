@@ -945,9 +945,12 @@ export async function GET(request: NextRequest) {
     
     if (queryError) {
       console.error(`[AUTO-CLOSE] Query error:`, queryError)
+      console.error(`[AUTO-CLOSE] Query error details:`, JSON.stringify(queryError, null, 2))
+      throw new Error(`Auto-close query failed: ${queryError.message}`)
     }
     
     console.log(`[AUTO-CLOSE] Found ${openOrders?.length || 0} orders eligible for auto-close check`)
+    console.error(`[AUTO-CLOSE] Found ${openOrders?.length || 0} orders eligible for auto-close check`)
     
     // Log order IDs being checked for debugging
     if (openOrders && openOrders.length > 0) {
