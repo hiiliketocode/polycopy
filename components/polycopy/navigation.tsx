@@ -212,16 +212,28 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
               Profile
             </Link>
             {isAdmin && (
-              <Link
-                href="/admin/users"
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  isActive("/admin/users")
-                    ? "text-slate-900 bg-slate-100"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                }`}
-              >
-                Admin
-              </Link>
+              <>
+                <Link
+                  href="/admin/auto-copy"
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    isActive("/admin/auto-copy")
+                      ? "text-slate-900 bg-slate-100"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                  }`}
+                >
+                  Auto Copy
+                </Link>
+                <Link
+                  href="/admin/users"
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    isActive("/admin/users")
+                      ? "text-slate-900 bg-slate-100"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                  }`}
+                >
+                  Admin
+                </Link>
+              </>
             )}
           </div>
 
@@ -362,9 +374,20 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
               <User className={`w-5 h-5 ${isActive("/profile") ? "stroke-[2.5]" : "stroke-2"}`} />
               <span className={`text-[10px] ${isActive("/profile") ? "font-semibold" : "font-medium"}`}>Profile</span>
             </Link>
+            {isAdmin && (
+              <Link
+                href="/admin/auto-copy"
+                className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors min-w-[64px] ${
+                  isActive("/admin/auto-copy") ? "bg-slate-100 text-[#FDB022]" : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <Settings className={`w-5 h-5 ${isActive("/admin/auto-copy") ? "stroke-[2.5]" : "stroke-2"}`} />
+                <span className={`text-[10px] ${isActive("/admin/auto-copy") ? "font-semibold" : "font-medium"}`}>Auto Copy</span>
+              </Link>
+            )}
           </div>
         </div>
-        </nav>
+      </nav>
       )}
 
       {/* Upgrade Modal for free users */}

@@ -84,6 +84,71 @@ function normalizeNumber(value?: number | string | null) {
   return Number.isFinite(n) ? n : null
 }
 
+function normalizeTimestamp(value?: string | Date | null) {
+  if (!value) return null
+  try {
+    const date = value instanceof Date ? value : new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date.toISOString()
+  } catch {
+    return null
+  }
+}
+
+async function fetchCopiedTraderPositionSize(
+  wallet?: string | null,
+  marketId?: string | null,
+  outcome?: string | null
+): Promise<number | null> {
+  const normalizedWallet = normalizeWallet(wallet)
+  const normalizedMarketId = normalizeOptionalString(marketId)
+  const normalizedOutcome = normalizeOptionalString(outcome)?.toUpperCase()
+  if (!normalizedWallet || !normalizedMarketId || !normalizedOutcome) return null
+
+  const limit = 500
+  let offset = 0
+
+  while (true) {
+    const url = new URL('https://data-api.polymarket.com/positions')
+    url.searchParams.set('user', normalizedWallet)
+    url.searchParams.set('limit', String(limit))
+    url.searchParams.set('offset', String(offset))
+
+    try {
+      const response = await fetch(url.toString(), { cache: 'no-store' })
+      if (!response.ok) break
+
+      const batch = await response.json()
+      if (!Array.isArray(batch) || batch.length === 0) break
+
+      for (const position of batch) {
+        const conditionId = normalizeOptionalString(position?.conditionId ?? position?.asset ?? null)
+        const matchesMarket =
+          conditionId &&
+          (conditionId === normalizedMarketId ||
+            normalizedMarketId.startsWith(conditionId) ||
+            conditionId.startsWith(normalizedMarketId))
+        if (!matchesMarket) continue
+
+        const outcomeValue = normalizeOptionalString(position?.outcome)?.toUpperCase()
+        if (outcomeValue !== normalizedOutcome) continue
+
+        const sizeValue = normalizeNumber(position?.size)
+        if (sizeValue !== null && sizeValue >= 0) {
+          return sizeValue
+        }
+      }
+
+      if (batch.length < limit) break
+      offset += limit
+    } catch (error) {
+      console.warn('[POLY-ORDER-PLACE] Failed to fetch copied trader position size', error)
+      break
+    }
+  }
+
+  return null
+}
+
 async function fetchMarketTickSize(clobBaseUrl: string, tokenId: string) {
   const normalizedTokenId = normalizeOptionalString(tokenId)
   if (!normalizedTokenId) return null
@@ -245,16 +310,25 @@ async function persistCopiedTraderMetadata({
   autoCloseOnTraderClose?: boolean
   autoClose?: boolean
   slippagePercent?: number
+},
+overrides?: {
+  status?: string | null
+  size?: number | null
+  filledSize?: number | null
+  remainingSize?: number | null
+  createdAt?: string | Date | null
+  rawOrder?: any
 }) {
   const hasCopiedMetadata =
     Boolean(normalizeOptionalString(copiedTraderId)) ||
     Boolean(normalizeOptionalString(copiedTraderWallet)) ||
     Boolean(normalizeOptionalString(copiedTraderUsername))
+  const normalizedOutcome = normalizeOptionalString(outcome)
   const hasOrderContext =
     Boolean(normalizeOptionalString(orderType ?? null)) ||
     Boolean(normalizeOptionalString(tokenId ?? null)) ||
     Boolean(normalizeOptionalString(marketId ?? null)) ||
-    Boolean(normalizeOptionalString(outcome ?? null)) ||
+    Boolean(normalizedOutcome) ||
     Boolean(normalizeOptionalString(side ?? null)) ||
     normalizeNumber(price) !== null ||
     normalizeNumber(amount) !== null
@@ -283,12 +357,20 @@ async function persistCopiedTraderMetadata({
   const normalizedMarketSlug = normalizeOptionalString(marketSlug)
   const normalizedMarketAvatarUrl = normalizeOptionalString(marketAvatarUrl)
   const normalizedPrice = normalizeNumber(price)
-  const normalizedSize = normalizeNumber(amount)
+  const normalizedSize = normalizeNumber(overrides?.size ?? amount)
+  const normalizedFilledSize = normalizeNumber(overrides?.filledSize)
+  const normalizedRemainingSize =
+    normalizeNumber(overrides?.remainingSize) ??
+    (normalizedSize !== null && normalizedFilledSize !== null
+      ? Math.max(normalizedSize - normalizedFilledSize, 0)
+      : normalizedSize)
+  const normalizedStatus = normalizeOptionalString(overrides?.status)?.toLowerCase() ?? 'open'
   const normalizedAmountInvested = normalizeNumber(amountInvested)
   const normalizedCopiedTraderId = normalizeOptionalString(copiedTraderId)
   const normalizedCopiedTraderWallet = normalizeWallet(copiedTraderWallet)
   const normalizedCopiedTraderUsername = normalizeOptionalString(copiedTraderUsername)
   const now = new Date().toISOString()
+  const resolvedCreatedAt = normalizeTimestamp(overrides?.createdAt) ?? now
   const resolvedAutoClose =
     typeof autoCloseOnTraderClose === 'boolean'
       ? autoCloseOnTraderClose
@@ -300,36 +382,52 @@ async function persistCopiedTraderMetadata({
       ? slippagePercent
       : null
 
+  const traderPositionSize = await fetchCopiedTraderPositionSize(
+    normalizedCopiedTraderWallet,
+    normalizedMarketId,
+    normalizedOutcome
+  )
+
+  const rawPayload: Record<string, unknown> = {
+    source: 'polycopy_place_order',
+    token_id: tokenId ?? null,
+    market_id: normalizedMarketId,
+    outcome: normalizedOutcome,
+    copied_trader_id: normalizedCopiedTraderId,
+    copied_trader_wallet: normalizedCopiedTraderWallet,
+    copied_trader_username: normalizeOptionalString(copiedTraderUsername),
+    auto_close_on_trader_close: resolvedAutoClose,
+    auto_close_slippage_percent: normalizedSlippage,
+  }
+
+  if (traderPositionSize !== null) {
+    rawPayload.trader_position_size = traderPositionSize
+  }
+
+  if (overrides?.rawOrder) {
+    rawPayload.clob_order = overrides.rawOrder
+  }
+
   const payload: Record<string, unknown> = {
     order_id: orderId,
     trader_id: traderId,
     copied_trader_id: normalizedCopiedTraderId,
     copied_trader_wallet: normalizedCopiedTraderWallet,
     market_id: normalizedMarketId,
-    outcome: normalizeOptionalString(outcome),
+    outcome: normalizedOutcome,
     side: side ? side.toLowerCase() : null,
     order_type: orderType ?? null,
     time_in_force: orderType ?? null,
     price: normalizedPrice ?? 0,
     size: normalizedSize ?? 0,
-    filled_size: 0,
-    remaining_size: normalizedSize ?? 0,
-    status: 'open',
-    created_at: now,
+    filled_size: normalizedFilledSize ?? 0,
+    remaining_size: normalizedRemainingSize ?? normalizedSize ?? 0,
+    status: normalizedStatus,
+    created_at: resolvedCreatedAt,
     updated_at: now,
     auto_close_on_trader_close: resolvedAutoClose,
     auto_close_slippage_percent: normalizedSlippage,
-    raw: {
-      source: 'polycopy_place_order',
-      token_id: tokenId ?? null,
-      market_id: normalizedMarketId,
-      outcome: normalizeOptionalString(outcome),
-      copied_trader_id: normalizedCopiedTraderId,
-      copied_trader_wallet: normalizedCopiedTraderWallet,
-      copied_trader_username: normalizeOptionalString(copiedTraderUsername),
-      auto_close_on_trader_close: resolvedAutoClose,
-      auto_close_slippage_percent: normalizedSlippage,
-    },
+    raw: rawPayload,
   }
 
   if (normalizedCopiedTraderWallet) {
@@ -342,6 +440,10 @@ async function persistCopiedTraderMetadata({
     payload.market_avatar_url = normalizedMarketAvatarUrl
     payload.trade_method = 'quick'
     payload.copied_trade_id = randomUUID()
+  }
+
+  if (traderPositionSize !== null) {
+    payload.trader_position_size = traderPositionSize
   }
 
   await service.from(ordersTable).upsert(payload, { onConflict: 'order_id' })
@@ -883,7 +985,59 @@ export async function POST(request: NextRequest) {
       error_message: null,
       raw_error: null,
     })
-    
+
+    let shouldPersistOrderRow = Boolean(orderId)
+    let metadataOverrides:
+      | {
+          status?: string | null
+          size?: number | null
+          filledSize?: number | null
+          remainingSize?: number | null
+          createdAt?: string | Date | null
+          rawOrder?: any
+        }
+      | undefined
+
+    if (orderId && normalizedOrderType === 'FAK') {
+      try {
+        const clobOrder = await client.getOrder(orderId)
+        const fetchedSize = normalizeNumber(
+          clobOrder?.original_size ?? clobOrder?.size ?? clobOrder?.amount
+        )
+        const fetchedFilled = normalizeNumber(
+          clobOrder?.size_matched ?? clobOrder?.filled_size ?? clobOrder?.filledSize
+        )
+        const fetchedRemaining =
+          normalizeNumber(clobOrder?.remaining_size) ??
+          (fetchedSize !== null && fetchedFilled !== null
+            ? Math.max(fetchedSize - fetchedFilled, 0)
+            : null)
+        const fetchedStatus =
+          typeof clobOrder?.status === 'string' ? clobOrder.status.toLowerCase() : null
+        const fetchedCreatedAt = normalizeTimestamp(
+          clobOrder?.created_at ?? clobOrder?.createdAt ?? null
+        )
+
+        metadataOverrides = {
+          status: fetchedStatus,
+          size: fetchedSize,
+          filledSize: fetchedFilled,
+          remainingSize: fetchedRemaining,
+          createdAt: fetchedCreatedAt,
+          rawOrder: clobOrder,
+        }
+
+        if (!fetchedFilled || fetchedFilled <= 0) {
+          shouldPersistOrderRow = false
+          console.log('[POLY-ORDER-PLACE] Skipping orders row for unfilled FAK order', {
+            orderId,
+          })
+        }
+      } catch (error) {
+        console.warn('[POLY-ORDER-PLACE] Failed to fetch order for FAK persistence check', error)
+      }
+    }
+
     // Update idempotency record with success
     try {
       await serviceRole.rpc('update_order_idempotency_result', {
@@ -921,7 +1075,7 @@ export async function POST(request: NextRequest) {
     })
 
     try {
-      if (orderId) {
+      if (shouldPersistOrderRow && orderId) {
         await persistCopiedTraderMetadata({
           userId,
           orderId,
@@ -942,7 +1096,7 @@ export async function POST(request: NextRequest) {
           autoCloseOnTraderClose,
           autoClose,
           slippagePercent,
-        })
+        }, metadataOverrides)
       }
     } catch (error) {
       console.warn('[POLY-ORDER-PLACE] Failed to persist copied trader metadata', error)

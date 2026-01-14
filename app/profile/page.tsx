@@ -81,7 +81,9 @@ interface CopiedTrade {
   user_closed_at: string | null;
   user_exit_price: number | null;
   resolved_outcome?: string | null;
-  trade_method?: 'quick' | 'manual' | null;
+  trade_method?: 'quick' | 'manual' | 'auto' | null;
+  order_id?: string | null;
+  copied_trade_id?: string | null;
 }
 
 interface PositionSizeBucket {
@@ -169,6 +171,39 @@ function formatContracts(value: number | null | undefined) {
   }).format(value);
 }
 
+function getCopiedTradeTimestamp(trade: CopiedTrade) {
+  const dateValue = trade.copied_at || (trade as any).created_at || null;
+  if (!dateValue) return 0;
+  const parsed = Date.parse(dateValue);
+  if (Number.isNaN(parsed)) return 0;
+  return parsed;
+}
+
+function mergeCopiedTrades(base: CopiedTrade[], extras: CopiedTrade[]) {
+  const map = new Map<string, CopiedTrade>();
+  base.forEach((trade) => map.set(trade.id, trade));
+  extras.forEach((trade) => map.set(trade.id, trade));
+  const merged = Array.from(map.values());
+  merged.sort((a, b) => getCopiedTradeTimestamp(b) - getCopiedTradeTimestamp(a));
+  return merged;
+}
+
+type OrderIdentifier = {
+  column: 'copied_trade_id' | 'order_id';
+  value: string;
+};
+
+function resolveOrderIdentifier(trade: CopiedTrade): OrderIdentifier | null {
+  if (trade.copied_trade_id) {
+    return { column: 'copied_trade_id', value: trade.copied_trade_id };
+  }
+  const fallback = trade.order_id ?? trade.id;
+  if (fallback) {
+    return { column: 'order_id', value: fallback };
+  }
+  return null;
+}
+
 function ProfilePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -186,7 +221,12 @@ function ProfilePageContent() {
   const hasPremiumAccess = tierHasPremiumAccess(featureTier);
   
   // Copied trades state
-  const [copiedTrades, setCopiedTrades] = useState<CopiedTrade[]>([]);
+  const [copiedTradesBase, setCopiedTradesBase] = useState<CopiedTrade[]>([]);
+  const [autoCopyExtras, setAutoCopyExtras] = useState<CopiedTrade[]>([]);
+  const copiedTrades = useMemo(
+    () => mergeCopiedTrades(copiedTradesBase, autoCopyExtras),
+    [copiedTradesBase, autoCopyExtras]
+  );
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(true);
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null);
   const [expandedQuickDetailsId, setExpandedQuickDetailsId] = useState<string | null>(null);
@@ -469,19 +509,71 @@ function ProfilePageContent() {
           };
         });
 
-        setCopiedTrades(tradesWithCorrectRoi);
+        setCopiedTradesBase(tradesWithCorrectRoi);
 
         // Fetch live market data for the trades
         fetchLiveMarketData(tradesWithCorrectRoi);
       } catch (err) {
         console.error('Error fetching portfolio trades:', err);
-        setCopiedTrades([]);
+        setCopiedTradesBase([]);
       } finally {
         setLoadingCopiedTrades(false);
       }
     };
 
     fetchCopiedTrades();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchAutoCopyLogs = async () => {
+      try {
+        const response = await fetch('/api/auto-copy/logs', { cache: 'no-store' });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.error || 'Failed to load auto copy logs');
+        }
+
+        const normalized = (payload?.logs || []).map((log: any) => {
+          const executedAt = log.executed_at || log.created_at || new Date().toISOString();
+          const normalizedTrade: CopiedTrade = {
+            id: log.id,
+            trader_wallet: log.trader_wallet,
+            trader_username: log.trader_username ?? null,
+            trader_profile_image_url: log.trader_profile_image_url ?? null,
+            market_id: log.market_id ?? '',
+            market_title: log.market_title ?? 'Auto copy trade',
+            market_slug: log.market_slug ?? null,
+            market_avatar_url: log.market_avatar_url ?? null,
+            outcome: log.outcome ?? 'Outcome',
+            price_when_copied: Number(log.price ?? log.amount_usd ?? 0) || 0,
+            entry_size: log.size ?? null,
+            amount_invested: log.amount_usd ?? null,
+            copied_at: executedAt,
+            trader_still_has_position: true,
+            trader_closed_at: null,
+            current_price: log.price ?? null,
+            market_resolved: false,
+            market_resolved_at: null,
+            roi: null,
+            pnl_usd: null,
+            user_closed_at: null,
+            user_exit_price: null,
+            resolved_outcome: null,
+            trade_method: 'auto'
+          };
+          (normalizedTrade as any).created_at = log.created_at ?? executedAt;
+          return normalizedTrade;
+        });
+
+        setAutoCopyExtras(normalized);
+      } catch (err) {
+        console.error('Error loading auto copy logs:', err);
+      }
+    };
+
+    fetchAutoCopyLogs();
   }, [user]);
 
   // Fetch quick trades (orders) from /api/orders
@@ -615,7 +707,7 @@ function ProfilePageContent() {
 
     // Apply live prices to open trades so PnL is mark-to-market
     if (newLiveData.size > 0) {
-      setCopiedTrades((prev) =>
+      setCopiedTradesBase((prev) =>
         prev.map((trade) => {
           if (!trade.market_id || trade.user_closed_at || trade.market_resolved) return trade;
           const live = newLiveData.get(trade.market_id);
@@ -1037,7 +1129,7 @@ function ProfilePageContent() {
         })
       );
       
-      setCopiedTrades(tradesWithFreshStatus);
+      setCopiedTradesBase(tradesWithFreshStatus);
       
       // Also refresh live market data
       await fetchLiveMarketData(tradesWithFreshStatus);
@@ -1201,6 +1293,11 @@ function ProfilePageContent() {
   // Edit trade handler
   const handleEditTrade = async (entryPrice: number, amountInvested: number | null) => {
     if (!user || !tradeToEdit) return;
+    const identifier = resolveOrderIdentifier(tradeToEdit);
+    if (!identifier) {
+      console.error('[Profile] Unable to identify trade for edit', tradeToEdit);
+      return;
+    }
     
     try {
       const { error } = await supabase
@@ -1209,13 +1306,13 @@ function ProfilePageContent() {
           price_when_copied: entryPrice,
           amount_invested: amountInvested,
         })
-        .eq('copied_trade_id', tradeToEdit.id)
+        .eq(identifier.column, identifier.value)
         .eq('copy_user_id', user.id);
       
       if (error) throw error;
       
       // Update local state
-      setCopiedTrades(trades =>
+      setCopiedTradesBase(trades =>
         trades.map(t =>
           t.id === tradeToEdit.id
             ? { ...t, price_when_copied: entryPrice, amount_invested: amountInvested }
@@ -1236,6 +1333,11 @@ function ProfilePageContent() {
   // Close trade handler
   const handleCloseTrade = async (exitPrice: number) => {
     if (!user || !tradeToEdit) return;
+    const identifier = resolveOrderIdentifier(tradeToEdit);
+    if (!identifier) {
+      console.error('[Profile] Unable to identify trade for closing', tradeToEdit);
+      return;
+    }
     
     try {
       const roi = ((exitPrice - tradeToEdit.price_when_copied) / tradeToEdit.price_when_copied) * 100;
@@ -1247,13 +1349,13 @@ function ProfilePageContent() {
           user_exit_price: exitPrice,
           roi: parseFloat(roi.toFixed(2)),
         })
-        .eq('copied_trade_id', tradeToEdit.id)
+        .eq(identifier.column, identifier.value)
         .eq('copy_user_id', user.id);
       
       if (error) throw error;
       
       // Update local state
-      setCopiedTrades(trades =>
+      setCopiedTradesBase(trades =>
         trades.map(t =>
           t.id === tradeToEdit.id
             ? {
@@ -1284,6 +1386,12 @@ function ProfilePageContent() {
       return;
     }
     
+    const identifier = resolveOrderIdentifier(trade);
+    if (!identifier) {
+      console.error('[Profile] Unable to identify trade for unmarking closed', trade);
+      return;
+    }
+    
     try {
       const { error } = await supabase
         .from('orders')
@@ -1291,13 +1399,13 @@ function ProfilePageContent() {
           user_closed_at: null,
           user_exit_price: null,
         })
-        .eq('copied_trade_id', trade.id)
+        .eq(identifier.column, identifier.value)
         .eq('copy_user_id', user.id);
       
       if (error) throw error;
       
       // Update local state
-      setCopiedTrades(trades =>
+      setCopiedTradesBase(trades =>
         trades.map(t =>
           t.id === trade.id
             ? {
@@ -1341,7 +1449,7 @@ function ProfilePageContent() {
       }
 
       // Remove from local state
-      setCopiedTrades(trades => trades.filter(t => t.id !== trade.id));
+      setCopiedTradesBase(trades => trades.filter(t => t.id !== trade.id));
 
       setToastMessage(payload.message || 'Trade deleted!');
       setShowToast(true);

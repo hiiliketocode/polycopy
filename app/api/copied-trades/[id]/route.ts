@@ -68,13 +68,24 @@ export async function DELETE(
     }
     
     // Verify the trade belongs to this user before deleting
-    const { data: order, error: fetchError } = await supabase
-      .from(ordersTable)
-      .select('order_id')
-      .eq('copied_trade_id', id)
-      .eq('copy_user_id', userId)
-      .single()
-    
+    const fetchByColumn = async (column: 'copied_trade_id' | 'order_id') => {
+      return supabase
+        .from(ordersTable)
+        .select('order_id')
+        .eq(column, id)
+        .eq('copy_user_id', userId)
+        .maybeSingle()
+    }
+
+    let fetchResult = await fetchByColumn('copied_trade_id')
+    let { data: order, error: fetchError } = fetchResult
+
+    if (!order && !fetchError) {
+      fetchResult = await fetchByColumn('order_id')
+      order = fetchResult.data
+      fetchError = fetchResult.error
+    }
+
     if (fetchError || !order) {
       console.log('❌ Trade not found or unauthorized:', fetchError?.message)
       return NextResponse.json({ error: 'Trade not found or unauthorized' }, { status: 404 })

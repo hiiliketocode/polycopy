@@ -92,9 +92,7 @@ export async function GET(
     // This ensures the user owns the trade before returning any data
     // Read from the enriched view to get derived entry/exit fields for PnL,
     // while still updating the base orders table later.
-    const { data: tradeRow, error: fetchError } = await supabase
-      .from('orders_copy_enriched')
-      .select(`
+    const selectFields = `
         order_id,
         trader_id,
         created_at,
@@ -124,10 +122,32 @@ export async function GET(
         exit_price,
         pnl_pct,
         pnl_usd
-      `)
-      .eq('copied_trade_id', id)
-      .eq('copy_user_id', userId)
-      .single()
+      `
+
+    const buildBaseQuery = () =>
+      supabase
+        .from('orders_copy_enriched')
+        .select(selectFields)
+        .eq('copy_user_id', userId)
+
+    const attemptFetch = async (column: 'copied_trade_id' | 'order_id') => {
+      return buildBaseQuery()
+        .eq(column, id)
+        .maybeSingle()
+    }
+
+    let tradeRow = null
+    let fetchError = null
+
+    let fetchResult = await attemptFetch('copied_trade_id')
+    tradeRow = fetchResult.data
+    fetchError = fetchResult.error
+
+    if (!tradeRow && !fetchError) {
+      fetchResult = await attemptFetch('order_id')
+      tradeRow = fetchResult.data
+      fetchError = fetchResult.error
+    }
 
     if (fetchError || !tradeRow) {
       console.error('❌ Trade not found or unauthorized:', fetchError?.message)
@@ -517,10 +537,18 @@ export async function GET(
       updateData.resolved_outcome = resolvedOutcome
     }
     
+    const identifierColumn: 'copied_trade_id' | 'order_id' = trade.copied_trade_id ? 'copied_trade_id' : 'order_id'
+    const identifierValue = trade.copied_trade_id || trade.order_id || id
+
+    if (!identifierValue) {
+      console.error('❌ Missing identifier for trade', id)
+      return NextResponse.json({ error: 'Trade identifier missing' }, { status: 500 })
+    }
+
     const { data: updatedTrade, error: updateError } = await supabase
       .from(ordersTable)
       .update(updateData)
-      .eq('copied_trade_id', id)
+      .eq(identifierColumn, identifierValue)
       .eq('copy_user_id', userId)  // SECURITY: Only update if it belongs to this user
       .select()
       .single()

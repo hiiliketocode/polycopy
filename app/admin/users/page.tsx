@@ -1,7 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
 import AdminUsersConsole from './AdminUsersConsole'
-import { createClient as createServerClient } from '@/lib/supabase/server'
 import { UserActivityEvent, UserProfile } from './types'
+import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -10,39 +9,6 @@ const MAX_PROFILES = 200
 const MAX_WALLETS = 200
 const MAX_EVENTS = 200
 const MAX_USERS = 200
-
-function createServiceClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    }
-  )
-}
-
-async function getAdminSessionUser() {
-  const supabase = await createServerClient()
-  const { data: { user }, error } = await supabase.auth.getUser()
-  if (error || !user) {
-    return null
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('is_admin')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profileError || !profile?.is_admin) {
-    return null
-  }
-
-  return user
-}
 
 export default async function AdminUsersPage() {
   const adminUser = await getAdminSessionUser()
@@ -57,7 +23,7 @@ export default async function AdminUsersPage() {
     )
   }
 
-  const supabase = createServiceClient()
+  const supabase = createAdminServiceClient()
 
   const [profilesResult, walletsResult] = await Promise.all([
     supabase

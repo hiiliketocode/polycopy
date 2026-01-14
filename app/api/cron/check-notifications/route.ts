@@ -168,7 +168,6 @@ export async function GET(request: NextRequest) {
         user_exit_price,
         created_at
       `)
-      .not('copied_trade_id', 'is', null)
       .not('copy_user_id', 'is', null)
       .or('market_resolved.eq.false,notification_resolved_sent.is.null,notification_resolved_sent.eq.false')
       .or('notification_closed_sent.is.null,notification_closed_sent.eq.false')
@@ -629,6 +628,13 @@ export async function GET(request: NextRequest) {
       invested_usd: trade.invested_usd ?? null,
     }))
 
+    const getTradeIdentifier = (trade: typeof normalizedTrades[number]) => {
+      const column = trade.copied_trade_id ? 'copied_trade_id' : 'order_id'
+      const value = trade.copied_trade_id || trade.order_id || null
+      if (!value) return null
+      return { column, value }
+    }
+
     if (normalizedTrades.length === 0) {
       console.log('ℹ️ No copied trades to check for notifications')
     } else {
@@ -686,6 +692,12 @@ export async function GET(request: NextRequest) {
         }
         
         const statusData = await statusResponse.json()
+
+        const tradeIdentifier = getTradeIdentifier(trade)
+        if (!tradeIdentifier) {
+          console.warn(`⚠️ Skipping trade ${trade.id} - missing identifier`)
+          continue
+        }
         
         console.log(`✅ Status check for trade ${trade.id}:`, {
           traderHasPosition: statusData.traderStillHasPosition,
@@ -723,7 +735,8 @@ export async function GET(request: NextRequest) {
                 notification_closed_sent: true,
                 trader_still_has_position: false
               })
-              .eq('copied_trade_id', trade.id)
+              .eq(tradeIdentifier.column, tradeIdentifier.value)
+              .eq('copy_user_id', trade.user_id)
           } else {
             console.log(`📧 Sending "Trader Closed" email for trade ${trade.id}`)
 
@@ -764,7 +777,8 @@ export async function GET(request: NextRequest) {
                 notification_closed_sent: true,
                 trader_still_has_position: false
               })
-              .eq('copied_trade_id', trade.id)
+              .eq(tradeIdentifier.column, tradeIdentifier.value)
+              .eq('copy_user_id', trade.user_id)
             
             notificationsSent++
             console.log(`✅ Sent "Trader Closed" email for trade ${trade.id} to ${profile.email}`)
@@ -810,7 +824,8 @@ export async function GET(request: NextRequest) {
             await supabase
               .from(ordersTable)
               .update({ market_resolved: true })
-              .eq('copied_trade_id', trade.id)
+              .eq(tradeIdentifier.column, tradeIdentifier.value)
+              .eq('copy_user_id', trade.user_id)
             continue
           }
           
@@ -845,7 +860,8 @@ export async function GET(request: NextRequest) {
                 notification_resolved_sent: true,
                 market_resolved: true
               })
-              .eq('copied_trade_id', trade.id)
+              .eq(tradeIdentifier.column, tradeIdentifier.value)
+              .eq('copy_user_id', trade.user_id)
             
             notificationsSent++
             console.log(`✅ Sent "Market Resolved" email for trade ${trade.id} to ${profile.email}`, {
@@ -867,7 +883,8 @@ export async function GET(request: NextRequest) {
         await supabase
           .from(ordersTable)
           .update({ last_checked_at: new Date().toISOString() })
-          .eq('copied_trade_id', trade.id)
+          .eq(tradeIdentifier.column, tradeIdentifier.value)
+          .eq('copy_user_id', trade.user_id)
         
       } catch (err) {
         console.error(`Error processing trade ${trade.id}:`, err)
