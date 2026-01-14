@@ -63,7 +63,33 @@ export async function GET(
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const trades = (data || []).map((row) => ({
+    type OrderRow = {
+      order_id: string
+      copied_trade_id: string | null
+      copied_trader_wallet: string | null
+      copied_trader_username: string | null
+      market_id: string | null
+      copied_market_title: string | null
+      market_slug: string | null
+      market_avatar_url: string | null
+      outcome: string | null
+      entry_price: number | null
+      entry_size: number | null
+      invested_usd: number | null
+      current_price: number | null
+      market_resolved: boolean | null
+      market_resolved_at: string | null
+      resolved_outcome: string | null
+      trader_still_has_position: boolean | null
+      user_closed_at: string | null
+      user_exit_price: number | null
+      trade_method: string | null
+      side: string | null
+      created_at: string | null
+      price_when_copied: number | null
+    }
+
+    const trades = ((data as OrderRow[]) || []).map((row) => ({
       id: row.copied_trade_id || row.order_id,
       order_id: row.order_id,
       copied_trade_id: row.copied_trade_id,
