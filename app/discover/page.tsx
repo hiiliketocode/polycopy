@@ -50,7 +50,7 @@ function formatDisplayName(name: string, wallet: string): string {
 function DiscoverPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [selectedCategory, setSelectedCategory] = useState('overall');
+  const [selectedCategory, setSelectedCategory] = useState('OVERALL');
   const [user, setUser] = useState<User | null>(null);
   const [isPremium, setIsPremium] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -296,17 +296,17 @@ function DiscoverPageContent() {
     }
   };
 
-  // Category mapping
+  // Category mapping - Polymarket API expects uppercase category names
   const categoryMap: Record<string, string> = {
-    'All': 'overall',
-    'Politics': 'politics',
-    'Sports': 'sports',
-    'Crypto': 'crypto',
-    'Pop Culture': 'culture',
-    'Business': 'finance',
-    'Economics': 'economics',
-    'Tech': 'tech',
-    'Weather': 'weather'
+    'All': 'OVERALL',
+    'Politics': 'POLITICS',
+    'Sports': 'SPORTS',
+    'Crypto': 'CRYPTO',
+    'Pop Culture': 'CULTURE',
+    'Business': 'FINANCE',
+    'Economics': 'ECONOMICS',
+    'Tech': 'TECH',
+    'Weather': 'WEATHER'
   };
 
   const categories = [
@@ -391,6 +391,21 @@ function DiscoverPageContent() {
         profileImageUrl={profileImageUrl}
       />
       <SignupBanner isLoggedIn={!!user} />
+      
+      {/* Logo Header for Non-Logged-In Users */}
+      {!user && (
+        <div className="bg-white border-b border-slate-200">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+            <div className="flex items-center justify-center">
+              <img
+                src="/logos/polycopy-logo-primary.png"
+                alt="Polycopy"
+                className="h-10 sm:h-12 w-auto"
+              />
+            </div>
+          </div>
+        </div>
+      )}
       
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white md:pt-0 pb-20 md:pb-8">
         {/* Hero Section */}

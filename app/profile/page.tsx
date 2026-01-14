@@ -2523,11 +2523,11 @@ function ProfilePageContent() {
                                 </p>
                               </div>
                             </Link>
-                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                            <div className="flex flex-col items-end gap-1.5 shrink-0 max-w-[50%] md:max-w-none">
                               {/* Live Price Display */}
                               {liveMarketData.get(trade.market_id) && (
-                                <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
-                                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Price:</span>
+                                <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm flex-shrink-0">
+                                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide hidden md:inline">Price:</span>
                                   <span className="text-xs font-bold text-slate-900">
                                     ${liveMarketData.get(trade.market_id)!.price.toFixed(2)}
                                   </span>
@@ -2544,22 +2544,23 @@ function ProfilePageContent() {
                                   })()}
                                 </div>
                               )}
-                              <div className="flex items-center gap-2 flex-wrap justify-end">
+                              <div className="flex items-center gap-1.5 md:gap-2 flex-wrap justify-end">
                                 {/* Trade Type Badge */}
                                 <Badge
                                   className={cn(
-                                    "text-[10px] font-semibold uppercase tracking-wide",
+                                    "text-[10px] font-semibold uppercase tracking-wide flex-shrink-0",
                                     trade.type === 'quick'
                                       ? "bg-indigo-50 text-indigo-700 border-indigo-200"
                                       : "bg-amber-50 text-amber-700 border-amber-200"
                                   )}
                                 >
-                                  {trade.type === 'quick' ? 'Quick Copy' : 'Manual Copy'}
+                                  <span className="md:hidden">{trade.type === 'quick' ? 'Quick' : 'Manual'}</span>
+                                  <span className="hidden md:inline">{trade.type === 'quick' ? 'Quick Copy' : 'Manual Copy'}</span>
                                 </Badge>
                                 {/* Status Badge */}
                                 <Badge
                                   className={cn(
-                                    "text-[10px] font-semibold uppercase tracking-wide",
+                                    "text-[10px] font-semibold uppercase tracking-wide flex-shrink-0",
                                     trade.status === 'open' && "bg-emerald-50 text-emerald-700 border-emerald-200",
                                     trade.status === 'user-closed' && "bg-gray-50 text-gray-700 border-gray-200",
                                     trade.status === 'trader-closed' && "bg-orange-50 text-orange-700 border-orange-200",
@@ -2567,10 +2568,17 @@ function ProfilePageContent() {
                                   )}
                                 >
                                   {trade.status === 'open' && 'Open'}
-                                  {trade.status === 'user-closed' && 'User Closed'}
-                                  {trade.status === 'trader-closed' && 'Trader Closed'}
+                                  {trade.status === 'user-closed' && <span className="md:hidden">Closed</span>}
+                                  {trade.status === 'user-closed' && <span className="hidden md:inline">User Closed</span>}
+                                  {trade.status === 'trader-closed' && <span className="md:hidden">T-Closed</span>}
+                                  {trade.status === 'trader-closed' && <span className="hidden md:inline">Trader Closed</span>}
                                   {trade.status === 'resolved' && 'Resolved'}
                                 </Badge>
+                                <span className="text-xs text-slate-500 font-medium whitespace-nowrap flex-shrink-0">
+                                  {formatRelativeTime(trade.created_at)}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 md:gap-2 flex-wrap justify-end mt-1">
                                 {trade.type === 'quick' && trade.raw && (
                                   <button
                                     type="button"
@@ -2579,9 +2587,10 @@ function ProfilePageContent() {
                                         expandedQuickDetailsId === trade.id ? null : trade.id
                                       )
                                     }
-                                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-50"
+                                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-50 flex-shrink-0"
                                   >
-                                    Trade Details
+                                    <span className="md:hidden">Details</span>
+                                    <span className="hidden md:inline">Trade Details</span>
                                     {expandedQuickDetailsId === trade.id ? (
                                       <ChevronUp className="h-3 w-3" />
                                     ) : (
@@ -2589,17 +2598,15 @@ function ProfilePageContent() {
                                     )}
                                   </button>
                                 )}
-                                <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
-                                  {formatRelativeTime(trade.created_at)}
-                                </span>
                                 {trade.type === 'manual' && (
                                   <Button
                                     onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
                                     variant="outline"
                                     size="sm"
-                                    className="h-7 px-2 text-xs font-semibold"
+                                    className="h-7 px-2 text-xs font-semibold flex-shrink-0"
                                   >
-                                    Edit Trade
+                                    <span className="md:hidden">Edit</span>
+                                    <span className="hidden md:inline">Edit Trade</span>
                                   </Button>
                                 )}
                               </div>
@@ -2609,19 +2616,20 @@ function ProfilePageContent() {
 
                         {/* For manual trades without trader info, show badges in a simpler header */}
                         {!trade.trader_wallet && (
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
+                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                            <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
                               <Badge
                                 className={cn(
-                                  "text-[10px] font-semibold uppercase tracking-wide",
+                                  "text-[10px] font-semibold uppercase tracking-wide flex-shrink-0",
                                   "bg-amber-50 text-amber-700 border-amber-200"
                                 )}
                               >
-                                Manual Copy
+                                <span className="md:hidden">Manual</span>
+                                <span className="hidden md:inline">Manual Copy</span>
                               </Badge>
                               <Badge
                                 className={cn(
-                                  "text-[10px] font-semibold uppercase tracking-wide",
+                                  "text-[10px] font-semibold uppercase tracking-wide flex-shrink-0",
                                   trade.status === 'open' && "bg-emerald-50 text-emerald-700 border-emerald-200",
                                   trade.status === 'user-closed' && "bg-gray-50 text-gray-700 border-gray-200",
                                   trade.status === 'trader-closed' && "bg-orange-50 text-orange-700 border-orange-200",
@@ -2629,8 +2637,10 @@ function ProfilePageContent() {
                                 )}
                               >
                                 {trade.status === 'open' && 'Open'}
-                                {trade.status === 'user-closed' && 'User Closed'}
-                                {trade.status === 'trader-closed' && 'Trader Closed'}
+                                {trade.status === 'user-closed' && <span className="md:hidden">Closed</span>}
+                                {trade.status === 'user-closed' && <span className="hidden md:inline">User Closed</span>}
+                                {trade.status === 'trader-closed' && <span className="md:hidden">T-Closed</span>}
+                                {trade.status === 'trader-closed' && <span className="hidden md:inline">Trader Closed</span>}
                                 {trade.status === 'resolved' && 'Resolved'}
                               </Badge>
                               {trade.type === 'quick' && trade.raw && (
@@ -2641,9 +2651,10 @@ function ProfilePageContent() {
                                       expandedQuickDetailsId === trade.id ? null : trade.id
                                     )
                                   }
-                                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-50"
+                                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-50 flex-shrink-0"
                                 >
-                                  Trade Details
+                                  <span className="md:hidden">Details</span>
+                                  <span className="hidden md:inline">Trade Details</span>
                                   {expandedQuickDetailsId === trade.id ? (
                                     <ChevronUp className="h-3 w-3" />
                                   ) : (
@@ -2652,16 +2663,16 @@ function ProfilePageContent() {
                                 </button>
                               )}
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
                               {liveMarketData.get(trade.market_id) && (
-                                <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
-                                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Price:</span>
+                                <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm flex-shrink-0">
+                                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide hidden md:inline">Price:</span>
                                   <span className="text-xs font-bold text-slate-900">
                                     ${liveMarketData.get(trade.market_id)!.price.toFixed(2)}
                                   </span>
                                 </div>
                               )}
-                              <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
+                              <span className="text-xs text-slate-500 font-medium whitespace-nowrap flex-shrink-0">
                                 {formatRelativeTime(trade.created_at)}
                               </span>
                               {trade.type === 'manual' && (
@@ -2669,9 +2680,10 @@ function ProfilePageContent() {
                                   onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
                                   variant="outline"
                                   size="sm"
-                                  className="h-7 px-2 text-xs font-semibold"
+                                  className="h-7 px-2 text-xs font-semibold flex-shrink-0"
                                 >
-                                  Edit Trade
+                                  <span className="md:hidden">Edit</span>
+                                  <span className="hidden md:inline">Edit Trade</span>
                                 </Button>
                               )}
                             </div>

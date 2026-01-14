@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import { ArrowLeft } from 'lucide-react'
 
 // Formatted trader from Polymarket leaderboard
 interface FormattedTrader {
@@ -345,6 +346,13 @@ export default function AdminDashboardClient({ data }: AdminDashboardClientProps
     <div className="min-h-screen bg-[#111827] text-white p-4 md:p-8">
       {/* Header */}
       <div className="max-w-7xl mx-auto mb-8">
+        <button
+          onClick={() => router.back()}
+          className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-6"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span className="text-sm font-medium">Back</span>
+        </button>
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-white mb-1">

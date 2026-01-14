@@ -67,8 +67,8 @@ export default function AutoCloseFailedEmail({
             </Section>
 
             <Section style={buttonContainer}>
-              <Link href={tradeUrl} style={primaryButton}>
-                Open Quick Trades to close manually
+              <Link href="https://polycopy.app/profile" style={primaryButton}>
+                Go to Profile to close manually
               </Link>
             </Section>
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,6 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { Navigation } from '@/components/polycopy/navigation'
 import { AutoCopyConfig, AutoCopyLog, TraderSummary } from './types'
+import { ArrowLeft } from 'lucide-react'
 
 type Props = {
   traders: TraderSummary[]
@@ -318,6 +320,8 @@ export default function AutoCopyAdminConsole({ traders, configs, adminUser }: Pr
 
   const displayedLogs = filteredLogs.slice(0, 12)
 
+  const router = useRouter()
+
   return (
     <>
       <Navigation
@@ -328,6 +332,13 @@ export default function AutoCopyAdminConsole({ traders, configs, adminUser }: Pr
       />
       <main className="bg-gradient-to-b from-white to-slate-50 pb-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 space-y-10">
+          <button
+            onClick={() => router.back()}
+            className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors mb-4"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="text-sm font-medium">Back</span>
+          </button>
           <header className="space-y-2">
             <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Auto Copy</p>
             <h1 className="text-3xl font-semibold text-slate-900">Auto Copy Simulator</h1>

@@ -1,7 +1,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { UserActivityEvent, UserProfile } from './types'
+import { ArrowLeft } from 'lucide-react'
 
 type Tab = 'activity' | 'users'
 
@@ -53,6 +55,7 @@ type AdminUsersConsoleProps = {
 }
 
 export default function AdminUsersConsole({ users, events }: AdminUsersConsoleProps) {
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<Tab>('activity')
 
   const summary = useMemo(() => {
@@ -65,6 +68,13 @@ export default function AdminUsersConsole({ users, events }: AdminUsersConsolePr
   return (
     <div className="min-h-screen bg-[#05070E] text-white p-6 md:p-10">
       <div className="max-w-6xl mx-auto space-y-6">
+        <button
+          onClick={() => router.back()}
+          className="inline-flex items-center gap-2 text-slate-300 hover:text-white transition-colors mb-4"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span className="text-sm font-medium">Back</span>
+        </button>
         <header className="space-y-2">
           <p className="text-sm uppercase tracking-[0.3em] text-[#94a3b8]">Admin Console</p>
           <h1 className="text-3xl font-semibold">Users & Change States</h1>
