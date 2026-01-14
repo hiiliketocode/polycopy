@@ -1009,8 +1009,13 @@ export async function POST(request: NextRequest) {
             : null
         const fetchedStatus =
           typeof clobOrder?.status === 'string' ? clobOrder.status.toLowerCase() : null
+        const createdAtIndex = clobOrder?.created_at
         const fetchedCreatedAt = normalizeTimestamp(
-          clobOrder?.created_at ?? clobOrder?.createdAt ?? null
+          createdAtIndex != null
+            ? typeof createdAtIndex === 'number'
+              ? new Date(createdAtIndex)
+              : createdAtIndex
+            : null
         )
 
         metadataOverrides = {
