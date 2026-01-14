@@ -986,11 +986,29 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`[AUTO-CLOSE] Processing ${openOrders?.length || 0} orders for auto-close...`)
-    for (const order of openOrders || []) {
-      console.log(`[AUTO-CLOSE] Processing order ${order.order_id}...`)
-      await attemptAutoCloseFromOrder(order)
+    console.error(`[AUTO-CLOSE] Processing ${openOrders?.length || 0} orders for auto-close...`)
+    
+    if (!openOrders || openOrders.length === 0) {
+      console.log(`[AUTO-CLOSE] No orders to process`)
+      console.error(`[AUTO-CLOSE] No orders to process`)
+    } else {
+      console.log(`[AUTO-CLOSE] Starting loop, will process ${openOrders.length} orders`)
+      console.error(`[AUTO-CLOSE] Starting loop, will process ${openOrders.length} orders`)
+      
+      for (const order of openOrders) {
+        console.log(`[AUTO-CLOSE] Processing order ${order.order_id}...`)
+        console.error(`[AUTO-CLOSE] Processing order ${order.order_id}...`)
+        try {
+          await attemptAutoCloseFromOrder(order)
+        } catch (orderError: any) {
+          console.error(`[AUTO-CLOSE] Error processing order ${order.order_id}:`, orderError)
+          console.error(`[AUTO-CLOSE] Error stack:`, orderError?.stack)
+        }
+      }
     }
+    
     console.log(`[AUTO-CLOSE] Finished processing all orders`)
+    console.error(`[AUTO-CLOSE] Finished processing all orders`)
     } catch (autoCloseError: any) {
       console.error(`[AUTO-CLOSE] ERROR in auto-close section:`, autoCloseError)
       console.error(`[AUTO-CLOSE] Error stack:`, autoCloseError?.stack)
