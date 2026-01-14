@@ -972,6 +972,11 @@ export async function GET(request: NextRequest) {
       await attemptAutoCloseFromOrder(order)
     }
     console.log(`[AUTO-CLOSE] Finished processing all orders`)
+    } catch (autoCloseError: any) {
+      console.error(`[AUTO-CLOSE] ERROR in auto-close section:`, autoCloseError)
+      console.error(`[AUTO-CLOSE] Error stack:`, autoCloseError?.stack)
+      // Don't throw - continue with the rest of the function
+    }
     
     console.log(`✅ Notification check complete. Checked ${tradesChecked}, sent ${notificationsSent} emails.`)
     
