@@ -2008,7 +2008,7 @@ export default function TraderProfilePage({
                               className="cursor-pointer hover:opacity-80 transition-opacity"
                               onMouseEnter={() => setHoveredBucket({ range: bucket.range, count: bucket.count, percentage: bucket.percentage, x: x + barWidth / 2, y })}
                               onMouseLeave={() => setHoveredBucket(null)}
-                            />
+                      />
                           );
                         })}
                     </svg>
@@ -2114,7 +2114,7 @@ export default function TraderProfilePage({
                         <p className="text-xs text-slate-500">
                           {categoryDistribution.find(c => c.category === hoveredCategory)?.count} trades
                         </p>
-                      </div>
+                  </div>
                     )}
                   </div>
 
