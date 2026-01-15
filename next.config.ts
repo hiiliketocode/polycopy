@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     '/api/cron/backfill-wallet-pnl': [
       './scripts/backfill-wallet-pnl.js',
       './node_modules/@supabase/**',
+      './node_modules/tslib/**',
       './node_modules/ws/**'
     ]
   },

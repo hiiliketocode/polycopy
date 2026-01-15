@@ -97,25 +97,33 @@ async function fetchWithRetry(url, options, attempt = 1) {
   }
 }
 
-async function seedQueueFromTrades() {
-  let from = 0
+async function seedQueueFromTradesLegacy() {
   let pages = 0
   let totalRows = 0
   let totalInserted = 0
+  let lastId = null
 
   console.log('🌱 Seeding market_fetch_queue from trades...')
 
   while (true) {
-    const { data, error } = await supabase
+    let query = supabase
       .from('trades')
-      .select('condition_id')
+      .select('id, condition_id')
       .not('condition_id', 'is', null)
-      .range(from, from + SEED_PAGE_LIMIT - 1)
+      .order('id', { ascending: true })
+      .limit(SEED_PAGE_LIMIT)
+
+    if (lastId) {
+      query = query.gt('id', lastId)
+    }
+
+    const { data, error } = await query
 
     if (error) throw error
     if (!data || data.length === 0) break
 
     totalRows += data.length
+    lastId = data[data.length - 1]?.id || lastId
     const uniqueIds = Array.from(new Set(data.map((row) => row.condition_id).filter(Boolean)))
 
     for (let i = 0; i < uniqueIds.length; i += INSERT_BATCH_SIZE) {
@@ -137,11 +145,21 @@ async function seedQueueFromTrades() {
     pages += 1
     if (data.length < SEED_PAGE_LIMIT) break
     if (SEED_MAX_PAGES && pages >= SEED_MAX_PAGES) break
-
-    from += data.length
   }
 
   console.log(`🌱 Queue seed complete. pages=${pages} rows=${totalRows} inserted=${totalInserted}`)
+}
+
+async function seedQueueFromTrades() {
+  console.log('🌱 Seeding market_fetch_queue from trades (DB-side)...')
+  const { data, error } = await supabase.rpc('enqueue_market_fetch_queue_from_trades')
+
+  if (error) {
+    console.warn(`⚠️  RPC seed failed (${error.message}); falling back to client-side seed`)
+    return seedQueueFromTradesLegacy()
+  }
+
+  console.log(`🌱 Queue seed complete. inserted=${data ?? 0}`)
 }
 
 function canAttempt(row, nowMs) {
