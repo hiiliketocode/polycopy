@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   console.log('📊 Starting wallet PnL backfill...')
 
-  return new Promise((resolve) => {
+  return new Promise<NextResponse>((resolve) => {
     const scriptPath = join(process.cwd(), 'scripts', 'backfill-wallet-pnl.js')
     const child = spawn('node', [scriptPath], {
       cwd: process.cwd(),
