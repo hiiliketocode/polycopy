@@ -169,8 +169,9 @@ export async function GET(request: NextRequest) {
         created_at
       `)
       .not('copy_user_id', 'is', null)
-      .or('market_resolved.eq.false,notification_resolved_sent.is.null,notification_resolved_sent.eq.false')
-      .or('notification_closed_sent.is.null,notification_closed_sent.eq.false')
+      .or(
+        'market_resolved.eq.false,notification_resolved_sent.is.null,notification_resolved_sent.eq.false,notification_closed_sent.is.null,notification_closed_sent.eq.false'
+      )
       .limit(100)
     
     if (error) {

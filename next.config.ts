@@ -3,6 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Empty turbopack config to allow webpack config to be used
   turbopack: {},
+  outputFileTracingIncludes: {
+    '/api/cron/backfill-wallet-pnl': [
+      './scripts/backfill-wallet-pnl.js',
+      './node_modules/@supabase/**',
+      './node_modules/ws/**'
+    ]
+  },
   
   webpack: (config) => {
     // Add fallbacks for Node.js modules that crypto libraries need

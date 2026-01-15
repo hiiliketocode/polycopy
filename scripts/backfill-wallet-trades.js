@@ -16,7 +16,7 @@
  *   SUPABASE_SERVICE_ROLE_KEY
  * 
  * Usage:
- *   node scripts/backfill-wallet-trades.js [--wallet <0x...>] [--days 30] [--start-time <unix>] [--end-time <unix>] [--fetch-all] [--select-days 30] [--select-start-time <unix>] [--select-end-time <unix>] [--max-wallets 10] [--reset-progress]
+ *   node scripts/backfill-wallet-trades.js [--wallet <0x...>] [--days 30] [--start-time <unix>] [--end-time <unix>] [--fetch-all] [--select-days 30] [--select-start-time <unix>] [--select-end-time <unix>] [--max-wallets 10] [--limit 1000] [--concurrency 5] [--reset-progress]
  */
 
 const fs = require('fs')
@@ -43,9 +43,11 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 const BASE_URL = 'https://api.domeapi.io/v1'
 const SLEEP_MS = 300 // Rate limiting (slightly slower to be safe)
 const MAX_RETRIES = 3
-const BATCH_SIZE = 100 // Dome API limit per request
-const INSERT_BATCH_SIZE = 500 // Supabase batch insert size
-const REQUEST_TIMEOUT_MS = 30000 // 30 second timeout
+const DEFAULT_DOME_LIMIT = 1000
+const MAX_DOME_LIMIT = 1000
+const DEFAULT_WALLET_CONCURRENCY = 5
+const INSERT_BATCH_SIZE = 3000 // Supabase batch insert size (tune 2000-5000)
+const REQUEST_TIMEOUT_MS = 60000 // 60 second timeout
 const PROGRESS_FILE = path.join(__dirname, '.backfill-progress.json')
 const DEFAULT_LOOKBACK_DAYS = 30
 const RECENT_TRADES_PAGE_SIZE = 1000
@@ -53,7 +55,7 @@ const TRADER_CHUNK_SIZE = 500
 const RECENT_ACTIVITY_TABLE = 'trades_public'
 const RECENT_ACTIVITY_WALLET_COLUMN = 'trader_wallet'
 const RECENT_ACTIVITY_TIME_COLUMN = 'trade_timestamp'
-const PROGRESS_SAVE_EVERY_PAGES = 5
+const PROGRESS_SAVE_EVERY_PAGES = 50
 
 function toNumber(value) {
   const num = Number(value)
@@ -99,6 +101,14 @@ function parseArgs() {
         parsed.maxWallets = toNumber(nextValue)
         if (!rawValue) i++
         break
+      case '--limit':
+        parsed.limit = toNumber(nextValue)
+        if (!rawValue) i++
+        break
+      case '--concurrency':
+        parsed.concurrency = toNumber(nextValue)
+        if (!rawValue) i++
+        break
       case '--select-days':
         parsed.selectDays = toNumber(nextValue)
         if (!rawValue) i++
@@ -122,12 +132,22 @@ function parseArgs() {
 const args = parseArgs()
 const NOW_TS = Math.floor(Date.now() / 1000)
 const ENV_LOOKBACK_DAYS = toNumber(process.env.DOME_LOOKBACK_DAYS)
+const ENV_DOME_LIMIT = toNumber(process.env.DOME_ORDERS_LIMIT)
+const ENV_WALLET_CONCURRENCY = toNumber(process.env.DOME_WALLET_CONCURRENCY)
 const ENV_SELECT_LOOKBACK_DAYS = toNumber(process.env.DOME_SELECT_LOOKBACK_DAYS)
 const ENV_SELECT_START_TIME = toNumber(process.env.DOME_SELECT_START_TIME)
 const ENV_SELECT_END_TIME = toNumber(process.env.DOME_SELECT_END_TIME)
 const ENV_START_TIME = toNumber(process.env.DOME_START_TIME)
 const ENV_END_TIME = toNumber(process.env.DOME_END_TIME)
 const FETCH_ALL = args.fetchAll === true
+const REQUEST_LIMIT = Number.isFinite(args.limit)
+  ? args.limit
+  : (Number.isFinite(ENV_DOME_LIMIT) ? ENV_DOME_LIMIT : DEFAULT_DOME_LIMIT)
+const BATCH_SIZE = Math.max(1, Math.min(MAX_DOME_LIMIT, Math.floor(REQUEST_LIMIT)))
+const WALLET_CONCURRENCY = Number.isFinite(args.concurrency)
+  ? args.concurrency
+  : (Number.isFinite(ENV_WALLET_CONCURRENCY) ? ENV_WALLET_CONCURRENCY : DEFAULT_WALLET_CONCURRENCY)
+const WALLET_WORKERS = Math.max(1, Math.floor(WALLET_CONCURRENCY))
 const LOOKBACK_DAYS = Number.isFinite(args.days) ? args.days : (Number.isFinite(ENV_LOOKBACK_DAYS) ? ENV_LOOKBACK_DAYS : DEFAULT_LOOKBACK_DAYS)
 const START_TIME = FETCH_ALL
   ? null
@@ -245,43 +265,6 @@ async function fetchWithRetry(url, options, attempt = 1) {
     }
     throw error
   }
-}
-
-/**
- * Get existing order_hashes for a wallet (for idempotency)
- */
-async function getExistingOrderHashes(wallet, window) {
-  let query = supabase
-    .from('trades')
-    .select('order_hash, tx_hash')
-    .eq('wallet_address', wallet.toLowerCase())
-
-  if (window?.startTime) {
-    query = query.gte('timestamp', new Date(window.startTime * 1000).toISOString())
-  }
-  if (window?.endTime) {
-    query = query.lte('timestamp', new Date(window.endTime * 1000).toISOString())
-  }
-
-  const { data, error } = await query
-
-  if (error) {
-    console.warn(`   ⚠️  Could not check existing trades: ${error.message}`)
-    return new Set()
-  }
-
-  // Create set of order_hashes (and tx_hash as fallback for null order_hash)
-  const existing = new Set()
-  ;(data || []).forEach(row => {
-    if (row.order_hash) {
-      existing.add(row.order_hash)
-    } else if (row.tx_hash) {
-      // For null order_hash, use tx_hash as identifier
-      existing.add(`tx:${row.tx_hash}`)
-    }
-  })
-
-  return existing
 }
 
 /**
@@ -445,22 +428,6 @@ function mapDomeEventToFillRow(event) {
   }
 }
 
-/**
- * Filter out trades that already exist (real idempotency)
- */
-function filterNewTrades(orders, existingHashes) {
-  return orders.filter(order => {
-    if (order.order_hash) {
-      return !existingHashes.has(order.order_hash)
-    } else if (order.tx_hash) {
-      // For null order_hash, use tx_hash as identifier
-      return !existingHashes.has(`tx:${order.tx_hash}`)
-    }
-    // If both are null, include it (shouldn't happen, but be safe)
-    return true
-  })
-}
-
 function filterOrdersByWindow(orders, startTime, endTime) {
   if (!startTime && !endTime) return orders
   return orders.filter(order => {
@@ -496,10 +463,13 @@ async function ingestTradesBatch(orders) {
     const batch = rows.slice(i, i + INSERT_BATCH_SIZE)
 
     // Try with shares first
-    let { data, error } = await supabase
+    let { error, count } = await supabase
       .from('trades')
-      .insert(batch)
-      .select('id')
+      .upsert(batch, {
+        onConflict: 'wallet_address,trade_uid',
+        ignoreDuplicates: true,
+        count: 'exact'
+      })
 
     // If error about shares column, remove it and retry
     if (error && error.message && error.message.includes('shares')) {
@@ -510,37 +480,21 @@ async function ingestTradesBatch(orders) {
 
       const retry = await supabase
         .from('trades')
-        .insert(batchWithoutShares)
-        .select('id')
+        .upsert(batchWithoutShares, {
+          onConflict: 'wallet_address,trade_uid',
+          ignoreDuplicates: true,
+          count: 'exact'
+        })
 
-      data = retry.data
       error = retry.error
+      count = retry.count
     }
 
     if (error) {
-      if (error.code === '23505') {
-        // Duplicates - try individual inserts to count new ones
-        let inserted = 0
-        for (const row of batch) {
-          try {
-            const { error: insertError } = await supabase
-              .from('trades')
-              .insert(row)
-              .select('id')
-              .single()
-
-            if (!insertError) inserted++
-          } catch (err) {
-            // Ignore duplicates
-          }
-        }
-        totalInserted += inserted
-      } else {
-        console.error(`   ❌ Batch insert error:`, error.message)
-        throw error
-      }
+      console.error(`   ❌ Batch upsert error:`, error.message)
+      throw error
     } else {
-      totalInserted += data?.length || 0
+      totalInserted += count ?? 0
     }
   }
 
@@ -570,11 +524,7 @@ async function processWallet(wallet, index, total, progress, window) {
       console.log(`   🔁 Resuming at offset ${offset} (page ${pageCount})`)
     }
 
-    // Check existing trades (real idempotency)
-    console.log(`   🔍 Checking existing trades...`)
-    const existingHashes = await getExistingOrderHashes(wallet, window)
-    const existingCount = existingHashes.size
-    console.log(`   ℹ️  Found ${existingCount} existing trades`)
+    console.log(`   🔍 Using DB idempotency (no pre-check)`)
 
     // Fetch trades page-by-page
     console.log(`   📡 Fetching trades from Dome API...`)
@@ -598,17 +548,9 @@ async function processWallet(wallet, index, total, progress, window) {
           break
         }
 
-        const newOrders = filterNewTrades(filteredOrders, existingHashes)
-        if (newOrders.length > 0) {
-          const inserted = await ingestTradesBatch(newOrders)
+        if (filteredOrders.length > 0) {
+          const inserted = await ingestTradesBatch(filteredOrders)
           totalInserted += inserted
-          newOrders.forEach(order => {
-            if (order.order_hash) {
-              existingHashes.add(order.order_hash)
-            } else if (order.tx_hash) {
-              existingHashes.add(`tx:${order.tx_hash}`)
-            }
-          })
         }
 
         offset += orders.length
@@ -734,27 +676,23 @@ async function main() {
       walletsToProcess = walletsToProcess.slice(0, MAX_WALLETS)
     }
     
-    console.log(`📋 Processing ${walletsToProcess.length} wallets (${progress.completedWallets.length} already completed)\n`)
+    console.log(`📋 Processing ${walletsToProcess.length} wallets (${progress.completedWallets.length} already completed) with concurrency ${WALLET_WORKERS}\n`)
 
-    const results = []
+    const walletIndexByAddress = new Map(allWallets.map((wallet, idx) => [wallet, idx]))
+    const results = new Array(walletsToProcess.length)
     let successCount = 0
     let failCount = 0
     let totalFetched = 0
     let totalInserted = 0
+    let progressUpdate = Promise.resolve()
 
-    // Process each wallet
-    for (let i = 0; i < walletsToProcess.length; i++) {
-      const wallet = walletsToProcess[i]
-      const globalIndex = allWallets.indexOf(wallet)
-      
-      const result = await processWallet(wallet, globalIndex, allWallets.length, progress, fetchWindow)
-      results.push(result)
-
+    const recordResult = (result, wallet, localIndex) => {
+      results[localIndex] = result
       if (result.success) {
         successCount++
         totalFetched += result.fetched || 0
         totalInserted += result.inserted || 0
-        
+
         // Mark as completed
         if (!progress.completedWallets.includes(wallet)) {
           progress.completedWallets.push(wallet)
@@ -771,12 +709,34 @@ async function main() {
 
       // Save progress after each wallet
       saveProgress(progress)
-
-      // Rate limiting between wallets
-      if (i < walletsToProcess.length - 1) {
-        await sleep(SLEEP_MS)
-      }
     }
+
+    const queueProgressUpdate = (result, wallet, localIndex) => {
+      progressUpdate = progressUpdate
+        .then(() => recordResult(result, wallet, localIndex))
+        .catch((err) => {
+          console.error('Failed to update progress:', err.message || err)
+        })
+      return progressUpdate
+    }
+
+    const runPool = async (items, limit, handler) => {
+      let nextIndex = 0
+      const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (true) {
+          const current = nextIndex++
+          if (current >= items.length) break
+          await handler(items[current], current)
+        }
+      })
+      await Promise.all(workers)
+    }
+
+    await runPool(walletsToProcess, WALLET_WORKERS, async (wallet, localIndex) => {
+      const globalIndex = walletIndexByAddress.get(wallet) ?? localIndex
+      const result = await processWallet(wallet, globalIndex, allWallets.length, progress, fetchWindow)
+      await queueProgressUpdate(result, wallet, localIndex)
+    })
 
     // Final summary
     console.log('\n' + '='.repeat(60))
