@@ -53,8 +53,10 @@ const BATCH_SIZE = Math.max(1, toNumber(process.env.BATCH_SIZE) || 200)
 const CONCURRENCY = Math.max(1, toNumber(process.env.CONCURRENCY) || 5)
 const SLEEP_MS = Math.max(0, toNumber(process.env.SLEEP_MS) || 200)
 const SEED_FROM_TRADES = process.env.SEED_FROM_TRADES !== 'false'
-const SEED_PAGE_SIZE = Math.max(100, toNumber(process.env.SEED_PAGE_SIZE) || 1000)
+const SEED_PAGE_SIZE = Math.max(100, toNumber(process.env.SEED_PAGE_SIZE) || 500)
 const SEED_PAGE_LIMIT = Math.min(SEED_PAGE_SIZE, 1000)
+const SEED_USE_PAGED_RPC = process.env.SEED_USE_PAGED_RPC !== 'false'
+const SKIP_SEED_WHEN_QUEUE_HAS_PENDING = process.env.SKIP_SEED_WHEN_QUEUE_HAS_PENDING !== 'false'
 const SEED_MAX_PAGES = toNumber(process.env.SEED_MAX_PAGES)
 const INSERT_BATCH_SIZE = Math.max(100, toNumber(process.env.INSERT_BATCH_SIZE) || 1000)
 const MAX_RETRIES = Math.max(1, toNumber(process.env.MAX_RETRIES) || 3)
@@ -101,20 +103,20 @@ async function seedQueueFromTradesLegacy() {
   let pages = 0
   let totalRows = 0
   let totalInserted = 0
-  let lastId = null
+  let lastConditionId = null
 
   console.log('🌱 Seeding market_fetch_queue from trades...')
 
   while (true) {
     let query = supabase
       .from('trades')
-      .select('id, condition_id')
+      .select('condition_id')
       .not('condition_id', 'is', null)
-      .order('id', { ascending: true })
+      .order('condition_id', { ascending: true })
       .limit(SEED_PAGE_LIMIT)
 
-    if (lastId) {
-      query = query.gt('id', lastId)
+    if (lastConditionId) {
+      query = query.gt('condition_id', lastConditionId)
     }
 
     const { data, error } = await query
@@ -123,7 +125,7 @@ async function seedQueueFromTradesLegacy() {
     if (!data || data.length === 0) break
 
     totalRows += data.length
-    lastId = data[data.length - 1]?.id || lastId
+    lastConditionId = data[data.length - 1]?.condition_id || lastConditionId
     const uniqueIds = Array.from(new Set(data.map((row) => row.condition_id).filter(Boolean)))
 
     for (let i = 0; i < uniqueIds.length; i += INSERT_BATCH_SIZE) {
@@ -151,6 +153,11 @@ async function seedQueueFromTradesLegacy() {
 }
 
 async function seedQueueFromTrades() {
+  if (SEED_USE_PAGED_RPC) {
+    const ok = await seedQueueFromTradesPagedRpc()
+    if (ok) return
+  }
+
   console.log('🌱 Seeding market_fetch_queue from trades (DB-side)...')
   const { data, error } = await supabase.rpc('enqueue_market_fetch_queue_from_trades')
 
@@ -160,6 +167,48 @@ async function seedQueueFromTrades() {
   }
 
   console.log(`🌱 Queue seed complete. inserted=${data ?? 0}`)
+}
+
+async function seedQueueFromTradesPagedRpc() {
+  console.log('🌱 Seeding market_fetch_queue from trades (paged RPC)...')
+  let pages = 0
+  let totalInserted = 0
+  let lastConditionId = null
+
+  while (true) {
+    const { data, error } = await supabase.rpc(
+      'enqueue_market_fetch_queue_from_trades_page',
+      {
+        p_after_condition_id: lastConditionId,
+        p_limit: SEED_PAGE_LIMIT
+      }
+    )
+
+    if (error) {
+      console.warn(`⚠️  Paged RPC seed failed (${error.message}); falling back`)
+      return false
+    }
+
+    const row = Array.isArray(data) ? data[0] : data
+    const inserted = Number(row?.inserted_count || 0)
+    const nextCursor = row?.last_condition_id || null
+
+    totalInserted += inserted
+    pages += 1
+
+    if (!nextCursor || nextCursor === lastConditionId) {
+      break
+    }
+
+    lastConditionId = nextCursor
+
+    if (SEED_MAX_PAGES && pages >= SEED_MAX_PAGES) {
+      break
+    }
+  }
+
+  console.log(`🌱 Queue seed complete. pages=${pages} inserted=${totalInserted}`)
+  return true
 }
 
 function canAttempt(row, nowMs) {
@@ -202,7 +251,7 @@ async function pickQueueBatch(limit) {
     if (updateError) throw updateError
   }
 
-  return selected
+  return Array.from(new Set(selected))
 }
 
 async function fetchGammaMarket(conditionId) {
@@ -289,7 +338,21 @@ async function main() {
   console.log('🚀 Starting Gamma market backfill')
 
   if (SEED_FROM_TRADES) {
-    await seedQueueFromTrades()
+    if (SKIP_SEED_WHEN_QUEUE_HAS_PENDING) {
+      const { count, error } = await supabase
+        .from('market_fetch_queue')
+        .select('condition_id', { count: 'exact', head: true })
+        .eq('fetched', false)
+      if (error) throw error
+
+      if (count && count > 0) {
+        console.log(`ℹ️  Queue already has ${count} pending rows; skipping seed`)
+      } else {
+        await seedQueueFromTrades()
+      }
+    } else {
+      await seedQueueFromTrades()
+    }
   } else {
     console.log('ℹ️  Skipping queue seed (SEED_FROM_TRADES=false)')
   }

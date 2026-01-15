@@ -239,7 +239,7 @@ async function loadActiveTraders() {
   return (data || []).map((r) => r.wallet_address).filter(Boolean)
 }
 
-async function main() {
+async function runBackfillWalletPnl() {
   const wallets = await loadActiveTraders()
   console.log(`Found ${wallets.length} active traders; starting backfill...`)
 
@@ -260,9 +260,15 @@ async function main() {
 
   console.log(`Backfill complete. Wallets processed: ${processed}, rows upserted: ${totalRows}.`)
   console.log('Reminder: run the 90d PnL/rank SQL to refresh ranks after backfill.')
+
+  return { processed, totalRows }
 }
 
-main().catch((err) => {
-  console.error('Backfill error:', err)
-  process.exit(1)
-})
+module.exports = { runBackfillWalletPnl }
+
+if (require.main === module) {
+  runBackfillWalletPnl().catch((err) => {
+    console.error('Backfill error:', err)
+    process.exit(1)
+  })
+}
