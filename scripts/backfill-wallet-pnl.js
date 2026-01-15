@@ -18,11 +18,20 @@
 
 const fs = require('fs')
 const path = require('path')
-const dotenv = require('dotenv')
+let dotenv = null
+try {
+  dotenv = require('dotenv')
+} catch (err) {
+  if (err?.code !== 'MODULE_NOT_FOUND') {
+    throw err
+  }
+}
 const { createClient } = require('@supabase/supabase-js')
 
 const envPath = path.resolve(process.cwd(), '.env.local')
-dotenv.config(fs.existsSync(envPath) ? { path: envPath } : {})
+if (dotenv && fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath })
+}
 
 const DOME_API_KEY = process.env.DOME_API_KEY
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
