@@ -1,0 +1,28 @@
+{
+  "completedWallets": [
+    "0x6a72f61820b26b1fe4d956e17b6dc2a1ea3033ee",
+    "0x14964aefa2cd7caff7878b3820a690a03c5aa429"
+  ],
+  "failedWallets": [],
+  "startTime": 1768440901155,
+  "selectionWindow": {
+    "startTime": 1765848901,
+    "endTime": 1768440901,
+    "lookbackDays": 30
+  },
+  "fetchWindow": {
+    "startTime": null,
+    "endTime": null,
+    "lookbackDays": 30,
+    "mode": "all"
+  },
+  "walletStates": {
+    "0x204f72f35326db932158cba6adff0b9a1da95e14": {
+      "offset": 128400,
+      "pageCount": 1285,
+      "fetched": 128400,
+      "inserted": 118448,
+      "updatedAt": 1768449915994
+    }
+  }
+}
