@@ -1,4 +1,5 @@
 import { ClobClient } from '@polymarket/clob-client'
+import { BuilderConfig } from '@polymarket/builder-signing-sdk'
 import { TurnkeySigner } from './turnkey-signer'
 import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
 const POLYGON_CHAIN_ID = 137
@@ -14,6 +15,12 @@ export interface ApiCredentials {
   passphrase: string
 }
 
+export interface BuilderCredentials {
+  key: string
+  secret: string
+  passphrase: string
+}
+
 /**
  * Create a CLOB client with Turnkey signer for L1 authentication
  *
@@ -23,6 +30,25 @@ export interface ApiCredentials {
  * @param funder - Optional funder address for L2
  * @returns Configured ClobClient instance
  */
+/**
+ * Load builder credentials from environment variables for order attribution
+ * These credentials are obtained from: https://polymarket.com/settings?tab=builder
+ */
+function loadBuilderCredentials(): BuilderCredentials | undefined {
+  const key = process.env.POLYMARKET_BUILDER_API_KEY
+  const secret = process.env.POLYMARKET_BUILDER_SECRET
+  const passphrase = process.env.POLYMARKET_BUILDER_PASSPHRASE
+
+  // Builder credentials are optional - orders will still work without them
+  // but won't be attributed to the builder account
+  if (!key || !secret || !passphrase) {
+    console.log('[CLOB] Builder credentials not configured - orders will not be attributed')
+    return undefined
+  }
+
+  return { key, secret, passphrase }
+}
+
 export async function createClobClient(
   signer: TurnkeySigner,
   signatureType: SignatureType = 0,
@@ -38,25 +64,32 @@ export async function createClobClient(
   console.log('[CLOB] Has API creds:', !!apiCreds)
   console.log('[CLOB] Funder:', funder || 'none')
 
-  const client = new ClobClient(
-    clobBaseUrl,
-    POLYGON_CHAIN_ID,
-    signer as any, // Cast to any to satisfy type requirements
-    apiCreds,
-    signatureType,
-    funder
-  )
+  // Load builder credentials for order attribution
+  const builderCreds = loadBuilderCredentials()
+  let builderConfig: BuilderConfig | undefined = undefined
 
-  // Configure builder headers for Polymarket API identification
-  // This helps Polymarket track usage and provide builder support
-  const clientWithAxios = client as any
-  if (clientWithAxios.axiosInstance && clientWithAxios.axiosInstance.defaults) {
-    const headers = clientWithAxios.axiosInstance.defaults.headers.common as Record<string, string>
-    headers['x-builder-name'] = 'Polycopy'
-    headers['User-Agent'] = 'Polycopy/1.0'
-    console.log('[CLOB] Builder headers configured: Polycopy')
+  if (builderCreds) {
+    // Use local signing since all orders are placed server-side
+    builderConfig = new BuilderConfig({
+      localBuilderCreds: builderCreds
+    })
+    console.log('[CLOB] ✅ Builder attribution configured - orders will be attributed to Polycopy')
   }
 
+  // Create CLOB client with builder config (parameter 9)
+  const client = new ClobClient(
+    clobBaseUrl,                  // host
+    POLYGON_CHAIN_ID,            // chainId
+    signer as any,               // signer
+    apiCreds,                    // creds
+    signatureType,               // signatureType
+    funder,                      // funderAddress
+    undefined,                   // geoBlockToken
+    undefined,                   // useServerTime
+    builderConfig                // builderConfig - THIS ENABLES ATTRIBUTION!
+  )
+
+  console.log('[CLOB] Client created successfully')
   return client
 }
 
