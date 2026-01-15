@@ -38,7 +38,7 @@ export async function createClobClient(
   console.log('[CLOB] Has API creds:', !!apiCreds)
   console.log('[CLOB] Funder:', funder || 'none')
 
-  return new ClobClient(
+  const client = new ClobClient(
     clobBaseUrl,
     POLYGON_CHAIN_ID,
     signer as any, // Cast to any to satisfy type requirements
@@ -46,6 +46,16 @@ export async function createClobClient(
     signatureType,
     funder
   )
+
+  // Configure builder headers for Polymarket API identification
+  // This helps Polymarket track usage and provide builder support
+  if (typeof (client as any).axiosInstance !== 'undefined') {
+    (client as any).axiosInstance.defaults.headers.common['x-builder-name'] = 'Polycopy'
+    (client as any).axiosInstance.defaults.headers.common['User-Agent'] = 'Polycopy/1.0'
+    console.log('[CLOB] Builder headers configured: Polycopy')
+  }
+
+  return client
 }
 
 /**

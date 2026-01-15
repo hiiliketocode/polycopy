@@ -67,7 +67,7 @@ function createHeaderOnlySigner(address: string) {
 
 function createClient(creds: ClobCredentials): ClobClient {
   const signer = createHeaderOnlySigner(creds.address)
-  return new ClobClient(
+  const client = new ClobClient(
     POLYMARKET_CLOB_BASE_URL,
     POLYGON_CHAIN_ID as any,
     signer,
@@ -77,6 +77,15 @@ function createClient(creds: ClobCredentials): ClobClient {
       passphrase: creds.passphrase
     } as any
   )
+
+  // Configure builder headers for Polymarket API identification
+  // This helps Polymarket track usage and provide builder support
+  if (typeof (client as any).axiosInstance !== 'undefined') {
+    (client as any).axiosInstance.defaults.headers.common['x-builder-name'] = 'Polycopy'
+    (client as any).axiosInstance.defaults.headers.common['User-Agent'] = 'Polycopy/1.0'
+  }
+
+  return client
 }
 
 async function withBackoff<T>(fn: () => Promise<T>, retries: number = DEFAULT_RETRIES, backoffMs: number = DEFAULT_BACKOFF_MS): Promise<T> {
