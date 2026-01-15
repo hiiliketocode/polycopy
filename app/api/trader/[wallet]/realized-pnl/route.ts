@@ -14,6 +14,10 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error('Missing Supabase environment variables for realized PnL route')
 }
 
+// TypeScript: After the check above, these are guaranteed to be strings
+const supabaseUrl: string = SUPABASE_URL
+const supabaseKey: string = SUPABASE_SERVICE_ROLE_KEY
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ wallet: string }> }
@@ -24,7 +28,7 @@ export async function GET(
     return NextResponse.json({ error: 'Wallet address is required' }, { status: 400 })
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  const supabase = createClient(supabaseUrl, supabaseKey, {
     auth: { autoRefreshToken: false, persistSession: false }
   })
 
