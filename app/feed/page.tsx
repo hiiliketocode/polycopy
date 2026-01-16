@@ -11,7 +11,7 @@ import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { TradeCard } from '@/components/polycopy/trade-card';
 import { EmptyState } from '@/components/polycopy/empty-state';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Activity, Filter, Flame, DollarSign, Users } from 'lucide-react';
+import { RefreshCw, Activity, Filter, DollarSign, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 
@@ -1345,45 +1345,41 @@ export default function FeedPage() {
           {/* Page Header */}
         <div className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
           <div className="max-w-[800px] mx-auto px-4 md:px-6 pb-2 md:py-4">
-            {/* Title Row */}
-            <div className="flex items-start justify-between mb-2 md:mb-3">
-              <div>
-                <h1 className="text-xl md:text-3xl font-bold text-slate-900 mb-0.5 md:mb-1">Activity Feed</h1>
+            <div className="flex items-start justify-between gap-3 mb-2 md:mb-3">
+              <div className="space-y-1">
                 <p className="text-xs md:text-base text-slate-500">Recent trades from traders you follow</p>
-              </div>
-              <Button
-                onClick={handleManualRefresh}
-                disabled={isRefreshing || loadingFeed}
-                variant="outline"
-                size="icon"
-                className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent flex-shrink-0 transition-all"
-              >
-                <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-              </Button>
-            </div>
-
-            {(lastFeedFetchAt || latestTradeTimestamp) && (
-              <div className="mb-1 text-xs text-slate-500">
-                {lastFeedFetchAt ? `Last updated ${getRelativeTime(lastFeedFetchAt)}` : 'Last updated: —'}
-                {latestTradeTimestamp ? ` • Latest trade ${getRelativeTime(latestTradeTimestamp)}` : ''}
-              </div>
-            )}
-
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={() => setShowFilters((prev) => !prev)}
-                variant="outline"
-                className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white gap-2"
-              >
-                <Filter className="h-4 w-4" />
-                Filters
-                {activeFiltersCount > 0 && (
-                  <span className="ml-1 inline-flex items-center justify-center text-[11px] font-semibold text-white bg-slate-900 rounded-full h-5 min-w-[20px] px-1.5">
-                    {activeFiltersCount}
-                  </span>
+                {lastFeedFetchAt && (
+                  <div className="text-xs text-slate-500">
+                    {`Last updated ${getRelativeTime(lastFeedFetchAt)}`}
+                  </div>
                 )}
-              </Button>
-              <span className="text-xs text-slate-500">Customize your feed</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={() => setShowFilters((prev) => !prev)}
+                  variant="outline"
+                  size="icon"
+                  className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white relative"
+                  aria-label="Toggle filters"
+                >
+                  <Filter className="h-4 w-4" />
+                  {activeFiltersCount > 0 && (
+                    <span className="absolute -top-1 -right-1 inline-flex items-center justify-center text-[10px] font-semibold text-white bg-slate-900 rounded-full h-4 min-w-[16px] px-1">
+                      {activeFiltersCount}
+                    </span>
+                  )}
+                </Button>
+                <Button
+                  onClick={handleManualRefresh}
+                  disabled={isRefreshing || loadingFeed}
+                  variant="outline"
+                  size="icon"
+                  className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent flex-shrink-0 transition-all"
+                  aria-label="Refresh feed"
+                >
+                  <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+                </Button>
+              </div>
             </div>
             {showFilters && (
               <div className="mt-3 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-5">
@@ -1412,30 +1408,25 @@ export default function FeedPage() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-2">
-                        <Flame className="h-4 w-4 text-orange-500" />
-                        Live games
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-slate-900">Live Games Only</span>
+                        <button
+                          onClick={() => setLiveGamesOnly((prev) => !prev)}
+                          className={cn(
+                            "relative inline-flex h-6 w-11 items-center rounded-full transition",
+                            liveGamesOnly ? "bg-emerald-500" : "bg-slate-200"
+                          )}
+                          role="switch"
+                          aria-checked={liveGamesOnly}
+                        >
+                          <span
+                            className={cn(
+                              "inline-block h-4 w-4 transform rounded-full bg-white transition",
+                              liveGamesOnly ? "translate-x-6" : "translate-x-1"
+                            )}
+                          />
+                        </button>
                       </div>
-                      <button
-                        onClick={() => setLiveGamesOnly((prev) => !prev)}
-                        className={cn(
-                          "w-full flex items-center justify-between text-sm font-medium rounded-lg px-3 py-2 border transition",
-                          liveGamesOnly
-                            ? "border-orange-200 bg-orange-50 text-orange-700"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                        )}
-                      >
-                        {liveGamesOnly ? "Live only" : "All games"}
-                        <span className={cn(
-                          "inline-flex items-center justify-center h-6 w-10 rounded-full text-[11px] font-semibold",
-                          liveGamesOnly ? "bg-orange-500 text-white" : "bg-slate-200 text-slate-600"
-                        )}>
-                          {liveGamesOnly ? "Only" : "All"}
-                        </span>
-                      </button>
-                      <p className="mt-2 text-xs text-slate-500">
-                        Toggle to show only markets that are live right now.
-                      </p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
                       <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-2">
