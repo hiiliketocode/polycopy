@@ -44,6 +44,12 @@ type TweetCandidate = {
 type Props = {
   adminUser: User
   candidates: TweetCandidate[]
+  stats: {
+    tradesScanned: number
+    marketsMatched: number
+    dataSource: string
+  }
+  showNav: boolean
   rules: RuleSet
 }
 
@@ -93,7 +99,7 @@ const formatMarketVolume = (value: number | null) => {
   return `$${value.toFixed(0)}`
 }
 
-export default function IWishCopiedFeed({ adminUser, candidates, rules }: Props) {
+export default function IWishCopiedFeed({ adminUser, candidates, stats, showNav, rules }: Props) {
   const summary = useMemo(() => {
     const highRoi = candidates.filter((trade) => (trade.roiPct ?? 0) >= rules.highRoiThreshold).length
     const late = candidates.filter((trade) => trade.lateWindowMinutes !== null).length
@@ -103,12 +109,14 @@ export default function IWishCopiedFeed({ adminUser, candidates, rules }: Props)
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <Navigation
-        user={{ id: adminUser.id, email: adminUser.email ?? '' }}
-        isPremium={false}
-        walletAddress={null}
-        profileImageUrl={null}
-      />
+      {showNav ? (
+        <Navigation
+          user={{ id: adminUser.id, email: adminUser.email ?? '' }}
+          isPremium={false}
+          walletAddress={null}
+          profileImageUrl={null}
+        />
+      ) : null}
       <main className="max-w-6xl mx-auto px-6 py-10">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
@@ -116,6 +124,9 @@ export default function IWishCopiedFeed({ adminUser, candidates, rules }: Props)
             <p className="text-slate-600 mt-2 max-w-2xl">
               Deterministic feed of trades from the last {rules.lookbackHours} hours that look tweet-worthy:
               high ROI moves, late swings before market close, and contrarian big-ticket buys.
+            </p>
+            <p className="text-xs text-slate-500 mt-2">
+              Scanned {stats.tradesScanned} trades • {stats.marketsMatched} markets matched • Source: {stats.dataSource}
             </p>
           </div>
           <Button
@@ -155,8 +166,8 @@ export default function IWishCopiedFeed({ adminUser, candidates, rules }: Props)
             candidates.map((trade) => {
               const marketUrl = trade.marketSlug
                 ? `https://polymarket.com/market/${trade.marketSlug}`
-                : trade.conditionId
-                  ? `https://polymarket.com/market/${trade.conditionId}`
+                : trade.marketTitle
+                  ? `https://polymarket.com/search?q=${encodeURIComponent(trade.marketTitle)}`
                   : null
               const roiClass =
                 trade.roiPct !== null

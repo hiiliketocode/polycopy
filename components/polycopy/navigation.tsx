@@ -224,16 +224,6 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                   Auto Copy
                 </Link>
                 <Link
-                  href="/admin/i-wish-id-copied-that"
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    isActive("/admin/i-wish-id-copied-that")
-                      ? "text-slate-900 bg-slate-100"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                  }`}
-                >
-                  Wish I Copied
-                </Link>
-                <Link
                   href="/admin/users"
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                     isActive("/admin/users")

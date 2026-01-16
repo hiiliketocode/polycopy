@@ -1630,7 +1630,7 @@ export function TradeCard({
           >
             <Avatar className="h-10 w-10 ring-2 ring-slate-100 transition-all">
               <AvatarImage src={trader.avatar || "/placeholder.svg"} alt={trader.name} />
-              <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-sm font-semibold">
+              <AvatarFallback className="bg-white text-slate-700 text-sm font-semibold">
                 {trader.name.slice(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>

@@ -40,7 +40,7 @@ export function TraderCard({
         <div className="flex items-start gap-4">
           <Avatar className="h-14 w-14 ring-2 ring-slate-100">
             <AvatarImage src={avatar || "/placeholder.svg"} alt={name} />
-            <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-base font-semibold">
+            <AvatarFallback className="bg-white text-slate-700 text-base font-semibold">
               {name.slice(0, 2).toUpperCase()}
             </AvatarFallback>
           </Avatar>

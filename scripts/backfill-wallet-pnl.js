@@ -51,25 +51,47 @@ const SLEEP_MS = 250 // tune if hitting rate limits
 const UPSERT_BATCH = 500
 const MAX_RETRIES = 3
 const HISTORICAL_BASELINE = Date.UTC(2023, 0, 1) / 1000 // Jan 1 2023 UTC, adjust if you want deeper history
+const FETCH_TIMEOUT_MS = Number.parseInt(process.env.FETCH_TIMEOUT_MS, 10) || 60000
+const SKIP_EXISTING_WALLETS = ['1', 'true', 'yes'].includes(
+  String(process.env.SKIP_EXISTING_WALLETS || '').toLowerCase()
+)
 
 async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 async function fetchWithRetry(url, options, attempt = 1) {
-  const res = await fetch(url, options)
-  if (res.ok) return res
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
 
-  // Retry on 429/5xx with simple backoff
-  if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
-    const delay = SLEEP_MS * attempt
-    console.warn(`Retrying ${url} after ${delay}ms (status ${res.status})`)
-    await sleep(delay)
-    return fetchWithRetry(url, options, attempt + 1)
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal })
+    if (res.ok) return res
+
+    // Retry on 429/5xx with simple backoff
+    if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
+      const delay = SLEEP_MS * attempt
+      console.warn(`Retrying ${url} after ${delay}ms (status ${res.status})`)
+      await sleep(delay)
+      return fetchWithRetry(url, options, attempt + 1)
+    }
+
+    const body = await res.text()
+    throw new Error(`Request failed (${res.status}): ${body || res.statusText}`)
+  } catch (err) {
+    if (err?.name === 'AbortError' && attempt < MAX_RETRIES) {
+      const delay = SLEEP_MS * attempt
+      console.warn(`Retrying ${url} after ${delay}ms (timeout)`)
+      await sleep(delay)
+      return fetchWithRetry(url, options, attempt + 1)
+    }
+    if (err?.name === 'AbortError') {
+      throw new Error(`Request timed out after ${FETCH_TIMEOUT_MS}ms`)
+    }
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
   }
-
-  const body = await res.text()
-  throw new Error(`Request failed (${res.status}): ${body || res.statusText}`)
 }
 
 function toDateString(tsSeconds) {
@@ -207,9 +229,12 @@ async function fetchMetrics(wallet) {
   }
 }
 
-async function backfillWallet(wallet) {
+async function backfillWallet(wallet, options = {}) {
   const lower = wallet.toLowerCase()
   const latestDate = await fetchLatestDateForWallet(lower)
+  if (options.skipIfExisting && latestDate) {
+    return { upserted: 0, hadData: false, skipped: true }
+  }
   const startTime = latestDate
     ? Math.floor((new Date(latestDate).getTime() - 24 * 3600 * 1000) / 1000) // one day before latest to get baseline
     : HISTORICAL_BASELINE
@@ -224,7 +249,7 @@ async function backfillWallet(wallet) {
     await updateTraderMetrics(lower, metrics)
   }
 
-  return { upserted, hadData: rows.length > 0 }
+  return { upserted, hadData: rows.length > 0, skipped: false }
 }
 
 async function loadActiveTraders() {
@@ -234,13 +259,16 @@ async function loadActiveTraders() {
     .eq('is_active', true)
     .not('pnl', 'is', null)
     .order('pnl', { ascending: false })
-    .limit(500)
+    .limit(1000)
   if (error) throw error
   return (data || []).map((r) => r.wallet_address).filter(Boolean)
 }
 
 async function runBackfillWalletPnl() {
   const wallets = await loadActiveTraders()
+  if (SKIP_EXISTING_WALLETS) {
+    console.log('Skipping wallets that already have PnL history.')
+  }
   console.log(`Found ${wallets.length} active traders; starting backfill...`)
 
   let totalRows = 0
@@ -248,10 +276,16 @@ async function runBackfillWalletPnl() {
 
   for (const wallet of wallets) {
     try {
-      const { upserted, hadData } = await backfillWallet(wallet)
+      const { upserted, hadData, skipped } = await backfillWallet(wallet, {
+        skipIfExisting: SKIP_EXISTING_WALLETS
+      })
       totalRows += upserted
       processed += 1
-      console.log(`[${processed}/${wallets.length}] ${wallet} -> upserted ${upserted} rows${hadData ? '' : ' (no new data)'}`)
+      if (skipped) {
+        console.log(`[${processed}/${wallets.length}] ${wallet} -> skipped (already has PnL history)`)
+      } else {
+        console.log(`[${processed}/${wallets.length}] ${wallet} -> upserted ${upserted} rows${hadData ? '' : ' (no new data)'}`)
+      }
     } catch (err) {
       console.error(`[${wallet}] failed:`, err.message || err)
     }

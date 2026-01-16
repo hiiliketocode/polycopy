@@ -29,7 +29,7 @@ export function ActivityItem({
       {/* Avatar */}
       <Avatar className="h-10 w-10 ring-2 ring-slate-100 shrink-0">
         <AvatarImage src={traderAvatar || "/placeholder.svg"} alt={traderName} />
-        <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-xs font-semibold">
+        <AvatarFallback className="bg-white text-slate-700 text-xs font-semibold">
           {traderName.slice(0, 2).toUpperCase()}
         </AvatarFallback>
       </Avatar>

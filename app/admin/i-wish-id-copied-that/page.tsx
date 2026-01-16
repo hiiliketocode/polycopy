@@ -26,6 +26,19 @@ type TradeRow = {
   title: string | null
 }
 
+type PublicTradeRow = {
+  trade_id: string
+  trader_wallet: string
+  trade_timestamp: string
+  side: string | null
+  size: number | null
+  price: number | null
+  outcome: string | null
+  condition_id: string | null
+  market_slug: string | null
+  market_title: string | null
+}
+
 type MarketRow = {
   condition_id: string
   slug: string | null
@@ -152,7 +165,11 @@ const chunkArray = <T,>(items: T[], size: number) => {
   return chunks
 }
 
-export default async function IWishCopiedThatPage() {
+type PageProps = {
+  searchParams?: { [key: string]: string | string[] | undefined }
+}
+
+export default async function IWishCopiedThatPage({ searchParams }: PageProps) {
   const adminUser = await getAdminSessionUser()
 
   if (!adminUser) {
@@ -180,7 +197,44 @@ export default async function IWishCopiedThatPage() {
     console.error('[admin/i-wish-id-copied-that] failed to load trades', tradesResult.error)
   }
 
-  const trades = (tradesResult.data ?? []) as TradeRow[]
+  let trades = (tradesResult.data ?? []) as TradeRow[]
+  let usedPublicTrades = false
+
+  if (trades.length < 10) {
+    const publicTradesResult = await supabase
+      .from('trades_public')
+      .select('trade_id, trader_wallet, trade_timestamp, side, size, price, outcome, condition_id, market_slug, market_title')
+      .gte('trade_timestamp', since)
+      .eq('side', 'BUY')
+      .order('trade_timestamp', { ascending: false })
+      .limit(MAX_TRADES)
+
+    if (publicTradesResult.error) {
+      console.error('[admin/i-wish-id-copied-that] failed to load public trades', publicTradesResult.error)
+    }
+
+    const publicTrades = (publicTradesResult.data ?? []) as PublicTradeRow[]
+    const merged = new Map<string, TradeRow>()
+    trades.forEach((trade) => merged.set(trade.id, trade))
+    publicTrades.forEach((trade) => {
+      const priceValue = Number(trade.price)
+      const sizeValue = Number(trade.size)
+      merged.set(trade.trade_id, {
+        id: trade.trade_id,
+        wallet_address: trade.trader_wallet,
+        timestamp: trade.trade_timestamp,
+        side: trade.side ?? 'BUY',
+        shares_normalized: Number.isFinite(sizeValue) ? sizeValue : Number.NaN,
+        price: Number.isFinite(priceValue) ? priceValue : Number.NaN,
+        token_label: trade.outcome,
+        condition_id: trade.condition_id,
+        market_slug: trade.market_slug,
+        title: trade.market_title
+      })
+    })
+    trades = Array.from(merged.values())
+    usedPublicTrades = true
+  }
   const conditionIds = Array.from(
     new Set(trades.map((trade) => trade.condition_id).filter(Boolean))
   ) as string[]
@@ -244,6 +298,7 @@ export default async function IWishCopiedThatPage() {
       if (isLate) score += 2
       if (isContrarian) score += 1
       if (isBigTicket) score += 1
+      if (!market) score += 0.25
 
       const reasonTags: string[] = []
       const reasonParts: string[] = []
@@ -267,6 +322,11 @@ export default async function IWishCopiedThatPage() {
       if (isBigTicket) {
         reasonTags.push('Big ticket')
         reasonParts.push(`Big ticket size: ${formatCurrency(investedUsd)}`)
+      }
+
+      if (!market && (isContrarian || isBigTicket)) {
+        reasonTags.push('Fresh tape')
+        reasonParts.push('Fresh public tape trade with limited market metadata')
       }
 
       const reason = reasonParts.join(' | ')
@@ -297,12 +357,8 @@ export default async function IWishCopiedThatPage() {
       }
     })
     .filter((candidate) => {
-      const hasReason =
-        candidate.reasonTags.length > 0 &&
-        (candidate.roiPct !== null ||
-          candidate.lateWindowMinutes !== null ||
-          (candidate.price <= CONTRARIAN_PRICE_MAX && candidate.investedUsd >= BIG_TICKET_USD))
-      return candidate.score >= 2 && hasReason
+      const hasReason = candidate.reasonTags.length > 0
+      return candidate.score >= 1.5 && hasReason
     })
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score
@@ -318,6 +374,12 @@ export default async function IWishCopiedThatPage() {
     <IWishCopiedFeed
       adminUser={adminUser}
       candidates={candidates}
+      stats={{
+        tradesScanned: trades.length,
+        marketsMatched: marketMap.size,
+        dataSource: usedPublicTrades ? 'trades + trades_public' : 'trades'
+      }}
+      showNav={searchParams?.embed !== '1'}
       rules={{
         lookbackHours: LOOKBACK_HOURS,
         lateWindowMinutes: LATE_WINDOW_MINUTES,

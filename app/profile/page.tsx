@@ -11,6 +11,13 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { CancelSubscriptionModal } from '@/components/polycopy/cancel-subscription-modal';
@@ -51,7 +58,6 @@ import {
   Check,
   Info,
   ArrowUpRight,
-  ExternalLink,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -138,6 +144,59 @@ function formatRelativeTime(dateString: string): string {
   if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} weeks ago`;
   
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatTimestamp(dateString: string): string {
+  if (!dateString) return '—';
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatOutcomeLabel(value: string | null | undefined) {
+  if (!value) return 'Outcome';
+  const trimmed = value.trim();
+  if (!trimmed) return 'Outcome';
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+function normalizeOutcomeValue(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.toUpperCase() : null;
+}
+
+function resolveResolvedOutcomeFromRaw(raw: any): string | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const candidates = [
+    raw.resolved_outcome,
+    raw.resolvedOutcome,
+    raw.market?.resolved_outcome,
+    raw.market?.resolvedOutcome,
+    raw.market?.winning_outcome,
+    raw.market?.winner_outcome,
+    raw.market?.winner,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return null;
+}
+
+function isSettlementPrice(value: number | null | undefined) {
+  if (!Number.isFinite(value ?? NaN)) return false;
+  return Math.abs((value as number) - 1) < 1e-6 || Math.abs((value as number) - 0) < 1e-6;
+}
+
+function buildLiveMarketKey(marketId: string, outcome: string) {
+  return `${marketId}:${outcome.toUpperCase()}`;
 }
 
 function formatCompactNumber(value: number) {
@@ -238,6 +297,8 @@ function ProfilePageContent() {
   const [expandedQuickDetailsId, setExpandedQuickDetailsId] = useState<string | null>(null);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved' | 'history'>('all');
+  const [tradeSort, setTradeSort] = useState<'date' | 'invested' | 'currentValue' | 'roi'>('date');
+  const [mobileMetric, setMobileMetric] = useState<'price' | 'size' | 'roi' | 'time'>('price');
   const [portfolioStats, setPortfolioStats] = useState<PortfolioStats | null>(null);
   const [portfolioStatsLoading, setPortfolioStatsLoading] = useState(false);
   const [portfolioStatsError, setPortfolioStatsError] = useState<string | null>(null);
@@ -245,6 +306,16 @@ function ProfilePageContent() {
   // Quick trades (orders) state  
   const [quickTrades, setQuickTrades] = useState<OrderRow[]>([]);
   const [loadingQuickTrades, setLoadingQuickTrades] = useState(true);
+  const [marketMeta, setMarketMeta] = useState<
+    Map<
+      string,
+      {
+        title: string | null;
+        image: string | null;
+        slug?: string | null;
+      }
+    >
+  >(new Map());
   const [positions, setPositions] = useState<PositionSummary[]>([]);
   const [closeTarget, setCloseTarget] = useState<{ order: OrderRow; position: PositionSummary } | null>(null);
   const [closeSubmitting, setCloseSubmitting] = useState(false);
@@ -628,6 +699,64 @@ function ProfilePageContent() {
     fetchQuickTrades();
   }, [user]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const idsToFetch = Array.from(
+      new Set(
+        [...quickTrades, ...copiedTrades]
+          .map((trade) => {
+            if ('marketId' in trade) {
+              return trade.marketId?.trim() || null;
+            }
+            return trade.market_id?.trim() || null;
+          })
+          .filter((id): id is string => Boolean(id))
+      )
+    ).filter((id) => !marketMeta.has(id));
+
+    if (idsToFetch.length === 0) return () => {
+      cancelled = true;
+    };
+
+    const fetchMeta = async () => {
+      const entries: Array<[string, { title: string | null; image: string | null; slug?: string | null }]> = [];
+      await Promise.allSettled(
+        idsToFetch.map(async (conditionId) => {
+          try {
+            const resp = await fetch(`/api/polymarket/market?conditionId=${encodeURIComponent(conditionId)}`, {
+              cache: 'no-store',
+            });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            entries.push([
+              conditionId,
+              {
+                title: data?.question ?? null,
+                image: data?.icon ?? data?.image ?? null,
+                slug: data?.slug ?? null,
+              },
+            ]);
+          } catch {
+            /* ignore fetch errors */
+          }
+        })
+      );
+
+      if (!cancelled && entries.length > 0) {
+        setMarketMeta((prev) => {
+          const next = new Map(prev);
+          entries.forEach(([id, meta]) => next.set(id, meta));
+          return next;
+        });
+      }
+    };
+
+    fetchMeta();
+    return () => {
+      cancelled = true;
+    };
+  }, [quickTrades, copiedTrades, marketMeta]);
+
   const refreshPositions = useCallback(async () => {
     try {
       const positionsResponse = await fetch('/api/polymarket/positions', { cache: 'no-store' });
@@ -677,12 +806,28 @@ function ProfilePageContent() {
   }, [user]);
 
   // Fetch live market data (prices and scores)
-  const fetchLiveMarketData = async (trades: CopiedTrade[]) => {
-    // Only fetch for open/unresolved markets to keep calls light
-    const priceTargets = trades.filter(
-      (t) => !t.user_closed_at && !t.market_resolved && t.market_id
+  const fetchLiveMarketData = async (trades: CopiedTrade[], unifiedTrades: UnifiedTrade[] = []) => {
+    const outcomeTargets = new Map<string, Set<string>>();
+    const manualTargets = trades.filter(
+      (t) => !t.user_closed_at && !t.market_resolved && t.market_id && t.outcome
     );
-    const uniqueMarketIds = [...new Set(priceTargets.map((t) => t.market_id).filter(Boolean))];
+    const unifiedTargets = unifiedTrades.filter(
+      (t) => t.status === 'open' && t.market_id && t.outcome
+    );
+
+    for (const trade of manualTargets) {
+      const key = trade.market_id;
+      if (!outcomeTargets.has(key)) outcomeTargets.set(key, new Set());
+      outcomeTargets.get(key)!.add(trade.outcome);
+    }
+
+    for (const trade of unifiedTargets) {
+      const key = trade.market_id;
+      if (!outcomeTargets.has(key)) outcomeTargets.set(key, new Set());
+      outcomeTargets.get(key)!.add(trade.outcome);
+    }
+
+    const uniqueMarketIds = [...outcomeTargets.keys()];
     if (uniqueMarketIds.length === 0) {
       setLiveMarketData(new Map());
       return;
@@ -701,17 +846,16 @@ function ProfilePageContent() {
             const priceData = await priceResponse.json();
             
             if (priceData.success && priceData.market) {
-              // Find the trade to determine which outcome we need
-              const trade = trades.find(t => t.market_id === marketId);
-              if (trade) {
-                const outcome = trade.outcome.toUpperCase();
-                const { outcomes, outcomePrices, closed } = priceData.market;
-                
-                // Find the price for this specific outcome
-                const outcomeIndex = outcomes?.findIndex((o: string) => o.toUpperCase() === outcome);
+              const { outcomes, outcomePrices, closed } = priceData.market;
+              const outcomeSet = outcomeTargets.get(marketId) || new Set<string>();
+              for (const outcome of outcomeSet) {
+                const outcomeIndex = outcomes?.findIndex((o: string) => o.toUpperCase() === outcome.toUpperCase());
                 if (outcomeIndex !== -1 && outcomePrices && outcomePrices[outcomeIndex]) {
                   const price = Number(outcomePrices[outcomeIndex]);
-                  newLiveData.set(marketId, { price, closed: Boolean(closed) });
+                  newLiveData.set(buildLiveMarketKey(marketId, outcome), {
+                    price,
+                    closed: Boolean(closed),
+                  });
                 }
               }
             }
@@ -727,17 +871,20 @@ function ProfilePageContent() {
 
     // Apply live prices to open trades so PnL is mark-to-market
     if (newLiveData.size > 0) {
-      setCopiedTradesBase((prev) =>
-        prev.map((trade) => {
+      setCopiedTradesBase((prev) => {
+        let changed = false;
+        const next = prev.map((trade) => {
           if (!trade.market_id || trade.user_closed_at || trade.market_resolved) return trade;
-          const live = newLiveData.get(trade.market_id);
-          if (!live) return trade;
+          const live = newLiveData.get(buildLiveMarketKey(trade.market_id, trade.outcome));
+          if (!live || trade.current_price === live.price) return trade;
+          changed = true;
           return {
             ...trade,
             current_price: live.price,
           };
-        })
-      );
+        });
+        return changed ? next : prev;
+      });
     }
   };
 
@@ -1835,7 +1982,10 @@ function ProfilePageContent() {
     order: OrderRow,
     statusOverride?: UnifiedTrade['status'] | null
   ): UnifiedTrade => {
-    const marketTitle = order.marketTitle || 'Unknown Market';
+    const meta = order.marketId ? marketMeta.get(order.marketId.trim()) : null;
+    const rawMarketTitle = order.marketTitle?.trim() ?? '';
+    const isUnknownTitle = rawMarketTitle.length === 0 || rawMarketTitle.toLowerCase() === 'unknown market';
+    const marketTitle = isUnknownTitle ? meta?.title ?? rawMarketTitle ?? 'Unknown Market' : rawMarketTitle;
     const outcome = order.outcome || (order.side === 'BUY' ? 'YES' : 'NO');
     
     return {
@@ -1845,7 +1995,7 @@ function ProfilePageContent() {
       created_at: order.createdAt || new Date().toISOString(),
       market_title: marketTitle,
       market_id: order.marketId || '',
-      market_slug: order.marketSlug || null,
+      market_slug: order.marketSlug || meta?.slug || null,
       outcome: outcome,
       price_entry: order.priceOrAvgPrice || 0,
       price_current: order.currentPrice || order.priceOrAvgPrice || 0,
@@ -1856,7 +2006,7 @@ function ProfilePageContent() {
       trader_wallet: order.copiedTraderWallet || null,
       trader_username: order.traderName || null,
       trader_profile_image: order.traderAvatarUrl || null,
-      market_avatar_url: order.marketImageUrl || null,
+      market_avatar_url: order.marketImageUrl || meta?.image || null,
       raw: order,
     };
   };
@@ -1867,14 +2017,18 @@ function ProfilePageContent() {
   };
 
   const convertCopiedTradeToUnified = (trade: CopiedTrade): UnifiedTrade => {
+    const meta = trade.market_id ? marketMeta.get(trade.market_id.trim()) : null;
+    const rawMarketTitle = trade.market_title?.trim() ?? '';
+    const isUnknownTitle = rawMarketTitle.length === 0 || rawMarketTitle.toLowerCase() === 'unknown market';
+    const marketTitle = isUnknownTitle ? meta?.title ?? rawMarketTitle ?? 'Unknown Market' : rawMarketTitle;
     return {
       id: `manual-${trade.id}`,
       type: 'manual',
       status: getTradeStatus(trade),
       created_at: trade.copied_at,
-      market_title: trade.market_title,
+      market_title: marketTitle,
       market_id: trade.market_id,
-      market_slug: trade.market_slug,
+      market_slug: trade.market_slug ?? meta?.slug ?? null,
       outcome: trade.outcome,
       price_entry: trade.price_when_copied,
       price_current: trade.current_price,
@@ -1883,7 +2037,7 @@ function ProfilePageContent() {
       trader_wallet: trade.trader_wallet,
       trader_username: trade.trader_username,
       trader_profile_image: trade.trader_profile_image_url,
-      market_avatar_url: trade.market_avatar_url,
+      market_avatar_url: trade.market_avatar_url ?? meta?.image ?? null,
       copiedTrade: trade,
     };
   };
@@ -1926,6 +2080,49 @@ function ProfilePageContent() {
     const side = order.side?.toLowerCase();
     return side === 'sell' || order.activity === 'sold' || order.positionState === 'closed';
   };
+
+  const getTradeContracts = useCallback((trade: UnifiedTrade) => {
+    if (trade.type === 'quick' && trade.raw) {
+      const filledSize =
+        Number.isFinite(trade.raw.filledSize) && trade.raw.filledSize > 0
+          ? trade.raw.filledSize
+          : trade.raw.size;
+      if (Number.isFinite(filledSize) && filledSize > 0) return filledSize;
+    }
+    if (trade.type === 'manual' && trade.copiedTrade?.entry_size) {
+      return trade.copiedTrade.entry_size;
+    }
+    if (trade.amount && trade.price_entry) {
+      return trade.amount / trade.price_entry;
+    }
+    return null;
+  }, []);
+
+  const getTradeDisplayPrice = useCallback(
+    (trade: UnifiedTrade) => {
+      const currentPrice = trade.price_current ?? trade.price_entry ?? null;
+      const resolvedOutcome =
+        trade.type === 'manual'
+          ? trade.copiedTrade?.resolved_outcome ?? null
+          : resolveResolvedOutcomeFromRaw(trade.raw);
+      const normalizedOutcome = normalizeOutcomeValue(trade.outcome);
+      const normalizedResolvedOutcome = normalizeOutcomeValue(resolvedOutcome);
+      const settlementPrice =
+        normalizedOutcome && normalizedResolvedOutcome
+          ? normalizedOutcome === normalizedResolvedOutcome
+            ? 1
+            : 0
+          : null;
+      if (settlementPrice !== null) return settlementPrice;
+      if (trade.status === 'open' && trade.market_id && trade.outcome) {
+        const liveKey = buildLiveMarketKey(trade.market_id, trade.outcome);
+        const livePrice = liveMarketData.get(liveKey)?.price;
+        return livePrice ?? currentPrice;
+      }
+      return currentPrice;
+    },
+    [liveMarketData]
+  );
 
   const netQuickPositionByKey = useMemo(() => {
     const map = new Map<string, number>();
@@ -1992,6 +2189,13 @@ function ProfilePageContent() {
     return combined;
   }, [copiedTrades, quickTrades, openPositionByKey]);
 
+  useEffect(() => {
+    if (tradeFilter === 'history') return;
+    fetchLiveMarketData(copiedTradesBase, allUnifiedTrades).catch(() => {
+      /* best effort */
+    });
+  }, [allUnifiedTrades, tradeFilter]);
+
   // Filter unified trades
   const filteredUnifiedTrades = useMemo(() => {
     const isSoldTrade = (trade: UnifiedTrade) => {
@@ -2014,21 +2218,76 @@ function ProfilePageContent() {
       return Boolean(trade.copiedTrade?.user_closed_at || trade.copiedTrade?.trader_closed_at);
     };
 
+    const isLiveResolved = (trade: UnifiedTrade) => {
+      if (trade.status !== 'open' || !trade.market_id || !trade.outcome) return false;
+      const live = liveMarketData.get(buildLiveMarketKey(trade.market_id, trade.outcome));
+      return Boolean(live?.closed);
+    };
+
     if (tradeFilter === 'all') return allUnifiedTrades;
     
     return allUnifiedTrades.filter(trade => {
       switch (tradeFilter) {
         case 'open':
-          return trade.status === 'open' && !isSoldTrade(trade);
+          return trade.status === 'open' && !isSoldTrade(trade) && !isLiveResolved(trade);
         case 'closed':
           return isSoldTrade(trade);
         case 'resolved':
-          return trade.status === 'resolved' && !isSoldTrade(trade);
+          return (trade.status === 'resolved' || isLiveResolved(trade)) && !isSoldTrade(trade);
         default:
           return true;
       }
     });
-  }, [allUnifiedTrades, tradeFilter, openPositionByKey]);
+  }, [allUnifiedTrades, tradeFilter, openPositionByKey, liveMarketData]);
+
+  const sortedUnifiedTrades = useMemo(() => {
+    const trades = [...filteredUnifiedTrades];
+    if (tradeSort === 'date') {
+      return trades.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+    if (tradeSort === 'invested') {
+      return trades.sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0));
+    }
+    if (tradeSort === 'roi') {
+      return trades.sort((a, b) => {
+        const aPrice = getTradeDisplayPrice(a);
+        const bPrice = getTradeDisplayPrice(b);
+        const aIsSell = a.type === 'quick' && a.raw?.side?.toLowerCase() === 'sell';
+        const bIsSell = b.type === 'quick' && b.raw?.side?.toLowerCase() === 'sell';
+        const aRoi =
+          a.roi ??
+          (a.price_entry && aPrice
+            ? (((aIsSell ? a.price_entry - aPrice : aPrice - a.price_entry) / a.price_entry) * 100)
+            : 0);
+        const bRoi =
+          b.roi ??
+          (b.price_entry && bPrice
+            ? (((bIsSell ? b.price_entry - bPrice : bPrice - b.price_entry) / b.price_entry) * 100)
+            : 0);
+        return bRoi - aRoi;
+      });
+    }
+    return trades.sort((a, b) => {
+      const aContracts = getTradeContracts(a);
+      const bContracts = getTradeContracts(b);
+      const aPrice = getTradeDisplayPrice(a);
+      const bPrice = getTradeDisplayPrice(b);
+      const aValue = aContracts && aPrice ? aContracts * aPrice : 0;
+      const bValue = bContracts && bPrice ? bContracts * bPrice : 0;
+      return bValue - aValue;
+    });
+  }, [filteredUnifiedTrades, tradeSort, getTradeContracts, getTradeDisplayPrice]);
+
+  const tradeSortOptions = useMemo(
+    () => [
+      { value: 'date' as const, label: 'Latest' },
+      { value: 'currentValue' as const, label: 'Current Value' },
+      { value: 'invested' as const, label: 'Invested' },
+      { value: 'roi' as const, label: 'P&L %' },
+    ],
+    []
+  );
+  const activeSortLabel = tradeSortOptions.find((option) => option.value === tradeSort)?.label ?? 'Latest';
 
   // Loading state
   if (loading) {
@@ -2270,7 +2529,7 @@ function ProfilePageContent() {
           {activeTab === 'trades' && (
             <div className="space-y-4">
               {/* Filter and Refresh */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <div className="flex gap-2 items-center">
                   {(['all', 'open', 'closed', 'resolved'] as const).map((filter) => (
                     <button
@@ -2305,16 +2564,70 @@ function ProfilePageContent() {
                     Activity
                   </button>
                 </div>
-                <Button
-                  onClick={handleManualRefresh}
-                  disabled={refreshingStatus}
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                >
-                  <RefreshCw className={cn("h-4 w-4", refreshingStatus && "animate-spin")} />
-                  Refresh Status
-                </Button>
+                <div className="flex items-center gap-2 md:hidden">
+                  <span className="text-xs text-slate-500">Show</span>
+                  {(['price', 'size', 'roi', 'time'] as const).map((metric) => (
+                    <button
+                      key={metric}
+                      type="button"
+                      onClick={() => setMobileMetric(metric)}
+                      className={cn(
+                        "px-2 py-1 rounded-full text-[11px] font-semibold border transition",
+                        mobileMetric === metric
+                          ? "bg-slate-900 text-white border-slate-900"
+                          : "bg-white border-slate-200 text-slate-600"
+                      )}
+                    >
+                      {metric === 'price'
+                        ? 'Price'
+                        : metric === 'size'
+                          ? 'Size'
+                          : metric === 'roi'
+                            ? 'P&L'
+                            : 'Time'}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-3 md:ml-auto">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300"
+                      >
+                        <span className="text-xs font-semibold text-slate-500">Sort</span>
+                        <span className="text-sm font-semibold text-slate-900">{activeSortLabel}</span>
+                        <ChevronDown className="h-4 w-4 text-slate-500" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                      <DropdownMenuRadioGroup
+                        value={tradeSort}
+                        onValueChange={(value) => setTradeSort(value as typeof tradeSort)}
+                      >
+                        {tradeSortOptions.map((option) => (
+                          <DropdownMenuRadioItem
+                            key={option.value}
+                            value={option.value}
+                            className="text-sm font-medium text-slate-700 focus:bg-slate-100"
+                          >
+                            {option.label}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button
+                    onClick={handleManualRefresh}
+                    disabled={refreshingStatus}
+                    variant="outline"
+                    size="icon"
+                    aria-label="Refresh status"
+                    className="h-9 w-9"
+                  >
+                    <RefreshCw className={cn("h-4 w-4", refreshingStatus && "animate-spin")} />
+                  </Button>
+                </div>
               </div>
 
               {/* Trades List or History View */}
@@ -2331,25 +2644,33 @@ function ProfilePageContent() {
               ) : (loadingCopiedTrades || loadingQuickTrades) ? (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="min-w-[1100px] w-full text-sm">
-                      <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <table className="min-w-[320px] md:min-w-[960px] w-full text-sm table-fixed md:table-auto">
+                      <thead className="bg-slate-50 text-xs text-slate-500">
                         <tr className="border-b border-slate-200">
-                          <th className="px-4 py-3 text-left font-semibold min-w-[180px]">Trader</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[260px]">Market</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[160px]">Trade</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[110px]">Invested</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[110px]">Contracts</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[100px]">Entry</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[100px]">Current</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[90px]">ROI</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[110px]">Time</th>
-                          <th className="px-4 py-3 text-right font-semibold min-w-[140px]">Action</th>
+                          <th className="px-3 py-3 text-left font-semibold md:px-4">Market</th>
+                          <th className="px-3 py-3 text-left font-semibold md:px-4">Outcome</th>
+                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">
+                            <span className="block">Invested</span>
+                            <span className="block text-[10px] font-medium text-slate-400">Contracts</span>
+                          </th>
+                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">
+                            <span className="block">
+                              Entry <span aria-hidden="true">→</span> Current
+                            </span>
+                          </th>
+                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">
+                            <span className="block">Current Value</span>
+                            <span className="block text-[10px] font-medium text-slate-400">P&L</span>
+                          </th>
+                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">Time</th>
+                          <th className="px-3 py-3 text-left font-semibold md:hidden md:px-4">Detail</th>
+                          <th className="px-3 py-3 text-right font-semibold w-[68px] md:w-[80px] md:px-4"></th>
                         </tr>
                       </thead>
                       <tbody>
                         {[1, 2, 3].map((i) => (
                           <tr key={i} className="border-b border-slate-100 animate-pulse">
-                            {Array.from({ length: 10 }).map((_, index) => (
+                            {Array.from({ length: 8 }).map((_, index) => (
                               <td key={index} className="px-4 py-4">
                                 <div className="h-3 w-full max-w-[120px] rounded-full bg-slate-200" />
                               </td>
@@ -2360,7 +2681,7 @@ function ProfilePageContent() {
                     </table>
                   </div>
                 </div>
-              ) : filteredUnifiedTrades.length === 0 ? (
+              ) : sortedUnifiedTrades.length === 0 ? (
                 <Card className="p-8 text-center">
                   <p className="text-slate-600">No trades yet.</p>
                   <Link href="/discover">
@@ -2372,47 +2693,72 @@ function ProfilePageContent() {
               ) : (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="min-w-[1100px] w-full text-sm">
-                      <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <table className="min-w-[320px] md:min-w-[960px] w-full text-sm table-fixed md:table-auto">
+                      <thead className="bg-slate-50 text-xs text-slate-500">
                         <tr className="border-b border-slate-200">
-                          <th className="px-4 py-3 text-left font-semibold min-w-[180px]">Trader</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[260px]">Market</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[160px]">Trade</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[110px]">Invested</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[110px]">Contracts</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[100px]">Entry</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[100px]">Current</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[90px]">ROI</th>
-                          <th className="px-4 py-3 text-left font-semibold min-w-[110px]">Time</th>
-                          <th className="px-4 py-3 text-right font-semibold min-w-[140px]">Action</th>
+                          <th className="px-3 py-3 text-left font-semibold md:px-4">Market</th>
+                          <th className="px-3 py-3 text-left font-semibold md:px-4">Outcome</th>
+                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">
+                            <span className="block">Invested</span>
+                            <span className="block text-[10px] font-medium text-slate-400">Contracts</span>
+                          </th>
+                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">
+                            <span className="block">
+                              Entry <span aria-hidden="true">→</span> Current
+                            </span>
+                          </th>
+                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">
+                            <span className="block">Current Value</span>
+                            <span className="block text-[10px] font-medium text-slate-400">P&L</span>
+                          </th>
+                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">Time</th>
+                          <th className="px-3 py-3 text-left font-semibold md:hidden md:px-4">Detail</th>
+                          <th className="px-3 py-3 text-right font-semibold w-[68px] md:w-[80px] md:px-4"></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredUnifiedTrades.slice(0, tradesToShow).map((trade) => {
+                        {sortedUnifiedTrades.slice(0, tradesToShow).map((trade) => {
                           const actionLabel =
                             trade.type === 'quick' && trade.raw?.side?.toLowerCase() === 'sell' ? 'Sell' : 'Buy';
-                          const currentPrice = trade.price_current ?? trade.price_entry ?? null;
                           const invested = trade.amount ?? null;
-                          const contracts = (() => {
-                            if (trade.type === 'quick' && trade.raw) {
-                              const filledSize =
-                                Number.isFinite(trade.raw.filledSize) && trade.raw.filledSize > 0
-                                  ? trade.raw.filledSize
-                                  : trade.raw.size;
-                              if (Number.isFinite(filledSize) && filledSize > 0) return filledSize;
-                            }
-                            if (trade.type === 'manual' && trade.copiedTrade?.entry_size) {
-                              return trade.copiedTrade.entry_size;
-                            }
-                            if (invested && trade.price_entry) {
-                              return invested / trade.price_entry;
-                            }
-                            return null;
-                          })();
+                          const contracts = getTradeContracts(trade);
+                          const statusLabel =
+                            trade.status === 'open'
+                              ? 'Open'
+                              : trade.status === 'user-closed'
+                                ? 'Sold'
+                                : trade.status === 'trader-closed'
+                                  ? 'Trader Closed'
+                                  : 'Resolved';
+                          const resolvedOutcome =
+                            trade.type === 'manual'
+                              ? trade.copiedTrade?.resolved_outcome ?? null
+                              : resolveResolvedOutcomeFromRaw(trade.raw);
+                          const normalizedOutcome = normalizeOutcomeValue(trade.outcome);
+                          const normalizedResolvedOutcome = normalizeOutcomeValue(resolvedOutcome);
+                          const settlementPrice =
+                            normalizedOutcome && normalizedResolvedOutcome
+                              ? normalizedOutcome === normalizedResolvedOutcome
+                                ? 1
+                                : 0
+                              : null;
+                          const displayPrice = settlementPrice ?? getTradeDisplayPrice(trade);
+                          const isResolvedLive = Boolean(
+                            trade.status === 'open' &&
+                              trade.market_id &&
+                              trade.outcome &&
+                              liveMarketData.get(buildLiveMarketKey(trade.market_id, trade.outcome))?.closed
+                          );
+                          const isResolvedMarket = trade.status === 'resolved' || isResolvedLive;
+                          const displayStatus = isResolvedMarket
+                            ? settlementPrice !== null || isSettlementPrice(displayPrice)
+                              ? 'Resolved'
+                              : 'Pending'
+                            : statusLabel;
                           const roiValue =
                             trade.roi ??
-                            (trade.price_entry && currentPrice
-                              ? (((actionLabel === 'Sell' ? trade.price_entry - currentPrice : currentPrice - trade.price_entry) /
+                            (trade.price_entry && displayPrice
+                              ? (((actionLabel === 'Sell' ? trade.price_entry - displayPrice : displayPrice - trade.price_entry) /
                                   trade.price_entry) *
                                   100)
                               : null);
@@ -2424,32 +2770,28 @@ function ProfilePageContent() {
                                 : roiValue < 0
                                   ? "text-red-600"
                                   : "text-slate-600";
-                          const statusLabel =
-                            trade.status === 'open'
-                              ? 'Open'
-                              : trade.status === 'user-closed'
-                                ? 'User Closed'
-                                : trade.status === 'trader-closed'
-                                  ? 'Trader Closed'
-                                  : 'Resolved';
-                          const statusClass = cn(
-                            'text-[10px] font-semibold uppercase tracking-wide',
-                            trade.status === 'open' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                            trade.status === 'user-closed' && 'bg-slate-50 text-slate-600 border-slate-200',
-                            trade.status === 'trader-closed' && 'bg-orange-50 text-orange-700 border-orange-200',
-                            trade.status === 'resolved' && 'bg-blue-50 text-blue-700 border-blue-200'
+                          const statusBadgeClass = cn(
+                            'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+                            displayStatus === 'Open' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                            displayStatus === 'Resolved' && 'bg-rose-50 text-rose-700 border-rose-200',
+                            displayStatus === 'Pending' && 'bg-amber-50 text-amber-700 border-amber-200',
+                            displayStatus === 'Trader Closed' && 'bg-orange-50 text-orange-700 border-orange-200',
+                            displayStatus === 'Sold' && 'bg-slate-50 text-slate-600 border-slate-200'
                           );
-                          const typeLabel = trade.type === 'quick' ? 'Quick Copy' : 'Manual Copy';
-                          const typeClass = cn(
-                            'text-[10px] font-semibold uppercase tracking-wide',
-                            trade.type === 'quick'
-                              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                              : 'bg-amber-50 text-amber-700 border-amber-200'
+                          const outcomeBadgeClass = cn(
+                            'inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+                            'bg-slate-50 text-slate-600 border-slate-200'
                           );
-                          const traderName = trade.trader_username || trade.trader_wallet || 'You';
-                          const traderWallet = trade.trader_wallet
-                            ? `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`
-                            : null;
+                          const mobileDetail =
+                            mobileMetric === 'price'
+                              ? `${formatPrice(trade.price_entry)} -> ${formatPrice(displayPrice)}`
+                              : mobileMetric === 'size'
+                                ? `${formatCurrency(invested)} / ${formatContracts(contracts)}`
+                                : mobileMetric === 'roi'
+                                  ? roiValue === null
+                                    ? '—'
+                                    : `${roiValue > 0 ? '+' : ''}${roiValue.toFixed(1)}%`
+                                  : formatTimestamp(trade.created_at);
 
                           const handleQuickSell = async () => {
                             if (!trade.raw) return;
@@ -2550,178 +2892,122 @@ function ProfilePageContent() {
                           return (
                             <React.Fragment key={trade.id}>
                               <tr className="border-b border-slate-100 bg-white">
-                                <td className="px-4 py-4 align-top">
-                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Trader</span>
-                                  {trade.trader_wallet ? (
-                                    <Link
-                                      href={`/trader/${trade.trader_wallet}`}
-                                      className="mt-1 flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
-                                    >
-                                      <Avatar className="h-10 w-10 ring-2 ring-slate-100">
-                                        {trade.trader_profile_image ? (
-                                          <img
-                                            src={trade.trader_profile_image}
-                                            alt={traderName}
-                                            className="h-full w-full object-cover"
-                                          />
-                                        ) : null}
-                                        <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-sm font-semibold">
-                                          {traderName.slice(0, 2).toUpperCase()}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                      <div className="min-w-0">
-                                        <p className="font-medium text-slate-900 text-sm truncate">{traderName}</p>
-                                        {traderWallet && (
-                                          <p className="text-xs text-slate-500 font-mono truncate">{traderWallet}</p>
-                                        )}
-                                      </div>
-                                    </Link>
-                                  ) : (
-                                    <div className="mt-1">
-                                      <p className="font-medium text-slate-900 text-sm">You</p>
-                                      <p className="text-xs text-slate-500">Manual entry</p>
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="px-4 py-4 align-top">
-                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Market</span>
-                                  <div className="mt-1 flex items-start gap-3 min-w-[240px]">
-                                    <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50">
+                                <td className="px-3 py-3 align-top md:px-4 md:py-4">
+                                  <span className="text-[10px] text-slate-400 md:hidden">Market</span>
+                                  <div className="mt-1 flex items-start gap-2 md:gap-3">
+                                    <div className="h-7 w-7 md:h-8 md:w-8 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200 shrink-0">
                                       {trade.market_avatar_url ? (
                                         <img
                                           src={trade.market_avatar_url}
                                           alt={trade.market_title}
                                           className="h-full w-full object-cover"
                                         />
-                                      ) : null}
-                                      <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
-                                        {trade.market_title.slice(0, 2)}
-                                      </AvatarFallback>
-                                    </Avatar>
+                                      ) : (
+                                        <span className="flex h-full w-full items-center justify-center text-[11px] font-semibold text-slate-500">
+                                          {trade.market_title.slice(0, 2)}
+                                        </span>
+                                      )}
+                                    </div>
                                     <div className="min-w-0">
-                                      <div className="flex items-start gap-2">
-                                        <p className="text-sm font-semibold text-slate-900 leading-snug truncate">
+                                      <span className={cn("mb-1 inline-flex", statusBadgeClass)}>
+                                        {displayStatus}
+                                      </span>
+                                      {trade.market_slug ? (
+                                        <a
+                                          href={`https://polymarket.com/market/${trade.market_slug}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-sm font-semibold text-slate-900 hover:underline line-clamp-2"
+                                          onClick={(event) => event.stopPropagation()}
+                                        >
                                           {trade.market_title}
-                                        </p>
-                                        {trade.market_slug && (
-                                          <a
-                                            href={`https://polymarket.com/market/${trade.market_slug}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
-                                            title="View on Polymarket"
-                                            onClick={(event) => event.stopPropagation()}
-                                          >
-                                            <ExternalLink className="w-4 h-4" />
-                                          </a>
-                                        )}
-                                      </div>
-                                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                                        <Badge className={typeClass}>{typeLabel}</Badge>
-                                        <Badge className={statusClass}>{statusLabel}</Badge>
-                                      </div>
+                                        </a>
+                                      ) : (
+                                        <span className="text-sm font-semibold text-slate-900 line-clamp-2">
+                                          {trade.market_title}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                 </td>
-                                <td className="px-4 py-4 align-top">
-                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Trade</span>
-                                  <div className="mt-1 flex flex-wrap items-center gap-1">
-                                    <Badge
-                                      variant="secondary"
-                                      className={cn(
-                                        "font-semibold text-xs",
-                                        actionLabel === "Buy"
-                                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                          : "bg-red-50 text-red-700 border-red-200"
-                                      )}
-                                    >
-                                      {actionLabel}
-                                    </Badge>
-                                    <span className="text-xs text-slate-400 font-semibold">|</span>
-                                    <Badge
-                                      variant="secondary"
-                                      className="font-semibold text-xs bg-slate-100 text-slate-700 border-slate-200 max-w-[160px] whitespace-normal break-words text-center leading-snug"
-                                    >
-                                      {trade.outcome || "Outcome"}
-                                    </Badge>
+                                <td className="px-3 py-3 align-top md:px-4 md:py-4">
+                                  <span className="text-[10px] text-slate-400 md:hidden">Outcome</span>
+                                  <div className="mt-1">
+                                    <span className={cn("mt-1 inline-flex", outcomeBadgeClass)}>
+                                      {formatOutcomeLabel(trade.outcome)}
+                                    </span>
                                   </div>
                                 </td>
-                                <td className="px-4 py-4 align-top">
-                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Invested</span>
-                                  <p className="mt-1 text-sm font-semibold text-slate-900">{formatCurrency(invested)}</p>
+                                <td className="px-3 py-3 align-top hidden md:table-cell md:px-4 md:py-4">
+                                  <p className="text-sm font-semibold text-slate-900">{formatCurrency(invested)}</p>
+                                  <p className="text-xs text-slate-500">{formatContracts(contracts)}</p>
                                 </td>
-                                <td className="px-4 py-4 align-top">
-                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Contracts</span>
-                                  <p className="mt-1 text-sm font-semibold text-slate-900">{formatContracts(contracts)}</p>
+                                <td className="px-3 py-3 align-top hidden md:table-cell md:px-4 md:py-4">
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {formatPrice(trade.price_entry)}
+                                    <span className="mx-1 text-slate-400">-&gt;</span>
+                                    {formatPrice(displayPrice)}
+                                  </p>
                                 </td>
-                                <td className="px-4 py-4 align-top">
-                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Entry</span>
-                                  <p className="mt-1 text-sm font-semibold text-slate-900">{formatPrice(trade.price_entry)}</p>
-                                </td>
-                                <td className="px-4 py-4 align-top">
-                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Current</span>
-                                  <p className="mt-1 text-sm font-semibold text-slate-900">{formatPrice(currentPrice)}</p>
-                                </td>
-                                <td className="px-4 py-4 align-top">
-                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">ROI</span>
-                                  <p className={cn("mt-1 text-sm font-semibold", roiClass)}>
+                                <td className="px-3 py-3 align-top hidden md:table-cell md:px-4 md:py-4">
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {contracts && displayPrice ? formatCurrency(contracts * displayPrice) : "—"}
+                                  </p>
+                                  <p className={cn("text-xs font-semibold", roiClass)}>
                                     {roiValue === null ? "—" : `${roiValue > 0 ? "+" : ""}${roiValue.toFixed(1)}%`}
                                   </p>
                                 </td>
-                                <td className="px-4 py-4 align-top">
-                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Time</span>
-                                  <p className="mt-1 text-xs font-medium text-slate-600 whitespace-nowrap">
-                                    {formatRelativeTime(trade.created_at)}
+                                <td className="px-3 py-3 align-top hidden md:table-cell md:px-4 md:py-4">
+                                  <p className="text-xs font-medium text-slate-600 whitespace-nowrap">
+                                    {formatTimestamp(trade.created_at)}
                                   </p>
                                 </td>
-                                <td className="px-4 py-4 align-top text-right">
-                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Action</span>
-                                  <div className="mt-1 flex flex-col items-end gap-2">
-                                    {trade.type === 'quick' && trade.raw && (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setExpandedQuickDetailsId(
-                                            expandedQuickDetailsId === trade.id ? null : trade.id
-                                          )
-                                        }
-                                        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-50"
-                                      >
-                                        Trade Details
-                                        {expandedQuickDetailsId === trade.id ? (
-                                          <ChevronUp className="h-3 w-3" />
-                                        ) : (
-                                          <ChevronDown className="h-3 w-3" />
-                                        )}
-                                      </button>
+                                <td className="px-3 py-3 align-top md:hidden md:px-4 md:py-4">
+                                  <p
+                                    className={cn(
+                                      "text-xs font-semibold",
+                                      mobileMetric === 'roi' ? roiClass : "text-slate-900"
                                     )}
-                                    {trade.type === 'manual' && (
-                                      <Button
-                                        onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-7 px-2 text-xs font-semibold"
-                                      >
-                                        Edit Trade
-                                      </Button>
-                                    )}
+                                  >
+                                    {mobileDetail}
+                                  </p>
+                                </td>
+                                <td className="px-3 py-3 align-top text-right md:px-4 md:py-4">
+                                  <div className="mt-1 flex flex-col items-end gap-1">
                                     {trade.type === 'quick' && trade.status === 'open' && trade.raw && (
                                       <Button
                                         onClick={handleQuickSell}
                                         size="sm"
-                                        style={{ backgroundColor: '#EF4444' }}
-                                        className="h-7 px-3 text-xs font-semibold text-white hover:opacity-90 transition-opacity"
+                                        variant="outline"
+                                        className="h-5 px-2 text-[10px] font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 hover:text-red-600"
                                       >
                                         Sell
                                       </Button>
                                     )}
+                                    {(trade.type === 'quick' && trade.raw) || trade.type === 'manual' ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (trade.type === 'quick') {
+                                            setExpandedQuickDetailsId(
+                                              expandedQuickDetailsId === trade.id ? null : trade.id
+                                            );
+                                          } else {
+                                            setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id);
+                                          }
+                                        }}
+                                        className="text-[10px] font-medium text-slate-400 hover:text-slate-500"
+                                      >
+                                        Details
+                                      </button>
+                                    ) : null}
                                   </div>
                                 </td>
                               </tr>
 
                               {trade.type === 'quick' && trade.raw && expandedQuickDetailsId === trade.id && (
                                 <tr className="border-b border-slate-100 bg-slate-50/60">
-                                  <td colSpan={10} className="px-4 py-4">
+                                  <td colSpan={8} className="px-4 py-4">
                                     <OrderRowDetails order={trade.raw as OrderRow} />
                                   </td>
                                 </tr>
@@ -2729,15 +3015,9 @@ function ProfilePageContent() {
 
                               {trade.type === 'manual' && expandedTradeId === trade.id && (
                                 <tr className="border-b border-slate-100 bg-slate-50/60">
-                                  <td colSpan={10} className="px-4 py-4">
+                                  <td colSpan={8} className="px-4 py-4">
                                     <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
                                       <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                          <p className="text-xs text-slate-500 mb-1">Current Price</p>
-                                          <p className="font-semibold text-slate-900">
-                                            ${trade.price_current?.toFixed(2) || trade.price_entry.toFixed(2)}
-                                          </p>
-                                        </div>
                                         <div>
                                           <p className="text-xs text-slate-500 mb-1">Shares</p>
                                           <p className="font-semibold text-slate-900">
@@ -2750,17 +3030,6 @@ function ProfilePageContent() {
                                           <p className="text-xs text-slate-500 mb-1">Amount Invested</p>
                                           <p className="font-semibold text-slate-900">
                                             ${trade.amount?.toFixed(0) || '—'}
-                                          </p>
-                                        </div>
-                                        <div>
-                                          <p className="text-xs text-slate-500 mb-1">P&L</p>
-                                          <p className={cn(
-                                            "font-semibold",
-                                            (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
-                                          )}>
-                                            {trade.amount && trade.roi
-                                              ? `${(trade.roi >= 0 ? '+' : '')}$${((trade.amount * trade.roi) / 100).toFixed(0)}`
-                                              : '—'}
                                           </p>
                                         </div>
                                       </div>
@@ -2875,14 +3144,14 @@ function ProfilePageContent() {
                     </table>
                   </div>
                   {/* View More Button */}
-                  {filteredUnifiedTrades.length > tradesToShow && (
+                  {sortedUnifiedTrades.length > tradesToShow && (
                     <div className="flex justify-center pt-4 pb-4">
                       <Button
                         onClick={() => setTradesToShow(prev => prev + 15)}
                         variant="outline"
                         className="border-slate-300 text-slate-700 hover:bg-slate-50"
                       >
-                        View More Trades ({filteredUnifiedTrades.length - tradesToShow} remaining)
+                        View More Trades ({sortedUnifiedTrades.length - tradesToShow} remaining)
                       </Button>
                     </div>
                   )}

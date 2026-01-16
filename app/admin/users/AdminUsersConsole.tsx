@@ -3,14 +3,17 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserActivityEvent, UserProfile } from './types'
+import AdminDashboardClient from '../content-data/AdminDashboardClient'
+import type { DashboardData } from '../content-data/data'
 import { ArrowLeft } from 'lucide-react'
 
-type Tab = 'activity' | 'users' | 'content-data'
+type Tab = 'activity' | 'users' | 'content-data' | 'wish-copied'
 
 const TAB_LABELS: Record<Tab, string> = {
   activity: 'User Activity',
   users: 'User Directory',
-  'content-data': 'Content Data'
+  'content-data': 'Content Data',
+  'wish-copied': 'Wish I Copied'
 }
 
 const TYPE_LABELS: Record<UserActivityEvent['type'], string> = {
@@ -53,9 +56,10 @@ const formatDate = (value: string | null) => {
 type AdminUsersConsoleProps = {
   users: UserProfile[]
   events: UserActivityEvent[]
+  contentData: DashboardData | null
 }
 
-export default function AdminUsersConsole({ users, events }: AdminUsersConsoleProps) {
+export default function AdminUsersConsole({ users, events, contentData }: AdminUsersConsoleProps) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<Tab>('activity')
 
@@ -104,7 +108,7 @@ export default function AdminUsersConsole({ users, events }: AdminUsersConsolePr
         </div>
 
         <div className="flex gap-2">
-          {(['activity', 'users', 'content-data'] as Tab[]).map((tab) => (
+          {(['activity', 'users', 'content-data', 'wish-copied'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -197,12 +201,22 @@ export default function AdminUsersConsole({ users, events }: AdminUsersConsolePr
               </tbody>
             </table>
           </section>
+        ) : activeTab === 'content-data' ? (
+          <section className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+            {contentData ? (
+              <AdminDashboardClient data={contentData} />
+            ) : (
+              <div className="p-8 text-slate-300">
+                Content data is unavailable right now.
+              </div>
+            )}
+          </section>
         ) : (
           <section className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
             <iframe
-              title="Content Data Dashboard"
-              src="/admin/content-data"
-              className="w-full h-[80vh] bg-[#111827]"
+              title="Wish I Copied Feed"
+              src="/admin/i-wish-id-copied-that?embed=1"
+              className="w-full h-[80vh] bg-[#0f172a]"
             />
           </section>
         )}

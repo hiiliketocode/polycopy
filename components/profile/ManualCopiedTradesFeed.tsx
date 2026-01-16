@@ -144,7 +144,7 @@ function ManualCopiedTradeCard({
         <div className="flex items-center gap-3 min-w-0">
           <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
             <AvatarImage src={trade.trader_profile_image_url || "/placeholder.svg"} alt={trade.trader_username || trade.trader_wallet} />
-            <AvatarFallback className="bg-amber-400 text-slate-900 text-sm font-semibold uppercase">
+            <AvatarFallback className="bg-white text-slate-700 text-sm font-semibold uppercase">
               {initials(trade.trader_username || trade.trader_wallet)}
             </AvatarFallback>
           </Avatar>

@@ -143,7 +143,7 @@ export function ExecuteTradeModal({ open, onOpenChange, trade, isAdmin = false }
                   >
                     <Avatar className="h-10 w-10 ring-2 ring-yellow-400">
                       <AvatarImage src={trade.traderAvatar || "/placeholder.svg"} alt={trade.traderName} />
-                      <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-amber-500 text-slate-900 font-semibold text-sm">
+                      <AvatarFallback className="bg-white text-slate-700 font-semibold text-sm">
                         {trade.traderName.slice(0, 2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>

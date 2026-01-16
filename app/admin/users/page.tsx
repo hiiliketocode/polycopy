@@ -1,6 +1,8 @@
 import AdminUsersConsole from './AdminUsersConsole'
 import { UserActivityEvent, UserProfile } from './types'
 import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin'
+import { fetchContentData } from '../content-data/data'
+import type { DashboardData } from '../content-data/data'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -123,10 +125,18 @@ export default async function AdminUsersPage() {
     updatedAt: profile.updated_at ?? null
   }))
 
+  let contentData: DashboardData | null = null
+  try {
+    contentData = await fetchContentData()
+  } catch (error) {
+    console.error('[admin/users] failed to fetch content data', error)
+  }
+
   return (
     <AdminUsersConsole
       users={users}
       events={trimmedEvents}
+      contentData={contentData}
     />
   )
 }

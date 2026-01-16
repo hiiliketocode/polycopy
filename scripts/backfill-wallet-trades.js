@@ -1,7 +1,7 @@
 'use strict'
 
 /**
- * Production-quality trade backfill script for top 500 wallets
+ * Production-quality trade backfill script for top N wallets
  * 
  * Features:
  * - Real idempotency: Checks which trades are actually missing (by order_hash)
@@ -16,7 +16,7 @@
  *   SUPABASE_SERVICE_ROLE_KEY
  * 
  * Usage:
- *   node scripts/backfill-wallet-trades.js [--wallet <0x...>] [--days 30] [--start-time <unix>] [--end-time <unix>] [--fetch-all] [--select-days 30] [--select-start-time <unix>] [--select-end-time <unix>] [--max-wallets 10] [--limit 1000] [--concurrency 5] [--reset-progress]
+ *   node scripts/backfill-wallet-trades.js [--wallet <0x...>] [--days 30] [--start-time <unix>] [--end-time <unix>] [--fetch-all] [--select-days 30] [--select-start-time <unix>] [--select-end-time <unix>] [--max-wallets 10] [--top-wallets 500] [--limit 1000] [--concurrency 5] [--reset-progress] [--keep-progress]
  */
 
 const fs = require('fs')
@@ -56,6 +56,7 @@ const RECENT_ACTIVITY_TABLE = 'trades_public'
 const RECENT_ACTIVITY_WALLET_COLUMN = 'trader_wallet'
 const RECENT_ACTIVITY_TIME_COLUMN = 'trade_timestamp'
 const PROGRESS_SAVE_EVERY_PAGES = 50
+const DEFAULT_TOP_WALLETS = 500
 
 function toNumber(value) {
   const num = Number(value)
@@ -74,6 +75,10 @@ function parseArgs() {
     }
     if (arg === '--fetch-all') {
       parsed.fetchAll = true
+      continue
+    }
+    if (arg === '--keep-progress') {
+      parsed.keepProgress = true
       continue
     }
 
@@ -99,6 +104,10 @@ function parseArgs() {
         break
       case '--max-wallets':
         parsed.maxWallets = toNumber(nextValue)
+        if (!rawValue) i++
+        break
+      case '--top-wallets':
+        parsed.topWallets = toNumber(nextValue)
         if (!rawValue) i++
         break
       case '--limit':
@@ -139,7 +148,9 @@ const ENV_SELECT_START_TIME = toNumber(process.env.DOME_SELECT_START_TIME)
 const ENV_SELECT_END_TIME = toNumber(process.env.DOME_SELECT_END_TIME)
 const ENV_START_TIME = toNumber(process.env.DOME_START_TIME)
 const ENV_END_TIME = toNumber(process.env.DOME_END_TIME)
+const ENV_TOP_WALLETS = toNumber(process.env.DOME_TOP_WALLETS)
 const FETCH_ALL = args.fetchAll === true
+const KEEP_PROGRESS = args.keepProgress === true
 const REQUEST_LIMIT = Number.isFinite(args.limit)
   ? args.limit
   : (Number.isFinite(ENV_DOME_LIMIT) ? ENV_DOME_LIMIT : DEFAULT_DOME_LIMIT)
@@ -178,6 +189,9 @@ const SELECT_END_TIME = Number.isFinite(args.selectEndTime)
       : (SELECT_START_TIME ? NOW_TS : null))
 const SINGLE_WALLET = args.wallet ? args.wallet.toLowerCase() : null
 const MAX_WALLETS = Number.isFinite(args.maxWallets) ? args.maxWallets : null
+const TOP_WALLETS = Number.isFinite(args.topWallets)
+  ? Math.max(1, Math.floor(args.topWallets))
+  : (Number.isFinite(ENV_TOP_WALLETS) ? Math.max(1, Math.floor(ENV_TOP_WALLETS)) : DEFAULT_TOP_WALLETS)
 const RESET_PROGRESS = args.resetProgress === true
 
 if (START_TIME !== null && END_TIME !== null && START_TIME > END_TIME) {
@@ -268,7 +282,7 @@ async function fetchWithRetry(url, options, attempt = 1) {
 }
 
 /**
- * Load top 500 wallets by PnL
+ * Load top wallets by PnL
  */
 async function loadWalletsWithRecentTrades(window) {
   if (!window?.startTime && !window?.endTime) return null
@@ -341,7 +355,7 @@ async function loadTopWallets(window) {
       .eq('is_active', true)
       .not('pnl', 'is', null)
       .order('pnl', { ascending: false })
-      .limit(500)
+      .limit(TOP_WALLETS)
 
     if (error) throw error
     return (data || []).map((r) => r.wallet_address).filter(Boolean)
@@ -365,7 +379,7 @@ async function loadTopWallets(window) {
 
   console.log(`📌 Active traders with PnL in window: ${ordered.length}`)
 
-  return ordered.slice(0, 500)
+  return ordered.slice(0, TOP_WALLETS)
 }
 
 /**
@@ -614,7 +628,7 @@ async function processWallet(wallet, index, total, progress, window) {
  * Main function
  */
 async function main() {
-  console.log('🚀 Starting trade backfill for top 500 wallets...\n')
+  console.log(`🚀 Starting trade backfill for top ${TOP_WALLETS} wallets...\n`)
 
   const defaultSelectionWindow = { startTime: SELECT_START_TIME, endTime: SELECT_END_TIME, lookbackDays: SELECT_LOOKBACK_DAYS }
   const defaultFetchWindow = { startTime: START_TIME, endTime: END_TIME, lookbackDays: LOOKBACK_DAYS, mode: FETCH_ALL ? 'all' : 'window' }
@@ -758,14 +772,16 @@ async function main() {
 
     console.log('\n✨ Backfill complete!')
     
-    // Clean up progress file on success
-    if (failCount === 0 && walletsToProcess.length === allWallets.length) {
+    // Clean up progress file on success unless told to keep it
+    if (!KEEP_PROGRESS && failCount === 0 && walletsToProcess.length === allWallets.length) {
       try {
         fs.unlinkSync(PROGRESS_FILE)
         console.log('🧹 Cleaned up progress file')
       } catch (error) {
         // Ignore cleanup errors
       }
+    } else if (KEEP_PROGRESS) {
+      console.log(`🧾 Keeping progress file at ${PROGRESS_FILE}`)
     }
   } catch (error) {
     console.error('❌ Fatal error:', error.message)

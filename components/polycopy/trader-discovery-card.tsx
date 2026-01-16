@@ -63,8 +63,8 @@ export function TraderDiscoveryCard({ trader, onFollowToggle }: TraderDiscoveryC
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
           <div className="flex items-center gap-3 min-w-0 sm:w-[240px] sm:flex-shrink-0">
             <Avatar className="h-12 w-12 border-2 border-white shadow-sm flex-shrink-0">
-              <AvatarImage src={trader.avatar || "/placeholder.svg"} alt={trader.name} />
-              <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 font-semibold">
+              {trader.avatar ? <AvatarImage src={trader.avatar} alt={trader.name} /> : null}
+              <AvatarFallback className="bg-white text-slate-700 font-semibold">
                 {getInitials(trader.name)}
               </AvatarFallback>
             </Avatar>

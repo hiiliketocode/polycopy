@@ -533,7 +533,7 @@ function DiscoverPageContent() {
                         <Link href={`/trader/${trader.wallet}`} className="block">
                           <div className="flex items-center gap-4 mb-6">
                             <Avatar className="h-16 w-16 border-2 border-white shadow-sm flex-shrink-0">
-                              <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 font-semibold text-xl">
+                              <AvatarFallback className="bg-white text-slate-700 font-semibold text-xl">
                                 {getInitials(trader.displayName)}
                               </AvatarFallback>
                             </Avatar>
