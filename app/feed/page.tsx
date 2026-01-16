@@ -9,6 +9,7 @@ import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { TradeCard } from '@/components/polycopy/trade-card';
+import { TradeTableHeader } from '@/components/polycopy/trade-table';
 import { EmptyState } from '@/components/polycopy/empty-state';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Activity, Filter, DollarSign, Users } from 'lucide-react';
@@ -689,7 +690,13 @@ export default function FeedPage() {
     );
     
     console.log(`💾 Stored live data for ${newLiveData.size} markets`);
-    setLiveMarketData(newLiveData);
+    setLiveMarketData((prev) => {
+      const merged = new Map(prev);
+      newLiveData.forEach((value, key) => {
+        merged.set(key, value);
+      });
+      return merged;
+    });
   }, []);
 
   // Fetch feed data
@@ -1120,10 +1127,31 @@ export default function FeedPage() {
   const refreshDisplayedMarketData = useCallback(() => {
     if (displayedTrades.length === 0) return;
     const now = Date.now();
-    if (now - lastLiveRefreshRef.current < 15000) return;
+    const refreshWindowMs = 15000;
+    const tradesNeedingRefresh = displayedTrades.filter((trade) => {
+      const conditionId = trade.market.conditionId;
+      if (!conditionId) return false;
+      const liveData = liveMarketData.get(conditionId);
+      if (!liveData?.updatedAt) return true;
+      return now - liveData.updatedAt > refreshWindowMs;
+    });
+
+    if (tradesNeedingRefresh.length === 0) return;
+
+    const hasMissingData = tradesNeedingRefresh.some((trade) => {
+      const conditionId = trade.market.conditionId;
+      if (!conditionId) return false;
+      const liveData = liveMarketData.get(conditionId);
+      return !liveData?.updatedAt;
+    });
+
+    if (!hasMissingData && now - lastLiveRefreshRef.current < refreshWindowMs) {
+      return;
+    }
+
     lastLiveRefreshRef.current = now;
-    fetchLiveMarketData(displayedTrades);
-  }, [displayedTrades, fetchLiveMarketData]);
+    fetchLiveMarketData(tradesNeedingRefresh);
+  }, [displayedTrades, fetchLiveMarketData, liveMarketData]);
 
   useEffect(() => {
     refreshDisplayedMarketData();
@@ -1355,6 +1383,21 @@ export default function FeedPage() {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {activeFiltersCount > 0 && (
+                  <Button
+                    onClick={() => {
+                      setActiveCategory('all');
+                      setLiveGamesOnly(false);
+                      setMinTradeSize(0);
+                      setSelectedTraders(new Set());
+                    }}
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-slate-500 hover:text-slate-700"
+                  >
+                    Clear filters
+                  </Button>
+                )}
                 <Button
                   onClick={() => setShowFilters((prev) => !prev)}
                   variant="outline"
@@ -1510,19 +1553,23 @@ export default function FeedPage() {
         {/* Feed Content */}
         <div className="max-w-[800px] mx-auto px-4 md:px-6 py-4 md:py-8">
           {loadingFeed ? (
-            <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 animate-pulse">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-slate-200 rounded-full"></div>
-                    <div className="flex-1">
-                      <div className="h-4 bg-slate-200 rounded w-1/3 mb-2"></div>
-                      <div className="h-4 bg-slate-200 rounded w-3/4 mb-3"></div>
-                      <div className="h-3 bg-slate-200 rounded w-1/4"></div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-[1100px] w-full text-sm">
+                  <TradeTableHeader />
+                  <tbody>
+                    {[1, 2, 3].map((i) => (
+                      <tr key={i} className="border-b border-slate-100 animate-pulse">
+                        {Array.from({ length: 10 }).map((_, index) => (
+                          <td key={index} className="px-4 py-4">
+                            <div className="h-3 w-full max-w-[120px] rounded-full bg-slate-200" />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : error ? (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
@@ -1554,68 +1601,77 @@ export default function FeedPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {displayedTrades.map((trade) => {
-                const liveMarket = liveMarketData.get(trade.market.conditionId || '')
-                
-                // Find the price for THIS specific trade's outcome
-                let currentPrice: number | undefined = undefined;
-                if (liveMarket?.outcomes && liveMarket?.outcomePrices) {
-                  const outcomeIndex = liveMarket.outcomes.findIndex(
-                    (o: string) => o.toUpperCase() === trade.trade.outcome.toUpperCase()
-                  );
-                  if (outcomeIndex !== -1 && outcomeIndex < liveMarket.outcomePrices.length) {
-                    currentPrice = liveMarket.outcomePrices[outcomeIndex];
-                  }
-                }
-                
-                const tradeKey = String(trade.id);
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-[1100px] w-full text-sm">
+                    <TradeTableHeader />
+                    <tbody>
+                      {displayedTrades.map((trade) => {
+                        const liveMarket = liveMarketData.get(trade.market.conditionId || '')
+                        
+                        // Find the price for THIS specific trade's outcome
+                        let currentPrice: number | undefined = undefined;
+                        if (liveMarket?.outcomes && liveMarket?.outcomePrices) {
+                          const outcomeIndex = liveMarket.outcomes.findIndex(
+                            (o: string) => o.toUpperCase() === trade.trade.outcome.toUpperCase()
+                          );
+                          if (outcomeIndex !== -1 && outcomeIndex < liveMarket.outcomePrices.length) {
+                            currentPrice = liveMarket.outcomePrices[outcomeIndex];
+                          }
+                        }
+                        
+                        const tradeKey = String(trade.id);
 
-                return (
-                  <TradeCard
-                    key={trade.id}
-                    trader={{
-                      name: trade.trader.displayName,
-                      address: trade.trader.wallet,
-                      id: trade.trader.wallet,
-                    }}
-                    market={trade.market.title}
-                    marketAvatar={trade.market.avatarUrl}
-                    position={trade.trade.outcome}
-                    action={trade.trade.side === 'BUY' ? 'Buy' : 'Sell'}
-                    price={trade.trade.price}
-                    size={trade.trade.size}
-                    total={trade.trade.price * trade.trade.size}
-                    timestamp={getRelativeTime(trade.trade.timestamp)}
-                    onCopyTrade={() => handleCopyTrade(trade)}
-                    onMarkAsCopied={(entryPrice, amountInvested) =>
-                      handleMarkAsCopied(trade, entryPrice, amountInvested)
-                    }
-                    onAdvancedCopy={() => handleRealCopy(trade)}
-                    isPremium={tierHasPremiumAccess(userTier)}
-                    isAdmin={userTier === 'admin'}
-                    isExpanded={expandedTradeIds.has(tradeKey)}
-                    onToggleExpand={() => toggleTradeExpanded(tradeKey)}
-                    isCopied={isTraceCopied(trade)}
-                    conditionId={trade.market.conditionId}
-                    tokenId={trade.trade.tokenId}
-                    marketSlug={trade.market.slug}
-                    currentMarketPrice={currentPrice}
-                    currentMarketUpdatedAt={liveMarket?.updatedAt}
-                    marketIsOpen={liveMarket?.resolved === undefined ? undefined : !liveMarket.resolved}
-                    liveScore={liveMarket?.score}
-                    category={trade.market.category}
-                    polymarketUrl={
-                      trade.market.eventSlug 
-                        ? `https://polymarket.com/event/${trade.market.eventSlug}`
-                        : trade.market.slug 
-                        ? `https://polymarket.com/market/${trade.market.slug}`
-                        : undefined
-                    }
-                    defaultBuySlippage={defaultBuySlippage}
-                    defaultSellSlippage={defaultSellSlippage}
-                  />
-                )
-              })}
+                        return (
+                          <TradeCard
+                            key={trade.id}
+                            trader={{
+                              name: trade.trader.displayName,
+                              address: trade.trader.wallet,
+                              id: trade.trader.wallet,
+                            }}
+                            market={trade.market.title}
+                            marketAvatar={trade.market.avatarUrl}
+                            position={trade.trade.outcome}
+                            action={trade.trade.side === 'BUY' ? 'Buy' : 'Sell'}
+                            price={trade.trade.price}
+                            size={trade.trade.size}
+                            total={trade.trade.price * trade.trade.size}
+                            timestamp={getRelativeTime(trade.trade.timestamp)}
+                            onCopyTrade={() => handleCopyTrade(trade)}
+                            onMarkAsCopied={(entryPrice, amountInvested) =>
+                              handleMarkAsCopied(trade, entryPrice, amountInvested)
+                            }
+                            onAdvancedCopy={() => handleRealCopy(trade)}
+                            isPremium={tierHasPremiumAccess(userTier)}
+                            isAdmin={userTier === 'admin'}
+                            isExpanded={expandedTradeIds.has(tradeKey)}
+                            onToggleExpand={() => toggleTradeExpanded(tradeKey)}
+                            isCopied={isTraceCopied(trade)}
+                            conditionId={trade.market.conditionId}
+                            tokenId={trade.trade.tokenId}
+                            marketSlug={trade.market.slug}
+                            currentMarketPrice={currentPrice}
+                            currentMarketUpdatedAt={liveMarket?.updatedAt}
+                            marketIsOpen={liveMarket?.resolved === undefined ? undefined : !liveMarket.resolved}
+                            liveScore={liveMarket?.score}
+                            category={trade.market.category}
+                            polymarketUrl={
+                              trade.market.eventSlug 
+                                ? `https://polymarket.com/event/${trade.market.eventSlug}`
+                                : trade.market.slug 
+                                ? `https://polymarket.com/market/${trade.market.slug}`
+                                : undefined
+                            }
+                            defaultBuySlippage={defaultBuySlippage}
+                            defaultSellSlippage={defaultSellSlippage}
+                          />
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
               
               {/* Load More Button */}
               {hasMoreTrades && (
