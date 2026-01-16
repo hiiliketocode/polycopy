@@ -6,7 +6,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { TradeTableHeader } from "@/components/polycopy/trade-table"
 import { cn } from "@/lib/utils"
 import type { OrderRow } from "@/lib/orders/types"
 
@@ -104,23 +103,20 @@ export function ManualTradesFeed({ displayName, avatarUrl, walletAddress }: Manu
       )}
 
       {loading ? (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-[980px] w-full text-sm">
-              <TradeTableHeader showActions={false} />
-              <tbody>
-                {Array.from({ length: 3 }).map((_, idx) => (
-                  <tr key={idx} className="border-b border-slate-100 animate-pulse">
-                    {Array.from({ length: 9 }).map((__, cellIndex) => (
-                      <td key={cellIndex} className="px-4 py-4">
-                        <div className="h-3 w-full max-w-[120px] rounded-full bg-slate-200" />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, idx) => (
+            <Card key={idx} className="p-4 sm:p-6 border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-full bg-slate-200 animate-pulse" />
+                <div className="space-y-2 flex-1">
+                  <div className="h-3 w-32 bg-slate-200 rounded-full animate-pulse" />
+                  <div className="h-3 w-24 bg-slate-200 rounded-full animate-pulse" />
+                </div>
+              </div>
+              <div className="h-10 w-10 rounded-full bg-slate-200 animate-pulse mb-3" />
+              <div className="h-16 bg-slate-100 rounded-lg animate-pulse" />
+            </Card>
+          ))}
         </div>
       ) : visibleOrders.length === 0 ? (
         <Card className="p-6 text-center border border-dashed border-slate-200 bg-white shadow-sm">
@@ -130,31 +126,24 @@ export function ManualTradesFeed({ displayName, avatarUrl, walletAddress }: Manu
           </p>
         </Card>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-[980px] w-full text-sm">
-              <TradeTableHeader showActions={false} />
-              <tbody>
-                {visibleOrders.map((order) => (
-                  <ManualTradeRow
-                    key={order.orderId}
-                    order={order}
-                    metrics={deriveTradeMetrics(order)}
-                    headerName={headerName}
-                    avatarUrl={avatarUrl}
-                    walletDisplay={walletDisplay}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="space-y-3">
+          {visibleOrders.map((order) => (
+            <ManualTradeCard
+              key={order.orderId}
+              order={order}
+              metrics={deriveTradeMetrics(order)}
+              headerName={headerName}
+              avatarUrl={avatarUrl}
+              walletDisplay={walletDisplay}
+            />
+          ))}
         </div>
       )}
     </div>
   )
 }
 
-type ManualTradeRowProps = {
+type ManualTradeCardProps = {
   order: OrderRow
   metrics: TradeMetrics
   headerName: string
@@ -162,7 +151,7 @@ type ManualTradeRowProps = {
   walletDisplay: string | null
 }
 
-function ManualTradeRow({ order, metrics, headerName, avatarUrl, walletDisplay }: ManualTradeRowProps) {
+function ManualTradeCard({ order, metrics, headerName, avatarUrl, walletDisplay }: ManualTradeCardProps) {
   const createdAt = safeDate(order.createdAt)
   const absoluteTime = createdAt ? formatAbsoluteTime(createdAt) : null
   const relativeTime = createdAt ? formatRelative(createdAt) : null
@@ -180,11 +169,10 @@ function ManualTradeRow({ order, metrics, headerName, avatarUrl, walletDisplay }
         : "text-slate-600"
 
   return (
-    <tr className="border-b border-slate-100 bg-white">
-      <td className="px-4 py-4 align-top">
-        <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Trader</span>
-        <div className="mt-1 flex items-center gap-3 min-w-0">
-          <Avatar className="h-10 w-10 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
+    <Card className="p-4 sm:p-6 rounded-3xl border border-slate-200 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
             <AvatarImage src={userAvatar} alt={headerName} />
             <AvatarFallback className="bg-amber-400 text-slate-900 text-sm font-semibold uppercase">
               {initials(headerName)}
@@ -197,78 +185,88 @@ function ManualTradeRow({ order, metrics, headerName, avatarUrl, walletDisplay }
             )}
           </div>
         </div>
-      </td>
-      <td className="px-4 py-4 align-top">
-        <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Market</span>
-        <div className="mt-1 flex items-start gap-3 min-w-[220px]">
-          <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
-            <AvatarImage src={marketAvatar} alt={marketTitle} />
-            <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
-              {marketTitle.slice(0, 2)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <h3 className="text-sm md:text-base font-semibold text-slate-900 leading-snug truncate">
-              {marketTitle}
-            </h3>
+        <div className="text-right text-xs text-slate-500 space-y-1 shrink-0">
+          {absoluteTime && (
+            <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-semibold text-slate-700">
+              {absoluteTime}
+            </span>
+          )}
+          {relativeTime && <div className="text-[11px]">{relativeTime}</div>}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 mt-4">
+        <Avatar className="h-12 w-12 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
+          <AvatarImage src={marketAvatar} alt={marketTitle} />
+          <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
+            {marketTitle.slice(0, 2)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex-1 flex items-center gap-2">
+          <h3 className="text-base md:text-lg font-semibold text-slate-900 leading-snug truncate">
+            {marketTitle}
+          </h3>
+        </div>
+      </div>
+
+      <div className="border border-slate-200 rounded-lg px-4 py-3 mt-3 bg-slate-50/50">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 relative">
+          <div className="text-center">
+            <p className="text-xs text-slate-500 mb-1 font-medium">Trade</p>
+            <div className="flex flex-wrap items-center justify-center gap-1 max-w-full">
+              <Badge
+                variant="secondary"
+                className={cn(
+                  "font-semibold text-xs",
+                  metrics.actionLabel === "Buy"
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : "bg-red-50 text-red-700 border-red-200"
+                )}
+              >
+                {metrics.actionLabel}
+              </Badge>
+              <span className="text-xs text-slate-400 font-semibold">|</span>
+              <Badge
+                variant="secondary"
+                className="font-semibold text-xs bg-slate-100 text-slate-700 border-slate-200 max-w-[160px] whitespace-normal break-words text-center leading-snug"
+              >
+                {outcomeLabel}
+              </Badge>
+            </div>
+          </div>
+          <div className="text-center md:border-l border-slate-200">
+            <p className="text-xs text-slate-500 mb-1 font-medium">Invested</p>
+            <p className="text-sm md:text-base font-semibold text-slate-900">
+              {formatCurrency(metrics.invested)}
+            </p>
+          </div>
+          <div className="text-center md:border-l border-slate-200">
+            <p className="text-xs text-slate-500 mb-1 font-medium">Contracts</p>
+            <p className="text-sm md:text-base font-semibold text-slate-900">
+              {formatContracts(metrics.contracts)}
+            </p>
+          </div>
+          <div className="text-center md:border-l border-slate-200">
+            <p className="text-xs text-slate-500 mb-1 font-medium">Entry</p>
+            <p className="text-sm md:text-base font-semibold text-slate-900">
+              {formatPrice(metrics.entryPrice)}
+            </p>
+          </div>
+          <div className="text-center md:border-l border-slate-200">
+            <p className="text-xs text-slate-500 mb-1 font-medium">Current</p>
+            <p className="text-sm md:text-base font-semibold text-slate-900">
+              {formatPrice(metrics.currentPrice)}
+            </p>
+          </div>
+          <div className="text-center md:border-l border-slate-200">
+            <p className="text-xs text-slate-500 mb-1 font-medium">ROI</p>
+            <p className={cn("text-sm md:text-base font-semibold", roiClass)}>
+              {metrics.roi === null ? "--" : `${metrics.roi > 0 ? "+" : ""}${metrics.roi.toFixed(1)}%`}
+            </p>
           </div>
         </div>
-      </td>
-      <td className="px-4 py-4 align-top">
-        <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Trade</span>
-        <div className="mt-1 flex flex-wrap items-center gap-1">
-          <Badge
-            variant="secondary"
-            className={cn(
-              "font-semibold text-xs",
-              metrics.actionLabel === "Buy"
-                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                : "bg-red-50 text-red-700 border-red-200"
-            )}
-          >
-            {metrics.actionLabel}
-          </Badge>
-          <span className="text-xs text-slate-400 font-semibold">|</span>
-          <Badge
-            variant="secondary"
-            className="font-semibold text-xs bg-slate-100 text-slate-700 border-slate-200 max-w-[160px] whitespace-normal break-words text-center leading-snug"
-          >
-            {outcomeLabel}
-          </Badge>
-        </div>
-      </td>
-      <td className="px-4 py-4 align-top">
-        <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Invested</span>
-        <p className="mt-1 text-sm font-semibold text-slate-900">{formatCurrency(metrics.invested)}</p>
-      </td>
-      <td className="px-4 py-4 align-top">
-        <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Contracts</span>
-        <p className="mt-1 text-sm font-semibold text-slate-900">{formatContracts(metrics.contracts)}</p>
-      </td>
-      <td className="px-4 py-4 align-top">
-        <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Entry</span>
-        <p className="mt-1 text-sm font-semibold text-slate-900">{formatPrice(metrics.entryPrice)}</p>
-      </td>
-      <td className="px-4 py-4 align-top">
-        <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Current</span>
-        <p className="mt-1 text-sm font-semibold text-slate-900">{formatPrice(metrics.currentPrice)}</p>
-      </td>
-      <td className="px-4 py-4 align-top">
-        <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">ROI</span>
-        <p className={cn("mt-1 text-sm font-semibold", roiClass)}>
-          {metrics.roi === null ? "--" : `${metrics.roi > 0 ? "+" : ""}${metrics.roi.toFixed(1)}%`}
-        </p>
-      </td>
-      <td className="px-4 py-4 align-top">
-        <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Time</span>
-        {absoluteTime && (
-          <div className="mt-1 inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
-            {absoluteTime}
-          </div>
-        )}
-        {relativeTime && <div className="text-[11px] text-slate-500 mt-1">{relativeTime}</div>}
-      </td>
-    </tr>
+      </div>
+    </Card>
   )
 }
 

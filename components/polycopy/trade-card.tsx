@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowLeftRight, ChevronDown, ChevronUp, Check, HelpCircle, ExternalLink, X, Loader2 } from "lucide-react"
+import { ArrowDown, ArrowLeftRight, ChevronDown, ChevronUp, Check, HelpCircle, ExternalLink, X, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -1619,16 +1619,14 @@ export function TradeCard({
     setSubmitError('Order failed to match. Try again with a wider spread or updated price.')
   }
 
-  const columnCount = 10
-
   return (
-    <>
-      <tr className="border-b border-slate-200 bg-white">
-        <td className="px-4 py-4 align-top">
-          <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Trader</span>
+    <div className="group bg-white border border-slate-200 rounded-xl overflow-hidden transition-all hover:shadow-lg">
+      <div className="p-5 md:p-6">
+        {/* Header Row */}
+        <div className="flex items-start justify-between mb-4 gap-3">
           <Link
             href={`/trader/${trader.id || "1"}`}
-            className="mt-1 flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
+            className="flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
           >
             <Avatar className="h-10 w-10 ring-2 ring-slate-100 transition-all">
               <AvatarImage src={trader.avatar || "/placeholder.svg"} alt={trader.name} />
@@ -1637,586 +1635,650 @@ export function TradeCard({
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0">
-              <p className="font-semibold text-slate-900 text-sm truncate">{trader.name}</p>
+              <p className="font-medium text-slate-900 text-sm">{trader.name}</p>
               <p className="text-xs text-slate-500 font-mono truncate">{displayAddress}</p>
             </div>
           </Link>
-        </td>
-        <td className="px-4 py-4 align-top">
-          <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Market</span>
-          <div className="mt-1 flex items-start gap-3 min-w-[220px]">
-            <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
-              <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
-              <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
-                {market.slice(0, 2)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
-              <div className="flex items-start gap-2">
-                <h3 className="text-sm md:text-base font-semibold text-slate-900 leading-snug truncate">
-                  {market}
-                </h3>
-                {isPremium && polymarketUrl && (
-                  <a
-                    href={polymarketUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
-                    title="View on Polymarket"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                )}
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                {isMarketEnded && (
-                  <Badge
-                    variant="secondary"
-                    className="h-6 px-2 text-[10px] font-semibold bg-rose-50 text-rose-700 border-rose-200 flex items-center"
-                  >
-                    Resolved
-                  </Badge>
-                )}
-                {liveScore && (
-                  <div className="px-2 py-1 rounded bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 shadow-sm flex items-center">
-                    <span className="text-[10px] font-semibold text-blue-900">{liveScore}</span>
-                  </div>
-                )}
-              </div>
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            {/* Live Score (Always visible for all users) */}
+            <div className="flex flex-col md:flex-row items-end md:items-center gap-2">
+              {isMarketEnded && (
+                <Badge
+                  variant="secondary"
+                  className="h-7 px-2 text-[10px] font-semibold bg-slate-100 text-slate-700 border-slate-300 flex items-center gap-1"
+                >
+                  <Check className="h-3 w-3" />
+                  Resolved
+                </Badge>
+              )}
+              {liveScore && (
+                <div className="px-2 py-1 h-7 rounded bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 shadow-sm flex items-center">
+                  <span className="text-[10px] font-semibold text-blue-900">{liveScore}</span>
+                </div>
+              )}
+            </div>
+            {/* Timestamp & Expand */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
+              {isPremium && onToggleExpand && !localCopied && null}
             </div>
           </div>
-        </td>
-        <td className="px-4 py-4 align-top">
-          <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Trade</span>
-          <div className="mt-1 flex flex-wrap items-center gap-1">
-            <Badge
-              variant="secondary"
-              className={`font-semibold text-xs ${
-                action === "Buy"
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                  : "bg-red-50 text-red-700 border-red-200"
-              }`}
-            >
-              {action}
-            </Badge>
-            <span className="text-xs text-slate-400 font-semibold">|</span>
-            <Badge
-              variant="secondary"
-              className={`font-semibold text-xs ${outcomeBadgeClass} max-w-[160px] whitespace-normal break-words text-center leading-snug`}
-            >
-              {formatOutcomeLabel(position)}
-            </Badge>
+        </div>
+
+        <div className="flex items-center gap-3 mb-4">
+          <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
+            <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
+            <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
+              {market.slice(0, 2)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1 flex items-center gap-2">
+            <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug">{market}</h3>
+            {/* External link icon for Premium users - at end of market name */}
+            {isPremium && polymarketUrl && (
+              <a
+                href={polymarketUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+                title="View on Polymarket"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            )}
           </div>
-        </td>
-        <td className="px-4 py-4 align-top">
-          <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Invested</span>
-          <p className="mt-1 text-sm font-semibold text-slate-900">{formatCurrency(total)}</p>
-        </td>
-        <td className="px-4 py-4 align-top">
-          <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Contracts</span>
-          <p className="mt-1 text-sm font-semibold text-slate-900">{formatContracts(size)}</p>
-        </td>
-        <td className="px-4 py-4 align-top">
-          <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Entry</span>
-          <p className="mt-1 text-sm font-semibold text-slate-900">{formatPrice(price)}</p>
-        </td>
-        <td className="px-4 py-4 align-top">
-          <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Current</span>
-          <p className="mt-1 text-sm font-semibold">
-            <span
+        </div>
+
+        <div className="border border-slate-200 rounded-lg px-4 py-3 mb-2 bg-slate-50/50">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 relative">
+            <div className="text-center">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Trade</p>
+              <div className="flex flex-wrap items-center justify-center gap-1 max-w-full">
+                <Badge
+                  variant="secondary"
+                  className={`font-semibold text-xs ${
+                    action === "Buy"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-red-50 text-red-700 border-red-200"
+                  }`}
+                >
+                  {action}
+                </Badge>
+                <span className="text-xs text-slate-400 font-semibold">|</span>
+                <Badge
+                  variant="secondary"
+                  className={`font-semibold text-xs ${outcomeBadgeClass} max-w-[140px] whitespace-normal break-words text-center leading-snug`}
+                >
+                  {formatOutcomeLabel(position)}
+                </Badge>
+                </div>
+              </div>
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Invested</p>
+              <p className="text-sm md:text-base font-semibold text-slate-900">{formatCurrency(total)}</p>
+            </div>
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Contracts</p>
+              <p className="text-sm md:text-base font-semibold text-slate-900">{formatContracts(size)}</p>
+            </div>
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Entry</p>
+              <p className="text-sm md:text-base font-semibold text-slate-900">{formatPrice(price)}</p>
+            </div>
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Current</p>
+              <p className="text-sm md:text-base font-semibold">
+                <span
+                  className={cn(
+                    "inline-flex items-center justify-center rounded-md px-1.5 py-0.5 transition-colors duration-300",
+                    !hasCurrentPrice && "text-slate-400",
+                    priceFlash === "up" && "bg-emerald-50 text-emerald-700",
+                    priceFlash === "down" && "bg-red-50 text-red-700",
+                    priceFlash === "neutral" && "bg-slate-100 text-slate-700",
+                    priceFlash === null && hasCurrentPrice && "text-slate-900"
+                  )}
+                >
+                  {hasCurrentPrice ? formatPrice(currentPrice) : "--"}
+                </span>
+              </p>
+            </div>
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">ROI</p>
+              <p className={`text-sm md:text-base font-semibold ${
+                priceDirection === 'neutral' || !hasCurrentPrice ? 'text-slate-400' :
+                priceDirection === 'up' ? 'text-emerald-600' :
+                'text-red-600'
+              }`}>
+                {!hasCurrentPrice ? '--' : `${priceChange > 0 ? '+' : ''}${priceChange.toFixed(1)}%`}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {!isPremium && manualDrawerOpen && (
+          <div className="p-4 mt-4 space-y-4 border border-slate-200 rounded-xl bg-slate-50">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-slate-900">Manual Copy</h4>
+              <button
+                type="button"
+                onClick={closeManualDrawer}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                aria-label="Close manual copy drawer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-lg p-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-600">Current Price</span>
+                <div className="text-right">
+                  <p className="text-base font-semibold text-slate-900">${manualDisplayPrice.toFixed(4)}</p>
+                  <p className={`text-xs font-medium ${manualPriceChangeColor}`}>{manualPriceChangeLabel}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="manual-copy-price" className="text-xs font-medium text-slate-700">
+                Price
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                <input
+                  id="manual-copy-price"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.0001"
+                  value={manualPriceInput}
+                  onChange={(e) => setManualPriceInput(e.target.value)}
+                  placeholder={manualDisplayPrice.toFixed(4)}
+                  className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="manual-copy-amount" className="text-xs font-medium text-slate-700">
+                Amount (USD)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                <input
+                  id="manual-copy-amount"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  value={manualUsdAmount}
+                  onChange={(e) => setManualUsdAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+              </div>
+              {manualAmountPositive && (
+                <p className="text-xs text-slate-500">
+                  ≈ {manualContractsEstimate.toLocaleString()} contracts
+                </p>
+              )}
+            </div>
+
+            <Button
+              onClick={handleManualMarkAsCopied}
+              disabled={!manualAmountValid || isCopyDisabled || isCopied}
+              variant="outline"
               className={cn(
-                "inline-flex items-center justify-center rounded-md px-1.5 py-0.5 transition-colors duration-300",
-                !hasCurrentPrice && "text-slate-400",
-                priceFlash === "up" && "bg-emerald-50 text-emerald-700",
-                priceFlash === "down" && "bg-red-50 text-red-700",
-                priceFlash === "neutral" && "bg-slate-100 text-slate-700",
-                priceFlash === null && hasCurrentPrice && "text-slate-900"
+                'w-full font-semibold text-sm',
+                isCopied
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
+                  : isCopyDisabled || !manualAmountValid
+                    ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'bg-[#FDB022] border-transparent hover:bg-[#FDB022]/90 text-slate-900'
               )}
             >
-              {hasCurrentPrice ? formatPrice(currentPrice) : "--"}
-            </span>
-          </p>
-        </td>
-        <td className="px-4 py-4 align-top">
-          <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">ROI</span>
-          <p
-            className={`mt-1 text-sm font-semibold ${
-              priceDirection === 'neutral' || !hasCurrentPrice
-                ? 'text-slate-400'
-                : priceDirection === 'up'
-                  ? 'text-emerald-600'
-                  : 'text-red-600'
-            }`}
-          >
-            {!hasCurrentPrice ? '--' : `${priceChange > 0 ? '+' : ''}${priceChange.toFixed(1)}%`}
-          </p>
-        </td>
-        <td className="px-4 py-4 align-top">
-          <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Time</span>
-          <p className="mt-1 text-xs font-medium text-slate-600 whitespace-nowrap">{timestamp}</p>
-        </td>
-        <td className="px-4 py-4 align-top text-right">
-          <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Action</span>
-          {!manualDrawerOpen && !(isPremium && isExpanded) && (
-            isPremium ? (
+              {isMarketEnded ? (
+                "Market Resolved"
+              ) : isCopied ? (
+                <>
+                  <Check className="h-4 w-4 mr-2" />
+                  Copied
+                </>
+              ) : (
+                'Mark trade as copied'
+              )}
+            </Button>
+          </div>
+        )}
+
+        {!(isPremium && isExpanded) && (
+          isPremium ? (
+            <div className="w-full">
               <Button
                 onClick={handleCopyTradeClick}
                 disabled={isCopyDisabled}
-                className={`mt-1 w-full font-semibold shadow-sm text-xs ${
+                className={`w-full font-semibold shadow-sm text-sm ${
                   localCopied
                     ? "bg-emerald-500 hover:bg-emerald-600 text-white"
                     : isMarketEnded
                       ? "bg-slate-200 text-slate-500 cursor-not-allowed"
                       : "bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
                 }`}
-                size="sm"
+                size="lg"
               >
-                {localCopied ? (
+                {isMarketEnded ? (
+                  "Market Resolved"
+                ) : localCopied ? (
                   <>
-                    <Check className="w-3.5 h-3.5 mr-1.5" />
+                    <Check className="w-4 h-4 mr-2" />
                     Copy Again
                   </>
                 ) : (
                   "Copy Trade"
                 )}
               </Button>
-            ) : (
-              isCopied ? (
-                <Button
-                  disabled
-                  className="mt-1 w-full bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-xs"
-                  size="sm"
-                >
-                  <Check className="w-3.5 h-3.5 mr-1.5" />
-                  Copied
-                </Button>
-              ) : (
-                <Button
-                  onClick={handleCopyTradeClick}
-                  disabled={isCopyDisabled}
-                  className={`mt-1 w-full font-semibold shadow-sm text-xs ${
-                    isMarketEnded
-                      ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                      : "bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900"
-                  }`}
-                  size="sm"
-                >
-                  {manualFlowStep === 'open-polymarket' ? (
-                    <>
-                      Open Polymarket
-                      <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
-                    </>
-                  ) : (
-                    'Enter details'
-                  )}
-                </Button>
-              )
-            )
-          )}
-        </td>
-      </tr>
-
-      {!isPremium && manualDrawerOpen && (
-        <tr className="border-b border-slate-100 bg-slate-50/60">
-          <td colSpan={columnCount} className="px-4 py-4">
-            <div className="space-y-4 border border-slate-200 rounded-xl bg-slate-50 p-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-slate-900">Manual Copy</h4>
-                <button
-                  type="button"
-                  onClick={closeManualDrawer}
-                  className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                  aria-label="Close manual copy drawer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-lg p-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-slate-600">Current Price</span>
-                  <div className="text-right">
-                    <p className="text-base font-semibold text-slate-900">${manualDisplayPrice.toFixed(4)}</p>
-                    <p className={`text-xs font-medium ${manualPriceChangeColor}`}>{manualPriceChangeLabel}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label htmlFor="manual-copy-price" className="text-xs font-medium text-slate-700">
-                  Price
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
-                  <input
-                    id="manual-copy-price"
-                    type="number"
-                    inputMode="decimal"
-                    step="0.0001"
-                    value={manualPriceInput}
-                    onChange={(e) => setManualPriceInput(e.target.value)}
-                    placeholder={manualDisplayPrice.toFixed(4)}
-                    className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label htmlFor="manual-copy-amount" className="text-xs font-medium text-slate-700">
-                  Amount (USD)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
-                  <input
-                    id="manual-copy-amount"
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    value={manualUsdAmount}
-                    onChange={(e) => setManualUsdAmount(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                </div>
-                {manualAmountPositive && (
-                  <p className="text-xs text-slate-500">
-                    ≈ {manualContractsEstimate.toLocaleString()} contracts
-                  </p>
-                )}
-              </div>
-
-              <Button
-                onClick={handleManualMarkAsCopied}
-                disabled={!manualAmountValid || isCopyDisabled || isCopied}
-                variant="outline"
-                className={cn(
-                  'w-full font-semibold text-sm',
-                  isCopied
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
-                    : isCopyDisabled || !manualAmountValid
-                      ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                      : 'bg-[#FDB022] border-transparent hover:bg-[#FDB022]/90 text-slate-900'
-                )}
-              >
-                {isCopied ? (
-                  <>
-                    <Check className="h-4 w-4 mr-2" />
-                    Copied
-                  </>
-                ) : (
-                  'Mark trade as copied'
-                )}
-              </Button>
             </div>
-          </td>
-        </tr>
-      )}
+          ) : (
+            <div className="w-full">
+              {!manualDrawerOpen && (
+                isCopied ? (
+                  <Button
+                    disabled
+                    className="w-full bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
+                    size="lg"
+                  >
+                    <Check className="w-4 h-4 mr-2" />
+                    Copied
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleCopyTradeClick}
+                    disabled={isCopyDisabled}
+                    className={`w-full font-semibold shadow-sm text-sm ${
+                      isMarketEnded
+                        ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                        : "bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900"
+                    }`}
+                    size="lg"
+                  >
+                    {isMarketEnded ? (
+                      "Market Resolved"
+                    ) : manualFlowStep === 'open-polymarket' ? (
+                      <>
+                        Open Polymarket to enter trade
+                        <ExternalLink className="w-4 h-4 ml-2" />
+                      </>
+                    ) : (
+                      'Enter order details'
+                    )}
+                  </Button>
+                )
+              )}
+            </div>
+          )
+        )}
+      </div>
 
       {isPremium && isExpanded && (
-        <tr className="border-b border-slate-100 bg-white">
-          <td colSpan={columnCount} className="px-4 pb-4 pt-3">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
-              {showConfirmation ? (
-                <div className="space-y-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-semibold tracking-wide text-slate-400">Status</p>
-                      <p className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                        {!isFinalStatus && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
-                        {statusLabel}
-                      </p>
-                      {!isFinalStatus && (
-                        <div className="mt-1">
-                          <p
-                            className={`text-xs ${
-                              statusPhase === 'timed_out' ? 'text-amber-600' : 'text-slate-500'
-                            }`}
-                          >
-                            {statusPhase === 'timed_out'
-                              ? 'Polymarket did not match this order within 30 seconds. Try increasing slippage and/or using a smaller amount.'
-                              : 'This may take a moment.'}
-                          </p>
-                        </div>
-                      )}
-                      {statusPhase === 'timed_out' && (
-                        <div className="mt-3 space-y-2">
-                          <p className="text-xs text-amber-600">
-                            We couldn’t fill this order at your price. Try increasing slippage (tap Advanced) or using a smaller amount.
-                          </p>
-                          <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                            <span>Why didn&apos;t it match?</span>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    type="button"
-                                    className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"
-                                    aria-label="Why orders fail to match"
-                                  >
-                                    ?
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent className="max-w-xs">
-                                  <p>
-                                    Orders fail to match when there isn&apos;t enough liquidity at your limit price.
-                                    Increasing slippage or reducing size widens the chance of a fill.
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
-                        </div>
-                      )}
-                      {cancelStatus && (
-                        <p className={`text-xs ${getCancelStatusClass(cancelStatus.variant)}`}>
-                          {cancelStatus.message}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {canCancelPendingOrder && (
-                        <button
-                          type="button"
-                          onClick={handleCancelOrder}
-                          disabled={isCancelingOrder}
-                          className={`inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
-                            isCancelingOrder
-                              ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
-                              : 'border-rose-200 bg-white text-rose-700 hover:bg-rose-50'
+        <div className="bg-white px-6 pb-3 pt-0">
+          <div className="-mt-4 mb-2 flex justify-center">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">
+              <ArrowDown className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-0.5 rounded-xl border border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
+            {showConfirmation ? (
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold tracking-wide text-slate-400">Status</p>
+                    <p className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                      {!isFinalStatus && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
+                      {statusLabel}
+                    </p>
+                    {!isFinalStatus && (
+                      <div className="mt-1">
+                        <p
+                          className={`text-xs ${
+                            statusPhase === 'timed_out' ? 'text-amber-600' : 'text-slate-500'
                           }`}
                         >
-                          {isCancelingOrder ? 'Canceling…' : 'Cancel'}
-                        </button>
-                      )}
-                      {isFilledStatus && (
-                        <button
-                          type="button"
-                          onClick={resetConfirmation}
-                          className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 h-8 w-8"
-                          aria-label="Close order confirmation"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {confirmationError && (
-                    <div
-                      className={`rounded-lg border px-3 py-2 text-xs ${
-                        confirmationError.success === false
-                          ? "border-amber-200 bg-amber-50 text-amber-900"
-                          : "border-rose-200 bg-rose-50 text-rose-700"
-                      }`}
-                    >
-                      <p className="font-semibold">
-                        {confirmationError.code
-                          ? `${confirmationError.code}: ${confirmationError.message}`
-                          : confirmationError.message}
-                      </p>
-                      {confirmationError.description && (
-                        <p className="text-[11px] opacity-80">{confirmationError.description}</p>
-                      )}
-                      {confirmationError.rawMessage &&
-                        confirmationError.rawMessage !== confirmationError.message && (
-                          <p className="text-[11px] opacity-70">{confirmationError.rawMessage}</p>
-                        )}
-                    </div>
-                  )}
-                  <div className="space-y-2">
-                    <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
-                      <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
-                        <label className="text-xs font-medium text-slate-700">
-                          {filledAmountValue !== null ? "Filled USD" : "Estimated max USD"}
-                        </label>
-                        <div className="flex h-14 items-center rounded-lg border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700">
-                          {formatCurrency(Number.isFinite(statusAmountValue) ? statusAmountValue : 0)}
-                        </div>
-                      </div>
-                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
-                        <span className="text-xs font-medium text-slate-700 text-center sm:text-left">
-                          Filled / submitted
-                        </span>
-                        <div className="flex h-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center">
-                          {statusContractsText}
-                        </div>
-                      </div>
-                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
-                        <span className="text-xs font-medium text-slate-700 text-center sm:text-left">
-                          Average fill price
-                        </span>
-                        <div className="flex h-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center">
-                          {formatPrice(fillPrice)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {statusError && (
-                    <p className="text-xs text-rose-600">Status error: {statusError}</p>
-                  )}
-                  <div className="flex justify-end pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowTradeDetails((current) => !current)}
-                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
-                    >
-                      Trade Details
-                      {showTradeDetails ? (
-                        <ChevronUp className="h-3.5 w-3.5" />
-                      ) : (
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  </div>
-                  {showTradeDetails && (
-                    <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs font-semibold text-slate-400">Polymarket Response</p>
-                      {tradeDetailsJson ? (
-                        <pre className="mt-2 max-h-56 overflow-auto rounded-lg border border-slate-100 bg-white p-3 text-[11px] leading-relaxed text-slate-600">
-                          {tradeDetailsJson}
-                        </pre>
-                      ) : (
-                        <p className="mt-2 text-xs text-slate-500">
-                          Waiting for confirmation details...
+                          {statusPhase === 'timed_out'
+                            ? 'Polymarket did not match this order within 30 seconds. Try increasing slippage and/or using a smaller amount.'
+                            : 'This may take a moment.'}
                         </p>
-                      )}
-                      {cancelStatus && (
-                        <p className={`mt-2 text-[11px] ${getCancelStatusClass(cancelStatus.variant)}`}>
-                          {cancelStatus.message}
+                      </div>
+                    )}
+                    {statusPhase === 'timed_out' && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs text-amber-600">
+                          We couldn’t fill this order at your price. Try increasing slippage (tap Advanced) or using a smaller amount.
                         </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : !isSuccess ? (
-                <div className="space-y-5">
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <button
-                        type="button"
-                        onClick={onToggleExpand}
-                        className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors"
-                        aria-label="Collapse quick copy"
-                      >
-                        <ChevronUp className="w-4 h-4" />
-                      </button>
-                      <h4 className="text-sm font-semibold text-slate-900">Copy</h4>
-                      <span className="w-[52px]" aria-hidden="true" />
-                    </div>
-
-                    {orderBookError && (
-                      <div className="text-xs text-amber-600">{orderBookError}</div>
-                    )}
-
-                    <div className="space-y-2 mb-4">
-                      <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
-                        <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
-                          <div className="flex items-center justify-between gap-2">
-                            <label htmlFor="amount" className="text-xs font-medium text-slate-700">
-                              {amountMode === "usd" ? `USD (min $${minUsdLabel})` : "Contracts"}
-                            </label>
-                          </div>
-                          <div className="relative">
-                            {amountMode === "usd" && (
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
-                            )}
-                            <input
-                              id="amount"
-                              type="number"
-                              step={amountMode === "contracts" ? contractStep : 0.01}
-                              value={amountInput}
-                              onChange={(e) => {
-                                handleAmountChange(e.target.value)
-                                if (submitError) setSubmitError(null)
-                              }}
-                              onWheel={(e) => e.currentTarget.blur()}
-                              placeholder={amountMode === "usd" ? "0.00" : "0"}
-                              disabled={isSubmitting}
-                              className={`w-full h-14 border border-slate-300 rounded-lg text-base font-semibold text-slate-700 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${amountMode === "usd" ? "pl-7 pr-3" : "pl-3 pr-3"}`}
-                            />
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={amountMode === "usd" ? handleSwitchToContracts : handleSwitchToUsd}
-                          className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:border-slate-300 sm:h-12 sm:w-12 disabled:opacity-50 disabled:cursor-not-allowed"
-                          disabled={!amountInput.trim()}
-                          aria-label={`Switch to ${amountMode === "usd" ? "contracts" : "USD"}`}
-                        >
-                          <ArrowLeftRight className="h-4 w-4" />
-                        </button>
-                        <div className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px]">
-                          {amountMode === "usd"
-                            ? !hasAmountInput
-                              ? "—"
-                              : `≈ ${formatContractsDisplay(contractsValue, 1)} ${contractLabel}`
-                            : !hasAmountInput
-                              ? "—"
-                              : `≈ ${estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"} USD`}
-                        </div>
-                        <div className="flex h-14 items-center text-xs font-medium text-slate-500">
-                          {sizePercentLabel} of original trade
-                        </div>
-                      </div>
-                      {orderBookLoading && (
-                        <p className="text-xs text-amber-700">Loading market prices…</p>
-                      )}
-                      {minUsdErrorMessage && (
-                        <p className="text-xs text-rose-600">{minUsdErrorMessage}</p>
-                      )}
-                      {submitError && (
-                        <p className="text-xs text-rose-600">{submitError}</p>
-                      )}
-                    </div>
-
-                    <Button
-                      onClick={handleQuickCopy}
-                      disabled={
-                        isMarketEnded ||
-                        !amountInput ||
-                        !contractsValue ||
-                        contractsValue <= 0 ||
-                        isBelowMinUsd ||
-                        !limitPrice ||
-                        isSubmitting
-                      }
-                      className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
-                      size="lg"
-                    >
-                      {isSubmitting ? pendingStatusLabel : "Execute Trade"}
-                    </Button>
-                    {isSubmitting && (
-                      <p className="mt-2 text-center text-xs text-slate-500">This may take a moment.</p>
-                    )}
-                    {canUseAutoClose && (
-                      <div className="mt-4 flex items-start space-x-3 p-2.5 bg-white rounded-lg border border-slate-200">
-                        <Checkbox
-                          id="auto-close"
-                          checked={autoClose}
-                          onCheckedChange={(checked) => setAutoClose(!!checked)}
-                          disabled={isSubmitting}
-                        />
-                        <div className="flex-1">
-                          <label
-                            htmlFor="auto-close"
-                            className="text-sm font-medium text-slate-900 cursor-pointer leading-tight"
-                          >
-                            Auto-close when trader closes
-                          </label>
-                        </div>
-                      </div>
-                    )}
-                    <div className="mt-2 flex items-center justify-between gap-3">
-                      {!showAdvanced && (
-                        <TooltipProvider>
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                          <span>Why didn&apos;t it match?</span>
+                          <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button
                                   type="button"
-                                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+                                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"
+                                  aria-label="Why orders fail to match"
                                 >
-                                  Slippage ({resolvedSlippage}%)
-                                  <HelpCircle className="h-3.5 w-3.5" />
+                                  ?
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p>
+                                  Orders fail to match when there isn&apos;t enough liquidity at your limit price.
+                                  Increasing slippage or reducing size widens the chance of a fill.
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                      </div>
+                    )}
+                    {cancelStatus && (
+                      <p className={`text-xs ${getCancelStatusClass(cancelStatus.variant)}`}>
+                        {cancelStatus.message}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {canCancelPendingOrder && (
+                      <button
+                        type="button"
+                        onClick={handleCancelOrder}
+                        disabled={isCancelingOrder}
+                        className={`inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
+                          isCancelingOrder
+                            ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                            : 'border-rose-200 bg-white text-rose-700 hover:bg-rose-50'
+                        }`}
+                      >
+                        {isCancelingOrder ? 'Canceling…' : 'Cancel'}
+                      </button>
+                    )}
+                    {isFilledStatus && (
+                      <button
+                        type="button"
+                        onClick={resetConfirmation}
+                        className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 h-8 w-8"
+                        aria-label="Close order confirmation"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {confirmationError && (
+                  <div
+                    className={`rounded-lg border px-3 py-2 text-xs ${
+                      confirmationError.success === false
+                        ? "border-amber-200 bg-amber-50 text-amber-900"
+                        : "border-rose-200 bg-rose-50 text-rose-700"
+                    }`}
+                  >
+                    <p className="font-semibold">
+                      {confirmationError.code
+                        ? `${confirmationError.code}: ${confirmationError.message}`
+                        : confirmationError.message}
+                    </p>
+                    {confirmationError.description && (
+                      <p className="text-[11px] opacity-80">{confirmationError.description}</p>
+                    )}
+                    {confirmationError.rawMessage &&
+                      confirmationError.rawMessage !== confirmationError.message && (
+                        <p className="text-[11px] opacity-70">{confirmationError.rawMessage}</p>
+                      )}
+                    </div>
+                )}
+                <div className="space-y-2">
+                  <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
+                    <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
+                      <label className="text-xs font-medium text-slate-700">
+                        {filledAmountValue !== null ? "Filled USD" : "Estimated max USD"}
+                      </label>
+                    <div className="flex h-14 items-center rounded-lg border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700">
+                      {formatCurrency(Number.isFinite(statusAmountValue) ? statusAmountValue : 0)}
+                    </div>
+                    </div>
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
+                      <span className="text-xs font-medium text-slate-700 text-center sm:text-left">
+                        Filled / submitted
+                      </span>
+                      <div className="flex h-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center">
+                        {statusContractsText}
+                      </div>
+                    </div>
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
+                      <span className="text-xs font-medium text-slate-700 text-center sm:text-left">
+                        Average fill price
+                      </span>
+                      <div className="flex h-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center">
+                        {formatPrice(fillPrice)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {statusError && (
+                  <p className="text-xs text-rose-600">Status error: {statusError}</p>
+                )}
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowTradeDetails((current) => !current)}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+                  >
+                    Trade Details
+                    {showTradeDetails ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </div>
+                {showTradeDetails && (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold text-slate-400">Polymarket Response</p>
+                  {tradeDetailsJson ? (
+                    <pre className="mt-2 max-h-56 overflow-auto rounded-lg border border-slate-100 bg-white p-3 text-[11px] leading-relaxed text-slate-600">
+                      {tradeDetailsJson}
+                    </pre>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Waiting for confirmation details...
+                    </p>
+                  )}
+                  {cancelStatus && (
+                    <p className={`mt-2 text-[11px] ${getCancelStatusClass(cancelStatus.variant)}`}>
+                      {cancelStatus.message}
+                    </p>
+                  )}
+                </div>
+              )}
+              </div>
+            ) : !isSuccess ? (
+              <div className="space-y-5">
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <button
+                      type="button"
+                      onClick={onToggleExpand}
+                      className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors"
+                      aria-label="Collapse quick copy"
+                    >
+                      <ChevronUp className="w-4 h-4" />
+                    </button>
+                    <h4 className="text-sm font-semibold text-slate-900">Copy</h4>
+                    <span className="w-[52px]" aria-hidden="true" />
+                </div>
+
+                {orderBookError && (
+                  <div className="text-xs text-amber-600">{orderBookError}</div>
+                )}
+
+                {/* Amount Input */}
+                <div className="space-y-2 mb-4">
+                    <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
+                      <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
+                        <div className="flex items-center justify-between gap-2">
+                  <label htmlFor="amount" className="text-xs font-medium text-slate-700">
+                    {amountMode === "usd" ? `USD (min $${minUsdLabel})` : "Contracts"}
+                  </label>
+                        </div>
+                  <div className="relative">
+                    {amountMode === "usd" && (
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                    )}
+                    <input
+                      id="amount"
+                      type="number"
+                      step={amountMode === "contracts" ? contractStep : 0.01}
+                      value={amountInput}
+                            onChange={(e) => {
+                              handleAmountChange(e.target.value)
+                              if (submitError) setSubmitError(null)
+                            }}
+                      onWheel={(e) => e.currentTarget.blur()}
+                      placeholder={amountMode === "usd" ? "0.00" : "0"}
+                      disabled={isSubmitting}
+                            className={`w-full h-14 border border-slate-300 rounded-lg text-base font-semibold text-slate-700 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${amountMode === "usd" ? "pl-7 pr-3" : "pl-3 pr-3"}`}
+                    />
+                  </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={amountMode === "usd" ? handleSwitchToContracts : handleSwitchToUsd}
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:border-slate-300 sm:h-12 sm:w-12 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!amountInput.trim()}
+                        aria-label={`Switch to ${amountMode === "usd" ? "contracts" : "USD"}`}
+                      >
+                        <ArrowLeftRight className="h-4 w-4" />
+                      </button>
+                      <div className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px]">
+                        {amountMode === "usd"
+                          ? !hasAmountInput
+                            ? "—"
+                            : `≈ ${formatContractsDisplay(contractsValue, 1)} ${contractLabel}`
+                          : !hasAmountInput
+                            ? "—"
+                            : `≈ ${estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"} USD`}
+                      </div>
+                      <div className="flex h-14 items-center text-xs font-medium text-slate-500">
+                        {sizePercentLabel} of original trade
+                      </div>
+                    </div>
+                    {orderBookLoading && (
+                      <p className="text-xs text-amber-700">Loading market prices…</p>
+                    )}
+                    {minUsdErrorMessage && (
+                      <p className="text-xs text-rose-600">{minUsdErrorMessage}</p>
+                    )}
+                    {submitError && (
+                      <p className="text-xs text-rose-600">{submitError}</p>
+                  )}
+                </div>
+
+                  <Button
+                    onClick={handleQuickCopy}
+                    disabled={
+                      isMarketEnded ||
+                      !amountInput ||
+                      !contractsValue ||
+                      contractsValue <= 0 ||
+                      isBelowMinUsd ||
+                      !limitPrice ||
+                      isSubmitting
+                    }
+                    className={`w-full font-semibold ${
+                      isMarketEnded
+                        ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                        : "bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
+                    }`}
+                    size="lg"
+                  >
+                    {isMarketEnded ? "Market Resolved" : isSubmitting ? pendingStatusLabel : "Execute Trade"}
+                  </Button>
+                  {isSubmitting && (
+                    <p className="mt-2 text-center text-xs text-slate-500">This may take a moment.</p>
+                  )}
+                {canUseAutoClose && (
+                  <div className="mt-4 flex items-start space-x-3 p-2.5 bg-white rounded-lg border border-slate-200">
+                    <Checkbox
+                      id="auto-close"
+                      checked={autoClose}
+                      onCheckedChange={(checked) => setAutoClose(!!checked)}
+                      disabled={isSubmitting}
+                    />
+                    <div className="flex-1">
+                      <label
+                        htmlFor="auto-close"
+                        className="text-sm font-medium text-slate-900 cursor-pointer leading-tight"
+                      >
+                        Auto-close when trader closes
+                      </label>
+                    </div>
+                  </div>
+                )}
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    {!showAdvanced && (
+                      <TooltipProvider>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+                              >
+                                Slippage ({resolvedSlippage}%)
+                                <HelpCircle className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <p>
+                                We set your limit price up to {resolvedSlippage}% worse than the current best price to increase the chance of filling. You still fill at the best available price.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+                              >
+                                {orderType === "GTC" ? "Good 'Til Canceled (GTC)" : "Fill and Kill (FAK)"}
+                                <HelpCircle className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <p>
+                                {orderType === "GTC"
+                                  ? "GTC leaves the order open until it fills or you cancel it."
+                                  : "FAK fills as much as possible immediately and cancels the rest."}
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </TooltipProvider>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvanced((prev) => !prev)}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-800"
+                    >
+                    Advanced
+                      <ChevronDown className={`h-4 w-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+                    </button>
+                  </div>
+                  {showAdvanced && (
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 space-y-3">
+                      <div className="space-y-1.5">
+                        <TooltipProvider>
+                          <div className="flex items-center gap-1.5">
+                            <Label className="text-xs font-medium text-slate-900">Slippage Tolerance</Label>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button type="button" className="text-slate-400 hover:text-slate-500">
+                                  <HelpCircle className="h-3 w-3" />
                                 </button>
                               </TooltipTrigger>
                               <TooltipContent className="max-w-xs">
@@ -2225,76 +2287,28 @@ export function TradeCard({
                                 </p>
                               </TooltipContent>
                             </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
-                                >
-                                  {orderType === "GTC" ? "Good 'Til Canceled (GTC)" : "Fill and Kill (FAK)"}
-                                  <HelpCircle className="h-3.5 w-3.5" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent className="max-w-xs">
-                                <p>
-                                  {orderType === "GTC"
-                                    ? "GTC leaves the order open until it fills or you cancel it."
-                                    : "FAK fills as much as possible immediately and cancels the rest."}
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
                           </div>
                         </TooltipProvider>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setShowAdvanced((prev) => !prev)}
-                        className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-800"
-                      >
-                        Advanced
-                        <ChevronDown className={`h-4 w-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
-                      </button>
-                    </div>
-                    {showAdvanced && (
-                      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 space-y-3">
-                        <div className="space-y-1.5">
-                          <TooltipProvider>
-                            <div className="flex items-center gap-1.5">
-                              <Label className="text-xs font-medium text-slate-900">Slippage Tolerance</Label>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button type="button" className="text-slate-400 hover:text-slate-500">
-                                    <HelpCircle className="h-3 w-3" />
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent className="max-w-xs">
-                                  <p>
-                                    We set your limit price up to {resolvedSlippage}% worse than the current best price to increase the chance of filling. You still fill at the best available price.
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </div>
-                          </TooltipProvider>
-                          <div className="flex flex-wrap items-center gap-2">
-                            {[0, 1, 3, 5].map((value) => (
-                              <Button
-                                key={value}
-                                type="button"
-                                variant={slippagePreset === value ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => {
-                                  handleSlippagePresetChange(value)
-                                  setCustomSlippage("")
-                                }}
-                                className={
-                                  slippagePreset === value
-                                    ? "bg-slate-900 text-white hover:bg-slate-800 font-semibold h-8 text-xs"
-                                    : "border-slate-300 text-slate-700 hover:bg-slate-50 font-medium h-8 text-xs"
-                                }
-                              >
-                                {value}%
-                              </Button>
-                            ))}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {[0, 1, 3, 5].map((value) => (
+                            <Button
+                              key={value}
+                              type="button"
+                              variant={slippagePreset === value ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => {
+                                handleSlippagePresetChange(value)
+                                setCustomSlippage("")
+                              }}
+                              className={
+                                slippagePreset === value
+                                  ? "bg-slate-900 text-white hover:bg-slate-800 font-semibold h-8 text-xs"
+                                  : "border-slate-300 text-slate-700 hover:bg-slate-50 font-medium h-8 text-xs"
+                              }
+                            >
+                              {value}%
+                  </Button>
+                          ))}
                             <Input
                               type="number"
                               placeholder="Custom"
@@ -2303,91 +2317,90 @@ export function TradeCard({
                                 setCustomSlippage(e.target.value)
                                 handleSlippagePresetChange("custom")
                               }}
-                              onWheel={(e) => e.currentTarget.blur()}
-                              className="w-20 h-8 text-xs border-slate-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <TooltipProvider>
-                            <div className="flex items-center gap-1.5">
-                              <Label className="text-xs font-medium text-slate-900">Order Behavior</Label>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button type="button" className="text-slate-400 hover:text-slate-500">
-                                    <HelpCircle className="h-3 w-3" />
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent className="max-w-xs">
-                                  <p>
-                                    FAK fills as much as possible immediately and cancels the rest. GTC leaves the order open until it fills or you cancel it.
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </div>
-                          </TooltipProvider>
-                          <RadioGroup value={orderType} onValueChange={(value) => setOrderType(value as 'FAK' | 'GTC')} className="space-y-1.5">
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="FAK" id="quick-copy-fak" className="h-4 w-4" />
-                              <Label htmlFor="quick-copy-fak" className="text-xs font-medium text-slate-700 cursor-pointer">
-                                Fill and Kill (FAK)
-                              </Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="GTC" id="quick-copy-gtc" className="h-4 w-4" />
-                              <Label htmlFor="quick-copy-gtc" className="text-xs font-medium text-slate-700 cursor-pointer">
-                                Good 'Til Canceled (GTC)
-                              </Label>
-                            </div>
-                          </RadioGroup>
-                        </div>
-                      </div>
-                    )}
-                    {refreshStatus === 'refreshing' && (
-                      <p className="text-xs text-slate-600 mt-2">Refreshing order status…</p>
-                    )}
-                    {refreshStatus === 'done' && (
-                      <p className="text-xs text-emerald-600 mt-2">Order submitted to Polymarket. Latest status will appear in Orders shortly.</p>
-                    )}
-                    {refreshStatus === 'error' && (
-                      <p className="text-xs text-rose-600 mt-2">
-                        Order pending at Polymarket, but status refresh failed. Check the Orders page for updates.
-                      </p>
-                    )}
-                  </div>
+                            onWheel={(e) => e.currentTarget.blur()}
+                            className="w-20 h-8 text-xs border-slate-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
                 </div>
-              ) : (
-                <div className="text-center py-6">
-                  <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Check className="w-8 h-8 text-emerald-600" />
-                  </div>
-                  <h4 className="text-lg font-semibold text-slate-900 mb-2">Trade Executed Successfully!</h4>
-                  <p className="text-sm text-slate-600">
-                    Your copy trade of {formatCurrency(estimatedMaxCost ?? 0)} has been submitted to Polymarket
-                  </p>
-                </div>
-              )}
-            </div>
-            {showConfirmation && isFinalStatus && (
-              <div className="mt-3">
-                <Button
-                  onClick={resetConfirmation}
-                  className={`w-full font-semibold ${
-                    isFilledStatus
-                      ? "bg-slate-900 text-white hover:bg-slate-800"
-                      : "bg-amber-500 text-slate-900 hover:bg-amber-400"
-                  }`}
-                  size="lg"
-                >
-                  {isFilledStatus ? "Copy Again" : "Try Again"}
-                </Button>
               </div>
-            )}
-          </td>
-        </tr>
+
+                      <div className="space-y-1.5">
+                        <TooltipProvider>
+                          <div className="flex items-center gap-1.5">
+                            <Label className="text-xs font-medium text-slate-900">Order Behavior</Label>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button type="button" className="text-slate-400 hover:text-slate-500">
+                                  <HelpCircle className="h-3 w-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p>
+                                  FAK fills as much as possible immediately and cancels the rest. GTC leaves the order open until it fills or you cancel it.
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TooltipProvider>
+                        <RadioGroup value={orderType} onValueChange={(value) => setOrderType(value as 'FAK' | 'GTC')} className="space-y-1.5">
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="FAK" id="quick-copy-fak" className="h-4 w-4" />
+                            <Label htmlFor="quick-copy-fak" className="text-xs font-medium text-slate-700 cursor-pointer">
+                              Fill and Kill (FAK)
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="GTC" id="quick-copy-gtc" className="h-4 w-4" />
+                            <Label htmlFor="quick-copy-gtc" className="text-xs font-medium text-slate-700 cursor-pointer">
+                              Good 'Til Canceled (GTC)
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                      </div>
+                    </div>
+                  )}
+                  {refreshStatus === 'refreshing' && (
+                    <p className="text-xs text-slate-600 mt-2">Refreshing order status…</p>
+                  )}
+                  {refreshStatus === 'done' && (
+                    <p className="text-xs text-emerald-600 mt-2">Order submitted to Polymarket. Latest status will appear in Orders shortly.</p>
+                  )}
+                  {refreshStatus === 'error' && (
+                    <p className="text-xs text-rose-600 mt-2">
+                      Order pending at Polymarket, but status refresh failed. Check the Orders page for updates.
+                    </p>
+                  )}
+                </div>
+              </div>
+          ) : (
+            <div className="text-center py-6">
+              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Check className="w-8 h-8 text-emerald-600" />
+              </div>
+              <h4 className="text-lg font-semibold text-slate-900 mb-2">Trade Executed Successfully!</h4>
+              <p className="text-sm text-slate-600">
+                Your copy trade of {formatCurrency(estimatedMaxCost ?? 0)} has been submitted to Polymarket
+              </p>
+            </div>
+          )}
+          </div>
+          {showConfirmation && isFinalStatus && (
+            <div className="mt-3">
+              <Button
+                onClick={resetConfirmation}
+                className={`w-full font-semibold ${
+                  isFilledStatus
+                    ? "bg-slate-900 text-white hover:bg-slate-800"
+                    : "bg-amber-500 text-slate-900 hover:bg-amber-400"
+                }`}
+                size="lg"
+              >
+                {isFilledStatus ? "Copy Again" : "Try Again"}
+              </Button>
+            </div>
+          )}
+        </div>
       )}
-    </>
+    </div>
   )
 }
 

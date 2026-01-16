@@ -2329,13 +2329,36 @@ function ProfilePageContent() {
                   />
                 </div>
               ) : (loadingCopiedTrades || loadingQuickTrades) ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <Card key={i} className="p-6 animate-pulse">
-                      <div className="h-4 bg-slate-200 rounded w-3/4 mb-3"></div>
-                      <div className="h-4 bg-slate-200 rounded w-1/2"></div>
-                    </Card>
-                  ))}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[1100px] w-full text-sm">
+                      <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                        <tr className="border-b border-slate-200">
+                          <th className="px-4 py-3 text-left font-semibold min-w-[180px]">Trader</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[260px]">Market</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[160px]">Trade</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[110px]">Invested</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[110px]">Contracts</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[100px]">Entry</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[100px]">Current</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[90px]">ROI</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[110px]">Time</th>
+                          <th className="px-4 py-3 text-right font-semibold min-w-[140px]">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[1, 2, 3].map((i) => (
+                          <tr key={i} className="border-b border-slate-100 animate-pulse">
+                            {Array.from({ length: 10 }).map((_, index) => (
+                              <td key={index} className="px-4 py-4">
+                                <div className="h-3 w-full max-w-[120px] rounded-full bg-slate-200" />
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ) : filteredUnifiedTrades.length === 0 ? (
                 <Card className="p-8 text-center">
@@ -2347,619 +2370,525 @@ function ProfilePageContent() {
                   </Link>
                 </Card>
               ) : (
-                <div className="space-y-3">
-                  {filteredUnifiedTrades.slice(0, tradesToShow).map((trade) => {
-                    const actionLabel =
-                      trade.type === 'quick' && trade.raw?.side?.toLowerCase() === 'sell' ? 'Sell' : 'Buy';
-                    const currentPrice = trade.price_current ?? trade.price_entry ?? null;
-                    const invested = trade.amount ?? null;
-                    const contracts = (() => {
-                      if (trade.type === 'quick' && trade.raw) {
-                        const filledSize =
-                          Number.isFinite(trade.raw.filledSize) && trade.raw.filledSize > 0
-                            ? trade.raw.filledSize
-                            : trade.raw.size;
-                        if (Number.isFinite(filledSize) && filledSize > 0) return filledSize;
-                      }
-                      if (trade.type === 'manual' && trade.copiedTrade?.entry_size) {
-                        return trade.copiedTrade.entry_size;
-                      }
-                      if (invested && trade.price_entry) {
-                        return invested / trade.price_entry;
-                      }
-                      return null;
-                    })();
-                    const roiValue =
-                      trade.roi ??
-                      (trade.price_entry && currentPrice
-                        ? (((actionLabel === 'Sell' ? trade.price_entry - currentPrice : currentPrice - trade.price_entry) /
-                            trade.price_entry) *
-                            100)
-                        : null);
-                    const roiClass =
-                      roiValue === null
-                        ? "text-slate-400"
-                        : roiValue > 0
-                          ? "text-emerald-600"
-                          : roiValue < 0
-                            ? "text-red-600"
-                            : "text-slate-600";
-                    const handleQuickSell = async () => {
-                      if (!trade.raw) return;
-                      const order = trade.raw!;
-                      
-                      // First, try to find the position in our current positions array
-                      let position = positions.find(p => 
-                        p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
-                      );
-                      
-                      // If not found, try to fetch fresh positions data from the correct endpoint
-                      if (!position) {
-                        try {
-                          const positionsResponse = await fetch('/api/polymarket/positions', { cache: 'no-store' });
-                          if (positionsResponse.ok) {
-                            const positionsData = await positionsResponse.json();
-                            const freshPositions = positionsData.positions || [];
-                            
-                            // Update our positions state
-                            setPositions(freshPositions);
-                            
-                            // Try to find it again
-                            position = freshPositions.find((p: PositionSummary) => 
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[1100px] w-full text-sm">
+                      <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                        <tr className="border-b border-slate-200">
+                          <th className="px-4 py-3 text-left font-semibold min-w-[180px]">Trader</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[260px]">Market</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[160px]">Trade</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[110px]">Invested</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[110px]">Contracts</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[100px]">Entry</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[100px]">Current</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[90px]">ROI</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[110px]">Time</th>
+                          <th className="px-4 py-3 text-right font-semibold min-w-[140px]">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredUnifiedTrades.slice(0, tradesToShow).map((trade) => {
+                          const actionLabel =
+                            trade.type === 'quick' && trade.raw?.side?.toLowerCase() === 'sell' ? 'Sell' : 'Buy';
+                          const currentPrice = trade.price_current ?? trade.price_entry ?? null;
+                          const invested = trade.amount ?? null;
+                          const contracts = (() => {
+                            if (trade.type === 'quick' && trade.raw) {
+                              const filledSize =
+                                Number.isFinite(trade.raw.filledSize) && trade.raw.filledSize > 0
+                                  ? trade.raw.filledSize
+                                  : trade.raw.size;
+                              if (Number.isFinite(filledSize) && filledSize > 0) return filledSize;
+                            }
+                            if (trade.type === 'manual' && trade.copiedTrade?.entry_size) {
+                              return trade.copiedTrade.entry_size;
+                            }
+                            if (invested && trade.price_entry) {
+                              return invested / trade.price_entry;
+                            }
+                            return null;
+                          })();
+                          const roiValue =
+                            trade.roi ??
+                            (trade.price_entry && currentPrice
+                              ? (((actionLabel === 'Sell' ? trade.price_entry - currentPrice : currentPrice - trade.price_entry) /
+                                  trade.price_entry) *
+                                  100)
+                              : null);
+                          const roiClass =
+                            roiValue === null
+                              ? "text-slate-400"
+                              : roiValue > 0
+                                ? "text-emerald-600"
+                                : roiValue < 0
+                                  ? "text-red-600"
+                                  : "text-slate-600";
+                          const statusLabel =
+                            trade.status === 'open'
+                              ? 'Open'
+                              : trade.status === 'user-closed'
+                                ? 'User Closed'
+                                : trade.status === 'trader-closed'
+                                  ? 'Trader Closed'
+                                  : 'Resolved';
+                          const statusClass = cn(
+                            'text-[10px] font-semibold uppercase tracking-wide',
+                            trade.status === 'open' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                            trade.status === 'user-closed' && 'bg-slate-50 text-slate-600 border-slate-200',
+                            trade.status === 'trader-closed' && 'bg-orange-50 text-orange-700 border-orange-200',
+                            trade.status === 'resolved' && 'bg-blue-50 text-blue-700 border-blue-200'
+                          );
+                          const typeLabel = trade.type === 'quick' ? 'Quick Copy' : 'Manual Copy';
+                          const typeClass = cn(
+                            'text-[10px] font-semibold uppercase tracking-wide',
+                            trade.type === 'quick'
+                              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
+                          );
+                          const traderName = trade.trader_username || trade.trader_wallet || 'You';
+                          const traderWallet = trade.trader_wallet
+                            ? `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`
+                            : null;
+
+                          const handleQuickSell = async () => {
+                            if (!trade.raw) return;
+                            const order = trade.raw!;
+
+                            let position = positions.find(p => 
                               p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
                             );
-                          }
-                        } catch (err) {
-                          console.error('Error fetching positions:', err);
-                        }
-                      }
-                      
-                      // If still not found, build position from order data (fallback like OrdersScreen)
-                      if (!position) {
-                        console.log('[PROFILE] Building position from order:', order);
-                        
-                        // Extract token ID from order raw data - try multiple fields
-                        const raw = order.raw ?? {};
-                        let tokenId: string | null = null;
-                        
-                        // Try common token ID fields
-                        const tokenIdCandidates = [
-                          raw.token_id,
-                          raw.tokenId,
-                          raw.tokenID,
-                          raw.asset_id,
-                          raw.assetId,
-                          raw.asset,
-                          raw.market?.token_id,
-                          raw.market?.asset_id,
-                        ];
-                        
-                        for (const candidate of tokenIdCandidates) {
-                          if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
-                            tokenId = candidate.trim();
-                            break;
-                          }
-                        }
-                        
-                        // Use the order's own size and pricing data
-                        const size = order.filledSize && order.filledSize > 0 ? order.filledSize : order.size;
-                        const normalizedSide = order.side?.trim().toUpperCase() ?? 'BUY';
-                        
-                        // For selling a position, we need to know what we're holding
-                        // If the original order was a BUY, we're LONG. If SELL, we're SHORT.
-                        const direction = normalizedSide === 'SELL' ? 'SHORT' : 'LONG';
-                        const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
-                        
-                        console.log('[PROFILE] Built position data:', {
-                          tokenId,
-                          size,
-                          side,
-                          direction,
-                          marketId: order.marketId,
-                          avgEntryPrice: order.priceOrAvgPrice,
-                        });
-                        
-                        if (tokenId && size && size > 0) {
-                          position = {
-                            tokenId,
-                            marketId: order.marketId ?? null,
-                            outcome: order.outcome ?? null,
-                            direction: direction as 'LONG' | 'SHORT',
-                            side: side as 'BUY' | 'SELL',
-                            size,
-                            avgEntryPrice: order.priceOrAvgPrice ?? null,
-                            firstTradeAt: order.createdAt ?? null,
-                            lastTradeAt: order.updatedAt ?? null,
+
+                            if (!position) {
+                              try {
+                                const positionsResponse = await fetch('/api/polymarket/positions', { cache: 'no-store' });
+                                if (positionsResponse.ok) {
+                                  const positionsData = await positionsResponse.json();
+                                  const freshPositions = positionsData.positions || [];
+
+                                  setPositions(freshPositions);
+
+                                  position = freshPositions.find((p: PositionSummary) => 
+                                    p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
+                                  );
+                                }
+                              } catch (err) {
+                                console.error('Error fetching positions:', err);
+                              }
+                            }
+
+                            if (!position) {
+                              console.log('[PROFILE] Building position from order:', order);
+
+                              const raw = order.raw ?? {};
+                              let tokenId: string | null = null;
+
+                              const tokenIdCandidates = [
+                                raw.token_id,
+                                raw.tokenId,
+                                raw.tokenID,
+                                raw.asset_id,
+                                raw.assetId,
+                                raw.asset,
+                                raw.market?.token_id,
+                                raw.market?.asset_id,
+                              ];
+
+                              for (const candidate of tokenIdCandidates) {
+                                if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
+                                  tokenId = candidate.trim();
+                                  break;
+                                }
+                              }
+
+                              const size = order.filledSize && order.filledSize > 0 ? order.filledSize : order.size;
+                              const normalizedSide = order.side?.trim().toUpperCase() ?? 'BUY';
+
+                              const direction = normalizedSide === 'SELL' ? 'SHORT' : 'LONG';
+                              const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
+
+                              console.log('[PROFILE] Built position data:', {
+                                tokenId,
+                                size,
+                                side,
+                                direction,
+                                marketId: order.marketId,
+                                avgEntryPrice: order.priceOrAvgPrice,
+                              });
+
+                              if (tokenId && size && size > 0) {
+                                position = {
+                                  tokenId,
+                                  marketId: order.marketId ?? null,
+                                  outcome: order.outcome ?? null,
+                                  direction: direction as 'LONG' | 'SHORT',
+                                  side: side as 'BUY' | 'SELL',
+                                  size,
+                                  avgEntryPrice: order.priceOrAvgPrice ?? null,
+                                  firstTradeAt: order.createdAt ?? null,
+                                  lastTradeAt: order.updatedAt ?? null,
+                                };
+                              } else {
+                                console.error('[PROFILE] Could not build position - missing critical data:', {
+                                  tokenId,
+                                  size,
+                                  order,
+                                });
+                              }
+                            }
+
+                            if (position) {
+                              console.log('[PROFILE] Opening sell modal with position:', position);
+                              setCloseTarget({ order, position });
+                            } else {
+                              setToastMessage('Unable to load position data for selling. Please try from the History tab.');
+                              setShowToast(true);
+                              setTimeout(() => setShowToast(false), 4000);
+                            }
                           };
-                        } else {
-                          console.error('[PROFILE] Could not build position - missing critical data:', {
-                            tokenId,
-                            size,
-                            order,
-                          });
-                        }
-                      }
-                      
-                      if (position) {
-                        console.log('[PROFILE] Opening sell modal with position:', position);
-                        // We have a position, open the modal
-                        setCloseTarget({ order, position });
-                      } else {
-                        // This should be very rare now
-                        setToastMessage('Unable to load position data for selling. Please try from the History tab.');
-                        setShowToast(true);
-                        setTimeout(() => setShowToast(false), 4000);
-                      }
-                    };
 
-                    return (
-                      <Card key={trade.id} className="p-4 sm:p-6">
-                        <div className="space-y-4">
-                        {/* Trader Header Row - Only show for trades with trader info */}
-                        {trade.trader_wallet && (
-                          <div className="flex items-start justify-between gap-3">
-                            <Link
-                              href={`/trader/${trade.trader_wallet}`}
-                              className="flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
-                            >
-                              <Avatar className="h-10 w-10 ring-2 ring-slate-100">
-                                {trade.trader_profile_image ? (
-                                  <img
-                                    src={trade.trader_profile_image}
-                                    alt={trade.trader_username || 'Trader'}
-                                    className="h-full w-full object-cover"
-                                  />
-                                ) : null}
-                                <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-sm font-semibold">
-                                  {(trade.trader_username || trade.trader_wallet).slice(0, 2).toUpperCase()}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="min-w-0">
-                                <p className="font-medium text-slate-900 text-sm">
-                                  {trade.trader_username || `${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
-                                </p>
-                                <p className="text-xs text-slate-500 font-mono truncate">
-                                  {`${trade.trader_wallet.slice(0, 6)}...${trade.trader_wallet.slice(-4)}`}
-                                </p>
-                              </div>
-                            </Link>
-                            <div className="flex flex-col items-end gap-1.5 shrink-0 max-w-[50%] md:max-w-none">
-                              {/* Live Price Display */}
-                              {liveMarketData.get(trade.market_id) && (
-                                <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm flex-shrink-0">
-                                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide hidden md:inline">Price:</span>
-                                  <span className="text-xs font-bold text-slate-900">
-                                    ${liveMarketData.get(trade.market_id)!.price.toFixed(2)}
-                                  </span>
-                                  {(() => {
-                                    const currentPrice = liveMarketData.get(trade.market_id)!.price;
-                                    const priceChange = ((currentPrice - trade.price_entry) / trade.price_entry) * 100;
-                                    if (Math.abs(priceChange) > 0.1) {
-                                      return (
-                                        <span className={`text-xs font-semibold flex items-center ${priceChange > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                          {priceChange > 0 ? '↑' : '↓'}{Math.abs(priceChange).toFixed(1)}%
-                                        </span>
-                                      );
-                                    }
-                                  })()}
-                                </div>
-                              )}
-                              <div className="flex items-center gap-1.5 md:gap-2 flex-wrap justify-end">
-                                {/* Trade Type Badge */}
-                                <Badge
-                                  className={cn(
-                                    "text-[10px] font-semibold uppercase tracking-wide flex-shrink-0",
-                                    trade.type === 'quick'
-                                      ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                                      : "bg-amber-50 text-amber-700 border-amber-200"
-                                  )}
-                                >
-                                  <span className="md:hidden">{trade.type === 'quick' ? 'Quick' : 'Manual'}</span>
-                                  <span className="hidden md:inline">{trade.type === 'quick' ? 'Quick Copy' : 'Manual Copy'}</span>
-                                </Badge>
-                                {/* Status Badge */}
-                                <Badge
-                                  className={cn(
-                                    "text-[10px] font-semibold uppercase tracking-wide flex-shrink-0",
-                                    trade.status === 'open' && "bg-emerald-50 text-emerald-700 border-emerald-200",
-                                    trade.status === 'user-closed' && "bg-gray-50 text-gray-700 border-gray-200",
-                                    trade.status === 'trader-closed' && "bg-orange-50 text-orange-700 border-orange-200",
-                                    trade.status === 'resolved' && "bg-blue-50 text-blue-700 border-blue-200"
-                                  )}
-                                >
-                                  {trade.status === 'open' && 'Open'}
-                                  {trade.status === 'user-closed' && <span className="md:hidden">Closed</span>}
-                                  {trade.status === 'user-closed' && <span className="hidden md:inline">User Closed</span>}
-                                  {trade.status === 'trader-closed' && <span className="md:hidden">T-Closed</span>}
-                                  {trade.status === 'trader-closed' && <span className="hidden md:inline">Trader Closed</span>}
-                                  {trade.status === 'resolved' && 'Resolved'}
-                                </Badge>
-                                <span className="text-xs text-slate-500 font-medium whitespace-nowrap flex-shrink-0">
-                                  {formatRelativeTime(trade.created_at)}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1.5 md:gap-2 flex-wrap justify-end mt-1">
-                                {trade.type === 'quick' && trade.raw && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setExpandedQuickDetailsId(
-                                        expandedQuickDetailsId === trade.id ? null : trade.id
-                                      )
-                                    }
-                                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-50 flex-shrink-0"
-                                  >
-                                    <span className="md:hidden">Details</span>
-                                    <span className="hidden md:inline">Trade Details</span>
-                                    {expandedQuickDetailsId === trade.id ? (
-                                      <ChevronUp className="h-3 w-3" />
-                                    ) : (
-                                      <ChevronDown className="h-3 w-3" />
-                                    )}
-                                  </button>
-                                )}
-                                {trade.type === 'manual' && (
-                                  <Button
-                                    onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7 px-2 text-xs font-semibold flex-shrink-0"
-                                  >
-                                    <span className="md:hidden">Edit</span>
-                                    <span className="hidden md:inline">Edit Trade</span>
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* For manual trades without trader info, show badges in a simpler header */}
-                        {!trade.trader_wallet && (
-                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                            <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
-                              <Badge
-                                className={cn(
-                                  "text-[10px] font-semibold uppercase tracking-wide flex-shrink-0",
-                                  "bg-amber-50 text-amber-700 border-amber-200"
-                                )}
-                              >
-                                <span className="md:hidden">Manual</span>
-                                <span className="hidden md:inline">Manual Copy</span>
-                              </Badge>
-                              <Badge
-                                className={cn(
-                                  "text-[10px] font-semibold uppercase tracking-wide flex-shrink-0",
-                                  trade.status === 'open' && "bg-emerald-50 text-emerald-700 border-emerald-200",
-                                  trade.status === 'user-closed' && "bg-gray-50 text-gray-700 border-gray-200",
-                                  trade.status === 'trader-closed' && "bg-orange-50 text-orange-700 border-orange-200",
-                                  trade.status === 'resolved' && "bg-blue-50 text-blue-700 border-blue-200"
-                                )}
-                              >
-                                {trade.status === 'open' && 'Open'}
-                                {trade.status === 'user-closed' && <span className="md:hidden">Closed</span>}
-                                {trade.status === 'user-closed' && <span className="hidden md:inline">User Closed</span>}
-                                {trade.status === 'trader-closed' && <span className="md:hidden">T-Closed</span>}
-                                {trade.status === 'trader-closed' && <span className="hidden md:inline">Trader Closed</span>}
-                                {trade.status === 'resolved' && 'Resolved'}
-                              </Badge>
-                              {trade.type === 'quick' && trade.raw && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setExpandedQuickDetailsId(
-                                      expandedQuickDetailsId === trade.id ? null : trade.id
-                                    )
-                                  }
-                                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-50 flex-shrink-0"
-                                >
-                                  <span className="md:hidden">Details</span>
-                                  <span className="hidden md:inline">Trade Details</span>
-                                  {expandedQuickDetailsId === trade.id ? (
-                                    <ChevronUp className="h-3 w-3" />
+                          return (
+                            <React.Fragment key={trade.id}>
+                              <tr className="border-b border-slate-100 bg-white">
+                                <td className="px-4 py-4 align-top">
+                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Trader</span>
+                                  {trade.trader_wallet ? (
+                                    <Link
+                                      href={`/trader/${trade.trader_wallet}`}
+                                      className="mt-1 flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
+                                    >
+                                      <Avatar className="h-10 w-10 ring-2 ring-slate-100">
+                                        {trade.trader_profile_image ? (
+                                          <img
+                                            src={trade.trader_profile_image}
+                                            alt={traderName}
+                                            className="h-full w-full object-cover"
+                                          />
+                                        ) : null}
+                                        <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-sm font-semibold">
+                                          {traderName.slice(0, 2).toUpperCase()}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-slate-900 text-sm truncate">{traderName}</p>
+                                        {traderWallet && (
+                                          <p className="text-xs text-slate-500 font-mono truncate">{traderWallet}</p>
+                                        )}
+                                      </div>
+                                    </Link>
                                   ) : (
-                                    <ChevronDown className="h-3 w-3" />
+                                    <div className="mt-1">
+                                      <p className="font-medium text-slate-900 text-sm">You</p>
+                                      <p className="text-xs text-slate-500">Manual entry</p>
+                                    </div>
                                   )}
-                                </button>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
-                              {liveMarketData.get(trade.market_id) && (
-                                <div className="flex items-center gap-1.5 px-2 py-1 h-7 rounded bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 shadow-sm flex-shrink-0">
-                                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide hidden md:inline">Price:</span>
-                                  <span className="text-xs font-bold text-slate-900">
-                                    ${liveMarketData.get(trade.market_id)!.price.toFixed(2)}
-                                  </span>
-                                </div>
-                              )}
-                              <span className="text-xs text-slate-500 font-medium whitespace-nowrap flex-shrink-0">
-                                {formatRelativeTime(trade.created_at)}
-                              </span>
-                              {trade.type === 'manual' && (
-                                <Button
-                                  onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 px-2 text-xs font-semibold flex-shrink-0"
-                                >
-                                  <span className="md:hidden">Edit</span>
-                                  <span className="hidden md:inline">Edit Trade</span>
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Market Row */}
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50">
-                            {trade.market_avatar_url ? (
-                              <img
-                                src={trade.market_avatar_url}
-                                alt={trade.market_title}
-                                className="h-full w-full object-cover"
-                              />
-                            ) : null}
-                            <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
-                              {trade.market_title.slice(0, 2)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 flex items-center gap-2">
-                            <h3 className="font-medium text-slate-900 leading-snug">
-                              {trade.market_title}
-                            </h3>
-                            {/* External link to Polymarket */}
-                            {trade.market_slug && (
-                              <a
-                                href={`https://polymarket.com/market/${trade.market_slug}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
-                                title="View on Polymarket"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <ExternalLink className="w-4 h-4" />
-                              </a>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Stats Grid */}
-                        <div className="border border-slate-200 rounded-lg px-4 py-3 mt-3 bg-slate-50/50">
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                            <div className="flex-1 grid grid-cols-2 md:grid-cols-6 gap-3">
-                              <div className="text-center">
-                                <p className="text-xs text-slate-500 mb-1 font-medium">Trade</p>
-                                <div className="flex flex-wrap items-center justify-center gap-1 max-w-full">
-                                  <Badge
-                                    variant="secondary"
-                                    className={cn(
-                                      "font-semibold text-xs",
-                                      actionLabel === "Buy"
-                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                        : "bg-red-50 text-red-700 border-red-200"
+                                </td>
+                                <td className="px-4 py-4 align-top">
+                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Market</span>
+                                  <div className="mt-1 flex items-start gap-3 min-w-[240px]">
+                                    <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50">
+                                      {trade.market_avatar_url ? (
+                                        <img
+                                          src={trade.market_avatar_url}
+                                          alt={trade.market_title}
+                                          className="h-full w-full object-cover"
+                                        />
+                                      ) : null}
+                                      <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
+                                        {trade.market_title.slice(0, 2)}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0">
+                                      <div className="flex items-start gap-2">
+                                        <p className="text-sm font-semibold text-slate-900 leading-snug truncate">
+                                          {trade.market_title}
+                                        </p>
+                                        {trade.market_slug && (
+                                          <a
+                                            href={`https://polymarket.com/market/${trade.market_slug}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+                                            title="View on Polymarket"
+                                            onClick={(event) => event.stopPropagation()}
+                                          >
+                                            <ExternalLink className="w-4 h-4" />
+                                          </a>
+                                        )}
+                                      </div>
+                                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                                        <Badge className={typeClass}>{typeLabel}</Badge>
+                                        <Badge className={statusClass}>{statusLabel}</Badge>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-4 align-top">
+                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Trade</span>
+                                  <div className="mt-1 flex flex-wrap items-center gap-1">
+                                    <Badge
+                                      variant="secondary"
+                                      className={cn(
+                                        "font-semibold text-xs",
+                                        actionLabel === "Buy"
+                                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                          : "bg-red-50 text-red-700 border-red-200"
+                                      )}
+                                    >
+                                      {actionLabel}
+                                    </Badge>
+                                    <span className="text-xs text-slate-400 font-semibold">|</span>
+                                    <Badge
+                                      variant="secondary"
+                                      className="font-semibold text-xs bg-slate-100 text-slate-700 border-slate-200 max-w-[160px] whitespace-normal break-words text-center leading-snug"
+                                    >
+                                      {trade.outcome || "Outcome"}
+                                    </Badge>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-4 align-top">
+                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Invested</span>
+                                  <p className="mt-1 text-sm font-semibold text-slate-900">{formatCurrency(invested)}</p>
+                                </td>
+                                <td className="px-4 py-4 align-top">
+                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Contracts</span>
+                                  <p className="mt-1 text-sm font-semibold text-slate-900">{formatContracts(contracts)}</p>
+                                </td>
+                                <td className="px-4 py-4 align-top">
+                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Entry</span>
+                                  <p className="mt-1 text-sm font-semibold text-slate-900">{formatPrice(trade.price_entry)}</p>
+                                </td>
+                                <td className="px-4 py-4 align-top">
+                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Current</span>
+                                  <p className="mt-1 text-sm font-semibold text-slate-900">{formatPrice(currentPrice)}</p>
+                                </td>
+                                <td className="px-4 py-4 align-top">
+                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">ROI</span>
+                                  <p className={cn("mt-1 text-sm font-semibold", roiClass)}>
+                                    {roiValue === null ? "—" : `${roiValue > 0 ? "+" : ""}${roiValue.toFixed(1)}%`}
+                                  </p>
+                                </td>
+                                <td className="px-4 py-4 align-top">
+                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Time</span>
+                                  <p className="mt-1 text-xs font-medium text-slate-600 whitespace-nowrap">
+                                    {formatRelativeTime(trade.created_at)}
+                                  </p>
+                                </td>
+                                <td className="px-4 py-4 align-top text-right">
+                                  <span className="text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Action</span>
+                                  <div className="mt-1 flex flex-col items-end gap-2">
+                                    {trade.type === 'quick' && trade.raw && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setExpandedQuickDetailsId(
+                                            expandedQuickDetailsId === trade.id ? null : trade.id
+                                          )
+                                        }
+                                        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-50"
+                                      >
+                                        Trade Details
+                                        {expandedQuickDetailsId === trade.id ? (
+                                          <ChevronUp className="h-3 w-3" />
+                                        ) : (
+                                          <ChevronDown className="h-3 w-3" />
+                                        )}
+                                      </button>
                                     )}
-                                  >
-                                    {actionLabel}
-                                  </Badge>
-                                  <span className="text-xs text-slate-400 font-semibold">|</span>
-                                  <Badge
-                                    variant="secondary"
-                                    className="font-semibold text-xs bg-slate-100 text-slate-700 border-slate-200 max-w-[160px] whitespace-normal break-words text-center leading-snug"
-                                  >
-                                    {trade.outcome || "Outcome"}
-                                  </Badge>
-                                </div>
-                              </div>
-                              <div className="text-center md:border-l border-slate-200">
-                                <p className="text-xs text-slate-500 mb-1 font-medium">Invested</p>
-                                <p className="text-sm md:text-base font-semibold text-slate-900">
-                                  {formatCurrency(invested)}
-                                </p>
-                              </div>
-                              <div className="text-center md:border-l border-slate-200">
-                                <p className="text-xs text-slate-500 mb-1 font-medium">Contracts</p>
-                                <p className="text-sm md:text-base font-semibold text-slate-900">
-                                  {formatContracts(contracts)}
-                                </p>
-                              </div>
-                              <div className="text-center md:border-l border-slate-200">
-                                <p className="text-xs text-slate-500 mb-1 font-medium">Entry</p>
-                                <p className="text-sm md:text-base font-semibold text-slate-900">
-                                  {formatPrice(trade.price_entry)}
-                                </p>
-                              </div>
-                              <div className="text-center md:border-l border-slate-200">
-                                <p className="text-xs text-slate-500 mb-1 font-medium">Current</p>
-                                <p className="text-sm md:text-base font-semibold text-slate-900">
-                                  {formatPrice(currentPrice)}
-                                </p>
-                              </div>
-                              <div className="text-center md:border-l border-slate-200">
-                                <p className="text-xs text-slate-500 mb-1 font-medium">ROI</p>
-                                <p className={cn("text-sm md:text-base font-semibold", roiClass)}>
-                                  {roiValue === null ? "—" : `${roiValue > 0 ? "+" : ""}${roiValue.toFixed(1)}%`}
-                                </p>
-                              </div>
-                            </div>
-                            {trade.type === 'quick' && trade.status === 'open' && trade.raw && (
-                              <Button
-                                onClick={handleQuickSell}
-                                size="sm"
-                                style={{ backgroundColor: '#EF4444' }}
-                                className="h-8 px-3 text-xs font-semibold text-white hover:opacity-90 transition-opacity self-center"
-                              >
-                                Sell
-                              </Button>
-                            )}
-                          </div>
-                        </div>
+                                    {trade.type === 'manual' && (
+                                      <Button
+                                        onClick={() => setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id)}
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs font-semibold"
+                                      >
+                                        Edit Trade
+                                      </Button>
+                                    )}
+                                    {trade.type === 'quick' && trade.status === 'open' && trade.raw && (
+                                      <Button
+                                        onClick={handleQuickSell}
+                                        size="sm"
+                                        style={{ backgroundColor: '#EF4444' }}
+                                        className="h-7 px-3 text-xs font-semibold text-white hover:opacity-90 transition-opacity"
+                                      >
+                                        Sell
+                                      </Button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
 
-                        {trade.type === 'quick' && trade.raw && expandedQuickDetailsId === trade.id && (
-                          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                            <OrderRowDetails order={trade.raw as OrderRow} />
-                          </div>
-                        )}
+                              {trade.type === 'quick' && trade.raw && expandedQuickDetailsId === trade.id && (
+                                <tr className="border-b border-slate-100 bg-slate-50/60">
+                                  <td colSpan={10} className="px-4 py-4">
+                                    <OrderRowDetails order={trade.raw as OrderRow} />
+                                  </td>
+                                </tr>
+                              )}
 
-                        {/* Expanded Details */}
-                        {trade.type === 'manual' && expandedTradeId === trade.id && (
-                          <div className="space-y-4 pt-4 border-t border-slate-200">
-                            {/* Additional Details */}
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-xs text-slate-500 mb-1">Current Price</p>
-                                <p className="font-semibold text-slate-900">
-                                  ${trade.price_current?.toFixed(2) || trade.price_entry.toFixed(2)}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-slate-500 mb-1">Shares</p>
-                                <p className="font-semibold text-slate-900">
-                                  {trade.amount && trade.price_entry 
-                                    ? Math.round(trade.amount / trade.price_entry)
-                                    : '—'}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-slate-500 mb-1">Amount Invested</p>
-                                <p className="font-semibold text-slate-900">
-                                  ${trade.amount?.toFixed(0) || '—'}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-slate-500 mb-1">P&L</p>
-                                <p className={cn(
-                                  "font-semibold",
-                                  (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
-                                )}>
-                                  {trade.amount && trade.roi
-                                    ? `${(trade.roi >= 0 ? '+' : '')}$${((trade.amount * trade.roi) / 100).toFixed(0)}`
-                                    : '—'}
-                                </p>
-                              </div>
-                            </div>
+                              {trade.type === 'manual' && expandedTradeId === trade.id && (
+                                <tr className="border-b border-slate-100 bg-slate-50/60">
+                                  <td colSpan={10} className="px-4 py-4">
+                                    <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                          <p className="text-xs text-slate-500 mb-1">Current Price</p>
+                                          <p className="font-semibold text-slate-900">
+                                            ${trade.price_current?.toFixed(2) || trade.price_entry.toFixed(2)}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-slate-500 mb-1">Shares</p>
+                                          <p className="font-semibold text-slate-900">
+                                            {trade.amount && trade.price_entry 
+                                              ? Math.round(trade.amount / trade.price_entry)
+                                              : '—'}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-slate-500 mb-1">Amount Invested</p>
+                                          <p className="font-semibold text-slate-900">
+                                            ${trade.amount?.toFixed(0) || '—'}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-slate-500 mb-1">P&L</p>
+                                          <p className={cn(
+                                            "font-semibold",
+                                            (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
+                                          )}>
+                                            {trade.amount && trade.roi
+                                              ? `${(trade.roi >= 0 ? '+' : '')}$${((trade.amount * trade.roi) / 100).toFixed(0)}`
+                                              : '—'}
+                                          </p>
+                                        </div>
+                                      </div>
 
-                            {/* Action Buttons - Different for Manual vs Quick */}
-                            {trade.type === 'manual' && trade.copiedTrade && (
-                              <div className="flex gap-2">
-                                {/* Manual Copy: Show Edit/Delete/Mark as Closed buttons */}
-                                {!trade.copiedTrade.user_closed_at && !trade.copiedTrade.market_resolved && (
-                                  <>
-                                    <Button
-                                      onClick={() => {
-                                        setTradeToEdit(trade.copiedTrade!);
-                                        setShowCloseModal(true);
-                                      }}
-                                      variant="outline"
-                                      size="default"
-                                      className="flex-1 border-blue-600 text-blue-600 hover:bg-blue-50 gap-2"
-                                    >
-                                      <Check className="h-4 w-4" />
-                                      Mark as Closed
-                                    </Button>
-                                    <Button
-                                      onClick={() => {
-                                        setTradeToEdit(trade.copiedTrade!);
-                                        setShowEditModal(true);
-                                      }}
-                                      variant="outline"
-                                      size="default"
-                                      className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
-                                    >
-                                      <Edit2 className="h-4 w-4" />
-                                      Edit
-                                    </Button>
-                                    <Button
-                                      onClick={() => handleDeleteTrade(trade.copiedTrade!)}
-                                      variant="ghost"
-                                      size="icon"
-                                      className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
-                                    >
-                                      <Trash2 className="h-5 w-5" />
-                                    </Button>
-                                  </>
-                                )}
-                                
-                                {trade.copiedTrade.user_closed_at && (
-                                  <>
-                                    <Button
-                                      onClick={() => {
-                                        setTradeToEdit(trade.copiedTrade!);
-                                        setShowEditModal(true);
-                                      }}
-                                      variant="outline"
-                                      size="default"
-                                      className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
-                                    >
-                                      <Edit2 className="h-4 w-4" />
-                                      Edit
-                                    </Button>
-                                    <Button
-                                      onClick={() => handleUnmarkClosed(trade.copiedTrade!)}
-                                      variant="outline"
-                                      size="default"
-                                      className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
-                                    >
-                                      <RotateCcw className="h-4 w-4" />
-                                      Unmark as Closed
-                                    </Button>
-                                    <Button
-                                      onClick={() => handleDeleteTrade(trade.copiedTrade!)}
-                                      variant="ghost"
-                                      size="icon"
-                                      className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
-                                    >
-                                      <Trash2 className="h-5 w-5" />
-                                    </Button>
-                                  </>
-                                )}
-                                
-                                {trade.copiedTrade.market_resolved && !trade.copiedTrade.user_closed_at && (
-                                  <>
-                                    <Button
-                                      onClick={() => {
-                                        setTradeToEdit(trade.copiedTrade!);
-                                        setShowEditModal(true);
-                                      }}
-                                      variant="outline"
-                                      size="default"
-                                      className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
-                                    >
-                                      <Edit2 className="h-4 w-4" />
-                                      Edit
-                                    </Button>
-                                    <Button
-                                      onClick={() => handleDeleteTrade(trade.copiedTrade!)}
-                                      variant="ghost"
-                                      size="icon"
-                                      className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
-                                    >
-                                      <Trash2 className="h-5 w-5" />
-                                    </Button>
-                                  </>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </Card>
-                  );
-                  })}
-                  
-                  {/* View More Button */}
-                  {filteredUnifiedTrades.length > tradesToShow && (
-                    <div className="flex justify-center pt-4">
-                      <Button
-                        onClick={() => setTradesToShow(prev => prev + 15)}
-                        variant="outline"
-                        className="border-slate-300 text-slate-700 hover:bg-slate-50"
-                      >
-                        View More Trades ({filteredUnifiedTrades.length - tradesToShow} remaining)
-                      </Button>
-                    </div>
-                  )}
+                                      {trade.type === 'manual' && trade.copiedTrade && (
+                                        <div className="flex flex-wrap gap-2">
+                                          {!trade.copiedTrade.user_closed_at && !trade.copiedTrade.market_resolved && (
+                                            <>
+                                              <Button
+                                                onClick={() => {
+                                                  setTradeToEdit(trade.copiedTrade!);
+                                                  setShowCloseModal(true);
+                                                }}
+                                                variant="outline"
+                                                size="default"
+                                                className="flex-1 border-blue-600 text-blue-600 hover:bg-blue-50 gap-2"
+                                              >
+                                                <Check className="h-4 w-4" />
+                                                Mark as Closed
+                                              </Button>
+                                              <Button
+                                                onClick={() => {
+                                                  setTradeToEdit(trade.copiedTrade!);
+                                                  setShowEditModal(true);
+                                                }}
+                                                variant="outline"
+                                                size="default"
+                                                className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                              >
+                                                <Edit2 className="h-4 w-4" />
+                                                Edit
+                                              </Button>
+                                              <Button
+                                                onClick={() => handleDeleteTrade(trade.copiedTrade!)}
+                                                variant="ghost"
+                                                size="icon"
+                                                className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                                              >
+                                                <Trash2 className="h-5 w-5" />
+                                              </Button>
+                                            </>
+                                          )}
+
+                                          {trade.copiedTrade.user_closed_at && (
+                                            <>
+                                              <Button
+                                                onClick={() => {
+                                                  setTradeToEdit(trade.copiedTrade!);
+                                                  setShowEditModal(true);
+                                                }}
+                                                variant="outline"
+                                                size="default"
+                                                className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                              >
+                                                <Edit2 className="h-4 w-4" />
+                                                Edit
+                                              </Button>
+                                              <Button
+                                                onClick={() => handleUnmarkClosed(trade.copiedTrade!)}
+                                                variant="outline"
+                                                size="default"
+                                                className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                              >
+                                                <RotateCcw className="h-4 w-4" />
+                                                Unmark as Closed
+                                              </Button>
+                                              <Button
+                                                onClick={() => handleDeleteTrade(trade.copiedTrade!)}
+                                                variant="ghost"
+                                                size="icon"
+                                                className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                                              >
+                                                <Trash2 className="h-5 w-5" />
+                                              </Button>
+                                            </>
+                                          )}
+
+                                          {trade.copiedTrade.market_resolved && !trade.copiedTrade.user_closed_at && (
+                                            <>
+                                              <Button
+                                                onClick={() => {
+                                                  setTradeToEdit(trade.copiedTrade!);
+                                                  setShowEditModal(true);
+                                                }}
+                                                variant="outline"
+                                                size="default"
+                                                className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 gap-2"
+                                              >
+                                                <Edit2 className="h-4 w-4" />
+                                                Edit
+                                              </Button>
+                                              <Button
+                                                onClick={() => handleDeleteTrade(trade.copiedTrade!)}
+                                                variant="ghost"
+                                                size="icon"
+                                                className="text-red-600 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                                              >
+                                                <Trash2 className="h-5 w-5" />
+                                              </Button>
+                                            </>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
+
+                {/* View More Button */}
+                {filteredUnifiedTrades.length > tradesToShow && (
+                  <div className="flex justify-center pt-4">
+                    <Button
+                      onClick={() => setTradesToShow(prev => prev + 15)}
+                      variant="outline"
+                      className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                    >
+                      View More Trades ({filteredUnifiedTrades.length - tradesToShow} remaining)
+                    </Button>
+                  </div>
+                )}
+
               )}
             </div>
           )}

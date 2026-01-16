@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation'
 import { UserActivityEvent, UserProfile } from './types'
 import { ArrowLeft } from 'lucide-react'
 
-type Tab = 'activity' | 'users'
+type Tab = 'activity' | 'users' | 'content-data'
 
 const TAB_LABELS: Record<Tab, string> = {
   activity: 'User Activity',
-  users: 'User Directory'
+  users: 'User Directory',
+  'content-data': 'Content Data'
 }
 
 const TYPE_LABELS: Record<UserActivityEvent['type'], string> = {
@@ -103,7 +104,7 @@ export default function AdminUsersConsole({ users, events }: AdminUsersConsolePr
         </div>
 
         <div className="flex gap-2">
-          {(['activity', 'users'] as Tab[]).map((tab) => (
+          {(['activity', 'users', 'content-data'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -142,7 +143,7 @@ export default function AdminUsersConsole({ users, events }: AdminUsersConsolePr
               </div>
             ))}
           </section>
-        ) : (
+        ) : activeTab === 'users' ? (
           <section className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5 p-4">
             <table className="min-w-full text-sm">
               <thead>
@@ -195,6 +196,14 @@ export default function AdminUsersConsole({ users, events }: AdminUsersConsolePr
                 ))}
               </tbody>
             </table>
+          </section>
+        ) : (
+          <section className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+            <iframe
+              title="Content Data Dashboard"
+              src="/admin/content-data"
+              className="w-full h-[80vh] bg-[#111827]"
+            />
           </section>
         )}
       </div>
