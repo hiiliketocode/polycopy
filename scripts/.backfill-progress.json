@@ -154,7 +154,8 @@
     "0xfefb4ab20c207f11278c222e5276546727f74b5d",
     "0x2863ce4d826552cc8b3d0a14e25b781eef2c0e3e",
     "0xecdbd79566a25693b9971c48d7de84bc05f7da79",
-    "0x3078755a25620dfa7684f9a8b9513017d4473e11"
+    "0x3078755a25620dfa7684f9a8b9513017d4473e11",
+    "0xb13d096b2e90411d0e5f42891d2e73ef4cea2e90"
   ],
   "failedWallets": [
     {
@@ -581,18 +582,18 @@
       "updatedAt": 1768524257543
     },
     "0xe8dd7741ccb12350957ec71e9ee332e0d1e6ec86": {
-      "offset": 1010000,
-      "pageCount": 1044,
-      "fetched": 1044000,
-      "inserted": 988083,
-      "updatedAt": 1768546664417
+      "offset": 1076000,
+      "pageCount": 1112,
+      "fetched": 1112000,
+      "inserted": 1052116,
+      "updatedAt": 1768548991359
     },
     "0xfb1c3c1ab4fb2d0cbcbb9538c8d4d357dd95963e": {
-      "offset": 818000,
-      "pageCount": 828,
-      "fetched": 828000,
-      "inserted": 547313,
-      "updatedAt": 1768546669224
+      "offset": 876000,
+      "pageCount": 889,
+      "fetched": 887000,
+      "inserted": 592290,
+      "updatedAt": 1768548995976
     },
     "0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d": {
       "offset": 387000,
@@ -616,25 +617,18 @@
       "updatedAt": 1768543995231
     },
     "0x7485d661b858b117a66e1b4fcbecfaea87ac1393": {
-      "offset": 150000,
-      "pageCount": 150,
-      "fetched": 150000,
-      "inserted": 109816,
-      "updatedAt": 1768546690614
-    },
-    "0xb13d096b2e90411d0e5f42891d2e73ef4cea2e90": {
-      "offset": 112000,
-      "pageCount": 112,
-      "fetched": 112000,
-      "inserted": 58873,
-      "updatedAt": 1768546686777
+      "offset": 299000,
+      "pageCount": 300,
+      "fetched": 299000,
+      "inserted": 234572,
+      "updatedAt": 1768549020159
     },
     "0xf247584e41117bbbe4cc06e4d2c95741792a5216": {
-      "offset": 6000,
-      "pageCount": 6,
-      "fetched": 6000,
-      "inserted": 5995,
-      "updatedAt": 1768546688319
+      "offset": 215000,
+      "pageCount": 217,
+      "fetched": 217000,
+      "inserted": 209971,
+      "updatedAt": 1768549025334
     }
   }
 }

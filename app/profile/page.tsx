@@ -2288,6 +2288,14 @@ function ProfilePageContent() {
     []
   );
   const activeSortLabel = tradeSortOptions.find((option) => option.value === tradeSort)?.label ?? 'Latest';
+  const mobileMetricOptions = [
+    { value: 'price' as const, label: 'Price' },
+    { value: 'size' as const, label: 'Size' },
+    { value: 'roi' as const, label: 'P&L' },
+    { value: 'time' as const, label: 'Time' },
+  ];
+  const activeMobileMetricLabel =
+    mobileMetricOptions.find((option) => option.value === mobileMetric)?.label ?? 'Price';
 
   // Loading state
   if (loading) {
@@ -2318,9 +2326,7 @@ function ProfilePageContent() {
     { key: 'performance' as ProfileTab, label: 'Performance' },
     { key: 'settings' as ProfileTab, label: 'Settings' },
   ];
-  const tabTooltips: Partial<Record<ProfileTab, string>> = {
-    'trades': 'View all your copy trades (both manual and quick copy). Track performance and manage open positions.',
-  };
+  const tabTooltips: Partial<Record<ProfileTab, string>> = {};
 
   return (
     <>
@@ -2566,27 +2572,33 @@ function ProfilePageContent() {
                 </div>
                 <div className="flex items-center gap-2 md:hidden">
                   <span className="text-xs text-slate-500">Show</span>
-                  {(['price', 'size', 'roi', 'time'] as const).map((metric) => (
-                    <button
-                      key={metric}
-                      type="button"
-                      onClick={() => setMobileMetric(metric)}
-                      className={cn(
-                        "px-2 py-1 rounded-full text-[11px] font-semibold border transition",
-                        mobileMetric === metric
-                          ? "bg-slate-900 text-white border-slate-900"
-                          : "bg-white border-slate-200 text-slate-600"
-                      )}
-                    >
-                      {metric === 'price'
-                        ? 'Price'
-                        : metric === 'size'
-                          ? 'Size'
-                          : metric === 'roi'
-                            ? 'P&L'
-                            : 'Time'}
-                    </button>
-                  ))}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
+                      >
+                        <span>{activeMobileMetricLabel}</span>
+                        <ChevronDown className="h-3 w-3 text-slate-500" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-40 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                      <DropdownMenuRadioGroup
+                        value={mobileMetric}
+                        onValueChange={(value) => setMobileMetric(value as typeof mobileMetric)}
+                      >
+                        {mobileMetricOptions.map((option) => (
+                          <DropdownMenuRadioItem
+                            key={option.value}
+                            value={option.value}
+                            className="text-sm font-medium text-slate-700 focus:bg-slate-100"
+                          >
+                            {option.label}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 <div className="flex items-center gap-3 md:ml-auto">
                   <DropdownMenu>
@@ -2644,33 +2656,34 @@ function ProfilePageContent() {
               ) : (loadingCopiedTrades || loadingQuickTrades) ? (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="min-w-[320px] md:min-w-[960px] w-full text-sm table-fixed md:table-auto">
+                    <table className="min-w-[320px] md:min-w-[1020px] w-full text-sm table-fixed md:table-auto">
                       <thead className="bg-slate-50 text-xs text-slate-500">
                         <tr className="border-b border-slate-200">
-                          <th className="px-3 py-3 text-left font-semibold md:px-4">Market</th>
-                          <th className="px-3 py-3 text-left font-semibold md:px-4">Outcome</th>
-                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4 w-[140px]">Copied Trader</th>
+                          <th className="px-3 py-3 text-center font-semibold md:px-4">Market</th>
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">Outcome</th>
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
                             <span className="block">Invested</span>
                             <span className="block text-[10px] font-medium text-slate-400">Contracts</span>
                           </th>
-                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
                             <span className="block">
                               Entry <span aria-hidden="true">→</span> Current
                             </span>
                           </th>
-                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
                             <span className="block">Current Value</span>
                             <span className="block text-[10px] font-medium text-slate-400">P&L</span>
                           </th>
-                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">Time</th>
-                          <th className="px-3 py-3 text-left font-semibold md:hidden md:px-4">Detail</th>
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">Time</th>
+                          <th className="px-3 py-3 text-center font-semibold md:hidden md:px-4">Detail</th>
                           <th className="px-3 py-3 text-right font-semibold w-[68px] md:w-[80px] md:px-4"></th>
                         </tr>
                       </thead>
                       <tbody>
                         {[1, 2, 3].map((i) => (
                           <tr key={i} className="border-b border-slate-100 animate-pulse">
-                            {Array.from({ length: 8 }).map((_, index) => (
+                            {Array.from({ length: 9 }).map((_, index) => (
                               <td key={index} className="px-4 py-4">
                                 <div className="h-3 w-full max-w-[120px] rounded-full bg-slate-200" />
                               </td>
@@ -2693,26 +2706,27 @@ function ProfilePageContent() {
               ) : (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="min-w-[320px] md:min-w-[960px] w-full text-sm table-fixed md:table-auto">
+                    <table className="min-w-[320px] md:min-w-[1020px] w-full text-sm table-fixed md:table-auto">
                       <thead className="bg-slate-50 text-xs text-slate-500">
                         <tr className="border-b border-slate-200">
-                          <th className="px-3 py-3 text-left font-semibold md:px-4">Market</th>
-                          <th className="px-3 py-3 text-left font-semibold md:px-4">Outcome</th>
-                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4 w-[140px]">Copied Trader</th>
+                          <th className="px-3 py-3 text-center font-semibold md:px-4">Market</th>
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">Outcome</th>
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
                             <span className="block">Invested</span>
                             <span className="block text-[10px] font-medium text-slate-400">Contracts</span>
                           </th>
-                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
                             <span className="block">
                               Entry <span aria-hidden="true">→</span> Current
                             </span>
                           </th>
-                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
                             <span className="block">Current Value</span>
                             <span className="block text-[10px] font-medium text-slate-400">P&L</span>
                           </th>
-                          <th className="px-3 py-3 text-left font-semibold hidden md:table-cell md:px-4">Time</th>
-                          <th className="px-3 py-3 text-left font-semibold md:hidden md:px-4">Detail</th>
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">Time</th>
+                          <th className="px-3 py-3 text-center font-semibold md:hidden md:px-4">Detail</th>
                           <th className="px-3 py-3 text-right font-semibold w-[68px] md:w-[80px] md:px-4"></th>
                         </tr>
                       </thead>
@@ -2771,7 +2785,7 @@ function ProfilePageContent() {
                                   ? "text-red-600"
                                   : "text-slate-600";
                           const statusBadgeClass = cn(
-                            'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+                            'inline-flex w-fit items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold leading-none',
                             displayStatus === 'Open' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
                             displayStatus === 'Resolved' && 'bg-rose-50 text-rose-700 border-rose-200',
                             displayStatus === 'Pending' && 'bg-amber-50 text-amber-700 border-amber-200',
@@ -2891,27 +2905,42 @@ function ProfilePageContent() {
 
                           return (
                             <React.Fragment key={trade.id}>
-                              <tr className="border-b border-slate-100 bg-white">
-                                <td className="px-3 py-3 align-top md:px-4 md:py-4">
+                              <tr className="border-b border-slate-100 bg-slate-50 align-top">
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 w-[140px]">
+                                  {trade.trader_wallet && trade.trader_username ? (
+                                    <a
+                                      href={`/trader/${trade.trader_wallet}`}
+                                      className="text-sm font-medium text-slate-700 hover:text-slate-900 truncate block"
+                                      onClick={(event) => event.stopPropagation()}
+                                    >
+                                      {trade.trader_username}
+                                    </a>
+                                  ) : (
+                                    <span className="text-sm text-slate-400">Unknown</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 align-top md:px-4 md:py-3">
                                   <span className="text-[10px] text-slate-400 md:hidden">Market</span>
                                   <div className="mt-1 flex items-start gap-2 md:gap-3">
-                                    <div className="h-7 w-7 md:h-8 md:w-8 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200 shrink-0">
-                                      {trade.market_avatar_url ? (
-                                        <img
-                                          src={trade.market_avatar_url}
-                                          alt={trade.market_title}
-                                          className="h-full w-full object-cover"
-                                        />
-                                      ) : (
-                                        <span className="flex h-full w-full items-center justify-center text-[11px] font-semibold text-slate-500">
-                                          {trade.market_title.slice(0, 2)}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <span className={cn("mb-1 inline-flex", statusBadgeClass)}>
+                                    <div className="flex flex-col items-start gap-1 shrink-0">
+                                      <span className={cn("inline-flex", statusBadgeClass)}>
                                         {displayStatus}
                                       </span>
+                                      <div className="h-7 w-7 md:h-8 md:w-8 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200">
+                                        {trade.market_avatar_url ? (
+                                          <img
+                                            src={trade.market_avatar_url}
+                                            alt={trade.market_title}
+                                            className="h-full w-full object-cover"
+                                          />
+                                        ) : (
+                                          <span className="flex h-full w-full items-center justify-center text-[11px] font-semibold text-slate-500">
+                                            {trade.market_title.slice(0, 2)}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="min-w-0 md:max-w-[260px] pt-0.5">
                                       {trade.market_slug ? (
                                         <a
                                           href={`https://polymarket.com/market/${trade.market_slug}`}
@@ -2930,26 +2959,23 @@ function ProfilePageContent() {
                                     </div>
                                   </div>
                                 </td>
-                                <td className="px-3 py-3 align-top md:px-4 md:py-4">
-                                  <span className="text-[10px] text-slate-400 md:hidden">Outcome</span>
-                                  <div className="mt-1">
-                                    <span className={cn("mt-1 inline-flex", outcomeBadgeClass)}>
-                                      {formatOutcomeLabel(trade.outcome)}
-                                    </span>
-                                  </div>
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3">
+                                  <span className={cn("inline-flex", outcomeBadgeClass)}>
+                                    {formatOutcomeLabel(trade.outcome)}
+                                  </span>
                                 </td>
-                                <td className="px-3 py-3 align-top hidden md:table-cell md:px-4 md:py-4">
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3">
                                   <p className="text-sm font-semibold text-slate-900">{formatCurrency(invested)}</p>
                                   <p className="text-xs text-slate-500">{formatContracts(contracts)}</p>
                                 </td>
-                                <td className="px-3 py-3 align-top hidden md:table-cell md:px-4 md:py-4">
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3">
                                   <p className="text-sm font-semibold text-slate-900">
                                     {formatPrice(trade.price_entry)}
                                     <span className="mx-1 text-slate-400">-&gt;</span>
                                     {formatPrice(displayPrice)}
                                   </p>
                                 </td>
-                                <td className="px-3 py-3 align-top hidden md:table-cell md:px-4 md:py-4">
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3">
                                   <p className="text-sm font-semibold text-slate-900">
                                     {contracts && displayPrice ? formatCurrency(contracts * displayPrice) : "—"}
                                   </p>
@@ -2957,12 +2983,12 @@ function ProfilePageContent() {
                                     {roiValue === null ? "—" : `${roiValue > 0 ? "+" : ""}${roiValue.toFixed(1)}%`}
                                   </p>
                                 </td>
-                                <td className="px-3 py-3 align-top hidden md:table-cell md:px-4 md:py-4">
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3">
                                   <p className="text-xs font-medium text-slate-600 whitespace-nowrap">
                                     {formatTimestamp(trade.created_at)}
                                   </p>
                                 </td>
-                                <td className="px-3 py-3 align-top md:hidden md:px-4 md:py-4">
+                                <td className="px-3 py-2 align-top md:hidden md:px-4 md:py-3">
                                   <p
                                     className={cn(
                                       "text-xs font-semibold",
@@ -2972,7 +2998,7 @@ function ProfilePageContent() {
                                     {mobileDetail}
                                   </p>
                                 </td>
-                                <td className="px-3 py-3 align-top text-right md:px-4 md:py-4">
+                                <td className="px-3 py-2 align-top text-right md:px-4 md:py-3">
                                   <div className="mt-1 flex flex-col items-end gap-1">
                                     {trade.type === 'quick' && trade.status === 'open' && trade.raw && (
                                       <Button
@@ -3006,16 +3032,16 @@ function ProfilePageContent() {
                               </tr>
 
                               {trade.type === 'quick' && trade.raw && expandedQuickDetailsId === trade.id && (
-                                <tr className="border-b border-slate-100 bg-slate-50/60">
-                                  <td colSpan={8} className="px-4 py-4">
+                                <tr className="border-b border-slate-100 bg-slate-100/60">
+                                  <td colSpan={9} className="px-4 py-4">
                                     <OrderRowDetails order={trade.raw as OrderRow} />
                                   </td>
                                 </tr>
                               )}
 
                               {trade.type === 'manual' && expandedTradeId === trade.id && (
-                                <tr className="border-b border-slate-100 bg-slate-50/60">
-                                  <td colSpan={8} className="px-4 py-4">
+                                <tr className="border-b border-slate-100 bg-slate-100/60">
+                                  <td colSpan={9} className="px-4 py-4">
                                     <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
                                       <div className="grid grid-cols-2 gap-4">
                                         <div>

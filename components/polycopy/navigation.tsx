@@ -142,13 +142,14 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
     const fetchBalance = async () => {
       setLoadingBalance(true)
       try {
+        if (!walletAddress?.trim()) return
         // Use the public Polymarket API endpoint
         const response = await fetch(`/api/polymarket/wallet/${walletAddress}`)
-        
+
         if (response.ok) {
           const data = await response.json()
           console.log('Wallet data received:', data)
-          
+
           setCashBalance(data.cashBalance || 0)
           setPortfolioValue(data.portfolioValue || 0)
         } else {
@@ -156,8 +157,8 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
           const errorData = await response.json().catch(() => ({}))
           console.warn('Error details:', errorData)
         }
-      } catch (error) {
-        console.error('Error fetching wallet balance:', error)
+      } catch {
+        console.warn('Wallet balance unavailable (network error).')
       } finally {
         setLoadingBalance(false)
       }
