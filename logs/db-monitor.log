@@ -1,0 +1,525 @@
+[dotenv@17.2.3] injecting env (33) from .env.local -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+🚀 Starting database monitoring...
+📍 URL: https://zgpnbyfjtxihbgxawazy.supabase.co
+⏰ Checking every 5 minutes
+Press Ctrl+C to stop
+
+
+============================================================
+[Check #1] Jan 16, 09:20:58 AM (0.0 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ❌ Health endpoint: 503 Service Unavailable
+🔍 Testing database query...
+   ❌ Database query failed:
+      Code: PGRST002
+      Message: Could not query the database for the schema cache. Retrying.
+      Details: N/A
+   📊 Status: DATABASE DOWN
+
+============================================================
+[Check #2] Jan 16, 09:33:03 AM (12.1 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ❌ Health endpoint: 503 Service Unavailable
+🔍 Testing database query...
+   ❌ Database query failed:
+      Code: PGRST002
+      Message: Could not query the database for the schema cache. Retrying.
+      Details: N/A
+   📊 Status: DATABASE DOWN
+
+============================================================
+[Check #3] Jan 16, 10:31:44 AM (70.8 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ❌ Health endpoint: 503 Service Unavailable
+🔍 Testing database query...
+   ❌ Database query failed:
+      Code: PGRST002
+      Message: Could not query the database for the schema cache. Retrying.
+      Details: N/A
+   📊 Status: DATABASE DOWN
+
+============================================================
+[Check #4] Jan 16, 12:07:29 PM (166.5 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ❌ Health endpoint: 503 Service Unavailable
+🔍 Testing database query...
+   ❌ Database query failed:
+      Code: PGRST002
+      Message: Could not query the database for the schema cache. Retrying.
+      Details: N/A
+   📊 Status: DATABASE DOWN
+
+============================================================
+[Check #5] Jan 16, 12:12:32 PM (171.6 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ❌ Health endpoint: 503 Service Unavailable
+🔍 Testing database query...
+   ❌ Database query failed:
+      Code: PGRST002
+      Message: Could not query the database for the schema cache. Retrying.
+      Details: N/A
+   📊 Status: DATABASE DOWN
+
+============================================================
+[Check #6] Jan 16, 12:39:13 PM (198.2 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #7] Jan 16, 12:44:14 PM (203.3 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #8] Jan 16, 12:49:14 PM (208.3 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #9] Jan 16, 01:24:24 PM (243.4 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #10] Jan 16, 01:29:25 PM (248.5 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #11] Jan 16, 01:34:26 PM (253.5 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #12] Jan 16, 01:39:26 PM (258.5 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #13] Jan 16, 01:44:27 PM (263.5 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #14] Jan 16, 01:52:01 PM (271.0 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #15] Jan 16, 02:26:05 PM (305.1 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #16] Jan 16, 02:31:06 PM (310.1 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #17] Jan 16, 02:36:06 PM (315.1 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #18] Jan 16, 02:41:07 PM (320.1 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #19] Jan 16, 02:46:08 PM (325.2 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #20] Jan 16, 02:51:08 PM (330.2 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #21] Jan 16, 02:56:09 PM (335.2 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #22] Jan 16, 03:01:10 PM (340.2 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #23] Jan 16, 03:06:10 PM (345.2 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #24] Jan 16, 03:11:11 PM (350.2 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #25] Jan 16, 03:16:11 PM (355.2 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #26] Jan 16, 03:21:12 PM (360.2 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #27] Jan 16, 03:26:12 PM (365.2 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #28] Jan 16, 03:31:13 PM (370.2 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #29] Jan 16, 03:36:13 PM (375.2 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #30] Jan 16, 03:41:14 PM (380.3 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #31] Jan 16, 03:46:14 PM (385.3 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)
+
+============================================================
+[Check #32] Jan 16, 03:51:15 PM (390.3 min elapsed)
+============================================================
+🔍 Testing health endpoint...
+   ✅ Health endpoint: 200 OK
+🔍 Testing database query...
+   ✅ Database query successful
+   📊 Status: DATABASE ONLINE! 🎉
+
+🚨 ACTION REQUIRED:
+   1. Go to Supabase Dashboard → SQL Editor
+   2. Run cleanup script: scripts/smart-trades-cleanup.sql
+   3. Do this IMMEDIATELY!
+
+✅ Database came back online! Run cleanup script immediately!
+   (Continuing to monitor - database is online)

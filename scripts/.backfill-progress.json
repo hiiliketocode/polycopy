@@ -155,7 +155,57 @@
     "0x2863ce4d826552cc8b3d0a14e25b781eef2c0e3e",
     "0xecdbd79566a25693b9971c48d7de84bc05f7da79",
     "0x3078755a25620dfa7684f9a8b9513017d4473e11",
-    "0xb13d096b2e90411d0e5f42891d2e73ef4cea2e90"
+    "0xb13d096b2e90411d0e5f42891d2e73ef4cea2e90",
+    "0x6f2628a8ac6e3f7bd857657d5316c33822ced136",
+    "0xe2b1fc269d0c2e27da11fadd1d9596fe28227d2a",
+    "0xfb1c3c1ab4fb2d0cbcbb9538c8d4d357dd95963e",
+    "0x7485d661b858b117a66e1b4fcbecfaea87ac1393",
+    "0xdb32d3d83ec2638be539f768e31a3cc89250b646",
+    "0x88712ac5d0f65592fcccb4708523c8fa6ee5830a",
+    "0xc02147dee42356b7a4edbb1c35ac4ffa95f61fa8",
+    "0x0f863d92dd2b960e3eb6a23a35fd92a91981404e",
+    "0x4a64afa45a44a01890c2161be88d2b44751d4430",
+    "0x323b16159312f463c45b3b02ab73c11ec17f9fe7",
+    "0x421bf8e567f99bb544f317f38fe71719dbb6ac12",
+    "0x1cc16713196d456f86fa9c7387dd326a7f73b8df",
+    "0x614dc8d3542c12103d2c6a3553fd761e391d1546",
+    "0x6916cc00aa1c3e75ecf4081df7cae7d2f3592fd4",
+    "0x96c4b0f5d839f5cb44ae07762441559ee2c2bfde",
+    "0x00e2d8f88b39d9b430c136c679369f41101cd56a",
+    "0xe1e7036279433715711a65fc3254a8af558c5fb6",
+    "0x7789806c754eb0af4c3abeb026c218b4ba78f823",
+    "0xbf5bf2730e1d679eb9d6ee37ef48d03959e823ca",
+    "0x6a9b04663e24b275bf6258a53976eb1a516e4d6c",
+    "0x2326812917a7bfecb485bb768007c910ea31ab0e",
+    "0x68dd6269bb89d27a850dcde0d59ee824a227f0b2",
+    "0x325f64edd42ac179213e12bc2a8c4f00764dd8ac",
+    "0xd5f52231d2af24bba8021dbd102c2bddfbefea4e",
+    "0xccf25be5f62cb1e2fbdc6b0392aa50584e6e41b7",
+    "0x161eb16874e34f545991e774b4e1ac5b65f86ef0",
+    "0xc4086b708cd3a50880b7069add1a1a80000f4675",
+    "0x43d4482a0a69d9bcfea8ce6432629b26c19a13a2",
+    "0x5116ee15e86bc8878b90ac8a8514e38511eb58c4",
+    "0x614d39859cd9420684097f9f743334cc1c047788",
+    "0x088ffbbc6f2c0b3839d2832e75f37e1bcecbc9e7",
+    "0xdbb9b3616f733e19278d1ca6f3207a8344b5ed8d",
+    "0x9fad8308ef6b6ed5320e53a290a3bd4ad91f5a9f",
+    "0xa710f0eae9129df28a52e886902c443364004173",
+    "0xd748c701ad93cfec32a3420e10f3b08e68612125",
+    "0x22271273b28d0d198a8e5ff9e7f9f75d0c24b572",
+    "0x7f692340bcc1d90b3ca3c8436e3973adb0279c7a",
+    "0x7072dd52161bae614bec6905846a53c9a3a53413",
+    "0x36cc547537fdc25339129b6b3c1ef1404ef48642",
+    "0x4e56f1ddaa8f5328036c449b89e731ec748cdee1",
+    "0xf508c2ce8cfee5926d42c2855d659b8a089f265c",
+    "0xab19716584931d81cd9e7763402673a64baa4876",
+    "0x8e8cf968a888c72a45627be3660d1c815d4c6657",
+    "0xdd8e67a862bd81067891ad41e86e9673229ef023",
+    "0xe6a2b60aa401ff375c607631735936225cb56af8",
+    "0xc25120b27e01031b2122f74488dcdb077a78b9c3",
+    "0x7a146c5e70c092d06be27097a5c770b49d0bd748",
+    "0xee035898c9ec311c6692e08b465ea388380c3eea",
+    "0x6ce22b6a995836c09871cdc9242b094d9e15e868",
+    "0xd1c769317bd15de7768a70d0214cf0bbcc531d2b"
   ],
   "failedWallets": [
     {
@@ -447,6 +497,1186 @@
       "wallet": "0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d",
       "error": "exceeded request buffer limit while retrying upstream",
       "timestamp": 1768544034786
+    },
+    {
+      "wallet": "0x5f390e4b7d6f06d6756a6c92afdbf7b3176aa78c",
+      "error": "could not extend file \"base/5/150839.15\": No space left on device",
+      "timestamp": 1768559328908
+    },
+    {
+      "wallet": "0x24b1e0c01d30b6e02a4de1ee82011a69893248ee",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559346886
+    },
+    {
+      "wallet": "0x1ff49fdcb6685c94059b65620f43a683be0ce7a5",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559347500
+    },
+    {
+      "wallet": "0xe00740bce98a594e26861838885ab310ec3b548c",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559362887
+    },
+    {
+      "wallet": "0xbcb6ebb4368dd51722d68d25c740cde2ef5fc7c9",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559364884
+    },
+    {
+      "wallet": "0x0540f430df85c770e0a4fb79d8499d71ebc298eb",
+      "error": "Could not query the database for the schema cache. Retrying.",
+      "timestamp": 1768559365615
+    },
+    {
+      "wallet": "0x8f69269039b9a401de28a38c2f1c3001364b7df1",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559379500
+    },
+    {
+      "wallet": "0xc1b399b26020a4f689108e9640fd3dc8ffc8501c",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559382856
+    },
+    {
+      "wallet": "0x1bfdf7224c358405a486b5fd8489f13c2adcb5f3",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559383740
+    },
+    {
+      "wallet": "0xf247584e41117bbbe4cc06e4d2c95741792a5216",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559385085
+    },
+    {
+      "wallet": "0xe8dd7741ccb12350957ec71e9ee332e0d1e6ec86",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559390558
+    },
+    {
+      "wallet": "0xa9b44dca52ed35e59ac2a6f49d1203b8155464ed",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559396920
+    },
+    {
+      "wallet": "0xa1d75a199ef084ee3ec9ae60dc986b439fe6e17e",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559399600
+    },
+    {
+      "wallet": "0x5e222c5667c429e79d0e36d580ed1110cc923993",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559404030
+    },
+    {
+      "wallet": "0x16f027dbaec0e4884ed8ea79567914f8f7e4a28d",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559404073
+    },
+    {
+      "wallet": "0x220ce36c47fa467152b3bd8d431af74f232243c8",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559410072
+    },
+    {
+      "wallet": "0x16cbe223607a6513ae76d1e3751c78e4eabc2704",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559416954
+    },
+    {
+      "wallet": "0x0f5801f1fe7dbadb5c1e92a310c9871447d90ff0",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559418801
+    },
+    {
+      "wallet": "0xc631d9d610b9939f0b915b1916864e9b806876f6",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559423284
+    },
+    {
+      "wallet": "0xb10047d6a254b2ebb306d7a7d13bf59171ab6461",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559423535
+    },
+    {
+      "wallet": "0x6b3d278a0a62230364f55f1684ad24c1c12d76dd",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559429708
+    },
+    {
+      "wallet": "0x8f23aead02f055b69c7f7db51a2d74187bb2c7d0",
+      "error": "could not extend file \"base/5/150839.15\": No space left on device",
+      "timestamp": 1768559652624
+    },
+    {
+      "wallet": "0xb63ac06f20eed05d0a34f61116d0580a0afb4064",
+      "error": "could not extend file \"base/5/150839.15\": No space left on device",
+      "timestamp": 1768559657699
+    },
+    {
+      "wallet": "0x818f214c7f3e479cce1d964d53fe3db7297558cb",
+      "error": "could not extend file \"base/5/150839.15\": No space left on device",
+      "timestamp": 1768559666391
+    },
+    {
+      "wallet": "0x4231e98f3b1044c3b34bf19cb27b9441d157f63e",
+      "error": "could not extend file \"base/5/150839.15\": No space left on device",
+      "timestamp": 1768559667470
+    },
+    {
+      "wallet": "0xe3726a1b9c6ba2f06585d1c9e01d00afaedaeb38",
+      "error": "could not extend file \"base/5/150839.15\": No space left on device",
+      "timestamp": 1768559669341
+    },
+    {
+      "wallet": "0xecd55daa7c6900683b804d1d4db935fbfabe43f4",
+      "error": "could not extend file \"base/5/150839.15\": No space left on device",
+      "timestamp": 1768559680728
+    },
+    {
+      "wallet": "0xf8ccb567e89c3240359217ebd0b5b5fe7fce5a82",
+      "error": "could not extend file \"base/5/150839.15\": No space left on device",
+      "timestamp": 1768559688991
+    },
+    {
+      "wallet": "0xfb334229be3446e7197c993e32f48101ea8dd6c0",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559695158
+    },
+    {
+      "wallet": "0xb532895e91e79422299d365c6bd0367ac35a916b",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559695966
+    },
+    {
+      "wallet": "0x2e0b70d482e6b389e81dea528be57d825dd48070",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559698225
+    },
+    {
+      "wallet": "0x4c0340f93e3c590118fc6e35215d51ce7dc80cc1",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559703179
+    },
+    {
+      "wallet": "0xce66940dfe6dc18bc151d66d52a66eb2121bcc64",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559708466
+    },
+    {
+      "wallet": "0xc6aefc2cf3f95cc3859105203167fdd79bd4bd0a",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559713188
+    },
+    {
+      "wallet": "0x3c918a8ef8c379304f744592120cbb4d76149af7",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559714517
+    },
+    {
+      "wallet": "0x842dabdbf420acea760af817fe7c85a249179d4d",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559717905
+    },
+    {
+      "wallet": "0x2b15b1cab8917d786e44765002a07a78ee8c9b08",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559720930
+    },
+    {
+      "wallet": "0xd189664c5308903476f9f079820431e4fd7d06f4",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559727266
+    },
+    {
+      "wallet": "0xca85f4b9e472b542e1df039594eeaebb6d466bf2",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559732841
+    },
+    {
+      "wallet": "0x51373c6b56e4a38bf97c301efbff840fc8451556",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559737498
+    },
+    {
+      "wallet": "0x9e5c74c0bf46f0bf3fcd1064d17e6201c67fd8e6",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559737581
+    },
+    {
+      "wallet": "0x689ae12e11aa489adb3605afd8f39040ff52779e",
+      "error": "Could not query the database for the schema cache. Retrying.",
+      "timestamp": 1768559739852
+    },
+    {
+      "wallet": "0xd06f0f7719df1b3b75b607923536b3250825d4a6",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559748405
+    },
+    {
+      "wallet": "0xf5f232033c51448e17ced9f2ff7c91b78b620234",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768559751491
+    },
+    {
+      "wallet": "0x1a4249cd596a8e51b267dfe3c56cacc25815a00b",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561270679
+    },
+    {
+      "wallet": "0xf68a281980f8c13828e84e147e3822381d6e5b1b",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561275951
+    },
+    {
+      "wallet": "0x6d79687084407c07761088ac216f8722da7a4725",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561284065
+    },
+    {
+      "wallet": "0x30e443872ddf63b2908a49f92cd690c304a55102",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561284631
+    },
+    {
+      "wallet": "0xa103eee98ac104a676c202d7afe5e859881c255c",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561292741
+    },
+    {
+      "wallet": "0x1521b47bf0c41f6b7fd3ad41cdec566812c8f23e",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561302185
+    },
+    {
+      "wallet": "0x481b018cfd404a20e61eeb6805afbc413c1a74c1",
+      "error": "could not extend file \"base/5/150852.3\": No space left on device",
+      "timestamp": 1768561307563
+    },
+    {
+      "wallet": "0x3b6fd06a595d71c70afb3f44414be1c11304340b",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561313134
+    },
+    {
+      "wallet": "0x5314305babb27b745f0d401076b97fbb2dae910c",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561321071
+    },
+    {
+      "wallet": "0xc6208602d8a6295983ebfe0b0aeb51ce92a82da3",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561324390
+    },
+    {
+      "wallet": "0x1dbd30000dd7dd051e8fc803fac38e8246d9af92",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561331860
+    },
+    {
+      "wallet": "0x5ecde7348ea5100af4360dd7a6e0a3fb1d420787",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561335870
+    },
+    {
+      "wallet": "0x8f037a2e4fd49d11267f4ab874ab7ba745ac64d6",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561345338
+    },
+    {
+      "wallet": "0x6a603ead2ab361654d867ea15eb610d81686d019",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561354646
+    },
+    {
+      "wallet": "0x0aae5c4ec45339a64a1dd2fe4ba98c2a19eb251c",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561355784
+    },
+    {
+      "wallet": "0xbacd00c9080a82ded56f504ee8810af732b0ab35",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561363879
+    },
+    {
+      "wallet": "0xd5ccdf772f795547e299de57f47966e24de8dea4",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561367744
+    },
+    {
+      "wallet": "0xa61ef8773ec2e821962306ca87d4b57e39ff0abd",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561379995
+    },
+    {
+      "wallet": "0x6d9fc316c3b8377060a44b852ba664adbfd59790",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561389063
+    },
+    {
+      "wallet": "0xe62d0223966f7cee8cc77065150a2db417bcc34d",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561392684
+    },
+    {
+      "wallet": "0xf4baccff188321440a1ed01a5d5fd89c3e1f5933",
+      "error": "could not extend file \"base/5/150851.1\": No space left on device",
+      "timestamp": 1768561393423
+    },
+    {
+      "wallet": "0x4cc3522b689a6bf1fb4a2444c523e7776db47552",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561396785
+    },
+    {
+      "wallet": "0x998154d8eb4ba7c4b34b10d76b9742d922d7dec4",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561415042
+    },
+    {
+      "wallet": "0x6bd4f813091dc404809bdcd065cc81103bdc8aca",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561431357
+    },
+    {
+      "wallet": "0x989b67c86daa5675c2a7d0ee4107d2a38f628ef3",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561432799
+    },
+    {
+      "wallet": "0x97e12cc7391a50e49042b44a2d4a0cef54c8017b",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561432804
+    },
+    {
+      "wallet": "0x1c1e841584db14084e10e7dca2ad0ab7b60dbfe7",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561433148
+    },
+    {
+      "wallet": "0x07e78f5f58f8fa839f298cfe3fefd258883aa343",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561445109
+    },
+    {
+      "wallet": "0x05ab749a8554fb7c852238c271d384bae6798145",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561465445
+    },
+    {
+      "wallet": "0xc25427ea224b8f9fa2df801233f944006ed33f73",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561469547
+    },
+    {
+      "wallet": "0xc6dd722558dbfbd8fa780efcbe819ed8c6604b9f",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561469592
+    },
+    {
+      "wallet": "0x252d7bae5ec87553dcafb23e275c202ac0d3c456",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561469901
+    },
+    {
+      "wallet": "0x2a019dc0089ea8c6edbbafc8a7cc9ba77b4b6397",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561480579
+    },
+    {
+      "wallet": "0xebc0df15e665da95bf819105b723ae90042ffa41",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561493531
+    },
+    {
+      "wallet": "0xf0b0ef1d6320c6be896b4c9c54dd74407e7f8cab",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561503372
+    },
+    {
+      "wallet": "0xddff18c9e86262e62af046d818dda0c3de6f52d6",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561503857
+    },
+    {
+      "wallet": "0x79dbc666f24349bf8f2cc4ef10269b6f60a8fd14",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561504431
+    },
+    {
+      "wallet": "0x12d6cccfc7470a3f4bafc53599a4779cbf2cf2a8",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768561508979
+    },
+    {
+      "wallet": "0xfbfd14dd4bb607373119de95f1d4b21c3b6c0029",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561941829
+    },
+    {
+      "wallet": "0x21504551452f4c4b67a1fbee6ba743a611cdba16",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561951314
+    },
+    {
+      "wallet": "0xa49becb692927d455924583b5e3e5788246f4c40",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561952596
+    },
+    {
+      "wallet": "0x6f06f9436fbc17cdd396e5943a14865065c5515a",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561952714
+    },
+    {
+      "wallet": "0x8e9eedf20dfa70956d49f608a205e402d9df38e4",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561961455
+    },
+    {
+      "wallet": "0x47ab026767cc320ac6e62f6ec747d59cf4d795df",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561972661
+    },
+    {
+      "wallet": "0x76bc5994bf0a12d08a791b897d1fe1affea7205b",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561983839
+    },
+    {
+      "wallet": "0xeee92f1cc6d6e0ad0b4ffda20b01cf3678e27ecb",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561984372
+    },
+    {
+      "wallet": "0x96a45b19604cd6238a38e5b818fa166f5a5d4d01",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561984665
+    },
+    {
+      "wallet": "0xe83cc0c82d009a1c349c1a89feaadfcee9655e8f",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768561993412
+    },
+    {
+      "wallet": "0x4ee29e4e7d4c380babeae5e22e5c02400c2246e1",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562001805
+    },
+    {
+      "wallet": "0xfcb034faade540c47ad37e582f6e0c762feac865",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562017878
+    },
+    {
+      "wallet": "0x4bbe10ba5b7f6df147c0dae17b46c44a6e562cf3",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562018127
+    },
+    {
+      "wallet": "0x5d8a990810b5975a98f0a2f593ae1bdac71604ec",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562018414
+    },
+    {
+      "wallet": "0x3e04fbc51adb75418129f6ce2091ae633070564d",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562024401
+    },
+    {
+      "wallet": "0x7f69983eb28245bba0d5083502a78744a8f66162",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562033532
+    },
+    {
+      "wallet": "0x63ce342161250d705dc0b16df89036c8e5f9ba9a",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562044131
+    },
+    {
+      "wallet": "0x118ed6e1e562ec54f1fa6e7f0a2741fe0d32ea4b",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562052437
+    },
+    {
+      "wallet": "0x805a922574d7d6b158b7bbb49a6fa8925eb60635",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562055191
+    },
+    {
+      "wallet": "0x48185887c8dc95de60ee89722f1d0ee7894cbf0b",
+      "error": "could not extend file \"base/5/150852.3\": No space left on device",
+      "timestamp": 1768562056384
+    },
+    {
+      "wallet": "0x10fbc3d2421e002f269089d15be6a56ce6ffc66c",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562067174
+    },
+    {
+      "wallet": "0xdb27bf2ac5d428a9c63dbc914611036855a6c56e",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562076086
+    },
+    {
+      "wallet": "0x1f0a343513aa6060488fabe96960e6d1e177f7aa",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562086393
+    },
+    {
+      "wallet": "0x1281d24ee91406bdc71fc94a2a89b464fe378d51",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562087179
+    },
+    {
+      "wallet": "0xd71304743e49f7254e5d9329c9e4b9ec5b6f7ff5",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562089376
+    },
+    {
+      "wallet": "0xa4b366ad22fc0d06f1e934ff468e8922431a87b8",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562096627
+    },
+    {
+      "wallet": "0x2d27e4d20f3b8a2ee3bc861d9b83752f338676d8",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562110177
+    },
+    {
+      "wallet": "0xac21f5a71e5492975f9800070c818db99a5d4fe3",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562110745
+    },
+    {
+      "wallet": "0x080a53ccb5caf5949d2e67074e8629fe1f249da4",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562115527
+    },
+    {
+      "wallet": "0xd44e29936409019f93993de8bd603ef6cb1bb15e",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562116595
+    },
+    {
+      "wallet": "0x0e5bd76779e74304d08e759072abf126d87da593",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562566099
+    },
+    {
+      "wallet": "0x21378fd64736103b01685aee2b1e5acfdc4f0677",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562574878
+    },
+    {
+      "wallet": "0x8b3eeb3ea135c9b2246b1b78adce71a4c580662c",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562574882
+    },
+    {
+      "wallet": "0xa9650fe4301f45e7f090ada7252f9c1268183565",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562578944
+    },
+    {
+      "wallet": "0xb6bed94e75c333dae24eb9c80b3fef47ef3cfcfe",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562586328
+    },
+    {
+      "wallet": "0xf7850ebb60c10d5375fff6e596d55b69fdec05ed",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562598166
+    },
+    {
+      "wallet": "0x5b8e1ac396de463145b390a2dde1eddfc7e95c3c",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562604631
+    },
+    {
+      "wallet": "0x843a6da3886cf889435cf0920659a00a68db8070",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562610079
+    },
+    {
+      "wallet": "0xf98b622967de1bfc84585ea7abdf1f9199a3bfc5",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562613529
+    },
+    {
+      "wallet": "0x1c72797cd4b9b83f42e287144e334c4de347dfb6",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562626168
+    },
+    {
+      "wallet": "0x5d4d3800cb347e766c7ada814cf0eddbeaf24a91",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562628672
+    },
+    {
+      "wallet": "0xeb6f0a13ea8c5a7a0514c25495adbe815c1025f0",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562642438
+    },
+    {
+      "wallet": "0x6c743aafd813475986dcd930f380a1f50901bd4e",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562645322
+    },
+    {
+      "wallet": "0x961afce6bd9aec79c5cf09d2d4dac2b434b23361",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562648154
+    },
+    {
+      "wallet": "0xb48b9192dc52eed724fa58c66fa8926d06a3648e",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562660488
+    },
+    {
+      "wallet": "0x589222a5124a96765443b97a3498d89ffd824ad2",
+      "error": "could not extend file \"base/5/150839.16\": No space left on device",
+      "timestamp": 1768562661794
+    },
+    {
+      "wallet": "0x18b9ff13d2564889685f268871b317e27b1e7d2f",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562674673
+    },
+    {
+      "wallet": "0xecbeba24a9e7d8fc3091db367f2578e911ac42ff",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562674855
+    },
+    {
+      "wallet": "0x8f7a4b414417911e7e9bd738399874792cdbdb40",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562675418
+    },
+    {
+      "wallet": "0x4e25605fd905e9972efc0f4d8814530c655cd7a7",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562685323
+    },
+    {
+      "wallet": "0x5fc814d89c2aa979bd987add20d6eb39eb0439ef",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562685712
+    },
+    {
+      "wallet": "0x23cb796cf58bfa12352f0164f479deedbd50658e",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562697492
+    },
+    {
+      "wallet": "0xf323f1a3599b55ad945e6b28a97a9161f0d4c700",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562698032
+    },
+    {
+      "wallet": "0xa92579f21a36bcda2c6f073fc9764481bb90e1c8",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562698876
+    },
+    {
+      "wallet": "0xfd691577dc6a9d21e9611b93ef9177d36738a2e1",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562710338
+    },
+    {
+      "wallet": "0x7c156bb0dbb44dcb7387a78778e0da313bf3c9db",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562710609
+    },
+    {
+      "wallet": "0x611c20bf7fdc4e88ec4f0172c99efcaa30d5c982",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562715047
+    },
+    {
+      "wallet": "0xde242261bcd8d4320113f12230da34d705ca25a8",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562720300
+    },
+    {
+      "wallet": "0x47bc8458d60154c8a17c2d8ce332f088a602abd2",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562721005
+    },
+    {
+      "wallet": "0x4133bcbad1d9c41de776646696f41c34d0a65e70",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562732168
+    },
+    {
+      "wallet": "0x613081e20f5b3a39c74ad1e29948e522865c144a",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562732960
+    },
+    {
+      "wallet": "0x9155e8cf81a3fb557639d23d43f1528675bcfcad",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562733327
+    },
+    {
+      "wallet": "0x2ee04b8b6ec338d7dc52e019dabdcaa456eaf57b",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562744103
+    },
+    {
+      "wallet": "0x5c1640a92fb8022554750f5c0112240132e8df3a",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562744498
+    },
+    {
+      "wallet": "0x7131cb618fb195c70e8e629c45199096833c29cc",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562751487
+    },
+    {
+      "wallet": "0x6cff25615924313a189d3bcd5ca99db452cdc3da",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562754649
+    },
+    {
+      "wallet": "0x9c667a1d1c1337c6dca9d93241d386e4ed346b66",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562755990
+    },
+    {
+      "wallet": "0x067f7f6e3d5363f1cf962499d1be2ca6de8be041",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562767144
+    },
+    {
+      "wallet": "0x388537259dc9e693c1c9b96fdf07a63f6b7aca77",
+      "error": "Could not query the database for the schema cache. Retrying.",
+      "timestamp": 1768562767554
+    },
+    {
+      "wallet": "0x472be80809165b1ba999d5fbc5efef9f2e86c594",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562771375
+    },
+    {
+      "wallet": "0xa3d3da79775f534629a920bfd1c6e4f5fb6fd424",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562775961
+    },
+    {
+      "wallet": "0x4ad6cadefae3c28f5b2caa32a99ebba3a614464c",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562777748
+    },
+    {
+      "wallet": "0x58d8248b1d54ce937733eb4b64fd6a2932d07a4c",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562786322
+    },
+    {
+      "wallet": "0x9c16127eccf031df45461ef1e04b52ea286a09cb",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562787414
+    },
+    {
+      "wallet": "0xc9b6227a295985591fe576ff2e054267a78a9b6a",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562790828
+    },
+    {
+      "wallet": "0x2a1dfd1a8ba5271839847264559bc19d07cfd02f",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562794774
+    },
+    {
+      "wallet": "0xe1e27a12e5aa338a39fd9787adf507aec8130abe",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562794818
+    },
+    {
+      "wallet": "0x9703676286b93c2eca71ca96e8757104519a69c2",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562808481
+    },
+    {
+      "wallet": "0xb5fc4d5388952dc7a798fe784fe659f9a20e5ca4",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562808552
+    },
+    {
+      "wallet": "0x94cff0a688ca7b2e5b2602343c49bcd812123db3",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562809395
+    },
+    {
+      "wallet": "0xbde579ead903b9cf5c3fc4be5a0c515464769c38",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562814514
+    },
+    {
+      "wallet": "0xce5bec63b40392845a9a504915f607c8e03a047a",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562814931
+    },
+    {
+      "wallet": "0xfcf2378f20cf408d077c21e731272f21cccea469",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562828592
+    },
+    {
+      "wallet": "0xa59c570a9eca148da55f6e1f47a538c0c600bb62",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562829833
+    },
+    {
+      "wallet": "0xc3940d891c5b14c01e37aa528e70cbc0e4b7fb0a",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562832904
+    },
+    {
+      "wallet": "0xc390fa385403669645a20d81fc672a25d1ad28bd",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562833330
+    },
+    {
+      "wallet": "0x550ced0c9c8bc83dcf1a5926acbfb1a9c2011549",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562835145
+    },
+    {
+      "wallet": "0x75e765216a57942d738d880ffcda854d9f869080",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562847315
+    },
+    {
+      "wallet": "0xd9a0cdd2f18d42f7cf0540d38036c597925288ee",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562851292
+    },
+    {
+      "wallet": "0x36f9b0d0db05b7ffe5ff69774d70eb3f78607e3b",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562852017
+    },
+    {
+      "wallet": "0x47bc4b50a8d0c4a07b22bfd949f9c6afb8aec043",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562853819
+    },
+    {
+      "wallet": "0xf9b6943d8cce124603a8c7ef8a02191a487761ce",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562855451
+    },
+    {
+      "wallet": "0x2652dd1140c3b9e69c8852264cf8dbe727672a1d",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562867295
+    },
+    {
+      "wallet": "0x10b30364936b03d26b3fd01a63d1f991454b40d4",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562870603
+    },
+    {
+      "wallet": "0x17e5540bc696fd3e8b7da9101a93e4835c783d19",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562872872
+    },
+    {
+      "wallet": "0x4ffe49ba2a4cae123536a8af4fda48faeb609f71",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562877956
+    },
+    {
+      "wallet": "0xb41ac4e8907de5460e2dac0a98df8d1530d33a25",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562878018
+    },
+    {
+      "wallet": "0xc2a37f1eb84fcc156c8aece9105dc1a73a36c3a6",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562885498
+    },
+    {
+      "wallet": "0x9cb990f1862568a63d8601efeebe0304225c32f2",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562889729
+    },
+    {
+      "wallet": "0xb4f2f0c858566fef705edf8efc1a5e9fba307862",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562890689
+    },
+    {
+      "wallet": "0x557bed924a1bb6f62842c5742d1dc789b8d480d4",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562896328
+    },
+    {
+      "wallet": "0x684bc3eb000bff0979d14b60cc74861736150601",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562897338
+    },
+    {
+      "wallet": "0xd0394bd0de8d901c3fde039a86bf08e6aa4a2532",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562903281
+    },
+    {
+      "wallet": "0x8262ffa70186af8656abb788bdb778e3f67ba815",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562909503
+    },
+    {
+      "wallet": "0x2fb0f88ef5ba40e799b996e6f07b590d92b4abf8",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562909910
+    },
+    {
+      "wallet": "0x63e975a9904e09249a37f771a877c55de7cde1a1",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562915309
+    },
+    {
+      "wallet": "0x209c21d489b3154458937072e2fd37a0bb87d319",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562916361
+    },
+    {
+      "wallet": "0x5f4d4927ea3ca72c9735f56778cfbb046c186be0",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562922063
+    },
+    {
+      "wallet": "0x336151559e8c8b048de5231dc8313e196b314363",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562928067
+    },
+    {
+      "wallet": "0x4a9a87962893e6e119f1cc7f67c61d0287e0f675",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562928936
+    },
+    {
+      "wallet": "0xa102b434ce441a3119e146f75ed6276ee1a836d9",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562932972
+    },
+    {
+      "wallet": "0xff12ffde498c958dc037def603dcbcc0052f09f9",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562934145
+    },
+    {
+      "wallet": "0x4aefed77846f1b884bcbfb9e63acb351c2be9337",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562941416
+    },
+    {
+      "wallet": "0x2be4dda4820730d431642ae97753e1f6ba6c01ad",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562945974
+    },
+    {
+      "wallet": "0x45afde053d18e9dd5d5ee28fc16aabf27df29158",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562946752
+    },
+    {
+      "wallet": "0x71ed0bc95433cdf1be29f43219725fce9addd9eb",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562952223
+    },
+    {
+      "wallet": "0x537494c54dee9162534675712f2e625c9713042e",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562952413
+    },
+    {
+      "wallet": "0xa0275889acf34a77ae9b66ea6a58112f6101e1d5",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562960059
+    },
+    {
+      "wallet": "0x24df228f4c96d1a3ee5614617a0593dd4159e8b2",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562965938
+    },
+    {
+      "wallet": "0x21d0c129deb8a7f7e1569045200d20e23862ce91",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562966543
+    },
+    {
+      "wallet": "0xd04d631183d7568356f598a3c77181ec4ab6d0e5",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562971557
+    },
+    {
+      "wallet": "0x51fd8f0358cc9e8a1ee5f87a0c7e3b07ed634272",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562972123
+    },
+    {
+      "wallet": "0x028f0762a67dd4df3cbfd71f05dc6c579a71f5ab",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562979742
+    },
+    {
+      "wallet": "0x3d2d66eb933cfa7aa7b9fc21e6614f080de99360",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562984567
+    },
+    {
+      "wallet": "0x5e9c76f30788f31f6c6867f5f44b1e95a7a7cd75",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562986437
+    },
+    {
+      "wallet": "0x42cb730fd89ab159c1b85fbb5412f2e7da318412",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562991227
+    },
+    {
+      "wallet": "0x38e59b36aae31b164200d0cad7c3fe5e0ee795e7",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562991762
+    },
+    {
+      "wallet": "0xb9fc8078fd6c0275c631ec10fcf8d5cc52d6da76",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768562998280
+    },
+    {
+      "wallet": "0xf54159ffa1b1c17117fa5c440f74671521eb74f7",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563007407
+    },
+    {
+      "wallet": "0x2d99e29c4f066ba32098c65e4c7454b277d94ca3",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563008312
+    },
+    {
+      "wallet": "0x8bbae46e91c74557bb1a64e9c96279ece03d9b86",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563011900
+    },
+    {
+      "wallet": "0x0a952634a357e2fdaaf2a251eebb0f0177476a76",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563012255
+    },
+    {
+      "wallet": "0xbc54e69667ceb6ccec538e5a0ba1927fc1fe680f",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563016324
+    },
+    {
+      "wallet": "0x29c0a89b23af58739b6a4ab5f9c8b459af4aefaa",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563030317
+    },
+    {
+      "wallet": "0x97317409bfd9e992611596acee93e8b938019b35",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563032341
+    },
+    {
+      "wallet": "0xcbbc5e035504421b084ad9248b660f6e9618b5d0",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563032423
+    },
+    {
+      "wallet": "0xe1e75b51779e5f65ac4c5375c846e256082d12fe",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563032871
+    },
+    {
+      "wallet": "0x368ba69507fd67972059fa178af5e459b72f2458",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563037813
+    },
+    {
+      "wallet": "0x48e7ca9d4754021dc8b32adcaec0234dd6c9d5f8",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563047002
+    },
+    {
+      "wallet": "0x490f66ea703fc8fae19fd231c9921e3f4c0c17e5",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563050510
+    },
+    {
+      "wallet": "0x2e3ea056400d81c42e2ce26ef25fda4ec5caabea",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563051551
+    },
+    {
+      "wallet": "0x17ce7c9a7f768bfa98946caf7d64c9e051f5beec",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563052391
+    },
+    {
+      "wallet": "0xa58d4f278d7953cd38eeb929f7e242bfc7c0b9b8",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563056063
+    },
+    {
+      "wallet": "0x908aad3bfbd70410e73f1db6a3e46c2a917cad16",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563066021
+    },
+    {
+      "wallet": "0x7e30c3a56d89edac738d788dd218a9e64fb91e50",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563070483
+    },
+    {
+      "wallet": "0x9a7f417c09c2d14f7b425b4bd38e9d6311084b5d",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563071203
+    },
+    {
+      "wallet": "0x0523ff55bd7525d5fbda5c77f80f61662db4e38b",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563072467
+    },
+    {
+      "wallet": "0xac2474546159e1349c57514d879732793db3941c",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563077285
+    },
+    {
+      "wallet": "0xfe175c90c4152392978fa402ed871657881298e9",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563086631
+    },
+    {
+      "wallet": "0x7846e489e11c7d2b9d6c15a955c1df93d041c08d",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563090071
+    },
+    {
+      "wallet": "0x371a0d623144ad877c81614afe52c356619c34b0",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563091966
+    },
+    {
+      "wallet": "0xf5198df69e13937a40d1c76d6f72d9aa067d906b",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563092954
+    },
+    {
+      "wallet": "0x69645cea639e7a19cbde6c126a197bc1abafef53",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563095673
+    },
+    {
+      "wallet": "0x482bf5accdecfaffa67c14d4d4fbb59f428a3266",
+      "error": "exceeded request buffer limit while retrying upstream",
+      "timestamp": 1768563105524
     }
   ],
   "startTime": 1768500123547,
@@ -582,18 +1812,11 @@
       "updatedAt": 1768524257543
     },
     "0xe8dd7741ccb12350957ec71e9ee332e0d1e6ec86": {
-      "offset": 1076000,
-      "pageCount": 1112,
-      "fetched": 1112000,
-      "inserted": 1052116,
-      "updatedAt": 1768548991359
-    },
-    "0xfb1c3c1ab4fb2d0cbcbb9538c8d4d357dd95963e": {
-      "offset": 876000,
-      "pageCount": 889,
-      "fetched": 887000,
-      "inserted": 592290,
-      "updatedAt": 1768548995976
+      "offset": 1344000,
+      "pageCount": 1382,
+      "fetched": 1382000,
+      "inserted": 1312196,
+      "updatedAt": 1768559278923
     },
     "0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d": {
       "offset": 387000,
@@ -616,19 +1839,166 @@
       "inserted": 106862,
       "updatedAt": 1768543995231
     },
-    "0x7485d661b858b117a66e1b4fcbecfaea87ac1393": {
-      "offset": 299000,
-      "pageCount": 300,
-      "fetched": 299000,
-      "inserted": 234572,
-      "updatedAt": 1768549020159
-    },
     "0xf247584e41117bbbe4cc06e4d2c95741792a5216": {
-      "offset": 215000,
-      "pageCount": 217,
-      "fetched": 217000,
-      "inserted": 209971,
-      "updatedAt": 1768549025334
+      "offset": 599000,
+      "pageCount": 604,
+      "fetched": 603000,
+      "inserted": 592207,
+      "updatedAt": 1768559287884
+    },
+    "0xe00740bce98a594e26861838885ab310ec3b548c": {
+      "offset": 548000,
+      "pageCount": 549,
+      "fetched": 548000,
+      "inserted": 509599,
+      "updatedAt": 1768559285320
+    },
+    "0x1ff49fdcb6685c94059b65620f43a683be0ce7a5": {
+      "offset": 227000,
+      "pageCount": 228,
+      "fetched": 228000,
+      "inserted": 226997,
+      "updatedAt": 1768559291226
+    },
+    "0x5f390e4b7d6f06d6756a6c92afdbf7b3176aa78c": {
+      "offset": 217000,
+      "pageCount": 218,
+      "fetched": 218000,
+      "inserted": 216903,
+      "updatedAt": 1768559293068
+    },
+    "0x4231e98f3b1044c3b34bf19cb27b9441d157f63e": {
+      "offset": 19000,
+      "pageCount": 21,
+      "fetched": 21000,
+      "inserted": 13218,
+      "updatedAt": 1768559629100
+    },
+    "0xe3726a1b9c6ba2f06585d1c9e01d00afaedaeb38": {
+      "offset": 18000,
+      "pageCount": 19,
+      "fetched": 19000,
+      "inserted": 17443,
+      "updatedAt": 1768559627376
+    },
+    "0x818f214c7f3e479cce1d964d53fe3db7297558cb": {
+      "offset": 19000,
+      "pageCount": 20,
+      "fetched": 20000,
+      "inserted": 13544,
+      "updatedAt": 1768559630166
+    },
+    "0xb63ac06f20eed05d0a34f61116d0580a0afb4064": {
+      "offset": 18000,
+      "pageCount": 20,
+      "fetched": 20000,
+      "inserted": 17944,
+      "updatedAt": 1768559627008
+    },
+    "0x8f23aead02f055b69c7f7db51a2d74187bb2c7d0": {
+      "offset": 19000,
+      "pageCount": 21,
+      "fetched": 21000,
+      "inserted": 2390,
+      "updatedAt": 1768559624934
+    },
+    "0xa103eee98ac104a676c202d7afe5e859881c255c": {
+      "offset": 121000,
+      "pageCount": 123,
+      "fetched": 123000,
+      "inserted": 61338,
+      "updatedAt": 1768561244595
+    },
+    "0x6d79687084407c07761088ac216f8722da7a4725": {
+      "offset": 55000,
+      "pageCount": 55,
+      "fetched": 55000,
+      "inserted": 33155,
+      "updatedAt": 1768561244489
+    },
+    "0x30e443872ddf63b2908a49f92cd690c304a55102": {
+      "offset": 49000,
+      "pageCount": 49,
+      "fetched": 49000,
+      "inserted": 10100,
+      "updatedAt": 1768561244248
+    },
+    "0x1a4249cd596a8e51b267dfe3c56cacc25815a00b": {
+      "offset": 16000,
+      "pageCount": 16,
+      "fetched": 16000,
+      "inserted": 15698,
+      "updatedAt": 1768561238469
+    },
+    "0xf68a281980f8c13828e84e147e3822381d6e5b1b": {
+      "offset": 18000,
+      "pageCount": 18,
+      "fetched": 18000,
+      "inserted": 3178,
+      "updatedAt": 1768561244571
+    },
+    "0x6f06f9436fbc17cdd396e5943a14865065c5515a": {
+      "offset": 38000,
+      "pageCount": 39,
+      "fetched": 39000,
+      "inserted": 15981,
+      "updatedAt": 1768561921665
+    },
+    "0xa49becb692927d455924583b5e3e5788246f4c40": {
+      "offset": 37000,
+      "pageCount": 39,
+      "fetched": 39000,
+      "inserted": 19631,
+      "updatedAt": 1768561909072
+    },
+    "0x8e9eedf20dfa70956d49f608a205e402d9df38e4": {
+      "offset": 32000,
+      "pageCount": 33,
+      "fetched": 33000,
+      "inserted": 30654,
+      "updatedAt": 1768561909270
+    },
+    "0xfbfd14dd4bb607373119de95f1d4b21c3b6c0029": {
+      "offset": 19000,
+      "pageCount": 19,
+      "fetched": 19000,
+      "inserted": 3844,
+      "updatedAt": 1768561917765
+    },
+    "0x21504551452f4c4b67a1fbee6ba743a611cdba16": {
+      "offset": 18000,
+      "pageCount": 18,
+      "fetched": 18000,
+      "inserted": 9656,
+      "updatedAt": 1768561915590
+    },
+    "0xa9650fe4301f45e7f090ada7252f9c1268183565": {
+      "offset": 38000,
+      "pageCount": 39,
+      "fetched": 39000,
+      "inserted": 12292,
+      "updatedAt": 1768562538705
+    },
+    "0xb6bed94e75c333dae24eb9c80b3fef47ef3cfcfe": {
+      "offset": 38000,
+      "pageCount": 39,
+      "fetched": 39000,
+      "inserted": 20286,
+      "updatedAt": 1768562545554
+    },
+    "0x8b3eeb3ea135c9b2246b1b78adce71a4c580662c": {
+      "offset": 38000,
+      "pageCount": 40,
+      "fetched": 40000,
+      "inserted": 20877,
+      "updatedAt": 1768562542095
+    },
+    "0x21378fd64736103b01685aee2b1e5acfdc4f0677": {
+      "offset": 10000,
+      "pageCount": 10,
+      "fetched": 10000,
+      "inserted": 2075,
+      "updatedAt": 1768562541112
     }
   }
 }

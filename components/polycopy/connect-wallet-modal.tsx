@@ -1,11 +1,11 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
-import { ExternalLink, Shield, Lock, Eye, EyeOff } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { ExternalLink, Shield } from "lucide-react"
+import { IframeStamper } from "@turnkey/iframe-stamper"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 
 interface ConnectWalletModalProps {
   open: boolean
@@ -18,10 +18,71 @@ type Step = "link-account" | "account-linked" | "enter-private-key" | "success"
 export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWalletModalProps) {
   const [step, setStep] = useState<Step>("link-account")
   const [walletAddress, setWalletAddress] = useState("")
-  const [privateKey, setPrivateKey] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [showPrivateKey, setShowPrivateKey] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
+  const [iframeReady, setIframeReady] = useState(false)
+  const [iframeError, setIframeError] = useState<string | null>(null)
+  const iframeContainerRef = useRef<HTMLDivElement | null>(null)
+  const iframeStamperRef = useRef<IframeStamper | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const setupIframe = async () => {
+      if (step !== "enter-private-key") return
+      if (iframeStamperRef.current || !iframeContainerRef.current) return
+
+      setIframeError(null)
+      setIframeReady(false)
+
+      try {
+        const stamper = new IframeStamper({
+          iframeUrl: "https://import.turnkey.com",
+          iframeContainer: iframeContainerRef.current,
+          iframeElementId: "turnkey-import-iframe",
+        })
+        iframeStamperRef.current = stamper
+        await stamper.init()
+
+        const bundleRes = await fetch("/api/turnkey/import-private-key", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        })
+        const bundleData = await bundleRes.json()
+        if (!bundleRes.ok || !bundleData?.importBundle) {
+          throw new Error(bundleData?.error || "Failed to load import bundle")
+        }
+
+        const injected = await stamper.injectImportBundle(bundleData.importBundle)
+        if (injected !== true) {
+          throw new Error("Failed to initialize Turnkey import iframe")
+        }
+
+        if (!cancelled) {
+          setIframeReady(true)
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setIframeError(err?.message || "Failed to load Turnkey import")
+        }
+      }
+    }
+
+    setupIframe()
+
+    return () => {
+      cancelled = true
+    }
+  }, [step])
+
+  useEffect(() => {
+    if (step !== "enter-private-key") {
+      setIframeReady(false)
+      setIframeError(null)
+      iframeStamperRef.current = null
+    }
+  }, [step])
 
   // Mock account data (replace with real data from API)
   const [accountData, setAccountData] = useState({
@@ -58,44 +119,17 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
     setImportError(null)
 
     try {
-      // Step 1: Get import bundle from server
-      const bundleRes = await fetch('/api/turnkey/import-private-key', {
-        method: 'GET',
-        credentials: 'include',
-        cache: 'no-store',
-      })
-
-      if (!bundleRes.ok) {
-        const bundleData = await bundleRes.json()
-        throw new Error(bundleData?.error || 'Failed to get import bundle')
+      if (!iframeStamperRef.current || !iframeReady) {
+        throw new Error("Turnkey import is not ready yet. Please wait.")
       }
 
-      const { importBundle, userId: importUserId, organizationId: importOrgId } = await bundleRes.json()
+      const encryptedBundle = await iframeStamperRef.current.extractWalletEncryptedBundle()
 
-      if (!importBundle) {
-        throw new Error('Import bundle not received from server')
+      if (!encryptedBundle) {
+        throw new Error("Failed to retrieve encrypted bundle from Turnkey")
       }
 
-      // Step 2: Encrypt private key client-side using Turnkey SDK
-      const { encryptPrivateKeyToBundle } = await import('@turnkey/crypto')
-
-      const trimmedKey = privateKey.trim()
-      const encryptedBundleString = await encryptPrivateKeyToBundle({
-        privateKey: trimmedKey,
-        keyFormat: 'HEXADECIMAL',
-        importBundle,
-        userId: importUserId,
-        organizationId: importOrgId,
-      })
-
-      let encryptedBundle: Record<string, any>
-      try {
-        encryptedBundle = JSON.parse(encryptedBundleString)
-      } catch {
-        throw new Error('Failed to parse encrypted bundle')
-      }
-
-      // Step 3: Send encrypted bundle to server
+      // Send encrypted bundle to server
       const importRes = await fetch('/api/turnkey/import-private-key', {
         method: 'POST',
         credentials: 'include',
@@ -131,8 +165,9 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
     setTimeout(() => {
       setStep("link-account")
       setWalletAddress("")
-      setPrivateKey("")
       setImportError(null)
+      setIframeReady(false)
+      setIframeError(null)
     }, 300)
   }
 
@@ -144,8 +179,10 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
       setTimeout(() => {
         setStep("link-account")
         setWalletAddress("")
-        setPrivateKey("")
         setImportError(null)
+        setIframeReady(false)
+        setIframeError(null)
+        iframeStamperRef.current = null
       }, 300)
     }
   }
@@ -253,7 +290,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
           </>
         )}
 
-        {/* Step 3: Enter Private Key */}
+        {/* Step 3: Import with Turnkey */}
         {step === "enter-private-key" && (
           <>
             <DialogHeader className="bg-gradient-to-r from-yellow-400 to-amber-500 text-black p-6">
@@ -268,9 +305,9 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                   Back
                 </Button>
               </div>
-              <DialogTitle className="text-xl font-bold">Enter your private key</DialogTitle>
+              <DialogTitle className="text-xl font-bold">Import your wallet securely</DialogTitle>
               <p className="text-sm text-black/80 mt-2">
-                Securely connect your wallet to enable trade execution using Turnkey.
+                Use Turnkey's embedded import form to encrypt your key inside the iframe.
               </p>
             </DialogHeader>
 
@@ -297,62 +334,22 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                 </div>
               </div>
 
-              {/* Steps */}
-              <div className="space-y-3">
-                <h3 className="font-semibold text-slate-900 text-sm flex items-center gap-2">
-                  <Lock className="h-4 w-4" />
-                  How to get your private key:
-                </h3>
-                <ol className="space-y-2 list-decimal list-inside text-sm text-slate-700 ml-1">
-                  <li>Click the button below to open Polymarket's Magic Link key export page.</li>
-                  <li>Sign in with the email associated with your Polymarket account.</li>
-                  <li>Click "Reveal Private Key" and complete authentication.</li>
-                  <li>Copy your private key (starts with "0x...").</li>
-                  <li>Paste it into the field below.</li>
-                </ol>
-              </div>
-
-              <Button
-                type="button"
-                onClick={() => window.open("https://reveal.magic.link/polymarket", "_blank", "noopener,noreferrer")}
-                variant="outline"
-                className="w-full gap-2 bg-transparent"
-              >
-                Open Polymarket Key Export
-                <ExternalLink className="h-4 w-4" />
-              </Button>
-
               <div className="space-y-2">
-                <label htmlFor="private-key" className="text-sm font-medium text-slate-900">
-                  Paste Your Private Key
-                </label>
-                <div className="relative">
-                  <Input
-                    id="private-key"
-                    type={showPrivateKey ? "text" : "password"}
-                    placeholder="Paste your private key here"
-                    value={privateKey}
-                    onChange={(e) => setPrivateKey(e.target.value)}
-                    className="w-full font-mono text-sm pr-10"
-                    required
-                  />
-                  {privateKey && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowPrivateKey(!showPrivateKey)}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 p-0"
-                    >
-                      {showPrivateKey ? (
-                        <EyeOff className="h-4 w-4 text-slate-500" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-slate-500" />
-                      )}
-                    </Button>
-                  )}
-                </div>
+                <label className="text-sm font-medium text-slate-900">Turnkey import</label>
+                <div
+                  ref={iframeContainerRef}
+                  className="h-64 w-full rounded-lg border border-slate-200 bg-white"
+                />
+                {!iframeReady && !iframeError && (
+                  <p className="text-xs text-slate-600">Loading secure import form…</p>
+                )}
               </div>
+
+              {iframeError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
+                  <strong>Error:</strong> {iframeError}
+                </div>
+              )}
 
               {importError && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
@@ -362,7 +359,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
 
               <Button
                 type="submit"
-                disabled={isSubmitting || !privateKey}
+                disabled={isSubmitting || !iframeReady}
                 className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-semibold"
               >
                 {isSubmitting ? "Securing Connection..." : "Link"}

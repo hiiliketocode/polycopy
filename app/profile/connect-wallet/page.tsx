@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { verifyMessage } from 'ethers/lib/utils'
 import { Navigation } from '@/components/polycopy/navigation'
+import { IframeStamper } from '@turnkey/iframe-stamper'
 
 const TURNKEY_UI_ENABLED = process.env.NEXT_PUBLIC_TURNKEY_ENABLED === 'true'
 
@@ -73,10 +74,11 @@ export default function ConnectWalletTurnkeyPage() {
   // Import wallet state
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
-  const [magicPrivateKey, setMagicPrivateKey] = useState('')
   const [importBundle, setImportBundle] = useState<string | null>(null)
-  const [importOrgId, setImportOrgId] = useState<string | null>(null)
-  const [importUserId, setImportUserId] = useState<string | null>(null)
+  const [iframeReady, setIframeReady] = useState(false)
+  const [iframeError, setIframeError] = useState<string | null>(null)
+  const iframeContainerRef = useRef<HTMLDivElement | null>(null)
+  const iframeStamperRef = useRef<IframeStamper | null>(null)
 
   const [linkStatus, setLinkStatus] = useState<LinkStatus | null>(null)
   const [linkStatusError, setLinkStatusError] = useState<string | null>(null)
@@ -108,8 +110,6 @@ export default function ConnectWalletTurnkeyPage() {
 
         if (!cancelled) {
           setImportBundle(data.importBundle || null)
-          setImportOrgId(data.organizationId || null)
-          setImportUserId(data.userId || null)
           console.log(
             `[Import] Loaded import bundle len=${(data.importBundle || '').length}`
           )
@@ -129,6 +129,57 @@ export default function ConnectWalletTurnkeyPage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const setupIframe = async () => {
+      if (!TURNKEY_UI_ENABLED) return
+      if (activeStage !== 'key') return
+      if (!importBundle || !iframeContainerRef.current) return
+      if (iframeStamperRef.current) return
+
+      setIframeError(null)
+      setIframeReady(false)
+
+      try {
+        const stamper = new IframeStamper({
+          iframeUrl: 'https://import.turnkey.com',
+          iframeContainer: iframeContainerRef.current,
+          iframeElementId: 'turnkey-import-iframe',
+        })
+        iframeStamperRef.current = stamper
+        await stamper.init()
+
+        const injected = await stamper.injectImportBundle(importBundle)
+        if (injected !== true) {
+          throw new Error('Failed to initialize Turnkey import iframe')
+        }
+
+        if (!cancelled) {
+          setIframeReady(true)
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setIframeError(err?.message || 'Failed to load Turnkey import')
+        }
+      }
+    }
+
+    setupIframe()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeStage, importBundle])
+
+  useEffect(() => {
+    if (activeStage !== 'key') {
+      setIframeReady(false)
+      setIframeError(null)
+      iframeStamperRef.current = null
+    }
+  }, [activeStage])
 
   const loadLinkStatus = useCallback(async () => {
     setLinkStatusError(null)
@@ -379,11 +430,6 @@ export default function ConnectWalletTurnkeyPage() {
     }
   }
 
-  const openPolymarketExport = () => {
-    // Open Polymarket's Magic Link key export page in a new tab
-    window.open('https://reveal.magic.link/polymarket', '_blank', 'noreferrer')
-  }
-
   const openPolymarketSite = () => {
     window.open('https://polymarket.com/', '_blank', 'noreferrer')
   }
@@ -405,21 +451,12 @@ export default function ConnectWalletTurnkeyPage() {
     address: string
     alreadyImported?: boolean
   } | null> => {
-    const trimmedKey = magicPrivateKey.trim()
-    if (!trimmedKey) {
-      setImportError('Paste your Magic private key (0x...) before importing')
-      return null
-    }
-    if (!trimmedKey.startsWith('0x') || trimmedKey.length !== 66) {
-      setImportError('Private key must start with 0x and be 66 chars long')
-      return null
-    }
     if (!polymarketAddress.trim()) {
       setImportError('Enter your Polymarket wallet address before importing')
       return null
     }
-    if (!importBundle || !importOrgId || !importUserId) {
-      setImportError('Import bundle not loaded. Please refresh and try again.')
+    if (!iframeStamperRef.current || !iframeReady) {
+      setImportError('Turnkey import is not ready yet. Please wait.')
       return null
     }
 
@@ -427,25 +464,9 @@ export default function ConnectWalletTurnkeyPage() {
     setImportError(null)
 
     try {
-      const { encryptPrivateKeyToBundle } = await import('@turnkey/crypto')
-
-      const encryptedBundleString = await encryptPrivateKeyToBundle({
-        privateKey: trimmedKey,
-        keyFormat: 'HEXADECIMAL',
-        importBundle,
-        userId: importUserId,
-        organizationId: importOrgId,
-      })
-
-      console.log(
-        `[Import] Encrypted bundle created (len=${encryptedBundleString.length})`
-      )
-
-      let encryptedBundle: Record<string, any>
-      try {
-        encryptedBundle = JSON.parse(encryptedBundleString)
-      } catch {
-        throw new Error('Failed to parse encrypted bundle JSON from Turnkey SDK')
+      const encryptedBundle = await iframeStamperRef.current.extractWalletEncryptedBundle()
+      if (!encryptedBundle) {
+        throw new Error('Failed to retrieve encrypted bundle from Turnkey')
       }
 
       const res = await fetch('/api/turnkey/import-private-key', {
@@ -528,11 +549,6 @@ export default function ConnectWalletTurnkeyPage() {
 
     if (!polymarketAddress.trim()) {
       setImportError('Enter your Polymarket wallet address before linking')
-      return
-    }
-
-    if (!magicPrivateKey.trim()) {
-      setImportError('Paste your Magic private key before linking')
       return
     }
 
@@ -698,33 +714,29 @@ export default function ConnectWalletTurnkeyPage() {
               Back
             </button>
             <div>
-              <h1 className="text-3xl font-bold text-slate-900">Enter your private key</h1>
-              <p className="text-sm text-slate-600 mt-2">Enter your private key in order to execute trading.</p>
+              <h1 className="text-3xl font-bold text-slate-900">Import your wallet securely</h1>
+              <p className="text-sm text-slate-600 mt-2">
+                Use Turnkey&apos;s embedded import to encrypt your key inside the iframe.
+              </p>
             </div>
 
-            <button
-              onClick={openPolymarketExport}
-              disabled={!TURNKEY_UI_ENABLED}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60 hover:bg-white"
-            >
-              Open Magic Link process
-            </button>
-
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-slate-700">Magic private key (0x…)</label>
-              <textarea
-                value={magicPrivateKey}
-                onChange={(e) => setMagicPrivateKey(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono text-sm"
-                placeholder="Paste the key you copied"
-                rows={3}
-                disabled={!TURNKEY_UI_ENABLED}
+              <label className="block text-sm font-medium text-slate-700">Turnkey import</label>
+              <div
+                ref={iframeContainerRef}
+                className="h-64 w-full rounded-xl border border-slate-300 bg-white"
               />
+              {!iframeReady && !iframeError && (
+                <p className="text-xs text-slate-500">Loading secure import form…</p>
+              )}
+              {iframeError && (
+                <p className="text-xs text-red-600">{iframeError}</p>
+              )}
             </div>
 
             <button
               onClick={handleLinkAccount}
-              disabled={!TURNKEY_UI_ENABLED || !magicPrivateKey.trim() || linkingInProgress}
+              disabled={!TURNKEY_UI_ENABLED || !iframeReady || linkingInProgress}
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 hover:bg-indigo-500"
             >
               {linkingInProgress ? 'Linking…' : 'Link'}
