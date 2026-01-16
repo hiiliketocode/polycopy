@@ -50,11 +50,15 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
           cache: "no-store",
         })
         const bundleData = await bundleRes.json()
-        if (!bundleRes.ok || !bundleData?.importBundle) {
+        if (!bundleRes.ok || !bundleData?.importBundle || !bundleData?.organizationId || !bundleData?.userId) {
           throw new Error(bundleData?.error || "Failed to load import bundle")
         }
 
-        const injected = await stamper.injectImportBundle(bundleData.importBundle)
+        const injected = await stamper.injectImportBundle(
+          bundleData.importBundle,
+          bundleData.organizationId,
+          bundleData.userId
+        )
         if (injected !== true) {
           throw new Error("Failed to initialize Turnkey import iframe")
         }
