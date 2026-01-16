@@ -2600,7 +2600,7 @@ function ProfilePageContent() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <div className="flex items-center gap-3 md:ml-auto">
+                <div className="flex items-center gap-3 ml-auto">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
@@ -2656,7 +2656,7 @@ function ProfilePageContent() {
               ) : (loadingCopiedTrades || loadingQuickTrades) ? (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="min-w-[320px] md:min-w-[1020px] w-full text-sm table-fixed md:table-auto">
+                    <table className="min-w-[320px] md:min-w-[1020px] w-full text-sm table-fixed md:table-auto border-separate border-spacing-y-2 border-spacing-x-0">
                       <thead className="bg-slate-50 text-xs text-slate-500">
                         <tr className="border-b border-slate-200">
                           <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4 w-[140px]">Copied Trader</th>
@@ -2706,7 +2706,7 @@ function ProfilePageContent() {
               ) : (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="min-w-[320px] md:min-w-[1020px] w-full text-sm table-fixed md:table-auto">
+                    <table className="min-w-[320px] md:min-w-[1020px] w-full text-sm table-fixed md:table-auto border-separate border-spacing-y-2 border-spacing-x-0">
                       <thead className="bg-slate-50 text-xs text-slate-500">
                         <tr className="border-b border-slate-200">
                           <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4 w-[140px]">Copied Trader</th>
@@ -2764,15 +2764,15 @@ function ProfilePageContent() {
                               liveMarketData.get(buildLiveMarketKey(trade.market_id, trade.outcome))?.closed
                           );
                           const isResolvedMarket = trade.status === 'resolved' || isResolvedLive;
-                          const displayStatus = isResolvedMarket
-                            ? settlementPrice !== null || isSettlementPrice(displayPrice)
-                              ? 'Resolved'
-                              : 'Pending'
-                            : statusLabel;
+                          const displayStatus = isResolvedMarket ? 'Resolved' : statusLabel;
+                          const resolvedDisplayPrice =
+                            isResolvedMarket && settlementPrice === null ? 0 : null;
+                          const finalDisplayPrice =
+                            resolvedDisplayPrice !== null ? resolvedDisplayPrice : displayPrice;
                           const roiValue =
                             trade.roi ??
-                            (trade.price_entry && displayPrice
-                              ? (((actionLabel === 'Sell' ? trade.price_entry - displayPrice : displayPrice - trade.price_entry) /
+                            (trade.price_entry && finalDisplayPrice
+                              ? (((actionLabel === 'Sell' ? trade.price_entry - finalDisplayPrice : finalDisplayPrice - trade.price_entry) /
                                   trade.price_entry) *
                                   100)
                               : null);
@@ -2788,23 +2788,24 @@ function ProfilePageContent() {
                             'inline-flex w-fit items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold leading-none',
                             displayStatus === 'Open' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
                             displayStatus === 'Resolved' && 'bg-rose-50 text-rose-700 border-rose-200',
-                            displayStatus === 'Pending' && 'bg-amber-50 text-amber-700 border-amber-200',
                             displayStatus === 'Trader Closed' && 'bg-orange-50 text-orange-700 border-orange-200',
                             displayStatus === 'Sold' && 'bg-slate-50 text-slate-600 border-slate-200'
                           );
                           const outcomeBadgeClass = cn(
-                            'inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+                            'inline-flex items-center rounded-full border px-2.5 py-1 text-[12px] font-semibold',
                             'bg-slate-50 text-slate-600 border-slate-200'
                           );
+                          const currentValue =
+                            contracts && finalDisplayPrice !== null ? contracts * finalDisplayPrice : null;
                           const mobileDetail =
                             mobileMetric === 'price'
-                              ? `${formatPrice(trade.price_entry)} -> ${formatPrice(displayPrice)}`
+                              ? `${formatPrice(trade.price_entry)} -> ${formatPrice(finalDisplayPrice)}`
                               : mobileMetric === 'size'
                                 ? `${formatCurrency(invested)} / ${formatContracts(contracts)}`
                                 : mobileMetric === 'roi'
-                                  ? roiValue === null
-                                    ? '—'
-                                    : `${roiValue > 0 ? '+' : ''}${roiValue.toFixed(1)}%`
+                                  ? `${currentValue !== null ? formatCurrency(currentValue) : '—'} · ${
+                                      roiValue === null ? '—' : `${roiValue > 0 ? '+' : ''}${roiValue.toFixed(1)}%`
+                                    }`
                                   : formatTimestamp(trade.created_at);
 
                           const handleQuickSell = async () => {
@@ -2905,8 +2906,8 @@ function ProfilePageContent() {
 
                           return (
                             <React.Fragment key={trade.id}>
-                              <tr className="border-b border-slate-100 bg-slate-50 align-top">
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 w-[140px]">
+                              <tr className="border-b border-slate-100 align-top">
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 w-[140px] bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   {trade.trader_wallet && trade.trader_username ? (
                                     <a
                                       href={`/trader/${trade.trader_wallet}`}
@@ -2919,8 +2920,7 @@ function ProfilePageContent() {
                                     <span className="text-sm text-slate-400">Unknown</span>
                                   )}
                                 </td>
-                                <td className="px-3 py-2 align-top md:px-4 md:py-3">
-                                  <span className="text-[10px] text-slate-400 md:hidden">Market</span>
+                                <td className="px-3 py-2 align-top md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <div className="mt-1 flex items-start gap-2 md:gap-3">
                                     <div className="flex flex-col items-start gap-1 shrink-0">
                                       <span className={cn("inline-flex", statusBadgeClass)}>
@@ -2959,36 +2959,36 @@ function ProfilePageContent() {
                                     </div>
                                   </div>
                                 </td>
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3">
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <span className={cn("inline-flex", outcomeBadgeClass)}>
                                     {formatOutcomeLabel(trade.outcome)}
                                   </span>
                                 </td>
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3">
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <p className="text-sm font-semibold text-slate-900">{formatCurrency(invested)}</p>
                                   <p className="text-xs text-slate-500">{formatContracts(contracts)}</p>
                                 </td>
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3">
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <p className="text-sm font-semibold text-slate-900">
                                     {formatPrice(trade.price_entry)}
                                     <span className="mx-1 text-slate-400">-&gt;</span>
-                                    {formatPrice(displayPrice)}
+                                    {formatPrice(finalDisplayPrice)}
                                   </p>
                                 </td>
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3">
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <p className="text-sm font-semibold text-slate-900">
-                                    {contracts && displayPrice ? formatCurrency(contracts * displayPrice) : "—"}
+                                    {contracts && finalDisplayPrice !== null ? formatCurrency(contracts * finalDisplayPrice) : "—"}
                                   </p>
                                   <p className={cn("text-xs font-semibold", roiClass)}>
                                     {roiValue === null ? "—" : `${roiValue > 0 ? "+" : ""}${roiValue.toFixed(1)}%`}
                                   </p>
                                 </td>
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3">
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <p className="text-xs font-medium text-slate-600 whitespace-nowrap">
                                     {formatTimestamp(trade.created_at)}
                                   </p>
                                 </td>
-                                <td className="px-3 py-2 align-top md:hidden md:px-4 md:py-3">
+                                <td className="px-3 py-2 align-top md:hidden md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <p
                                     className={cn(
                                       "text-xs font-semibold",
@@ -2998,14 +2998,14 @@ function ProfilePageContent() {
                                     {mobileDetail}
                                   </p>
                                 </td>
-                                <td className="px-3 py-2 align-top text-right md:px-4 md:py-3">
+                                <td className="px-3 py-2 align-top text-right md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <div className="mt-1 flex flex-col items-end gap-1">
                                     {trade.type === 'quick' && trade.status === 'open' && trade.raw && (
                                       <Button
                                         onClick={handleQuickSell}
                                         size="sm"
                                         variant="outline"
-                                        className="h-5 px-2 text-[10px] font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 hover:text-red-600"
+                                        className="h-6 px-3 text-[11px] font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 hover:text-red-600"
                                       >
                                         Sell
                                       </Button>
