@@ -2874,20 +2874,19 @@ function ProfilePageContent() {
                       </tbody>
                     </table>
                   </div>
+                  {/* View More Button */}
+                  {filteredUnifiedTrades.length > tradesToShow && (
+                    <div className="flex justify-center pt-4 pb-4">
+                      <Button
+                        onClick={() => setTradesToShow(prev => prev + 15)}
+                        variant="outline"
+                        className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                      >
+                        View More Trades ({filteredUnifiedTrades.length - tradesToShow} remaining)
+                      </Button>
+                    </div>
+                  )}
                 </div>
-
-                {/* View More Button */}
-                {filteredUnifiedTrades.length > tradesToShow && (
-                  <div className="flex justify-center pt-4">
-                    <Button
-                      onClick={() => setTradesToShow(prev => prev + 15)}
-                      variant="outline"
-                      className="border-slate-300 text-slate-700 hover:bg-slate-50"
-                    >
-                      View More Trades ({filteredUnifiedTrades.length - tradesToShow} remaining)
-                    </Button>
-                  </div>
-                )}
 
               )}
             </div>
