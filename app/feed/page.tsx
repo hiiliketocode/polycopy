@@ -13,7 +13,6 @@ import { EmptyState } from '@/components/polycopy/empty-state';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 
 // Types
@@ -43,7 +42,6 @@ export interface FeedTrade {
   };
 }
 
-type FilterTab = "all" | "buys" | "sells";
 type Category = "all" | "politics" | "sports" | "crypto" | "culture" | "finance" | "economics" | "tech" | "weather";
 
 const normalizeKeyPart = (value?: string | null) => value?.trim().toLowerCase() || '';
@@ -91,10 +89,13 @@ export default function FeedPage() {
   const [isPremium, setIsPremium] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [activeCategory, setActiveCategory] = useState<Category>('all');
   const [defaultBuySlippage, setDefaultBuySlippage] = useState(3);
   const [defaultSellSlippage, setDefaultSellSlippage] = useState(3);
+  const [showFilters, setShowFilters] = useState(false);
+  const [liveGamesOnly, setLiveGamesOnly] = useState(false);
+  const [largeTradesOnly, setLargeTradesOnly] = useState(false);
+  const [selectedTraders, setSelectedTraders] = useState<Set<string>>(new Set());
   
   // Data state
   const [allTrades, setAllTrades] = useState<FeedTrade[]>([]);
@@ -129,19 +130,6 @@ export default function FeedPage() {
   // Manual refresh state
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Categories
-  const categoryMap: Record<string, string> = {
-    'all': 'all',
-    'politics': 'politics',
-    'sports': 'sports',
-    'crypto': 'crypto',
-    'culture': 'culture',
-    'finance': 'finance',
-    'economics': 'economics',
-    'tech': 'tech',
-    'weather': 'weather'
-  };
-  
   const categories = [
     { value: "all" as Category, label: "All" },
     { value: "politics" as Category, label: "Politics" },
@@ -154,11 +142,32 @@ export default function FeedPage() {
     { value: "weather" as Category, label: "Weather" },
   ];
 
-  const filterTabs: { value: FilterTab; label: string }[] = [
-    { value: "all", label: "All Trades" },
-    { value: "buys", label: "Buys Only" },
-    { value: "sells", label: "Sells Only" },
-  ];
+  const traderFilters = useMemo(() => {
+    const map = new Map<string, string>();
+    allTrades.forEach((trade) => {
+      const wallet = trade.trader.wallet?.toLowerCase();
+      if (!wallet) return;
+      if (!map.has(wallet)) {
+        map.set(wallet, trade.trader.displayName);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([wallet, name]) => ({ wallet, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [allTrades]);
+
+  const isLiveMarket = useCallback(
+    (trade: FeedTrade) => {
+      const conditionId = trade.market.conditionId || '';
+      const liveData = conditionId ? liveMarketData.get(conditionId) : undefined;
+      if (!liveData) return false;
+      const status = liveData.eventStatus?.toLowerCase() || '';
+      if (status.includes('final') || status.includes('post')) return false;
+      if (status.includes('live') || status.includes('in') || status.includes('progress')) return true;
+      return Boolean(liveData.score);
+    },
+    [liveMarketData]
+  );
 
   // Auth check
   useEffect(() => {
@@ -1052,22 +1061,45 @@ export default function FeedPage() {
   const filteredAllTrades = useMemo(() => allTrades.filter(trade => {
     // Only show BUY trades
     if (trade.trade.side !== 'BUY') return false;
-    
+
     if (activeCategory !== 'all') {
       const tradeCategory = trade.market.category?.toLowerCase();
       if (!tradeCategory || tradeCategory !== activeCategory) {
         return false;
       }
     }
+
+    if (largeTradesOnly) {
+      const totalValue = trade.trade.price * trade.trade.size;
+      if (!Number.isFinite(totalValue) || totalValue < 1000) {
+        return false;
+      }
+    }
+
+    if (liveGamesOnly && !isLiveMarket(trade)) {
+      return false;
+    }
+
+    if (selectedTraders.size > 0) {
+      const wallet = trade.trader.wallet?.toLowerCase() || '';
+      if (!selectedTraders.has(wallet)) {
+        return false;
+      }
+    }
     
     return true;
-  }), [allTrades, activeCategory]);
+  }), [allTrades, activeCategory, largeTradesOnly, liveGamesOnly, selectedTraders, isLiveMarket]);
   
   const displayedTrades = useMemo(
     () => filteredAllTrades.slice(0, displayedTradesCount),
     [filteredAllTrades, displayedTradesCount]
   );
   const hasMoreTrades = filteredAllTrades.length > displayedTradesCount;
+
+  useEffect(() => {
+    if (!liveGamesOnly || allTrades.length === 0) return;
+    fetchLiveMarketData(allTrades);
+  }, [liveGamesOnly, allTrades, fetchLiveMarketData]);
 
   const refreshDisplayedMarketData = useCallback(() => {
     if (displayedTrades.length === 0) return;
@@ -1321,23 +1353,107 @@ export default function FeedPage() {
               </div>
             )}
 
-            {/* Category Pills */}
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 md:pb-2">
-              {categories.map((category) => (
-                <button
-                  key={category.value}
-                  onClick={() => setActiveCategory(category.value)}
-                  className={cn(
-                    "px-4 py-2 rounded-full font-medium text-sm whitespace-nowrap transition-all flex-shrink-0",
-                    activeCategory === category.value
-                      ? "bg-gradient-to-r from-yellow-400 to-amber-500 text-slate-900 shadow-sm"
-                      : "bg-slate-100 text-slate-700 hover:bg-slate-200",
-                  )}
-                >
-                  {category.label}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => setShowFilters((prev) => !prev)}
+                variant="outline"
+                className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white"
+              >
+                Filters
+              </Button>
+              {(activeCategory !== 'all' || liveGamesOnly || largeTradesOnly || selectedTraders.size > 0) && (
+                <span className="text-xs text-slate-500">
+                  Filters active
+                </span>
+              )}
             </div>
+            {showFilters && (
+              <div className="mt-3 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-5">
+                <div className="flex flex-col gap-5">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900 mb-2">Category</h4>
+                    <div className="flex gap-2 flex-wrap">
+                      {categories.map((category) => (
+                        <button
+                          key={category.value}
+                          onClick={() => setActiveCategory(category.value)}
+                          className={cn(
+                            "px-4 py-2 rounded-full font-medium text-sm whitespace-nowrap transition-all",
+                            activeCategory === category.value
+                              ? "bg-gradient-to-r from-yellow-400 to-amber-500 text-slate-900 shadow-sm"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                          )}
+                        >
+                          {category.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-yellow-500 focus:ring-yellow-400"
+                        checked={liveGamesOnly}
+                        onChange={(event) => setLiveGamesOnly(event.target.checked)}
+                      />
+                      Live games
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-yellow-500 focus:ring-yellow-400"
+                        checked={largeTradesOnly}
+                        onChange={(event) => setLargeTradesOnly(event.target.checked)}
+                      />
+                      Large trades ($1,000+)
+                    </label>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-semibold text-slate-900">Traders</h4>
+                      {selectedTraders.size > 0 && (
+                        <button
+                          onClick={() => setSelectedTraders(new Set())}
+                          className="text-xs font-medium text-slate-500 hover:text-slate-700"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">
+                      {traderFilters.map((trader) => {
+                        const isSelected = selectedTraders.has(trader.wallet);
+                        return (
+                          <label key={trader.wallet} className="flex items-center gap-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-slate-300 text-yellow-500 focus:ring-yellow-400"
+                              checked={isSelected}
+                              onChange={(event) => {
+                                setSelectedTraders((prev) => {
+                                  const next = new Set(prev);
+                                  if (event.target.checked) {
+                                    next.add(trader.wallet);
+                                  } else {
+                                    next.delete(trader.wallet);
+                                  }
+                                  return next;
+                                });
+                              }}
+                            />
+                            <span className="truncate">{trader.name}</span>
+                          </label>
+                        );
+                      })}
+                      {traderFilters.length === 0 && (
+                        <p className="text-sm text-slate-500">No traders yet.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
