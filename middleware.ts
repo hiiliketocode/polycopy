@@ -15,7 +15,7 @@ function applySecurityHeaders(response: NextResponse) {
     "img-src 'self' data: https: blob:",
     "font-src 'self' data:",
     "connect-src 'self' https://*.supabase.co https://*.polymarket.com https://api.turnkey.com https://api.stripe.com https://www.google-analytics.com https://analytics.google.com wss://*.supabase.co",
-    "frame-src 'self' https://js.stripe.com https://checkout.stripe.com",
+    "frame-src 'self' https://js.stripe.com https://checkout.stripe.com https://import.turnkey.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
