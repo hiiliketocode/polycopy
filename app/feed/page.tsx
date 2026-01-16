@@ -814,6 +814,24 @@ export default function FeedPage() {
           return undefined;
         };
 
+        const normalizedCategory = (value?: string | null) =>
+          value ? value.trim().toLowerCase() : undefined;
+        const getMarketTitle = (rawTrade: any) => {
+          const candidates = [
+            rawTrade.title,
+            rawTrade.market_title,
+            rawTrade.marketTitle,
+            rawTrade.question,
+            rawTrade.market,
+          ];
+          for (const candidate of candidates) {
+            if (typeof candidate === 'string' && candidate.trim()) {
+              return candidate;
+            }
+          }
+          return 'Unknown Market';
+        };
+
         const formattedTrades: FeedTrade[] = allTradesRaw.map((trade: any) => {
           const wallet = trade._followedWallet || trade.user || trade.wallet || '';
           const walletKey = wallet.toLowerCase();
@@ -839,10 +857,15 @@ export default function FeedPage() {
             market: {
               id: marketId,
               conditionId,
-              title: trade.market || trade.title || 'Unknown Market',
+              title: getMarketTitle(trade),
               slug: trade.market_slug || trade.slug || '',
               eventSlug: trade.eventSlug || trade.event_slug || '',
-              category: undefined,
+              category: normalizedCategory(
+                trade.category ||
+                  trade.market_category ||
+                  trade.marketCategory ||
+                  trade.market?.category
+              ),
               avatarUrl: extractMarketAvatarUrl(trade) || undefined,
             },
             trade: {
@@ -858,15 +881,48 @@ export default function FeedPage() {
         });
 
         // 5. Categorize trades
+        const isSportsTitle = (title: string) => {
+          const text = title.toLowerCase();
+          if (
+            text.includes('vs.') ||
+            text.includes(' vs ') ||
+            text.includes(' v ') ||
+            text.includes(' at ') ||
+            text.includes('@')
+          ) {
+            return true;
+          }
+          return [
+            'nfl',
+            'nba',
+            'wnba',
+            'mlb',
+            'nhl',
+            'ncaa',
+            'soccer',
+            'football',
+            'basketball',
+            'baseball',
+            'hockey',
+            'ufc',
+            'pga',
+            'f1',
+            'formula 1',
+            'world cup',
+            'champions league',
+            'super bowl',
+          ].some((term) => text.includes(term));
+        };
+
         formattedTrades.forEach(trade => {
+          if (trade.market.category) return;
           const title = trade.market.title.toLowerCase();
           
           if (title.includes('trump') || title.includes('biden') || title.includes('election') || 
               title.includes('senate') || title.includes('congress') || title.includes('president')) {
             trade.market.category = 'politics';
           }
-          else if (title.includes('nba') || title.includes('nfl') || title.includes('mlb') || title.includes('nhl') ||
-                   title.includes('soccer') || title.includes('football') || title.includes('basketball')) {
+          else if (isSportsTitle(title)) {
             trade.market.category = 'sports';
           }
           else if (title.includes('bitcoin') || title.includes('btc') || title.includes('ethereum') || 
