@@ -166,11 +166,12 @@ const chunkArray = <T,>(items: T[], size: number) => {
 }
 
 type PageProps = {
-  searchParams?: { [key: string]: string | string[] | undefined }
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>
 }
 
 export default async function IWishCopiedThatPage({ searchParams }: PageProps) {
   const adminUser = await getAdminSessionUser()
+  const resolvedSearchParams = await searchParams
 
   if (!adminUser) {
     return (
@@ -379,7 +380,7 @@ export default async function IWishCopiedThatPage({ searchParams }: PageProps) {
         marketsMatched: marketMap.size,
         dataSource: usedPublicTrades ? 'trades + trades_public' : 'trades'
       }}
-      showNav={searchParams?.embed !== '1'}
+      showNav={resolvedSearchParams?.embed !== '1'}
       rules={{
         lookbackHours: LOOKBACK_HOURS,
         lateWindowMinutes: LATE_WINDOW_MINUTES,
