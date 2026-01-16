@@ -1457,21 +1457,19 @@ export default function TraderProfilePage({
                     </tbody>
                   </table>
                 </div>
+                {/* Load More Button */}
+                {filteredTrades.length > tradesToShow && (
+                  <div className="flex justify-center pt-4 pb-4">
+                    <Button
+                      onClick={() => setTradesToShow(prev => prev + 15)}
+                      variant="outline"
+                      className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                    >
+                      Load More Trades ({filteredTrades.length - tradesToShow} remaining)
+                    </Button>
+                  </div>
+                )}
               </div>
-
-              {/* Load More Button */}
-              {filteredTrades.length > tradesToShow && (
-                <div className="flex justify-center pt-4">
-                  <Button
-                    onClick={() => setTradesToShow(prev => prev + 15)}
-                    variant="outline"
-                    className="border-slate-300 text-slate-700 hover:bg-slate-50"
-                  >
-                    Load More Trades ({filteredTrades.length - tradesToShow} remaining)
-                  </Button>
-                </div>
-              )}
-            </div>
             )}
           </div>
         )}
