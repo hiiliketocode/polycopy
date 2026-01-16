@@ -14,6 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { TradeCard } from '@/components/polycopy/trade-card';
+import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 import type { User } from '@supabase/supabase-js';
@@ -1549,6 +1550,8 @@ export default function TraderProfilePage({
                       polymarketUrl={polymarketUrl}
                       defaultBuySlippage={defaultBuySlippage}
                       defaultSellSlippage={defaultSellSlippage}
+                      walletConnected={Boolean(walletAddress)}
+                      onRequireWallet={() => setShowWalletConnectModal(true)}
                     />
                   ) : (
                     <Card key={`${trade.timestamp}-${index}`} className="p-6">
@@ -2212,51 +2215,11 @@ export default function TraderProfilePage({
         )}
       </div>
 
-      {/* Wallet Connect Required Modal */}
-      {showWalletConnectModal && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-          onClick={() => setShowWalletConnectModal(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-4 mb-4">
-              <div className="flex-shrink-0 w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
-                <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">
-                  Wallet Connection Required
-                </h3>
-                <p className="text-sm text-slate-600 mb-4">
-                  To use auto-copy trading, you need to connect your Polymarket wallet first. This allows us to execute trades on your behalf.
-                </p>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => {
-                      setShowWalletConnectModal(false);
-                      router.push('/profile');
-                    }}
-                    className="flex-1 px-4 py-2.5 bg-[#FDB022] hover:bg-[#E69E1A] text-slate-900 font-semibold rounded-lg transition-colors"
-                  >
-                    Connect Wallet
-                  </button>
-                  <button
-                    onClick={() => setShowWalletConnectModal(false)}
-                    className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConnectWalletModal
+        open={showWalletConnectModal}
+        onOpenChange={setShowWalletConnectModal}
+        onConnect={(address) => setWalletAddress(address)}
+      />
     </div>
   );
 }

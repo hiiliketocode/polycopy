@@ -58,6 +58,8 @@ interface TradeCardProps {
   polymarketUrl?: string
   defaultBuySlippage?: number
   defaultSellSlippage?: number
+  walletConnected?: boolean
+  onRequireWallet?: () => void
 }
 
 type StatusPhase =
@@ -358,6 +360,8 @@ export function TradeCard({
   polymarketUrl,
   defaultBuySlippage,
   defaultSellSlippage,
+  walletConnected = true,
+  onRequireWallet,
 }: TradeCardProps) {
   const resolvedDefaultSlippage =
     action === "Buy"
@@ -1123,6 +1127,10 @@ export function TradeCard({
       onCopyTrade?.()
       return
     }
+    if (!walletConnected) {
+      onRequireWallet?.()
+      return
+    }
 
     setIsSubmitting(true)
     setSubmitError(null)
@@ -1334,6 +1342,10 @@ export function TradeCard({
 
   const handleCopyTradeClick = () => {
     if (isMarketEnded) return
+    if (isPremium && !walletConnected) {
+      onRequireWallet?.()
+      return
+    }
     if (isPremium && onToggleExpand) {
       onToggleExpand()
       return

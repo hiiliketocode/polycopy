@@ -9,6 +9,7 @@ import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { TradeCard } from '@/components/polycopy/trade-card';
+import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { EmptyState } from '@/components/polycopy/empty-state';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Activity, Filter, DollarSign, Users } from 'lucide-react';
@@ -96,6 +97,7 @@ export default function FeedPage() {
   const [liveGamesOnly, setLiveGamesOnly] = useState(false);
   const [minTradeSize, setMinTradeSize] = useState(0);
   const [selectedTraders, setSelectedTraders] = useState<Set<string>>(new Set());
+  const [showWalletConnectModal, setShowWalletConnectModal] = useState(false);
   
   // Data state
   const [allTrades, setAllTrades] = useState<FeedTrade[]>([]);
@@ -1684,6 +1686,8 @@ export default function FeedPage() {
                     }
                     defaultBuySlippage={defaultBuySlippage}
                     defaultSellSlippage={defaultSellSlippage}
+                    walletConnected={Boolean(walletAddress)}
+                    onRequireWallet={() => setShowWalletConnectModal(true)}
                   />
                 )
               })}
@@ -1705,6 +1709,11 @@ export default function FeedPage() {
         </div>
       </div>
 
+      <ConnectWalletModal
+        open={showWalletConnectModal}
+        onOpenChange={setShowWalletConnectModal}
+        onConnect={(address) => setWalletAddress(address)}
+      />
     </>
   );
 }

@@ -26,6 +26,23 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
   const iframeContainerRef = useRef<HTMLDivElement | null>(null)
   const iframeStamperRef = useRef<IframeStamper | null>(null)
 
+  const resolveImportErrorMessage = (message: string) => {
+    const normalized = message.toLowerCase()
+    if (normalized.includes("no wallet mnemonic") || normalized.includes("mnemonic")) {
+      return "Paste your wallet seed phrase or private key into the secure Turnkey form to continue."
+    }
+    if (
+      normalized.includes("expected 32 bytes") ||
+      (normalized.includes("private key") && normalized.includes("32"))
+    ) {
+      return "This key looks the wrong length. Turnkey expects a 32-byte private key (64 hex characters). If yours starts with 0x, remove the 0x and try again."
+    }
+    if (normalized.includes("private key")) {
+      return "We couldn't read that key. Double-check the private key format and try again."
+    }
+    return message
+  }
+
   useEffect(() => {
     let cancelled = false
 
@@ -310,9 +327,9 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                   Back
                 </Button>
               </div>
-              <DialogTitle className="text-xl font-bold">Import your wallet securely</DialogTitle>
+              <DialogTitle className="text-xl font-bold">Connect your wallet, securely</DialogTitle>
               <p className="text-sm text-black/80 mt-2">
-                Use Turnkey's embedded import form to encrypt your key inside the iframe.
+                You'll paste your Polymarket private key into Turnkey's secure form. Polycopy never sees the key.
               </p>
             </DialogHeader>
 
@@ -322,10 +339,10 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                 <div className="flex items-start gap-2">
                   <Shield className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
                   <div className="space-y-2 text-sm">
-                    <p className="font-bold text-blue-900 text-base">Polycopy can never access your private keys</p>
+                    <p className="font-bold text-blue-900 text-base">Polycopy can't access your private key</p>
                     <p className="text-blue-800">
-                      Polycopy never sees or stores your private key. We use Turnkey, an industry-leading secure wallet
-                      infrastructure provider, to handle all key management.{" "}
+                      Your key is encrypted inside Turnkey's iframe and never touches Polycopy servers. Turnkey is an
+                      industry-leading wallet infrastructure provider.{" "}
                       <a
                         href="https://www.turnkey.com/"
                         target="_blank"
@@ -340,7 +357,17 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-900">Turnkey import</label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-sm font-medium text-slate-900">Secure import form</label>
+                  <a
+                    href="https://polymarket.com/profile"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-semibold text-blue-600 hover:underline"
+                  >
+                    Open Polymarket to export your private key
+                  </a>
+                </div>
                 <div
                   ref={iframeContainerRef}
                   className="h-64 w-full rounded-lg border border-slate-200 bg-white"
@@ -358,7 +385,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
 
               {importError && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
-                  <strong>Error:</strong> {importError}
+                  <strong>Couldn't import:</strong> {resolveImportErrorMessage(importError)}
                 </div>
               )}
 
@@ -367,7 +394,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                 disabled={isSubmitting || !iframeReady}
                 className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-semibold"
               >
-                {isSubmitting ? "Securing Connection..." : "Link"}
+                {isSubmitting ? "Connecting..." : "Connect wallet"}
               </Button>
             </form>
           </>
