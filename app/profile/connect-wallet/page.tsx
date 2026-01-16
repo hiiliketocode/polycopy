@@ -75,6 +75,8 @@ export default function ConnectWalletTurnkeyPage() {
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [importBundle, setImportBundle] = useState<string | null>(null)
+  const [importOrganizationId, setImportOrganizationId] = useState<string | null>(null)
+  const [importUserId, setImportUserId] = useState<string | null>(null)
   const [iframeReady, setIframeReady] = useState(false)
   const [iframeError, setIframeError] = useState<string | null>(null)
   const iframeContainerRef = useRef<HTMLDivElement | null>(null)
@@ -110,6 +112,8 @@ export default function ConnectWalletTurnkeyPage() {
 
         if (!cancelled) {
           setImportBundle(data.importBundle || null)
+          setImportOrganizationId(data.organizationId || null)
+          setImportUserId(data.userId || null)
           console.log(
             `[Import] Loaded import bundle len=${(data.importBundle || '').length}`
           )
@@ -136,7 +140,7 @@ export default function ConnectWalletTurnkeyPage() {
     const setupIframe = async () => {
       if (!TURNKEY_UI_ENABLED) return
       if (activeStage !== 'key') return
-      if (!importBundle || !iframeContainerRef.current) return
+      if (!importBundle || !importOrganizationId || !importUserId || !iframeContainerRef.current) return
       if (iframeStamperRef.current) return
 
       setIframeError(null)
@@ -151,7 +155,7 @@ export default function ConnectWalletTurnkeyPage() {
         iframeStamperRef.current = stamper
         await stamper.init()
 
-        const injected = await stamper.injectImportBundle(importBundle)
+        const injected = await stamper.injectImportBundle(importBundle, importOrganizationId, importUserId)
         if (injected !== true) {
           throw new Error('Failed to initialize Turnkey import iframe')
         }
@@ -171,7 +175,7 @@ export default function ConnectWalletTurnkeyPage() {
     return () => {
       cancelled = true
     }
-  }, [activeStage, importBundle])
+  }, [activeStage, importBundle, importOrganizationId, importUserId])
 
   useEffect(() => {
     if (activeStage !== 'key') {
