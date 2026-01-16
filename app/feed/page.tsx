@@ -629,7 +629,7 @@ export default function FeedPage() {
                         awayTeamName,
                         homeTeamAbbrev: normalizeTeamAbbrev(homeTeamName),
                         awayTeamAbbrev: normalizeTeamAbbrev(awayTeamName),
-                        status: 'live',
+                        status: 'live' as const,
                         startTime: gameStartTime || '',
                         displayClock: undefined,
                         period: undefined,
