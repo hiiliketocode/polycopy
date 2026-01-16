@@ -1425,14 +1425,17 @@ export default function FeedPage() {
                             : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
                         )}
                       >
-                        {liveGamesOnly ? "On" : "Off"}
+                        {liveGamesOnly ? "Live only" : "All games"}
                         <span className={cn(
                           "inline-flex items-center justify-center h-6 w-10 rounded-full text-[11px] font-semibold",
                           liveGamesOnly ? "bg-orange-500 text-white" : "bg-slate-200 text-slate-600"
                         )}>
-                          Live
+                          {liveGamesOnly ? "Only" : "All"}
                         </span>
                       </button>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Toggle to show only markets that are live right now.
+                      </p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
                       <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-2">
