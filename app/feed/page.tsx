@@ -11,7 +11,7 @@ import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { TradeCard } from '@/components/polycopy/trade-card';
 import { EmptyState } from '@/components/polycopy/empty-state';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Activity } from 'lucide-react';
+import { RefreshCw, Activity, Filter, Flame, DollarSign, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 
@@ -94,7 +94,7 @@ export default function FeedPage() {
   const [defaultSellSlippage, setDefaultSellSlippage] = useState(3);
   const [showFilters, setShowFilters] = useState(false);
   const [liveGamesOnly, setLiveGamesOnly] = useState(false);
-  const [largeTradesOnly, setLargeTradesOnly] = useState(false);
+  const [minTradeSize, setMinTradeSize] = useState(0);
   const [selectedTraders, setSelectedTraders] = useState<Set<string>>(new Set());
   
   // Data state
@@ -155,6 +155,22 @@ export default function FeedPage() {
       .map(([wallet, name]) => ({ wallet, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [allTrades]);
+
+  const tradeSizeOptions = [
+    { value: 0, label: 'Any size' },
+    { value: 100, label: '$100+' },
+    { value: 500, label: '$500+' },
+    { value: 1000, label: '$1,000+' },
+  ];
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (activeCategory !== 'all') count += 1;
+    if (liveGamesOnly) count += 1;
+    if (minTradeSize > 0) count += 1;
+    if (selectedTraders.size > 0) count += 1;
+    return count;
+  }, [activeCategory, liveGamesOnly, minTradeSize, selectedTraders]);
 
   const isLiveMarket = useCallback(
     (trade: FeedTrade) => {
@@ -1069,9 +1085,9 @@ export default function FeedPage() {
       }
     }
 
-    if (largeTradesOnly) {
+    if (minTradeSize > 0) {
       const totalValue = trade.trade.price * trade.trade.size;
-      if (!Number.isFinite(totalValue) || totalValue < 1000) {
+      if (!Number.isFinite(totalValue) || totalValue < minTradeSize) {
         return false;
       }
     }
@@ -1088,7 +1104,7 @@ export default function FeedPage() {
     }
     
     return true;
-  }), [allTrades, activeCategory, largeTradesOnly, liveGamesOnly, selectedTraders, isLiveMarket]);
+  }), [allTrades, activeCategory, minTradeSize, liveGamesOnly, selectedTraders, isLiveMarket]);
   
   const displayedTrades = useMemo(
     () => filteredAllTrades.slice(0, displayedTradesCount),
@@ -1325,12 +1341,12 @@ export default function FeedPage() {
       />
       <SignupBanner isLoggedIn={!!user} />
       
-      <div className="min-h-screen bg-slate-50 pt-4 md:pt-0 pb-20 md:pb-8">
-        {/* Page Header */}
+        <div className="min-h-screen bg-slate-50 pt-3 md:pt-0 pb-20 md:pb-8">
+          {/* Page Header */}
         <div className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
-          <div className="max-w-[800px] mx-auto px-4 md:px-6 pb-3 md:py-8">
+          <div className="max-w-[800px] mx-auto px-4 md:px-6 pb-2 md:py-4">
             {/* Title Row */}
-            <div className="flex items-start justify-between mb-3 md:mb-4">
+            <div className="flex items-start justify-between mb-2 md:mb-3">
               <div>
                 <h1 className="text-xl md:text-3xl font-bold text-slate-900 mb-0.5 md:mb-1">Activity Feed</h1>
                 <p className="text-xs md:text-base text-slate-500">Recent trades from traders you follow</p>
@@ -1347,7 +1363,7 @@ export default function FeedPage() {
             </div>
 
             {(lastFeedFetchAt || latestTradeTimestamp) && (
-              <div className="mb-2 text-xs text-slate-500">
+              <div className="mb-1 text-xs text-slate-500">
                 {lastFeedFetchAt ? `Last updated ${getRelativeTime(lastFeedFetchAt)}` : 'Last updated: —'}
                 {latestTradeTimestamp ? ` • Latest trade ${getRelativeTime(latestTradeTimestamp)}` : ''}
               </div>
@@ -1357,21 +1373,26 @@ export default function FeedPage() {
               <Button
                 onClick={() => setShowFilters((prev) => !prev)}
                 variant="outline"
-                className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white"
+                className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white gap-2"
               >
+                <Filter className="h-4 w-4" />
                 Filters
+                {activeFiltersCount > 0 && (
+                  <span className="ml-1 inline-flex items-center justify-center text-[11px] font-semibold text-white bg-slate-900 rounded-full h-5 min-w-[20px] px-1.5">
+                    {activeFiltersCount}
+                  </span>
+                )}
               </Button>
-              {(activeCategory !== 'all' || liveGamesOnly || largeTradesOnly || selectedTraders.size > 0) && (
-                <span className="text-xs text-slate-500">
-                  Filters active
-                </span>
-              )}
+              <span className="text-xs text-slate-500">Customize your feed</span>
             </div>
             {showFilters && (
               <div className="mt-3 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-5">
-                <div className="flex flex-col gap-5">
+                <div className="flex flex-col gap-4">
                   <div>
-                    <h4 className="text-sm font-semibold text-slate-900 mb-2">Category</h4>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-2">
+                      <Filter className="h-4 w-4 text-slate-500" />
+                      Category
+                    </div>
                     <div className="flex gap-2 flex-wrap">
                       {categories.map((category) => (
                         <button
@@ -1389,29 +1410,59 @@ export default function FeedPage() {
                       ))}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-4">
-                    <label className="flex items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 text-yellow-500 focus:ring-yellow-400"
-                        checked={liveGamesOnly}
-                        onChange={(event) => setLiveGamesOnly(event.target.checked)}
-                      />
-                      Live games
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 text-yellow-500 focus:ring-yellow-400"
-                        checked={largeTradesOnly}
-                        onChange={(event) => setLargeTradesOnly(event.target.checked)}
-                      />
-                      Large trades ($1,000+)
-                    </label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-2">
+                        <Flame className="h-4 w-4 text-orange-500" />
+                        Live games
+                      </div>
+                      <button
+                        onClick={() => setLiveGamesOnly((prev) => !prev)}
+                        className={cn(
+                          "w-full flex items-center justify-between text-sm font-medium rounded-lg px-3 py-2 border transition",
+                          liveGamesOnly
+                            ? "border-orange-200 bg-orange-50 text-orange-700"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                        )}
+                      >
+                        {liveGamesOnly ? "On" : "Off"}
+                        <span className={cn(
+                          "inline-flex items-center justify-center h-6 w-10 rounded-full text-[11px] font-semibold",
+                          liveGamesOnly ? "bg-orange-500 text-white" : "bg-slate-200 text-slate-600"
+                        )}>
+                          Live
+                        </span>
+                      </button>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-2">
+                        <DollarSign className="h-4 w-4 text-emerald-600" />
+                        Trade size
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {tradeSizeOptions.map((option) => (
+                          <button
+                            key={option.value}
+                            onClick={() => setMinTradeSize(option.value)}
+                            className={cn(
+                              "px-3 py-1.5 rounded-full text-sm font-medium border transition",
+                              minTradeSize === option.value
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                            )}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-semibold text-slate-900">Traders</h4>
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <Users className="h-4 w-4 text-slate-500" />
+                        Traders
+                      </div>
                       {selectedTraders.size > 0 && (
                         <button
                           onClick={() => setSelectedTraders(new Set())}
@@ -1421,11 +1472,16 @@ export default function FeedPage() {
                         </button>
                       )}
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
                       {traderFilters.map((trader) => {
                         const isSelected = selectedTraders.has(trader.wallet);
                         return (
-                          <label key={trader.wallet} className="flex items-center gap-2 text-sm text-slate-700">
+                          <label key={trader.wallet} className={cn(
+                            "flex items-center gap-2 text-sm rounded-lg border px-2.5 py-2 transition",
+                            isSelected
+                              ? "border-yellow-200 bg-yellow-50 text-slate-800"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          )}>
                             <input
                               type="checkbox"
                               className="h-4 w-4 rounded border-slate-300 text-yellow-500 focus:ring-yellow-400"
