@@ -58,6 +58,7 @@ import {
   Check,
   Info,
   ArrowUpRight,
+  LogOut,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -1656,6 +1657,17 @@ function ProfilePageContent() {
       setNotificationsEnabled(!newValue);
     }
   };
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+      await fetch('/api/auth/admin-logout', { method: 'POST' });
+    } catch (err) {
+      console.error('Error logging out:', err);
+    } finally {
+      router.push('/login');
+    }
+  }, [router]);
 
   // Update slippage settings
   const handleUpdateSlippage = async (type: 'buy' | 'sell', value: number) => {
@@ -3831,6 +3843,24 @@ function ProfilePageContent() {
                     </Button>
                   </div>
                 )}
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Account</h3>
+                <div className="flex flex-col gap-3 p-4 bg-slate-50 rounded-lg border border-slate-200 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium text-slate-900">Log out</p>
+                    <p className="text-sm text-slate-500">Sign out of your account on this device.</p>
+                  </div>
+                  <Button
+                    onClick={handleLogout}
+                    variant="outline"
+                    className="border-red-200 text-red-600 hover:bg-red-50"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Log Out
+                  </Button>
+                </div>
               </div>
             </Card>
           )}

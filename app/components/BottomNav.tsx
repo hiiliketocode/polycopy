@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
+import { Button } from '@/components/ui/button';
 import { Crown } from 'lucide-react';
 
 export default function BottomNav() {
@@ -19,6 +20,7 @@ export default function BottomNav() {
   const [isPremium, setIsPremium] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
 
   const isActive = (href: string) => {
     if (href === '/feed') {
@@ -58,6 +60,7 @@ export default function BottomNav() {
             setIsAdmin(false);
             setIsPremium(false);
             setIsLoggedIn(false);
+            setHasCheckedAuth(true);
           }
           return;
         }
@@ -75,6 +78,7 @@ export default function BottomNav() {
         if (isMounted) {
           setIsAdmin(Boolean(profile?.is_admin && !error));
           setIsPremium(Boolean(profile?.is_premium && !error));
+          setHasCheckedAuth(true);
         }
       } catch (error) {
         console.error('[BottomNav] failed to resolve user status', error);
@@ -82,6 +86,7 @@ export default function BottomNav() {
           setIsAdmin(false);
           setIsPremium(false);
           setIsLoggedIn(false);
+          setHasCheckedAuth(true);
         }
       }
     };
@@ -94,6 +99,21 @@ export default function BottomNav() {
 
   return (
     <>
+      {hasCheckedAuth && !isLoggedIn && (
+        <div
+          className="md:hidden fixed left-0 right-0 z-[9998] px-4"
+          style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px) + 8px)' }}
+        >
+          <div className="max-w-md mx-auto grid grid-cols-2 gap-3 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
+            <Button asChild variant="outline" className="w-full border-slate-300 text-slate-700">
+              <Link href="/login">Log In</Link>
+            </Button>
+            <Button asChild className="w-full bg-[#FDB022] text-slate-900 hover:bg-[#FDB022]/90">
+              <Link href="/login?mode=signup">Sign Up</Link>
+            </Button>
+          </div>
+        </div>
+      )}
       <nav 
         className="md:hidden fixed bottom-0 left-0 right-0 w-full z-[9999] bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]"
         style={{ 

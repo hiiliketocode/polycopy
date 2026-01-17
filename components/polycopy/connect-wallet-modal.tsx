@@ -20,11 +20,15 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
   const [step, setStep] = useState<Step>("link-account")
   const [walletAddress, setWalletAddress] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
+  const [accountDataError, setAccountDataError] = useState<string | null>(null)
   const [iframeReady, setIframeReady] = useState(false)
   const [iframeError, setIframeError] = useState<string | null>(null)
   const iframeContainerRef = useRef<HTMLDivElement | null>(null)
   const iframeStamperRef = useRef<IframeStamper | null>(null)
+
+  const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/
 
   const resolveImportErrorMessage = (message: string) => {
     const normalized = message.toLowerCase()
@@ -106,21 +110,63 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
     }
   }, [step])
 
-  // Mock account data (replace with real data from API)
   const [accountData, setAccountData] = useState({
-    accountValue: "452.93",
-    openPositions: 22,
+    accountValue: null as number | null,
+    openPositions: null as number | null,
   })
 
   const handleLinkAccount = async (e: React.FormEvent) => {
     e.preventDefault()
+    const trimmed = walletAddress.trim()
+    if (!ADDRESS_REGEX.test(trimmed)) {
+      setLinkError("Enter a valid Polymarket wallet address (0x...).")
+      return
+    }
+    setLinkError(null)
     setIsSubmitting(true)
+    setAccountDataError(null)
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      const [walletRes, positionsRes] = await Promise.all([
+        fetch(`/api/polymarket/wallet/${trimmed}`, { cache: "no-store" }),
+        fetch(`/api/polymarket/open-positions?wallet=${encodeURIComponent(trimmed)}`, {
+          cache: "no-store",
+        }),
+      ])
 
-    setIsSubmitting(false)
-    setStep("account-linked")
+      const walletPayload = await walletRes.json().catch(() => null)
+      const positionsPayload = await positionsRes.json().catch(() => null)
+
+      const accountValue =
+        walletRes.ok && typeof walletPayload?.portfolioValue === "number"
+          ? walletPayload.portfolioValue
+          : 0
+      const openPositions =
+        positionsRes.ok && typeof positionsPayload?.open_positions === "number"
+          ? positionsPayload.open_positions
+          : 0
+
+      if (!walletRes.ok || !positionsRes.ok) {
+        setAccountDataError("We couldn't fetch live account stats yet. You can still continue.")
+      }
+
+      setAccountData({
+        accountValue,
+        openPositions,
+      })
+      setWalletAddress(trimmed)
+      setStep("account-linked")
+    } catch {
+      setAccountData({
+        accountValue: 0,
+        openPositions: 0,
+      })
+      setAccountDataError("We couldn't fetch live account stats yet. You can still continue.")
+      setStep("account-linked")
+    } finally {
+      setIsSubmitting(false)
+    }
+
   }
 
   const handleNext = () => {
@@ -133,6 +179,16 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
     } else if (step === "enter-private-key") {
       setStep("account-linked")
     }
+  }
+
+  const formatUsdc = (value: number | null) => {
+    if (value === null || Number.isNaN(value)) return "--"
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value)
   }
 
   const handleLinkPrivateKey = async (e: React.FormEvent) => {
@@ -187,7 +243,10 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
     setTimeout(() => {
       setStep("link-account")
       setWalletAddress("")
+      setLinkError(null)
       setImportError(null)
+      setAccountDataError(null)
+      setAccountData({ accountValue: null, openPositions: null })
       setIframeReady(false)
       setIframeError(null)
     }, 300)
@@ -201,7 +260,10 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
       setTimeout(() => {
         setStep("link-account")
         setWalletAddress("")
+        setLinkError(null)
         setImportError(null)
+        setAccountDataError(null)
+        setAccountData({ accountValue: null, openPositions: null })
         setIframeReady(false)
         setIframeError(null)
         iframeStamperRef.current = null
@@ -261,6 +323,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                   className="w-full"
                   required
                 />
+                {linkError && <p className="text-xs text-rose-600">{linkError}</p>}
               </div>
 
               <Button
@@ -288,13 +351,16 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
               <div className="grid grid-cols-2 gap-4">
                 <div className="border border-slate-200 rounded-lg p-4">
                   <div className="text-xs text-slate-500 uppercase mb-1">Account Value</div>
-                  <div className="text-2xl font-bold text-slate-900">{accountData.accountValue} USDC</div>
+                  <div className="text-2xl font-bold text-slate-900">{formatUsdc(accountData.accountValue)}</div>
                 </div>
                 <div className="border border-slate-200 rounded-lg p-4">
                   <div className="text-xs text-slate-500 uppercase mb-1">Open Positions</div>
-                  <div className="text-2xl font-bold text-slate-900">{accountData.openPositions}</div>
+                  <div className="text-2xl font-bold text-slate-900">
+                    {accountData.openPositions ?? "--"}
+                  </div>
                 </div>
               </div>
+              {accountDataError && <p className="text-xs text-amber-700">{accountDataError}</p>}
 
               <div className="flex gap-3">
                 <Button type="button" variant="outline" onClick={handleBack} className="flex-1 bg-transparent">
