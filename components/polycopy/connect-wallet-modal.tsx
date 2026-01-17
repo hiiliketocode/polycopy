@@ -3,12 +3,13 @@
 import type React from "react"
 import { useEffect, useRef, useState } from "react"
 import { ArrowLeft, ExternalLink, Shield } from "lucide-react"
-import { IframeStamper } from "@turnkey/iframe-stamper"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { supabase } from "@/lib/supabase"
 import Image from "next/image"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { encryptPrivateKeyToBundle } from "@turnkey/crypto"
 
 interface ConnectWalletModalProps {
   open: boolean
@@ -24,12 +25,10 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
+  const [clobSetupError, setClobSetupError] = useState<string | null>(null)
   const [accountDataError, setAccountDataError] = useState<string | null>(null)
-  const [iframeReady, setIframeReady] = useState(false)
-  const [iframeError, setIframeError] = useState<string | null>(null)
-  const iframeContainerRef = useRef<HTMLDivElement | null>(null)
-  const iframeStamperRef = useRef<IframeStamper | null>(null)
   const autoAdvanceRef = useRef(false)
+  const [privateKeyInput, setPrivateKeyInput] = useState("")
 
   const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/
 
@@ -50,69 +49,6 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
     }
     return message
   }
-
-  useEffect(() => {
-    let cancelled = false
-
-    const setupIframe = async () => {
-      if (step !== "enter-private-key") return
-      if (iframeStamperRef.current || !iframeContainerRef.current) return
-
-      setIframeError(null)
-      setIframeReady(false)
-
-      try {
-        const stamper = new IframeStamper({
-          iframeUrl: "https://import.turnkey.com",
-          iframeContainer: iframeContainerRef.current,
-          iframeElementId: "turnkey-import-iframe",
-        })
-        iframeStamperRef.current = stamper
-        await stamper.init()
-
-        const bundleRes = await fetch("/api/turnkey/import-private-key", {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        })
-        const bundleData = await bundleRes.json()
-        if (!bundleRes.ok || !bundleData?.importBundle || !bundleData?.organizationId || !bundleData?.userId) {
-          throw new Error(bundleData?.error || "Failed to load import bundle")
-        }
-
-        const injected = await stamper.injectImportBundle(
-          bundleData.importBundle,
-          bundleData.organizationId,
-          bundleData.userId
-        )
-        if (injected !== true) {
-          throw new Error("Failed to initialize Turnkey import iframe")
-        }
-
-        if (!cancelled) {
-          setIframeReady(true)
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          setIframeError(err?.message || "Failed to load Turnkey import")
-        }
-      }
-    }
-
-    setupIframe()
-
-    return () => {
-      cancelled = true
-    }
-  }, [step])
-
-  useEffect(() => {
-    if (step !== "enter-private-key") {
-      setIframeReady(false)
-      setIframeError(null)
-      iframeStamperRef.current = null
-    }
-  }, [step])
 
   const [accountData, setAccountData] = useState({
     accountValue: null as number | null,
@@ -256,6 +192,14 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
     }
   }
 
+  const normalizePrivateKey = (value: string) => {
+    let trimmed = value.trim().replace(/\s+/g, "")
+    if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
+      trimmed = trimmed.slice(2)
+    }
+    return trimmed
+  }
+
   const BackButton = ({ className = "" }: { className?: string }) => (
     <Button
       type="button"
@@ -280,19 +224,36 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
 
   const handleLinkPrivateKey = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsSubmitting(true)
     setImportError(null)
+    const normalizedKey = normalizePrivateKey(privateKeyInput)
+    if (!normalizedKey) {
+      setImportError("Paste your private key to continue.")
+      return
+    }
+    if (!/^[0-9a-fA-F]{64}$/.test(normalizedKey)) {
+      setImportError("This key should be 64 hex characters. Remove 0x and any spaces or line breaks.")
+      return
+    }
 
+    setIsSubmitting(true)
     try {
-      if (!iframeStamperRef.current || !iframeReady) {
-        throw new Error("Turnkey import is not ready yet. Please wait.")
+      const bundleRes = await fetch("/api/turnkey/import-private-key", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      })
+      const bundleData = await bundleRes.json()
+      if (!bundleRes.ok || !bundleData?.importBundle || !bundleData?.organizationId || !bundleData?.userId) {
+        throw new Error(bundleData?.error || "Failed to load Turnkey import bundle")
       }
 
-      const encryptedBundle = await iframeStamperRef.current.extractWalletEncryptedBundle()
-
-      if (!encryptedBundle) {
-        throw new Error("Failed to retrieve encrypted bundle from Turnkey")
-      }
+      const encryptedBundle = await encryptPrivateKeyToBundle({
+        privateKey: normalizedKey,
+        keyFormat: "HEXADECIMAL",
+        importBundle: bundleData.importBundle,
+        userId: bundleData.userId,
+        organizationId: bundleData.organizationId,
+      })
 
       // Send encrypted bundle to server
       const importRes = await fetch('/api/turnkey/import-private-key', {
@@ -310,6 +271,21 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
       if (!importRes.ok) {
         throw new Error(importData?.error || 'Failed to import wallet')
       }
+
+      const l2Response = await fetch('/api/polymarket/l2-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ polymarketAccountAddress: walletAddress.trim() }),
+      })
+      if (!l2Response.ok) {
+        const l2Payload = await l2Response.json().catch(() => null)
+        const l2Message = l2Payload?.error || 'Unable to create CLOB credentials'
+        setClobSetupError(l2Message)
+        setImportError(`Wallet connected, but CLOB setup failed: ${l2Message}.`)
+        setIsSubmitting(false)
+        return
+      }
+      setClobSetupError(null)
 
       // Success!
       setIsSubmitting(false)
@@ -332,10 +308,10 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
       setWalletAddress("")
       setLinkError(null)
       setImportError(null)
+      setClobSetupError(null)
       setAccountDataError(null)
       setAccountData({ accountValue: null, openPositions: null })
-      setIframeReady(false)
-      setIframeError(null)
+      setPrivateKeyInput("")
     }, 300)
   }
 
@@ -349,11 +325,10 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
         setWalletAddress("")
         setLinkError(null)
         setImportError(null)
+        setClobSetupError(null)
         setAccountDataError(null)
         setAccountData({ accountValue: null, openPositions: null })
-        setIframeReady(false)
-        setIframeError(null)
-        iframeStamperRef.current = null
+        setPrivateKeyInput("")
       }, 300)
     }
   }
@@ -361,7 +336,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[440px] p-0 gap-0 overflow-hidden">
+      <DialogContent className="sm:max-w-[480px] p-0 gap-0 overflow-hidden">
         {/* Step 1: Link Account */}
         {step === "link-account" && (
           <>
@@ -466,32 +441,47 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
         {/* Step 3: Import with Turnkey */}
         {step === "enter-private-key" && (
           <>
-            <DialogHeader className="bg-[linear-gradient(135deg,#4C48FF_0%,#F8A9D8_55%,#FFDCD1_100%)] text-[#111111] p-5 text-center">
-              <DialogTitle className="text-lg font-bold">Turnkey secure import</DialogTitle>
-              <p className="text-xs text-black/80 mt-1">
-                Paste your Polymarket private key into Turnkey's secure form.
+            <DialogHeader className="bg-[#FFF4D6] text-slate-900 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <BackButton className="-ml-2" />
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <span>Secured by Turnkey</span>
+                  <Image src="/logos/turnkey-logo.png" alt="Turnkey" width={78} height={18} />
+                </div>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <DialogTitle className="text-base font-bold">
+                  Now we need to add your Polymarket private key
+                </DialogTitle>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[11px] font-semibold text-slate-600"
+                        aria-label="Why we need your private key"
+                      >
+                        ?
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>
+                        Turnkey encrypts your key in your browser so trades can be executed securely without Polycopy ever
+                        seeing it.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <p className="text-xs text-slate-700 mt-1">
+                Paste it into the secure Turnkey form below.
               </p>
             </DialogHeader>
 
             <form onSubmit={handleLinkPrivateKey} className="p-5 space-y-4 bg-white">
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <Image src="/logos/turnkey-logo-black.svg" alt="Turnkey" width={96} height={20} />
-                </div>
-                <BackButton />
-              </div>
-
-              <div className="flex items-center justify-between rounded-lg border border-[#4C48FF]/20 bg-[#F8A9D8]/15 px-3 py-2">
-                <div className="flex items-center gap-2 text-xs text-[#111111]">
-                  <Shield className="h-4 w-4 text-[#4C48FF]" />
-                  Polycopy never sees your private key. Turnkey encrypts it in your browser.
-                </div>
-                <Image
-                  src="/logos/secured-by-turnkey-black.svg"
-                  alt="Secured by Turnkey"
-                  width={140}
-                  height={20}
-                />
+              <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                <Shield className="h-4 w-4" />
+                Polycopy never sees your private key. Turnkey encrypts it in your browser.
               </div>
 
               <div className="space-y-2">
@@ -506,21 +496,23 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                     Open Polymarket to export your private key
                   </a>
                 </div>
-                <p className="text-[11px] text-slate-500">Use the raw 64-character key.</p>
-                <div
-                  ref={iframeContainerRef}
-                  className="h-28 w-full rounded-lg border border-[#4C48FF]/20 bg-white shadow-[0_0_0_1px_rgba(76,72,255,0.06)]"
-                />
-                {!iframeReady && !iframeError && (
-                  <p className="text-xs text-slate-600">Loading secure import form…</p>
-                )}
-              </div>
-
-              {iframeError && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
-                  <strong>Error:</strong> {iframeError}
+                <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+                  <span>Use the raw 64-character key. If it starts with 0x, remove it.</span>
+                  <button type="button" className="font-medium text-slate-600 hover:text-slate-800">
+                    How do I change that?
+                  </button>
+                  <button type="button" className="font-medium text-slate-600 hover:text-slate-800">
+                    How do I find my Turnkey?
+                  </button>
                 </div>
-              )}
+                <textarea
+                  value={privateKeyInput}
+                  onChange={(event) => setPrivateKeyInput(event.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-[#8B8CFB] focus:outline-none focus:ring-2 focus:ring-[#8B8CFB]/30"
+                  placeholder="Paste your private key here"
+                />
+              </div>
 
               {importError && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
@@ -530,11 +522,67 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
 
               <Button
                 type="submit"
-                disabled={isSubmitting || !iframeReady}
-                className="w-full bg-[#4C48FF] hover:bg-[#3A35FF] text-white font-semibold"
+                disabled={isSubmitting}
+                className="w-full bg-[#8B8CFB] hover:bg-[#7B7BF6] text-white font-semibold"
               >
-                {isSubmitting ? "Sending..." : "Send to Turnkey"}
+                {isSubmitting ? "Connecting..." : "Continue with Turnkey"}
               </Button>
+              {clobSetupError && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isSubmitting}
+                  onClick={async () => {
+                    setIsSubmitting(true)
+                    setImportError(null)
+                    try {
+                      const res = await fetch('/api/polymarket/l2-credentials', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ polymarketAccountAddress: walletAddress.trim() }),
+                      })
+                      if (!res.ok) {
+                        const payload = await res.json().catch(() => null)
+                        const message = payload?.error || 'Unable to create CLOB credentials'
+                        setClobSetupError(message)
+                        setImportError(`Wallet connected, but CLOB setup failed: ${message}.`)
+                        return
+                      }
+                      setClobSetupError(null)
+                      setStep("success")
+                    } finally {
+                      setIsSubmitting(false)
+                    }
+                  }}
+                  className="w-full"
+                >
+                  Retry CLOB setup
+                </Button>
+              )}
+
+              <div className="pt-1 space-y-2 text-xs text-slate-700">
+                <p className="font-semibold text-slate-900">FAQs</p>
+                <details className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <summary className="cursor-pointer font-medium text-slate-800">
+                    How do I find my Turnkey wallet private key?
+                  </summary>
+                  <p className="mt-2 text-slate-600">
+                    Open your Polymarket profile, export your private key, and paste the raw 64-character key here.
+                  </p>
+                </details>
+                <details className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <summary className="cursor-pointer font-medium text-slate-800">Why do I need it?</summary>
+                  <p className="mt-2 text-slate-600">
+                    Turnkey uses it to sign trades after you approve a copy trade.
+                  </p>
+                </details>
+                <details className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <summary className="cursor-pointer font-medium text-slate-800">How is it secure?</summary>
+                  <p className="mt-2 text-slate-600">
+                    Your key is encrypted in your browser and sent directly to Turnkey. Polycopy never sees or stores it.
+                  </p>
+                </details>
+              </div>
             </form>
           </>
         )}

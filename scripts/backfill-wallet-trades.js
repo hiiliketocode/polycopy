@@ -1,7 +1,7 @@
 'use strict'
 
 /**
- * Production-quality trade backfill script for top N wallets
+ * Production-quality trade backfill script for trader + user wallets
  * 
  * Features:
  * - Real idempotency: Checks which trades are actually missing (by order_hash)
@@ -56,7 +56,7 @@ const RECENT_ACTIVITY_TABLE = 'trades_public'
 const RECENT_ACTIVITY_WALLET_COLUMN = 'trader_wallet'
 const RECENT_ACTIVITY_TIME_COLUMN = 'trade_timestamp'
 const PROGRESS_SAVE_EVERY_PAGES = 50
-const DEFAULT_TOP_WALLETS = 500
+const DEFAULT_TOP_WALLETS = null
 const DEFAULT_LOG_FILE = path.join(process.cwd(), 'logs', 'backfill-wallet-trades.log')
 const DEFAULT_RETRY_ROUNDS = 2
 const DEFAULT_RETRY_DELAY_MS = 15000
@@ -453,7 +453,7 @@ async function loadTopWallets(window) {
       if (error) throw error
       if (data && data.length > 0) traderRows.push(...data)
     }
-  } else {
+  } else if (Number.isFinite(TOP_WALLETS)) {
     const { data, error } = await supabase
       .from('traders')
       .select('wallet_address, pnl')
@@ -464,6 +464,29 @@ async function loadTopWallets(window) {
 
     if (error) throw error
     return (data || []).map((r) => r.wallet_address).filter(Boolean)
+  } else {
+    let from = 0
+    const pageSize = 1000
+    let hasMore = true
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('traders')
+        .select('wallet_address, pnl')
+        .eq('is_active', true)
+        .not('pnl', 'is', null)
+        .order('pnl', { ascending: false })
+        .range(from, from + pageSize - 1)
+
+      if (error) throw error
+      if (data && data.length > 0) {
+        traderRows.push(...data)
+      }
+      if (!data || data.length < pageSize) {
+        hasMore = false
+      } else {
+        from += pageSize
+      }
+    }
   }
 
   const byWallet = new Map()
@@ -484,7 +507,76 @@ async function loadTopWallets(window) {
 
   console.log(`📌 Active traders with PnL in window: ${ordered.length}`)
 
-  return ordered.slice(0, TOP_WALLETS)
+  return Number.isFinite(TOP_WALLETS) ? ordered.slice(0, TOP_WALLETS) : ordered
+}
+
+async function loadUserWallets() {
+  const wallets = new Set()
+
+  try {
+    const { data, error } = await supabase
+      .from('user_wallets')
+      .select('proxy_wallet, eoa_wallet')
+    if (error) throw error
+    ;(data || []).forEach((row) => {
+      if (row?.proxy_wallet) wallets.add(String(row.proxy_wallet).toLowerCase())
+      if (row?.eoa_wallet) wallets.add(String(row.eoa_wallet).toLowerCase())
+    })
+  } catch (error) {
+    console.warn('⚠️  Failed to load user_wallets:', error.message || error)
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('wallet_address, trading_wallet_address')
+    if (error) throw error
+    ;(data || []).forEach((row) => {
+      if (row?.wallet_address) wallets.add(String(row.wallet_address).toLowerCase())
+      if (row?.trading_wallet_address) wallets.add(String(row.trading_wallet_address).toLowerCase())
+    })
+  } catch (error) {
+    console.warn('⚠️  Failed to load profiles wallets:', error.message || error)
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('turnkey_wallets')
+      .select('polymarket_account_address, eoa_address')
+    if (error) throw error
+    ;(data || []).forEach((row) => {
+      if (row?.polymarket_account_address) wallets.add(String(row.polymarket_account_address).toLowerCase())
+      if (row?.eoa_address) wallets.add(String(row.eoa_address).toLowerCase())
+    })
+  } catch (error) {
+    console.warn('⚠️  Failed to load turnkey_wallets:', error.message || error)
+  }
+
+  return Array.from(wallets)
+}
+
+async function loadAllWallets(window) {
+  const traderWallets = await loadTopWallets(window)
+  const userWallets = await loadUserWallets()
+  const combined = []
+  const seen = new Set()
+
+  traderWallets.forEach((wallet) => {
+    if (!wallet || seen.has(wallet)) return
+    seen.add(wallet)
+    combined.push(wallet)
+  })
+
+  userWallets
+    .slice()
+    .sort()
+    .forEach((wallet) => {
+      if (!wallet || seen.has(wallet)) return
+      seen.add(wallet)
+      combined.push(wallet)
+    })
+
+  return combined
 }
 
 /**
@@ -790,7 +882,10 @@ async function processWallet(wallet, index, total, progress, window) {
  * Main function
  */
 async function main() {
-  console.log(`🚀 Starting trade backfill for top ${TOP_WALLETS} wallets...\n`)
+  const walletScopeLabel = Number.isFinite(TOP_WALLETS)
+    ? `top ${TOP_WALLETS} trader wallets + user wallets`
+    : 'all trader wallets + user wallets'
+  console.log(`🚀 Starting trade backfill for ${walletScopeLabel}...\n`)
 
   const defaultSelectionWindow = { startTime: SELECT_START_TIME, endTime: SELECT_END_TIME, lookbackDays: SELECT_LOOKBACK_DAYS }
   const defaultFetchWindow = { startTime: START_TIME, endTime: END_TIME, lookbackDays: LOOKBACK_DAYS, mode: FETCH_ALL ? 'all' : 'window' }
@@ -836,7 +931,7 @@ async function main() {
 
   try {
     // Load wallets
-    const allWallets = SINGLE_WALLET ? [SINGLE_WALLET] : await loadTopWallets(selectionWindow)
+    const allWallets = SINGLE_WALLET ? [SINGLE_WALLET] : await loadAllWallets(selectionWindow)
     console.log(`📊 Loaded ${allWallets.length} wallets\n`)
 
     if (allWallets.length === 0) {
