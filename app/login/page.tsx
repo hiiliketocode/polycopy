@@ -72,9 +72,16 @@ function LoginForm() {
     }
   };
 
+  const isProduction = process.env.NODE_ENV === 'production';
+
   return (
     <>
       <Navigation user={null} />
+      {isProduction && (
+        <div className="bg-yellow-500 text-slate-900 px-4 py-3 text-center font-semibold border-b-2 border-yellow-600">
+          <p>We are currently working on maintenance and will be available again shortly. We apologize for the inconvenience.</p>
+        </div>
+      )}
       <div className="min-h-[calc(100vh-64px)] bg-slate-50">
         {isSignupMode ? (
           // Signup Page - Split Screen Design
