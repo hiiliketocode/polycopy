@@ -57,6 +57,48 @@ const RECENT_ACTIVITY_WALLET_COLUMN = 'trader_wallet'
 const RECENT_ACTIVITY_TIME_COLUMN = 'trade_timestamp'
 const PROGRESS_SAVE_EVERY_PAGES = 50
 const DEFAULT_TOP_WALLETS = 500
+const DEFAULT_LOG_FILE = path.join(process.cwd(), 'logs', 'backfill-wallet-trades.log')
+const DEFAULT_RETRY_ROUNDS = 2
+const DEFAULT_RETRY_DELAY_MS = 15000
+
+function ensureDir(dirPath) {
+  if (!dirPath) return
+  if (fs.existsSync(dirPath)) return
+  fs.mkdirSync(dirPath, { recursive: true })
+}
+
+function formatLogArg(value) {
+  if (value instanceof Error) return value.stack || value.message
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value)
+  } catch (err) {
+    return String(value)
+  }
+}
+
+function wireLogFile(logFile) {
+  if (!logFile) return null
+  ensureDir(path.dirname(logFile))
+  const stream = fs.createWriteStream(logFile, { flags: 'a' })
+  const originals = {
+    log: console.log.bind(console),
+    warn: console.warn.bind(console),
+    error: console.error.bind(console),
+  }
+  const write = (level, args) => {
+    const line = `[${new Date().toISOString()}] ${level} ${args.map(formatLogArg).join(' ')}`
+    if (level === 'ERROR') originals.error(line)
+    else if (level === 'WARN') originals.warn(line)
+    else originals.log(line)
+    stream.write(`${line}\n`)
+  }
+  console.log = (...args) => write('INFO', args)
+  console.warn = (...args) => write('WARN', args)
+  console.error = (...args) => write('ERROR', args)
+  process.on('exit', () => stream.end())
+  return { stream, originals }
+}
 
 function toNumber(value) {
   const num = Number(value)
@@ -79,6 +121,10 @@ function parseArgs() {
     }
     if (arg === '--keep-progress') {
       parsed.keepProgress = true
+      continue
+    }
+    if (arg === '--no-log-file') {
+      parsed.noLogFile = true
       continue
     }
 
@@ -128,6 +174,18 @@ function parseArgs() {
         break
       case '--select-end-time':
         parsed.selectEndTime = toNumber(nextValue)
+        if (!rawValue) i++
+        break
+      case '--log-file':
+        parsed.logFile = nextValue
+        if (!rawValue) i++
+        break
+      case '--retry-rounds':
+        parsed.retryRounds = toNumber(nextValue)
+        if (!rawValue) i++
+        break
+      case '--retry-delay-ms':
+        parsed.retryDelayMs = toNumber(nextValue)
         if (!rawValue) i++
         break
       default:
@@ -193,6 +251,17 @@ const TOP_WALLETS = Number.isFinite(args.topWallets)
   ? Math.max(1, Math.floor(args.topWallets))
   : (Number.isFinite(ENV_TOP_WALLETS) ? Math.max(1, Math.floor(ENV_TOP_WALLETS)) : DEFAULT_TOP_WALLETS)
 const RESET_PROGRESS = args.resetProgress === true
+const LOG_FILE = args.noLogFile
+  ? null
+  : (args.logFile || process.env.BACKFILL_LOG_FILE || DEFAULT_LOG_FILE)
+const RETRY_ROUNDS = Number.isFinite(args.retryRounds)
+  ? Math.max(0, Math.floor(args.retryRounds))
+  : DEFAULT_RETRY_ROUNDS
+const RETRY_DELAY_MS = Number.isFinite(args.retryDelayMs)
+  ? Math.max(0, Math.floor(args.retryDelayMs))
+  : DEFAULT_RETRY_DELAY_MS
+
+wireLogFile(LOG_FILE)
 
 if (START_TIME !== null && END_TIME !== null && START_TIME > END_TIME) {
   throw new Error('Invalid time window: start_time is after end_time')
@@ -236,6 +305,42 @@ function saveProgress(progress) {
     fs.writeFileSync(PROGRESS_FILE, JSON.stringify(progress, null, 2))
   } catch (error) {
     console.warn('⚠️  Could not save progress file:', error.message)
+  }
+}
+
+function removeFailedWallet(progress, wallet) {
+  if (!Array.isArray(progress.failedWallets)) return
+  progress.failedWallets = progress.failedWallets.filter((entry) => entry.wallet !== wallet)
+}
+
+async function countTradesForWallet(wallet) {
+  const { count, error } = await supabase
+    .from('trades')
+    .select('id', { count: 'exact', head: true })
+    .eq('wallet_address', wallet)
+  if (error) throw error
+  return count ?? 0
+}
+
+async function fetchEdgeTimestamp(wallet, ascending) {
+  const { data, error } = await supabase
+    .from('trades')
+    .select('timestamp')
+    .eq('wallet_address', wallet)
+    .order('timestamp', { ascending })
+    .limit(1)
+  if (error) throw error
+  return data?.[0]?.timestamp ?? null
+}
+
+async function updateWalletBackfillStatus(payload) {
+  try {
+    const { error } = await supabase
+      .from('wallet_backfill_status')
+      .upsert(payload, { onConflict: 'wallet_address' })
+    if (error) throw error
+  } catch (error) {
+    console.warn('⚠️  Failed to update wallet_backfill_status:', error.message || error)
   }
 }
 
@@ -523,6 +628,15 @@ async function processWallet(wallet, index, total, progress, window) {
   console.log(`\n[${index + 1}/${total}] Processing ${walletShort}...`)
 
   try {
+    const existingTrades = await countTradesForWallet(wallet)
+    await updateWalletBackfillStatus({
+      wallet_address: wallet,
+      status: 'in_progress',
+      existing_trade_count: existingTrades,
+      updated_at: new Date().toISOString(),
+      last_backfill_run_at: new Date().toISOString(),
+    })
+
     if (!progress.walletStates) progress.walletStates = {}
     const state = progress.walletStates[wallet] || {}
     let offset = Number.isFinite(state.offset) ? state.offset : 0
@@ -608,18 +722,66 @@ async function processWallet(wallet, index, total, progress, window) {
 
     if (totalFetched === 0) {
       console.log(`   ⚠️  No trades found for this wallet`)
+      await updateWalletBackfillStatus({
+        wallet_address: wallet,
+        latest_trade_ts: null,
+        earliest_trade_ts: null,
+        last_ingested_trade_ts: null,
+        trade_count: existingTrades,
+        existing_trade_count: existingTrades,
+        new_trades_added: 0,
+        status: 'completed',
+        updated_at: new Date().toISOString(),
+        last_backfill_run_at: new Date().toISOString(),
+      })
       return { wallet, success: true, fetched: 0, inserted: 0, skipped: true }
     }
 
     if (totalInserted === 0) {
       console.log(`   ✅ All trades already exist, skipping insert`)
+      const earliestTradeTs = await fetchEdgeTimestamp(wallet, true)
+      const latestTradeTs = await fetchEdgeTimestamp(wallet, false)
+      await updateWalletBackfillStatus({
+        wallet_address: wallet,
+        earliest_trade_ts: earliestTradeTs,
+        latest_trade_ts: latestTradeTs,
+        last_ingested_trade_ts: latestTradeTs,
+        backfilled_until_ts: FETCH_ALL ? earliestTradeTs : null,
+        trade_count: existingTrades,
+        existing_trade_count: existingTrades,
+        new_trades_added: 0,
+        status: 'completed',
+        updated_at: new Date().toISOString(),
+        last_backfill_run_at: new Date().toISOString(),
+      })
       return { wallet, success: true, fetched: totalFetched, inserted: 0, skipped: true }
     }
 
     console.log(`   ✅ Inserted ${totalInserted} new trades`)
+    const earliestTradeTs = await fetchEdgeTimestamp(wallet, true)
+    const latestTradeTs = await fetchEdgeTimestamp(wallet, false)
+    await updateWalletBackfillStatus({
+      wallet_address: wallet,
+      earliest_trade_ts: earliestTradeTs,
+      latest_trade_ts: latestTradeTs,
+      last_ingested_trade_ts: latestTradeTs,
+      backfilled_until_ts: FETCH_ALL ? earliestTradeTs : null,
+      trade_count: existingTrades + totalInserted,
+      existing_trade_count: existingTrades,
+      new_trades_added: totalInserted,
+      status: 'completed',
+      updated_at: new Date().toISOString(),
+      last_backfill_run_at: new Date().toISOString(),
+    })
     return { wallet, success: true, fetched: totalFetched, inserted: totalInserted, skipped: false }
   } catch (error) {
     console.error(`   ❌ Error processing wallet:`, error.message)
+    await updateWalletBackfillStatus({
+      wallet_address: wallet,
+      status: 'failed',
+      updated_at: new Date().toISOString(),
+      last_backfill_run_at: new Date().toISOString(),
+    })
     return { wallet, success: false, error: error.message, fetched: 0, inserted: 0 }
   }
 }
@@ -693,19 +855,25 @@ async function main() {
     console.log(`📋 Processing ${walletsToProcess.length} wallets (${progress.completedWallets.length} already completed) with concurrency ${WALLET_WORKERS}\n`)
 
     const walletIndexByAddress = new Map(allWallets.map((wallet, idx) => [wallet, idx]))
-    const results = new Array(walletsToProcess.length)
-    let successCount = 0
-    let failCount = 0
-    let totalFetched = 0
-    let totalInserted = 0
-    let progressUpdate = Promise.resolve()
+  const results = new Array(walletsToProcess.length)
+  let successCount = 0
+  let failCount = 0
+  let totalFetched = 0
+  let totalInserted = 0
+  const resultByWallet = new Map()
+  let progressUpdate = Promise.resolve()
 
     const recordResult = (result, wallet, localIndex) => {
+      const prev = resultByWallet.get(wallet)
       results[localIndex] = result
+      resultByWallet.set(wallet, result)
       if (result.success) {
-        successCount++
-        totalFetched += result.fetched || 0
-        totalInserted += result.inserted || 0
+        if (!prev || !prev.success) {
+          successCount++
+          if (prev && !prev.success) failCount--
+          totalFetched += result.fetched || 0
+          totalInserted += result.inserted || 0
+        }
 
         // Mark as completed
         if (!progress.completedWallets.includes(wallet)) {
@@ -714,8 +882,12 @@ async function main() {
         if (progress.walletStates && progress.walletStates[wallet]) {
           delete progress.walletStates[wallet]
         }
+        removeFailedWallet(progress, wallet)
       } else {
-        failCount++
+        if (!prev || prev.success) {
+          failCount++
+          if (prev && prev.success) successCount--
+        }
         if (!progress.failedWallets.find(f => f.wallet === wallet)) {
           progress.failedWallets.push({ wallet, error: result.error, timestamp: Date.now() })
         }
@@ -751,6 +923,24 @@ async function main() {
       const result = await processWallet(wallet, globalIndex, allWallets.length, progress, fetchWindow)
       await queueProgressUpdate(result, wallet, localIndex)
     })
+
+    for (let round = 1; round <= RETRY_ROUNDS; round += 1) {
+      const failedWallets = Array.from(resultByWallet.entries())
+        .filter(([, result]) => !result.success)
+        .map(([wallet]) => wallet)
+      if (failedWallets.length === 0) break
+      console.log(`\n🔁 Retry round ${round}/${RETRY_ROUNDS} for ${failedWallets.length} wallets...`)
+      if (RETRY_DELAY_MS > 0) {
+        console.log(`⏳ Waiting ${RETRY_DELAY_MS}ms before retry...`)
+        await sleep(RETRY_DELAY_MS)
+      }
+      const retryResults = new Array(failedWallets.length)
+      await runPool(failedWallets, WALLET_WORKERS, async (wallet, localIndex) => {
+        const result = await processWallet(wallet, localIndex, failedWallets.length, progress, fetchWindow)
+        await queueProgressUpdate(result, wallet, localIndex)
+        retryResults[localIndex] = result
+      })
+    }
 
     // Final summary
     console.log('\n' + '='.repeat(60))

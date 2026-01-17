@@ -46,7 +46,13 @@ const supabaseAdmin = createSupabaseAdminClient(SUPABASE_URL, SUPABASE_SERVICE_R
 })
 
 function containsRawPrivateKey(body: any): boolean {
-  const bodyStr = JSON.stringify(body)
+  if (!body) return false
+  if (typeof body !== 'object') {
+    const bodyStr = JSON.stringify(body)
+    return RAW_KEY_PATTERNS.some(pattern => pattern.test(bodyStr))
+  }
+  const { encryptedBundle, ...rest } = body as Record<string, unknown>
+  const bodyStr = JSON.stringify(rest)
   return RAW_KEY_PATTERNS.some(pattern => pattern.test(bodyStr))
 }
 

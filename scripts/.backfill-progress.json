@@ -155,7 +155,16 @@
     "0x2863ce4d826552cc8b3d0a14e25b781eef2c0e3e",
     "0xecdbd79566a25693b9971c48d7de84bc05f7da79",
     "0x3078755a25620dfa7684f9a8b9513017d4473e11",
-    "0xb13d096b2e90411d0e5f42891d2e73ef4cea2e90"
+    "0xb13d096b2e90411d0e5f42891d2e73ef4cea2e90",
+    "0x80cd8310aa624521e9e1b2b53b568cafb0ef0273",
+    "0xebf79787ab928c803cbef6fa8e0abe42b9e1da78",
+    "0x7c3db723f1d4d8cb9c550095203b686cb11e5c6b",
+    "0xdf2e12c6a53671d0b08f29d0391728097029ddec",
+    "0x9d333d3122c0e38de533b2e59343a92df9e1fa02",
+    "0x2f09642639aedd6ced432519c1a86e7d52034632",
+    "0x7177a7f5c216809c577c50c77b12aae81f81ddef",
+    "0xcc500cbcc8b7cf5bd21975ebbea34f21b5644c82",
+    "0x7744bfd749a70020d16a1fcbac1d064761c9999e"
   ],
   "failedWallets": [
     {
@@ -463,39 +472,32 @@
   },
   "walletStates": {
     "0x204f72f35326db932158cba6adff0b9a1da95e14": {
-      "offset": 73000,
-      "pageCount": 83,
-      "fetched": 83000,
+      "offset": 86000,
+      "pageCount": 96,
+      "fetched": 96000,
       "inserted": 60041,
-      "updatedAt": 1768501880870
+      "updatedAt": 1768612785834
     },
     "0x9d84ce0306f8551e02efef1680475fc0f1dc1344": {
-      "offset": 489000,
-      "pageCount": 520,
-      "fetched": 519000,
-      "inserted": 102865,
-      "updatedAt": 1768513315013
+      "offset": 495000,
+      "pageCount": 526,
+      "fetched": 525000,
+      "inserted": 104151,
+      "updatedAt": 1768612790346
     },
     "0x2005d16a84ceefa912d4e380cd32e7ff827875ea": {
-      "offset": 109000,
-      "pageCount": 119,
-      "fetched": 119000,
+      "offset": 121000,
+      "pageCount": 131,
+      "fetched": 131000,
       "inserted": 65177,
-      "updatedAt": 1768504074849
+      "updatedAt": 1768612786688
     },
     "0x212954857f5efc138748c33d032a93bf95974222": {
-      "offset": 50000,
-      "pageCount": 59,
-      "fetched": 59000,
-      "inserted": 28803,
-      "updatedAt": 1768504079683
-    },
-    "0xcc500cbcc8b7cf5bd21975ebbea34f21b5644c82": {
-      "offset": 70000,
-      "pageCount": 75,
-      "fetched": 75000,
-      "inserted": 45972,
-      "updatedAt": 1768505072676
+      "offset": 65000,
+      "pageCount": 74,
+      "fetched": 74000,
+      "inserted": 32320,
+      "updatedAt": 1768612788343
     },
     "0x16b29c50f2439faf627209b2ac0c7bbddaa8a881": {
       "offset": 62000,
@@ -519,60 +521,32 @@
       "updatedAt": 1768513330208
     },
     "0xa6a856a8c8a7f14fd9be6ae11c367c7cbb755009": {
-      "offset": 8000,
-      "pageCount": 9,
-      "fetched": 9000,
+      "offset": 9000,
+      "pageCount": 10,
+      "fetched": 10000,
       "inserted": 6248,
-      "updatedAt": 1768505606519
-    },
-    "0x80cd8310aa624521e9e1b2b53b568cafb0ef0273": {
-      "offset": 14000,
-      "pageCount": 15,
-      "fetched": 15000,
-      "inserted": 8929,
-      "updatedAt": 1768507050163
+      "updatedAt": 1768613141119
     },
     "0xd42f6a1634a3707e27cbae14ca966068e5d1047d": {
-      "offset": 173000,
-      "pageCount": 177,
-      "fetched": 177000,
-      "inserted": 19208,
-      "updatedAt": 1768509895553
-    },
-    "0xebf79787ab928c803cbef6fa8e0abe42b9e1da78": {
-      "offset": 21000,
-      "pageCount": 22,
-      "fetched": 22000,
-      "inserted": 15642,
-      "updatedAt": 1768509883453
+      "offset": 352000,
+      "pageCount": 356,
+      "fetched": 356000,
+      "inserted": 66757,
+      "updatedAt": 1768616171679
     },
     "0xd218e474776403a330142299f7796e8ba32eb5c9": {
-      "offset": 31000,
-      "pageCount": 31,
-      "fetched": 31000,
-      "inserted": 28493,
-      "updatedAt": 1768511592245
+      "offset": 232000,
+      "pageCount": 232,
+      "fetched": 232000,
+      "inserted": 202840,
+      "updatedAt": 1768616164118
     },
     "0x507e52ef684ca2dd91f90a9d26d149dd3288beae": {
-      "offset": 123000,
-      "pageCount": 127,
-      "fetched": 127000,
-      "inserted": 65259,
-      "updatedAt": 1768513342195
-    },
-    "0x7c3db723f1d4d8cb9c550095203b686cb11e5c6b": {
-      "offset": 58000,
-      "pageCount": 58,
-      "fetched": 58000,
-      "inserted": 16896,
-      "updatedAt": 1768513341778
-    },
-    "0xdf2e12c6a53671d0b08f29d0391728097029ddec": {
-      "offset": 27000,
-      "pageCount": 27,
-      "fetched": 27000,
-      "inserted": 14244,
-      "updatedAt": 1768513334519
+      "offset": 254000,
+      "pageCount": 259,
+      "fetched": 258000,
+      "inserted": 133258,
+      "updatedAt": 1768616171414
     },
     "0x5248313731287b61d714ab9df655442d6ed28aa2": {
       "offset": 512000,
@@ -629,6 +603,13 @@
       "fetched": 217000,
       "inserted": 209971,
       "updatedAt": 1768549025334
+    },
+    "0x28065f1b88027422274fb33e1e22bf3dad5736e7": {
+      "offset": 50000,
+      "pageCount": 50,
+      "fetched": 50000,
+      "inserted": 43250,
+      "updatedAt": 1768616169054
     }
   }
 }
