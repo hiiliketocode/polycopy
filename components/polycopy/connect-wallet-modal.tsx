@@ -7,6 +7,7 @@ import { IframeStamper } from "@turnkey/iframe-stamper"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { supabase } from "@/lib/supabase"
 
 interface ConnectWalletModalProps {
   open: boolean
@@ -37,9 +38,10 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
     }
     if (
       normalized.includes("expected 32 bytes") ||
+      normalized.includes("turnkey error 3") ||
       (normalized.includes("private key") && normalized.includes("32"))
     ) {
-      return "This key looks the wrong length. Turnkey expects a 32-byte private key (64 hex characters). If yours starts with 0x, remove the 0x and try again."
+      return "This key looks the wrong length. Turnkey expects a 32-byte private key (64 hex characters). If yours starts with 0x, remove the 0x and make sure there are no spaces or line breaks."
     }
     if (normalized.includes("private key")) {
       return "We couldn't read that key. Double-check the private key format and try again."
@@ -115,6 +117,37 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
     openPositions: null as number | null,
   })
 
+  useEffect(() => {
+    if (!open) return
+    if (walletAddress.trim()) return
+
+    let cancelled = false
+
+    const fetchSavedAddress = async () => {
+      try {
+        const { data: userData } = await supabase.auth.getUser()
+        const user = userData?.user
+        if (!user) return
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("trading_wallet_address")
+          .eq("id", user.id)
+          .maybeSingle()
+        if (cancelled || error) return
+        if (data?.trading_wallet_address) {
+          setWalletAddress(data.trading_wallet_address)
+        }
+      } catch {
+        // Best effort only.
+      }
+    }
+
+    fetchSavedAddress()
+    return () => {
+      cancelled = true
+    }
+  }, [open, walletAddress])
+
   const handleLinkAccount = async (e: React.FormEvent) => {
     e.preventDefault()
     const trimmed = walletAddress.trim()
@@ -127,6 +160,15 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
     setAccountDataError(null)
 
     try {
+      const importResponse = await fetch("/api/wallet/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: trimmed }),
+      })
+      if (!importResponse.ok) {
+        setAccountDataError("We couldn't save this wallet address yet. You can still continue.")
+      }
+
       const [walletRes, positionsRes] = await Promise.all([
         fetch(`/api/polymarket/wallet/${trimmed}`, { cache: "no-store" }),
         fetch(`/api/polymarket/open-positions?wallet=${encodeURIComponent(trimmed)}`, {
@@ -274,7 +316,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[560px] p-0 gap-0 overflow-hidden">
+      <DialogContent className="sm:max-w-[560px] p-0 gap-0 max-h-[90vh] overflow-y-auto">
         {/* Step 1: Link Account */}
         {step === "link-account" && (
           <>
@@ -400,6 +442,23 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
             </DialogHeader>
 
             <form onSubmit={handleLinkPrivateKey} className="p-6 space-y-5">
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white border border-slate-200 text-[10px] font-bold text-slate-700">
+                    TK
+                  </span>
+                  Powered by Turnkey
+                </div>
+                <a
+                  href="https://www.turnkey.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-medium text-slate-500 hover:text-slate-700"
+                >
+                  turnkey.com
+                </a>
+              </div>
+
               {/* Security Info */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
                 <div className="flex items-start gap-2">
@@ -434,9 +493,12 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                     Open Polymarket to export your private key
                   </a>
                 </div>
+                <p className="text-xs text-slate-500">
+                  Tip: Turnkey expects the raw 64-character key. If your key starts with 0x, remove it.
+                </p>
                 <div
                   ref={iframeContainerRef}
-                  className="h-64 w-full rounded-lg border border-slate-200 bg-white"
+                  className="h-48 w-full rounded-lg border border-slate-200 bg-white"
                 />
                 {!iframeReady && !iframeError && (
                   <p className="text-xs text-slate-600">Loading secure import form…</p>
@@ -455,13 +517,23 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                 </div>
               )}
 
-              <Button
-                type="submit"
-                disabled={isSubmitting || !iframeReady}
-                className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-semibold"
-              >
-                {isSubmitting ? "Connecting..." : "Connect wallet"}
-              </Button>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleBack}
+                  className="w-full bg-transparent"
+                >
+                  Back
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || !iframeReady}
+                  className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-semibold"
+                >
+                  {isSubmitting ? "Connecting..." : "Connect wallet"}
+                </Button>
+              </div>
             </form>
           </>
         )}
