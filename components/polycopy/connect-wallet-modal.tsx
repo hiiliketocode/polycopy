@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { supabase } from "@/lib/supabase"
+import Image from "next/image"
 
 interface ConnectWalletModalProps {
   open: boolean
@@ -316,7 +317,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[560px] p-0 gap-0 max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[440px] p-0 gap-0 overflow-hidden">
         {/* Step 1: Link Account */}
         {step === "link-account" && (
           <>
@@ -423,62 +424,32 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
         {/* Step 3: Import with Turnkey */}
         {step === "enter-private-key" && (
           <>
-            <DialogHeader className="bg-gradient-to-r from-yellow-400 to-amber-500 text-black p-6">
-              <div className="flex items-start gap-2 mb-2">
+            <DialogHeader className="bg-gradient-to-r from-yellow-400 to-amber-500 text-black p-5 text-center">
+              <DialogTitle className="text-lg font-bold">Turnkey secure import</DialogTitle>
+              <p className="text-xs text-black/80 mt-1">
+                Paste your Polymarket private key into Turnkey's secure form.
+              </p>
+            </DialogHeader>
+
+            <form onSubmit={handleLinkPrivateKey} className="p-5 space-y-4">
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <Image src="/logos/turnkey-logo.png" alt="Turnkey" width={92} height={20} />
+                </div>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={handleBack}
-                  className="text-black hover:bg-black/10 -ml-2"
+                  className="text-slate-500 hover:text-slate-700"
                 >
                   Back
                 </Button>
               </div>
-              <DialogTitle className="text-xl font-bold">Connect your wallet, securely</DialogTitle>
-              <p className="text-sm text-black/80 mt-2">
-                You'll paste your Polymarket private key into Turnkey's secure form. Polycopy never sees the key.
-              </p>
-            </DialogHeader>
 
-            <form onSubmit={handleLinkPrivateKey} className="p-6 space-y-5">
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white border border-slate-200 text-[10px] font-bold text-slate-700">
-                    TK
-                  </span>
-                  Powered by Turnkey
-                </div>
-                <a
-                  href="https://www.turnkey.com/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-medium text-slate-500 hover:text-slate-700"
-                >
-                  turnkey.com
-                </a>
-              </div>
-
-              {/* Security Info */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
-                <div className="flex items-start gap-2">
-                  <Shield className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <div className="space-y-2 text-sm">
-                    <p className="font-bold text-blue-900 text-base">Polycopy can't access your private key</p>
-                    <p className="text-blue-800">
-                      Your key is encrypted inside Turnkey's iframe and never touches Polycopy servers. Turnkey is an
-                      industry-leading wallet infrastructure provider.{" "}
-                      <a
-                        href="https://www.turnkey.com/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline font-medium"
-                      >
-                        Learn more about Turnkey.
-                      </a>
-                    </p>
-                  </div>
-                </div>
+              <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                <Shield className="h-4 w-4" />
+                Polycopy never sees your private key. Turnkey encrypts it in your browser.
               </div>
 
               <div className="space-y-2">
@@ -493,12 +464,12 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                     Open Polymarket to export your private key
                   </a>
                 </div>
-                <p className="text-xs text-slate-500">
-                  Tip: Turnkey expects the raw 64-character key. If your key starts with 0x, remove it.
+                <p className="text-[11px] text-slate-500">
+                  Use the raw 64-character key. If it starts with 0x, remove it.
                 </p>
                 <div
                   ref={iframeContainerRef}
-                  className="h-48 w-full rounded-lg border border-slate-200 bg-white"
+                  className="h-28 w-full rounded-lg border border-slate-200 bg-white"
                 />
                 {!iframeReady && !iframeError && (
                   <p className="text-xs text-slate-600">Loading secure import form…</p>
@@ -517,23 +488,13 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                 </div>
               )}
 
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleBack}
-                  className="w-full bg-transparent"
-                >
-                  Back
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isSubmitting || !iframeReady}
-                  className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-semibold"
-                >
-                  {isSubmitting ? "Connecting..." : "Connect wallet"}
-                </Button>
-              </div>
+              <Button
+                type="submit"
+                disabled={isSubmitting || !iframeReady}
+                className="w-full bg-[#8B8CFB] hover:bg-[#7B7BF6] text-white font-semibold"
+              >
+                {isSubmitting ? "Connecting..." : "Continue with Turnkey"}
+              </Button>
             </form>
           </>
         )}
