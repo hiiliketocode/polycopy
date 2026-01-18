@@ -2233,7 +2233,7 @@ export default function FeedPage() {
 
       <div className="min-h-screen bg-slate-50 pt-3 md:pt-0 pb-36 md:pb-8 overflow-x-hidden">
         {/* Page Header */}
-        <div className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
+        <div className="sticky top-0 z-10 bg-slate-50">
           <div className="max-w-[1200px] mx-auto px-4 md:px-6 pb-3 md:py-4">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
