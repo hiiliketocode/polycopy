@@ -1364,8 +1364,8 @@ export default function FeedPage() {
     if (priceFilter !== 'any') {
       const livePrice = getCurrentOutcomePrice(trade);
       const priceValue = Number.isFinite(livePrice) ? livePrice : trade.trade.price;
-      if (!Number.isFinite(priceValue)) return false;
-      const priceCents = priceValue * 100;
+      if (!Number.isFinite(priceValue) || priceValue === undefined || priceValue === null) return false;
+      const priceCents = Number(priceValue) * 100;
       if (priceFilter === 'lt10' && priceCents >= 10) return false;
       if (priceFilter === 'lt25' && priceCents >= 25) return false;
       if (priceFilter === 'lt50' && priceCents >= 50) return false;
