@@ -20,7 +20,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
-import { CancelSubscriptionModal } from '@/components/polycopy/cancel-subscription-modal';
 import { SubscriptionSuccessModal } from '@/components/polycopy/subscription-success-modal';
 import { MarkTradeClosed } from '@/components/polycopy/mark-trade-closed';
 import { EditCopiedTrade } from '@/components/polycopy/edit-copied-trade';
@@ -29,16 +28,8 @@ import ClosePositionModal from '@/components/orders/ClosePositionModal';
 import OrderRowDetails from '@/components/orders/OrderRowDetails';
 import type { OrderRow } from '@/lib/orders/types';
 import type { PositionSummary } from '@/lib/orders/position';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   TrendingUp,
   Percent,
@@ -51,8 +42,7 @@ import {
   RefreshCw,
   Edit2,
   X,
-  Bell,
-  BellOff,
+  Settings,
   Trash2,
   RotateCcw,
   Check,
@@ -105,9 +95,8 @@ interface CategoryDistribution {
   color: string;
 }
 
-type ProfileTab = 'trades' | 'performance' | 'settings';
+type ProfileTab = 'trades' | 'performance';
 
-const SLIPPAGE_PRESETS = [0, 1, 3, 5];
 const MIN_OPEN_POSITION_SIZE = 1e-4;
 
 interface PortfolioStats {
@@ -280,8 +269,6 @@ function ProfilePageContent() {
   
   // Premium and trading wallet state
   const [profile, setProfile] = useState<any>(null);
-  const [showWalletSetup, setShowWalletSetup] = useState(false);
-  const [disconnectingWallet, setDisconnectingWallet] = useState(false);
   const featureTier = resolveFeatureTier(Boolean(user), profile);
   const hasPremiumAccess = tierHasPremiumAccess(featureTier);
   const hasConnectedWallet = Boolean(profile?.trading_wallet_address);
@@ -355,29 +342,14 @@ function ProfilePageContent() {
   const tabParam = searchParams?.get('tab');
   const preferredDefaultTab: ProfileTab = 'trades';
   const initialTab =
-    tabParam === 'settings' || tabParam === 'performance' || tabParam === 'trades'
+    tabParam === 'performance' || tabParam === 'trades'
       ? (tabParam as ProfileTab)
       : preferredDefaultTab;
   const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
   const hasAppliedPreferredTab = useRef(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
-  const [showCancelSubscriptionModal, setShowCancelSubscriptionModal] = useState(false);
   const [showSubscriptionSuccessModal, setShowSubscriptionSuccessModal] = useState(false);
-
-  // Disconnect wallet confirmation modal state
-  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
-  const [disconnectConfirmText, setDisconnectConfirmText] = useState('');
-  
-  // Notification preferences state
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [loadingNotificationPrefs, setLoadingNotificationPrefs] = useState(false);
-  const [defaultBuySlippage, setDefaultBuySlippage] = useState<number>(3);
-  const [defaultSellSlippage, setDefaultSellSlippage] = useState<number>(3);
-  const [buySlippageSelection, setBuySlippageSelection] = useState<string>('3');
-  const [sellSlippageSelection, setSellSlippageSelection] = useState<string>('3');
-  const [customBuySlippage, setCustomBuySlippage] = useState<string>('');
-  const [customSellSlippage, setCustomSellSlippage] = useState<string>('');
 
   // Check for upgrade success in URL params
   useEffect(() => {
@@ -411,7 +383,6 @@ function ProfilePageContent() {
   const hasLoadedTradesRef = useRef(false);
   const hasLoadedQuickTradesRef = useRef(false);
   const hasLoadedPositionsRef = useRef(false);
-  const hasLoadedNotificationPrefsRef = useRef(false);
 
   // Check auth status on mount
   useEffect(() => {
@@ -514,6 +485,12 @@ function ProfilePageContent() {
     setActiveTab(preferredDefaultTab);
     hasAppliedPreferredTab.current = true;
   }, [preferredDefaultTab, tabParam, loadingStats]);
+
+  useEffect(() => {
+    if (tabParam === 'settings') {
+      router.replace('/settings');
+    }
+  }, [tabParam, router]);
 
   // Fetch Polymarket username when wallet is connected
   useEffect(() => {
@@ -1104,73 +1081,6 @@ function ProfilePageContent() {
     setTopTradersStats(topTraders);
   }, [copiedTrades]);
 
-  // Fetch notification preferences
-  useEffect(() => {
-    if (!user || hasLoadedNotificationPrefsRef.current) return;
-    hasLoadedNotificationPrefsRef.current = true;
-    
-    const fetchNotificationPrefs = async () => {
-      setLoadingNotificationPrefs(true);
-      try {
-        const { data, error } = await supabase
-          .from('notification_preferences')
-          .select('*')
-          .eq('user_id', user.id)
-          .maybeSingle(); // Use maybeSingle() instead of single() to avoid error when no row exists
-        
-        // Only log meaningful errors; Supabase may return an empty PostgrestError object when no row exists
-        const isMeaningfulError = (err: any) => {
-          if (!err || typeof err !== 'object') return !!err;
-          const values = [err.code, err.message, err.details, err.hint];
-          return values.some((v) => {
-            if (typeof v === 'string') return v.trim().length > 0;
-            return Boolean(v);
-          });
-        };
-
-        if (isMeaningfulError(error)) {
-          console.error('Error fetching notification preferences:', error);
-        }
-        
-        if (data) {
-          setNotificationsEnabled(data.trader_closes_position || false);
-          setDefaultBuySlippage(data.default_buy_slippage ?? 3);
-          setDefaultSellSlippage(data.default_sell_slippage ?? 3);
-        }
-        // If no data and no error, user has no preferences yet - that's fine, use default
-      } catch (err: any) {
-        const hasMeaningfulError =
-          err && (err.code || err.message || err.details || err.hint);
-        if (hasMeaningfulError) {
-          console.error('Error fetching notification preferences:', err);
-        }
-      } finally {
-        setLoadingNotificationPrefs(false);
-      }
-    };
-
-    fetchNotificationPrefs();
-  }, [user]);
-
-  useEffect(() => {
-    const nextSelection = SLIPPAGE_PRESETS.includes(defaultBuySlippage)
-      ? String(defaultBuySlippage)
-      : 'custom';
-    setBuySlippageSelection(nextSelection);
-    if (nextSelection === 'custom') {
-      setCustomBuySlippage(defaultBuySlippage.toString());
-    }
-  }, [defaultBuySlippage]);
-
-  useEffect(() => {
-    const nextSelection = SLIPPAGE_PRESETS.includes(defaultSellSlippage)
-      ? String(defaultSellSlippage)
-      : 'custom';
-    setSellSlippageSelection(nextSelection);
-    if (nextSelection === 'custom') {
-      setCustomSellSlippage(defaultSellSlippage.toString());
-    }
-  }, [defaultSellSlippage]);
 
   // Calculate stats
   const calculateStats = (): PortfolioStats => {
@@ -1447,37 +1357,6 @@ function ProfilePageContent() {
     }
   };
 
-  const handleWalletDisconnect = async () => {
-    if (!user || !profile?.trading_wallet_address) return;
-    
-    // Check if confirmation is correct
-    if (disconnectConfirmText.toUpperCase() !== 'YES') {
-      return;
-    }
-    
-    setDisconnectingWallet(true);
-    
-    try {
-      // Delete from turnkey_wallets table
-      const { error } = await supabase
-        .from('turnkey_wallets')
-        .delete()
-        .eq('user_id', user.id);
-      
-      if (error) throw error;
-      
-      setProfile({ ...profile, trading_wallet_address: null });
-      setShowDisconnectModal(false);
-      setDisconnectConfirmText('');
-      setToastMessage('Wallet disconnected');
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 2000);
-    } catch (err) {
-      console.error('Error disconnecting wallet:', err);
-    } finally {
-      setDisconnectingWallet(false);
-    }
-  };
 
   // Edit trade handler
   const handleEditTrade = async (entryPrice: number, amountInvested: number | null) => {
@@ -1648,121 +1527,6 @@ function ProfilePageContent() {
     }
   };
 
-  // Notification toggle
-  const handleToggleNotifications = async () => {
-    if (!user) return;
-    
-    const newValue = !notificationsEnabled;
-    setNotificationsEnabled(newValue);
-    
-    try {
-      const { error } = await supabase
-        .from('notification_preferences')
-        .upsert(
-          {
-            user_id: user.id,
-            trader_closes_position: newValue,
-            market_resolves: newValue,
-          },
-          { onConflict: 'user_id' }
-        );
-      
-      if (error) throw error;
-      
-      setToastMessage(`Notifications ${newValue ? 'enabled' : 'disabled'}`);
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 2000);
-    } catch (err) {
-      console.error('Error updating notification preferences:', err);
-      setNotificationsEnabled(!newValue);
-    }
-  };
-
-  // Update slippage settings
-  const handleUpdateSlippage = async (type: 'buy' | 'sell', value: number) => {
-    if (!user) return;
-    
-    // Validate slippage value (0-100)
-    const validatedValue = Math.max(0, Math.min(100, value));
-    const prevBuy = defaultBuySlippage;
-    const prevSell = defaultSellSlippage;
-    
-    if (type === 'buy') {
-      setDefaultBuySlippage(validatedValue);
-    } else {
-      setDefaultSellSlippage(validatedValue);
-    }
-    
-    const payload = {
-      userId: user.id,
-      default_buy_slippage: type === 'buy' ? validatedValue : defaultBuySlippage,
-      default_sell_slippage: type === 'sell' ? validatedValue : defaultSellSlippage,
-    };
-
-    const applyUpdatedState = (next: any) => {
-      if (typeof next?.default_buy_slippage === 'number') {
-        setDefaultBuySlippage(next.default_buy_slippage);
-      }
-      if (typeof next?.default_sell_slippage === 'number') {
-        setDefaultSellSlippage(next.default_sell_slippage);
-      }
-    };
-
-    try {
-      const response = await fetch('/api/notification-preferences', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw payload?.error || payload?.dev_info || new Error('Failed to update slippage');
-      }
-
-      const updated = await response.json();
-      applyUpdatedState(updated);
-      
-      setToastMessage(`Default ${type} slippage updated to ${validatedValue}%`);
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 2000);
-      return;
-    } catch (err) {
-      // Fallback to client Supabase (anon) to reduce impact if API fails
-      try {
-        const { data, error } = await supabase
-          .from('notification_preferences')
-          .upsert(
-            {
-              user_id: user.id,
-              default_buy_slippage: payload.default_buy_slippage,
-              default_sell_slippage: payload.default_sell_slippage,
-            },
-            { onConflict: 'user_id' }
-          )
-          .select()
-          .maybeSingle();
-
-        if (error) throw error;
-
-        applyUpdatedState(data);
-        setToastMessage(`Default ${type} slippage updated to ${validatedValue}%`);
-        setShowToast(true);
-        setTimeout(() => setShowToast(false), 2000);
-        return;
-      } catch (fallbackErr) {
-        console.error('Slippage update failed via API and fallback:', {
-          api_error: err,
-          fallback_error: fallbackErr,
-        });
-      }
-    }
-    // Revert on error after all attempts
-    setDefaultBuySlippage(prevBuy);
-    setDefaultSellSlippage(prevSell);
-  };
 
   // Handle confirm close for quick trades
   const handleConfirmClose = async ({
@@ -2531,7 +2295,6 @@ function ProfilePageContent() {
   const tabButtons: Array<{ key: ProfileTab; label: string }> = [
     { key: 'trades' as ProfileTab, label: 'Trades' },
     { key: 'performance' as ProfileTab, label: 'Performance' },
-    { key: 'settings' as ProfileTab, label: 'Settings' },
   ];
   const tabTooltips: Partial<Record<ProfileTab, string>> = {};
 
@@ -2690,41 +2453,58 @@ function ProfilePageContent() {
           </Card>
 
           {/* Tab Navigation */}
-          <div className="flex gap-2 mb-6 flex-wrap">
-            {tabButtons.map(({ key, label }) => {
-              const tooltipText = tabTooltips[key];
-              const button = (
-                <Button
-                  onClick={() => setActiveTab(key)}
-                  variant="ghost"
-                  className={cn(
-                    "w-full px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
-                    activeTab === key
-                      ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
-                      : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
-                  )}
-                >
-                  {label}
-                </Button>
-              );
+          <div className="flex flex-wrap items-center gap-2 mb-6">
+            <div className="flex flex-1 flex-wrap gap-2">
+              {tabButtons.map(({ key, label }) => {
+                const tooltipText = tabTooltips[key];
+                const button = (
+                  <Button
+                    onClick={() => setActiveTab(key)}
+                    variant="ghost"
+                    className={cn(
+                      "w-full px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
+                      activeTab === key
+                        ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
+                        : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
+                    )}
+                  >
+                    {label}
+                  </Button>
+                );
 
-              return (
-                <div key={key} className="flex-1 min-w-[150px]">
-                  {tooltipText ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        {button}
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs">
-                        <p>{tooltipText}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    button
-                  )}
-                </div>
-              );
-            })}
+                return (
+                  <div key={key} className="flex-1 min-w-[150px]">
+                    {tooltipText ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          {button}
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <p>{tooltipText}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      button
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  asChild
+                  variant="outline"
+                  size="icon"
+                  className="h-11 w-11 border-slate-200 text-slate-600 hover:text-slate-900"
+                >
+                  <Link href="/settings" aria-label="Open settings">
+                    <Settings className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Settings</TooltipContent>
+            </Tooltip>
           </div>
 
           {/* Tab Content */}
@@ -3725,247 +3505,6 @@ function ProfilePageContent() {
               </Card>
             </div>
           )}
-
-          {activeTab === 'settings' && (
-            <Card className="p-6 space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">Notifications</h3>
-                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
-                  <div className="flex items-center gap-3">
-                    {notificationsEnabled ? (
-                      <Bell className="h-5 w-5 text-slate-600" />
-                    ) : (
-                      <BellOff className="h-5 w-5 text-slate-400" />
-                    )}
-                    <div>
-                      <p className="font-medium text-slate-900">Email Notifications</p>
-                      <p className="text-sm text-slate-500">Get notified when traders close positions</p>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={handleToggleNotifications}
-                    disabled={loadingNotificationPrefs}
-                    variant={notificationsEnabled ? "default" : "outline"}
-                    size="sm"
-                  >
-                    {notificationsEnabled ? 'Enabled' : 'Disabled'}
-                  </Button>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">Premium</h3>
-                {isPremium ? (
-                  <div className="space-y-3">
-                    <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Crown className="h-5 w-5 text-yellow-600" />
-                        <p className="font-semibold text-yellow-900">Premium Member</p>
-                      </div>
-                      <p className="text-sm text-yellow-700">
-                        You have access to all premium features including Real Copy trading.
-                      </p>
-                    </div>
-
-                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-4">
-                      <div>
-                        <h4 className="font-semibold text-slate-900">Default Slippage</h4>
-                        <p className="text-sm text-slate-500">
-                          Set your preferred default slippage tolerance for buy and sell orders.
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">
-                          This becomes the default slippage for all trades unless you change it on a specific order.
-                        </p>
-                      </div>
-                      <div className="space-y-3">
-                        <div className="rounded-lg border border-slate-200 bg-white p-3">
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium text-slate-900">Buy Orders</p>
-                            <span className="text-xs text-slate-600">{defaultBuySlippage}%</span>
-                          </div>
-                          <RadioGroup
-                            value={buySlippageSelection}
-                            onValueChange={(value) => {
-                              setBuySlippageSelection(value);
-                              if (value === 'custom') return;
-                              const parsed = Number(value);
-                              if (Number.isFinite(parsed)) {
-                                handleUpdateSlippage('buy', parsed);
-                              }
-                            }}
-                            className="mt-2 flex flex-wrap gap-4"
-                          >
-                            {SLIPPAGE_PRESETS.map((value) => (
-                              <div key={value} className="flex items-center space-x-2">
-                                <RadioGroupItem
-                                  value={String(value)}
-                                  id={`buy-slippage-${value}`}
-                                  className="h-4 w-4"
-                                />
-                                <Label
-                                  htmlFor={`buy-slippage-${value}`}
-                                  className="text-sm font-medium text-slate-700 cursor-pointer"
-                                >
-                                  {value}%
-                                </Label>
-                              </div>
-                            ))}
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="custom" id="buy-slippage-custom" className="h-4 w-4" />
-                              <Label
-                                htmlFor="buy-slippage-custom"
-                                className="text-sm font-medium text-slate-700 cursor-pointer"
-                              >
-                                Custom
-                              </Label>
-                            </div>
-                          </RadioGroup>
-                          {buySlippageSelection === 'custom' && (
-                            <div className="mt-2">
-                              <Input
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="0.1"
-                                value={customBuySlippage}
-                                onChange={(e) => {
-                                  const nextValue = e.target.value;
-                                  setCustomBuySlippage(nextValue);
-                                  setBuySlippageSelection('custom');
-                                  const parsed = Number(nextValue);
-                                  if (Number.isFinite(parsed)) {
-                                    handleUpdateSlippage('buy', parsed);
-                                  }
-                                }}
-                                className="w-28 text-sm"
-                                placeholder="0.5"
-                              />
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="rounded-lg border border-slate-200 bg-white p-3">
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium text-slate-900">Sell Orders</p>
-                            <span className="text-xs text-slate-600">{defaultSellSlippage}%</span>
-                          </div>
-                          <RadioGroup
-                            value={sellSlippageSelection}
-                            onValueChange={(value) => {
-                              setSellSlippageSelection(value);
-                              if (value === 'custom') return;
-                              const parsed = Number(value);
-                              if (Number.isFinite(parsed)) {
-                                handleUpdateSlippage('sell', parsed);
-                              }
-                            }}
-                            className="mt-2 flex flex-wrap gap-4"
-                          >
-                            {SLIPPAGE_PRESETS.map((value) => (
-                              <div key={value} className="flex items-center space-x-2">
-                                <RadioGroupItem
-                                  value={String(value)}
-                                  id={`sell-slippage-${value}`}
-                                  className="h-4 w-4"
-                                />
-                                <Label
-                                  htmlFor={`sell-slippage-${value}`}
-                                  className="text-sm font-medium text-slate-700 cursor-pointer"
-                                >
-                                  {value}%
-                                </Label>
-                              </div>
-                            ))}
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="custom" id="sell-slippage-custom" className="h-4 w-4" />
-                              <Label
-                                htmlFor="sell-slippage-custom"
-                                className="text-sm font-medium text-slate-700 cursor-pointer"
-                              >
-                                Custom
-                              </Label>
-                            </div>
-                          </RadioGroup>
-                          {sellSlippageSelection === 'custom' && (
-                            <div className="mt-2">
-                              <Input
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="0.1"
-                                value={customSellSlippage}
-                                onChange={(e) => {
-                                  const nextValue = e.target.value;
-                                  setCustomSellSlippage(nextValue);
-                                  setSellSlippageSelection('custom');
-                                  const parsed = Number(nextValue);
-                                  if (Number.isFinite(parsed)) {
-                                    handleUpdateSlippage('sell', parsed);
-                                  }
-                                }}
-                                className="w-28 text-sm"
-                                placeholder="0.5"
-                              />
-                            </div>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-500">
-                          Higher slippage increases fill rate but may result in worse prices.
-                        </p>
-                      </div>
-                    </div>
-
-                    {profile?.trading_wallet_address && (
-                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900 mb-1">Disconnect Wallet</p>
-                            <p className="text-sm text-slate-600">
-                              Remove your connected Polymarket wallet and stop automated trade execution.
-                            </p>
-                          </div>
-                          <Button
-                            onClick={() => setShowDisconnectModal(true)}
-                            disabled={disconnectingWallet}
-                            variant="outline"
-                            className="border-red-300 text-red-700 hover:bg-red-50"
-                          >
-                            Disconnect
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                      <p className="text-sm text-slate-600 mb-3">
-                        Need to cancel your subscription? You'll keep premium access until the end of your billing period.
-                      </p>
-                      <Button
-                        onClick={() => setShowCancelSubscriptionModal(true)}
-                        variant="outline"
-                        className="border-red-300 text-red-700 hover:bg-red-50"
-                      >
-                        Cancel Subscription
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                    <p className="text-sm text-slate-600 mb-3">
-                      Upgrade to Premium to unlock Real Copy trading and advanced features.
-                    </p>
-                    <Button
-                      onClick={() => setShowUpgradeModal(true)}
-                      className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white"
-                    >
-                      <Crown className="mr-2 h-4 w-4" />
-                      Upgrade to Premium
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </Card>
-          )}
         </div>
       </div>
 
@@ -3975,29 +3514,6 @@ function ProfilePageContent() {
         open={isConnectModalOpen}
         onOpenChange={setIsConnectModalOpen}
         onConnect={handleWalletConnect}
-      />
-      <CancelSubscriptionModal
-        open={showCancelSubscriptionModal}
-        onOpenChange={setShowCancelSubscriptionModal}
-        onConfirmCancel={async () => {
-          const response = await fetch('/api/stripe/cancel-subscription', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-            },
-          });
-
-          const data = await response.json();
-
-          if (response.ok) {
-            const accessUntil = new Date(data.current_period_end * 1000).toLocaleDateString();
-            alert(`Your subscription has been canceled. You'll keep Premium access until ${accessUntil}.`);
-            window.location.reload();
-          } else {
-            throw new Error(data.error || 'Failed to cancel subscription');
-          }
-        }}
       />
       <SubscriptionSuccessModal
         open={showSubscriptionSuccessModal}
@@ -4057,63 +3573,6 @@ function ProfilePageContent() {
           submittedAt={closeSubmittedAt}
         />
       )}
-
-      {/* Disconnect Wallet Confirmation Modal */}
-      <Dialog open={showDisconnectModal} onOpenChange={setShowDisconnectModal}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-red-600">Disconnect Wallet?</DialogTitle>
-            <DialogDescription className="text-slate-600 mt-2">
-              This will remove your connected Polymarket wallet from Polycopy. You will need to reconnect it to use Real Copy trading features.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 mt-4">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-sm font-semibold text-red-900 mb-2">⚠️ Warning:</p>
-              <ul className="text-sm text-red-800 space-y-1 list-disc list-inside">
-                <li>You will lose access to automated trade execution</li>
-                <li>Your private key will be removed from secure storage</li>
-                <li>This action cannot be undone</li>
-              </ul>
-            </div>
-            
-            <div className="space-y-2">
-              <label htmlFor="confirm-text" className="text-sm font-medium text-slate-900">
-                Type <span className="font-bold">YES</span> to confirm:
-              </label>
-              <Input
-                id="confirm-text"
-                type="text"
-                placeholder="Type YES to confirm"
-                value={disconnectConfirmText}
-                onChange={(e) => setDisconnectConfirmText(e.target.value)}
-                className="font-mono"
-              />
-            </div>
-            
-            <div className="flex gap-3 pt-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowDisconnectModal(false);
-                  setDisconnectConfirmText('');
-                }}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleWalletDisconnect}
-                disabled={disconnectConfirmText.toUpperCase() !== 'YES' || disconnectingWallet}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
-              >
-                {disconnectingWallet ? 'Disconnecting...' : 'Disconnect Wallet'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Toast */}
       {showToast && (

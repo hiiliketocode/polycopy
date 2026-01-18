@@ -597,7 +597,7 @@ export function TradeCard({
     badgeBaseClass,
     statusVariant === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200",
     statusVariant === "ended" && "bg-slate-100 text-slate-700 border-slate-200",
-    statusVariant === "resolved" && "bg-emerald-50 text-emerald-700 border-emerald-200",
+    statusVariant === "resolved" && "bg-rose-50 text-rose-700 border-rose-200",
     statusVariant === "scheduled" && "bg-amber-50 text-amber-700 border-amber-200",
     statusVariant === "open" && "bg-slate-50 text-slate-600 border-slate-200",
   )
@@ -606,21 +606,38 @@ export function TradeCard({
     Boolean(cleanedLiveScore && looksLikeScore) &&
     (resolvedLiveStatus === "live" || resolvedLiveStatus === "final")
 
+  const showEventTimeBadge = statusVariant !== "live" && statusVariant !== "resolved"
   const hasEventTime = Boolean(eventStartTime || eventEndTime)
+  const { eventTimeValue, eventTimeKind } = useMemo(() => {
+    if (statusVariant === "ended" || statusVariant === "resolved") {
+      if (eventEndTime) return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
+      if (eventStartTime) return { eventTimeValue: eventStartTime, eventTimeKind: "start" as const }
+      return { eventTimeValue: null, eventTimeKind: "unknown" as const }
+    }
+    if (eventStartTime) return { eventTimeValue: eventStartTime, eventTimeKind: "start" as const }
+    if (eventEndTime) return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
+    return { eventTimeValue: null, eventTimeKind: "unknown" as const }
+  }, [statusVariant, eventStartTime, eventEndTime])
   const eventTimeLabel = useMemo(() => {
-    const value = eventStartTime || eventEndTime
-    if (!value) return "Time TBD"
-    const parsed = new Date(value)
+    if (!eventTimeValue) return "Time TBD"
+    const prefix =
+      eventTimeKind === "start" ? "Starts" : eventTimeKind === "end" ? "Resolves" : "Time"
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(eventTimeValue)
+    const isMidnightUtc = /T00:00:00(?:\.000)?(?:Z|[+-]00:00)$/.test(eventTimeValue)
+    const useDateOnly = eventTimeKind === "end" || isDateOnly || isMidnightUtc
+    const parsed = new Date(eventTimeValue)
     if (Number.isNaN(parsed.getTime())) return "Time TBD"
     const options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }
-    if (parsed.getHours() !== 0 || parsed.getMinutes() !== 0) {
+    if (!useDateOnly && (parsed.getHours() !== 0 || parsed.getMinutes() !== 0)) {
       options.hour = "numeric"
       options.minute = "2-digit"
     }
-    const formatted = new Intl.DateTimeFormat("en-US", options).format(parsed)
-    const prefix = eventStartTime ? "Starts" : eventEndTime ? "Resolves" : "Time"
+    const formatted = new Intl.DateTimeFormat("en-US", {
+      ...options,
+      timeZone: useDateOnly ? "UTC" : undefined,
+    }).format(parsed)
     return `${prefix} ${formatted}`
-  }, [eventStartTime, eventEndTime])
+  }, [eventTimeValue, eventTimeKind])
 
   useEffect(() => {
     if (userUpdatedSlippageRef.current) return
@@ -1899,7 +1916,7 @@ export function TradeCard({
     >
       <div className="p-5 md:p-6">
         {/* Header Row */}
-        <div className="flex items-start justify-between mb-4 gap-3">
+        <div className="flex items-start justify-between mb-3 gap-3">
           <Link
             href={`/trader/${trader.id || "1"}`}
             className="flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
@@ -1915,52 +1932,20 @@ export function TradeCard({
               <p className="text-xs text-slate-500 font-mono truncate">{displayAddress}</p>
             </div>
           </Link>
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <div className="flex flex-wrap items-center justify-end gap-1.5">
-              <Badge
-                variant="secondary"
-                className={cn(
-                  badgeBaseClass,
-                  hasEventTime
-                    ? "bg-white text-slate-700 border-slate-200"
-                    : "bg-slate-50 text-slate-400 border-slate-200",
-                )}
-              >
-                <CalendarClock className="h-3.5 w-3.5" />
-                {eventTimeLabel}
-              </Badge>
-              <Badge variant="secondary" className={statusBadgeClass}>
-                <StatusIcon className="h-3.5 w-3.5" />
-                {eventStatusLabel}
-              </Badge>
-              {showScoreBadge && (
-                <Badge
-                  variant="secondary"
-                  className={cn(
-                    badgeBaseClass,
-                    "bg-indigo-50 text-indigo-700 border-indigo-200",
-                  )}
-                >
-                  <Trophy className="h-3.5 w-3.5" />
-                  <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
-                </Badge>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
-              {isPremium && onToggleExpand && !localCopied && null}
-            </div>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <span className="text-[11px] text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
+            {isPremium && onToggleExpand && !localCopied && null}
           </div>
         </div>
 
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex flex-wrap items-center gap-3 mb-4">
           <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
             <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
             <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
               {market.slice(0, 2)}
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1 flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug">{market}</h3>
             {/* External link icon for Premium users - at end of market name */}
             {isPremium && polymarketUrl && (
@@ -1973,6 +1958,42 @@ export function TradeCard({
               >
                 <ExternalLink className="w-4 h-4" />
               </a>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-1.5 ml-auto">
+            {showEventTimeBadge && (
+              <Badge
+                variant="secondary"
+                className={cn(
+                  badgeBaseClass,
+                  hasEventTime
+                    ? "bg-white text-slate-700 border-slate-200"
+                    : "bg-slate-50 text-slate-400 border-slate-200",
+                )}
+              >
+                <CalendarClock className="h-3.5 w-3.5" />
+                {eventTimeLabel}
+              </Badge>
+            )}
+            {(statusVariant === "live" ||
+              statusVariant === "ended" ||
+              statusVariant === "resolved") && (
+              <Badge variant="secondary" className={statusBadgeClass}>
+                <StatusIcon className="h-3.5 w-3.5" />
+                {eventStatusLabel}
+              </Badge>
+            )}
+            {showScoreBadge && (
+              <Badge
+                variant="secondary"
+                className={cn(
+                  badgeBaseClass,
+                  "bg-indigo-50 text-indigo-700 border-indigo-200",
+                )}
+              >
+                <Trophy className="h-3.5 w-3.5" />
+                <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+              </Badge>
             )}
           </div>
         </div>

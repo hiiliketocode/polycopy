@@ -20,6 +20,7 @@ import type { LucideProps } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 type ExecuteForm = {
   tokenId: string
@@ -107,6 +108,7 @@ const SLIPPAGE_TOOLTIP =
   'Limits how much higher than your limit price the order can fill; 1% means the execution price may be at most 1% above your quote.'
 const ORDER_BEHAVIOR_TOOLTIP =
   'FAK fills as much as possible immediately and cancels the rest, while GTC keeps the order open until you cancel it or it fills.'
+const FUNDING_FAQ_URL = 'https://docs.polymarket.com/polymarket-learn/get-started/how-to-deposit'
 function firstStringValue(record: Record<string, any>, keys: string[]) {
   for (const key of keys) {
     const value = record?.[key]
@@ -537,6 +539,7 @@ function TradeExecutePageInner() {
   const [balanceData, setBalanceData] = useState<BalanceResponse | null>(null)
   const [showSlippageInfo, setShowSlippageInfo] = useState(false)
   const [showOrderBehaviorInfo, setShowOrderBehaviorInfo] = useState(false)
+  const [showFundingModal, setShowFundingModal] = useState(false)
 
   const record = tradeRecord
   const marketIcon = record ? extractMarketIcon(record) : ''
@@ -1179,6 +1182,12 @@ function TradeExecutePageInner() {
       return
     }
 
+    if (isPremiumUser && notEnoughFunds) {
+      setSubmitError('Not enough balance to place this order.')
+      setShowFundingModal(true)
+      return
+    }
+
     setSubmitLoading(true)
     try {
       if (!limitPriceValue) {
@@ -1265,6 +1274,10 @@ function TradeExecutePageInner() {
         }
         
         const normalizedError = errorMessage.toLowerCase()
+        const isFundingError =
+          normalizedError.includes('not enough balance') ||
+          normalizedError.includes('allowance') ||
+          normalizedError.includes('insufficient')
 
         // Add helpful context based on error type
         if (errorMessage.includes('No turnkey wallet') || errorMessage.includes('wallet not found')) {
@@ -1281,6 +1294,10 @@ function TradeExecutePageInner() {
             'Not enough balance or allowance to place this order. Add funds or approve a higher allowance, then try again.'
         } else if (errorMessage.includes('balance') || errorMessage.includes('insufficient')) {
           errorMessage = 'Insufficient balance. Please add funds to your wallet or reduce the trade amount.'
+        }
+
+        if (isPremiumUser && isFundingError) {
+          setShowFundingModal(true)
         }
         
         setSubmitError(errorMessage)
@@ -2009,6 +2026,31 @@ function TradeExecutePageInner() {
         onOpenChange={setShowConnectWalletModal}
         onConnect={handleWalletConnect}
       />
+
+      <Dialog open={showFundingModal} onOpenChange={setShowFundingModal}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Fund your Polymarket account</DialogTitle>
+            <DialogDescription>
+              Quick trades use your Polymarket USDC balance. Add funds before retrying this order.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 space-y-2">
+            <Button asChild className="w-full bg-slate-900 text-white hover:bg-slate-800">
+              <a href={FUNDING_FAQ_URL} target="_blank" rel="noopener noreferrer">
+                How to deposit USDC
+              </a>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setShowFundingModal(false)}
+            >
+              Got it
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

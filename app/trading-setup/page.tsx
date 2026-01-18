@@ -119,7 +119,7 @@ export default function TradingSetupPage() {
               <li>
                 Paste it into Polycopy at{' '}
                 <Link href="/profile/connect-wallet" className="text-[#FDB022] hover:text-[#E69E1A] font-semibold">
-                  Profile → Connect Wallet
+                  Portfolio → Connect Wallet
                 </Link>
                 .
               </li>

@@ -35,9 +35,113 @@ interface ESPNScoreResult {
   period?: number;
 }
 
+type SportGroup =
+  | 'nfl'
+  | 'nba'
+  | 'mlb'
+  | 'nhl'
+  | 'wnba'
+  | 'ncaaf'
+  | 'ncaab'
+  | 'ncaaw'
+  | 'soccer'
+  | 'tennis'
+  | 'golf'
+  | 'mma'
+  | 'boxing';
+
+const ESPN_SPORT_GROUPS: Record<SportGroup, string[]> = {
+  nfl: ['nfl'],
+  nba: ['nba'],
+  mlb: ['mlb'],
+  nhl: ['nhl'],
+  wnba: ['wnba'],
+  ncaaf: ['ncaaf'],
+  ncaab: ['ncaab'],
+  ncaaw: ['ncaaw'],
+  soccer: [
+    'soccer_mls',
+    'soccer_epl',
+    'soccer_eng_champ',
+    'soccer_laliga',
+    'soccer_seriea',
+    'soccer_bundesliga',
+    'soccer_ligue1',
+    'soccer_eredivisie',
+    'soccer_primeira',
+    'soccer_scottish_prem',
+    'soccer_uefa_champions',
+    'soccer_uefa_europa',
+    'soccer_uefa_conference',
+    'soccer_fifa_world_cup',
+    'soccer_fifa_womens_world_cup',
+    'soccer_uefa_euro',
+    'soccer_copa_libertadores',
+    'soccer_copa_sudamericana',
+  ],
+  tennis: ['tennis_atp', 'tennis_wta'],
+  golf: ['golf_pga', 'golf_lpga'],
+  mma: ['mma_ufc'],
+  boxing: ['boxing'],
+};
+
+const SECONDARY_SPORT_GROUPS: Partial<Record<SportGroup, string[]>> = {
+  nfl: ['americanfootball_nfl'],
+  nba: ['basketball_nba'],
+  mlb: ['baseball_mlb'],
+  nhl: ['icehockey_nhl'],
+  wnba: ['basketball_wnba'],
+  ncaaf: ['americanfootball_ncaaf'],
+  ncaab: ['basketball_ncaab'],
+  ncaaw: ['basketball_ncaaw'],
+  soccer: [
+    'soccer_usa_mls',
+    'soccer_epl',
+    'soccer_england_championship',
+    'soccer_spain_la_liga',
+    'soccer_italy_serie_a',
+    'soccer_germany_bundesliga',
+    'soccer_france_ligue_one',
+    'soccer_uefa_champs_league',
+    'soccer_uefa_europa_league',
+    'soccer_uefa_europa_conference_league',
+    'soccer_fifa_world_cup',
+    'soccer_fifa_world_cup_womens',
+    'soccer_uefa_european_championship',
+  ],
+};
+
+const TEAM_NAME_STOP_WORDS = new Set([
+  'fc',
+  'sc',
+  'cf',
+  'ac',
+  'afc',
+  'c.f',
+  's.c',
+  'club',
+  'the',
+]);
+
 // Detect sport type from market title
-function detectSportType(title: string): string | null {
+function detectSportType(title: string, category?: string | null): SportGroup | null {
   const titleLower = title.toLowerCase();
+  const isSportsCategory = category?.toLowerCase() === 'sports';
+
+  if (titleLower.includes('wnba')) return 'wnba';
+  if (
+    titleLower.match(/\b(ncaaf|college football|cfb)\b/) ||
+    (titleLower.includes('ncaa') && titleLower.includes('football'))
+  ) {
+    return 'ncaaf';
+  }
+  if (titleLower.match(/\b(ncaaw|women's college basketball|womens college basketball|wcbb)\b/)) return 'ncaaw';
+  if (
+    titleLower.match(/\b(ncaab|college basketball|march madness)\b/) ||
+    (titleLower.includes('ncaa') && titleLower.includes('basketball'))
+  ) {
+    return 'ncaab';
+  }
   
   // NFL teams
   const nflTeams = [
@@ -61,8 +165,11 @@ function detectSportType(title: string): string | null {
   
   // MLB teams
   const mlbTeams = [
-    'yankees', 'red sox', 'dodgers', 'giants', 'cubs', 'cardinals', 'astros', 'braves',
-    'mets', 'phillies', 'padres', 'mariners', 'rangers', 'angels', 'athletics', 'rays'
+    'yankees', 'red sox', 'blue jays', 'orioles', 'rays', 'white sox', 'guardians', 'tigers',
+    'twins', 'royals', 'astros', 'angels', 'athletics', 'mariners', 'rangers',
+    'braves', 'marlins', 'mets', 'nationals', 'phillies',
+    'cubs', 'reds', 'brewers', 'pirates', 'cardinals',
+    'diamondbacks', 'dodgers', 'giants', 'padres', 'rockies'
   ];
   
   // NHL teams
@@ -78,6 +185,32 @@ function detectSportType(title: string): string | null {
   if (nbaTeams.some(team => titleLower.includes(team))) return 'nba';
   if (mlbTeams.some(team => titleLower.includes(team))) return 'mlb';
   if (nhlTeams.some(team => titleLower.includes(team))) return 'nhl';
+
+  if (titleLower.match(/\b(premier league|la liga|serie a|bundesliga|ligue 1|eredivisie|primeira|uefa|champions league|europa league|conference league|world cup|fifa|copa|conmebol|concacaf|afc|caf|mls)\b/)) {
+    return 'soccer';
+  }
+
+  if (
+    titleLower.match(/\b(fc|cf|sc|afc)\b/) &&
+    (titleLower.includes(' vs ') || titleLower.includes(' vs.') || titleLower.includes(' v ') || titleLower.includes(' @ ') || titleLower.includes(' versus '))
+  ) {
+    return 'soccer';
+  }
+
+  if (titleLower.match(/\b(tennis|wimbledon|roland garros|australian open|us open|atp|wta)\b/)) {
+    return 'tennis';
+  }
+
+  if (titleLower.match(/\b(golf|pga|lpga|masters|ryder cup|open championship|the open)\b/)) {
+    return 'golf';
+  }
+
+  if (titleLower.match(/\b(ufc|mma)\b/)) return 'mma';
+  if (titleLower.match(/\bboxing\b/)) return 'boxing';
+
+  if (isSportsCategory && titleLower.includes(' vs ')) {
+    return 'soccer';
+  }
   
   return null;
 }
@@ -88,10 +221,13 @@ export function extractTeamNames(title: string): { team1: string; team2: string 
   const cleanTitle = title
     .replace(/\s*\([−+]?\d+\.?\d*\)/g, '') // Remove (−9.5) or (+7)
     .replace(/\s*O\/U\s*\d+\.?\d*/gi, '') // Remove O/U 215.5
-    .replace(/\s*(Over|Under)\s*\d+\.?\d*/gi, ''); // Remove Over/Under 215.5
+    .replace(/\s*(Over|Under)\s*\d+\.?\d*/gi, '') // Remove Over/Under 215.5
+    .replace(/\s*\|\s*.*$/, '') // Remove trailing pipes
+    .replace(/\s*:\s*.*$/, '') // Remove trailing descriptor after colon
+    .trim();
   
   // Match patterns like "Chiefs vs. Raiders" or "Chiefs @ Raiders"
-  const vsPattern = /(.+?)\s+(?:vs\.?|@|versus)\s+(.+?)(?:\s+\||$)/i;
+  const vsPattern = /(.+?)\s+(?:vs\.?|v\.?|@|versus|at)\s+(.+?)(?:\s|$)/i;
   const match = cleanTitle.match(vsPattern);
   
   if (match) {
@@ -115,6 +251,20 @@ export function extractTeamNames(title: string): { team1: string; team2: string 
   return null;
 }
 
+function normalizeTeamTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(token => token.length > 1 && !TEAM_NAME_STOP_WORDS.has(token));
+}
+
+function buildTeamAbbrev(value: string): string {
+  const tokens = normalizeTeamTokens(value);
+  if (tokens.length === 0) return '';
+  return tokens.map(token => token[0]).join('');
+}
+
 // Check if two team names match (flexible matching)
 export function teamsMatch(marketTeam: string, espnTeamName: string, espnAbbrev: string): boolean {
   const marketLower = marketTeam.toLowerCase().trim();
@@ -122,13 +272,22 @@ export function teamsMatch(marketTeam: string, espnTeamName: string, espnAbbrev:
   const abbrevLower = espnAbbrev.toLowerCase().trim();
   
   // Direct match
-  if (marketLower === espnLower || marketLower === abbrevLower) return true;
+  if (marketLower === espnLower || (abbrevLower && marketLower === abbrevLower)) return true;
   
   // Partial match (e.g., "Chiefs" matches "Kansas City Chiefs")
   if (espnLower.includes(marketLower) || marketLower.includes(espnLower)) return true;
   
   // Abbreviation match
-  if (marketLower.includes(abbrevLower) || abbrevLower.includes(marketLower)) return true;
+  if (abbrevLower && (marketLower.includes(abbrevLower) || abbrevLower.includes(marketLower))) return true;
+
+  const marketAbbrev = buildTeamAbbrev(marketTeam);
+  const espnDerivedAbbrev = espnAbbrev ? espnAbbrev : buildTeamAbbrev(espnTeamName);
+  if (marketAbbrev && espnDerivedAbbrev) {
+    const marketAbbrevLower = marketAbbrev.toLowerCase();
+    const espnAbbrevLower = espnDerivedAbbrev.toLowerCase();
+    if (marketAbbrevLower === espnAbbrevLower) return true;
+    if (marketAbbrevLower.startsWith(espnAbbrevLower) || espnAbbrevLower.startsWith(marketAbbrevLower)) return true;
+  }
   
   // Special cases for common team name variations
   const specialCases: Record<string, string[]> = {
@@ -150,6 +309,20 @@ export function teamsMatch(marketTeam: string, espnTeamName: string, espnAbbrev:
     
     if (matchesCanonical && matchesVariation) return true;
     if (variations.some(v => marketLower.includes(v) && (espnLower.includes(canonical) || abbrevLower.includes(canonical)))) return true;
+  }
+
+  const marketTokens = normalizeTeamTokens(marketTeam);
+  const espnTokens = normalizeTeamTokens(espnTeamName);
+  if (marketTokens.length > 0 && espnTokens.length > 0) {
+    const forwardMatch = marketTokens.every(token =>
+      espnTokens.some(espnToken => espnToken === token || espnToken.startsWith(token) || token.startsWith(espnToken))
+    );
+    if (forwardMatch) return true;
+
+    const reverseMatch = espnTokens.every(token =>
+      marketTokens.some(marketToken => marketToken === token || marketToken.startsWith(token) || token.startsWith(marketToken))
+    );
+    if (reverseMatch) return true;
   }
   
   return false;
@@ -195,69 +368,71 @@ export function getScoreDisplaySides(
   };
 }
 
-// Fetch ESPN scores for a specific sport
-async function fetchESPNScores(sport: string): Promise<ESPNGame[]> {
+// Fetch ESPN scores for a specific sport key
+async function fetchESPNScores(sportKey: string): Promise<ESPNGame[]> {
   try {
-    const response = await fetch(`/api/espn/scores?sport=${sport}`, {
+    const response = await fetch(`/api/espn/scores?sport=${sportKey}`, {
       cache: 'no-store',
     });
     
     if (!response.ok) {
-      console.warn(`Failed to fetch ${sport.toUpperCase()} scores:`, response.status);
+      console.warn(`Failed to fetch ${sportKey.toUpperCase()} scores:`, response.status);
       return [];
     }
     
     const data = await response.json();
     return data.games || [];
   } catch (error) {
-    console.error(`Error fetching ${sport} scores:`, error);
+    console.error(`Error fetching ${sportKey} scores:`, error);
     return [];
   }
 }
 
-// Main function to get score for a Polymarket trade
-export async function getESPNScoreForTrade(trade: FeedTrade): Promise<ESPNScoreResult | null> {
-  const marketTitle = trade.market.title;
-  
-  // Detect sport type
-  const sport = detectSportType(marketTitle);
-  if (!sport) {
-    console.log(`No sport detected for: ${marketTitle}`);
-    return null;
+// Fetch secondary provider scores by odds-api sport key
+async function fetchSecondaryScores(oddsKey: string): Promise<ESPNGame[]> {
+  try {
+    const response = await fetch(`/api/odds/scores?oddsKey=${oddsKey}`, {
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      console.warn(`Failed to fetch secondary scores for ${oddsKey}:`, response.status);
+      return [];
+    }
+
+    const data = await response.json();
+    return data.games || [];
+  } catch (error) {
+    console.error(`Error fetching secondary scores for ${oddsKey}:`, error);
+    return [];
   }
-  
-  console.log(`🔍 Detected ${sport.toUpperCase()} for: ${marketTitle}`);
-  
-  // Extract team names
+}
+
+async function fetchScoresForGroup(provider: 'espn' | 'odds', sport: SportGroup): Promise<ESPNGame[]> {
+  const groupKeys = provider === 'espn' ? ESPN_SPORT_GROUPS[sport] : (SECONDARY_SPORT_GROUPS[sport] || []);
+  if (!groupKeys || groupKeys.length === 0) return [];
+
+  const fetcher = provider === 'espn' ? fetchESPNScores : fetchSecondaryScores;
+  const results = await Promise.all(groupKeys.map(key => fetcher(key)));
+  return results.flat();
+}
+
+function findMatchingGame(marketTitle: string, games: ESPNGame[]): ESPNGame | null {
   const teams = extractTeamNames(marketTitle);
-  if (!teams) {
-    console.log(`Could not extract teams from: ${marketTitle}`);
-    return null;
-  }
-  
-  console.log(`🏈 Looking for: ${teams.team1} vs ${teams.team2}`);
-  
-  // Fetch ESPN scores
-  const espnGames = await fetchESPNScores(sport);
-  
-  // Find matching game
-  const matchingGame = espnGames.find(game => {
+  if (!teams) return null;
+
+  return games.find(game => {
     const homeMatches = teamsMatch(teams.team1, game.homeTeam.name, game.homeTeam.abbreviation) ||
                         teamsMatch(teams.team2, game.homeTeam.name, game.homeTeam.abbreviation);
-    
+
     const awayMatches = teamsMatch(teams.team1, game.awayTeam.name, game.awayTeam.abbreviation) ||
                         teamsMatch(teams.team2, game.awayTeam.name, game.awayTeam.abbreviation);
-    
+
     return homeMatches && awayMatches;
-  });
-  
-  if (!matchingGame) {
-    console.log(`❌ No ESPN game found for: ${marketTitle}`);
-    return null;
-  }
-  
-  console.log(`✅ Found ESPN game: ${matchingGame.name} | Status: ${matchingGame.status}`);
-  
+  }) || null;
+}
+
+function buildScoreResult(matchingGame: ESPNGame): ESPNScoreResult {
   return {
     homeScore: matchingGame.homeTeam.score || 0,
     awayScore: matchingGame.awayTeam.score || 0,
@@ -272,20 +447,36 @@ export async function getESPNScoreForTrade(trade: FeedTrade): Promise<ESPNScoreR
   };
 }
 
+// Main function to get score for a Polymarket trade
+export async function getESPNScoreForTrade(trade: FeedTrade): Promise<ESPNScoreResult | null> {
+  const scores = await getESPNScoresForTrades([trade]);
+  const key = trade.market.conditionId || trade.market.id || trade.market.title;
+  return key ? scores.get(key) || null : null;
+}
+
 // Batch fetch scores for multiple trades (more efficient)
 export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<string, ESPNScoreResult>> {
   const scoreMap = new Map<string, ESPNScoreResult>();
   
   // Group trades by sport
-  const sportGroups: Record<string, FeedTrade[]> = {
+  const sportGroups: Record<SportGroup, FeedTrade[]> = {
     nfl: [],
     nba: [],
     mlb: [],
     nhl: [],
+    wnba: [],
+    ncaaf: [],
+    ncaab: [],
+    ncaaw: [],
+    soccer: [],
+    tennis: [],
+    golf: [],
+    mma: [],
+    boxing: [],
   };
   
   trades.forEach(trade => {
-    const sport = detectSportType(trade.market.title);
+    const sport = detectSportType(trade.market.title, trade.market.category);
     if (sport && sportGroups[sport]) {
       sportGroups[sport].push(trade);
     }
@@ -295,50 +486,38 @@ export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<s
   const sportFetches = Object.entries(sportGroups)
     .filter(([_, trades]) => trades.length > 0)
     .map(async ([sport, sportTrades]) => {
-      const espnGames = await fetchESPNScores(sport);
-      
+      const sportKey = sport as SportGroup;
+      const espnGames = await fetchScoresForGroup('espn', sportKey);
+      const unmatchedTrades: FeedTrade[] = [];
+
       sportTrades.forEach(trade => {
-        const teams = extractTeamNames(trade.market.title);
-        if (!teams) {
-          console.log(`⚠️ Could not extract teams from: ${trade.market.title}`);
-          return;
-        }
-        
-        console.log(`🔍 Searching for ${sport.toUpperCase()} game: ${teams.team1} vs ${teams.team2}`);
-        
-        const matchingGame = espnGames.find(game => {
-          const homeMatches = teamsMatch(teams.team1, game.homeTeam.name, game.homeTeam.abbreviation) ||
-                              teamsMatch(teams.team2, game.homeTeam.name, game.homeTeam.abbreviation);
-          
-          const awayMatches = teamsMatch(teams.team1, game.awayTeam.name, game.awayTeam.abbreviation) ||
-                              teamsMatch(teams.team2, game.awayTeam.name, game.awayTeam.abbreviation);
-          
-          return homeMatches && awayMatches;
-        });
-        
+        const matchingGame = findMatchingGame(trade.market.title, espnGames);
         if (matchingGame) {
           console.log(`✅ Found ESPN game for "${trade.market.title}": ${matchingGame.name} (${matchingGame.status})`);
           const key = trade.market.conditionId || trade.market.id || trade.market.title;
-          scoreMap.set(key, {
-            homeScore: matchingGame.homeTeam.score || 0,
-            awayScore: matchingGame.awayTeam.score || 0,
-            homeTeamName: matchingGame.homeTeam.name,
-            awayTeamName: matchingGame.awayTeam.name,
-            homeTeamAbbrev: matchingGame.homeTeam.abbreviation,
-            awayTeamAbbrev: matchingGame.awayTeam.abbreviation,
-            status: matchingGame.status,
-            startTime: matchingGame.startTime,
-            displayClock: matchingGame.displayClock,
-            period: matchingGame.period,
-          });
+          scoreMap.set(key, buildScoreResult(matchingGame));
         } else {
-          console.log(`❌ No ESPN game found for "${trade.market.title}". Available ${sport.toUpperCase()} games:`, espnGames.map(g => g.name));
+          unmatchedTrades.push(trade);
+        }
+      });
+
+      if (unmatchedTrades.length === 0) return;
+
+      const secondaryGames = await fetchScoresForGroup('odds', sportKey);
+      unmatchedTrades.forEach(trade => {
+        const matchingGame = findMatchingGame(trade.market.title, secondaryGames);
+        if (matchingGame) {
+          console.log(`✅ Found secondary score for "${trade.market.title}": ${matchingGame.name} (${matchingGame.status})`);
+          const key = trade.market.conditionId || trade.market.id || trade.market.title;
+          scoreMap.set(key, buildScoreResult(matchingGame));
+        } else {
+          console.log(`❌ No score found for "${trade.market.title}" in ${sportKey.toUpperCase()} feeds.`);
         }
       });
     });
   
   await Promise.all(sportFetches);
   
-  console.log(`✅ Fetched ESPN scores for ${scoreMap.size} markets`);
+  console.log(`✅ Fetched scores for ${scoreMap.size} markets`);
   return scoreMap;
 }

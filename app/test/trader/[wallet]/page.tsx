@@ -127,6 +127,13 @@ const findOutcomeIndex = (outcomes: string[] | null | undefined, target: string)
   );
 };
 
+const pickOutcomeTeams = (outcomes?: string[] | null) => {
+  if (!outcomes || outcomes.length === 0) return [];
+  const filtered = outcomes.filter(outcome => !/^(draw|tie)$/i.test(outcome.trim()));
+  if (filtered.length >= 2) return filtered.slice(0, 2);
+  return outcomes.slice(0, 2);
+};
+
 const normalizeKeyPart = (value?: string | null) => value?.trim().toLowerCase() || '';
 const buildCopiedTradeKey = (marketKey?: string | null, traderWallet?: string | null) => {
   const market = normalizeKeyPart(marketKey);
@@ -861,7 +868,7 @@ export default function TraderProfilePage({
 
       // Start ESPN scores fetch (don't await - let it run in parallel)
       const espnScoresPromise = getESPNScoresForTrades(tradesForESPN as any);
-      console.log('🏈 Fetching ESPN scores in background...');
+      console.log('🏈 Fetching sports scores in background...');
 
       // Immediately start fetching prices for all trades in parallel
       const pricePromises = displayedTrades.map(async (trade) => {
@@ -881,6 +888,9 @@ export default function TraderProfilePage({
                 resolved,
                 gameStartTime,
                 eventStatus,
+                score,
+                homeTeam,
+                awayTeam,
                 endDateIso,
               } = priceData.market;
               
@@ -910,7 +920,19 @@ export default function TraderProfilePage({
                 return next;
               });
 
-              return { trade, outcomes, currentPrice, closed, isResolved, gameStartTime, eventStatus, endDateIso };
+              return {
+                trade,
+                outcomes,
+                currentPrice,
+                closed,
+                isResolved,
+                gameStartTime,
+                eventStatus,
+                score,
+                homeTeam,
+                awayTeam,
+                endDateIso,
+              };
             }
           }
         } catch (error) {
@@ -925,12 +947,24 @@ export default function TraderProfilePage({
       // Now wait for ESPN scores and update trades with scores
       try {
         const espnScores = await espnScoresPromise;
-        console.log(`✅ Got ESPN scores for ${espnScores.size} markets`);
+        console.log(`✅ Got sports scores for ${espnScores.size} markets`);
 
         // Update trades with scores
         priceResults.forEach(result => {
           if (!result) return;
-          const { trade, outcomes, currentPrice, closed, isResolved, gameStartTime, eventStatus, endDateIso } = result;
+          const {
+            trade,
+            outcomes,
+            currentPrice,
+            closed,
+            isResolved,
+            gameStartTime,
+            eventStatus,
+            score: liveScore,
+            homeTeam,
+            awayTeam,
+            endDateIso,
+          } = result;
 
           const espnScore = espnScores.get(trade.conditionId!);
           let scoreDisplay: string | undefined;
@@ -938,10 +972,12 @@ export default function TraderProfilePage({
           // Detect if this is a sports market
           const isSportsMarket = trade.market.includes(' vs. ') || 
                                 trade.market.includes(' vs ') ||
+                                trade.market.includes(' v ') ||
+                                trade.market.includes(' versus ') ||
                                 trade.market.includes(' @ ') ||
                                 trade.category === 'sports';
 
-          if (isSportsMarket && espnScore && outcomes?.length === 2) {
+          if (isSportsMarket && espnScore) {
             const { team1Label, team1Score, team2Label, team2Score } = getScoreDisplaySides(
               trade.market,
               espnScore
@@ -953,10 +989,35 @@ export default function TraderProfilePage({
             } else if (espnScore.status === 'live') {
               scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}${clock}`;
             }
+          } else if (isSportsMarket && liveScore && typeof liveScore === 'object') {
+            const homeScoreRaw = (liveScore as any).home ?? (liveScore as any).homeScore ?? (liveScore as any).home_score ?? 0;
+            const awayScoreRaw = (liveScore as any).away ?? (liveScore as any).awayScore ?? (liveScore as any).away_score ?? 0;
+            const homeScore = Number.isFinite(Number(homeScoreRaw)) ? Number(homeScoreRaw) : 0;
+            const awayScore = Number.isFinite(Number(awayScoreRaw)) ? Number(awayScoreRaw) : 0;
+            const fallbackTeams = pickOutcomeTeams(outcomes);
+            const homeTeamName = typeof homeTeam === 'string' ? homeTeam : fallbackTeams[0] || '';
+            const awayTeamName = typeof awayTeam === 'string' ? awayTeam : fallbackTeams[1] || '';
+            const derivedScore = {
+              homeScore,
+              awayScore,
+              homeTeamName,
+              awayTeamName,
+              homeTeamAbbrev: '',
+              awayTeamAbbrev: '',
+              status: 'live' as const,
+              startTime: gameStartTime || '',
+              displayClock: undefined,
+              period: undefined,
+            };
+            const { team1Label, team1Score, team2Label, team2Score } = getScoreDisplaySides(
+              trade.market,
+              derivedScore
+            );
+            scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
           }
 
-          if (espnScore) {
-            const liveStatus = espnScore.status;
+          if (espnScore || scoreDisplay) {
+            const liveStatus = espnScore?.status;
             setLiveMarketData(prev => {
               const next = new Map(prev);
               const existing = next.get(trade.conditionId!);
@@ -966,7 +1027,7 @@ export default function TraderProfilePage({
                 resolved: isResolved,
                 score: scoreDisplay ?? existing?.score,
                 liveStatus: liveStatus ?? existing?.liveStatus,
-                gameStartTime: existing?.gameStartTime ?? gameStartTime ?? espnScore.startTime,
+                gameStartTime: existing?.gameStartTime ?? gameStartTime ?? espnScore?.startTime,
                 eventStatus: existing?.eventStatus ?? eventStatus,
                 endDateIso: existing?.endDateIso ?? endDateIso,
               });

@@ -159,7 +159,7 @@ export default function BottomNav() {
             </span>
           </Link>
 
-          {/* Profile */}
+          {/* Portfolio */}
           <Link 
             href="/profile" 
             className="flex-1 flex flex-col items-center justify-center gap-1"
@@ -176,7 +176,7 @@ export default function BottomNav() {
               </svg>
             </div>
             <span className={`text-xs ${isActive('/profile') ? 'text-[#0F0F0F] font-semibold' : 'text-slate-500'}`}>
-              Profile
+              Portfolio
             </span>
           </Link>
 

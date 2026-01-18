@@ -13,7 +13,8 @@ import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { EmptyState } from '@/components/polycopy/empty-state';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Activity, Filter, DollarSign, Users, Clock, Coins, Tag } from 'lucide-react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { RefreshCw, Activity, Filter, X, Check, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
@@ -46,6 +47,127 @@ export interface FeedTrade {
 }
 
 type Category = "all" | "politics" | "sports" | "crypto" | "culture" | "finance" | "economics" | "tech" | "weather";
+type FilterStatus = "all" | "live" | "resolved";
+type ResolvingWindow = "any" | "hour" | "today" | "tomorrow" | "week";
+
+type FilterState = {
+  category: Category;
+  status: FilterStatus;
+  tradeSizeMin: number;
+  resolvingWindow: ResolvingWindow;
+  priceMinCents: number;
+  priceMaxCents: number;
+  traderIds: string[];
+};
+
+const FILTERS_STORAGE_KEY = 'feed-filters-v1';
+
+const CATEGORY_OPTIONS = [
+  { value: "all" as Category, label: "All" },
+  { value: "politics" as Category, label: "Politics" },
+  { value: "sports" as Category, label: "Sports" },
+  { value: "crypto" as Category, label: "Crypto" },
+  { value: "culture" as Category, label: "Pop Culture" },
+  { value: "finance" as Category, label: "Business" },
+  { value: "economics" as Category, label: "Economics" },
+  { value: "tech" as Category, label: "Tech" },
+  { value: "weather" as Category, label: "Weather" },
+];
+
+const STATUS_OPTIONS = [
+  { value: "all" as FilterStatus, label: "All" },
+  { value: "live" as FilterStatus, label: "Live" },
+  { value: "resolved" as FilterStatus, label: "Resolved" },
+];
+
+const TRADE_SIZE_OPTIONS = [
+  { value: 0, label: 'Any size' },
+  { value: 100, label: '$100+' },
+  { value: 500, label: '$500+' },
+  { value: 1000, label: '$1,000+' },
+];
+
+const RESOLVING_OPTIONS = [
+  { value: 'any' as ResolvingWindow, label: 'Any time' },
+  { value: 'hour' as ResolvingWindow, label: 'Next hour' },
+  { value: 'today' as ResolvingWindow, label: 'Today' },
+  { value: 'tomorrow' as ResolvingWindow, label: 'Tomorrow' },
+  { value: 'week' as ResolvingWindow, label: 'This week' },
+];
+
+const PRICE_RANGE = { min: 0, max: 100 };
+const PRICE_PRESET_OPTIONS = [
+  { label: 'Any', min: PRICE_RANGE.min, max: PRICE_RANGE.max },
+  { label: '0-25¢', min: 0, max: 25 },
+  { label: '25-50¢', min: 25, max: 50 },
+  { label: '50-75¢', min: 50, max: 75 },
+  { label: '75¢+', min: 75, max: PRICE_RANGE.max },
+];
+
+const defaultFilters: FilterState = {
+  category: "all",
+  status: "all",
+  tradeSizeMin: 0,
+  resolvingWindow: "any",
+  priceMinCents: PRICE_RANGE.min,
+  priceMaxCents: PRICE_RANGE.max,
+  traderIds: [],
+};
+
+const CATEGORY_VALUES = new Set(CATEGORY_OPTIONS.map((option) => option.value));
+const STATUS_VALUES = new Set(STATUS_OPTIONS.map((option) => option.value));
+const RESOLVING_VALUES = new Set(RESOLVING_OPTIONS.map((option) => option.value));
+
+const clampNumber = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+const normalizeFilters = (value: Partial<FilterState> | null): FilterState => {
+  const fallback = { ...defaultFilters, traderIds: [] };
+  if (!value || typeof value !== 'object') return fallback;
+
+  const category = CATEGORY_VALUES.has(value.category as Category)
+    ? (value.category as Category)
+    : fallback.category;
+  const status = STATUS_VALUES.has(value.status as FilterStatus)
+    ? (value.status as FilterStatus)
+    : fallback.status;
+  const tradeSizeMin =
+    typeof value.tradeSizeMin === 'number' && value.tradeSizeMin >= 0
+      ? value.tradeSizeMin
+      : fallback.tradeSizeMin;
+  const resolvingWindow = RESOLVING_VALUES.has(value.resolvingWindow as ResolvingWindow)
+    ? (value.resolvingWindow as ResolvingWindow)
+    : fallback.resolvingWindow;
+  const minCents =
+    typeof value.priceMinCents === 'number'
+      ? clampNumber(value.priceMinCents, PRICE_RANGE.min, PRICE_RANGE.max)
+      : fallback.priceMinCents;
+  const maxCents =
+    typeof value.priceMaxCents === 'number'
+      ? clampNumber(value.priceMaxCents, PRICE_RANGE.min, PRICE_RANGE.max)
+      : fallback.priceMaxCents;
+  const normalizedMin = Math.min(minCents, maxCents);
+  const normalizedMax = Math.max(minCents, maxCents);
+  const traderIds = Array.isArray(value.traderIds)
+    ? Array.from(
+        new Set(
+          value.traderIds
+            .map((id) => String(id).toLowerCase())
+            .filter(Boolean)
+        )
+      )
+    : [];
+
+  return {
+    category,
+    status,
+    tradeSizeMin,
+    resolvingWindow,
+    priceMinCents: normalizedMin,
+    priceMaxCents: normalizedMax,
+    traderIds,
+  };
+};
 
 const normalizeKeyPart = (value?: string | null) => value?.trim().toLowerCase() || '';
 const buildCopiedTradeKey = (marketKey?: string | null, traderWallet?: string | null) => {
@@ -93,15 +215,14 @@ export default function FeedPage() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const [showConnectWalletModal, setShowConnectWalletModal] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<Category>('all');
   const [defaultBuySlippage, setDefaultBuySlippage] = useState(3);
   const [defaultSellSlippage, setDefaultSellSlippage] = useState(3);
-  const [showFilters, setShowFilters] = useState(false);
-  const [liveGamesOnly, setLiveGamesOnly] = useState(false);
-  const [minTradeSize, setMinTradeSize] = useState(0);
-  const [selectedTraders, setSelectedTraders] = useState<Set<string>>(new Set());
-  const [resolvingWindow, setResolvingWindow] = useState<'any' | 'hour' | 'today' | 'tomorrow' | 'week'>('any');
-  const [priceFilter, setPriceFilter] = useState<'any' | 'lt10' | 'lt25' | 'lt50' | 'gte50'>('any');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilters);
+  const [draftFilters, setDraftFilters] = useState<FilterState>(defaultFilters);
+  const [traderSearch, setTraderSearch] = useState('');
+  const [showAllTraders, setShowAllTraders] = useState(false);
+  const filtersPanelRef = useRef<HTMLDivElement | null>(null);
   
   // Data state
   const [allTrades, setAllTrades] = useState<FeedTrade[]>([]);
@@ -143,18 +264,6 @@ export default function FeedPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [tradeNotifications, setTradeNotifications] = useState<TradeExecutionNotification[]>([]);
 
-  const categories = [
-    { value: "all" as Category, label: "All" },
-    { value: "politics" as Category, label: "Politics" },
-    { value: "sports" as Category, label: "Sports" },
-    { value: "crypto" as Category, label: "Crypto" },
-    { value: "culture" as Category, label: "Pop Culture" },
-    { value: "finance" as Category, label: "Business" },
-    { value: "economics" as Category, label: "Economics" },
-    { value: "tech" as Category, label: "Tech" },
-    { value: "weather" as Category, label: "Weather" },
-  ];
-
   const traderFilters = useMemo(() => {
     const map = new Map<string, string>();
     allTrades.forEach((trade) => {
@@ -169,39 +278,254 @@ export default function FeedPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [allTrades]);
 
-  const tradeSizeOptions = [
-    { value: 0, label: 'Any size' },
-    { value: 100, label: '$100+' },
-    { value: 500, label: '$500+' },
-    { value: 1000, label: '$1,000+' },
-  ];
+  const traderLabelMap = useMemo(
+    () => new Map(traderFilters.map((trader) => [trader.wallet, trader.name])),
+    [traderFilters]
+  );
 
-  const resolvingOptions = [
-    { value: 'any' as const, label: 'Any time' },
-    { value: 'hour' as const, label: 'Next hour' },
-    { value: 'today' as const, label: 'Today' },
-    { value: 'tomorrow' as const, label: 'Tomorrow' },
-    { value: 'week' as const, label: 'This week' },
-  ];
+  const filteredTraderOptions = useMemo(() => {
+    const query = traderSearch.trim().toLowerCase();
+    if (!query) return traderFilters;
+    return traderFilters.filter((trader) =>
+      trader.name.toLowerCase().includes(query) || trader.wallet.includes(query)
+    );
+  }, [traderFilters, traderSearch]);
 
-  const priceOptions = [
-    { value: 'any' as const, label: 'Any' },
-    { value: 'lt10' as const, label: '<10¢' },
-    { value: 'lt25' as const, label: '<25¢' },
-    { value: 'lt50' as const, label: '<50¢' },
-    { value: 'gte50' as const, label: '50¢+' },
-  ];
+  const visibleTraderOptions = useMemo(
+    () => (showAllTraders ? filteredTraderOptions : filteredTraderOptions.slice(0, 8)),
+    [filteredTraderOptions, showAllTraders]
+  );
 
-  const activeFiltersCount = useMemo(() => {
+  const appliedTraderSet = useMemo(
+    () => new Set(appliedFilters.traderIds),
+    [appliedFilters.traderIds]
+  );
+
+  const draftTraderSet = useMemo(
+    () => new Set(draftFilters.traderIds),
+    [draftFilters.traderIds]
+  );
+
+  const countActiveFilters = useCallback((filters: FilterState) => {
     let count = 0;
-    if (activeCategory !== 'all') count += 1;
-    if (liveGamesOnly) count += 1;
-    if (minTradeSize > 0) count += 1;
-    if (selectedTraders.size > 0) count += 1;
-    if (resolvingWindow !== 'any') count += 1;
-    if (priceFilter !== 'any') count += 1;
+    if (filters.category !== 'all') count += 1;
+    if (filters.status !== 'all') count += 1;
+    if (filters.tradeSizeMin > 0) count += 1;
+    if (filters.traderIds.length > 0) count += 1;
+    if (filters.resolvingWindow !== 'any') count += 1;
+    if (filters.priceMinCents > PRICE_RANGE.min || filters.priceMaxCents < PRICE_RANGE.max) count += 1;
     return count;
-  }, [activeCategory, liveGamesOnly, minTradeSize, selectedTraders, resolvingWindow, priceFilter]);
+  }, []);
+
+  const activeFiltersCount = useMemo(
+    () => countActiveFilters(appliedFilters),
+    [appliedFilters, countActiveFilters]
+  );
+
+  const draftFiltersCount = useMemo(
+    () => countActiveFilters(draftFilters),
+    [draftFilters, countActiveFilters]
+  );
+
+  const formatPriceCents = (value: number) => `${value}¢`;
+  const formatTradeSize = (value: number) => `$${value.toLocaleString('en-US')}+`;
+  const formatWallet = (wallet: string) =>
+    wallet.length > 10 ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : wallet;
+  const filterTabBase = "rounded-full px-3 py-1.5 text-xs font-medium transition-all whitespace-nowrap";
+  const filterTabActive = "bg-slate-900 text-white shadow-sm";
+  const filterTabInactive = "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50";
+  const categoryPillBase = "rounded-full px-4 py-2 text-sm font-medium transition-all whitespace-nowrap";
+  const categoryPillActive = "bg-gradient-to-r from-yellow-400 to-amber-500 text-slate-900 shadow-sm";
+  const categoryPillInactive = "bg-slate-100 text-slate-700 hover:bg-slate-200";
+
+  const buildDefaultFilters = useCallback(
+    () => ({ ...defaultFilters, traderIds: [] }),
+    []
+  );
+
+  const updateAppliedFilters = useCallback(
+    (updater: (previous: FilterState) => FilterState) => {
+      setAppliedFilters((previous) => {
+        const next = updater(previous);
+        if (!filtersOpen) {
+          setDraftFilters(next);
+        }
+        return next;
+      });
+    },
+    [filtersOpen]
+  );
+
+  const openFilters = useCallback(() => {
+    setDraftFilters(appliedFilters);
+    setTraderSearch('');
+    setShowAllTraders(false);
+    setFiltersOpen(true);
+  }, [appliedFilters]);
+
+  const closeFilters = useCallback(() => {
+    setDraftFilters(appliedFilters);
+    setFiltersOpen(false);
+  }, [appliedFilters]);
+
+  const applyFilters = useCallback(() => {
+    updateAppliedFilters(() => draftFilters);
+    setFiltersOpen(false);
+  }, [draftFilters, updateAppliedFilters]);
+
+  const clearAllFilters = useCallback(() => {
+    updateAppliedFilters(() => buildDefaultFilters());
+  }, [buildDefaultFilters, updateAppliedFilters]);
+
+  const clearDraftFilters = useCallback(() => {
+    setDraftFilters(buildDefaultFilters());
+  }, [buildDefaultFilters]);
+
+  const toggleDraftTrader = useCallback((wallet: string) => {
+    setDraftFilters((prev) => {
+      const next = new Set(prev.traderIds);
+      if (next.has(wallet)) {
+        next.delete(wallet);
+      } else {
+        next.add(wallet);
+      }
+      return { ...prev, traderIds: Array.from(next) };
+    });
+  }, []);
+
+  const updateDraftPriceRange = useCallback((minCents: number, maxCents: number) => {
+    const normalizedMin = clampNumber(Math.min(minCents, maxCents), PRICE_RANGE.min, PRICE_RANGE.max);
+    const normalizedMax = clampNumber(Math.max(minCents, maxCents), PRICE_RANGE.min, PRICE_RANGE.max);
+    setDraftFilters((prev) => ({
+      ...prev,
+      priceMinCents: normalizedMin,
+      priceMaxCents: normalizedMax,
+    }));
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(FILTERS_STORAGE_KEY);
+      if (!stored) return;
+      const parsed = JSON.parse(stored) as Partial<FilterState>;
+      const nextFilters = normalizeFilters(parsed);
+      setAppliedFilters(nextFilters);
+      setDraftFilters(nextFilters);
+    } catch {
+      // Ignore storage errors
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(appliedFilters));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [appliedFilters]);
+
+  useEffect(() => {
+    if (!filtersOpen) {
+      setDraftFilters(appliedFilters);
+    }
+  }, [appliedFilters, filtersOpen]);
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    filtersPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [filtersOpen]);
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeFilters();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeFilters, filtersOpen]);
+
+  const handleRemoveFilter = useCallback(
+    (filterKey: 'category' | 'status' | 'tradeSize' | 'resolvingWindow' | 'price' | 'traders') => {
+      updateAppliedFilters((previous) => {
+        const next = { ...previous };
+        switch (filterKey) {
+          case 'category':
+            next.category = defaultFilters.category;
+            break;
+          case 'status':
+            next.status = defaultFilters.status;
+            break;
+          case 'tradeSize':
+            next.tradeSizeMin = defaultFilters.tradeSizeMin;
+            break;
+          case 'resolvingWindow':
+            next.resolvingWindow = defaultFilters.resolvingWindow;
+            break;
+          case 'price':
+            next.priceMinCents = defaultFilters.priceMinCents;
+            next.priceMaxCents = defaultFilters.priceMaxCents;
+            break;
+          case 'traders':
+            next.traderIds = [];
+            break;
+          default:
+            break;
+        }
+        return next;
+      });
+    },
+    [updateAppliedFilters]
+  );
+
+  const activeFilterChips = useMemo(() => {
+    const chips: { key: 'category' | 'status' | 'tradeSize' | 'resolvingWindow' | 'price' | 'traders'; label: string }[] = [];
+
+    if (appliedFilters.category !== 'all') {
+      const label = CATEGORY_OPTIONS.find((option) => option.value === appliedFilters.category)?.label ?? 'Category';
+      chips.push({ key: 'category', label: `Category: ${label}` });
+    }
+
+    if (appliedFilters.status !== 'all') {
+      const label = STATUS_OPTIONS.find((option) => option.value === appliedFilters.status)?.label ?? 'Status';
+      chips.push({ key: 'status', label: `Status: ${label}` });
+    }
+
+    if (appliedFilters.tradeSizeMin > 0) {
+      const label = TRADE_SIZE_OPTIONS.find((option) => option.value === appliedFilters.tradeSizeMin)?.label ?? formatTradeSize(appliedFilters.tradeSizeMin);
+      chips.push({ key: 'tradeSize', label: `Trade size: ${label}` });
+    }
+
+    if (appliedFilters.resolvingWindow !== 'any') {
+      const label = RESOLVING_OPTIONS.find((option) => option.value === appliedFilters.resolvingWindow)?.label ?? 'Resolving';
+      chips.push({ key: 'resolvingWindow', label: `Resolves: ${label}` });
+    }
+
+    if (appliedFilters.priceMinCents > PRICE_RANGE.min || appliedFilters.priceMaxCents < PRICE_RANGE.max) {
+      const min = appliedFilters.priceMinCents;
+      const max = appliedFilters.priceMaxCents;
+      let label = '';
+      if (min > PRICE_RANGE.min && max < PRICE_RANGE.max) {
+        label = `${formatPriceCents(min)}-${formatPriceCents(max)}`;
+      } else if (min > PRICE_RANGE.min) {
+        label = `${formatPriceCents(min)}+`;
+      } else {
+        label = `Up to ${formatPriceCents(max)}`;
+      }
+      chips.push({ key: 'price', label: `Price: ${label}` });
+    }
+
+    if (appliedFilters.traderIds.length > 0) {
+      const names = appliedFilters.traderIds.map((wallet) => traderLabelMap.get(wallet) || formatWallet(wallet));
+      const label = names.length === 1 ? `Trader: ${names[0]}` : `Traders: ${names[0]} + ${names.length - 1}`;
+      chips.push({ key: 'traders', label });
+    }
+
+    return chips;
+  }, [appliedFilters, traderLabelMap, formatPriceCents, formatTradeSize, formatWallet]);
 
   const handleTradeExecutionNotification = useCallback((notification: TradeExecutionNotification) => {
     setTradeNotifications((prev) => {
@@ -226,8 +550,18 @@ export default function FeedPage() {
     [liveMarketData]
   );
 
+  const isResolvedMarket = useCallback(
+    (trade: FeedTrade) => {
+      const marketKey = getMarketKeyForTrade(trade);
+      const liveData = marketKey ? liveMarketData.get(marketKey) : undefined;
+      return Boolean(liveData?.resolved);
+    },
+    [liveMarketData]
+  );
+
   const matchesResolvingWindow = useCallback(
     (trade: FeedTrade) => {
+      const { resolvingWindow } = appliedFilters;
       if (resolvingWindow === 'any') return true;
       const marketKey = getMarketKeyForTrade(trade);
       const liveData = marketKey ? liveMarketData.get(marketKey) : undefined;
@@ -266,7 +600,7 @@ export default function FeedPage() {
 
       return endTime.getTime() <= endOfWeek.getTime();
     },
-    [liveMarketData, resolvingWindow]
+    [appliedFilters.resolvingWindow, liveMarketData]
   );
 
   const getCurrentOutcomePrice = useCallback(
@@ -610,6 +944,13 @@ export default function FeedPage() {
     return '';
   };
 
+  const pickOutcomeTeams = (outcomes?: string[] | null) => {
+    if (!outcomes || outcomes.length === 0) return [];
+    const filtered = outcomes.filter(outcome => !/^(draw|tie)$/i.test(outcome.trim()));
+    if (filtered.length >= 2) return filtered.slice(0, 2);
+    return outcomes.slice(0, 2);
+  };
+
   const resolveLiveStatus = (payload: {
     eventStatus?: string | null;
     gameStartTime?: string | null;
@@ -689,9 +1030,9 @@ export default function FeedPage() {
     console.log(`📊 Fetching live data for ${tradeByMarketKey.size} markets`);
     
     // **NEW: Fetch ESPN scores for all sports trades first**
-    console.log(`🏈 Fetching ESPN scores for sports markets...`);
+    console.log(`🏈 Fetching sports scores for sports markets...`);
     const espnScores = await getESPNScoresForTrades(trades);
-    console.log(`✅ Got ESPN scores for ${espnScores.size} markets`);
+    console.log(`✅ Got sports scores for ${espnScores.size} markets`);
     
     // Fetch prices for each market
     await Promise.all(
@@ -732,6 +1073,8 @@ export default function FeedPage() {
                 // Detect sports markets by checking for "vs." or "vs" in title, or common sports patterns
                 const isSportsMarket = trade.market.title.includes(' vs. ') || 
                                       trade.market.title.includes(' vs ') ||
+                                      trade.market.title.includes(' v ') ||
+                                      trade.market.title.includes(' versus ') ||
                                       trade.market.title.includes(' @ ') ||
                                       trade.market.category === 'sports' ||
                                       // Detect spread and over/under bets
@@ -751,7 +1094,7 @@ export default function FeedPage() {
                   const espnScore = espnScoreKey ? espnScores.get(espnScoreKey) : undefined;
                   const effectiveGameStartTime = gameStartTime || espnScore?.startTime || undefined;
                   
-                  if (isSportsMarket && outcomes?.length === 2) {
+                  if (isSportsMarket) {
                     // SPORTS MARKETS: Prioritize ESPN scores, then Polymarket data
                     
                     if (espnScore) {
@@ -823,8 +1166,9 @@ export default function FeedPage() {
                       const awayScoreRaw = (liveScore as any).away ?? (liveScore as any).awayScore ?? (liveScore as any).away_score ?? 0;
                       const homeScore = Number.isFinite(Number(homeScoreRaw)) ? Number(homeScoreRaw) : 0;
                       const awayScore = Number.isFinite(Number(awayScoreRaw)) ? Number(awayScoreRaw) : 0;
-                      const homeTeamName = typeof homeTeam === 'string' ? homeTeam : outcomes?.[0] || '';
-                      const awayTeamName = typeof awayTeam === 'string' ? awayTeam : outcomes?.[1] || '';
+                      const fallbackTeams = pickOutcomeTeams(outcomes);
+                      const homeTeamName = typeof homeTeam === 'string' ? homeTeam : fallbackTeams[0] || '';
+                      const awayTeamName = typeof awayTeam === 'string' ? awayTeam : fallbackTeams[1] || '';
                       const derivedScore = {
                         homeScore,
                         awayScore,
@@ -1295,48 +1639,51 @@ export default function FeedPage() {
     // Only show BUY trades
     if (trade.trade.side !== 'BUY') return false;
 
-    if (activeCategory !== 'all') {
+    if (appliedFilters.category !== 'all') {
       const tradeCategory = trade.market.category?.toLowerCase();
-      if (!tradeCategory || tradeCategory !== activeCategory) {
+      if (!tradeCategory || tradeCategory !== appliedFilters.category) {
         return false;
       }
     }
 
-    if (minTradeSize > 0) {
+    if (appliedFilters.tradeSizeMin > 0) {
       const totalValue = trade.trade.price * trade.trade.size;
-      if (!Number.isFinite(totalValue) || totalValue < minTradeSize) {
+      if (!Number.isFinite(totalValue) || totalValue < appliedFilters.tradeSizeMin) {
         return false;
       }
     }
 
-    if (liveGamesOnly && !isLiveMarket(trade)) {
+    if (appliedFilters.status === 'live' && !isLiveMarket(trade)) {
       return false;
     }
 
-    if (resolvingWindow !== 'any' && !matchesResolvingWindow(trade)) {
+    if (appliedFilters.status === 'resolved' && !isResolvedMarket(trade)) {
       return false;
     }
 
-    if (priceFilter !== 'any') {
+    if (appliedFilters.resolvingWindow !== 'any' && !matchesResolvingWindow(trade)) {
+      return false;
+    }
+
+    if (appliedFilters.priceMinCents > PRICE_RANGE.min || appliedFilters.priceMaxCents < PRICE_RANGE.max) {
       const livePrice = getCurrentOutcomePrice(trade);
       const priceValue = Number.isFinite(livePrice) ? livePrice : trade.trade.price;
       if (!Number.isFinite(priceValue) || priceValue === undefined || priceValue === null) return false;
-      const priceCents = Number(priceValue) * 100;
-      if (priceFilter === 'lt10' && priceCents >= 10) return false;
-      if (priceFilter === 'lt25' && priceCents >= 25) return false;
-      if (priceFilter === 'lt50' && priceCents >= 50) return false;
-      if (priceFilter === 'gte50' && priceCents < 50) return false;
+      const priceCents = Math.round(Number(priceValue) * 100);
+      if (priceCents < appliedFilters.priceMinCents || priceCents > appliedFilters.priceMaxCents) {
+        return false;
+      }
     }
 
-    if (selectedTraders.size > 0) {
+    if (appliedFilters.traderIds.length > 0) {
       const wallet = trade.trader.wallet?.toLowerCase() || '';
-      if (!selectedTraders.has(wallet)) {
+      if (!appliedTraderSet.has(wallet)) {
         return false;
       }
     }
     
     return true;
-  }), [allTrades, activeCategory, minTradeSize, liveGamesOnly, selectedTraders, resolvingWindow, priceFilter, isLiveMarket, matchesResolvingWindow, getCurrentOutcomePrice]);
+  }), [allTrades, appliedFilters, appliedTraderSet, isLiveMarket, isResolvedMarket, matchesResolvingWindow, getCurrentOutcomePrice]);
   
   const displayedTrades = useMemo(
     () => filteredAllTrades.slice(0, displayedTradesCount),
@@ -1344,20 +1691,24 @@ export default function FeedPage() {
   );
   const hasMoreTrades = filteredAllTrades.length > displayedTradesCount;
 
-  useEffect(() => {
-    if (!liveGamesOnly || allTrades.length === 0) return;
-    fetchLiveMarketData(allTrades);
-  }, [liveGamesOnly, allTrades, fetchLiveMarketData]);
+  const needsMarketData = useMemo(
+    () =>
+      appliedFilters.status !== 'all' ||
+      appliedFilters.resolvingWindow !== 'any' ||
+      appliedFilters.priceMinCents > PRICE_RANGE.min ||
+      appliedFilters.priceMaxCents < PRICE_RANGE.max,
+    [
+      appliedFilters.status,
+      appliedFilters.resolvingWindow,
+      appliedFilters.priceMinCents,
+      appliedFilters.priceMaxCents,
+    ]
+  );
 
   useEffect(() => {
-    if (resolvingWindow === 'any' || allTrades.length === 0) return;
+    if (!needsMarketData || allTrades.length === 0) return;
     fetchLiveMarketData(allTrades);
-  }, [resolvingWindow, allTrades, fetchLiveMarketData]);
-
-  useEffect(() => {
-    if (priceFilter === 'any' || allTrades.length === 0) return;
-    fetchLiveMarketData(allTrades);
-  }, [priceFilter, allTrades, fetchLiveMarketData]);
+  }, [needsMarketData, allTrades, fetchLiveMarketData]);
 
   const refreshDisplayedMarketData = useCallback(() => {
     if (displayedTrades.length === 0) return;
@@ -1573,6 +1924,347 @@ export default function FeedPage() {
     });
   };
 
+  const draftStatusLabel =
+    STATUS_OPTIONS.find((option) => option.value === draftFilters.status)?.label ?? 'All';
+  const draftCategoryLabel =
+    CATEGORY_OPTIONS.find((option) => option.value === draftFilters.category)?.label ?? 'All';
+  const draftTradeSizeLabel =
+    TRADE_SIZE_OPTIONS.find((option) => option.value === draftFilters.tradeSizeMin)?.label ??
+    (draftFilters.tradeSizeMin > 0 ? formatTradeSize(draftFilters.tradeSizeMin) : 'Any');
+  const draftResolvingLabel =
+    RESOLVING_OPTIONS.find((option) => option.value === draftFilters.resolvingWindow)?.label ?? 'Any';
+  const draftPriceLabel = (() => {
+    const min = draftFilters.priceMinCents;
+    const max = draftFilters.priceMaxCents;
+    if (min <= PRICE_RANGE.min && max >= PRICE_RANGE.max) return 'Any';
+    if (min > PRICE_RANGE.min && max < PRICE_RANGE.max) {
+      return `${formatPriceCents(min)}-${formatPriceCents(max)}`;
+    }
+    if (min > PRICE_RANGE.min) return `${formatPriceCents(min)}+`;
+    return `Up to ${formatPriceCents(max)}`;
+  })();
+  const draftTradersLabel = draftFilters.traderIds.length > 0
+    ? `${draftFilters.traderIds.length} selected`
+    : 'Any';
+
+  const filterPanel = (
+    <div className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <div className="space-y-0.5">
+          <p className="text-sm font-semibold text-slate-900">Filters</p>
+          <p className="text-xs text-slate-500">
+            {draftFiltersCount > 0 ? `${draftFiltersCount} active` : 'No filters applied'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={clearDraftFilters}
+          className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+        >
+          Reset
+        </button>
+      </div>
+
+      <div className="flex-1 px-4 py-4">
+        <Accordion type="multiple" defaultValue={['status', 'category']} className="space-y-2">
+          <AccordionItem value="status" className="border-slate-200">
+            <AccordionTrigger className="py-2 hover:no-underline">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-slate-900">Status</span>
+                <span className="text-xs font-medium text-slate-500">{draftStatusLabel}</span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="pt-2">
+              <div className="flex flex-wrap gap-2">
+                {STATUS_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() =>
+                      setDraftFilters((prev) => ({ ...prev, status: option.value }))
+                    }
+                    aria-pressed={draftFilters.status === option.value}
+                    className={cn(
+                      filterTabBase,
+                      draftFilters.status === option.value ? filterTabActive : filterTabInactive
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="category" className="border-slate-200">
+            <AccordionTrigger className="py-2 hover:no-underline">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-slate-900">Category</span>
+                <span className="text-xs font-medium text-slate-500">{draftCategoryLabel}</span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="pt-2">
+              <div className="flex flex-wrap gap-2">
+                {CATEGORY_OPTIONS.map((category) => (
+                  <button
+                    key={category.value}
+                    onClick={() =>
+                      setDraftFilters((prev) => ({ ...prev, category: category.value }))
+                    }
+                    aria-pressed={draftFilters.category === category.value}
+                    className={cn(
+                      categoryPillBase,
+                      draftFilters.category === category.value
+                        ? categoryPillActive
+                        : categoryPillInactive
+                    )}
+                  >
+                    {category.label}
+                  </button>
+                ))}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="trade-size" className="border-slate-200">
+            <AccordionTrigger className="py-2 hover:no-underline">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-slate-900">Trade size</span>
+                <span className="text-xs font-medium text-slate-500">{draftTradeSizeLabel}</span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="pt-2">
+              <div className="flex flex-wrap gap-2">
+                {TRADE_SIZE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() =>
+                      setDraftFilters((prev) => ({
+                        ...prev,
+                        tradeSizeMin: option.value,
+                      }))
+                    }
+                    aria-pressed={draftFilters.tradeSizeMin === option.value}
+                    className={cn(
+                      filterTabBase,
+                      draftFilters.tradeSizeMin === option.value
+                        ? filterTabActive
+                        : filterTabInactive
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="resolving" className="border-slate-200">
+            <AccordionTrigger className="py-2 hover:no-underline">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-slate-900">Resolving</span>
+                <span className="text-xs font-medium text-slate-500">{draftResolvingLabel}</span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="pt-2">
+              <div className="flex flex-wrap gap-2">
+                {RESOLVING_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() =>
+                      setDraftFilters((prev) => ({
+                        ...prev,
+                        resolvingWindow: option.value,
+                      }))
+                    }
+                    aria-pressed={draftFilters.resolvingWindow === option.value}
+                    className={cn(
+                      filterTabBase,
+                      draftFilters.resolvingWindow === option.value
+                        ? filterTabActive
+                        : filterTabInactive
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="price" className="border-slate-200">
+            <AccordionTrigger className="py-2 hover:no-underline">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-slate-900">Price</span>
+                <span className="text-xs font-medium text-slate-500">{draftPriceLabel}</span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="pt-2">
+              <div className="flex flex-wrap gap-2">
+                {PRICE_PRESET_OPTIONS.map((preset) => {
+                  const isActive =
+                    draftFilters.priceMinCents === preset.min &&
+                    draftFilters.priceMaxCents === preset.max;
+                  return (
+                    <button
+                      key={preset.label}
+                      onClick={() => updateDraftPriceRange(preset.min, preset.max)}
+                      aria-pressed={isActive}
+                      className={cn(filterTabBase, isActive ? filterTabActive : filterTabInactive)}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-3">
+                <div className="text-xs font-medium text-slate-500">Custom range</div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label className="space-y-1 text-xs font-medium text-slate-500">
+                    Min (cents)
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={PRICE_RANGE.min}
+                      max={draftFilters.priceMaxCents}
+                      value={draftFilters.priceMinCents}
+                      onChange={(event) => {
+                        const nextValue = Number(event.target.value);
+                        if (Number.isNaN(nextValue)) return;
+                        updateDraftPriceRange(nextValue, draftFilters.priceMaxCents);
+                      }}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs font-medium text-slate-500">
+                    Max (cents)
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={draftFilters.priceMinCents}
+                      max={PRICE_RANGE.max}
+                      value={draftFilters.priceMaxCents}
+                      onChange={(event) => {
+                        const nextValue = Number(event.target.value);
+                        if (Number.isNaN(nextValue)) return;
+                        updateDraftPriceRange(draftFilters.priceMinCents, nextValue);
+                      }}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    />
+                  </label>
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="traders" className="border-slate-200">
+            <AccordionTrigger className="py-2 hover:no-underline">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-slate-900">Traders</span>
+                <span className="text-xs font-medium text-slate-500">{draftTradersLabel}</span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-500">Followed traders</span>
+                {draftFilters.traderIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraftFilters((prev) => ({ ...prev, traderIds: [] }))
+                    }
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <div className="relative mt-2">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={traderSearch}
+                  onChange={(event) => {
+                    setTraderSearch(event.target.value);
+                    setShowAllTraders(false);
+                  }}
+                  placeholder="Search followed traders"
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                />
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {visibleTraderOptions.map((trader) => {
+                  const isSelected = draftTraderSet.has(trader.wallet);
+                  const displayName = trader.name || formatWallet(trader.wallet);
+                  return (
+                    <button
+                      key={trader.wallet}
+                      type="button"
+                      onClick={() => toggleDraftTrader(trader.wallet)}
+                      aria-pressed={isSelected}
+                      className={cn(
+                        "flex items-center justify-between rounded-lg border px-2.5 py-2 text-left transition",
+                        isSelected
+                          ? "border-slate-900/15 bg-slate-100 text-slate-900"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                      )}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+                          {displayName.charAt(0).toUpperCase()}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-slate-900">
+                            {displayName}
+                          </span>
+                          <span className="block truncate text-xs text-slate-500">
+                            {formatWallet(trader.wallet)}
+                          </span>
+                        </span>
+                      </span>
+                      {isSelected && <Check className="h-4 w-4 text-slate-900" />}
+                    </button>
+                  );
+                })}
+              </div>
+              {filteredTraderOptions.length === 0 && (
+                <p className="mt-2 text-sm text-slate-500">No traders match your search.</p>
+              )}
+              {filteredTraderOptions.length > 8 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllTraders((prev) => !prev)}
+                  className="mt-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  {showAllTraders
+                    ? 'Show less'
+                    : `Show more (${filteredTraderOptions.length - 8})`}
+                </button>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </div>
+
+      <div className="border-t border-slate-200 px-4 py-3">
+        <div className="flex items-center justify-between text-xs text-slate-500 mb-3">
+          <span>{`Showing ${filteredAllTrades.length} trades`}</span>
+          {draftFiltersCount > 0 && <span>{draftFiltersCount} active</span>}
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={clearDraftFilters} className="flex-1">
+            Clear all
+          </Button>
+          <Button
+            onClick={applyFilters}
+            className="flex-1 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold"
+          >
+            Apply filters
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   // Loading state
   if (loading) {
     return (
@@ -1603,12 +2295,12 @@ export default function FeedPage() {
         profileImageUrl={profileImageUrl}
       />
       <SignupBanner isLoggedIn={!!user} />
-      
-        <div className="min-h-screen bg-slate-50 pt-3 md:pt-0 pb-20 md:pb-8">
-          {/* Page Header */}
+
+      <div className="min-h-screen bg-slate-50 pt-3 md:pt-0 pb-24 md:pb-8 overflow-x-hidden">
+        {/* Page Header */}
         <div className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
-          <div className="max-w-[800px] mx-auto px-4 md:px-6 pb-2 md:py-4">
-            <div className="flex items-start justify-between gap-3 mb-2 md:mb-3">
+          <div className="max-w-[1200px] mx-auto px-4 md:px-6 pb-3 md:py-4">
+            <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
                 <p className="text-xs md:text-base text-slate-500">Recent trades from traders you follow</p>
                 {lastFeedFetchAt && (
@@ -1617,37 +2309,18 @@ export default function FeedPage() {
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                {activeFiltersCount > 0 && (
-                  <Button
-                    onClick={() => {
-                      setActiveCategory('all');
-                      setLiveGamesOnly(false);
-                      setMinTradeSize(0);
-                      setSelectedTraders(new Set());
-                      setResolvingWindow('any');
-                      setPriceFilter('any');
-                    }}
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs text-slate-500 hover:text-slate-700"
-                  >
-                    Clear filters
-                  </Button>
-                )}
+              <div className="hidden md:flex items-center gap-2">
                 <Button
-                  onClick={() => setShowFilters((prev) => !prev)}
+                  onClick={filtersOpen ? closeFilters : openFilters}
                   variant="outline"
-                  size="icon"
-                  className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white relative"
-                  aria-label="Toggle filters"
+                  size="sm"
+                  className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white flex items-center gap-2 lg:hidden"
+                  aria-label="Open filters"
                 >
                   <Filter className="h-4 w-4" />
-                  {activeFiltersCount > 0 && (
-                    <span className="absolute -top-1 -right-1 inline-flex items-center justify-center text-[10px] font-semibold text-white bg-slate-900 rounded-full h-4 min-w-[16px] px-1">
-                      {activeFiltersCount}
-                    </span>
-                  )}
+                  <span className="text-sm font-semibold">
+                    Filter{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ''}
+                  </span>
                 </Button>
                 <Button
                   onClick={handleManualRefresh}
@@ -1661,344 +2334,201 @@ export default function FeedPage() {
                 </Button>
               </div>
             </div>
-            {showFilters && (
-              <div className="mt-3 rounded-xl border border-slate-200 bg-white shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-2 md:px-4">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-50 text-amber-600">
-                      <Filter className="h-4 w-4" />
-                    </span>
-                    <span className="text-sm font-semibold text-slate-900">Filters</span>
-                    {activeFiltersCount > 0 && (
-                      <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-slate-900">
-                        {activeFiltersCount}
-                      </span>
-                    )}
-                  </div>
-                  {activeFiltersCount > 0 && (
-                    <button
-                      onClick={() => {
-                        setActiveCategory('all');
-                        setLiveGamesOnly(false);
-                        setMinTradeSize(0);
-                        setSelectedTraders(new Set());
-                        setResolvingWindow('any');
-                        setPriceFilter('any');
-                      }}
-                      className="text-xs font-semibold text-slate-600 hover:text-slate-900"
-                    >
-                      Clear all
-                    </button>
-                  )}
-                </div>
-                <div className="p-3 md:p-4">
-                  <div className="grid grid-cols-1 lg:grid-cols-[1.45fr_1fr] gap-3">
-                    <div className="space-y-3">
-                      <section className="rounded-lg border border-slate-200 bg-white p-3">
-                        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
-                          <Tag className="h-3.5 w-3.5" />
-                          Category
-                        </div>
-                        <div className="flex gap-2 overflow-x-auto pb-1">
-                          {categories.map((category) => (
-                            <button
-                              key={category.value}
-                              onClick={() => setActiveCategory(category.value)}
-                              aria-pressed={activeCategory === category.value}
-                              className={cn(
-                                "whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-semibold transition",
-                                activeCategory === category.value
-                                  ? "border-amber-300 bg-amber-50 text-slate-900"
-                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                              )}
-                            >
-                              {category.label}
-                            </button>
-                          ))}
-                        </div>
-                      </section>
-                      <section className="rounded-lg border border-slate-200 bg-white p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            <Users className="h-3.5 w-3.5" />
-                            Traders
-                          </div>
-                          {selectedTraders.size > 0 && (
-                            <button
-                              onClick={() => setSelectedTraders(new Set())}
-                              className="text-xs font-semibold text-slate-500 hover:text-slate-700"
-                            >
-                              Clear
-                            </button>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 max-h-36 overflow-y-auto pr-1">
-                          {traderFilters.map((trader) => {
-                            const isSelected = selectedTraders.has(trader.wallet);
-                            return (
-                              <label
-                                key={trader.wallet}
-                                className={cn(
-                                  "flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm transition",
-                                  isSelected
-                                    ? "border-amber-300 bg-amber-50 text-slate-900"
-                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                                )}
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-400"
-                                  checked={isSelected}
-                                  onChange={(event) => {
-                                    setSelectedTraders((prev) => {
-                                      const next = new Set(prev);
-                                      if (event.target.checked) {
-                                        next.add(trader.wallet);
-                                      } else {
-                                        next.delete(trader.wallet);
-                                      }
-                                      return next;
-                                    });
-                                  }}
-                                />
-                                <span className="truncate">{trader.name}</span>
-                              </label>
-                            );
-                          })}
-                          {traderFilters.length === 0 && (
-                            <p className="text-sm text-slate-500">No traders yet.</p>
-                          )}
-                        </div>
-                      </section>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <section className="rounded-lg border border-slate-200 bg-white p-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                              <Activity className="h-3.5 w-3.5" />
-                              Live games
-                            </div>
-                            <button
-                              onClick={() => setLiveGamesOnly((prev) => !prev)}
-                              className={cn(
-                                "relative inline-flex h-6 w-11 items-center rounded-full transition",
-                                liveGamesOnly ? "bg-amber-500" : "bg-slate-200"
-                              )}
-                              role="switch"
-                              aria-checked={liveGamesOnly}
-                            >
-                              <span
-                                className={cn(
-                                  "inline-block h-4 w-4 transform rounded-full bg-white transition",
-                                  liveGamesOnly ? "translate-x-6" : "translate-x-1"
-                                )}
-                              />
-                            </button>
-                          </div>
-                        </section>
-                        <section className="rounded-lg border border-slate-200 bg-white p-3">
-                          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
-                            <Clock className="h-3.5 w-3.5" />
-                            Resolving
-                          </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                            {resolvingOptions.map((option) => (
-                              <button
-                                key={option.value}
-                                onClick={() => setResolvingWindow(option.value)}
-                                aria-pressed={resolvingWindow === option.value}
-                                className={cn(
-                                  "whitespace-nowrap rounded-lg border px-2 py-2 text-[11px] font-semibold transition",
-                                  resolvingWindow === option.value
-                                    ? "border-amber-300 bg-amber-50 text-slate-900"
-                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                                )}
-                              >
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
-                        </section>
-                      </div>
-                      <section className="rounded-lg border border-slate-200 bg-white p-3">
-                        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
-                          <DollarSign className="h-3.5 w-3.5" />
-                          Trade size
-                        </div>
-                        <div className="flex gap-2 overflow-x-auto pb-1">
-                          {tradeSizeOptions.map((option) => (
-                            <button
-                              key={option.value}
-                              onClick={() => setMinTradeSize(option.value)}
-                              aria-pressed={minTradeSize === option.value}
-                              className={cn(
-                                "whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-semibold transition",
-                                minTradeSize === option.value
-                                  ? "border-amber-300 bg-amber-50 text-slate-900"
-                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                              )}
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
-                      </section>
-                      <section className="rounded-lg border border-slate-200 bg-white p-3">
-                        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
-                          <Coins className="h-3.5 w-3.5" />
-                          Current price
-                        </div>
-                        <div className="flex gap-2 overflow-x-auto pb-1">
-                          {priceOptions.map((option) => (
-                            <button
-                              key={option.value}
-                              onClick={() => setPriceFilter(option.value)}
-                              aria-pressed={priceFilter === option.value}
-                              className={cn(
-                                "whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-semibold transition",
-                                priceFilter === option.value
-                                  ? "border-amber-300 bg-amber-50 text-slate-900"
-                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                              )}
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
-                      </section>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Feed Content */}
-        <div className="max-w-[800px] mx-auto px-4 md:px-6 py-4 md:py-8">
-          {loadingFeed ? (
-            <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 animate-pulse">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-slate-200 rounded-full"></div>
-                    <div className="flex-1">
-                      <div className="h-4 bg-slate-200 rounded w-1/3 mb-2"></div>
-                      <div className="h-4 bg-slate-200 rounded w-3/4 mb-3"></div>
-                      <div className="h-3 bg-slate-200 rounded w-1/4"></div>
-                    </div>
+        <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-4 md:py-8">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0 space-y-4">
+              {activeFilterChips.length > 0 && (
+                <div className="border-b border-slate-200 pb-3">
+                  <div className="flex flex-wrap gap-2">
+                    {activeFilterChips.map((chip) => (
+                      <button
+                        key={chip.key}
+                        type="button"
+                        onClick={() => handleRemoveFilter(chip.key)}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300"
+                      >
+                        <span className="truncate">{chip.label}</span>
+                        <X className="h-3 w-3" />
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={clearAllFilters}
+                      className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                    >
+                      Clear all
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : error ? (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
-              <div className="text-6xl mb-4">⚠️</div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Failed to load feed</h3>
-              <p className="text-slate-600 mb-6">{error}</p>
-              <Button
-                onClick={() => window.location.reload()}
-                className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold"
-              >
-                Try Again
-              </Button>
-            </div>
-          ) : followingCount === 0 ? (
-            <EmptyState
-              icon={Activity}
-              title="Your feed is empty"
-              description="Follow traders on the Discover page to see their activity here"
-            />
-          ) : displayedTrades.length === 0 ? (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
-              <div className="text-6xl mb-4">🔍</div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">No trades match your filters</h3>
-              <p className="text-slate-600">
-                Try selecting a different filter to see more trades.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {displayedTrades.map((trade) => {
-                const marketKey = getMarketKeyForTrade(trade);
-                const liveMarket = marketKey ? liveMarketData.get(marketKey) : undefined
-                const currentPrice = getCurrentOutcomePrice(trade);
-                
-                const tradeKey = String(trade.id);
-                const tradeAnchorId = `trade-card-${trade.id}`;
+              )}
 
-                return (
-                  <TradeCard
-                    key={trade.id}
-                    tradeAnchorId={tradeAnchorId}
-                    onExecutionNotification={handleTradeExecutionNotification}
-                    trader={{
-                      name: trade.trader.displayName,
-                      address: trade.trader.wallet,
-                      id: trade.trader.wallet,
-                    }}
-                    market={trade.market.title}
-                    marketAvatar={trade.market.avatarUrl}
-                    position={trade.trade.outcome}
-                    action={trade.trade.side === 'BUY' ? 'Buy' : 'Sell'}
-                    price={trade.trade.price}
-                    size={trade.trade.size}
-                    total={trade.trade.price * trade.trade.size}
-                    timestamp={getRelativeTime(trade.trade.timestamp)}
-                    onCopyTrade={() => handleCopyTrade(trade)}
-                    onMarkAsCopied={(entryPrice, amountInvested) =>
-                      handleMarkAsCopied(trade, entryPrice, amountInvested)
-                    }
-                    onAdvancedCopy={() => handleRealCopy(trade)}
-                    isPremium={tierHasPremiumAccess(userTier)}
-                    isAdmin={userTier === 'admin'}
-                    isExpanded={expandedTradeIds.has(tradeKey)}
-                    onToggleExpand={() => toggleTradeExpanded(tradeKey)}
-                    isCopied={isTraceCopied(trade)}
-                    conditionId={trade.market.conditionId}
-                    tokenId={trade.trade.tokenId}
-                    marketSlug={trade.market.slug}
-                    currentMarketPrice={currentPrice}
-                    currentMarketUpdatedAt={liveMarket?.updatedAt}
-                    marketIsOpen={liveMarket?.resolved === undefined ? undefined : !liveMarket.resolved}
-                    liveScore={liveMarket?.score}
-                    eventStartTime={liveMarket?.gameStartTime}
-                    eventEndTime={liveMarket?.endDateIso}
-                    eventStatus={liveMarket?.eventStatus}
-                    liveStatus={liveMarket?.liveStatus}
-                    category={trade.market.category}
-                    polymarketUrl={
-                      trade.market.eventSlug 
-                        ? `https://polymarket.com/event/${trade.market.eventSlug}`
-                        : trade.market.slug 
-                        ? `https://polymarket.com/market/${trade.market.slug}`
-                        : undefined
-                    }
-                    defaultBuySlippage={defaultBuySlippage}
-                    defaultSellSlippage={defaultSellSlippage}
-                    walletAddress={walletAddress}
-                    manualTradingEnabled={manualModeEnabled}
-                    onSwitchToManualTrading={enableManualMode}
-                    onOpenConnectWallet={() => setShowConnectWalletModal(true)}
-                  />
-                )
-              })}
-              
-              {/* Load More Button */}
-              {hasMoreTrades && (
-                <div className="flex justify-center pt-4">
+              {/* Feed Content */}
+              {loadingFeed ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 animate-pulse">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-slate-200 rounded-full"></div>
+                        <div className="flex-1">
+                          <div className="h-4 bg-slate-200 rounded w-1/3 mb-2"></div>
+                          <div className="h-4 bg-slate-200 rounded w-3/4 mb-3"></div>
+                          <div className="h-3 bg-slate-200 rounded w-1/4"></div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : error ? (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+                  <div className="text-6xl mb-4">⚠️</div>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">Failed to load feed</h3>
+                  <p className="text-slate-600 mb-6">{error}</p>
                   <Button
-                    onClick={handleLoadMore}
-                    variant="outline"
-                    className="bg-white hover:bg-slate-50 text-slate-900 font-semibold py-3 px-8 border-2 border-slate-200"
+                    onClick={() => window.location.reload()}
+                    className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold"
                   >
-                    Load More Trades
+                    Try Again
                   </Button>
+                </div>
+              ) : followingCount === 0 ? (
+                <EmptyState
+                  icon={Activity}
+                  title="Your feed is empty"
+                  description="Follow traders on the Discover page to see their activity here"
+                />
+              ) : displayedTrades.length === 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+                  <div className="text-6xl mb-4">🔍</div>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">No trades match your filters</h3>
+                  <p className="text-slate-600">
+                    Try selecting a different filter to see more trades.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {displayedTrades.map((trade) => {
+                    const marketKey = getMarketKeyForTrade(trade);
+                    const liveMarket = marketKey ? liveMarketData.get(marketKey) : undefined
+                    const currentPrice = getCurrentOutcomePrice(trade);
+                    
+                    const tradeKey = String(trade.id);
+                    const tradeAnchorId = `trade-card-${trade.id}`;
+
+                    return (
+                      <TradeCard
+                        key={trade.id}
+                        tradeAnchorId={tradeAnchorId}
+                        onExecutionNotification={handleTradeExecutionNotification}
+                        trader={{
+                          name: trade.trader.displayName,
+                          address: trade.trader.wallet,
+                          id: trade.trader.wallet,
+                        }}
+                        market={trade.market.title}
+                        marketAvatar={trade.market.avatarUrl}
+                        position={trade.trade.outcome}
+                        action={trade.trade.side === 'BUY' ? 'Buy' : 'Sell'}
+                        price={trade.trade.price}
+                        size={trade.trade.size}
+                        total={trade.trade.price * trade.trade.size}
+                        timestamp={getRelativeTime(trade.trade.timestamp)}
+                        onCopyTrade={() => handleCopyTrade(trade)}
+                        onMarkAsCopied={(entryPrice, amountInvested) =>
+                          handleMarkAsCopied(trade, entryPrice, amountInvested)
+                        }
+                        onAdvancedCopy={() => handleRealCopy(trade)}
+                        isPremium={tierHasPremiumAccess(userTier)}
+                        isAdmin={userTier === 'admin'}
+                        isExpanded={expandedTradeIds.has(tradeKey)}
+                        onToggleExpand={() => toggleTradeExpanded(tradeKey)}
+                        isCopied={isTraceCopied(trade)}
+                        conditionId={trade.market.conditionId}
+                        tokenId={trade.trade.tokenId}
+                        marketSlug={trade.market.slug}
+                        currentMarketPrice={currentPrice}
+                        currentMarketUpdatedAt={liveMarket?.updatedAt}
+                        marketIsOpen={liveMarket?.resolved === undefined ? undefined : !liveMarket.resolved}
+                        liveScore={liveMarket?.score}
+                        eventStartTime={liveMarket?.gameStartTime}
+                        eventEndTime={liveMarket?.endDateIso}
+                        eventStatus={liveMarket?.eventStatus}
+                        liveStatus={liveMarket?.liveStatus}
+                        category={trade.market.category}
+                        polymarketUrl={
+                          trade.market.eventSlug 
+                            ? `https://polymarket.com/event/${trade.market.eventSlug}`
+                            : trade.market.slug 
+                            ? `https://polymarket.com/market/${trade.market.slug}`
+                            : undefined
+                        }
+                        defaultBuySlippage={defaultBuySlippage}
+                        defaultSellSlippage={defaultSellSlippage}
+                        walletAddress={walletAddress}
+                        manualTradingEnabled={manualModeEnabled}
+                        onSwitchToManualTrading={enableManualMode}
+                        onOpenConnectWallet={() => setShowConnectWalletModal(true)}
+                      />
+                    )
+                  })}
+                  
+                  {/* Load More Button */}
+                  {hasMoreTrades && (
+                    <div className="flex justify-center pt-4">
+                      <Button
+                        onClick={handleLoadMore}
+                        variant="outline"
+                        className="bg-white hover:bg-slate-50 text-slate-900 font-semibold py-3 px-8 border-2 border-slate-200"
+                      >
+                        Load More Trades
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
+
+            <aside
+              ref={filtersPanelRef}
+              className={cn(
+                "lg:sticky lg:top-24 lg:self-start lg:order-none",
+                filtersOpen ? "order-first block" : "hidden lg:block"
+              )}
+              aria-label="Filters"
+            >
+              {filterPanel}
+            </aside>
+          </div>
+        </div>
+
+        <div className="fixed bottom-0 inset-x-0 z-20 md:hidden">
+          <div className="mx-auto max-w-[1200px] border-t border-slate-200 bg-white/95 backdrop-blur px-4 pt-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={filtersOpen ? closeFilters : openFilters}
+                variant="outline"
+                className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 bg-white flex items-center justify-center gap-2"
+                aria-label="Open filters"
+              >
+                <Filter className="h-4 w-4" />
+                <span className="text-sm font-semibold">
+                  Filter{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ''}
+                </span>
+              </Button>
+              <Button
+                onClick={handleManualRefresh}
+                disabled={isRefreshing || loadingFeed}
+                variant="outline"
+                size="icon"
+                className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white flex-shrink-0 transition-all"
+                aria-label="Refresh feed"
+              >
+                <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 

@@ -104,7 +104,7 @@ export function TradeExecutionNotifications({
           className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-lg"
           aria-label="Expand trade updates"
         >
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <span className="text-[11px] font-semibold tracking-wide text-slate-500">
             Trade updates
           </span>
           <span className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
@@ -134,7 +134,7 @@ export function TradeExecutionNotifications({
           className="flex w-full items-center justify-between border-b border-slate-100 px-4 py-2.5 text-left"
           aria-label="Collapse trade updates"
         >
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <span className="text-[11px] font-semibold tracking-wide text-slate-500">
             Trade updates
           </span>
           <span className="flex items-center gap-2 text-[11px] font-medium text-slate-400">

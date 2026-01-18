@@ -89,12 +89,24 @@ Polycopy now displays **real live scores** for sports markets using ESPN's free 
 - **NBA**: `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard`
 - **MLB**: `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard`
 - **NHL**: `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard`
+- **WNBA + College (NCAAF/NCAAB/NCAAW)**: see `app/api/espn/scores/route.ts`
+- **Soccer (MLS, EPL, La Liga, Serie A, Bundesliga, Ligue 1, UEFA, World Cup)**: see `app/api/espn/scores/route.ts`
+- **Tennis, golf, UFC, boxing**: see `app/api/espn/scores/route.ts`
 
 ### Rate Limits:
 - ✅ **No API key required**
 - ✅ **No documented rate limits**
 - ✅ **Completely free**
 - ⚠️ Unofficial API (could change without notice)
+
+---
+
+## 🧩 Secondary Provider (The Odds API)
+
+- **Optional fallback** when ESPN misses or is unavailable
+- **Env var**: `THE_ODDS_API_KEY`
+- **Endpoint**: `https://api.the-odds-api.com/v4/sports/{sport}/scores/`
+- **Behavior**: used only after ESPN fails to match; Polymarket data remains the last fallback
 
 ---
 
@@ -238,4 +250,3 @@ useEffect(() => {
 **Status**: ✅ **Production Ready**
 
 The ESPN integration is working and ready for production. It enhances the user experience significantly by showing actual live scores instead of just odds percentages for sports markets!
-

@@ -232,7 +232,7 @@ Think of copying like: Actually making the same investment - you have skin in th
 3. **Execute on Polymarket:** Log into Polymarket (if not already logged in) and manually place the bet with your desired amount
 4. **Return to Polycopy:** Come back to Polycopy and click "Mark as Copied"
 5. **Enter Trade Details:** Fill in your Entry Price (price per contract) and Amount Invested (dollar amount you bet)
-6. **Confirm:** Click confirm and your trade will now be visible in your profile under the "Trades" tab
+6. **Confirm:** Click confirm and your trade will now be visible in your portfolio under the "Trades" tab
 
 **Note:** Manual Copy requires you to have a Polymarket account and execute trades yourself on their platform. It's perfect for getting started with copy trading without connecting your wallet.`,
   },
@@ -265,7 +265,7 @@ We show the current fill price automatically; only update it if it has changed.
     question: 'Can I manually sell my Quick Copied order?',
     answer: `Yes. Premium users can manually sell a Quick Copy position anytime (market conditions allowing).
 
-1. Go to your profile and open the **Trades** page
+1. Go to your portfolio and open the **Trades** page
 2. Find the copied trade you want to exit
 3. Click **Sell** and confirm the order
 
@@ -321,7 +321,7 @@ Users with premium subscriptions can enable the Auto-Close feature during a Quic
 - Consider your wallet balance when copying multiple trades
 
 **3. Organization:**
-- Use the "Trades" tab on your profile to track all positions
+- Use the "Trades" tab on your portfolio to track all positions
 - Monitor which traders are performing best for you
 - Adjust your following list based on results
 
@@ -393,7 +393,7 @@ Full manual limit controls are coming soon.`,
     id: 'see-polymarket-trades',
     category: 'Trading & Orders',
     question: 'Can I see my Polymarket trades on Polycopy?',
-    answer: `Polycopy only shows trades made or marked as traded on Polycopy. Polycopy users can see their manual and Quick Copy trades on the "Trades" tab of the profile page. Polymarket trades executed on platforms other than Polycopy do not display on Polycopy.`,
+    answer: `Polycopy only shows trades made or marked as traded on Polycopy. Polycopy users can see their manual and Quick Copy trades on the "Trades" tab of the portfolio page. Polymarket trades executed on platforms other than Polycopy do not display on Polycopy.`,
   },
 
   // ============================================
@@ -424,8 +424,8 @@ Full manual limit controls are coming soon.`,
     question: 'How do I connect my Polymarket wallet to Polycopy?',
     answer: `Connecting your wallet is required for Premium features (Quick Copy, direct trade execution). Here's the step-by-step process:
 
-1. **Subscribe to Premium:** Go to your profile and upgrade to Premium ($20/month)
-2. **Navigate to Profile:** Click "Connect Wallet" to begin
+1. **Subscribe to Premium:** Open Settings and upgrade to Premium ($20/month)
+2. **Navigate to Portfolio:** Click "Connect Wallet" to begin
 3. **Enter Your Polymarket Address:** Visit Polymarket and copy your wallet address, then paste it into Polycopy
 4. **Import Private Key (Secure):** Enter your Polymarket wallet's private key
 5. **Turnkey Encryption:** Your private key is encrypted client-side in your browser using Turnkey's secure encryption
@@ -504,7 +504,7 @@ Every trade is publicly visible on the Polygon blockchain. If we made unauthoriz
 Even we must request Turnkey to sign transactions. Turnkey monitors for suspicious activity and unusual patterns.
 
 **4. Instant Revocation**
-You can disconnect your wallet anytime in your profile settings, immediately revoking our ability to execute trades.
+You can disconnect your wallet anytime from your settings page, immediately revoking our ability to execute trades.
 
 **Our Business Model:** We make money from $20/month subscriptions, not from your trades or funds. Stealing from users would destroy our reputation and company instantly. We're building a long-term business based on trust and transparency.`,
   },
@@ -512,14 +512,14 @@ You can disconnect your wallet anytime in your profile settings, immediately rev
     id: 'disconnect-wallet',
     category: 'Wallet & Security',
     question: 'How do I disconnect my wallet from Polycopy?',
-    answer: `You can disconnect your wallet anytime from your profile page. Here's how:
+    answer: `You can disconnect your wallet anytime from your settings page. Here's how:
 
-1. Go to your [Profile page](/profile)
-2. Click the disconnect icon (X) next to your connected wallet address
-3. Confirm that you want to disconnect
+1. Open Settings (top-right cog) and select Account
+2. Scroll to Wallet connection
+3. Click Disconnect and confirm
 
 **What happens when you disconnect:**
-- Your wallet address is removed from your Polycopy profile
+- Your wallet address is removed from your Polycopy account
 - Your encrypted private key is permanently deleted from Turnkey's secure infrastructure
 - You can no longer use Quick Copy or execute trades through Polycopy
 - Your manual copy trade history remains intact
@@ -606,7 +606,7 @@ Premium users can execute Polymarket trades directly from Polycopy's interface w
 - **Fraud protection:** Stripe's advanced fraud detection protects your account
 
 **Billing Management:**
-- Update your payment method anytime in your profile
+- Update your payment method anytime in Settings
 - View payment history and download invoices
 - Cancel subscription anytime (no penalty)
 
@@ -620,7 +620,7 @@ If a payment fails:
 1. Check your card has sufficient funds
 2. Verify your card hasn't expired
 3. Contact your bank (they may be blocking the transaction)
-4. Update your payment method in your profile
+4. Update your payment method in Settings
 5. Contact our support if issues persist: [@polycopyapp on X](https://twitter.com/polycopyapp)
 
 **Note:** We do not currently accept cryptocurrency for subscriptions - only traditional payment methods via Stripe.`,
@@ -655,8 +655,8 @@ If a payment fails:
     answer: `**Yes, anytime - with zero hassle.**
 
 **How to cancel:**
-1. Go to your Profile page
-2. Click "Manage Subscription"
+1. Open Settings (top-right cog) and select Account
+2. Scroll to Membership & Wallet
 3. Click "Cancel Subscription"
 4. Confirm cancellation
 
@@ -678,8 +678,8 @@ If a payment fails:
 You can upgrade to Premium anytime! Here's what happens:
 
 **How to Upgrade:**
-1. Go to your [Profile page](/profile)
-2. Click "Upgrade to Premium" or "Subscribe"
+1. Open Settings (top-right cog) and select Account
+2. Click "Upgrade to Premium" or "Get Premium"
 3. Enter your payment details via Stripe
 4. Instant access to all Premium features
 
@@ -705,8 +705,8 @@ You can upgrade to Premium anytime! Here's what happens:
 You can downgrade by canceling your subscription:
 
 **How to Downgrade:**
-1. Go to your Profile page
-2. Click "Manage Subscription"
+1. Open Settings (top-right cog) and select Account
+2. Scroll to Membership & Wallet
 3. Click "Cancel Subscription"
 4. Confirm cancellation
 
