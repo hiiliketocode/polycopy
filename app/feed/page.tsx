@@ -387,11 +387,6 @@ export default function FeedPage() {
     setFiltersOpen(false);
   }, [appliedFilters]);
 
-  const applyFilters = useCallback(() => {
-    updateAppliedFilters(() => draftFilters);
-    setFiltersOpen(false);
-  }, [draftFilters, updateAppliedFilters]);
-
   const clearAllFilters = useCallback(() => {
     updateAppliedFilters(() => buildDefaultFilters());
   }, [buildDefaultFilters, updateAppliedFilters]);
@@ -448,6 +443,11 @@ export default function FeedPage() {
       setDraftFilters(appliedFilters);
     }
   }, [appliedFilters, filtersOpen]);
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    updateAppliedFilters(() => draftFilters);
+  }, [draftFilters, filtersOpen, updateAppliedFilters]);
 
   useEffect(() => {
     if (!filtersOpen) return;
@@ -2256,13 +2256,6 @@ export default function FeedPage() {
               Clear all
             </button>
           )}
-          <Button
-            size="sm"
-            onClick={applyFilters}
-            className="mx-auto rounded-full bg-[#FDB022] px-5 text-xs font-semibold text-slate-900 hover:bg-[#FDB022]/90"
-          >
-            Apply filters
-          </Button>
         </div>
       </div>
     </div>
@@ -2478,7 +2471,7 @@ export default function FeedPage() {
                     const tradeAnchorId = `trade-card-${trade.id}`;
 
                     return (
-                      <div className="w-full md:w-[70%] md:mx-auto">
+                      <div className="w-full md:w-[52.5%] md:mx-auto">
                         <TradeCard
                           key={trade.id}
                           tradeAnchorId={tradeAnchorId}
