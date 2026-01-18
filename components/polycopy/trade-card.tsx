@@ -2855,7 +2855,7 @@ export function TradeCard({
             <div className="mt-3">
               <Button
                 onClick={resetConfirmation}
-                className={`w-full font-semibold ${
+                className={`w-full max-w-[360px] mx-auto rounded-full font-semibold ${
                   isFilledStatus
                     ? "bg-slate-900 text-white hover:bg-slate-800"
                     : "bg-amber-500 text-slate-900 hover:bg-amber-400"

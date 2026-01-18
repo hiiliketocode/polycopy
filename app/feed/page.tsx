@@ -14,6 +14,7 @@ import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { EmptyState } from '@/components/polycopy/empty-state';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { RefreshCw, Activity, Filter, X, Check, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
@@ -53,7 +54,7 @@ export interface FeedTrade {
 }
 
 type Category = "all" | "politics" | "sports" | "crypto" | "culture" | "finance" | "economics" | "tech" | "weather";
-type FilterStatus = "all" | "live" | "resolved";
+type FilterStatus = "all" | "live";
 type ResolvingWindow = "any" | "hour" | "today" | "tomorrow" | "week";
 
 type FilterState = {
@@ -82,8 +83,7 @@ const CATEGORY_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { value: "all" as FilterStatus, label: "All" },
-  { value: "live" as FilterStatus, label: "Live" },
-  { value: "resolved" as FilterStatus, label: "Resolved" },
+  { value: "live" as FilterStatus, label: "Live Games Only" },
 ];
 
 const TRADE_SIZE_OPTIONS = [
@@ -119,6 +119,9 @@ const defaultFilters: FilterState = {
   priceMaxCents: PRICE_RANGE.max,
   traderIds: [],
 };
+
+const LOW_BALANCE_TOOLTIP =
+  'Quick trades use your Polymarket USDC balance. Add funds before retrying this order.';
 
 const CATEGORY_VALUES = new Set(CATEGORY_OPTIONS.map((option) => option.value));
 const STATUS_VALUES = new Set(STATUS_OPTIONS.map((option) => option.value));
@@ -269,6 +272,16 @@ export default function FeedPage() {
   // Manual refresh state
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [tradeNotifications, setTradeNotifications] = useState<TradeExecutionNotification[]>([]);
+  const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
+  const [cashBalance, setCashBalance] = useState<number | null>(null);
+  const [loadingBalance, setLoadingBalance] = useState(false);
+  const hasPremiumAccess = tierHasPremiumAccess(userTier);
+  const showLowBalanceCallout =
+    hasPremiumAccess &&
+    Boolean(walletAddress) &&
+    !loadingBalance &&
+    typeof cashBalance === 'number' &&
+    cashBalance < 1;
 
   const traderFilters = useMemo(() => {
     const map = new Map<string, string>();
@@ -496,8 +509,7 @@ export default function FeedPage() {
     }
 
     if (appliedFilters.status !== 'all') {
-      const label = STATUS_OPTIONS.find((option) => option.value === appliedFilters.status)?.label ?? 'Event Status';
-      chips.push({ key: 'status', label: `Event Status: ${label}` });
+      chips.push({ key: 'status', label: 'Event Status: Live Games Only' });
     }
 
     if (appliedFilters.tradeSizeMin > 0) {
@@ -552,15 +564,6 @@ export default function FeedPage() {
       const liveData = marketKey ? liveMarketData.get(marketKey) : undefined;
       if (!liveData) return false;
       return liveData.liveStatus === 'live';
-    },
-    [liveMarketData]
-  );
-
-  const isResolvedMarket = useCallback(
-    (trade: FeedTrade) => {
-      const marketKey = getMarketKeyForTrade(trade);
-      const liveData = marketKey ? liveMarketData.get(marketKey) : undefined;
-      return Boolean(liveData?.resolved);
     },
     [liveMarketData]
   );
@@ -829,6 +832,45 @@ export default function FeedPage() {
   useEffect(() => {
     fetchCopiedTrades();
   }, [fetchCopiedTrades]);
+
+  useEffect(() => {
+    if (!hasPremiumAccess || !walletAddress || !user) {
+      setPortfolioValue(null);
+      setCashBalance(null);
+      setLoadingBalance(false);
+      return;
+    }
+
+    let mounted = true;
+
+    const fetchBalance = async () => {
+      setLoadingBalance(true);
+      try {
+        if (!walletAddress?.trim()) return;
+        const response = await fetch(`/api/polymarket/wallet/${walletAddress}`);
+        if (!response.ok) {
+          return;
+        }
+        const data = await response.json();
+        if (!mounted) return;
+        setCashBalance(data.cashBalance || 0);
+        setPortfolioValue(data.portfolioValue || 0);
+      } catch {
+        // Non-blocking: balance is optional on the feed header.
+      } finally {
+        if (mounted) {
+          setLoadingBalance(false);
+        }
+      }
+    };
+
+    fetchBalance();
+    const interval = setInterval(fetchBalance, 30000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [hasPremiumAccess, walletAddress, user]);
 
   // Fetch feature tier and wallet
   useEffect(() => {
@@ -1650,10 +1692,6 @@ export default function FeedPage() {
       return false;
     }
 
-    if (appliedFilters.status === 'resolved' && !isResolvedMarket(trade)) {
-      return false;
-    }
-
     if (appliedFilters.resolvingWindow !== 'any' && !matchesResolvingWindow(trade)) {
       return false;
     }
@@ -1676,7 +1714,7 @@ export default function FeedPage() {
     }
     
     return true;
-  }), [allTrades, appliedFilters, appliedTraderSet, isLiveMarket, isResolvedMarket, matchesResolvingWindow, getCurrentOutcomePrice]);
+  }), [allTrades, appliedFilters, appliedTraderSet, isLiveMarket, matchesResolvingWindow, getCurrentOutcomePrice]);
   
   const displayedTrades = useMemo(
     () => filteredAllTrades.slice(0, displayedTradesCount),
@@ -1918,8 +1956,7 @@ export default function FeedPage() {
     });
   };
 
-  const draftStatusLabel =
-    STATUS_OPTIONS.find((option) => option.value === draftFilters.status)?.label ?? 'All';
+  const draftStatusLabel = draftFilters.status === 'live' ? 'Live Games Only' : 'All';
   const draftCategoryLabel =
     CATEGORY_OPTIONS.find((option) => option.value === draftFilters.category)?.label ?? 'All';
   const draftTradeSizeLabel =
@@ -1961,31 +1998,7 @@ export default function FeedPage() {
 
       <div className="flex-1 px-4 py-3">
         <div className="grid gap-3 lg:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-semibold text-slate-900">Event Status</span>
-              <span className="text-xs font-medium text-slate-500">{draftStatusLabel}</span>
-            </div>
-            <div className="mt-1.5 flex flex-wrap gap-2">
-              {STATUS_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  onClick={() =>
-                    setDraftFilters((prev) => ({ ...prev, status: option.value }))
-                  }
-                  aria-pressed={draftFilters.status === option.value}
-                  className={cn(
-                    filterTabBase,
-                    draftFilters.status === option.value ? filterTabActive : filterTabInactive
-                  )}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 lg:col-span-2">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-semibold text-slate-900">Category</span>
               <span className="text-xs font-medium text-slate-500">{draftCategoryLabel}</span>
@@ -2006,6 +2019,86 @@ export default function FeedPage() {
                   )}
                 >
                   {category.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Event Status</span>
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  draftFilters.status === 'live'
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-slate-100 text-slate-500"
+                )}
+              >
+                {draftStatusLabel}
+              </span>
+            </div>
+            <div className="mt-1.5">
+              <button
+                type="button"
+                onClick={() =>
+                  setDraftFilters((prev) => ({
+                    ...prev,
+                    status: prev.status === 'live' ? 'all' : 'live',
+                  }))
+                }
+                role="switch"
+                aria-checked={draftFilters.status === 'live'}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-full border px-3 py-2 text-xs font-semibold transition",
+                  draftFilters.status === 'live'
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                )}
+              >
+                <span>Live Games Only</span>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                    draftFilters.status === 'live' ? "bg-emerald-500" : "bg-slate-300"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "inline-block h-4 w-4 transform rounded-full bg-white shadow transition",
+                      draftFilters.status === 'live' ? "translate-x-4" : "translate-x-0.5"
+                    )}
+                  />
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Market Resolves</span>
+              <span className="text-xs font-medium text-slate-500">{draftResolvingLabel}</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {RESOLVING_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() =>
+                    setDraftFilters((prev) => ({
+                      ...prev,
+                      resolvingWindow: option.value,
+                    }))
+                  }
+                  aria-pressed={draftFilters.resolvingWindow === option.value}
+                  className={cn(
+                    filterTabBase,
+                    draftFilters.resolvingWindow === option.value
+                      ? filterTabActive
+                      : filterTabInactive
+                  )}
+                >
+                  {option.label}
                 </button>
               ))}
             </div>
@@ -2041,35 +2134,6 @@ export default function FeedPage() {
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-semibold text-slate-900">Market Resolves</span>
-              <span className="text-xs font-medium text-slate-500">{draftResolvingLabel}</span>
-            </div>
-            <div className="mt-1.5 flex flex-wrap gap-2">
-              {RESOLVING_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  onClick={() =>
-                    setDraftFilters((prev) => ({
-                      ...prev,
-                      resolvingWindow: option.value,
-                    }))
-                  }
-                  aria-pressed={draftFilters.resolvingWindow === option.value}
-                  className={cn(
-                    filterTabBase,
-                    draftFilters.resolvingWindow === option.value
-                      ? filterTabActive
-                      : filterTabInactive
-                  )}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 lg:col-span-2">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-semibold text-slate-900">Current Price</span>
               <span className="text-xs font-medium text-slate-500">{draftPriceLabel}</span>
@@ -2182,16 +2246,20 @@ export default function FeedPage() {
           <span>{`Showing ${filteredAllTrades.length} trades`}</span>
           {draftFiltersCount > 0 && <span>{draftFiltersCount} active</span>}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col items-center gap-2">
           {draftFiltersCount > 0 && (
-            <Button variant="outline" size="sm" onClick={clearDraftFilters} className="flex-1 text-xs">
+            <button
+              type="button"
+              onClick={clearDraftFilters}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+            >
               Clear all
-            </Button>
+            </button>
           )}
           <Button
             size="sm"
             onClick={applyFilters}
-            className="w-fit rounded-full bg-[#FDB022] px-5 text-xs font-semibold text-slate-900 hover:bg-[#FDB022]/90"
+            className="mx-auto rounded-full bg-[#FDB022] px-5 text-xs font-semibold text-slate-900 hover:bg-[#FDB022]/90"
           >
             Apply filters
           </Button>
@@ -2235,38 +2303,90 @@ export default function FeedPage() {
         {/* Page Header */}
         <div className="sticky top-0 z-10 bg-slate-50">
           <div className="max-w-[1200px] mx-auto px-4 md:px-6 pb-3 md:py-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-xs md:text-base text-slate-500">Recent trades from traders you follow</p>
-                {lastFeedFetchAt && (
-                  <div className="text-xs text-slate-500">
-                    {`Last updated ${getRelativeTime(lastFeedFetchAt)}`}
-                  </div>
-                )}
-              </div>
-              <div className="hidden md:flex items-center gap-2">
-                <Button
-                  onClick={filtersOpen ? closeFilters : openFilters}
-                  variant="outline"
-                  size="sm"
-                  className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white flex items-center gap-2"
-                  aria-label="Open filters"
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              {hasPremiumAccess && walletAddress && (
+                <a
+                  href="https://polymarket.com/portfolio"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="md:hidden flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm"
                 >
-                  <Filter className="h-4 w-4" />
-                  <span className="text-sm font-semibold">
-                    Filter{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ''}
+                  <span className="text-[11px] font-semibold leading-tight text-slate-600">
+                    <span className="block">Polymarket</span>
+                    <span className="block">Account</span>
                   </span>
-                </Button>
-                <Button
-                  onClick={handleManualRefresh}
-                  disabled={isRefreshing || loadingFeed}
-                  variant="outline"
-                  size="icon"
-                  className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent flex-shrink-0 transition-all"
-                  aria-label="Refresh feed"
-                >
-                  <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-                </Button>
+                  <div className="flex items-center gap-4">
+                    <div className="text-center">
+                      <div className="text-[11px] font-semibold text-slate-900">Portfolio</div>
+                      <div className="text-xs font-medium text-emerald-600">
+                        {loadingBalance
+                          ? '...'
+                          : portfolioValue !== null
+                          ? `$${portfolioValue.toFixed(2)}`
+                          : '$0.00'}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-900">
+                        <span>Cash</span>
+                        {showLowBalanceCallout && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span
+                                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-[10px] font-bold text-rose-600"
+                                  aria-label="Low cash balance"
+                                >
+                                  !
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-[220px]">
+                                <p>{LOW_BALANCE_TOOLTIP}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                      <div className="text-xs font-medium text-slate-600">
+                        {loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toFixed(2)}` : '$0.00'}
+                      </div>
+                    </div>
+                  </div>
+                </a>
+              )}
+              <div className="flex items-start justify-between gap-3 md:flex-1">
+                <div className="space-y-1">
+                  <p className="text-xs md:text-base text-slate-500">Recent trades from traders you follow</p>
+                  {lastFeedFetchAt && (
+                    <div className="text-xs text-slate-500">
+                      {`Last updated ${getRelativeTime(lastFeedFetchAt)}`}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={filtersOpen ? closeFilters : openFilters}
+                    variant="outline"
+                    size="sm"
+                    className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white flex items-center gap-2"
+                    aria-label="Open filters"
+                  >
+                    <Filter className="h-4 w-4" />
+                    <span className="text-sm font-semibold">
+                      Filter{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ''}
+                    </span>
+                  </Button>
+                  <Button
+                    onClick={handleManualRefresh}
+                    disabled={isRefreshing || loadingFeed}
+                    variant="outline"
+                    size="icon"
+                    className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent flex-shrink-0 transition-all"
+                    aria-label="Refresh feed"
+                  >
+                    <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -2358,59 +2478,61 @@ export default function FeedPage() {
                     const tradeAnchorId = `trade-card-${trade.id}`;
 
                     return (
-                      <TradeCard
-                        key={trade.id}
-                        tradeAnchorId={tradeAnchorId}
-                        onExecutionNotification={handleTradeExecutionNotification}
-                        trader={{
-                          name: trade.trader.displayName,
-                          address: trade.trader.wallet,
-                          id: trade.trader.wallet,
-                        }}
-                        market={trade.market.title}
-                        marketAvatar={trade.market.avatarUrl}
-                        position={trade.trade.outcome}
-                        action={trade.trade.side === 'BUY' ? 'Buy' : 'Sell'}
-                        price={trade.trade.price}
-                        size={trade.trade.size}
-                        total={trade.trade.price * trade.trade.size}
-                        timestamp={getRelativeTime(trade.trade.timestamp)}
-                        onCopyTrade={() => handleCopyTrade(trade)}
-                        onMarkAsCopied={(entryPrice, amountInvested) =>
-                          handleMarkAsCopied(trade, entryPrice, amountInvested)
-                        }
-                        onAdvancedCopy={() => handleRealCopy(trade)}
-                        isPremium={tierHasPremiumAccess(userTier)}
-                        isAdmin={userTier === 'admin'}
-                        isExpanded={expandedTradeIds.has(tradeKey)}
-                        onToggleExpand={() => toggleTradeExpanded(tradeKey)}
-                        isCopied={isTraceCopied(trade)}
-                        conditionId={trade.market.conditionId}
-                        tokenId={trade.trade.tokenId}
-                        marketSlug={trade.market.slug}
-                        currentMarketPrice={currentPrice}
-                        currentMarketUpdatedAt={liveMarket?.updatedAt}
-                        marketIsOpen={liveMarket?.resolved === undefined ? undefined : !liveMarket.resolved}
-                        liveScore={liveMarket?.score}
-                        eventStartTime={liveMarket?.gameStartTime}
-                        eventEndTime={liveMarket?.endDateIso}
-                        eventStatus={liveMarket?.eventStatus}
-                        liveStatus={liveMarket?.liveStatus}
-                        category={trade.market.category}
-                        polymarketUrl={
-                          trade.market.eventSlug 
-                            ? `https://polymarket.com/event/${trade.market.eventSlug}`
-                            : trade.market.slug 
-                            ? `https://polymarket.com/market/${trade.market.slug}`
-                            : undefined
-                        }
-                        defaultBuySlippage={defaultBuySlippage}
-                        defaultSellSlippage={defaultSellSlippage}
-                        walletAddress={walletAddress}
-                        manualTradingEnabled={manualModeEnabled}
-                        onSwitchToManualTrading={enableManualMode}
-                        onOpenConnectWallet={() => setShowConnectWalletModal(true)}
-                      />
+                      <div className="w-full md:w-[70%] md:mx-auto">
+                        <TradeCard
+                          key={trade.id}
+                          tradeAnchorId={tradeAnchorId}
+                          onExecutionNotification={handleTradeExecutionNotification}
+                          trader={{
+                            name: trade.trader.displayName,
+                            address: trade.trader.wallet,
+                            id: trade.trader.wallet,
+                          }}
+                          market={trade.market.title}
+                          marketAvatar={trade.market.avatarUrl}
+                          position={trade.trade.outcome}
+                          action={trade.trade.side === 'BUY' ? 'Buy' : 'Sell'}
+                          price={trade.trade.price}
+                          size={trade.trade.size}
+                          total={trade.trade.price * trade.trade.size}
+                          timestamp={getRelativeTime(trade.trade.timestamp)}
+                          onCopyTrade={() => handleCopyTrade(trade)}
+                          onMarkAsCopied={(entryPrice, amountInvested) =>
+                            handleMarkAsCopied(trade, entryPrice, amountInvested)
+                          }
+                          onAdvancedCopy={() => handleRealCopy(trade)}
+                          isPremium={tierHasPremiumAccess(userTier)}
+                          isAdmin={userTier === 'admin'}
+                          isExpanded={expandedTradeIds.has(tradeKey)}
+                          onToggleExpand={() => toggleTradeExpanded(tradeKey)}
+                          isCopied={isTraceCopied(trade)}
+                          conditionId={trade.market.conditionId}
+                          tokenId={trade.trade.tokenId}
+                          marketSlug={trade.market.slug}
+                          currentMarketPrice={currentPrice}
+                          currentMarketUpdatedAt={liveMarket?.updatedAt}
+                          marketIsOpen={liveMarket?.resolved === undefined ? undefined : !liveMarket.resolved}
+                          liveScore={liveMarket?.score}
+                          eventStartTime={liveMarket?.gameStartTime}
+                          eventEndTime={liveMarket?.endDateIso}
+                          eventStatus={liveMarket?.eventStatus}
+                          liveStatus={liveMarket?.liveStatus}
+                          category={trade.market.category}
+                          polymarketUrl={
+                            trade.market.eventSlug 
+                              ? `https://polymarket.com/event/${trade.market.eventSlug}`
+                              : trade.market.slug 
+                              ? `https://polymarket.com/market/${trade.market.slug}`
+                              : undefined
+                          }
+                          defaultBuySlippage={defaultBuySlippage}
+                          defaultSellSlippage={defaultSellSlippage}
+                          walletAddress={walletAddress}
+                          manualTradingEnabled={manualModeEnabled}
+                          onSwitchToManualTrading={enableManualMode}
+                          onOpenConnectWallet={() => setShowConnectWalletModal(true)}
+                        />
+                      </div>
                     )
                   })}
                   
@@ -2432,33 +2554,6 @@ export default function FeedPage() {
           </div>
         </div>
 
-        <div className="fixed inset-x-0 z-30 md:hidden bottom-[calc(64px+env(safe-area-inset-bottom))]">
-          <div className="mx-auto max-w-[1200px] border-t border-slate-200 bg-white/95 backdrop-blur px-4 pt-2 pb-3">
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={filtersOpen ? closeFilters : openFilters}
-                variant="outline"
-                className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 bg-white flex items-center justify-center gap-2"
-                aria-label="Open filters"
-              >
-                <Filter className="h-4 w-4" />
-                <span className="text-sm font-semibold">
-                  Filter{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ''}
-                </span>
-              </Button>
-              <Button
-                onClick={handleManualRefresh}
-                disabled={isRefreshing || loadingFeed}
-                variant="outline"
-                size="icon"
-                className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white flex-shrink-0 transition-all"
-                aria-label="Refresh feed"
-              >
-                <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-              </Button>
-            </div>
-          </div>
-        </div>
       </div>
 
       <TradeExecutionNotifications
