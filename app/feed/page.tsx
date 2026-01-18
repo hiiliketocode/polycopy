@@ -2471,7 +2471,7 @@ export default function FeedPage() {
                     const tradeAnchorId = `trade-card-${trade.id}`;
 
                     return (
-                      <div className="w-full md:w-[52.5%] md:mx-auto">
+                      <div className="w-full md:w-[63%] md:mx-auto">
                         <TradeCard
                           key={trade.id}
                           tradeAnchorId={tradeAnchorId}
