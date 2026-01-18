@@ -152,6 +152,10 @@ export default function TraderProfilePage({
     score?: string;
     closed?: boolean;
     resolved?: boolean;
+    gameStartTime?: string;
+    eventStatus?: string;
+    endDateIso?: string;
+    liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
   }>>(new Map());
 
   useEffect(() => {
@@ -167,10 +171,6 @@ export default function TraderProfilePage({
       if (prev.some((item) => item.id === notification.id)) return prev;
       return [notification, ...prev];
     });
-  }, []);
-
-  const handleDismissTradeNotification = useCallback((id: string) => {
-    setTradeNotifications((prev) => prev.filter((notice) => notice.id !== id));
   }, []);
 
   const handleNavigateToTrade = useCallback((notice: TradeExecutionNotification) => {
@@ -692,10 +692,18 @@ export default function TraderProfilePage({
             const priceData = await response.json();
             
             if (priceData.success && priceData.market) {
-              const { outcomes, outcomePrices, closed } = priceData.market;
+              const {
+                outcomes,
+                outcomePrices,
+                closed,
+                resolved,
+                gameStartTime,
+                eventStatus,
+                endDateIso,
+              } = priceData.market;
               
               // Check if market is resolved
-              const isResolved = closed === true;
+              const isResolved = typeof resolved === 'boolean' ? resolved : closed === true;
               
               // Find the price for this specific outcome
               const outcomeIndex = findOutcomeIndex(outcomes, trade.outcome);
@@ -704,13 +712,23 @@ export default function TraderProfilePage({
                 : trade.price;
 
               // Update state immediately with price data (without score yet)
-              setLiveMarketData(prev => new Map(prev).set(trade.conditionId!, {
-                price: currentPrice,
-                closed: closed,
-                resolved: isResolved,
-              }));
+              setLiveMarketData(prev => {
+                const next = new Map(prev);
+                const existing = next.get(trade.conditionId!);
+                next.set(trade.conditionId!, {
+                  price: currentPrice,
+                  closed: closed,
+                  resolved: isResolved,
+                  score: existing?.score,
+                  liveStatus: existing?.liveStatus,
+                  gameStartTime: gameStartTime || existing?.gameStartTime,
+                  eventStatus: eventStatus || existing?.eventStatus,
+                  endDateIso: endDateIso || existing?.endDateIso,
+                });
+                return next;
+              });
 
-              return { trade, outcomes, currentPrice, closed, isResolved };
+              return { trade, outcomes, currentPrice, closed, isResolved, gameStartTime, eventStatus, endDateIso };
             }
           }
         } catch (error) {
@@ -730,7 +748,7 @@ export default function TraderProfilePage({
         // Update trades with scores
         priceResults.forEach(result => {
           if (!result) return;
-          const { trade, outcomes, currentPrice, closed, isResolved } = result;
+          const { trade, outcomes, currentPrice, closed, isResolved, gameStartTime, eventStatus, endDateIso } = result;
 
           const espnScore = espnScores.get(trade.conditionId!);
           let scoreDisplay: string | undefined;
@@ -749,20 +767,29 @@ export default function TraderProfilePage({
             const clock = espnScore.displayClock ? ` (${espnScore.displayClock})` : '';
 
             if (espnScore.status === 'final') {
-              scoreDisplay = `🏁 ${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
+              scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
             } else if (espnScore.status === 'live') {
-              scoreDisplay = `🟢 ${team1Label} ${team1Score} - ${team2Score} ${team2Label}${clock}`;
+              scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}${clock}`;
             }
           }
 
-          // Update with score if we found one
-          if (scoreDisplay) {
-            setLiveMarketData(prev => new Map(prev).set(trade.conditionId!, {
-              price: currentPrice,
-              score: scoreDisplay,
-              closed: closed,
-              resolved: isResolved,
-            }));
+          if (espnScore) {
+            const liveStatus = espnScore.status;
+            setLiveMarketData(prev => {
+              const next = new Map(prev);
+              const existing = next.get(trade.conditionId!);
+              next.set(trade.conditionId!, {
+                price: currentPrice,
+                closed: closed,
+                resolved: isResolved,
+                score: scoreDisplay ?? existing?.score,
+                liveStatus: liveStatus ?? existing?.liveStatus,
+                gameStartTime: existing?.gameStartTime ?? gameStartTime ?? espnScore.startTime,
+                eventStatus: existing?.eventStatus ?? eventStatus,
+                endDateIso: existing?.endDateIso ?? endDateIso,
+              });
+              return next;
+            });
           }
         });
       } catch (error) {
@@ -1619,6 +1646,10 @@ export default function TraderProfilePage({
                       currentMarketPrice={currentPrice}
                       marketIsOpen={marketIsOpen}
                       liveScore={liveScore}
+                      eventStartTime={liveData?.gameStartTime}
+                      eventEndTime={liveData?.endDateIso}
+                      eventStatus={liveData?.eventStatus}
+                      liveStatus={liveData?.liveStatus}
                       category={trade.category}
                       polymarketUrl={polymarketUrl}
                       defaultBuySlippage={defaultBuySlippage}
@@ -2338,7 +2369,6 @@ export default function TraderProfilePage({
 
       <TradeExecutionNotifications
         notifications={tradeNotifications}
-        onDismiss={handleDismissTradeNotification}
         onNavigate={handleNavigateToTrade}
       />
       <ConnectWalletModal

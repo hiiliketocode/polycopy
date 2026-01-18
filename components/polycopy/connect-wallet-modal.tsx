@@ -4,6 +4,7 @@ import type React from "react"
 import { useState } from "react"
 import {
   ExternalLink,
+  CheckCircle2,
   Shield,
   Lock,
   Eye,
@@ -12,12 +13,14 @@ import {
   ArrowLeft,
   ChevronDown,
   Info,
+  Settings,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { USDC_DECIMALS } from "@/lib/turnkey/config"
 
 interface ConnectWalletModalProps {
   open: boolean
@@ -25,7 +28,7 @@ interface ConnectWalletModalProps {
   onConnect?: (walletAddress: string) => void
 }
 
-type Step = "intro" | "link-account" | "enter-private-key"
+type Step = "intro" | "link-account" | "enter-private-key" | "success"
 
 type ValidateResponse = {
   isValidAddress: boolean
@@ -63,6 +66,11 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
   const [tradeCountLoading, setTradeCountLoading] = useState(false)
   const [tradeCountError, setTradeCountError] = useState<string | null>(null)
   const [tradeCount, setTradeCount] = useState<number | null>(null)
+  const lowBalanceThresholdRaw = BigInt(10) ** BigInt(USDC_DECIMALS)
+  const shouldShowFundingReminder =
+    !!balanceData?.usdcBalanceRaw &&
+    !balanceLoading &&
+    BigInt(balanceData.usdcBalanceRaw) < lowBalanceThresholdRaw
 
   const validateAccount = async (addressOverride?: string) => {
     const targetAddress = (addressOverride ?? walletAddress).trim()
@@ -260,7 +268,12 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
 
       // Success!
       setIsSubmitting(false)
-      handleDone()
+      setPrivateKey("")
+      setShowPrivateKey(false)
+      if (onConnect) {
+        onConnect(walletAddress)
+      }
+      setStep("success")
     } catch (err: any) {
       console.error('Wallet import error:', err)
       setImportError(err?.message || 'Failed to import wallet')
@@ -269,9 +282,6 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
   }
 
   const handleDone = () => {
-    if (onConnect) {
-      onConnect(walletAddress)
-    }
     onOpenChange(false)
     // Reset state
     setTimeout(() => {
@@ -431,6 +441,11 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                       {tradeCountError && <p className="text-xs text-rose-600 mt-1">{tradeCountError}</p>}
                     </div>
                   </div>
+                  {shouldShowFundingReminder && (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                      Your Polymarket account balance is under $1. Fund your account with USDC before trading.
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -494,7 +509,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                 </Button>
               </div>
               <DialogTitle className="text-xl font-semibold text-slate-900">
-                Step 2: Securely enter your private key
+                Step 2: Enter your private key
               </DialogTitle>
             </DialogHeader>
 
@@ -544,15 +559,43 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                 href="https://www.turnkey.com/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 text-xs text-slate-500 hover:text-slate-700"
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
               >
-                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                  Secured by
+                <span className="text-[10px] uppercase tracking-wide text-slate-500">Secured by</span>
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-[10px] font-semibold text-white">
+                    T
+                  </span>
+                  Turnkey
                 </span>
-                <span className="text-sm font-semibold text-slate-800">Turnkey</span>
               </a>
 
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
+                <Collapsible>
+                  <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    <span className="flex items-center gap-2">
+                      <Lock className="h-4 w-4" />
+                      How to get your private key
+                    </span>
+                    <ChevronDown className="h-4 w-4 text-slate-400" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="pt-3 text-sm text-slate-600">
+                    <ol className="space-y-2 list-decimal list-inside">
+                      <li>Sign in with the email tied to your Polymarket account.</li>
+                      <li>
+                        Go to{" "}
+                        <span className="inline-flex items-center gap-1">
+                          Settings
+                          <Settings className="h-3 w-3 text-slate-500" aria-hidden="true" />
+                        </span>{" "}
+                        &gt; Export Private Key.
+                      </li>
+                      <li>Click “Reveal Private Key” and complete authentication.</li>
+                      <li>Copy the key that starts with “0x”.</li>
+                    </ol>
+                  </CollapsibleContent>
+                </Collapsible>
+
                 <div className="flex items-center gap-2">
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -572,27 +615,33 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                     type="button"
                     onClick={() => window.open("https://reveal.magic.link/polymarket", "_blank", "noopener,noreferrer")}
                     variant="outline"
-                    className="flex-1 justify-between"
+                    size="sm"
+                    className="w-fit gap-2"
                   >
                     Open Polymarket key export
-                    <ExternalLink className="h-4 w-4" />
+                    <ExternalLink className="h-3.5 w-3.5" />
                   </Button>
                 </div>
 
                 <Collapsible>
                   <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
                     <span className="flex items-center gap-2">
-                      <Lock className="h-4 w-4" />
-                      How to get your private key
+                      <Info className="h-4 w-4" />
+                      I can't find Export Private Key?
                     </span>
                     <ChevronDown className="h-4 w-4 text-slate-400" />
                   </CollapsibleTrigger>
                   <CollapsibleContent className="pt-3 text-sm text-slate-600">
-                    <ol className="space-y-2 list-decimal list-inside">
-                      <li>Sign in with the email tied to your Polymarket account.</li>
-                      <li>Click “Reveal Private Key” and complete authentication.</li>
-                      <li>Copy the key that starts with “0x”.</li>
-                    </ol>
+                    This most likely means you created your account with a wallet (not an email). It needs to be an
+                    email account.{" "}
+                    <a
+                      href="https://docs.polymarket.com/polymarket-learn/get-started/how-to-signup"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold underline underline-offset-2"
+                    >
+                      Learn more here.
+                    </a>
                   </CollapsibleContent>
                 </Collapsible>
               </div>
@@ -601,11 +650,46 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                 <div className="flex items-start gap-2">
                   <Shield className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
                   <p className="text-sm text-blue-800">
-                    Polycopy never sees or stores your private key. Key management is handled by Turnkey.
+                    Polycopy never sees or stores your private key. Key management is handled by Turnkey.{" "}
+                    <a
+                      href="https://www.turnkey.com/what-is-turnkey"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold underline underline-offset-2"
+                    >
+                      Learn more.
+                    </a>
                   </p>
                 </div>
               </div>
             </form>
+          </>
+        )}
+
+        {step === "success" && (
+          <>
+            <DialogHeader className="bg-white border-b border-slate-100 p-6">
+              <div className="flex flex-col items-center text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50">
+                  <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+                </div>
+                <DialogTitle className="text-xl font-semibold text-slate-900 mt-4">
+                  Congratulations!
+                </DialogTitle>
+                <p className="text-sm text-slate-600 mt-2">
+                  Setup complete. You are now ready to trade.
+                </p>
+              </div>
+            </DialogHeader>
+            <div className="p-6">
+              <Button
+                type="button"
+                onClick={handleDone}
+                className="w-full h-12 text-base bg-slate-900 hover:bg-slate-800 text-white font-semibold"
+              >
+                Start trading
+              </Button>
+            </div>
           </>
         )}
 

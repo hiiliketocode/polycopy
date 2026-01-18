@@ -4,7 +4,24 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowDown, ArrowLeftRight, ChevronDown, ChevronUp, Check, HelpCircle, ExternalLink, X, Loader2 } from "lucide-react"
+import {
+  ArrowDown,
+  ArrowLeftRight,
+  ChevronDown,
+  ChevronUp,
+  Check,
+  HelpCircle,
+  ExternalLink,
+  X,
+  Loader2,
+  CalendarClock,
+  SignalHigh,
+  CheckCircle2,
+  Flag,
+  Trophy,
+  CircleDot,
+  Clock,
+} from "lucide-react"
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -55,6 +72,10 @@ interface TradeCardProps {
   currentMarketUpdatedAt?: number
   marketIsOpen?: boolean | null
   liveScore?: string
+  eventStartTime?: string
+  eventEndTime?: string
+  eventStatus?: string
+  liveStatus?: "live" | "scheduled" | "final" | "unknown"
   category?: string
   polymarketUrl?: string
   defaultBuySlippage?: number
@@ -385,6 +406,10 @@ export function TradeCard({
   currentMarketUpdatedAt,
   marketIsOpen,
   liveScore,
+  eventStartTime,
+  eventEndTime,
+  eventStatus,
+  liveStatus,
   category,
   polymarketUrl,
   defaultBuySlippage,
@@ -490,6 +515,112 @@ export function TradeCard({
         ? currentPrice > 0.01 && currentPrice < 0.99
         : null
   const isMarketEnded = inferredMarketOpen === false
+
+  const cleanedLiveScore = useMemo(() => {
+    if (!liveScore) return null
+    const cleaned = liveScore.replace(/^[^A-Za-z0-9]+/, "").trim()
+    return cleaned.length ? cleaned : null
+  }, [liveScore])
+
+  const looksLikeScore = Boolean(cleanedLiveScore && /\d+\s*-\s*\d+/.test(cleanedLiveScore))
+  const resolvedLiveStatus = useMemo(() => {
+    if (liveStatus) return liveStatus
+    const normalized = (eventStatus || "").toLowerCase()
+    if (
+      normalized.includes("final") ||
+      normalized.includes("finished") ||
+      normalized.includes("post")
+    ) {
+      return "final"
+    }
+    if (
+      normalized.includes("live") ||
+      normalized.includes("in_progress") ||
+      normalized.includes("in progress") ||
+      normalized.includes("in-progress")
+    ) {
+      return "live"
+    }
+    if (
+      normalized.includes("scheduled") ||
+      normalized.includes("not_started") ||
+      normalized.includes("preview") ||
+      normalized.includes("upcoming")
+    ) {
+      return "scheduled"
+    }
+    if (eventStartTime) {
+      const start = new Date(eventStartTime)
+      if (!Number.isNaN(start.getTime())) {
+        return Date.now() >= start.getTime() ? "live" : "scheduled"
+      }
+    }
+    if (looksLikeScore) return "live"
+    return "unknown"
+  }, [liveStatus, eventStatus, eventStartTime, looksLikeScore])
+
+  const statusVariant = isMarketEnded
+    ? "resolved"
+    : resolvedLiveStatus === "live"
+      ? "live"
+      : resolvedLiveStatus === "final"
+        ? "ended"
+        : resolvedLiveStatus === "scheduled"
+          ? "scheduled"
+          : "open"
+
+  const statusLabel =
+    statusVariant === "live"
+      ? "Live"
+      : statusVariant === "ended"
+        ? "Ended"
+        : statusVariant === "resolved"
+          ? "Resolved"
+          : statusVariant === "scheduled"
+            ? "Scheduled"
+            : "Open"
+
+  const statusIconMap = {
+    live: SignalHigh,
+    ended: Flag,
+    resolved: CheckCircle2,
+    scheduled: Clock,
+    open: CircleDot,
+  } as const
+
+  const StatusIcon = statusIconMap[statusVariant]
+
+  const badgeBaseClass =
+    "h-7 px-2.5 text-[11px] font-semibold border shadow-[0_1px_0_rgba(15,23,42,0.06)]"
+
+  const statusBadgeClass = cn(
+    badgeBaseClass,
+    statusVariant === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200",
+    statusVariant === "ended" && "bg-slate-100 text-slate-700 border-slate-200",
+    statusVariant === "resolved" && "bg-emerald-50 text-emerald-700 border-emerald-200",
+    statusVariant === "scheduled" && "bg-amber-50 text-amber-700 border-amber-200",
+    statusVariant === "open" && "bg-slate-50 text-slate-600 border-slate-200",
+  )
+
+  const showScoreBadge =
+    Boolean(cleanedLiveScore && looksLikeScore) &&
+    (resolvedLiveStatus === "live" || resolvedLiveStatus === "final")
+
+  const hasEventTime = Boolean(eventStartTime || eventEndTime)
+  const eventTimeLabel = useMemo(() => {
+    const value = eventStartTime || eventEndTime
+    if (!value) return "Time TBD"
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return "Time TBD"
+    const options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }
+    if (parsed.getHours() !== 0 || parsed.getMinutes() !== 0) {
+      options.hour = "numeric"
+      options.minute = "2-digit"
+    }
+    const formatted = new Intl.DateTimeFormat("en-US", options).format(parsed)
+    const prefix = eventStartTime ? "Starts" : eventEndTime ? "Resolves" : "Time"
+    return `${prefix} ${formatted}`
+  }, [eventStartTime, eventEndTime])
 
   useEffect(() => {
     if (userUpdatedSlippageRef.current) return
@@ -1784,27 +1915,39 @@ export function TradeCard({
               <p className="text-xs text-slate-500 font-mono truncate">{displayAddress}</p>
             </div>
           </Link>
-          <div className="flex flex-col items-end gap-1.5 shrink-0">
-            {/* Live Score (Always visible for all users) */}
-            <div className="flex flex-col md:flex-row items-end md:items-center gap-2">
-              {isMarketEnded && (
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <Badge
+                variant="secondary"
+                className={cn(
+                  badgeBaseClass,
+                  hasEventTime
+                    ? "bg-white text-slate-700 border-slate-200"
+                    : "bg-slate-50 text-slate-400 border-slate-200",
+                )}
+              >
+                <CalendarClock className="h-3.5 w-3.5" />
+                {eventTimeLabel}
+              </Badge>
+              <Badge variant="secondary" className={statusBadgeClass}>
+                <StatusIcon className="h-3.5 w-3.5" />
+                {statusLabel}
+              </Badge>
+              {showScoreBadge && (
                 <Badge
                   variant="secondary"
-                  className="h-7 px-2 text-[10px] font-semibold bg-slate-100 text-slate-700 border-slate-300 flex items-center gap-1"
+                  className={cn(
+                    badgeBaseClass,
+                    "bg-indigo-50 text-indigo-700 border-indigo-200",
+                  )}
                 >
-                  <Check className="h-3 w-3" />
-                  Resolved
+                  <Trophy className="h-3.5 w-3.5" />
+                  <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
                 </Badge>
               )}
-              {liveScore && (
-                <div className="px-2 py-1 h-7 rounded bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 shadow-sm flex items-center">
-                  <span className="text-[10px] font-semibold text-blue-900">{liveScore}</span>
-                </div>
-              )}
             </div>
-            {/* Timestamp & Expand */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
               {isPremium && onToggleExpand && !localCopied && null}
             </div>
           </div>
@@ -1837,27 +1980,16 @@ export function TradeCard({
         <div className="border border-slate-200 rounded-lg px-4 py-3 mb-2 bg-slate-50/50">
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3 relative">
             <div className="text-center">
-              <p className="text-xs text-slate-500 mb-1 font-medium">Trade</p>
-              <div className="flex flex-wrap items-center justify-center gap-1 max-w-full">
-                <Badge
-                  variant="secondary"
-                  className={`font-semibold text-xs ${
-                    action === "Buy"
-                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      : "bg-red-50 text-red-700 border-red-200"
-                  }`}
-                >
-                  {action}
-                </Badge>
-                <span className="text-xs text-slate-400 font-semibold">|</span>
+              <p className="text-xs text-slate-500 mb-1 font-medium">Outcome</p>
+              <div className="flex flex-wrap items-center justify-center max-w-full">
                 <Badge
                   variant="secondary"
                   className={`font-semibold text-xs ${outcomeBadgeClass} max-w-[140px] whitespace-normal break-words text-center leading-snug`}
                 >
                   {formatOutcomeLabel(position)}
                 </Badge>
-                </div>
               </div>
+            </div>
             <div className="text-center md:border-l border-slate-200">
               <p className="text-xs text-slate-500 mb-1 font-medium">Invested</p>
               <p className="text-sm md:text-base font-semibold text-slate-900">{formatCurrency(total)}</p>

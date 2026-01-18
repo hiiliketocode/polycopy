@@ -210,10 +210,6 @@ export default function FeedPage() {
     });
   }, []);
 
-  const handleDismissTradeNotification = useCallback((id: string) => {
-    setTradeNotifications((prev) => prev.filter((notice) => notice.id !== id));
-  }, []);
-
   const handleNavigateToTrade = useCallback((notice: TradeExecutionNotification) => {
     const target = document.getElementById(notice.tradeAnchorId);
     if (!target) return;
@@ -753,6 +749,7 @@ export default function FeedPage() {
                   // **NEW: Check ESPN scores first for sports markets**
                   const espnScoreKey = trade.market.conditionId || trade.market.id || trade.market.title;
                   const espnScore = espnScoreKey ? espnScores.get(espnScoreKey) : undefined;
+                  const effectiveGameStartTime = gameStartTime || espnScore?.startTime || undefined;
                   
                   if (isSportsMarket && outcomes?.length === 2) {
                     // SPORTS MARKETS: Prioritize ESPN scores, then Polymarket data
@@ -766,7 +763,7 @@ export default function FeedPage() {
                       );
 
                       if (espnScore.status === 'final') {
-                        scoreDisplay = `🏁 ${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
+                        scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
                         console.log(`🏁 ESPN Final score: ${scoreDisplay}`);
                       } else if (espnScore.status === 'live') {
                         let periodContext = '';
@@ -813,20 +810,10 @@ export default function FeedPage() {
                         }
 
                         const clock = espnScore.displayClock ? ` (${periodContext}${espnScore.displayClock})` : '';
-                        scoreDisplay = `🟢 ${team1Label} ${team1Score} - ${team2Score} ${team2Label}${clock}`;
+                        scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}${clock}`;
                         console.log(`🟢 ESPN Live score: ${scoreDisplay} | Period: ${espnScore.period}`);
                       } else if (espnScore.status === 'scheduled') {
-                        // Show game start time
-                        const startTime = new Date(espnScore.startTime);
-                        const formatter = new Intl.DateTimeFormat('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true,
-                        });
-                        scoreDisplay = `🗓️ ${formatter.format(startTime)}`;
-                        console.log(`📅 ESPN Scheduled: ${scoreDisplay}`);
+                        console.log(`📅 ESPN Scheduled: ${espnScore.startTime}`);
                       }
                     }
                     // Fallback to Polymarket data if no ESPN score
@@ -846,7 +833,7 @@ export default function FeedPage() {
                         homeTeamAbbrev: normalizeTeamAbbrev(homeTeamName),
                         awayTeamAbbrev: normalizeTeamAbbrev(awayTeamName),
                         status: 'live' as const,
-                        startTime: gameStartTime || '',
+                        startTime: effectiveGameStartTime || '',
                         displayClock: undefined,
                         period: undefined,
                       };
@@ -856,37 +843,6 @@ export default function FeedPage() {
                       );
                       scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
                       console.log(`🏀 Polymarket score: ${scoreDisplay}`);
-                    } else if (eventStatus === 'finished' || eventStatus === 'final') {
-                      // Game finished
-                      scoreDisplay = '🏁 Final';
-                    } else if (eventStatus === 'live' || eventStatus === 'in_progress') {
-                      // Game in progress but no score data
-                      scoreDisplay = '🟢 LIVE';
-                    } else if (gameStartTime) {
-                      // Check if game has started
-                      const startTime = new Date(gameStartTime);
-                      const now = new Date();
-                      
-                      if (now < startTime) {
-                        // Game hasn't started - show start time
-                        const formatter = new Intl.DateTimeFormat('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true,
-                        });
-                        scoreDisplay = `🗓️ ${formatter.format(startTime)}`;
-                        console.log(`📅 Upcoming game: ${scoreDisplay}`);
-                      } else {
-                        // Time passed, assume live
-                        scoreDisplay = '🟢 LIVE';
-                      }
-                    } else {
-                      // No data, fall back to odds
-                      const prob1 = (Number(outcomePrices[0]) * 100).toFixed(0);
-                      const prob2 = (Number(outcomePrices[1]) * 100).toFixed(0);
-                      scoreDisplay = `${outcomes[0]}: ${prob1}% | ${outcomes[1]}: ${prob2}%`;
                     }
                   } else if (outcomes?.length === 2) {
                     // NON-SPORTS BINARY MARKETS: Show odds
@@ -915,7 +871,7 @@ export default function FeedPage() {
 
                   const liveStatus = resolveLiveStatus({
                     eventStatus,
-                    gameStartTime,
+                    gameStartTime: effectiveGameStartTime,
                     espnStatus,
                     resolved: isMarketResolved,
                     hasLiveScore: Boolean(liveScore && typeof liveScore === 'object'),
@@ -925,7 +881,7 @@ export default function FeedPage() {
                     outcomes: outcomes || [],
                     outcomePrices: numericPrices,
                     score: scoreDisplay,
-                    gameStartTime: gameStartTime || undefined,
+                    gameStartTime: effectiveGameStartTime || undefined,
                     eventStatus: eventStatus || undefined,
                     resolved: isMarketResolved,
                     endDateIso: endDateIso || undefined,
@@ -2007,6 +1963,10 @@ export default function FeedPage() {
                     currentMarketUpdatedAt={liveMarket?.updatedAt}
                     marketIsOpen={liveMarket?.resolved === undefined ? undefined : !liveMarket.resolved}
                     liveScore={liveMarket?.score}
+                    eventStartTime={liveMarket?.gameStartTime}
+                    eventEndTime={liveMarket?.endDateIso}
+                    eventStatus={liveMarket?.eventStatus}
+                    liveStatus={liveMarket?.liveStatus}
                     category={trade.market.category}
                     polymarketUrl={
                       trade.market.eventSlug 
@@ -2044,7 +2004,6 @@ export default function FeedPage() {
 
       <TradeExecutionNotifications
         notifications={tradeNotifications}
-        onDismiss={handleDismissTradeNotification}
         onNavigate={handleNavigateToTrade}
       />
       <ConnectWalletModal
