@@ -569,7 +569,7 @@ export function TradeCard({
           ? "scheduled"
           : "open"
 
-  const statusLabel =
+  const eventStatusLabel =
     statusVariant === "live"
       ? "Live"
       : statusVariant === "ended"
@@ -1620,18 +1620,18 @@ export function TradeCard({
   const fillPrice =
     typeof statusData?.price === 'number' ? statusData.price : null
   const pendingStatusLabel = "Order pending at Polymarket"
-  const statusLabel =
-    statusPhase === "filled"
-      ? "Filled"
-      : statusPhase === "partial"
-        ? "Partially filled"
-        : statusPhase === "timed_out"
-          ? "Failed to match on Polymarket"
-        : orderType === "FAK" &&
-            (statusPhase === "canceled" || statusPhase === "expired" || statusPhase === "rejected") &&
-            (!filledContracts || filledContracts <= 0)
-          ? "Not filled (FAK)"
-          : pendingStatusLabel
+  let statusLabel: string
+  if (statusPhase === "filled") {
+    statusLabel = "Filled"
+  } else if (statusPhase === "partial") {
+    statusLabel = "Partially filled"
+  } else if (statusPhase === "timed_out") {
+    statusLabel = "Failed to match on Polymarket"
+  } else if (orderType === "FAK" && (statusPhase === "canceled" || statusPhase === "expired" || statusPhase === "rejected") && (!filledContracts || filledContracts <= 0)) {
+    statusLabel = "Not filled (FAK)"
+  } else {
+    statusLabel = pendingStatusLabel
+  }
   const filledAmountValue =
     filledContracts !== null && fillPrice !== null ? filledContracts * fillPrice : null
   const totalAmountValue =
@@ -1931,7 +1931,7 @@ export function TradeCard({
               </Badge>
               <Badge variant="secondary" className={statusBadgeClass}>
                 <StatusIcon className="h-3.5 w-3.5" />
-                {statusLabel}
+                {eventStatusLabel}
               </Badge>
               {showScoreBadge && (
                 <Badge
