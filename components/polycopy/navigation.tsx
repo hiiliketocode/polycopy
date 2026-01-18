@@ -365,42 +365,52 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
           <div className="flex items-center gap-4">
             {!isLoggedIn || !showUI ? null : hasPremiumAccess && hasWalletConnected ? (
               /* Show wallet balance for premium users with connected wallet */
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-slate-900">
-                    Portfolio
+              <a
+                href="https://polymarket.com/portfolio"
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-4 rounded-full bg-slate-100 px-3 py-2 transition-colors hover:bg-slate-200"
+              >
+                <span className="text-xs font-semibold leading-tight text-slate-600">
+                  <span className="block">Polymarket</span>
+                  <span className="block">Account</span>
+                </span>
+                <div className="flex items-center gap-4">
+                  <div className="text-center">
+                    <div className="text-sm font-semibold text-slate-900">
+                      Portfolio
+                    </div>
+                    <div className="text-xs font-medium text-emerald-600">
+                      {loadingBalance ? '...' : portfolioValue !== null ? `$${portfolioValue.toFixed(2)}` : '$0.00'}
+                    </div>
                   </div>
-                  <div className="text-xs font-medium text-emerald-600">
-                    {loadingBalance ? '...' : portfolioValue !== null ? `$${portfolioValue.toFixed(2)}` : '$0.00'}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="flex items-center justify-end gap-1 text-sm font-semibold text-slate-900">
-                    <span>Cash</span>
-                    {showLowBalanceCallout && (
-                      <TooltipProvider>
-                        <Tooltip>
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-1 text-sm font-semibold text-slate-900">
+                      <span>Cash</span>
+                      {showLowBalanceCallout && (
+                        <TooltipProvider>
+                          <Tooltip>
                           <TooltipTrigger asChild>
-                            <button
-                              type="button"
+                            <span
                               className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-[10px] font-bold text-rose-600"
                               aria-label="Low cash balance"
                             >
                               !
-                            </button>
+                            </span>
                           </TooltipTrigger>
-                          <TooltipContent className="max-w-[220px]">
-                            <p>{LOW_BALANCE_TOOLTIP}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    )}
-                  </div>
-                  <div className="text-xs font-medium text-slate-600">
-                    {loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toFixed(2)}` : '$0.00'}
+                            <TooltipContent className="max-w-[220px]">
+                              <p>{LOW_BALANCE_TOOLTIP}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                    </div>
+                    <div className="text-xs font-medium text-slate-600">
+                      {loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toFixed(2)}` : '$0.00'}
+                    </div>
                   </div>
                 </div>
-              </div>
+              </a>
             ) : hasPremiumAccess ? (
               /* Show Premium badge for premium users without wallet */
               <div className="px-4 py-2 rounded-lg border-2 border-yellow-400 bg-white">

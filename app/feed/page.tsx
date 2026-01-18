@@ -107,7 +107,7 @@ const PRICE_PRESET_OPTIONS = [
   { label: '0-25¢', min: 0, max: 25 },
   { label: '25-50¢', min: 25, max: 50 },
   { label: '50-75¢', min: 50, max: 75 },
-  { label: '75¢+', min: 75, max: PRICE_RANGE.max },
+  { label: '90¢+', min: 90, max: PRICE_RANGE.max },
 ];
 
 const defaultFilters: FilterState = {
@@ -337,10 +337,10 @@ export default function FeedPage() {
   const formatTradeSize = (value: number) => `$${value.toLocaleString('en-US')}+`;
   const formatWallet = (wallet: string) =>
     wallet.length > 10 ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : wallet;
-  const filterTabBase = "rounded-full px-3 py-1.5 text-xs font-medium transition-all whitespace-nowrap";
+  const filterTabBase = "rounded-full px-2.5 py-1 text-[11px] font-medium transition-all whitespace-nowrap";
   const filterTabActive = "bg-slate-900 text-white shadow-sm";
   const filterTabInactive = "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50";
-  const categoryPillBase = "rounded-full px-4 py-2 text-sm font-medium transition-all whitespace-nowrap";
+  const categoryPillBase = "rounded-full px-3 py-1.5 text-xs font-medium transition-all whitespace-nowrap";
   const categoryPillActive = "bg-gradient-to-r from-yellow-400 to-amber-500 text-slate-900 shadow-sm";
   const categoryPillInactive = "bg-slate-100 text-slate-700 hover:bg-slate-200";
 
@@ -502,12 +502,12 @@ export default function FeedPage() {
 
     if (appliedFilters.tradeSizeMin > 0) {
       const label = TRADE_SIZE_OPTIONS.find((option) => option.value === appliedFilters.tradeSizeMin)?.label ?? formatTradeSize(appliedFilters.tradeSizeMin);
-      chips.push({ key: 'tradeSize', label: `Trade size: ${label}` });
+      chips.push({ key: 'tradeSize', label: `Trade Size: ${label}` });
     }
 
     if (appliedFilters.resolvingWindow !== 'any') {
-      const label = RESOLVING_OPTIONS.find((option) => option.value === appliedFilters.resolvingWindow)?.label ?? 'Resolving';
-      chips.push({ key: 'resolvingWindow', label: `Resolves: ${label}` });
+      const label = RESOLVING_OPTIONS.find((option) => option.value === appliedFilters.resolvingWindow)?.label ?? 'Market Resolves';
+      chips.push({ key: 'resolvingWindow', label: `Market Resolves: ${label}` });
     }
 
     if (appliedFilters.priceMinCents > PRICE_RANGE.min || appliedFilters.priceMaxCents < PRICE_RANGE.max) {
@@ -521,7 +521,7 @@ export default function FeedPage() {
       } else {
         label = `Up to ${formatPriceCents(max)}`;
       }
-      chips.push({ key: 'price', label: `Price: ${label}` });
+      chips.push({ key: 'price', label: `Current Price: ${label}` });
     }
 
     if (appliedFilters.traderIds.length > 0) {
@@ -1943,30 +1943,30 @@ export default function FeedPage() {
 
   const filterPanel = (
     <div className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
         <div className="space-y-0.5">
           <p className="text-sm font-semibold text-slate-900">Filters</p>
-          <p className="text-xs text-slate-500">
+          <p className="text-[11px] text-slate-500">
             {draftFiltersCount > 0 ? `${draftFiltersCount} active` : 'No filters applied'}
           </p>
         </div>
         <button
           type="button"
           onClick={clearDraftFilters}
-          className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+          className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
         >
           Reset
         </button>
       </div>
 
-      <div className="flex-1 px-4 py-4">
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+      <div className="flex-1 px-4 py-3">
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-semibold text-slate-900">Event Status</span>
               <span className="text-xs font-medium text-slate-500">{draftStatusLabel}</span>
             </div>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-1.5 flex flex-wrap gap-2">
               {STATUS_OPTIONS.map((option) => (
                 <button
                   key={option.value}
@@ -1985,12 +1985,12 @@ export default function FeedPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-semibold text-slate-900">Category</span>
               <span className="text-xs font-medium text-slate-500">{draftCategoryLabel}</span>
             </div>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-1.5 flex flex-wrap gap-2">
               {CATEGORY_OPTIONS.map((category) => (
                 <button
                   key={category.value}
@@ -2011,12 +2011,12 @@ export default function FeedPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-semibold text-slate-900">Trade size</span>
+              <span className="text-sm font-semibold text-slate-900">Trade Size</span>
               <span className="text-xs font-medium text-slate-500">{draftTradeSizeLabel}</span>
             </div>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-1.5 flex flex-wrap gap-2">
               {TRADE_SIZE_OPTIONS.map((option) => (
                 <button
                   key={option.value}
@@ -2040,12 +2040,12 @@ export default function FeedPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-semibold text-slate-900">Resolving</span>
+              <span className="text-sm font-semibold text-slate-900">Market Resolves</span>
               <span className="text-xs font-medium text-slate-500">{draftResolvingLabel}</span>
             </div>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-1.5 flex flex-wrap gap-2">
               {RESOLVING_OPTIONS.map((option) => (
                 <button
                   key={option.value}
@@ -2069,12 +2069,12 @@ export default function FeedPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 lg:col-span-2">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 lg:col-span-2">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-semibold text-slate-900">Price</span>
+              <span className="text-sm font-semibold text-slate-900">Current Price</span>
               <span className="text-xs font-medium text-slate-500">{draftPriceLabel}</span>
             </div>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-1.5 flex flex-wrap gap-2">
               {PRICE_PRESET_OPTIONS.map((preset) => {
                 const isActive =
                   draftFilters.priceMinCents === preset.min &&
@@ -2091,46 +2091,9 @@ export default function FeedPage() {
                 );
               })}
             </div>
-            <div className="mt-3">
-              <div className="text-xs font-medium text-slate-500">Custom range</div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <label className="space-y-1 text-xs font-medium text-slate-500">
-                  Min (cents)
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={PRICE_RANGE.min}
-                    max={draftFilters.priceMaxCents}
-                    value={draftFilters.priceMinCents}
-                    onChange={(event) => {
-                      const nextValue = Number(event.target.value);
-                      if (Number.isNaN(nextValue)) return;
-                      updateDraftPriceRange(nextValue, draftFilters.priceMaxCents);
-                    }}
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                  />
-                </label>
-                <label className="space-y-1 text-xs font-medium text-slate-500">
-                  Max (cents)
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={draftFilters.priceMinCents}
-                    max={PRICE_RANGE.max}
-                    value={draftFilters.priceMaxCents}
-                    onChange={(event) => {
-                      const nextValue = Number(event.target.value);
-                      if (Number.isNaN(nextValue)) return;
-                      updateDraftPriceRange(draftFilters.priceMinCents, nextValue);
-                    }}
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                  />
-                </label>
-              </div>
-            </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 lg:col-span-2">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 lg:col-span-2">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <span className="text-sm font-semibold text-slate-900">Traders</span>
@@ -2142,13 +2105,13 @@ export default function FeedPage() {
                   onClick={() =>
                     setDraftFilters((prev) => ({ ...prev, traderIds: [] }))
                   }
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                  className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
                 >
                   Clear
                 </button>
               )}
             </div>
-            <div className="relative mt-3">
+            <div className="relative mt-2">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 type="search"
@@ -2158,10 +2121,10 @@ export default function FeedPage() {
                   setShowAllTraders(false);
                 }}
                 placeholder="Search followed traders"
-                className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
               />
             </div>
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {visibleTraderOptions.map((trader) => {
                 const isSelected = draftTraderSet.has(trader.wallet);
                 const displayName = trader.name || formatWallet(trader.wallet);
@@ -2172,21 +2135,21 @@ export default function FeedPage() {
                     onClick={() => toggleDraftTrader(trader.wallet)}
                     aria-pressed={isSelected}
                     className={cn(
-                      "flex items-center justify-between rounded-lg border px-2.5 py-2 text-left transition",
+                      "flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-left transition",
                       isSelected
                         ? "border-slate-900/15 bg-slate-100 text-slate-900"
                         : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                     )}
                   >
                     <span className="flex min-w-0 items-center gap-2">
-                      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+                      <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">
                         {displayName.charAt(0).toUpperCase()}
                       </span>
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-semibold text-slate-900">
                           {displayName}
                         </span>
-                        <span className="block truncate text-xs text-slate-500">
+                        <span className="block truncate text-[11px] text-slate-500">
                           {formatWallet(trader.wallet)}
                         </span>
                       </span>
@@ -2203,7 +2166,7 @@ export default function FeedPage() {
               <button
                 type="button"
                 onClick={() => setShowAllTraders((prev) => !prev)}
-                className="mt-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
+                className="mt-2 text-[11px] font-semibold text-slate-500 hover:text-slate-700"
               >
                 {showAllTraders
                   ? 'Show less'
@@ -2214,20 +2177,21 @@ export default function FeedPage() {
         </div>
       </div>
 
-      <div className="border-t border-slate-200 px-4 py-3">
-        <div className="flex items-center justify-between text-xs text-slate-500 mb-3">
+      <div className="border-t border-slate-200 px-4 py-2.5">
+        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2">
           <span>{`Showing ${filteredAllTrades.length} trades`}</span>
           {draftFiltersCount > 0 && <span>{draftFiltersCount} active</span>}
         </div>
         <div className="flex gap-2">
           {draftFiltersCount > 0 && (
-            <Button variant="outline" onClick={clearDraftFilters} className="flex-1">
+            <Button variant="outline" size="sm" onClick={clearDraftFilters} className="flex-1 text-xs">
               Clear all
             </Button>
           )}
           <Button
+            size="sm"
             onClick={applyFilters}
-            className="flex-1 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold"
+            className="w-fit rounded-full bg-[#FDB022] px-5 text-xs font-semibold text-slate-900 hover:bg-[#FDB022]/90"
           >
             Apply filters
           </Button>

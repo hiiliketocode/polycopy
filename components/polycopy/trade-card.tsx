@@ -585,7 +585,7 @@ export function TradeCard({
           ? "scheduled"
           : "open"
 
-  const forceResolvedBadge = resolvedLiveStatus === "final" && looksLikeScore
+  const forceResolvedBadge = resolvedLiveStatus === "final" && looksLikeScore && isMarketEnded
   const statusBadgeVariant = forceResolvedBadge ? "resolved" : statusVariant
 
   const eventStatusLabel =
@@ -2167,7 +2167,7 @@ export function TradeCard({
               disabled={!manualAmountValid || isCopyDisabled || isCopied}
               variant="outline"
               className={cn(
-                'w-full sm:max-w-[360px] sm:mx-auto font-semibold text-sm',
+                'w-full max-w-[360px] mx-auto font-semibold text-sm',
                 isCopied
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
                   : isCopyDisabled || !manualAmountValid
@@ -2191,11 +2191,11 @@ export function TradeCard({
 
         {!(showQuickCopyExperience && isExpanded) && (
           showQuickCopyExperience ? (
-            <div className="w-full">
+            <div className="w-full flex justify-center">
               <Button
                 onClick={handleCopyTradeClick}
                 disabled={isCopyDisabled}
-                className={`w-full sm:max-w-[360px] sm:mx-auto font-semibold shadow-sm text-sm ${
+                className={`w-full max-w-[360px] rounded-full font-semibold shadow-sm text-sm ${
                   localCopied
                     ? "bg-emerald-500 hover:bg-emerald-600 text-white"
                     : isMarketEnded
@@ -2217,12 +2217,12 @@ export function TradeCard({
               </Button>
             </div>
           ) : allowManualExperience ? (
-            <div className="w-full">
+            <div className="w-full flex justify-center">
               {!manualDrawerOpen && (
                 isCopied ? (
                   <Button
                     disabled
-                    className="w-full sm:max-w-[360px] sm:mx-auto bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
+                    className="w-full max-w-[360px] rounded-full bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
                     size="lg"
                   >
                     <Check className="w-4 h-4 mr-2" />
@@ -2232,7 +2232,7 @@ export function TradeCard({
                   <Button
                     onClick={handleCopyTradeClick}
                     disabled={isCopyDisabled}
-                    className={`w-full sm:max-w-[360px] sm:mx-auto font-semibold shadow-sm text-sm ${
+                    className={`w-full max-w-[360px] rounded-full font-semibold shadow-sm text-sm ${
                       isMarketEnded
                         ? "bg-slate-200 text-slate-500 cursor-not-allowed"
                         : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
@@ -2267,11 +2267,11 @@ export function TradeCard({
               )}
             </div>
           ) : (
-            <div className="w-full">
+            <div className="w-full flex justify-center">
               <Button
                 onClick={handleCopyTradeClick}
                 disabled={isCopyDisabled}
-                className={`w-full sm:max-w-[360px] sm:mx-auto font-semibold shadow-sm text-sm ${
+                className={`w-full max-w-[360px] mx-auto font-semibold shadow-sm text-sm ${
                   isMarketEnded
                     ? "bg-slate-200 text-slate-500 cursor-not-allowed"
                     : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
@@ -2644,26 +2644,28 @@ export function TradeCard({
                   )}
                 </div>
 
-                  <Button
-                    onClick={handleQuickCopy}
-                    disabled={
-                      isMarketEnded ||
-                      !amountInput ||
-                      !contractsValue ||
-                      contractsValue <= 0 ||
-                      isBelowMinUsd ||
-                      !limitPrice ||
-                      isSubmitting
-                    }
-                    className={`w-full sm:max-w-[360px] sm:mx-auto font-semibold ${
-                      isMarketEnded
-                        ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                        : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
-                    }`}
-                    size="lg"
-                  >
-                    {isMarketEnded ? "Market Resolved" : isSubmitting ? pendingStatusLabel : "Execute Trade"}
-                  </Button>
+                  <div className="flex justify-center">
+                    <Button
+                      onClick={handleQuickCopy}
+                      disabled={
+                        isMarketEnded ||
+                        !amountInput ||
+                        !contractsValue ||
+                        contractsValue <= 0 ||
+                        isBelowMinUsd ||
+                        !limitPrice ||
+                        isSubmitting
+                      }
+                      className={`w-full max-w-[360px] rounded-full font-semibold ${
+                        isMarketEnded
+                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                          : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
+                      }`}
+                      size="lg"
+                    >
+                      {isMarketEnded ? "Market Resolved" : isSubmitting ? pendingStatusLabel : "Execute Trade"}
+                    </Button>
+                  </div>
                   {isSubmitting && (
                     <p className="mt-2 text-center text-xs text-slate-500">This may take a moment.</p>
                   )}

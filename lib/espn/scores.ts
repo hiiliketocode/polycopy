@@ -300,6 +300,43 @@ function buildTeamAbbrev(value: string): string {
   return tokens.map(token => token[0]).join('');
 }
 
+function scoreTeamMatch(marketTeam: string, espnTeamName: string, espnAbbrev: string): number {
+  const marketLower = marketTeam.toLowerCase().trim();
+  const espnLower = espnTeamName.toLowerCase().trim();
+  const abbrevLower = espnAbbrev.toLowerCase().trim();
+
+  if (!marketLower || !espnLower) return 0;
+
+  if (marketLower === espnLower) return 6;
+  if (abbrevLower && marketLower === abbrevLower) return 6;
+
+  if (espnLower.includes(marketLower) || marketLower.includes(espnLower)) return 4;
+  if (abbrevLower && (marketLower.includes(abbrevLower) || abbrevLower.includes(marketLower))) return 3;
+
+  const marketAbbrev = buildTeamAbbrev(marketTeam).toLowerCase();
+  const espnDerivedAbbrev = (espnAbbrev ? espnAbbrev : buildTeamAbbrev(espnTeamName)).toLowerCase();
+  if (marketAbbrev && espnDerivedAbbrev) {
+    if (marketAbbrev === espnDerivedAbbrev) return 4;
+    if (marketAbbrev.startsWith(espnDerivedAbbrev) || espnDerivedAbbrev.startsWith(marketAbbrev)) return 2;
+  }
+
+  const marketTokens = normalizeTeamTokens(marketTeam);
+  const espnTokens = normalizeTeamTokens(espnTeamName);
+  if (marketTokens.length > 0 && espnTokens.length > 0) {
+    const forwardMatch = marketTokens.every(token =>
+      espnTokens.some(espnToken => espnToken === token || espnToken.startsWith(token) || token.startsWith(espnToken))
+    );
+    if (forwardMatch) return 2;
+
+    const reverseMatch = espnTokens.every(token =>
+      marketTokens.some(marketToken => marketToken === token || marketToken.startsWith(token) || token.startsWith(marketToken))
+    );
+    if (reverseMatch) return 2;
+  }
+
+  return 0;
+}
+
 // Check if two team names match (flexible matching)
 export function teamsMatch(marketTeam: string, espnTeamName: string, espnAbbrev: string): boolean {
   const marketLower = marketTeam.toLowerCase().trim();
@@ -435,15 +472,25 @@ function findMatchingGame(marketTitle: string, games: ESPNGame[]): ESPNGame | nu
   const teams = extractTeamNames(marketTitle);
   if (!teams) return null;
 
-  return games.find(game => {
-    const homeMatches = teamsMatch(teams.team1, game.homeTeam.name, game.homeTeam.abbreviation) ||
-                        teamsMatch(teams.team2, game.homeTeam.name, game.homeTeam.abbreviation);
+  const scoredMatches = games.map(game => {
+    const team1Home = scoreTeamMatch(teams.team1, game.homeTeam.name, game.homeTeam.abbreviation);
+    const team2Away = scoreTeamMatch(teams.team2, game.awayTeam.name, game.awayTeam.abbreviation);
+    const team1Away = scoreTeamMatch(teams.team1, game.awayTeam.name, game.awayTeam.abbreviation);
+    const team2Home = scoreTeamMatch(teams.team2, game.homeTeam.name, game.homeTeam.abbreviation);
 
-    const awayMatches = teamsMatch(teams.team1, game.awayTeam.name, game.awayTeam.abbreviation) ||
-                        teamsMatch(teams.team2, game.awayTeam.name, game.awayTeam.abbreviation);
+    const directScore = team1Home + team2Away;
+    const swappedScore = team1Away + team2Home;
+    const bestScore = Math.max(directScore, swappedScore);
+    const minSideScore = bestScore === directScore ? Math.min(team1Home, team2Away) : Math.min(team1Away, team2Home);
 
-    return homeMatches && awayMatches;
-  }) || null;
+    return { game, bestScore, minSideScore };
+  });
+
+  const bestMatch = scoredMatches
+    .filter(match => match.bestScore >= 6 && match.minSideScore >= 2)
+    .sort((a, b) => b.bestScore - a.bestScore)[0];
+
+  return bestMatch ? bestMatch.game : null;
 }
 
 function buildScoreResult(matchingGame: ESPNGame): ESPNScoreResult {
