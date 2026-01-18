@@ -108,7 +108,6 @@ ws.onmessage = (event) => {
 ### Option 2: Third-Party Sports API
 If Polymarket doesn't provide scores, integrate with:
 - ESPN API
-- The Odds API
 - SportsData.io
 - RapidAPI Sports
 
@@ -166,4 +165,3 @@ For production:
 3. Implement auto-refresh for markets with `eventStatus: 'live'`
 4. Add loading states for score updates
 5. Cache game times to reduce API calls
-

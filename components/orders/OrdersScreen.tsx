@@ -8,6 +8,7 @@ import OrdersTable from '@/components/orders/OrdersTable'
 import ClosePositionModal from '@/components/orders/ClosePositionModal'
 import { supabase } from '@/lib/supabase'
 import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from '@/lib/feature-tier'
+import { triggerLoggedOut } from '@/lib/auth/logout-events'
 import type { User } from '@supabase/supabase-js'
 import type { OrderRow, OrderStatus } from '@/lib/orders/types'
 import type { PositionSummary } from '@/lib/orders/position'
@@ -90,14 +91,16 @@ export function OrdersScreen({
     const checkAuth = async () => {
       setLoadingAuth(true)
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) {
+          triggerLoggedOut('session_missing')
           router.push('/login')
           return
         }
-        setUser(user)
+        setUser(session.user)
       } catch (err) {
         console.error('Auth error:', err)
+        triggerLoggedOut('auth_error')
         router.push('/login')
       } finally {
         setLoadingAuth(false)
@@ -108,6 +111,7 @@ export function OrdersScreen({
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
+        triggerLoggedOut('signed_out')
         router.push('/login')
       } else {
         setUser(prevUser => {
@@ -197,6 +201,7 @@ export function OrdersScreen({
       const data = await response.json()
 
       if (response.status === 401) {
+        triggerLoggedOut('unauthorized')
         router.push('/login')
         return null
       }
@@ -344,6 +349,7 @@ export function OrdersScreen({
       const data = await response.json()
 
       if (response.status === 401) {
+        triggerLoggedOut('unauthorized')
         router.push('/login')
         return
       }

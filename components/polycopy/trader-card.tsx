@@ -127,7 +127,7 @@ export function TraderCard({
       <div className="p-6 pt-0">
         <Button
           onClick={onCopyClick}
-          className="w-full bg-[#FDB022] hover:bg-[#E09A1A] text-slate-950 font-semibold shadow-sm"
+          className="w-full sm:max-w-[360px] sm:mx-auto bg-[#FDB022] hover:bg-[#E09A1A] text-slate-950 font-semibold shadow-sm"
         >
           Copy Trade
         </Button>

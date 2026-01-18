@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase, ensureProfile } from '@/lib/supabase';
 import { resolveFeatureTier } from '@/lib/feature-tier';
+import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { SignupBanner } from '@/components/polycopy/signup-banner';
@@ -244,6 +245,7 @@ function DiscoverPageContent() {
   // Follow change handler
   const handleFollowChange = async (wallet: string, isNowFollowing: boolean) => {
     if (!user) {
+      triggerLoggedOut('session_missing');
       router.push('/login');
       return;
     }

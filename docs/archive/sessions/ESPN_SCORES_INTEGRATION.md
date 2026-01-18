@@ -101,15 +101,6 @@ Polycopy now displays **real live scores** for sports markets using ESPN's free 
 
 ---
 
-## 🧩 Secondary Provider (The Odds API)
-
-- **Optional fallback** when ESPN misses or is unavailable
-- **Env var**: `THE_ODDS_API_KEY`
-- **Endpoint**: `https://api.the-odds-api.com/v4/sports/{sport}/scores/`
-- **Behavior**: used only after ESPN fails to match; Polymarket data remains the last fallback
-
----
-
 ## 🧪 Testing
 
 ### Test Cases:
@@ -242,7 +233,6 @@ useEffect(() => {
 
 - ESPN API (Unofficial): https://gist.github.com/akeaswaran/b48b02f1c94f873c6655e7129910fc3b
 - API-Sports (Official): https://api-sports.io
-- The Odds API: https://the-odds-api.com
 - SportSRC: https://sportsrc.org
 
 ---

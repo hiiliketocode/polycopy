@@ -1274,6 +1274,9 @@ function TradeExecutePageInner() {
         }
         
         const normalizedError = errorMessage.toLowerCase()
+        const priceLimitMatch = errorMessage.match(
+          /price must be at (most|least)\s*\$?([0-9]*\.?[0-9]+)/i
+        )
         const isFundingError =
           normalizedError.includes('not enough balance') ||
           normalizedError.includes('allowance') ||
@@ -1286,6 +1289,12 @@ function TradeExecutePageInner() {
           errorMessage = 'Polymarket credentials not set up. Please complete wallet setup in your profile to enable trading.'
         } else if (errorMessage.includes('Unauthorized')) {
           errorMessage = 'Session expired. Please log out and log back in to continue trading.'
+        } else if (priceLimitMatch) {
+          const direction = priceLimitMatch[1]?.toLowerCase()
+          const limitValue = priceLimitMatch[2]
+          const relation = direction === 'least' ? 'below' : 'above'
+          const bound = direction === 'least' ? 'min' : 'max'
+          errorMessage = `Slippage pushed your limit price ${relation} the allowed ${bound} ($${limitValue}). Lower slippage % in Advanced and try again.`
         } else if (normalizedError.includes('no orders found to match with fak order') || normalizedError.includes('fak orders are partially filled') || normalizedError.includes('fak order')) {
           errorMessage =
             "We couldn’t fill this order at your price. Try increasing slippage (tap Advanced) or using a smaller amount."

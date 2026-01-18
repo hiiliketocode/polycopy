@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Compass, User, LogOut, Settings, Home, Crown, Wallet } from "lucide-react"
+import { Compass, User, LogOut, Settings, Home, Crown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -11,11 +11,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import Image from "next/image"
 import { UpgradeModal } from "@/components/polycopy/upgrade-modal"
 import { useState, useEffect, useRef } from "react"
 import { supabase } from "@/lib/supabase"
+import { triggerLoggedOut } from "@/lib/auth/logout-events"
 
 interface NavigationProps {
   user?: { id: string; email: string } | null
@@ -31,6 +33,9 @@ const FeedIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
+const LOW_BALANCE_TOOLTIP =
+  "Quick trades use your Polymarket USDC balance. Add funds before retrying this order."
+
 export function Navigation({ user, isPremium = false, walletAddress = null, profileImageUrl = null }: NavigationProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -41,15 +46,18 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
   const [showUI, setShowUI] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [premiumStatus, setPremiumStatus] = useState<boolean | null>(isPremium ? true : null)
+  const [resolvedUser, setResolvedUser] = useState<NavigationProps["user"]>(user)
   
+  const activeUser = user === undefined ? resolvedUser : user
+
   // Track previous prop values to detect when they've stabilized
-  const prevPropsRef = useRef({ user, isPremium, walletAddress, profileImageUrl })
+  const prevPropsRef = useRef({ user: activeUser, isPremium, walletAddress, profileImageUrl })
   const stabilityTimerRef = useRef<NodeJS.Timeout | null>(null)
 
-  const isLoggedIn = user !== null && user !== undefined
+  const isLoggedIn = activeUser !== null && activeUser !== undefined
   const hasWalletConnected = Boolean(walletAddress)
   const hasPremiumAccess = premiumStatus ?? isPremium
-  const premiumCacheKey = user?.id ? `polycopy:premium-status:${user.id}` : null
+  const premiumCacheKey = activeUser?.id ? `polycopy:premium-status:${activeUser.id}` : null
   const showLowBalanceCallout =
     hasPremiumAccess &&
     hasWalletConnected &&
@@ -65,25 +73,64 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
   const handleLogout = async () => {
     await supabase.auth.signOut()
     await fetch('/api/auth/admin-logout', { method: 'POST' })
+    triggerLoggedOut('signed_out')
     router.push('/login')
   }
 
+  useEffect(() => {
+    if (user !== undefined) {
+      setResolvedUser(user)
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (user !== undefined) return
+
+    let mounted = true
+
+    const loadUser = async () => {
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser()
+        if (mounted) {
+          setResolvedUser(authUser ? { id: authUser.id, email: authUser.email || "" } : null)
+        }
+      } catch {
+        if (mounted) {
+          setResolvedUser(null)
+        }
+      }
+    }
+
+    loadUser()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return
+      const sessionUser = session?.user
+      setResolvedUser(sessionUser ? { id: sessionUser.id, email: sessionUser.email || "" } : null)
+    })
+
+    return () => {
+      mounted = false
+      subscription?.unsubscribe()
+    }
+  }, [user])
+
   // Wait for props to stabilize before showing UI
   useEffect(() => {
-    if (!user) {
+    if (!activeUser) {
       setShowUI(false)
       return
     }
 
     // Check if props have changed
     const propsChanged = 
-      prevPropsRef.current.user?.id !== user?.id ||
+      prevPropsRef.current.user?.id !== activeUser?.id ||
       prevPropsRef.current.isPremium !== isPremium ||
       prevPropsRef.current.walletAddress !== walletAddress ||
       prevPropsRef.current.profileImageUrl !== profileImageUrl
 
     // Update ref with current props
-    prevPropsRef.current = { user, isPremium, walletAddress, profileImageUrl }
+    prevPropsRef.current = { user: activeUser, isPremium, walletAddress, profileImageUrl }
 
     // Clear any existing timer
     if (stabilityTimerRef.current) {
@@ -108,11 +155,11 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
         clearTimeout(stabilityTimerRef.current)
       }
     }
-  }, [user, isPremium, walletAddress, profileImageUrl, showUI])
+  }, [activeUser, isPremium, walletAddress, profileImageUrl, showUI])
 
   // Resolve admin status so we can show admin links on desktop nav
   useEffect(() => {
-    if (!user) {
+    if (!activeUser) {
       setIsAdmin(false)
       return
     }
@@ -124,7 +171,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
         const { data: profile, error } = await supabase
           .from("profiles")
           .select("is_admin")
-          .eq("id", user.id)
+          .eq("id", activeUser.id)
           .maybeSingle()
 
         if (!mounted) return
@@ -142,11 +189,11 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
     return () => {
       mounted = false
     }
-  }, [user])
+  }, [activeUser])
 
   // Resolve premium status to prevent upsell flashes for premium users
   useEffect(() => {
-    if (!user) {
+    if (!activeUser) {
       setPremiumStatus(null)
       return
     }
@@ -183,7 +230,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
         const { data: profile, error } = await supabase
           .from("profiles")
           .select("is_premium, is_admin")
-          .eq("id", user.id)
+          .eq("id", activeUser.id)
           .maybeSingle()
 
         if (!mounted) return
@@ -209,11 +256,11 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
     return () => {
       mounted = false
     }
-  }, [user, isPremium, premiumCacheKey])
+  }, [activeUser, isPremium, premiumCacheKey])
 
   // Fetch wallet balance for premium users with connected wallets
   useEffect(() => {
-    if (!hasPremiumAccess || !walletAddress || !user) return
+    if (!hasPremiumAccess || !walletAddress || !activeUser) return
 
     const fetchBalance = async () => {
       setLoadingBalance(true)
@@ -244,7 +291,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
     // Refresh balance every 30 seconds
     const interval = setInterval(fetchBalance, 30000)
     return () => clearInterval(interval)
-  }, [hasPremiumAccess, walletAddress, user])
+  }, [hasPremiumAccess, walletAddress, activeUser])
 
   return (
     <>
@@ -329,18 +376,25 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                 </div>
                 <div className="text-right">
                   <div className="flex items-center justify-end gap-1 text-sm font-semibold text-slate-900">
-                    <span
-                      className="relative inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-600"
-                      title={showLowBalanceCallout ? "Low cash balance" : undefined}
-                    >
-                      <Wallet className="h-3.5 w-3.5" aria-hidden="true" />
-                      {showLowBalanceCallout && (
-                        <span className="absolute -right-1 -top-1 flex h-3 w-3 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
-                          !
-                        </span>
-                      )}
-                    </span>
-                    Cash
+                    <span>Cash</span>
+                    {showLowBalanceCallout && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-[10px] font-bold text-rose-600"
+                              aria-label="Low cash balance"
+                            >
+                              !
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-[220px]">
+                            <p>{LOW_BALANCE_TOOLTIP}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
                   </div>
                   <div className="text-xs font-medium text-slate-600">
                     {loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toFixed(2)}` : '$0.00'}
@@ -377,11 +431,11 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                       {profileImageUrl ? (
                         <AvatarImage src={profileImageUrl} alt="Account" />
                       ) : null}
-                      <AvatarFallback className={`bg-gradient-to-br ${isPremium ? 'from-yellow-400 to-yellow-500' : 'from-yellow-400 to-yellow-500'} text-slate-900 font-semibold relative`}>
-                        {isPremium && (
+                      <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 font-semibold relative">
+                        {hasPremiumAccess && (
                           <Crown className="absolute -top-1 -right-1 w-3 h-3 text-yellow-600" />
                         )}
-                        {user?.email?.charAt(0).toUpperCase() || "U"}
+                        {activeUser?.email?.charAt(0).toUpperCase() || "U"}
                       </AvatarFallback>
                     </Avatar>
                   </button>
@@ -392,16 +446,16 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                       {profileImageUrl ? (
                         <AvatarImage src={profileImageUrl} alt="Account" />
                       ) : null}
-                      <AvatarFallback className={`bg-gradient-to-br ${isPremium ? 'from-yellow-400 to-yellow-500' : 'from-yellow-400 to-yellow-500'} text-slate-900 font-semibold relative`}>
-                        {isPremium && (
+                      <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 font-semibold relative">
+                        {hasPremiumAccess && (
                           <Crown className="absolute -top-1 -right-1 w-3 h-3 text-yellow-600" />
                         )}
-                        {user?.email?.charAt(0).toUpperCase() || "U"}
+                        {activeUser?.email?.charAt(0).toUpperCase() || "U"}
                       </AvatarFallback>
                     </Avatar>
                     <div>
                       <p className="text-sm font-medium text-slate-600">Account</p>
-                      <p className="text-sm font-medium text-slate-900">{user?.email || "User"}</p>
+                      <p className="text-sm font-medium text-slate-900">{activeUser?.email || "User"}</p>
                     </div>
                   </div>
                   <DropdownMenuSeparator />

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from '@/lib/feature-tier';
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
+import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { SignupBanner } from '@/components/polycopy/signup-banner';
@@ -13,11 +14,16 @@ import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { EmptyState } from '@/components/polycopy/empty-state';
 import { Button } from '@/components/ui/button';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { RefreshCw, Activity, Filter, X, Check, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
+import {
+  normalizeEventStatus,
+  statusLooksFinal,
+  statusLooksLive,
+  statusLooksScheduled,
+} from '@/lib/market-status';
 
 // Types
 export interface FeedTrade {
@@ -490,8 +496,8 @@ export default function FeedPage() {
     }
 
     if (appliedFilters.status !== 'all') {
-      const label = STATUS_OPTIONS.find((option) => option.value === appliedFilters.status)?.label ?? 'Status';
-      chips.push({ key: 'status', label: `Status: ${label}` });
+      const label = STATUS_OPTIONS.find((option) => option.value === appliedFilters.status)?.label ?? 'Event Status';
+      chips.push({ key: 'status', label: `Event Status: ${label}` });
     }
 
     if (appliedFilters.tradeSizeMin > 0) {
@@ -620,14 +626,15 @@ export default function FeedPage() {
   // Auth check
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (!user) {
+      if (!session?.user) {
+        triggerLoggedOut('session_missing');
         router.push('/login');
         return;
       }
       
-      setUser(user);
+      setUser(session.user);
       setLoading(false);
     };
     
@@ -635,6 +642,7 @@ export default function FeedPage() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
+        triggerLoggedOut('signed_out');
         router.push('/login');
       }
       // Don't update user state on every auth change to prevent unnecessary re-renders
@@ -959,14 +967,10 @@ export default function FeedPage() {
     hasLiveScore?: boolean;
   }) => {
     if (payload.resolved) return 'final';
-    const status = (payload.espnStatus || payload.eventStatus || '').toLowerCase();
-    if (status.includes('final') || status.includes('finished') || status.includes('post')) return 'final';
-    if (
-      status.includes('live') ||
-      status.includes('in_progress') ||
-      status.includes('in progress') ||
-      status.includes('in-progress')
-    ) {
+    const status = normalizeEventStatus(payload.espnStatus || payload.eventStatus);
+    if (statusLooksFinal(status)) return 'final';
+    if (statusLooksLive(status)) {
+      if (payload.espnStatus === 'live' || payload.hasLiveScore) return 'live';
       if (payload.gameStartTime) {
         const start = new Date(payload.gameStartTime);
         const now = new Date();
@@ -976,25 +980,8 @@ export default function FeedPage() {
       }
       return 'live';
     }
-    if (
-      status.includes('scheduled') ||
-      status.includes('pre') ||
-      status.includes('not_started') ||
-      status.includes('upcoming') ||
-      status.includes('preview')
-    ) {
-      return 'scheduled';
-    }
-    if (payload.hasLiveScore) {
-      if (payload.gameStartTime) {
-        const start = new Date(payload.gameStartTime);
-        const now = new Date();
-        if (!Number.isNaN(start.getTime()) && start.getTime() - now.getTime() > 5 * 60 * 1000) {
-          return 'scheduled';
-        }
-      }
-      return 'live';
-    }
+    if (payload.hasLiveScore) return 'live';
+    if (statusLooksScheduled(status)) return 'scheduled';
     if (payload.gameStartTime) {
       const start = new Date(payload.gameStartTime);
       const now = new Date();
@@ -1213,12 +1200,18 @@ export default function FeedPage() {
                     `🔒 Market resolved status for ${trade.market.title.slice(0, 40)}... | closed=${closed} | apiResolved=${resolved} | max=${maxPrice} | min=${minPrice} | resolved=${isMarketResolved}`
                   );
 
+                  const scoreLooksLive = Boolean(
+                    scoreDisplay && /\d+\s*-\s*\d+/.test(scoreDisplay)
+                  );
+                  const hasLiveScore =
+                    scoreLooksLive || Boolean(liveScore && typeof liveScore === 'object');
+
                   const liveStatus = resolveLiveStatus({
                     eventStatus,
                     gameStartTime: effectiveGameStartTime,
                     espnStatus,
                     resolved: isMarketResolved,
-                    hasLiveScore: Boolean(liveScore && typeof liveScore === 'object'),
+                    hasLiveScore,
                   });
                   
                   newLiveData.set(marketKey, { 
@@ -1816,6 +1809,7 @@ export default function FeedPage() {
     amountInvested?: number
   ) => {
     if (!user) {
+      triggerLoggedOut('session_missing');
       router.push('/login');
       return;
     }
@@ -1966,283 +1960,258 @@ export default function FeedPage() {
       </div>
 
       <div className="flex-1 px-4 py-4">
-        <Accordion type="multiple" defaultValue={['status', 'category']} className="space-y-2">
-          <AccordionItem value="status" className="border-slate-200">
-            <AccordionTrigger className="py-2 hover:no-underline">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-semibold text-slate-900">Status</span>
-                <span className="text-xs font-medium text-slate-500">{draftStatusLabel}</span>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="pt-2">
-              <div className="flex flex-wrap gap-2">
-                {STATUS_OPTIONS.map((option) => (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Event Status</span>
+              <span className="text-xs font-medium text-slate-500">{draftStatusLabel}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {STATUS_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() =>
+                    setDraftFilters((prev) => ({ ...prev, status: option.value }))
+                  }
+                  aria-pressed={draftFilters.status === option.value}
+                  className={cn(
+                    filterTabBase,
+                    draftFilters.status === option.value ? filterTabActive : filterTabInactive
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Category</span>
+              <span className="text-xs font-medium text-slate-500">{draftCategoryLabel}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {CATEGORY_OPTIONS.map((category) => (
+                <button
+                  key={category.value}
+                  onClick={() =>
+                    setDraftFilters((prev) => ({ ...prev, category: category.value }))
+                  }
+                  aria-pressed={draftFilters.category === category.value}
+                  className={cn(
+                    categoryPillBase,
+                    draftFilters.category === category.value
+                      ? categoryPillActive
+                      : categoryPillInactive
+                  )}
+                >
+                  {category.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Trade size</span>
+              <span className="text-xs font-medium text-slate-500">{draftTradeSizeLabel}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {TRADE_SIZE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() =>
+                    setDraftFilters((prev) => ({
+                      ...prev,
+                      tradeSizeMin: option.value,
+                    }))
+                  }
+                  aria-pressed={draftFilters.tradeSizeMin === option.value}
+                  className={cn(
+                    filterTabBase,
+                    draftFilters.tradeSizeMin === option.value
+                      ? filterTabActive
+                      : filterTabInactive
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Resolving</span>
+              <span className="text-xs font-medium text-slate-500">{draftResolvingLabel}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {RESOLVING_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() =>
+                    setDraftFilters((prev) => ({
+                      ...prev,
+                      resolvingWindow: option.value,
+                    }))
+                  }
+                  aria-pressed={draftFilters.resolvingWindow === option.value}
+                  className={cn(
+                    filterTabBase,
+                    draftFilters.resolvingWindow === option.value
+                      ? filterTabActive
+                      : filterTabInactive
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 lg:col-span-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Price</span>
+              <span className="text-xs font-medium text-slate-500">{draftPriceLabel}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {PRICE_PRESET_OPTIONS.map((preset) => {
+                const isActive =
+                  draftFilters.priceMinCents === preset.min &&
+                  draftFilters.priceMaxCents === preset.max;
+                return (
                   <button
-                    key={option.value}
-                    onClick={() =>
-                      setDraftFilters((prev) => ({ ...prev, status: option.value }))
-                    }
-                    aria-pressed={draftFilters.status === option.value}
-                    className={cn(
-                      filterTabBase,
-                      draftFilters.status === option.value ? filterTabActive : filterTabInactive
-                    )}
+                    key={preset.label}
+                    onClick={() => updateDraftPriceRange(preset.min, preset.max)}
+                    aria-pressed={isActive}
+                    className={cn(filterTabBase, isActive ? filterTabActive : filterTabInactive)}
                   >
-                    {option.label}
+                    {preset.label}
                   </button>
-                ))}
+                );
+              })}
+            </div>
+            <div className="mt-3">
+              <div className="text-xs font-medium text-slate-500">Custom range</div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <label className="space-y-1 text-xs font-medium text-slate-500">
+                  Min (cents)
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={PRICE_RANGE.min}
+                    max={draftFilters.priceMaxCents}
+                    value={draftFilters.priceMinCents}
+                    onChange={(event) => {
+                      const nextValue = Number(event.target.value);
+                      if (Number.isNaN(nextValue)) return;
+                      updateDraftPriceRange(nextValue, draftFilters.priceMaxCents);
+                    }}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  />
+                </label>
+                <label className="space-y-1 text-xs font-medium text-slate-500">
+                  Max (cents)
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={draftFilters.priceMinCents}
+                    max={PRICE_RANGE.max}
+                    value={draftFilters.priceMaxCents}
+                    onChange={(event) => {
+                      const nextValue = Number(event.target.value);
+                      if (Number.isNaN(nextValue)) return;
+                      updateDraftPriceRange(draftFilters.priceMinCents, nextValue);
+                    }}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  />
+                </label>
               </div>
-            </AccordionContent>
-          </AccordionItem>
+            </div>
+          </div>
 
-          <AccordionItem value="category" className="border-slate-200">
-            <AccordionTrigger className="py-2 hover:no-underline">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-semibold text-slate-900">Category</span>
-                <span className="text-xs font-medium text-slate-500">{draftCategoryLabel}</span>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="pt-2">
-              <div className="flex flex-wrap gap-2">
-                {CATEGORY_OPTIONS.map((category) => (
-                  <button
-                    key={category.value}
-                    onClick={() =>
-                      setDraftFilters((prev) => ({ ...prev, category: category.value }))
-                    }
-                    aria-pressed={draftFilters.category === category.value}
-                    className={cn(
-                      categoryPillBase,
-                      draftFilters.category === category.value
-                        ? categoryPillActive
-                        : categoryPillInactive
-                    )}
-                  >
-                    {category.label}
-                  </button>
-                ))}
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-
-          <AccordionItem value="trade-size" className="border-slate-200">
-            <AccordionTrigger className="py-2 hover:no-underline">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-semibold text-slate-900">Trade size</span>
-                <span className="text-xs font-medium text-slate-500">{draftTradeSizeLabel}</span>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="pt-2">
-              <div className="flex flex-wrap gap-2">
-                {TRADE_SIZE_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() =>
-                      setDraftFilters((prev) => ({
-                        ...prev,
-                        tradeSizeMin: option.value,
-                      }))
-                    }
-                    aria-pressed={draftFilters.tradeSizeMin === option.value}
-                    className={cn(
-                      filterTabBase,
-                      draftFilters.tradeSizeMin === option.value
-                        ? filterTabActive
-                        : filterTabInactive
-                    )}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-
-          <AccordionItem value="resolving" className="border-slate-200">
-            <AccordionTrigger className="py-2 hover:no-underline">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-semibold text-slate-900">Resolving</span>
-                <span className="text-xs font-medium text-slate-500">{draftResolvingLabel}</span>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="pt-2">
-              <div className="flex flex-wrap gap-2">
-                {RESOLVING_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() =>
-                      setDraftFilters((prev) => ({
-                        ...prev,
-                        resolvingWindow: option.value,
-                      }))
-                    }
-                    aria-pressed={draftFilters.resolvingWindow === option.value}
-                    className={cn(
-                      filterTabBase,
-                      draftFilters.resolvingWindow === option.value
-                        ? filterTabActive
-                        : filterTabInactive
-                    )}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-
-          <AccordionItem value="price" className="border-slate-200">
-            <AccordionTrigger className="py-2 hover:no-underline">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-semibold text-slate-900">Price</span>
-                <span className="text-xs font-medium text-slate-500">{draftPriceLabel}</span>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="pt-2">
-              <div className="flex flex-wrap gap-2">
-                {PRICE_PRESET_OPTIONS.map((preset) => {
-                  const isActive =
-                    draftFilters.priceMinCents === preset.min &&
-                    draftFilters.priceMaxCents === preset.max;
-                  return (
-                    <button
-                      key={preset.label}
-                      onClick={() => updateDraftPriceRange(preset.min, preset.max)}
-                      aria-pressed={isActive}
-                      className={cn(filterTabBase, isActive ? filterTabActive : filterTabInactive)}
-                    >
-                      {preset.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-3">
-                <div className="text-xs font-medium text-slate-500">Custom range</div>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <label className="space-y-1 text-xs font-medium text-slate-500">
-                    Min (cents)
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={PRICE_RANGE.min}
-                      max={draftFilters.priceMaxCents}
-                      value={draftFilters.priceMinCents}
-                      onChange={(event) => {
-                        const nextValue = Number(event.target.value);
-                        if (Number.isNaN(nextValue)) return;
-                        updateDraftPriceRange(nextValue, draftFilters.priceMaxCents);
-                      }}
-                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                    />
-                  </label>
-                  <label className="space-y-1 text-xs font-medium text-slate-500">
-                    Max (cents)
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={draftFilters.priceMinCents}
-                      max={PRICE_RANGE.max}
-                      value={draftFilters.priceMaxCents}
-                      onChange={(event) => {
-                        const nextValue = Number(event.target.value);
-                        if (Number.isNaN(nextValue)) return;
-                        updateDraftPriceRange(draftFilters.priceMinCents, nextValue);
-                      }}
-                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                    />
-                  </label>
-                </div>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-
-          <AccordionItem value="traders" className="border-slate-200">
-            <AccordionTrigger className="py-2 hover:no-underline">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 lg:col-span-2">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <span className="text-sm font-semibold text-slate-900">Traders</span>
                 <span className="text-xs font-medium text-slate-500">{draftTradersLabel}</span>
               </div>
-            </AccordionTrigger>
-            <AccordionContent className="pt-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-slate-500">Followed traders</span>
-                {draftFilters.traderIds.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDraftFilters((prev) => ({ ...prev, traderIds: [] }))
-                    }
-                    className="text-xs font-semibold text-slate-500 hover:text-slate-700"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-              <div className="relative mt-2">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="search"
-                  value={traderSearch}
-                  onChange={(event) => {
-                    setTraderSearch(event.target.value);
-                    setShowAllTraders(false);
-                  }}
-                  placeholder="Search followed traders"
-                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                />
-              </div>
-              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {visibleTraderOptions.map((trader) => {
-                  const isSelected = draftTraderSet.has(trader.wallet);
-                  const displayName = trader.name || formatWallet(trader.wallet);
-                  return (
-                    <button
-                      key={trader.wallet}
-                      type="button"
-                      onClick={() => toggleDraftTrader(trader.wallet)}
-                      aria-pressed={isSelected}
-                      className={cn(
-                        "flex items-center justify-between rounded-lg border px-2.5 py-2 text-left transition",
-                        isSelected
-                          ? "border-slate-900/15 bg-slate-100 text-slate-900"
-                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                      )}
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-                          {displayName.charAt(0).toUpperCase()}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-semibold text-slate-900">
-                            {displayName}
-                          </span>
-                          <span className="block truncate text-xs text-slate-500">
-                            {formatWallet(trader.wallet)}
-                          </span>
-                        </span>
-                      </span>
-                      {isSelected && <Check className="h-4 w-4 text-slate-900" />}
-                    </button>
-                  );
-                })}
-              </div>
-              {filteredTraderOptions.length === 0 && (
-                <p className="mt-2 text-sm text-slate-500">No traders match your search.</p>
-              )}
-              {filteredTraderOptions.length > 8 && (
+              {draftFilters.traderIds.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => setShowAllTraders((prev) => !prev)}
-                  className="mt-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
+                  onClick={() =>
+                    setDraftFilters((prev) => ({ ...prev, traderIds: [] }))
+                  }
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-700"
                 >
-                  {showAllTraders
-                    ? 'Show less'
-                    : `Show more (${filteredTraderOptions.length - 8})`}
+                  Clear
                 </button>
               )}
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
+            </div>
+            <div className="relative mt-3">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                value={traderSearch}
+                onChange={(event) => {
+                  setTraderSearch(event.target.value);
+                  setShowAllTraders(false);
+                }}
+                placeholder="Search followed traders"
+                className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              />
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {visibleTraderOptions.map((trader) => {
+                const isSelected = draftTraderSet.has(trader.wallet);
+                const displayName = trader.name || formatWallet(trader.wallet);
+                return (
+                  <button
+                    key={trader.wallet}
+                    type="button"
+                    onClick={() => toggleDraftTrader(trader.wallet)}
+                    aria-pressed={isSelected}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg border px-2.5 py-2 text-left transition",
+                      isSelected
+                        ? "border-slate-900/15 bg-slate-100 text-slate-900"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                    )}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+                        {displayName.charAt(0).toUpperCase()}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-slate-900">
+                          {displayName}
+                        </span>
+                        <span className="block truncate text-xs text-slate-500">
+                          {formatWallet(trader.wallet)}
+                        </span>
+                      </span>
+                    </span>
+                    {isSelected && <Check className="h-4 w-4 text-slate-900" />}
+                  </button>
+                );
+              })}
+            </div>
+            {filteredTraderOptions.length === 0 && (
+              <p className="mt-2 text-sm text-slate-500">No traders match your search.</p>
+            )}
+            {filteredTraderOptions.length > 8 && (
+              <button
+                type="button"
+                onClick={() => setShowAllTraders((prev) => !prev)}
+                className="mt-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
+              >
+                {showAllTraders
+                  ? 'Show less'
+                  : `Show more (${filteredTraderOptions.length - 8})`}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="border-t border-slate-200 px-4 py-3">
@@ -2251,9 +2220,11 @@ export default function FeedPage() {
           {draftFiltersCount > 0 && <span>{draftFiltersCount} active</span>}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={clearDraftFilters} className="flex-1">
-            Clear all
-          </Button>
+          {draftFiltersCount > 0 && (
+            <Button variant="outline" onClick={clearDraftFilters} className="flex-1">
+              Clear all
+            </Button>
+          )}
           <Button
             onClick={applyFilters}
             className="flex-1 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold"
@@ -2296,7 +2267,7 @@ export default function FeedPage() {
       />
       <SignupBanner isLoggedIn={!!user} />
 
-      <div className="min-h-screen bg-slate-50 pt-3 md:pt-0 pb-24 md:pb-8 overflow-x-hidden">
+      <div className="min-h-screen bg-slate-50 pt-3 md:pt-0 pb-36 md:pb-8 overflow-x-hidden">
         {/* Page Header */}
         <div className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
           <div className="max-w-[1200px] mx-auto px-4 md:px-6 pb-3 md:py-4">
@@ -2314,7 +2285,7 @@ export default function FeedPage() {
                   onClick={filtersOpen ? closeFilters : openFilters}
                   variant="outline"
                   size="sm"
-                  className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white flex items-center gap-2 lg:hidden"
+                  className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white flex items-center gap-2"
                   aria-label="Open filters"
                 >
                   <Filter className="h-4 w-4" />
@@ -2338,8 +2309,13 @@ export default function FeedPage() {
         </div>
 
         <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-4 md:py-8">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-6">
             <div className="min-w-0 space-y-4">
+              {filtersOpen && (
+                <div ref={filtersPanelRef} aria-label="Filters">
+                  {filterPanel}
+                </div>
+              )}
               {activeFilterChips.length > 0 && (
                 <div className="border-b border-slate-200 pb-3">
                   <div className="flex flex-wrap gap-2">
@@ -2489,22 +2465,11 @@ export default function FeedPage() {
                 </div>
               )}
             </div>
-
-            <aside
-              ref={filtersPanelRef}
-              className={cn(
-                "lg:sticky lg:top-24 lg:self-start lg:order-none",
-                filtersOpen ? "order-first block" : "hidden lg:block"
-              )}
-              aria-label="Filters"
-            >
-              {filterPanel}
-            </aside>
           </div>
         </div>
 
-        <div className="fixed bottom-0 inset-x-0 z-20 md:hidden">
-          <div className="mx-auto max-w-[1200px] border-t border-slate-200 bg-white/95 backdrop-blur px-4 pt-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="fixed inset-x-0 z-30 md:hidden bottom-[calc(64px+env(safe-area-inset-bottom))]">
+          <div className="mx-auto max-w-[1200px] border-t border-slate-200 bg-white/95 backdrop-blur px-4 pt-2 pb-3">
             <div className="flex items-center gap-2">
               <Button
                 onClick={filtersOpen ? closeFilters : openFilters}

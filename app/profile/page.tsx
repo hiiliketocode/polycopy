@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ensureProfile } from '@/lib/supabase';
 import { resolveFeatureTier, tierHasPremiumAccess } from '@/lib/feature-tier';
+import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { Card } from '@/components/ui/card';
@@ -393,6 +394,7 @@ function ProfilePageContent() {
         const { data: { session } } = await supabase.auth.getSession();
 
         if (!session?.user) {
+          triggerLoggedOut('session_missing');
           router.push('/login');
           return;
         }
@@ -401,6 +403,7 @@ function ProfilePageContent() {
         await ensureProfile(session.user.id, session.user.email!);
       } catch (err) {
         console.error('Auth error:', err);
+        triggerLoggedOut('auth_error');
         router.push('/login');
       } finally {
         setLoading(false);
@@ -411,6 +414,7 @@ function ProfilePageContent() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!session?.user) {
+        triggerLoggedOut('signed_out');
         router.push('/login');
       } else {
         setUser(session.user);
@@ -2635,7 +2639,7 @@ function ProfilePageContent() {
                     <table className="min-w-[320px] md:min-w-[1020px] w-full text-sm table-fixed md:table-auto border-separate border-spacing-y-2 border-spacing-x-0">
                       <thead className="bg-slate-50 text-xs text-slate-500">
                         <tr className="border-b border-slate-200">
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4 w-[140px]">Copied Trader</th>
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4 w-[120px]">Copied Trader</th>
                           <th className="px-3 py-3 text-center font-semibold md:px-4">Market</th>
                           <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">Outcome</th>
                           <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
@@ -2680,7 +2684,7 @@ function ProfilePageContent() {
                     <table className="min-w-[320px] md:min-w-[1020px] w-full text-sm table-fixed md:table-auto border-separate border-spacing-y-2 border-spacing-x-0">
                       <thead className="bg-slate-50 text-xs text-slate-500">
                         <tr className="border-b border-slate-200">
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4 w-[140px]">Copied Trader</th>
+                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4 w-[120px]">Copied Trader</th>
                           <th className="px-3 py-3 text-center font-semibold md:px-4">Market</th>
                           <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">Outcome</th>
                           <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
@@ -2788,11 +2792,12 @@ function ProfilePageContent() {
                           return (
                             <React.Fragment key={trade.id}>
                               <tr className="border-b border-slate-100 align-top">
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 w-[140px] bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
+                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 w-[120px] bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   {trade.trader_wallet && trade.trader_username ? (
                                     <a
                                       href={`/trader/${trade.trader_wallet}`}
-                                      className="text-sm font-medium text-slate-700 hover:text-slate-900 truncate block"
+                                      className="text-sm font-medium text-slate-700 hover:text-slate-900 truncate block max-w-[120px]"
+                                      title={trade.trader_username}
                                       onClick={(event) => event.stopPropagation()}
                                     >
                                       {trade.trader_username}

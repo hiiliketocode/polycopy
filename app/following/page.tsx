@@ -9,6 +9,7 @@ import { TraderDiscoveryCard } from '@/components/polycopy/trader-discovery-card
 import { Card } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { triggerLoggedOut } from '@/lib/auth/logout-events';
 
 interface Trader {
   wallet: string;
@@ -63,6 +64,7 @@ function FollowingPageContent() {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (!session?.user) {
+          triggerLoggedOut('session_missing');
           router.push('/login');
           return;
         }
@@ -92,6 +94,7 @@ function FollowingPageContent() {
         );
       } catch (err) {
         console.error('Auth error:', err);
+        triggerLoggedOut('auth_error');
         router.push('/login');
       } finally {
         setLoading(false);

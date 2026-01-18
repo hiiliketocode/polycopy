@@ -85,32 +85,6 @@ const ESPN_SPORT_GROUPS: Record<SportGroup, string[]> = {
   boxing: ['boxing'],
 };
 
-const SECONDARY_SPORT_GROUPS: Partial<Record<SportGroup, string[]>> = {
-  nfl: ['americanfootball_nfl'],
-  nba: ['basketball_nba'],
-  mlb: ['baseball_mlb'],
-  nhl: ['icehockey_nhl'],
-  wnba: ['basketball_wnba'],
-  ncaaf: ['americanfootball_ncaaf'],
-  ncaab: ['basketball_ncaab'],
-  ncaaw: ['basketball_ncaaw'],
-  soccer: [
-    'soccer_usa_mls',
-    'soccer_epl',
-    'soccer_england_championship',
-    'soccer_spain_la_liga',
-    'soccer_italy_serie_a',
-    'soccer_germany_bundesliga',
-    'soccer_france_ligue_one',
-    'soccer_uefa_champs_league',
-    'soccer_uefa_europa_league',
-    'soccer_uefa_europa_conference_league',
-    'soccer_fifa_world_cup',
-    'soccer_fifa_world_cup_womens',
-    'soccer_uefa_european_championship',
-  ],
-};
-
 const TEAM_NAME_STOP_WORDS = new Set([
   'fc',
   'sc',
@@ -126,7 +100,6 @@ const TEAM_NAME_STOP_WORDS = new Set([
 // Detect sport type from market title
 function detectSportType(title: string, category?: string | null): SportGroup | null {
   const titleLower = title.toLowerCase();
-  const isSportsCategory = category?.toLowerCase() === 'sports';
 
   if (titleLower.includes('wnba')) return 'wnba';
   if (
@@ -197,6 +170,72 @@ function detectSportType(title: string, category?: string | null): SportGroup | 
     return 'soccer';
   }
 
+  const soccerClubHints = [
+    'real madrid',
+    'barcelona',
+    'atletico',
+    'athletic',
+    'real sociedad',
+    'real betis',
+    'sevilla',
+    'valencia',
+    'villarreal',
+    'juventus',
+    'inter',
+    'milan',
+    'napoli',
+    'roma',
+    'lazio',
+    'bayern',
+    'dortmund',
+    'leverkusen',
+    'arsenal',
+    'chelsea',
+    'liverpool',
+    'tottenham',
+    'manchester',
+    'man city',
+    'man utd',
+    'psg',
+    'marseille',
+    'lyon',
+    'monaco',
+    'ajax',
+    'psv',
+    'feyenoord',
+    'benfica',
+    'porto',
+    'sporting',
+    'celtic',
+    'rangers',
+    'galatasaray',
+    'fenerbahce',
+    'besiktas',
+    'boca',
+    'river',
+    'flamengo',
+    'palmeiras',
+    'corinthians',
+    'santos',
+    'tigres',
+    'monterrey',
+    'chivas',
+    'pumas',
+    'cruz azul',
+    'inter miami',
+    'al nassr',
+    'al hilal',
+    'al ittihad',
+    'al ahli',
+  ];
+
+  if (
+    soccerClubHints.some(hint => titleLower.includes(hint)) &&
+    (titleLower.includes(' vs ') || titleLower.includes(' vs.') || titleLower.includes(' v ') || titleLower.includes(' @ ') || titleLower.includes(' versus '))
+  ) {
+    return 'soccer';
+  }
+
   if (titleLower.match(/\b(tennis|wimbledon|roland garros|australian open|us open|atp|wta)\b/)) {
     return 'tennis';
   }
@@ -208,10 +247,6 @@ function detectSportType(title: string, category?: string | null): SportGroup | 
   if (titleLower.match(/\b(ufc|mma)\b/)) return 'mma';
   if (titleLower.match(/\bboxing\b/)) return 'boxing';
 
-  if (isSportsCategory && titleLower.includes(' vs ')) {
-    return 'soccer';
-  }
-  
   return null;
 }
 
@@ -388,32 +423,11 @@ async function fetchESPNScores(sportKey: string): Promise<ESPNGame[]> {
   }
 }
 
-// Fetch secondary provider scores by odds-api sport key
-async function fetchSecondaryScores(oddsKey: string): Promise<ESPNGame[]> {
-  try {
-    const response = await fetch(`/api/odds/scores?oddsKey=${oddsKey}`, {
-      cache: 'no-store',
-    });
-
-    if (!response.ok) {
-      console.warn(`Failed to fetch secondary scores for ${oddsKey}:`, response.status);
-      return [];
-    }
-
-    const data = await response.json();
-    return data.games || [];
-  } catch (error) {
-    console.error(`Error fetching secondary scores for ${oddsKey}:`, error);
-    return [];
-  }
-}
-
-async function fetchScoresForGroup(provider: 'espn' | 'odds', sport: SportGroup): Promise<ESPNGame[]> {
-  const groupKeys = provider === 'espn' ? ESPN_SPORT_GROUPS[sport] : (SECONDARY_SPORT_GROUPS[sport] || []);
+async function fetchESPNGroupScores(sport: SportGroup): Promise<ESPNGame[]> {
+  const groupKeys = ESPN_SPORT_GROUPS[sport];
   if (!groupKeys || groupKeys.length === 0) return [];
 
-  const fetcher = provider === 'espn' ? fetchESPNScores : fetchSecondaryScores;
-  const results = await Promise.all(groupKeys.map(key => fetcher(key)));
+  const results = await Promise.all(groupKeys.map(key => fetchESPNScores(key)));
   return results.flat();
 }
 
@@ -487,8 +501,7 @@ export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<s
     .filter(([_, trades]) => trades.length > 0)
     .map(async ([sport, sportTrades]) => {
       const sportKey = sport as SportGroup;
-      const espnGames = await fetchScoresForGroup('espn', sportKey);
-      const unmatchedTrades: FeedTrade[] = [];
+      const espnGames = await fetchESPNGroupScores(sportKey);
 
       sportTrades.forEach(trade => {
         const matchingGame = findMatchingGame(trade.market.title, espnGames);
@@ -497,21 +510,7 @@ export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<s
           const key = trade.market.conditionId || trade.market.id || trade.market.title;
           scoreMap.set(key, buildScoreResult(matchingGame));
         } else {
-          unmatchedTrades.push(trade);
-        }
-      });
-
-      if (unmatchedTrades.length === 0) return;
-
-      const secondaryGames = await fetchScoresForGroup('odds', sportKey);
-      unmatchedTrades.forEach(trade => {
-        const matchingGame = findMatchingGame(trade.market.title, secondaryGames);
-        if (matchingGame) {
-          console.log(`✅ Found secondary score for "${trade.market.title}": ${matchingGame.name} (${matchingGame.status})`);
-          const key = trade.market.conditionId || trade.market.id || trade.market.title;
-          scoreMap.set(key, buildScoreResult(matchingGame));
-        } else {
-          console.log(`❌ No score found for "${trade.market.title}" in ${sportKey.toUpperCase()} feeds.`);
+          console.log(`❌ No ESPN game found for "${trade.market.title}" in ${sportKey.toUpperCase()} feeds.`);
         }
       });
     });

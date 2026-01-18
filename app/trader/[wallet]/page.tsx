@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, ArrowUpRight, ChevronDown, ChevronUp, Loader2, Info, ExternalLink, Copy } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import { Navigation } from '@/components/polycopy/navigation';
 import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { Card } from '@/components/ui/card';
@@ -247,10 +248,10 @@ export default function TraderProfilePage({
   // Fetch current user
   useEffect(() => {
     const fetchUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
       
-      if (user) {
+      if (session?.user) {
         const isMeaningfulError = (err: any) => {
           if (!err || typeof err !== 'object') return !!err;
           if (err.code === 'PGRST116') return false;
@@ -276,7 +277,7 @@ export default function TraderProfilePage({
         const { data: profile } = await supabase
           .from('profiles')
           .select('is_premium, is_admin')
-          .eq('id', user.id)
+          .eq('id', session.user.id)
           .single();
         
         setIsPremium(profile?.is_premium || profile?.is_admin || false);
@@ -286,7 +287,7 @@ export default function TraderProfilePage({
         const { data: walletData } = await supabase
           .from('turnkey_wallets')
           .select('polymarket_account_address, eoa_address')
-          .eq('user_id', user.id)
+          .eq('user_id', session.user.id)
           .maybeSingle();
         
         if (walletData) {
@@ -297,7 +298,7 @@ export default function TraderProfilePage({
           const { data, error } = await supabase
             .from('notification_preferences')
             .select('default_buy_slippage, default_sell_slippage')
-            .eq('user_id', user.id)
+            .eq('user_id', session.user.id)
             .maybeSingle();
 
           if (isMeaningfulError(error)) {
@@ -316,7 +317,7 @@ export default function TraderProfilePage({
         
         // Fetch copied trades (service-backed to bypass RLS issues)
         try {
-          const apiResponse = await fetch(`/api/copied-trades?userId=${user.id}`);
+          const apiResponse = await fetch(`/api/copied-trades?userId=${session.user.id}`);
           if (apiResponse.ok) {
             const payload = await apiResponse.json();
             const ids = new Set<string>();
@@ -972,6 +973,7 @@ export default function TraderProfilePage({
   // Toggle follow
   const handleFollowToggle = async () => {
     if (!user) {
+      triggerLoggedOut('session_missing');
       router.push('/login');
       return;
     }
@@ -1016,6 +1018,7 @@ export default function TraderProfilePage({
     amountInvested?: number
   ) => {
     if (!user) {
+      triggerLoggedOut('session_missing');
       router.push('/login');
       return;
     }

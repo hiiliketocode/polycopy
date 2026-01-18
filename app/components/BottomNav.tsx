@@ -180,6 +180,29 @@ export default function BottomNav() {
             </span>
           </Link>
 
+          {/* Account */}
+          <Link 
+            href="/settings" 
+            className="flex-1 flex flex-col items-center justify-center gap-1"
+            style={navItemStyle}
+          >
+            <div style={iconContainerStyle} className="flex items-center justify-center">
+              <svg 
+                className={`h-6 w-6 ${isActive('/settings') ? 'text-[#0F0F0F]' : 'text-slate-400'}`}
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.8 19.2a6 6 0 00-11.6 0" />
+              </svg>
+            </div>
+            <span className={`text-xs ${isActive('/settings') ? 'text-[#0F0F0F] font-semibold' : 'text-slate-500'}`}>
+              Account
+            </span>
+          </Link>
+
           {/* Get Premium - Only show for logged in free users */}
           {isLoggedIn && !isPremium && (
             <button 

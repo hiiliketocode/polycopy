@@ -17,6 +17,7 @@ import { resolveFeatureTier, tierHasPremiumAccess } from '@/lib/feature-tier';
 import { Navigation } from '@/components/polycopy/navigation';
 import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
 import { CancelSubscriptionModal } from '@/components/polycopy/cancel-subscription-modal';
+import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -43,8 +44,8 @@ export default function SettingsPage() {
   const [showCancelSubscriptionModal, setShowCancelSubscriptionModal] = useState(false);
 
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
-  const [disconnectConfirmText, setDisconnectConfirmText] = useState('');
   const [disconnectingWallet, setDisconnectingWallet] = useState(false);
+  const [showDisconnectSuccess, setShowDisconnectSuccess] = useState(false);
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loadingNotificationPrefs, setLoadingNotificationPrefs] = useState(false);
@@ -67,6 +68,7 @@ export default function SettingsPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) {
+          triggerLoggedOut('session_missing');
           router.push('/login');
           return;
         }
@@ -74,6 +76,7 @@ export default function SettingsPage() {
         await ensureProfile(session.user.id, session.user.email!);
       } catch (err) {
         console.error('Auth error:', err);
+        triggerLoggedOut('auth_error');
         router.push('/login');
       } finally {
         setLoading(false);
@@ -84,6 +87,7 @@ export default function SettingsPage() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
+        triggerLoggedOut('signed_out');
         router.push('/login');
       } else {
         setUser(session.user);
@@ -323,7 +327,6 @@ export default function SettingsPage() {
 
   const handleWalletDisconnect = async () => {
     if (!user || !walletAddress) return;
-    if (disconnectConfirmText.toUpperCase() !== 'YES') return;
 
     setDisconnectingWallet(true);
 
@@ -337,10 +340,7 @@ export default function SettingsPage() {
 
       setProfile({ ...profile, trading_wallet_address: null });
       setShowDisconnectModal(false);
-      setDisconnectConfirmText('');
-      setToastMessage('Wallet disconnected');
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 2000);
+      setShowDisconnectSuccess(true);
     } catch (err) {
       console.error('Error disconnecting wallet:', err);
     } finally {
@@ -606,7 +606,7 @@ export default function SettingsPage() {
                         variant="outline"
                         className="border-red-300 text-red-700 hover:bg-red-50"
                       >
-                        Disconnect
+                        Remove wallet
                       </Button>
                     ) : (
                       <Button asChild variant="outline">
@@ -729,7 +729,7 @@ export default function SettingsPage() {
       <Dialog open={showDisconnectModal} onOpenChange={setShowDisconnectModal}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-red-600">Disconnect Wallet?</DialogTitle>
+            <DialogTitle className="text-xl font-bold text-red-600">Remove wallet?</DialogTitle>
             <DialogDescription className="text-slate-600 mt-2">
               This will remove your connected Polymarket wallet from Polycopy. You will need to reconnect it to use Real Copy trading features.
             </DialogDescription>
@@ -745,26 +745,11 @@ export default function SettingsPage() {
               </ul>
             </div>
 
-            <div className="space-y-2">
-              <label htmlFor="confirm-text" className="text-sm font-medium text-slate-900">
-                Type <span className="font-bold">YES</span> to confirm:
-              </label>
-              <Input
-                id="confirm-text"
-                type="text"
-                placeholder="Type YES to confirm"
-                value={disconnectConfirmText}
-                onChange={(e) => setDisconnectConfirmText(e.target.value)}
-                className="font-mono"
-              />
-            </div>
-
             <div className="flex gap-3 pt-2">
               <Button
                 variant="outline"
                 onClick={() => {
                   setShowDisconnectModal(false);
-                  setDisconnectConfirmText('');
                 }}
                 className="flex-1"
               >
@@ -772,12 +757,31 @@ export default function SettingsPage() {
               </Button>
               <Button
                 onClick={handleWalletDisconnect}
-                disabled={disconnectConfirmText.toUpperCase() !== 'YES' || disconnectingWallet}
+                disabled={disconnectingWallet}
                 className="flex-1 bg-red-600 hover:bg-red-700 text-white"
               >
-                {disconnectingWallet ? 'Disconnecting...' : 'Disconnect Wallet'}
+                {disconnectingWallet ? 'Removing...' : 'Remove wallet'}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDisconnectSuccess} onOpenChange={setShowDisconnectSuccess}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-slate-900">Wallet removed</DialogTitle>
+            <DialogDescription className="text-slate-600 mt-2">
+              Your Polymarket wallet is no longer connected. You can reconnect anytime to use Real Copy trading.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-3 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setShowDisconnectSuccess(false)}>
+              Done
+            </Button>
+            <Button asChild className="flex-1">
+              <Link href="/profile/connect-wallet">Reconnect wallet</Link>
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

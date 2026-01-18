@@ -5,6 +5,7 @@ import "./globals.css";
 import "./styles/design-system.css";
 import BottomNav from "./components/BottomNav";
 import Footer from "./components/Footer";
+import { LoggedOutModal } from "@/components/auth/LoggedOutModal";
 
 const inter = Inter({ 
   subsets: ['latin'],
@@ -102,6 +103,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         </div>
         <Footer />
         <BottomNav />
+        <LoggedOutModal />
       </body>
     </html>
   );

@@ -38,6 +38,12 @@ import {
   roundUpToStep,
 } from "@/lib/polymarket/sizing"
 import { cn } from "@/lib/utils"
+import {
+  normalizeEventStatus,
+  statusLooksFinal,
+  statusLooksLive,
+  statusLooksScheduled,
+} from "@/lib/market-status"
 
 interface TradeCardProps {
   trader: {
@@ -133,6 +139,8 @@ type CancelStatus = {
 }
 
 const ORDER_STATUS_TIMEOUT_MS = 30_000
+const CELEBRATION_MS = 1200
+const CONFETTI_PIECES = Array.from({ length: 12 }, (_, index) => index)
 const EXIT_TRADE_WARNING =
   'Are you sure you want to leave? You have trades in progress that may fail.'
 
@@ -141,6 +149,7 @@ const LIQUIDITY_ERROR_PHRASES = [
   'no match found',
   'could not insert order',
 ]
+const PRICE_LIMIT_REGEX = /price must be at (most|least)\s*\$?([0-9]*\.?[0-9]+)/i
 
 type TradeErrorInfo = {
   code?: string
@@ -332,6 +341,17 @@ function getFriendlyLiquidityMessage(rawMessage?: string | null) {
   return null
 }
 
+function getFriendlyPriceLimitMessage(rawMessage?: string | null) {
+  if (!rawMessage) return null
+  const match = rawMessage.match(PRICE_LIMIT_REGEX)
+  if (!match) return null
+  const direction = match[1]?.toLowerCase()
+  const limitValue = match[2]
+  const relation = direction === 'least' ? 'below' : 'above'
+  const bound = direction === 'least' ? 'min' : 'max'
+  return `Slippage pushed your limit price ${relation} the allowed ${bound} ($${limitValue}). Lower slippage % in Advanced and try again.`
+}
+
 function resolveTradeErrorInfo(value: unknown, fallbackMessage: string): TradeErrorInfo {
   const rawMessage = findTradeErrorMessage(value)
   const code = findTradeErrorCode(value)
@@ -339,6 +359,12 @@ function resolveTradeErrorInfo(value: unknown, fallbackMessage: string): TradeEr
   if (friendly) {
     return {
       message: friendly,
+    }
+  }
+  const priceLimitMessage = getFriendlyPriceLimitMessage(rawMessage)
+  if (priceLimitMessage) {
+    return {
+      message: priceLimitMessage,
     }
   }
   if (code && code in TRADE_ERROR_DETAILS) {
@@ -475,7 +501,11 @@ export function TradeCard({
   const [isInView, setIsInView] = useState(true)
   const [notificationPending, setNotificationPending] = useState(false)
   const [notificationSent, setNotificationSent] = useState(false)
+  const [showFilledCelebration, setShowFilledCelebration] = useState(false)
+  const [celebrationKey, setCelebrationKey] = useState(0)
   const cardRef = useRef<HTMLDivElement | null>(null)
+  const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const previousStatusRef = useRef<StatusPhase | null>(null)
   const [orderIntentId] = useState<string>(() => {
     const randomUuId = globalThis.crypto?.randomUUID?.()
     if (randomUuId) return randomUuId
@@ -524,38 +554,24 @@ export function TradeCard({
 
   const looksLikeScore = Boolean(cleanedLiveScore && /\d+\s*-\s*\d+/.test(cleanedLiveScore))
   const resolvedLiveStatus = useMemo(() => {
-    if (liveStatus) return liveStatus
-    const normalized = (eventStatus || "").toLowerCase()
-    if (
-      normalized.includes("final") ||
-      normalized.includes("finished") ||
-      normalized.includes("post")
-    ) {
-      return "final"
-    }
-    if (
-      normalized.includes("live") ||
-      normalized.includes("in_progress") ||
-      normalized.includes("in progress") ||
-      normalized.includes("in-progress")
-    ) {
-      return "live"
-    }
-    if (
-      normalized.includes("scheduled") ||
-      normalized.includes("not_started") ||
-      normalized.includes("preview") ||
-      normalized.includes("upcoming")
-    ) {
+    const normalizedLiveStatus = typeof liveStatus === "string" ? liveStatus.toLowerCase() : ""
+    if (normalizedLiveStatus === "live") return "live"
+    if (normalizedLiveStatus === "final") return "final"
+    if (normalizedLiveStatus === "scheduled") {
+      if (looksLikeScore) return "live"
       return "scheduled"
     }
+    const normalized = normalizeEventStatus(eventStatus)
+    if (statusLooksFinal(normalized)) return "final"
+    if (statusLooksLive(normalized)) return "live"
+    if (looksLikeScore) return "live"
+    if (statusLooksScheduled(normalized)) return "scheduled"
     if (eventStartTime) {
       const start = new Date(eventStartTime)
       if (!Number.isNaN(start.getTime())) {
         return Date.now() >= start.getTime() ? "live" : "scheduled"
       }
     }
-    if (looksLikeScore) return "live"
     return "unknown"
   }, [liveStatus, eventStatus, eventStartTime, looksLikeScore])
 
@@ -569,14 +585,17 @@ export function TradeCard({
           ? "scheduled"
           : "open"
 
+  const forceResolvedBadge = resolvedLiveStatus === "final" && looksLikeScore
+  const statusBadgeVariant = forceResolvedBadge ? "resolved" : statusVariant
+
   const eventStatusLabel =
-    statusVariant === "live"
+    statusBadgeVariant === "live"
       ? "Live"
-      : statusVariant === "ended"
+      : statusBadgeVariant === "ended"
         ? "Ended"
-        : statusVariant === "resolved"
+        : statusBadgeVariant === "resolved"
           ? "Resolved"
-          : statusVariant === "scheduled"
+          : statusBadgeVariant === "scheduled"
             ? "Scheduled"
             : "Open"
 
@@ -588,25 +607,25 @@ export function TradeCard({
     open: CircleDot,
   } as const
 
-  const StatusIcon = statusIconMap[statusVariant]
+  const StatusIcon = statusIconMap[statusBadgeVariant]
 
   const badgeBaseClass =
     "h-7 px-2.5 text-[11px] font-semibold border shadow-[0_1px_0_rgba(15,23,42,0.06)]"
 
   const statusBadgeClass = cn(
     badgeBaseClass,
-    statusVariant === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200",
-    statusVariant === "ended" && "bg-slate-100 text-slate-700 border-slate-200",
-    statusVariant === "resolved" && "bg-rose-50 text-rose-700 border-rose-200",
-    statusVariant === "scheduled" && "bg-amber-50 text-amber-700 border-amber-200",
-    statusVariant === "open" && "bg-slate-50 text-slate-600 border-slate-200",
+    statusBadgeVariant === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200",
+    statusBadgeVariant === "ended" && "bg-slate-100 text-slate-700 border-slate-200",
+    statusBadgeVariant === "resolved" && "bg-rose-50 text-rose-700 border-rose-200",
+    statusBadgeVariant === "scheduled" && "bg-amber-50 text-amber-700 border-amber-200",
+    statusBadgeVariant === "open" && "bg-slate-50 text-slate-600 border-slate-200",
   )
 
   const showScoreBadge =
     Boolean(cleanedLiveScore && looksLikeScore) &&
     (resolvedLiveStatus === "live" || resolvedLiveStatus === "final")
 
-  const showEventTimeBadge = statusVariant !== "live" && statusVariant !== "resolved"
+  const showEventTimeBadge = statusBadgeVariant !== "live" && statusBadgeVariant !== "resolved"
   const hasEventTime = Boolean(eventStartTime || eventEndTime)
   const { eventTimeValue, eventTimeKind } = useMemo(() => {
     if (statusVariant === "ended" || statusVariant === "resolved") {
@@ -1175,6 +1194,29 @@ export function TradeCard({
   useEffect(() => {
     statusPhaseRef.current = statusPhase
   }, [statusPhase])
+
+  useEffect(() => {
+    if (!showConfirmation) return
+    if (statusPhase === 'filled' && previousStatusRef.current !== 'filled') {
+      setCelebrationKey((prev) => prev + 1)
+      setShowFilledCelebration(true)
+      if (celebrationTimerRef.current) {
+        clearTimeout(celebrationTimerRef.current)
+      }
+      celebrationTimerRef.current = setTimeout(() => {
+        setShowFilledCelebration(false)
+      }, CELEBRATION_MS)
+    }
+    previousStatusRef.current = statusPhase
+  }, [statusPhase, showConfirmation])
+
+  useEffect(() => {
+    return () => {
+      if (celebrationTimerRef.current) {
+        clearTimeout(celebrationTimerRef.current)
+      }
+    }
+  }, [])
 
   const hasInFlightTrade =
     isSubmitting || (showConfirmation && !TERMINAL_STATUS_PHASES.has(statusPhase))
@@ -1975,9 +2017,9 @@ export function TradeCard({
                 {eventTimeLabel}
               </Badge>
             )}
-            {(statusVariant === "live" ||
-              statusVariant === "ended" ||
-              statusVariant === "resolved") && (
+            {(statusBadgeVariant === "live" ||
+              statusBadgeVariant === "ended" ||
+              statusBadgeVariant === "resolved") && (
               <Badge variant="secondary" className={statusBadgeClass}>
                 <StatusIcon className="h-3.5 w-3.5" />
                 {eventStatusLabel}
@@ -2125,12 +2167,12 @@ export function TradeCard({
               disabled={!manualAmountValid || isCopyDisabled || isCopied}
               variant="outline"
               className={cn(
-                'w-full font-semibold text-sm',
+                'w-full sm:max-w-[360px] sm:mx-auto font-semibold text-sm',
                 isCopied
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
                   : isCopyDisabled || !manualAmountValid
                     ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                    : 'bg-[#FDB022] border-transparent hover:bg-[#FDB022]/90 text-slate-900'
+                    : 'bg-[#FDB022] border-transparent hover:bg-[#E09A1A] text-slate-900'
               )}
             >
               {isMarketEnded ? (
@@ -2153,12 +2195,12 @@ export function TradeCard({
               <Button
                 onClick={handleCopyTradeClick}
                 disabled={isCopyDisabled}
-                className={`w-full font-semibold shadow-sm text-sm ${
+                className={`w-full sm:max-w-[360px] sm:mx-auto font-semibold shadow-sm text-sm ${
                   localCopied
                     ? "bg-emerald-500 hover:bg-emerald-600 text-white"
                     : isMarketEnded
                       ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                      : "bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
+                      : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
                 }`}
                 size="lg"
               >
@@ -2180,7 +2222,7 @@ export function TradeCard({
                 isCopied ? (
                   <Button
                     disabled
-                    className="w-full bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
+                    className="w-full sm:max-w-[360px] sm:mx-auto bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
                     size="lg"
                   >
                     <Check className="w-4 h-4 mr-2" />
@@ -2190,10 +2232,10 @@ export function TradeCard({
                   <Button
                     onClick={handleCopyTradeClick}
                     disabled={isCopyDisabled}
-                    className={`w-full font-semibold shadow-sm text-sm ${
+                    className={`w-full sm:max-w-[360px] sm:mx-auto font-semibold shadow-sm text-sm ${
                       isMarketEnded
                         ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                        : "bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900"
+                        : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
                     }`}
                     size="lg"
                   >
@@ -2229,10 +2271,10 @@ export function TradeCard({
               <Button
                 onClick={handleCopyTradeClick}
                 disabled={isCopyDisabled}
-                className={`w-full font-semibold shadow-sm text-sm ${
+                className={`w-full sm:max-w-[360px] sm:mx-auto font-semibold shadow-sm text-sm ${
                   isMarketEnded
                     ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                    : "bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
+                    : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
                 }`}
                 size="lg"
               >
@@ -2250,7 +2292,14 @@ export function TradeCard({
               <ArrowDown className="h-4 w-4" />
             </div>
           </div>
-          <div className="mt-0.5 rounded-xl border border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
+          <div className="relative mt-0.5 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
+            {showFilledCelebration ? (
+              <div key={celebrationKey} className="confetti-layer" aria-hidden="true">
+                {CONFETTI_PIECES.map((index) => (
+                  <span key={index} className="confetti" />
+                ))}
+              </div>
+            ) : null}
             {showConfirmation ? (
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-4">
@@ -2469,8 +2518,99 @@ export function TradeCard({
                       disabled={isSubmitting}
                             className={`w-full h-14 border border-slate-300 rounded-lg text-base font-semibold text-slate-700 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${amountMode === "usd" ? "pl-7 pr-3" : "pl-3 pr-3"}`}
                     />
-                  </div>
-                      </div>
+          </div>
+          <style jsx>{`
+            .confetti-layer {
+              position: absolute;
+              inset: 0;
+              pointer-events: none;
+              overflow: hidden;
+              z-index: 10;
+            }
+
+            .confetti {
+              position: absolute;
+              top: -8px;
+              width: 7px;
+              height: 14px;
+              border-radius: 3px;
+              opacity: 0;
+              animation: confetti-fall ${CELEBRATION_MS}ms ease-out forwards;
+            }
+
+            .confetti-layer span:nth-child(1) {
+              left: 8%;
+              background: #34d399;
+              animation-delay: 0ms;
+            }
+            .confetti-layer span:nth-child(2) {
+              left: 18%;
+              background: #fbbf24;
+              animation-delay: 40ms;
+            }
+            .confetti-layer span:nth-child(3) {
+              left: 28%;
+              background: #60a5fa;
+              animation-delay: 80ms;
+            }
+            .confetti-layer span:nth-child(4) {
+              left: 38%;
+              background: #f472b6;
+              animation-delay: 120ms;
+            }
+            .confetti-layer span:nth-child(5) {
+              left: 48%;
+              background: #fb7185;
+              animation-delay: 60ms;
+            }
+            .confetti-layer span:nth-child(6) {
+              left: 58%;
+              background: #a78bfa;
+              animation-delay: 140ms;
+            }
+            .confetti-layer span:nth-child(7) {
+              left: 68%;
+              background: #22d3ee;
+              animation-delay: 100ms;
+            }
+            .confetti-layer span:nth-child(8) {
+              left: 78%;
+              background: #f97316;
+              animation-delay: 160ms;
+            }
+            .confetti-layer span:nth-child(9) {
+              left: 88%;
+              background: #facc15;
+              animation-delay: 20ms;
+            }
+            .confetti-layer span:nth-child(10) {
+              left: 12%;
+              background: #34d399;
+              animation-delay: 180ms;
+            }
+            .confetti-layer span:nth-child(11) {
+              left: 52%;
+              background: #60a5fa;
+              animation-delay: 30ms;
+            }
+            .confetti-layer span:nth-child(12) {
+              left: 92%;
+              background: #fb7185;
+              animation-delay: 70ms;
+            }
+
+            @keyframes confetti-fall {
+              0% {
+                transform: translateY(0) rotate(0deg);
+                opacity: 1;
+              }
+              100% {
+                transform: translateY(90px) rotate(160deg);
+                opacity: 0;
+              }
+            }
+          `}</style>
+        </div>
                       <button
                         type="button"
                         onClick={amountMode === "usd" ? handleSwitchToContracts : handleSwitchToUsd}
@@ -2515,10 +2655,10 @@ export function TradeCard({
                       !limitPrice ||
                       isSubmitting
                     }
-                    className={`w-full font-semibold ${
+                    className={`w-full sm:max-w-[360px] sm:mx-auto font-semibold ${
                       isMarketEnded
                         ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                        : "bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
+                        : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
                     }`}
                     size="lg"
                   >
