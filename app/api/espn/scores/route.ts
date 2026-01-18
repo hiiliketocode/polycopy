@@ -166,7 +166,7 @@ export async function GET(request: NextRequest) {
         startTime: competition.date,
         displayClock: event.status?.displayClock,
         period: event.status?.period,
-      };
+      } as NormalizedGame;
     }).filter((game): game is NormalizedGame => Boolean(game));
 
     // Filter by team names if provided
