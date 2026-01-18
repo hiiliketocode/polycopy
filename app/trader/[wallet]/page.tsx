@@ -14,10 +14,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { TradeCard } from '@/components/polycopy/trade-card';
+import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/components/polycopy/trade-execution-notifications';
+import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 import type { User } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
+import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
 
 interface TraderData {
   wallet: string;
@@ -115,11 +118,17 @@ export default function TraderProfilePage({
   const [showResolvedTrades, setShowResolvedTrades] = useState(false);
   
   const [showWalletConnectModal, setShowWalletConnectModal] = useState(false);
+  const [showConnectWalletModal, setShowConnectWalletModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
+  const { manualModeEnabled, enableManualMode } = useManualTradingMode(
+    isPremium,
+    Boolean(walletAddress)
+  );
   
   // Premium user expandable cards
   const [expandedTradeKeys, setExpandedTradeKeys] = useState<Set<string>>(new Set());
+  const [tradeNotifications, setTradeNotifications] = useState<TradeExecutionNotification[]>([]);
   const [usdAmount, setUsdAmount] = useState<string>('');
   const [autoClose, setAutoClose] = useState(false);
   const [manualCopyTradeIndex, setManualCopyTradeIndex] = useState<number | null>(null);
@@ -152,6 +161,23 @@ export default function TraderProfilePage({
     }
     setAutoClose((prev) => (prev ? prev : true));
   }, [isAdmin]);
+
+  const handleTradeExecutionNotification = useCallback((notification: TradeExecutionNotification) => {
+    setTradeNotifications((prev) => {
+      if (prev.some((item) => item.id === notification.id)) return prev;
+      return [notification, ...prev];
+    });
+  }, []);
+
+  const handleDismissTradeNotification = useCallback((id: string) => {
+    setTradeNotifications((prev) => prev.filter((notice) => notice.id !== id));
+  }, []);
+
+  const handleNavigateToTrade = useCallback((notice: TradeExecutionNotification) => {
+    const target = document.getElementById(notice.tradeAnchorId);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
 
   const mergeTrades = useCallback((existing: Trade[], incoming: Trade[]) => {
     const all = [...incoming, ...existing];
@@ -310,6 +336,52 @@ export default function TraderProfilePage({
     
     fetchUser();
   }, []);
+
+  const handleWalletConnect = async (address: string) => {
+    if (!user) return;
+
+    try {
+      const { data: walletData } = await supabase
+        .from('turnkey_wallets')
+        .select('polymarket_account_address, eoa_address')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      const connectedWallet =
+        walletData?.polymarket_account_address ||
+        walletData?.eoa_address ||
+        address;
+
+      setWalletAddress(connectedWallet || null);
+
+      try {
+        await fetch('/api/polymarket/reset-credentials', {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+        });
+      } catch {
+        // Non-blocking
+      }
+
+      if (connectedWallet) {
+        try {
+          await fetch('/api/polymarket/l2-credentials', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-store',
+            body: JSON.stringify({ polymarketAccountAddress: connectedWallet }),
+          });
+        } catch {
+          // Non-blocking
+        }
+      }
+    } catch (err) {
+      console.error('Error updating wallet after connection:', err);
+      setWalletAddress(address);
+    }
+  };
 
   // Fetch trader data
   useEffect(() => {
@@ -1506,6 +1578,8 @@ export default function TraderProfilePage({
                   return isPremium ? (
                     <TradeCard
                       key={`${trade.timestamp}-${index}`}
+                      tradeAnchorId={`trade-card-${wallet}-${trade.timestamp}-${index}`}
+                      onExecutionNotification={handleTradeExecutionNotification}
                       trader={{
                         name: traderData.displayName,
                         avatar: undefined,
@@ -1549,6 +1623,10 @@ export default function TraderProfilePage({
                       polymarketUrl={polymarketUrl}
                       defaultBuySlippage={defaultBuySlippage}
                       defaultSellSlippage={defaultSellSlippage}
+                      walletAddress={walletAddress}
+                      manualTradingEnabled={manualModeEnabled}
+                      onSwitchToManualTrading={enableManualMode}
+                      onOpenConnectWallet={() => setShowConnectWalletModal(true)}
                     />
                   ) : (
                     <Card key={`${trade.timestamp}-${index}`} className="p-6">
@@ -2257,6 +2335,17 @@ export default function TraderProfilePage({
           </div>
         </div>
       )}
+
+      <TradeExecutionNotifications
+        notifications={tradeNotifications}
+        onDismiss={handleDismissTradeNotification}
+        onNavigate={handleNavigateToTrade}
+      />
+      <ConnectWalletModal
+        open={showConnectWalletModal}
+        onOpenChange={setShowConnectWalletModal}
+        onConnect={handleWalletConnect}
+      />
     </div>
   );
 }

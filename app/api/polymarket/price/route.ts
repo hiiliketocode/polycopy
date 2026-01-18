@@ -8,6 +8,19 @@ export async function GET(request: Request) {
   const slug = searchParams.get('slug');
   const title = searchParams.get('title');
 
+  const normalizeEndDate = (value: any) => {
+    if (!value) return null;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number') {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+    }
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    return null;
+  };
+
   try {
     // Try 1: CLOB API with condition_id (most accurate for real-time prices)
     if (conditionId && conditionId.startsWith('0x')) {
@@ -38,6 +51,33 @@ export async function GET(request: Request) {
                   ? market.isResolved
                   : undefined;
 
+          let endDateIso =
+            normalizeEndDate(market.end_date_iso || market.end_date || market.endDate || null);
+
+          if (!endDateIso) {
+            try {
+              const gammaResponse = await fetch(
+                `https://gamma-api.polymarket.com/markets?condition_id=${conditionId}`,
+                { cache: 'no-store' }
+              );
+              if (gammaResponse.ok) {
+                const gammaData = await gammaResponse.json();
+                const gammaMarket = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null;
+                if (gammaMarket) {
+                  endDateIso = normalizeEndDate(
+                    gammaMarket.end_date_iso ||
+                      gammaMarket.end_date ||
+                      gammaMarket.endDate ||
+                      gammaMarket.close_time ||
+                      null
+                  );
+                }
+              }
+            } catch (error) {
+              console.warn('[Price API] Gamma end date fallback failed:', error);
+            }
+          }
+
           return NextResponse.json({
             success: true,
             market: {
@@ -51,7 +91,7 @@ export async function GET(request: Request) {
               // Sports/Event metadata
               description: market.description,
               category: market.category,
-              endDateIso: market.end_date_iso || null,
+              endDateIso,
               gameStartTime: market.game_start_time || market.start_date_iso || market.event_start_date || null,
               enableOrderBook: market.enable_order_book || false,
               // Additional sports metadata if available
@@ -100,6 +140,10 @@ export async function GET(request: Request) {
                   ? market.isResolved
                   : undefined;
 
+          const endDateIso = normalizeEndDate(
+            market.end_date_iso || market.end_date || market.endDate || market.close_time || null
+          );
+
           return NextResponse.json({
             success: true,
             market: {
@@ -110,6 +154,7 @@ export async function GET(request: Request) {
               resolved,
               outcomePrices: prices,
               outcomes: outcomes,
+              endDateIso,
             }
           });
         }
@@ -162,6 +207,10 @@ export async function GET(request: Request) {
                   ? match.isResolved
                   : undefined;
 
+          const endDateIso = normalizeEndDate(
+            match.end_date_iso || match.end_date || match.endDate || match.close_time || null
+          );
+
           return NextResponse.json({
             success: true,
             market: {
@@ -172,6 +221,7 @@ export async function GET(request: Request) {
               resolved,
               outcomePrices: prices,
               outcomes: outcomes,
+              endDateIso,
             }
           });
         }

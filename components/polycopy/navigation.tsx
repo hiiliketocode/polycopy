@@ -40,6 +40,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
   const [loadingBalance, setLoadingBalance] = useState(false)
   const [showUI, setShowUI] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [premiumStatus, setPremiumStatus] = useState<boolean | null>(isPremium ? true : null)
   
   // Track previous prop values to detect when they've stabilized
   const prevPropsRef = useRef({ user, isPremium, walletAddress, profileImageUrl })
@@ -47,6 +48,8 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
 
   const isLoggedIn = user !== null && user !== undefined
   const hasWalletConnected = Boolean(walletAddress)
+  const hasPremiumAccess = premiumStatus ?? isPremium
+  const premiumCacheKey = user?.id ? `polycopy:premium-status:${user.id}` : null
 
   const isActive = (path: string) => {
     if (path === "/") return pathname === "/"
@@ -135,9 +138,76 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
     }
   }, [user])
 
+  // Resolve premium status to prevent upsell flashes for premium users
+  useEffect(() => {
+    if (!user) {
+      setPremiumStatus(null)
+      return
+    }
+
+    setPremiumStatus(isPremium ? true : null)
+
+    if (isPremium) {
+      setPremiumStatus(true)
+      if (premiumCacheKey) {
+        try {
+          localStorage.setItem(premiumCacheKey, "true")
+        } catch {
+          // Ignore storage errors in restricted environments
+        }
+      }
+      return
+    }
+
+    if (premiumCacheKey) {
+      try {
+        const cached = localStorage.getItem(premiumCacheKey)
+        if (cached === "true") {
+          setPremiumStatus(true)
+        }
+      } catch {
+        // Ignore storage errors in restricted environments
+      }
+    }
+
+    let mounted = true
+
+    const fetchPremiumFlag = async () => {
+      try {
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("is_premium, is_admin")
+          .eq("id", user.id)
+          .maybeSingle()
+
+        if (!mounted) return
+        const resolvedPremium = Boolean((profile?.is_premium || profile?.is_admin) && !error)
+        setPremiumStatus(resolvedPremium)
+        if (premiumCacheKey) {
+          try {
+            localStorage.setItem(premiumCacheKey, resolvedPremium ? "true" : "false")
+          } catch {
+            // Ignore storage errors in restricted environments
+          }
+        }
+      } catch (err) {
+        if (mounted) {
+          console.error("[Navigation] failed to load premium status", err)
+          setPremiumStatus(false)
+        }
+      }
+    }
+
+    fetchPremiumFlag()
+
+    return () => {
+      mounted = false
+    }
+  }, [user, isPremium, premiumCacheKey])
+
   // Fetch wallet balance for premium users with connected wallets
   useEffect(() => {
-    if (!isPremium || !walletAddress || !user) return
+    if (!hasPremiumAccess || !walletAddress || !user) return
 
     const fetchBalance = async () => {
       setLoadingBalance(true)
@@ -168,7 +238,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
     // Refresh balance every 30 seconds
     const interval = setInterval(fetchBalance, 30000)
     return () => clearInterval(interval)
-  }, [isPremium, walletAddress, user])
+  }, [hasPremiumAccess, walletAddress, user])
 
   return (
     <>
@@ -240,7 +310,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
 
           {/* Right Side - User Menu or Auth Buttons */}
           <div className="flex items-center gap-4">
-            {!isLoggedIn || !showUI ? null : isPremium && hasWalletConnected ? (
+            {!isLoggedIn || !showUI ? null : hasPremiumAccess && hasWalletConnected ? (
               /* Show wallet balance for premium users with connected wallet */
               <div className="flex items-center gap-4">
                 <div className="text-right">
@@ -260,7 +330,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                   </div>
                 </div>
               </div>
-            ) : isPremium ? (
+            ) : hasPremiumAccess ? (
               /* Show Premium badge for premium users without wallet */
               <div className="px-4 py-2 rounded-lg border-2 border-yellow-400 bg-white">
                 <div className="flex items-center gap-2">
@@ -268,7 +338,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                   <span className="font-bold text-yellow-500">Premium</span>
                 </div>
               </div>
-            ) : (
+            ) : premiumStatus === false ? (
               /* Show upgrade button for non-premium users */
               <Button
                 onClick={() => setUpgradeModalOpen(true)}
@@ -278,6 +348,8 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                 <Crown className="w-4 h-4 mr-2 relative z-10" />
                 <span className="relative z-10">Get Premium</span>
               </Button>
+            ) : (
+              <div className="h-10 w-[164px]" aria-hidden />
             )}
 
             {isLoggedIn ? (
@@ -392,7 +464,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
       )}
 
       {/* Upgrade Modal for free users */}
-      {isLoggedIn && !isPremium && <UpgradeModal open={upgradeModalOpen} onOpenChange={setUpgradeModalOpen} />}
+      {isLoggedIn && premiumStatus === false && <UpgradeModal open={upgradeModalOpen} onOpenChange={setUpgradeModalOpen} />}
     </>
   )
 }

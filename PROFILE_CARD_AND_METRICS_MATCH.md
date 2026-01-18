@@ -112,7 +112,7 @@
 ┌────────────────────────────────────────────────┐
 │ [Avatar]  You                                   │
 │           [Avatar] Following 175 traders        │
-│           [Connect Polymarket Wallet]           │
+│           [Connect Polymarket Account]           │
 │                                                 │
 │ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐│
 │ │Total P&L│ │   ROI   │ │ Volume  │ │Win Rate││
@@ -203,7 +203,7 @@
 
 2. ✅ Without wallet:
    - Check "Following X traders" badge appears
-   - Verify "Connect Polymarket Wallet" button shows
+   - Verify "Connect Polymarket Account" button shows
    - Stats should still display correctly
 
 ### Trader Profile
@@ -227,4 +227,3 @@ Both pages now have **matching structure and styling**:
 - ✅ Clean, professional, consistent design
 
 **Only differences are contextual** (button types, stat order, copy text).
-

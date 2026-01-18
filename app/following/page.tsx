@@ -272,12 +272,6 @@ function FollowingPageContent() {
           ) : expectedTraderCount === 0 ? (
             <Card className="p-8 text-center">
               <p className="text-slate-600 mb-2">You're not following any traders yet.</p>
-              <Link 
-                href="/discover"
-                className="inline-flex items-center justify-center px-4 py-2 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold rounded-lg transition-colors"
-              >
-                Discover Traders
-              </Link>
             </Card>
           ) : (
             <div className="space-y-3">

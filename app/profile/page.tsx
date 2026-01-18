@@ -284,6 +284,8 @@ function ProfilePageContent() {
   const [disconnectingWallet, setDisconnectingWallet] = useState(false);
   const featureTier = resolveFeatureTier(Boolean(user), profile);
   const hasPremiumAccess = tierHasPremiumAccess(featureTier);
+  const hasConnectedWallet = Boolean(profile?.trading_wallet_address);
+  const canExecuteTrades = hasPremiumAccess && hasConnectedWallet;
   
   // Copied trades state
   const [copiedTradesBase, setCopiedTradesBase] = useState<CopiedTrade[]>([]);
@@ -408,6 +410,7 @@ function ProfilePageContent() {
   const hasLoadedStatsRef = useRef(false);
   const hasLoadedTradesRef = useRef(false);
   const hasLoadedQuickTradesRef = useRef(false);
+  const hasLoadedPositionsRef = useRef(false);
   const hasLoadedNotificationPrefsRef = useRef(false);
 
   // Check auth status on mount
@@ -757,16 +760,27 @@ function ProfilePageContent() {
     };
   }, [quickTrades, copiedTrades, marketMeta]);
 
-  const refreshPositions = useCallback(async () => {
+  const refreshPositions = useCallback(async (): Promise<PositionSummary[] | null> => {
     try {
       const positionsResponse = await fetch('/api/polymarket/positions', { cache: 'no-store' });
-      if (!positionsResponse.ok) return;
+      if (!positionsResponse.ok) return null;
       const positionsData = await positionsResponse.json();
-      setPositions(positionsData.positions || []);
+      const nextPositions = positionsData.positions || [];
+      setPositions(nextPositions);
+      return nextPositions;
     } catch (err) {
       console.error('Error refreshing positions:', err);
+      return null;
     }
   }, []);
+
+  useEffect(() => {
+    if (!user || !hasConnectedWallet || hasLoadedPositionsRef.current) return;
+    hasLoadedPositionsRef.current = true;
+    refreshPositions().catch(() => {
+      /* best effort */
+    });
+  }, [user, hasConnectedWallet, refreshPositions]);
 
   // Fetch aggregated portfolio stats (realized + unrealized PnL)
   useEffect(() => {
@@ -780,6 +794,13 @@ function ProfilePageContent() {
         if (!response.ok) {
           const message = await response.text();
           throw new Error(message || 'Failed to fetch portfolio stats');
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const message = await response.text();
+          console.error('Portfolio stats returned non-JSON response:', message.slice(0, 200));
+          throw new Error('Invalid portfolio stats response');
         }
 
         const data = await response.json();
@@ -2150,6 +2171,122 @@ function ProfilePageContent() {
     return map;
   }, [positions]);
 
+  const positionByKey = useMemo(() => {
+    const map = new Map<string, PositionSummary>();
+    positions.forEach((pos) => {
+      const key = buildPositionKey(pos.marketId, pos.outcome);
+      if (!key) return;
+      map.set(key, pos);
+    });
+    return map;
+  }, [positions]);
+
+  const buildFallbackPositionFromOrder = useCallback((order: OrderRow): PositionSummary | null => {
+    const raw = order.raw ?? {};
+    let tokenId: string | null = null;
+
+    const tokenIdCandidates = [
+      raw.token_id,
+      raw.tokenId,
+      raw.tokenID,
+      raw.asset_id,
+      raw.assetId,
+      raw.asset,
+      raw.market?.token_id,
+      raw.market?.asset_id,
+    ];
+
+    for (const candidate of tokenIdCandidates) {
+      if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
+        tokenId = candidate.trim();
+        break;
+      }
+    }
+
+    const size = order.filledSize && order.filledSize > 0 ? order.filledSize : order.size;
+    const normalizedSide = order.side?.trim().toUpperCase() ?? 'BUY';
+    const direction = normalizedSide === 'SELL' ? 'SHORT' : 'LONG';
+    const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
+
+    if (tokenId && size && size > 0) {
+      return {
+        tokenId,
+        marketId: order.marketId ?? null,
+        outcome: order.outcome ?? null,
+        direction: direction as 'LONG' | 'SHORT',
+        side: side as 'BUY' | 'SELL',
+        size,
+        avgEntryPrice: order.priceOrAvgPrice ?? null,
+        firstTradeAt: order.createdAt ?? null,
+        lastTradeAt: order.updatedAt ?? null,
+      };
+    }
+
+    return null;
+  }, []);
+
+  const buildSyntheticOrder = useCallback(
+    (trade: UnifiedTrade, position: PositionSummary): OrderRow => {
+      const meta = trade.market_id ? marketMeta.get(trade.market_id.trim()) : null;
+      const marketTitle = trade.market_title || meta?.title || 'Market';
+      const marketImageUrl = trade.market_avatar_url || meta?.image || null;
+      const marketSlug = trade.market_slug ?? meta?.slug ?? null;
+      const side = position.side ?? 'BUY';
+      const outcome = trade.outcome || position.outcome || null;
+      const createdAt = trade.created_at || new Date().toISOString();
+      const entryPrice = position.avgEntryPrice ?? trade.price_entry ?? null;
+      const currentPrice = getTradeDisplayPrice(trade);
+      const activity = side === 'SELL' ? 'sold' : 'bought';
+      const activityLabel = side === 'SELL' ? 'Sold' : 'Bought';
+
+      return {
+        orderId: trade.id,
+        status: 'filled',
+        activity,
+        activityLabel,
+        activityIcon: activity,
+        marketId: trade.market_id || position.marketId || '',
+        marketTitle,
+        marketImageUrl,
+        marketIsOpen: trade.status === 'open',
+        marketResolved: trade.status === 'resolved',
+        marketSlug,
+        traderId: trade.trader_wallet || 'unknown',
+        traderWallet: trade.trader_wallet ?? null,
+        traderName: trade.trader_username ?? 'Trader',
+        traderAvatarUrl: trade.trader_profile_image ?? null,
+        copiedTraderId: null,
+        copiedTraderWallet: trade.trader_wallet ?? null,
+        side,
+        outcome,
+        size: position.size,
+        filledSize: position.size,
+        priceOrAvgPrice: entryPrice,
+        currentPrice: currentPrice ?? entryPrice ?? null,
+        pnlUsd: null,
+        positionState: 'open',
+        positionStateLabel: 'Open',
+        createdAt,
+        updatedAt: createdAt,
+        raw: null,
+      };
+    },
+    [getTradeDisplayPrice, marketMeta]
+  );
+
+  const resolvePositionForTrade = useCallback(
+    async (trade: UnifiedTrade): Promise<PositionSummary | null> => {
+      const key = buildPositionKey(trade.market_id, trade.outcome);
+      if (!key) return null;
+      const cached = positionByKey.get(key);
+      if (cached) return cached;
+      const fresh = await refreshPositions();
+      if (!fresh) return null;
+      return fresh.find((pos) => buildPositionKey(pos.marketId, pos.outcome) === key) ?? null;
+    },
+    [positionByKey, refreshPositions]
+  );
+
   // Merge and sort all trades
   const allUnifiedTrades = useMemo(() => {
     // Filter out trades that are explicitly marked as 'quick' - those should only come from orders API
@@ -2278,6 +2415,76 @@ function ProfilePageContent() {
     });
   }, [filteredUnifiedTrades, tradeSort, getTradeContracts, getTradeDisplayPrice]);
 
+  const handleCopyAgain = (trade: UnifiedTrade) => {
+    if (trade.status !== 'open') return;
+
+    const meta = trade.market_id ? marketMeta.get(trade.market_id.trim()) : null;
+    const slug = trade.market_slug ?? meta?.slug ?? null;
+
+    if (canExecuteTrades) {
+      const params = new URLSearchParams();
+      params.set('prefill', '1');
+      if (trade.market_id) params.set('conditionId', trade.market_id);
+      if (slug) params.set('marketSlug', slug);
+      if (trade.market_title) params.set('marketTitle', trade.market_title);
+      if (trade.outcome) params.set('outcome', trade.outcome);
+      const contracts = getTradeContracts(trade);
+      if (Number.isFinite(contracts)) params.set('size', String(contracts));
+      if (Number.isFinite(trade.price_entry) && trade.price_entry > 0) {
+        params.set('price', String(trade.price_entry));
+      }
+
+      const positionKey = buildPositionKey(trade.market_id, trade.outcome);
+      const positionSide =
+        trade.type === 'quick'
+          ? trade.raw?.side
+          : positionKey
+            ? positionByKey.get(positionKey)?.side
+            : null;
+      if (positionSide) params.set('side', String(positionSide).toUpperCase());
+
+      if (trade.trader_username) params.set('traderName', trade.trader_username);
+      if (trade.trader_wallet) params.set('traderWallet', trade.trader_wallet);
+
+      router.push(`/trade-execute?${params.toString()}`);
+      return;
+    }
+
+    let url = 'https://polymarket.com';
+    if (slug) {
+      url = `https://polymarket.com/market/${slug}?utm_source=polycopy&utm_medium=copy_again&utm_campaign=profile`;
+    } else if (trade.market_title) {
+      url = `https://polymarket.com/search?q=${encodeURIComponent(trade.market_title)}`;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleSellTrade = async (trade: UnifiedTrade) => {
+    if (trade.status !== 'open') return;
+    if (trade.type !== 'quick' && !canExecuteTrades) {
+      setToastMessage('Connect your Polymarket wallet to sell positions.');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 4000);
+      return;
+    }
+
+    let position = await resolvePositionForTrade(trade);
+    if (!position && trade.type === 'quick' && trade.raw) {
+      position = buildFallbackPositionFromOrder(trade.raw);
+    }
+
+    if (!position) {
+      setToastMessage('Unable to locate an open position to sell. Please refresh and try again.');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 4000);
+      return;
+    }
+
+    const order =
+      trade.type === 'quick' && trade.raw ? trade.raw : buildSyntheticOrder(trade, position);
+    setCloseTarget({ order, position });
+  };
+
   const tradeSortOptions = useMemo(
     () => [
       { value: 'date' as const, label: 'Latest' },
@@ -2386,25 +2593,14 @@ function ProfilePageContent() {
                           View on Polymarket
                           <ArrowUpRight className="h-3 w-3" />
                         </a>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            onClick={() => navigator.clipboard.writeText(profile.trading_wallet_address)}
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-slate-500 hover:text-slate-900"
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            onClick={() => setShowDisconnectModal(true)}
-                            disabled={disconnectingWallet}
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-red-500 hover:text-red-700"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                        <Button
+                          onClick={() => navigator.clipboard.writeText(profile.trading_wallet_address)}
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-slate-500 hover:text-slate-900"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                       {/* Following count for premium users */}
                       <Link 
@@ -2442,7 +2638,7 @@ function ProfilePageContent() {
                       size="sm"
                     >
                       <Wallet className="mr-2 h-4 w-4" />
-                      Connect Polymarket Wallet
+                      Connect Polymarket Account
                     </Button>
                   )}
                 </div>
@@ -2697,11 +2893,6 @@ function ProfilePageContent() {
               ) : sortedUnifiedTrades.length === 0 ? (
                 <Card className="p-8 text-center">
                   <p className="text-slate-600">No trades yet.</p>
-                  <Link href="/discover">
-                    <Button className="mt-4 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900">
-                      Discover Traders
-                    </Button>
-                  </Link>
                 </Card>
               ) : (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -2808,101 +2999,11 @@ function ProfilePageContent() {
                                     }`
                                   : formatTimestamp(trade.created_at);
 
-                          const handleQuickSell = async () => {
-                            if (!trade.raw) return;
-                            const order = trade.raw!;
-
-                            let position = positions.find(p => 
-                              p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
-                            );
-
-                            if (!position) {
-                              try {
-                                const positionsResponse = await fetch('/api/polymarket/positions', { cache: 'no-store' });
-                                if (positionsResponse.ok) {
-                                  const positionsData = await positionsResponse.json();
-                                  const freshPositions = positionsData.positions || [];
-
-                                  setPositions(freshPositions);
-
-                                  position = freshPositions.find((p: PositionSummary) => 
-                                    p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
-                                  );
-                                }
-                              } catch (err) {
-                                console.error('Error fetching positions:', err);
-                              }
-                            }
-
-                            if (!position) {
-                              console.log('[PROFILE] Building position from order:', order);
-
-                              const raw = order.raw ?? {};
-                              let tokenId: string | null = null;
-
-                              const tokenIdCandidates = [
-                                raw.token_id,
-                                raw.tokenId,
-                                raw.tokenID,
-                                raw.asset_id,
-                                raw.assetId,
-                                raw.asset,
-                                raw.market?.token_id,
-                                raw.market?.asset_id,
-                              ];
-
-                              for (const candidate of tokenIdCandidates) {
-                                if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
-                                  tokenId = candidate.trim();
-                                  break;
-                                }
-                              }
-
-                              const size = order.filledSize && order.filledSize > 0 ? order.filledSize : order.size;
-                              const normalizedSide = order.side?.trim().toUpperCase() ?? 'BUY';
-
-                              const direction = normalizedSide === 'SELL' ? 'SHORT' : 'LONG';
-                              const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
-
-                              console.log('[PROFILE] Built position data:', {
-                                tokenId,
-                                size,
-                                side,
-                                direction,
-                                marketId: order.marketId,
-                                avgEntryPrice: order.priceOrAvgPrice,
-                              });
-
-                              if (tokenId && size && size > 0) {
-                                position = {
-                                  tokenId,
-                                  marketId: order.marketId ?? null,
-                                  outcome: order.outcome ?? null,
-                                  direction: direction as 'LONG' | 'SHORT',
-                                  side: side as 'BUY' | 'SELL',
-                                  size,
-                                  avgEntryPrice: order.priceOrAvgPrice ?? null,
-                                  firstTradeAt: order.createdAt ?? null,
-                                  lastTradeAt: order.updatedAt ?? null,
-                                };
-                              } else {
-                                console.error('[PROFILE] Could not build position - missing critical data:', {
-                                  tokenId,
-                                  size,
-                                  order,
-                                });
-                              }
-                            }
-
-                            if (position) {
-                              console.log('[PROFILE] Opening sell modal with position:', position);
-                              setCloseTarget({ order, position });
-                            } else {
-                              setToastMessage('Unable to load position data for selling. Please try from the History tab.');
-                              setShowToast(true);
-                              setTimeout(() => setShowToast(false), 4000);
-                            }
-                          };
+                          const canCopyAgain = trade.status === 'open' && !isResolvedMarket;
+                          const canSell =
+                            trade.status === 'open' &&
+                            !isResolvedMarket &&
+                            (trade.type === 'quick' ? Boolean(trade.raw) : canExecuteTrades);
 
                           return (
                             <React.Fragment key={trade.id}>
@@ -3000,9 +3101,19 @@ function ProfilePageContent() {
                                 </td>
                                 <td className="px-3 py-2 align-top text-right md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <div className="mt-1 flex flex-col items-end gap-1">
-                                    {trade.type === 'quick' && trade.status === 'open' && trade.raw && (
+                                    {canCopyAgain && (
                                       <Button
-                                        onClick={handleQuickSell}
+                                        onClick={() => handleCopyAgain(trade)}
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-6 px-3 text-[11px] font-semibold text-amber-700 border border-amber-300 bg-white hover:bg-amber-50 hover:text-amber-700"
+                                      >
+                                        Copy Again
+                                      </Button>
+                                    )}
+                                    {canSell && (
+                                      <Button
+                                        onClick={() => handleSellTrade(trade)}
                                         size="sm"
                                         variant="outline"
                                         className="h-6 px-3 text-[11px] font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 hover:text-red-600"
@@ -3803,7 +3914,28 @@ function ProfilePageContent() {
                         </p>
                       </div>
                     </div>
-                    
+
+                    {profile?.trading_wallet_address && (
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 mb-1">Disconnect Wallet</p>
+                            <p className="text-sm text-slate-600">
+                              Remove your connected Polymarket wallet and stop automated trade execution.
+                            </p>
+                          </div>
+                          <Button
+                            onClick={() => setShowDisconnectModal(true)}
+                            disabled={disconnectingWallet}
+                            variant="outline"
+                            className="border-red-300 text-red-700 hover:bg-red-50"
+                          >
+                            Disconnect
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                       <p className="text-sm text-slate-600 mb-3">
                         Need to cancel your subscription? You'll keep premium access until the end of your billing period.

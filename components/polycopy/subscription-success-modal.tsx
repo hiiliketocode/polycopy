@@ -77,7 +77,7 @@ export function SubscriptionSuccessModal({
             size="lg"
           >
             <Wallet className="mr-2 h-5 w-5" />
-            Connect Polymarket Wallet
+            Connect Polymarket Account
             <ArrowRight className="ml-2 h-5 w-5" />
           </Button>
           <Button

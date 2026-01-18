@@ -15,6 +15,12 @@ export default function Footer() {
               FAQ
             </Link>
             <Link 
+              href="/trading-setup" 
+              className="text-sm text-slate-400 hover:text-[#FDB022] transition-colors"
+            >
+              Trading Setup
+            </Link>
+            <Link 
               href="/terms" 
               className="text-sm text-slate-400 hover:text-[#FDB022] transition-colors"
             >

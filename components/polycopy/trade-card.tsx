@@ -8,6 +8,7 @@ import { ArrowDown, ArrowLeftRight, ChevronDown, ChevronUp, Check, HelpCircle, E
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -58,6 +59,12 @@ interface TradeCardProps {
   polymarketUrl?: string
   defaultBuySlippage?: number
   defaultSellSlippage?: number
+  tradeAnchorId?: string
+  onExecutionNotification?: (payload: TradeExecutionNotificationPayload) => void
+  walletAddress?: string | null
+  manualTradingEnabled?: boolean
+  onSwitchToManualTrading?: () => void
+  onOpenConnectWallet?: () => void
 }
 
 type StatusPhase =
@@ -74,6 +81,14 @@ type StatusPhase =
   | 'unknown'
 
 type ManualFlowStep = 'open-polymarket' | 'enter-details'
+
+type TradeExecutionNotificationPayload = {
+  id: string
+  market: string
+  status: 'filled' | 'partial' | 'failed'
+  tradeAnchorId: string
+  timestamp: number
+}
 
 const TERMINAL_STATUS_PHASES = new Set<StatusPhase>([
   'filled',
@@ -182,6 +197,22 @@ const TRADE_ERROR_DETAILS = {
 } as const
 
 const TRADE_ERROR_ENTRIES = Object.entries(TRADE_ERROR_DETAILS)
+
+function resolveExecutionNotificationStatus(
+  statusPhase: StatusPhase,
+  filledContracts: number | null,
+  totalContracts: number | null,
+): TradeExecutionNotificationPayload["status"] | null {
+  if (statusPhase === "partial") return "partial"
+  if (TERMINAL_STATUS_PHASES.has(statusPhase)) {
+    if (filledContracts !== null && filledContracts > 0) {
+      if (totalContracts !== null && filledContracts < totalContracts) return "partial"
+      return "filled"
+    }
+    return "failed"
+  }
+  return null
+}
 
 function matchTradeErrorCode(text: string): string | null {
   const trimmed = text.trim()
@@ -358,6 +389,12 @@ export function TradeCard({
   polymarketUrl,
   defaultBuySlippage,
   defaultSellSlippage,
+  tradeAnchorId,
+  onExecutionNotification,
+  walletAddress = null,
+  manualTradingEnabled = false,
+  onSwitchToManualTrading,
+  onOpenConnectWallet,
 }: TradeCardProps) {
   const resolvedDefaultSlippage =
     action === "Buy"
@@ -409,6 +446,11 @@ export function TradeCard({
   const [manualUsdAmount, setManualUsdAmount] = useState("")
   const [manualPriceInput, setManualPriceInput] = useState("")
   const [manualFlowStep, setManualFlowStep] = useState<ManualFlowStep>('open-polymarket')
+  const [showWalletPrompt, setShowWalletPrompt] = useState(false)
+  const [isInView, setIsInView] = useState(true)
+  const [notificationPending, setNotificationPending] = useState(false)
+  const [notificationSent, setNotificationSent] = useState(false)
+  const cardRef = useRef<HTMLDivElement | null>(null)
   const [orderIntentId] = useState<string>(() => {
     const randomUuId = globalThis.crypto?.randomUUID?.()
     if (randomUuId) return randomUuId
@@ -462,6 +504,26 @@ export function TradeCard({
     }
     prevCanUseAutoCloseRef.current = canUseAutoClose
   }, [canUseAutoClose])
+
+  useEffect(() => {
+    const target = cardRef.current
+    if (!target) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setIsInView(entries[0]?.isIntersecting ?? true)
+      },
+      { threshold: 0.3 }
+    )
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!showConfirmation) {
+      setNotificationPending(false)
+      setNotificationSent(false)
+    }
+  }, [showConfirmation])
 
   const handleSlippagePresetChange = (value: number | 'custom') => {
     userUpdatedSlippageRef.current = true
@@ -1283,15 +1345,24 @@ export function TradeCard({
         return
       }
 
-      const placedOrderId =
+      const resolvedOrderId =
         data?.orderId ||
         data?.orderID ||
-        data?.raw?.orderId ||
+        data?.order_id ||
+        data?.order_hash ||
+        data?.orderHash ||
         data?.raw?.orderID ||
+        data?.raw?.orderId ||
         data?.raw?.order_id ||
+        data?.raw?.order_hash ||
+        data?.raw?.orderHash ||
         null
+      const normalizedOrderId =
+        resolvedOrderId !== null && resolvedOrderId !== undefined
+          ? String(resolvedOrderId).trim()
+          : null
 
-      if (!placedOrderId) {
+      if (!normalizedOrderId) {
         const errorInfo = resolveTradeErrorInfo(
           data,
           'Order submitted but no order ID returned.'
@@ -1305,7 +1376,7 @@ export function TradeCard({
       // Success: open confirmation view
       setIsSubmitting(false)
       setLocalCopied(true)
-      setOrderId(String(placedOrderId))
+      setOrderId(normalizedOrderId)
       refreshOrders().catch(() => {
         /* handled in refreshOrders */
       })
@@ -1332,10 +1403,20 @@ export function TradeCard({
     setManualDrawerOpen(true)
   }
 
+  const hasConnectedWallet = Boolean(walletAddress)
+  const isPremiumWithoutWallet = Boolean(isPremium) && !hasConnectedWallet
+  const allowManualExperience = !isPremium || (isPremiumWithoutWallet && manualTradingEnabled)
+  const showQuickCopyExperience = Boolean(isPremium) && hasConnectedWallet
+  const showLinkWalletHint = isPremiumWithoutWallet && manualTradingEnabled
+
   const handleCopyTradeClick = () => {
     if (isMarketEnded) return
-    if (isPremium && onToggleExpand) {
+    if (showQuickCopyExperience && onToggleExpand) {
       onToggleExpand()
+      return
+    }
+    if (isPremiumWithoutWallet && !manualTradingEnabled) {
+      setShowWalletPrompt(true)
       return
     }
 
@@ -1440,6 +1521,66 @@ export function TradeCard({
   const isFilledStatus = statusPhase === 'filled'
   const canCancelPendingOrder =
     showConfirmation && (isSubmitting || (Boolean(orderId) && CANCELABLE_PHASES.has(statusPhase)))
+
+  const notificationStatus = resolveExecutionNotificationStatus(
+    statusPhase,
+    filledContracts,
+    totalContracts
+  )
+  const notificationId = orderId ?? orderIntentId
+
+  useEffect(() => {
+    if (!showConfirmation || notificationSent || !notificationStatus) return
+    if (!onExecutionNotification || !tradeAnchorId) return
+    if (!isInView) {
+      onExecutionNotification({
+        id: notificationId,
+        market,
+        status: notificationStatus,
+        tradeAnchorId,
+        timestamp: Date.now(),
+      })
+      setNotificationSent(true)
+      setNotificationPending(false)
+    } else {
+      setNotificationPending(true)
+    }
+  }, [
+    showConfirmation,
+    notificationSent,
+    notificationStatus,
+    onExecutionNotification,
+    tradeAnchorId,
+    isInView,
+    notificationId,
+    market,
+  ])
+
+  useEffect(() => {
+    if (!showConfirmation || notificationSent || !notificationPending) return
+    if (!notificationStatus || !onExecutionNotification || !tradeAnchorId) return
+    if (!isInView) {
+      onExecutionNotification({
+        id: notificationId,
+        market,
+        status: notificationStatus,
+        tradeAnchorId,
+        timestamp: Date.now(),
+      })
+      setNotificationSent(true)
+      setNotificationPending(false)
+    }
+  }, [
+    showConfirmation,
+    notificationSent,
+    notificationPending,
+    notificationStatus,
+    onExecutionNotification,
+    tradeAnchorId,
+    isInView,
+    notificationId,
+    market,
+  ])
 
   const handleCancelOrder = useCallback(async () => {
     if (isCancelingOrder) return
@@ -1620,7 +1761,11 @@ export function TradeCard({
   }
 
   return (
-    <div className="group bg-white border border-slate-200 rounded-xl overflow-hidden transition-all hover:shadow-lg">
+    <div
+      ref={cardRef}
+      id={tradeAnchorId}
+      className="group bg-white border border-slate-200 rounded-xl overflow-hidden transition-all hover:shadow-lg"
+    >
       <div className="p-5 md:p-6">
         {/* Header Row */}
         <div className="flex items-start justify-between mb-4 gap-3">
@@ -1755,7 +1900,7 @@ export function TradeCard({
           </div>
         </div>
 
-        {!isPremium && manualDrawerOpen && (
+        {allowManualExperience && manualDrawerOpen && (
           <div className="p-4 mt-4 space-y-4 border border-slate-200 rounded-xl bg-slate-50">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-slate-900">Manual Copy</h4>
@@ -1849,8 +1994,8 @@ export function TradeCard({
           </div>
         )}
 
-        {!(isPremium && isExpanded) && (
-          isPremium ? (
+        {!(showQuickCopyExperience && isExpanded) && (
+          showQuickCopyExperience ? (
             <div className="w-full">
               <Button
                 onClick={handleCopyTradeClick}
@@ -1876,7 +2021,7 @@ export function TradeCard({
                 )}
               </Button>
             </div>
-          ) : (
+          ) : allowManualExperience ? (
             <div className="w-full">
               {!manualDrawerOpen && (
                 isCopied ? (
@@ -1912,12 +2057,40 @@ export function TradeCard({
                   </Button>
                 )
               )}
+              {showLinkWalletHint && (
+                <div className="mt-3 flex justify-center">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
+                    onClick={() => onOpenConnectWallet?.()}
+                  >
+                    Link my wallet for quick trades
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="w-full">
+              <Button
+                onClick={handleCopyTradeClick}
+                disabled={isCopyDisabled}
+                className={`w-full font-semibold shadow-sm text-sm ${
+                  isMarketEnded
+                    ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                    : "bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900"
+                }`}
+                size="lg"
+              >
+                {isMarketEnded ? "Market Resolved" : "Copy Trade"}
+              </Button>
             </div>
           )
         )}
       </div>
 
-      {isPremium && isExpanded && (
+      {showQuickCopyExperience && isExpanded && (
         <div className="bg-white px-6 pb-3 pt-0">
           <div className="-mt-4 mb-2 flex justify-center">
             <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">
@@ -2400,6 +2573,38 @@ export function TradeCard({
           )}
         </div>
       )}
+
+      <Dialog open={showWalletPrompt} onOpenChange={setShowWalletPrompt}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Connect your wallet to trade</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">
+            You need to connect your Polymarket wallet to continue trading with quick copy.
+          </p>
+          <div className="mt-4 space-y-2">
+            <Button
+              className="w-full bg-slate-900 text-white hover:bg-slate-800"
+              onClick={() => {
+                setShowWalletPrompt(false)
+                onOpenConnectWallet?.()
+              }}
+            >
+              Link my wallet for quick trades
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                onSwitchToManualTrading?.()
+                setShowWalletPrompt(false)
+              }}
+            >
+              Switch to manual trading
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

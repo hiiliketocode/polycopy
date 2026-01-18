@@ -17,6 +17,9 @@ import {
 import { extractTraderNameFromRecord } from '@/lib/trader-name'
 import { CheckCircle2, Clock, XCircle } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal'
+import { Button } from '@/components/ui/button'
 
 type ExecuteForm = {
   tokenId: string
@@ -526,6 +529,9 @@ function TradeExecutePageInner() {
   const [slippagePreset, setSlippagePreset] = useState<number | 'custom'>(3)
   const [customSlippage, setCustomSlippage] = useState('')
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [isPremiumUser, setIsPremiumUser] = useState(false)
+  const [showConnectWalletModal, setShowConnectWalletModal] = useState(false)
   const [balanceLoading, setBalanceLoading] = useState(false)
   const [balanceError, setBalanceError] = useState<string | null>(null)
   const [balanceData, setBalanceData] = useState<BalanceResponse | null>(null)
@@ -950,6 +956,46 @@ function TradeExecutePageInner() {
   }, [searchParams, resetRecordState])
 
   useEffect(() => {
+    let mounted = true
+
+    const loadProfile = async () => {
+      try {
+        const { data } = await supabase.auth.getUser()
+        const user = data?.user || null
+        if (!mounted) return
+        if (!user) {
+          setUserId(null)
+          setIsPremiumUser(false)
+          return
+        }
+        setUserId(user.id)
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_premium, is_admin')
+          .eq('id', user.id)
+          .maybeSingle()
+
+        if (mounted) {
+          setIsPremiumUser(Boolean(profile?.is_premium || profile?.is_admin))
+        }
+      } catch (err) {
+        console.warn('Failed to load profile for trade execution', err)
+        if (mounted) {
+          setUserId(null)
+          setIsPremiumUser(false)
+        }
+      }
+    }
+
+    loadProfile()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
     const tokenId = form.tokenId.trim()
     if (!tokenId) return
     let cancelled = false
@@ -1051,6 +1097,52 @@ function TradeExecutePageInner() {
       setBalanceLoading(false)
     }
   }, [walletAddress])
+
+  const handleWalletConnect = async (address: string) => {
+    if (!userId) return
+
+    try {
+      const { data: walletData } = await supabase
+        .from('turnkey_wallets')
+        .select('polymarket_account_address, eoa_address')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      const connectedWallet =
+        walletData?.polymarket_account_address ||
+        walletData?.eoa_address ||
+        address
+
+      setWalletAddress(connectedWallet || null)
+
+      try {
+        await fetch('/api/polymarket/reset-credentials', {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+        })
+      } catch {
+        // Non-blocking
+      }
+
+      if (connectedWallet) {
+        try {
+          await fetch('/api/polymarket/l2-credentials', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-store',
+            body: JSON.stringify({ polymarketAccountAddress: connectedWallet }),
+          })
+        } catch {
+          // Non-blocking
+        }
+      }
+    } catch (err) {
+      console.warn('Error updating wallet after connection:', err)
+      setWalletAddress(address)
+    }
+  }
 
   useEffect(() => {
     let cached: BalanceResponse | null = null
@@ -1415,6 +1507,8 @@ function TradeExecutePageInner() {
     record?.outcome_index,
   ])
 
+  const showLinkWalletHint = isPremiumUser && !walletAddress
+
   return (
     <div>
       <Navigation />
@@ -1439,16 +1533,29 @@ function TradeExecutePageInner() {
                 </div>
               </div>
             </div>
-            <div
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                marketStatus === 'Open'
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : marketStatus === 'Closed'
-                    ? 'bg-rose-100 text-rose-700'
-                    : 'bg-slate-100 text-slate-500'
-              }`}
-            >
-              {marketStatus ? `Market ${marketStatus}` : 'Market status pending'}
+            <div className="flex flex-wrap items-center gap-2">
+              <div
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  marketStatus === 'Open'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : marketStatus === 'Closed'
+                      ? 'bg-rose-100 text-rose-700'
+                      : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                {marketStatus ? `Market ${marketStatus}` : 'Market status pending'}
+              </div>
+              {showLinkWalletHint && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
+                  onClick={() => setShowConnectWalletModal(true)}
+                >
+                  Link my wallet for quick trades
+                </Button>
+              )}
             </div>
           </div>
           <div className="flex items-start gap-4">
@@ -1897,6 +2004,11 @@ function TradeExecutePageInner() {
         </section>
       </main>
 
+      <ConnectWalletModal
+        open={showConnectWalletModal}
+        onOpenChange={setShowConnectWalletModal}
+        onConnect={handleWalletConnect}
+      />
     </div>
   )
 }

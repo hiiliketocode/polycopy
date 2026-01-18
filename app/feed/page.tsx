@@ -9,11 +9,14 @@ import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { TradeCard } from '@/components/polycopy/trade-card';
+import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/components/polycopy/trade-execution-notifications';
+import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { EmptyState } from '@/components/polycopy/empty-state';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Activity, Filter, DollarSign, Users } from 'lucide-react';
+import { RefreshCw, Activity, Filter, DollarSign, Users, Clock, Coins, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
+import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
 
 // Types
 export interface FeedTrade {
@@ -89,6 +92,7 @@ export default function FeedPage() {
   const [isPremium, setIsPremium] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
+  const [showConnectWalletModal, setShowConnectWalletModal] = useState(false);
   const [activeCategory, setActiveCategory] = useState<Category>('all');
   const [defaultBuySlippage, setDefaultBuySlippage] = useState(3);
   const [defaultSellSlippage, setDefaultSellSlippage] = useState(3);
@@ -96,6 +100,8 @@ export default function FeedPage() {
   const [liveGamesOnly, setLiveGamesOnly] = useState(false);
   const [minTradeSize, setMinTradeSize] = useState(0);
   const [selectedTraders, setSelectedTraders] = useState<Set<string>>(new Set());
+  const [resolvingWindow, setResolvingWindow] = useState<'any' | 'hour' | 'today' | 'tomorrow' | 'week'>('any');
+  const [priceFilter, setPriceFilter] = useState<'any' | 'lt10' | 'lt25' | 'lt50' | 'gte50'>('any');
   
   // Data state
   const [allTrades, setAllTrades] = useState<FeedTrade[]>([]);
@@ -113,6 +119,10 @@ export default function FeedPage() {
   // Copied trades state
   const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(false);
+  const { manualModeEnabled, enableManualMode } = useManualTradingMode(
+    isPremium,
+    Boolean(walletAddress)
+  );
   
   // Live market data (prices, scores, and game metadata)
   const [liveMarketData, setLiveMarketData] = useState<Map<string, { 
@@ -122,6 +132,8 @@ export default function FeedPage() {
     gameStartTime?: string;
     eventStatus?: string;
     resolved?: boolean;
+    endDateIso?: string;
+    liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
     updatedAt?: number;
   }>>(new Map());
 
@@ -129,6 +141,7 @@ export default function FeedPage() {
   
   // Manual refresh state
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [tradeNotifications, setTradeNotifications] = useState<TradeExecutionNotification[]>([]);
 
   const categories = [
     { value: "all" as Category, label: "All" },
@@ -163,24 +176,113 @@ export default function FeedPage() {
     { value: 1000, label: '$1,000+' },
   ];
 
+  const resolvingOptions = [
+    { value: 'any' as const, label: 'Any time' },
+    { value: 'hour' as const, label: 'Next hour' },
+    { value: 'today' as const, label: 'Today' },
+    { value: 'tomorrow' as const, label: 'Tomorrow' },
+    { value: 'week' as const, label: 'This week' },
+  ];
+
+  const priceOptions = [
+    { value: 'any' as const, label: 'Any' },
+    { value: 'lt10' as const, label: '<10¢' },
+    { value: 'lt25' as const, label: '<25¢' },
+    { value: 'lt50' as const, label: '<50¢' },
+    { value: 'gte50' as const, label: '50¢+' },
+  ];
+
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (activeCategory !== 'all') count += 1;
     if (liveGamesOnly) count += 1;
     if (minTradeSize > 0) count += 1;
     if (selectedTraders.size > 0) count += 1;
+    if (resolvingWindow !== 'any') count += 1;
+    if (priceFilter !== 'any') count += 1;
     return count;
-  }, [activeCategory, liveGamesOnly, minTradeSize, selectedTraders]);
+  }, [activeCategory, liveGamesOnly, minTradeSize, selectedTraders, resolvingWindow, priceFilter]);
+
+  const handleTradeExecutionNotification = useCallback((notification: TradeExecutionNotification) => {
+    setTradeNotifications((prev) => {
+      if (prev.some((item) => item.id === notification.id)) return prev;
+      return [notification, ...prev];
+    });
+  }, []);
+
+  const handleDismissTradeNotification = useCallback((id: string) => {
+    setTradeNotifications((prev) => prev.filter((notice) => notice.id !== id));
+  }, []);
+
+  const handleNavigateToTrade = useCallback((notice: TradeExecutionNotification) => {
+    const target = document.getElementById(notice.tradeAnchorId);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
 
   const isLiveMarket = useCallback(
     (trade: FeedTrade) => {
-      const conditionId = trade.market.conditionId || '';
-      const liveData = conditionId ? liveMarketData.get(conditionId) : undefined;
+      const marketKey = getMarketKeyForTrade(trade);
+      const liveData = marketKey ? liveMarketData.get(marketKey) : undefined;
       if (!liveData) return false;
-      const status = liveData.eventStatus?.toLowerCase() || '';
-      if (status.includes('final') || status.includes('post')) return false;
-      if (status.includes('live') || status.includes('in') || status.includes('progress')) return true;
-      return Boolean(liveData.score);
+      return liveData.liveStatus === 'live';
+    },
+    [liveMarketData]
+  );
+
+  const matchesResolvingWindow = useCallback(
+    (trade: FeedTrade) => {
+      if (resolvingWindow === 'any') return true;
+      const marketKey = getMarketKeyForTrade(trade);
+      const liveData = marketKey ? liveMarketData.get(marketKey) : undefined;
+      if (!liveData?.endDateIso || liveData.resolved) return false;
+      const endTime = new Date(liveData.endDateIso);
+      if (Number.isNaN(endTime.getTime())) return false;
+      const now = new Date();
+      if (endTime.getTime() < now.getTime()) return false;
+
+      if (resolvingWindow === 'hour') {
+        return endTime.getTime() <= now.getTime() + 60 * 60 * 1000;
+      }
+
+      const endOfToday = new Date(now);
+      endOfToday.setHours(23, 59, 59, 999);
+
+      if (resolvingWindow === 'today') {
+        return endTime.getTime() <= endOfToday.getTime();
+      }
+
+      const startOfTomorrow = new Date(now);
+      startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+      startOfTomorrow.setHours(0, 0, 0, 0);
+      const endOfTomorrow = new Date(startOfTomorrow);
+      endOfTomorrow.setHours(23, 59, 59, 999);
+
+      if (resolvingWindow === 'tomorrow') {
+        return endTime.getTime() >= startOfTomorrow.getTime() && endTime.getTime() <= endOfTomorrow.getTime();
+      }
+
+      const endOfWeek = new Date(now);
+      const day = endOfWeek.getDay();
+      const daysUntilEnd = (7 - day) % 7;
+      endOfWeek.setDate(endOfWeek.getDate() + daysUntilEnd);
+      endOfWeek.setHours(23, 59, 59, 999);
+
+      return endTime.getTime() <= endOfWeek.getTime();
+    },
+    [liveMarketData, resolvingWindow]
+  );
+
+  const getCurrentOutcomePrice = useCallback(
+    (trade: FeedTrade) => {
+      const marketKey = getMarketKeyForTrade(trade);
+      const liveData = marketKey ? liveMarketData.get(marketKey) : undefined;
+      if (!liveData?.outcomes || !liveData?.outcomePrices) return undefined;
+      const outcomeIndex = liveData.outcomes.findIndex(
+        (o: string) => o.toUpperCase() === trade.trade.outcome.toUpperCase()
+      );
+      if (outcomeIndex === -1 || outcomeIndex >= liveData.outcomePrices.length) return undefined;
+      return liveData.outcomePrices[outcomeIndex];
     },
     [liveMarketData]
   );
@@ -457,6 +559,52 @@ export default function FeedPage() {
     };
   }, [user]);
 
+  const handleWalletConnect = async (address: string) => {
+    if (!user) return;
+
+    try {
+      const { data: walletData } = await supabase
+        .from('turnkey_wallets')
+        .select('polymarket_account_address, eoa_address')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      const connectedWallet =
+        walletData?.polymarket_account_address ||
+        walletData?.eoa_address ||
+        address;
+
+      setWalletAddress(connectedWallet || null);
+
+      try {
+        await fetch('/api/polymarket/reset-credentials', {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+        });
+      } catch {
+        // Non-blocking
+      }
+
+      if (connectedWallet) {
+        try {
+          await fetch('/api/polymarket/l2-credentials', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-store',
+            body: JSON.stringify({ polymarketAccountAddress: connectedWallet }),
+          });
+        } catch {
+          // Non-blocking
+        }
+      }
+    } catch (err) {
+      console.error('Error updating wallet after connection:', err);
+      setWalletAddress(address);
+    }
+  };
+
   const normalizeTeamAbbrev = (value?: string | null) => {
     if (!value) return '';
     const trimmed = value.trim();
@@ -464,6 +612,60 @@ export default function FeedPage() {
     if (/^[A-Z]{2,4}$/.test(trimmed)) return trimmed;
     if (trimmed.length <= 4) return trimmed.toUpperCase();
     return '';
+  };
+
+  const resolveLiveStatus = (payload: {
+    eventStatus?: string | null;
+    gameStartTime?: string | null;
+    espnStatus?: 'scheduled' | 'live' | 'final' | null;
+    resolved?: boolean;
+    hasLiveScore?: boolean;
+  }) => {
+    if (payload.resolved) return 'final';
+    const status = (payload.espnStatus || payload.eventStatus || '').toLowerCase();
+    if (status.includes('final') || status.includes('finished') || status.includes('post')) return 'final';
+    if (
+      status.includes('live') ||
+      status.includes('in_progress') ||
+      status.includes('in progress') ||
+      status.includes('in-progress')
+    ) {
+      if (payload.gameStartTime) {
+        const start = new Date(payload.gameStartTime);
+        const now = new Date();
+        if (!Number.isNaN(start.getTime()) && start.getTime() - now.getTime() > 5 * 60 * 1000) {
+          return 'scheduled';
+        }
+      }
+      return 'live';
+    }
+    if (
+      status.includes('scheduled') ||
+      status.includes('pre') ||
+      status.includes('not_started') ||
+      status.includes('upcoming') ||
+      status.includes('preview')
+    ) {
+      return 'scheduled';
+    }
+    if (payload.hasLiveScore) {
+      if (payload.gameStartTime) {
+        const start = new Date(payload.gameStartTime);
+        const now = new Date();
+        if (!Number.isNaN(start.getTime()) && start.getTime() - now.getTime() > 5 * 60 * 1000) {
+          return 'scheduled';
+        }
+      }
+      return 'live';
+    }
+    if (payload.gameStartTime) {
+      const start = new Date(payload.gameStartTime);
+      const now = new Date();
+      if (!Number.isNaN(start.getTime())) {
+        return now >= start ? 'live' : 'scheduled';
+      }
+    }
+    return 'unknown';
   };
 
   // Fetch live market data (prices, scores, and game metadata)
@@ -475,13 +677,20 @@ export default function FeedPage() {
       gameStartTime?: string;
       eventStatus?: string;
       resolved?: boolean;
+      endDateIso?: string;
+      liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
       updatedAt?: number;
     }>();
     
-    // Group trades by condition ID to avoid duplicate API calls
-    const uniqueConditionIds = [...new Set(trades.map(t => t.market.conditionId).filter(Boolean))];
+    // Group trades by market key to avoid duplicate API calls
+    const tradeByMarketKey = new Map<string, FeedTrade>();
+    trades.forEach((trade) => {
+      const marketKey = getMarketKeyForTrade(trade);
+      if (!marketKey || tradeByMarketKey.has(marketKey)) return;
+      tradeByMarketKey.set(marketKey, trade);
+    });
     
-    console.log(`📊 Fetching live data for ${uniqueConditionIds.length} markets`);
+    console.log(`📊 Fetching live data for ${tradeByMarketKey.size} markets`);
     
     // **NEW: Fetch ESPN scores for all sports trades first**
     console.log(`🏈 Fetching ESPN scores for sports markets...`);
@@ -490,18 +699,21 @@ export default function FeedPage() {
     
     // Fetch prices for each market
     await Promise.all(
-      uniqueConditionIds.map(async (conditionId) => {
-        if (!conditionId) return;
+      Array.from(tradeByMarketKey.entries()).map(async ([marketKey, trade]) => {
+        if (!marketKey) return;
         
         try {
+          const params = new URLSearchParams();
+          if (trade.market.conditionId) params.set('conditionId', trade.market.conditionId);
+          if (trade.market.slug) params.set('slug', trade.market.slug);
+          if (trade.market.title) params.set('title', trade.market.title);
+
           // Fetch current price from Polymarket API
-          const priceResponse = await fetch(`/api/polymarket/price?conditionId=${conditionId}`);
+          const priceResponse = await fetch(`/api/polymarket/price?${params.toString()}`);
           if (priceResponse.ok) {
             const priceData = await priceResponse.json();
             
             if (priceData.success && priceData.market) {
-              // Get the trade to determine which outcome we need
-              const trade = trades.find(t => t.market.conditionId === conditionId);
               if (trade) {
                 const { 
                   outcomes, 
@@ -512,7 +724,8 @@ export default function FeedPage() {
                   homeTeam,
                   awayTeam,
                   closed,
-                  resolved
+                  resolved,
+                  endDateIso,
                 } = priceData.market;
                 
                 console.log(`✅ Got data for ${trade.market.title.slice(0, 40)}... | Status: ${eventStatus} | Score:`, liveScore);
@@ -535,15 +748,18 @@ export default function FeedPage() {
                                        trade.market.title.match(/\w+ (vs\.?|@) \w+/));
                   
                   let scoreDisplay: string | undefined;
+                  let espnStatus: 'scheduled' | 'live' | 'final' | null = null;
                   
                   // **NEW: Check ESPN scores first for sports markets**
-                  const espnScore = espnScores.get(conditionId);
+                  const espnScoreKey = trade.market.conditionId || trade.market.id || trade.market.title;
+                  const espnScore = espnScoreKey ? espnScores.get(espnScoreKey) : undefined;
                   
                   if (isSportsMarket && outcomes?.length === 2) {
                     // SPORTS MARKETS: Prioritize ESPN scores, then Polymarket data
                     
                     if (espnScore) {
                       // **ESPN DATA AVAILABLE** 🎯
+                      espnStatus = espnScore.status;
                       const { team1Label, team1Score, team2Label, team2Score } = getScoreDisplaySides(
                         trade.market.title,
                         espnScore
@@ -696,23 +912,33 @@ export default function FeedPage() {
                   console.log(
                     `🔒 Market resolved status for ${trade.market.title.slice(0, 40)}... | closed=${closed} | apiResolved=${resolved} | max=${maxPrice} | min=${minPrice} | resolved=${isMarketResolved}`
                   );
+
+                  const liveStatus = resolveLiveStatus({
+                    eventStatus,
+                    gameStartTime,
+                    espnStatus,
+                    resolved: isMarketResolved,
+                    hasLiveScore: Boolean(liveScore && typeof liveScore === 'object'),
+                  });
                   
-                  newLiveData.set(conditionId, { 
+                  newLiveData.set(marketKey, { 
                     outcomes: outcomes || [],
                     outcomePrices: numericPrices,
                     score: scoreDisplay,
                     gameStartTime: gameStartTime || undefined,
                     eventStatus: eventStatus || undefined,
                     resolved: isMarketResolved,
+                    endDateIso: endDateIso || undefined,
+                    liveStatus,
                     updatedAt: Date.now(),
                   });
                 }
             }
           } else {
-            console.warn(`❌ Price API failed for ${conditionId}: ${priceResponse.status}`);
+            console.warn(`❌ Price API failed for ${trade.market.title}: ${priceResponse.status}`);
           }
         } catch (error) {
-          console.warn(`Failed to fetch live data for ${conditionId}:`, error);
+          console.warn(`Failed to fetch live data for ${trade.market.title}:`, error);
         }
       })
     );
@@ -1131,6 +1357,21 @@ export default function FeedPage() {
       return false;
     }
 
+    if (resolvingWindow !== 'any' && !matchesResolvingWindow(trade)) {
+      return false;
+    }
+
+    if (priceFilter !== 'any') {
+      const livePrice = getCurrentOutcomePrice(trade);
+      const priceValue = Number.isFinite(livePrice) ? livePrice : trade.trade.price;
+      if (!Number.isFinite(priceValue)) return false;
+      const priceCents = priceValue * 100;
+      if (priceFilter === 'lt10' && priceCents >= 10) return false;
+      if (priceFilter === 'lt25' && priceCents >= 25) return false;
+      if (priceFilter === 'lt50' && priceCents >= 50) return false;
+      if (priceFilter === 'gte50' && priceCents < 50) return false;
+    }
+
     if (selectedTraders.size > 0) {
       const wallet = trade.trader.wallet?.toLowerCase() || '';
       if (!selectedTraders.has(wallet)) {
@@ -1139,7 +1380,7 @@ export default function FeedPage() {
     }
     
     return true;
-  }), [allTrades, activeCategory, minTradeSize, liveGamesOnly, selectedTraders, isLiveMarket]);
+  }), [allTrades, activeCategory, minTradeSize, liveGamesOnly, selectedTraders, resolvingWindow, priceFilter, isLiveMarket, matchesResolvingWindow, getCurrentOutcomePrice]);
   
   const displayedTrades = useMemo(
     () => filteredAllTrades.slice(0, displayedTradesCount),
@@ -1152,14 +1393,24 @@ export default function FeedPage() {
     fetchLiveMarketData(allTrades);
   }, [liveGamesOnly, allTrades, fetchLiveMarketData]);
 
+  useEffect(() => {
+    if (resolvingWindow === 'any' || allTrades.length === 0) return;
+    fetchLiveMarketData(allTrades);
+  }, [resolvingWindow, allTrades, fetchLiveMarketData]);
+
+  useEffect(() => {
+    if (priceFilter === 'any' || allTrades.length === 0) return;
+    fetchLiveMarketData(allTrades);
+  }, [priceFilter, allTrades, fetchLiveMarketData]);
+
   const refreshDisplayedMarketData = useCallback(() => {
     if (displayedTrades.length === 0) return;
     const now = Date.now();
     const refreshWindowMs = 15000;
     const tradesNeedingRefresh = displayedTrades.filter((trade) => {
-      const conditionId = trade.market.conditionId;
-      if (!conditionId) return false;
-      const liveData = liveMarketData.get(conditionId);
+      const marketKey = getMarketKeyForTrade(trade);
+      if (!marketKey) return false;
+      const liveData = liveMarketData.get(marketKey);
       if (!liveData?.updatedAt) return true;
       return now - liveData.updatedAt > refreshWindowMs;
     });
@@ -1167,9 +1418,9 @@ export default function FeedPage() {
     if (tradesNeedingRefresh.length === 0) return;
 
     const hasMissingData = tradesNeedingRefresh.some((trade) => {
-      const conditionId = trade.market.conditionId;
-      if (!conditionId) return false;
-      const liveData = liveMarketData.get(conditionId);
+      const marketKey = getMarketKeyForTrade(trade);
+      if (!marketKey) return false;
+      const liveData = liveMarketData.get(marketKey);
       return !liveData?.updatedAt;
     });
 
@@ -1418,6 +1669,8 @@ export default function FeedPage() {
                       setLiveGamesOnly(false);
                       setMinTradeSize(0);
                       setSelectedTraders(new Set());
+                      setResolvingWindow('any');
+                      setPriceFilter('any');
                     }}
                     variant="ghost"
                     size="sm"
@@ -1453,123 +1706,211 @@ export default function FeedPage() {
               </div>
             </div>
             {showFilters && (
-              <div className="mt-3 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-5">
-                <div className="flex flex-col gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-2">
-                      <Filter className="h-4 w-4 text-slate-500" />
-                      Category
-                    </div>
-                    <div className="flex gap-2 flex-wrap">
-                      {categories.map((category) => (
-                        <button
-                          key={category.value}
-                          onClick={() => setActiveCategory(category.value)}
-                          className={cn(
-                            "px-4 py-2 rounded-full font-medium text-sm whitespace-nowrap transition-all",
-                            activeCategory === category.value
-                              ? "bg-gradient-to-r from-yellow-400 to-amber-500 text-slate-900 shadow-sm"
-                              : "bg-slate-100 text-slate-700 hover:bg-slate-200",
-                          )}
-                        >
-                          {category.label}
-                        </button>
-                      ))}
-                    </div>
+              <div className="mt-3 rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-2 md:px-4">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+                      <Filter className="h-4 w-4" />
+                    </span>
+                    <span className="text-sm font-semibold text-slate-900">Filters</span>
+                    {activeFiltersCount > 0 && (
+                      <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-slate-900">
+                        {activeFiltersCount}
+                      </span>
+                    )}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-semibold text-slate-900">Live Games Only</span>
-                        <button
-                          onClick={() => setLiveGamesOnly((prev) => !prev)}
-                          className={cn(
-                            "relative inline-flex h-6 w-11 items-center rounded-full transition",
-                            liveGamesOnly ? "bg-emerald-500" : "bg-slate-200"
+                  {activeFiltersCount > 0 && (
+                    <button
+                      onClick={() => {
+                        setActiveCategory('all');
+                        setLiveGamesOnly(false);
+                        setMinTradeSize(0);
+                        setSelectedTraders(new Set());
+                        setResolvingWindow('any');
+                        setPriceFilter('any');
+                      }}
+                      className="text-xs font-semibold text-slate-600 hover:text-slate-900"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+                <div className="p-3 md:p-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-[1.45fr_1fr] gap-3">
+                    <div className="space-y-3">
+                      <section className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
+                          <Tag className="h-3.5 w-3.5" />
+                          Category
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {categories.map((category) => (
+                            <button
+                              key={category.value}
+                              onClick={() => setActiveCategory(category.value)}
+                              aria-pressed={activeCategory === category.value}
+                              className={cn(
+                                "whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-semibold transition",
+                                activeCategory === category.value
+                                  ? "border-amber-300 bg-amber-50 text-slate-900"
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                              )}
+                            >
+                              {category.label}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                      <section className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            <Users className="h-3.5 w-3.5" />
+                            Traders
+                          </div>
+                          {selectedTraders.size > 0 && (
+                            <button
+                              onClick={() => setSelectedTraders(new Set())}
+                              className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                            >
+                              Clear
+                            </button>
                           )}
-                          role="switch"
-                          aria-checked={liveGamesOnly}
-                        >
-                          <span
-                            className={cn(
-                              "inline-block h-4 w-4 transform rounded-full bg-white transition",
-                              liveGamesOnly ? "translate-x-6" : "translate-x-1"
-                            )}
-                          />
-                        </button>
-                      </div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 max-h-36 overflow-y-auto pr-1">
+                          {traderFilters.map((trader) => {
+                            const isSelected = selectedTraders.has(trader.wallet);
+                            return (
+                              <label
+                                key={trader.wallet}
+                                className={cn(
+                                  "flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm transition",
+                                  isSelected
+                                    ? "border-amber-300 bg-amber-50 text-slate-900"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                                )}
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-400"
+                                  checked={isSelected}
+                                  onChange={(event) => {
+                                    setSelectedTraders((prev) => {
+                                      const next = new Set(prev);
+                                      if (event.target.checked) {
+                                        next.add(trader.wallet);
+                                      } else {
+                                        next.delete(trader.wallet);
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                />
+                                <span className="truncate">{trader.name}</span>
+                              </label>
+                            );
+                          })}
+                          {traderFilters.length === 0 && (
+                            <p className="text-sm text-slate-500">No traders yet.</p>
+                          )}
+                        </div>
+                      </section>
                     </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-2">
-                        <DollarSign className="h-4 w-4 text-emerald-600" />
-                        Trade size
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <section className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                              <Activity className="h-3.5 w-3.5" />
+                              Live games
+                            </div>
+                            <button
+                              onClick={() => setLiveGamesOnly((prev) => !prev)}
+                              className={cn(
+                                "relative inline-flex h-6 w-11 items-center rounded-full transition",
+                                liveGamesOnly ? "bg-amber-500" : "bg-slate-200"
+                              )}
+                              role="switch"
+                              aria-checked={liveGamesOnly}
+                            >
+                              <span
+                                className={cn(
+                                  "inline-block h-4 w-4 transform rounded-full bg-white transition",
+                                  liveGamesOnly ? "translate-x-6" : "translate-x-1"
+                                )}
+                              />
+                            </button>
+                          </div>
+                        </section>
+                        <section className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
+                            <Clock className="h-3.5 w-3.5" />
+                            Resolving
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {resolvingOptions.map((option) => (
+                              <button
+                                key={option.value}
+                                onClick={() => setResolvingWindow(option.value)}
+                                aria-pressed={resolvingWindow === option.value}
+                                className={cn(
+                                  "whitespace-nowrap rounded-lg border px-2 py-2 text-[11px] font-semibold transition",
+                                  resolvingWindow === option.value
+                                    ? "border-amber-300 bg-amber-50 text-slate-900"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                                )}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </section>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        {tradeSizeOptions.map((option) => (
-                          <button
-                            key={option.value}
-                            onClick={() => setMinTradeSize(option.value)}
-                            className={cn(
-                              "px-3 py-1.5 rounded-full text-sm font-medium border transition",
-                              minTradeSize === option.value
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                            )}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                        <Users className="h-4 w-4 text-slate-500" />
-                        Traders
-                      </div>
-                      {selectedTraders.size > 0 && (
-                        <button
-                          onClick={() => setSelectedTraders(new Set())}
-                          className="text-xs font-medium text-slate-500 hover:text-slate-700"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
-                      {traderFilters.map((trader) => {
-                        const isSelected = selectedTraders.has(trader.wallet);
-                        return (
-                          <label key={trader.wallet} className={cn(
-                            "flex items-center gap-2 text-sm rounded-lg border px-2.5 py-2 transition",
-                            isSelected
-                              ? "border-yellow-200 bg-yellow-50 text-slate-800"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                          )}>
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-slate-300 text-yellow-500 focus:ring-yellow-400"
-                              checked={isSelected}
-                              onChange={(event) => {
-                                setSelectedTraders((prev) => {
-                                  const next = new Set(prev);
-                                  if (event.target.checked) {
-                                    next.add(trader.wallet);
-                                  } else {
-                                    next.delete(trader.wallet);
-                                  }
-                                  return next;
-                                });
-                              }}
-                            />
-                            <span className="truncate">{trader.name}</span>
-                          </label>
-                        );
-                      })}
-                      {traderFilters.length === 0 && (
-                        <p className="text-sm text-slate-500">No traders yet.</p>
-                      )}
+                      <section className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
+                          <DollarSign className="h-3.5 w-3.5" />
+                          Trade size
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {tradeSizeOptions.map((option) => (
+                            <button
+                              key={option.value}
+                              onClick={() => setMinTradeSize(option.value)}
+                              aria-pressed={minTradeSize === option.value}
+                              className={cn(
+                                "whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-semibold transition",
+                                minTradeSize === option.value
+                                  ? "border-amber-300 bg-amber-50 text-slate-900"
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                              )}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                      <section className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
+                          <Coins className="h-3.5 w-3.5" />
+                          Current price
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {priceOptions.map((option) => (
+                            <button
+                              key={option.value}
+                              onClick={() => setPriceFilter(option.value)}
+                              aria-pressed={priceFilter === option.value}
+                              className={cn(
+                                "whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-semibold transition",
+                                priceFilter === option.value
+                                  ? "border-amber-300 bg-amber-50 text-slate-900"
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                              )}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
                     </div>
                   </div>
                 </div>
@@ -1612,8 +1953,6 @@ export default function FeedPage() {
               icon={Activity}
               title="Your feed is empty"
               description="Follow traders on the Discover page to see their activity here"
-              actionLabel="Discover Traders"
-              onAction={() => router.push('/discover')}
             />
           ) : displayedTrades.length === 0 ? (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
@@ -1626,24 +1965,18 @@ export default function FeedPage() {
           ) : (
             <div className="space-y-4">
               {displayedTrades.map((trade) => {
-                const liveMarket = liveMarketData.get(trade.market.conditionId || '')
-                
-                // Find the price for THIS specific trade's outcome
-                let currentPrice: number | undefined = undefined;
-                if (liveMarket?.outcomes && liveMarket?.outcomePrices) {
-                  const outcomeIndex = liveMarket.outcomes.findIndex(
-                    (o: string) => o.toUpperCase() === trade.trade.outcome.toUpperCase()
-                  );
-                  if (outcomeIndex !== -1 && outcomeIndex < liveMarket.outcomePrices.length) {
-                    currentPrice = liveMarket.outcomePrices[outcomeIndex];
-                  }
-                }
+                const marketKey = getMarketKeyForTrade(trade);
+                const liveMarket = marketKey ? liveMarketData.get(marketKey) : undefined
+                const currentPrice = getCurrentOutcomePrice(trade);
                 
                 const tradeKey = String(trade.id);
+                const tradeAnchorId = `trade-card-${trade.id}`;
 
                 return (
                   <TradeCard
                     key={trade.id}
+                    tradeAnchorId={tradeAnchorId}
+                    onExecutionNotification={handleTradeExecutionNotification}
                     trader={{
                       name: trade.trader.displayName,
                       address: trade.trader.wallet,
@@ -1684,6 +2017,10 @@ export default function FeedPage() {
                     }
                     defaultBuySlippage={defaultBuySlippage}
                     defaultSellSlippage={defaultSellSlippage}
+                    walletAddress={walletAddress}
+                    manualTradingEnabled={manualModeEnabled}
+                    onSwitchToManualTrading={enableManualMode}
+                    onOpenConnectWallet={() => setShowConnectWalletModal(true)}
                   />
                 )
               })}
@@ -1705,6 +2042,16 @@ export default function FeedPage() {
         </div>
       </div>
 
+      <TradeExecutionNotifications
+        notifications={tradeNotifications}
+        onDismiss={handleDismissTradeNotification}
+        onNavigate={handleNavigateToTrade}
+      />
+      <ConnectWalletModal
+        open={showConnectWalletModal}
+        onOpenChange={setShowConnectWalletModal}
+        onConnect={handleWalletConnect}
+      />
     </>
   );
 }
