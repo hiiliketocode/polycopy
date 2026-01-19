@@ -1775,7 +1775,13 @@ function ProfilePageContent() {
     const rawMarketTitle = order.marketTitle?.trim() ?? '';
     const isUnknownTitle = rawMarketTitle.length === 0 || rawMarketTitle.toLowerCase() === 'unknown market';
     const marketTitle = isUnknownTitle ? meta?.title ?? rawMarketTitle ?? 'Unknown Market' : rawMarketTitle;
-    const outcome = order.outcome || (order.side === 'BUY' ? 'YES' : 'NO');
+    const rawOutcome =
+      order.raw?.outcome ??
+      order.raw?.token?.outcome ??
+      order.raw?.market?.outcome ??
+      order.raw?.market?.winning_outcome ??
+      null;
+    const outcome = order.outcome || rawOutcome || (order.side === 'BUY' ? 'YES' : 'NO');
     
     return {
       id: `quick-${order.orderId}`,
@@ -2042,17 +2048,60 @@ function ProfilePageContent() {
     [getTradeDisplayPrice, marketMeta]
   );
 
+  const resolveTokenIdForTrade = useCallback(async (trade: UnifiedTrade): Promise<string | null> => {
+    const marketId = trade.market_id?.trim();
+    const normalizedOutcome = normalizeOutcomeValue(trade.outcome);
+    if (!marketId || !normalizedOutcome) return null;
+    try {
+      const response = await fetch(
+        `/api/polymarket/market?conditionId=${encodeURIComponent(marketId)}`,
+        { cache: 'no-store' }
+      );
+      if (!response.ok) return null;
+      const data = await response.json();
+      const tokens = Array.isArray(data?.tokens) ? data.tokens : [];
+      const match = tokens.find(
+        (token) => normalizeOutcomeValue(token?.outcome) === normalizedOutcome
+      );
+      if (typeof match?.token_id === 'string' && match.token_id.trim()) {
+        return match.token_id.trim();
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const findPositionMatch = useCallback(
+    (positionsList: PositionSummary[], trade: UnifiedTrade): PositionSummary | null => {
+      const normalizedMarketId = trade.market_id?.trim().toLowerCase();
+      if (!normalizedMarketId) return null;
+      const normalizedOutcome = normalizeOutcomeValue(trade.outcome);
+      const candidates = positionsList.filter(
+        (pos) => pos.marketId?.trim().toLowerCase() === normalizedMarketId
+      );
+      if (candidates.length === 0) return null;
+      if (normalizedOutcome) {
+        const outcomeMatch = candidates.find(
+          (pos) => normalizeOutcomeValue(pos.outcome) === normalizedOutcome
+        );
+        if (outcomeMatch) return outcomeMatch;
+      }
+      if (candidates.length === 1) return candidates[0];
+      return null;
+    },
+    []
+  );
+
   const resolvePositionForTrade = useCallback(
     async (trade: UnifiedTrade): Promise<PositionSummary | null> => {
-      const key = buildPositionKey(trade.market_id, trade.outcome);
-      if (!key) return null;
-      const cached = positionByKey.get(key);
+      const cached = findPositionMatch(positions, trade);
       if (cached) return cached;
       const fresh = await refreshPositions();
       if (!fresh) return null;
-      return fresh.find((pos) => buildPositionKey(pos.marketId, pos.outcome) === key) ?? null;
+      return findPositionMatch(fresh, trade);
     },
-    [positionByKey, refreshPositions]
+    [findPositionMatch, positions, refreshPositions]
   );
 
   // Merge and sort all trades
@@ -2239,6 +2288,28 @@ function ProfilePageContent() {
     let position = await resolvePositionForTrade(trade);
     if (!position && trade.type === 'quick' && trade.raw) {
       position = buildFallbackPositionFromOrder(trade.raw);
+    }
+
+    if (!position) {
+      const tokenId = await resolveTokenIdForTrade(trade);
+      const size = getTradeContracts(trade);
+      if (tokenId && size && size > 0) {
+        const sideRaw =
+          trade.type === 'quick' ? trade.raw?.side : null;
+        const normalizedSide = sideRaw ? String(sideRaw).trim().toUpperCase() : 'BUY';
+        const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
+        position = {
+          tokenId,
+          marketId: trade.market_id ?? null,
+          outcome: trade.outcome ?? null,
+          direction: side === 'SELL' ? 'SHORT' : 'LONG',
+          side,
+          size,
+          avgEntryPrice: trade.price_entry ?? null,
+          firstTradeAt: trade.created_at ?? null,
+          lastTradeAt: trade.created_at ?? null,
+        };
+      }
     }
 
     if (!position) {
