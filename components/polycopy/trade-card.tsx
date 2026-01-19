@@ -763,7 +763,13 @@ export function TradeCard({
 
   const contractStep = 0.0001
   const contractDecimals = 2
-  const formatContracts = (value: number) => formatByStep(value, contractStep)
+  const formatContracts = (value: number) => {
+    if (!Number.isFinite(value)) return "--"
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: value % 1 === 0 ? 0 : 1,
+      maximumFractionDigits: 1,
+    }).format(value)
+  }
 
   const roundPriceToTickSize = (price: number, tickSize?: number | null) => {
     if (!Number.isFinite(price)) return price
@@ -1746,8 +1752,8 @@ export function TradeCard({
           : 0
   const statusContractsText =
     filledContracts !== null && totalContracts !== null
-      ? `${formatContractsDisplay(filledContracts)} / ${formatContractsDisplay(totalContracts)}`
-      : `${formatContractsDisplay(contractsValue ?? 0)} submitted`
+      ? `${formatContractsDisplay(filledContracts, 1)} / ${formatContractsDisplay(totalContracts, 1)}`
+      : `${formatContractsDisplay(contractsValue ?? 0, 1)} submitted`
   const isFinalStatus = TERMINAL_STATUS_PHASES.has(statusPhase)
   const isFilledStatus = statusPhase === 'filled'
   const canCancelPendingOrder =

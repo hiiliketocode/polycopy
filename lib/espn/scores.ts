@@ -171,7 +171,7 @@ function detectSportType(title: string, category?: string | null): SportGroup | 
     return 'soccer';
   }
 
-  if (titleLower.match(/\b(afc|fc)\b/) && titleLower.match(/\bwin\b/) && titleLower.match(/\b\d{4}-\d{2}-\d{2}\b/)) {
+  if (titleLower.match(/\b(afc|cf|fc)\b/) && titleLower.match(/\bwin\b/) && titleLower.match(/\b\d{4}-\d{2}-\d{2}\b/)) {
     return 'soccer';
   }
 
@@ -179,7 +179,7 @@ function detectSportType(title: string, category?: string | null): SportGroup | 
     if (titleLower.match(/\b(premier league|premiership|epl|uefa|champions league|europa league|conference league|fa cup|carabao|community shield)\b/)) {
       return 'soccer';
     }
-    if (titleLower.match(/\b(afc|fc)\b/) && titleLower.match(/\bwin\b/)) {
+    if (titleLower.match(/\b(afc|cf|fc)\b/) && titleLower.match(/\bwin\b/)) {
       return 'soccer';
     }
     if (titleLower.match(/\bwin\b/) && titleLower.match(/\b\d{4}-\d{2}-\d{2}\b/)) {
@@ -274,6 +274,8 @@ export function extractTeamNames(title: string): { team1: string; team2: string 
     .replace(/\s*\([−+]?\d+\.?\d*\)/g, '') // Remove (−9.5) or (+7)
     .replace(/\s*O\/U\s*\d+\.?\d*/gi, '') // Remove O/U 215.5
     .replace(/\s*(Over|Under)\s*\d+\.?\d*/gi, '') // Remove Over/Under 215.5
+    .replace(/^\s*(Spread|Total|Moneyline|ML|Pick'?em|O\/U|Over\/Under)\s*\d*\.?\d*\s*:\s*/i, '') // Remove leading bet type
+    .replace(/^\s*(Spread|Total|Moneyline|ML|Pick'?em)\s+/i, '') // Remove leading bet type without colon
     .replace(/\s*\|\s*.*$/, '') // Remove trailing pipes
     .replace(/\s*:\s*.*$/, '') // Remove trailing descriptor after colon
     .trim();
@@ -317,10 +319,11 @@ function extractSingleTeamMatch(title: string): { team: string; dateKey?: string
 }
 
 function extractSingleTeamHint(title: string): { team: string } | null {
-  if (!/\b(spread|moneyline|ml|pick'?em)\b/i.test(title)) return null;
+  if (!/\b(spread|moneyline|ml|pick'?em|total|o\/u|over\/under)\b/i.test(title)) return null;
   const cleaned = title
     .replace(/\s*\([−+]?\d+\.?\d*\)/g, '')
-    .replace(/\b(spread|moneyline|ml|pick'?em)\b\s*:/i, '')
+    .replace(/\b(spread|moneyline|ml|pick'?em|total|o\/u|over\/under)\b\s*:/i, '')
+    .replace(/\s*[−+-]?\d+\.?\d*\s*$/g, '')
     .trim();
   if (!cleaned || /\b(vs\.?|v\.?|@|versus|at)\b/i.test(cleaned)) return null;
   return { team: cleaned };
@@ -528,12 +531,13 @@ function findMatchingGame(marketTitle: string, games: ESPNGame[]): ESPNGame | nu
   const teams = extractTeamNames(marketTitle);
   if (!teams) {
     const singleTeamMatch = extractSingleTeamMatch(marketTitle);
-    if (!singleTeamMatch) return null;
-    const targetDateKey = singleTeamMatch.dateKey || null;
+    const fallbackSingleTeam = singleTeamMatch ?? extractSingleTeamHint(marketTitle);
+    if (!fallbackSingleTeam) return null;
+    const targetDateKey = 'dateKey' in fallbackSingleTeam ? fallbackSingleTeam.dateKey || null : null;
 
     const scoredMatches = games.map(game => {
-      const homeScore = scoreTeamMatch(singleTeamMatch.team, game.homeTeam.name, game.homeTeam.abbreviation);
-      const awayScore = scoreTeamMatch(singleTeamMatch.team, game.awayTeam.name, game.awayTeam.abbreviation);
+      const homeScore = scoreTeamMatch(fallbackSingleTeam.team, game.homeTeam.name, game.homeTeam.abbreviation);
+      const awayScore = scoreTeamMatch(fallbackSingleTeam.team, game.awayTeam.name, game.awayTeam.abbreviation);
       const baseScore = Math.max(homeScore, awayScore);
       const dateKey = getStartDateKey(game.startTime);
       const dateMatch = targetDateKey && dateKey && targetDateKey === dateKey;
@@ -546,9 +550,13 @@ function findMatchingGame(marketTitle: string, games: ESPNGame[]): ESPNGame | nu
         if (targetDateKey) {
           return match.baseScore >= 4 && match.dateMatch;
         }
-        return match.baseScore >= 6;
+        return match.baseScore >= 4;
       })
-      .sort((a, b) => b.bestScore - a.bestScore)[0];
+      .sort((a, b) => {
+        const statusScore = (game: ESPNGame) =>
+          game.status === 'live' ? 2 : game.status === 'final' ? 1 : 0;
+        return b.bestScore + statusScore(b.game) - (a.bestScore + statusScore(a.game));
+      })[0];
 
     if (bestMatch) return bestMatch.game;
 
@@ -608,6 +616,16 @@ export async function getESPNScoreForTrade(trade: FeedTrade): Promise<ESPNScoreR
 // Batch fetch scores for multiple trades (more efficient)
 export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<string, ESPNScoreResult>> {
   const scoreMap = new Map<string, ESPNScoreResult>();
+  const gamesBySport = new Map<SportGroup, ESPNGame[]>();
+  const ALL_SPORTS = Object.keys(ESPN_SPORT_GROUPS) as SportGroup[];
+
+  const fetchGamesForSport = async (sport: SportGroup): Promise<ESPNGame[]> => {
+    const cached = gamesBySport.get(sport);
+    if (cached) return cached;
+    const games = await fetchESPNGroupScores(sport);
+    gamesBySport.set(sport, games);
+    return games;
+  };
   
   // Group trades by sport
   const sportGroups: Record<SportGroup, FeedTrade[]> = {
@@ -625,11 +643,14 @@ export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<s
     mma: [],
     boxing: [],
   };
+  const unknownTrades: FeedTrade[] = [];
   
   trades.forEach(trade => {
     const sport = detectSportType(trade.market.title, trade.market.category);
     if (sport && sportGroups[sport]) {
       sportGroups[sport].push(trade);
+    } else if (trade.market.category?.toLowerCase() === 'sports') {
+      unknownTrades.push(trade);
     }
   });
   
@@ -638,7 +659,7 @@ export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<s
     .filter(([_, trades]) => trades.length > 0)
     .map(async ([sport, sportTrades]) => {
       const sportKey = sport as SportGroup;
-      const espnGames = await fetchESPNGroupScores(sportKey);
+      const espnGames = await fetchGamesForSport(sportKey);
 
       sportTrades.forEach(trade => {
         const matchingGame = findMatchingGame(trade.market.title, espnGames);
@@ -653,6 +674,23 @@ export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<s
     });
   
   await Promise.all(sportFetches);
+
+  if (unknownTrades.length > 0) {
+    for (const trade of unknownTrades) {
+      const key = trade.market.conditionId || trade.market.id || trade.market.title;
+      if (!key || scoreMap.has(key)) continue;
+
+      for (const sport of ALL_SPORTS) {
+        const games = await fetchGamesForSport(sport);
+        const matchingGame = findMatchingGame(trade.market.title, games);
+        if (matchingGame) {
+          console.log(`✅ Found ESPN game for "${trade.market.title}": ${matchingGame.name} (${matchingGame.status})`);
+          scoreMap.set(key, buildScoreResult(matchingGame));
+          break;
+        }
+      }
+    }
+  }
   
   console.log(`✅ Fetched scores for ${scoreMap.size} markets`);
   return scoreMap;

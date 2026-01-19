@@ -36,10 +36,20 @@ const findOutcomePrice = (market: MarketPrice, outcome: string | null) => {
   return null
 }
 
+const inferResolvedFromPrices = (market: MarketPrice) => {
+  if (!market.outcomePrices || market.outcomePrices.length < 2) return false
+  const prices = market.outcomePrices
+    .map((price) => Number(price))
+    .filter((price) => Number.isFinite(price))
+  if (prices.length < 2) return false
+  const maxPrice = Math.max(...prices)
+  const minPrice = Math.min(...prices)
+  return maxPrice >= 0.995 && minPrice <= 0.005
+}
+
 const resolveIsResolved = (market: MarketPrice) => {
   if (typeof market.resolved === 'boolean') return market.resolved
-  if (typeof market.closed === 'boolean') return market.closed
-  return false
+  return inferResolvedFromPrices(market)
 }
 
 const parseMaybeArray = (value: any) => {
