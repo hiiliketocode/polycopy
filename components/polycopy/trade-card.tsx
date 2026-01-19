@@ -625,7 +625,10 @@ export function TradeCard({
     Boolean(cleanedLiveScore && looksLikeScore) &&
     (resolvedLiveStatus === "live" || resolvedLiveStatus === "final")
 
-  const showEventTimeBadge = statusBadgeVariant !== "live" && statusBadgeVariant !== "resolved"
+  const showEventTimeBadge =
+    statusBadgeVariant !== "live" &&
+    statusBadgeVariant !== "resolved" &&
+    statusBadgeVariant !== "ended"
   const hasEventTime = Boolean(eventStartTime || eventEndTime)
   const { eventTimeValue, eventTimeKind } = useMemo(() => {
     if (statusVariant === "ended" || statusVariant === "resolved") {
@@ -646,6 +649,29 @@ export function TradeCard({
     const useDateOnly = isDateOnly || isMidnightUtc
     const parsed = new Date(eventTimeValue)
     if (Number.isNaN(parsed.getTime())) return "Time TBD"
+    if (eventTimeKind === "end") {
+      const timeZone = useDateOnly ? "UTC" : undefined
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      })
+      const toYmd = (date: Date) => {
+        const parts = formatter.formatToParts(date)
+        const lookup = parts.reduce<Record<string, string>>((acc, part) => {
+          if (part.type !== "literal") acc[part.type] = part.value
+          return acc
+        }, {})
+        return `${lookup.year}-${lookup.month}-${lookup.day}`
+      }
+      const today = new Date()
+      const tomorrow = new Date(today)
+      tomorrow.setDate(today.getDate() + 1)
+      const targetKey = toYmd(parsed)
+      if (targetKey === toYmd(today)) return `${prefix} Today`
+      if (targetKey === toYmd(tomorrow)) return `${prefix} Tomorrow`
+    }
     const options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }
     const allowTime = !useDateOnly && eventTimeKind !== "end"
     if (allowTime && (parsed.getHours() !== 0 || parsed.getMinutes() !== 0)) {

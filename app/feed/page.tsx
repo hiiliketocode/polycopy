@@ -2318,7 +2318,7 @@ export default function FeedPage() {
                   alt="Polycopy"
                   width={120}
                   height={32}
-                  className="h-7 w-auto"
+                  className="h-9 w-auto"
                 />
                 {hasPremiumAccess && walletAddress && (
                   <a
