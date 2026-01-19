@@ -94,7 +94,6 @@ interface RealizedPnlRow {
 
 const pnlWindowOptions = [
   { key: '1D', label: 'Yesterday', range: 'rolling', days: 1 },
-  { key: 'LW', label: 'Last Week', range: 'calendar', days: 7 },
   { key: '7D', label: 'Last 7 Days', range: 'rolling', days: 7 },
   { key: '30D', label: '30 Days', range: 'rolling', days: 30 },
   { key: '3M', label: '3 Months', range: 'rolling', days: 90 },
@@ -1279,20 +1278,6 @@ export default function TraderProfilePage({
     if (option.key === 'ALL') {
       startDate = null;
       endDate = null;
-    } else if (option.key === 'LW') {
-      const day = anchorDate.getUTCDay();
-      const diff = (day + 6) % 7;
-      const weekStart = new Date(Date.UTC(
-        anchorDate.getUTCFullYear(),
-        anchorDate.getUTCMonth(),
-        anchorDate.getUTCDate() - diff
-      ));
-      const lastWeekStart = new Date(weekStart);
-      lastWeekStart.setUTCDate(weekStart.getUTCDate() - 7);
-      const lastWeekEnd = new Date(weekStart);
-      lastWeekEnd.setUTCDate(weekStart.getUTCDate() - 1);
-      startDate = lastWeekStart;
-      endDate = lastWeekEnd;
     } else if (option.days !== null) {
       const start = new Date(Date.UTC(
         anchorDate.getUTCFullYear(),
@@ -2227,19 +2212,12 @@ export default function TraderProfilePage({
               <p className="text-sm text-slate-500 mt-1">The data below covers this trader's last 100 trades. Please note this does not cover complete historical performance data.</p>
             </div>
 
-            <Card className="relative overflow-hidden border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-slate-100/80 p-6">
-              <div className="absolute -right-20 -top-24 h-48 w-48 rounded-full bg-amber-200/40 blur-3xl" />
-              <div className="absolute -left-24 bottom-0 h-56 w-56 rounded-full bg-emerald-200/20 blur-3xl" />
-              <div className="relative space-y-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                  <div className="max-w-2xl">
-                    <div className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">
-                      Realized P&amp;L Daily
-                    </div>
-                    <h3 className="mt-3 text-2xl font-semibold text-slate-900">Daily P&amp;L</h3>
-                    <p className="text-sm text-slate-500 mt-1">
-                      Daily realized movement in USD with a cumulative view for the selected window.
-                    </p>
+            <Card className="border-slate-200/80 bg-white/90 p-6">
+              <div className="space-y-6">
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <h3 className="text-2xl font-semibold text-slate-900">Realized P&amp;L</h3>
+                    <p className="text-sm text-slate-500 mt-1">Daily</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {pnlWindowOptions.map((option) => {
@@ -2252,7 +2230,7 @@ export default function TraderProfilePage({
                             'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
                             isActive
                               ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                              : 'border-slate-200 bg-white/80 text-slate-600 hover:border-slate-300'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
                           )}
                         >
                           {option.label}
@@ -2268,74 +2246,78 @@ export default function TraderProfilePage({
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div
-                    className={cn(
-                      'rounded-2xl border bg-gradient-to-br p-4 shadow-sm',
-                      realizedSummary.totalPnl > 0
-                        ? 'border-emerald-100/80 from-emerald-50/90 to-emerald-100/70'
-                        : realizedSummary.totalPnl < 0
-                          ? 'border-red-100/80 from-red-50/90 to-red-100/70'
-                          : 'border-slate-200/70 from-slate-50 to-white'
-                    )}
-                  >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Total P&amp;L</p>
-                    <p
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div
                       className={cn(
-                        'mt-2 text-3xl font-semibold',
+                        'rounded-2xl border p-4 text-center shadow-sm',
                         realizedSummary.totalPnl > 0
-                          ? 'text-emerald-700'
+                          ? 'border-emerald-100/80 bg-emerald-50/70'
                           : realizedSummary.totalPnl < 0
-                            ? 'text-red-600'
-                            : 'text-slate-900'
+                            ? 'border-red-100/80 bg-red-50/70'
+                            : 'border-slate-200/70 bg-white'
                       )}
                     >
-                      {formatSignedCurrency(realizedSummary.totalPnl)}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">{pnlWindowLabel}</p>
+                      <p className="text-sm font-semibold text-slate-600">Total P&amp;L</p>
+                      <p
+                        className={cn(
+                          'mt-2 text-3xl font-semibold',
+                          realizedSummary.totalPnl > 0
+                            ? 'text-emerald-700'
+                            : realizedSummary.totalPnl < 0
+                              ? 'text-red-600'
+                              : 'text-slate-900'
+                        )}
+                      >
+                        {formatSignedCurrency(realizedSummary.totalPnl)}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">{pnlWindowLabel}</p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <p className="text-sm font-semibold text-slate-600">Average Daily</p>
+                      <p
+                        className={cn(
+                          'mt-2 text-3xl font-semibold',
+                          realizedSummary.avgDaily > 0
+                            ? 'text-emerald-700'
+                            : realizedSummary.avgDaily < 0
+                              ? 'text-red-600'
+                              : 'text-slate-900'
+                        )}
+                      >
+                        {formatSignedCurrency(realizedSummary.avgDaily, 2)}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">Average per day</p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <p className="text-sm font-semibold text-slate-600">Platform Rank</p>
+                      <p className="mt-2 text-3xl font-semibold text-slate-900">
+                        {realizedSummary.rankEstimate ? `#${realizedSummary.rankEstimate}` : '--'}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">of 1,000 traders (preview)</p>
+                    </div>
                   </div>
 
-                  <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Average Daily P&amp;L</p>
-                    <p
-                      className={cn(
-                        'mt-2 text-3xl font-semibold',
-                        realizedSummary.avgDaily > 0
-                          ? 'text-emerald-700'
-                          : realizedSummary.avgDaily < 0
-                            ? 'text-red-600'
-                            : 'text-slate-900'
-                      )}
-                    >
-                      {formatSignedCurrency(realizedSummary.avgDaily, 2)}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">Average per day</p>
-                  </div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm">
+                      <p className="text-sm font-semibold text-slate-600">Days Active</p>
+                      <p className="mt-2 text-2xl font-semibold text-slate-900">{realizedSummary.daysActive}</p>
+                      <p className="text-xs text-slate-500 mt-1">Daily P&amp;L != 0</p>
+                    </div>
 
-                  <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Days Active</p>
-                    <p className="mt-2 text-3xl font-semibold text-slate-900">{realizedSummary.daysActive}</p>
-                    <p className="text-xs text-slate-500 mt-1">Daily P&amp;L != 0</p>
-                  </div>
+                    <div className="rounded-2xl border border-emerald-100/80 bg-emerald-50/70 px-4 py-3 text-center shadow-sm">
+                      <p className="text-sm font-semibold text-emerald-700">Days Up</p>
+                      <p className="mt-2 text-2xl font-semibold text-emerald-700">{realizedSummary.daysUp}</p>
+                      <p className="text-xs text-emerald-700/70 mt-1">Daily P&amp;L {'>'} 0</p>
+                    </div>
 
-                  <div className="rounded-2xl border border-emerald-100/80 bg-emerald-50/70 p-4 shadow-sm">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700">Days Up</p>
-                    <p className="mt-2 text-3xl font-semibold text-emerald-700">{realizedSummary.daysUp}</p>
-                    <p className="text-xs text-emerald-700/70 mt-1">Daily P&amp;L {'>'} 0</p>
-                  </div>
-
-                  <div className="rounded-2xl border border-red-100/80 bg-red-50/70 p-4 shadow-sm">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-red-600">Days Down</p>
-                    <p className="mt-2 text-3xl font-semibold text-red-600">{realizedSummary.daysDown}</p>
-                    <p className="text-xs text-red-600/70 mt-1">Daily P&amp;L {'<'} 0</p>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-900/80 bg-gradient-to-br from-slate-950 to-slate-800 p-4 shadow-lg">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-200">Platform Rank</p>
-                    <p className="mt-2 text-3xl font-semibold text-white">
-                      {realizedSummary.rankEstimate ? `#${realizedSummary.rankEstimate}` : '--'}
-                    </p>
-                    <p className="text-xs text-slate-300 mt-1">of 1,000 traders (preview)</p>
+                    <div className="rounded-2xl border border-red-100/80 bg-red-50/70 px-4 py-3 text-center shadow-sm">
+                      <p className="text-sm font-semibold text-red-600">Days Down</p>
+                      <p className="mt-2 text-2xl font-semibold text-red-600">{realizedSummary.daysDown}</p>
+                      <p className="text-xs text-red-600/70 mt-1">Daily P&amp;L {'<'} 0</p>
+                    </div>
                   </div>
                 </div>
 

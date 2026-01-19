@@ -16,16 +16,42 @@ interface ESPNGame {
     displayClock?: string;
     period?: number;
   };
-  competitions: Array<{
-    competitors: Array<{
-      team: {
-        name: string;
-        abbreviation: string;
-      };
-      score?: string;
-      homeAway: 'home' | 'away';
-    }>;
-    date: string; // ISO 8601
+  competitions?: ESPNCompetition[];
+  groupings?: Array<{
+    competitions?: ESPNCompetition[];
+  }>;
+}
+
+interface ESPNCompetition {
+  competitors?: ESPNCompetitor[];
+  date?: string;
+  startDate?: string;
+  status?: {
+    type?: {
+      name?: string;
+      state?: string;
+      completed?: boolean;
+    };
+    displayClock?: string;
+    period?: number;
+  };
+}
+
+interface ESPNCompetitor {
+  team?: {
+    name?: string;
+    abbreviation?: string;
+    displayName?: string;
+  };
+  athlete?: {
+    displayName?: string;
+    shortName?: string;
+    fullName?: string;
+  };
+  score?: string;
+  homeAway?: 'home' | 'away';
+  linescores?: Array<{
+    value?: number;
   }>;
 }
 
@@ -118,24 +144,44 @@ export async function GET(request: NextRequest) {
     
     console.log(`✅ Fetched ${data.events?.length || 0} ${sport.toUpperCase()} games`);
 
-    // Parse and format the games
-    const games = (data.events || []).map((event) => {
-      const competition = event.competitions?.[0];
-      if (!competition || !competition.competitors || competition.competitors.length < 2) {
-        return null;
+    const getCompetitorName = (competitor: ESPNCompetitor) =>
+      competitor?.team?.name ||
+      competitor?.team?.displayName ||
+      competitor?.athlete?.displayName ||
+      competitor?.athlete?.fullName ||
+      '';
+
+    const getCompetitorAbbrev = (competitor: ESPNCompetitor) =>
+      competitor?.team?.abbreviation ||
+      competitor?.athlete?.shortName ||
+      competitor?.athlete?.displayName ||
+      '';
+
+    const getLinescoreValues = (competitor: ESPNCompetitor) =>
+      Array.isArray(competitor?.linescores)
+        ? competitor.linescores
+            .map((line) => Number(line?.value))
+            .filter((value) => Number.isFinite(value))
+        : [];
+
+    const getSetScores = (homeLines: number[], awayLines: number[]) => {
+      if (homeLines.length === 0 || awayLines.length === 0) return null;
+      const setCount = Math.min(homeLines.length, awayLines.length);
+      let homeSets = 0;
+      let awaySets = 0;
+      for (let i = 0; i < setCount; i += 1) {
+        const home = homeLines[i];
+        const away = awayLines[i];
+        if (home > away) homeSets += 1;
+        if (away > home) awaySets += 1;
       }
+      return { homeSets, awaySets };
+    };
 
-      const competitors = competition.competitors;
-      const homeTeam = competitors.find(c => c.homeAway === 'home') || competitors[0];
-      const awayTeam = competitors.find(c => c.homeAway === 'away') || competitors[1];
-
-      if (!homeTeam || !awayTeam) {
-        return null;
-      }
-
-      const statusName = event.status?.type?.name || '';
-      const statusState = event.status?.type?.state || '';
-      const completed = Boolean(event.status?.type?.completed);
+    const normalizeStatus = (status: ESPNCompetition['status'] | ESPNGame['status']) => {
+      const statusName = status?.type?.name || '';
+      const statusState = status?.type?.state || '';
+      const completed = Boolean(status?.type?.completed);
       let gameStatus: 'scheduled' | 'live' | 'final' = 'scheduled';
 
       if (statusName === 'STATUS_FINAL' || completed || statusState === 'post') {
@@ -144,28 +190,84 @@ export async function GET(request: NextRequest) {
         gameStatus = 'live';
       }
 
-      const homeName = homeTeam?.team?.name || '';
-      const awayName = awayTeam?.team?.name || '';
+      return gameStatus;
+    };
+
+    const events = data.events || [];
+    const rawCompetitions = events.flatMap((event) => {
+      if (Array.isArray(event.competitions) && event.competitions.length > 0) {
+        return event.competitions.map((competition) => ({ event, competition }));
+      }
+      if (Array.isArray(event.groupings)) {
+        return event.groupings.flatMap((grouping) =>
+          Array.isArray(grouping.competitions)
+            ? grouping.competitions.map((competition) => ({ event, competition }))
+            : []
+        );
+      }
+      return [];
+    });
+
+    // Parse and format the games
+    const games = rawCompetitions.map(({ event, competition }) => {
+      const competitors = competition?.competitors || [];
+      if (competitors.length < 2) {
+        return null;
+      }
+
+      const homeTeam = competitors.find((c) => c.homeAway === 'home') || competitors[0];
+      const awayTeam = competitors.find((c) => c.homeAway === 'away') || competitors[1];
+
+      if (!homeTeam || !awayTeam) {
+        return null;
+      }
+
+      const gameStatus = normalizeStatus(competition.status || event.status);
+
+      const homeName = getCompetitorName(homeTeam);
+      const awayName = getCompetitorName(awayTeam);
       const shortName = event.shortName || `${awayName} @ ${homeName}`;
 
+      const homeLines = getLinescoreValues(homeTeam);
+      const awayLines = getLinescoreValues(awayTeam);
+      const setScores = getSetScores(homeLines, awayLines);
+
+      const parsedHomeScore = homeTeam?.score ? parseInt(homeTeam.score) : null;
+      const parsedAwayScore = awayTeam?.score ? parseInt(awayTeam.score) : null;
+
+      const homeScore = Number.isFinite(parsedHomeScore as number)
+        ? parsedHomeScore
+        : setScores
+          ? setScores.homeSets
+          : null;
+      const awayScore = Number.isFinite(parsedAwayScore as number)
+        ? parsedAwayScore
+        : setScores
+          ? setScores.awaySets
+          : null;
+
+      const startTime = competition.date || competition.startDate || event.date;
+
+      const name = event.name || shortName || `${awayName} @ ${homeName}`;
+
       return {
-        id: event.id,
-        name: event.name || shortName,
+        id: competition.id || event.id,
+        name,
         shortName,
         homeTeam: {
           name: homeName,
-          abbreviation: homeTeam?.team?.abbreviation || '',
-          score: homeTeam?.score ? parseInt(homeTeam.score) : null,
+          abbreviation: getCompetitorAbbrev(homeTeam),
+          score: homeScore,
         },
         awayTeam: {
           name: awayName,
-          abbreviation: awayTeam?.team?.abbreviation || '',
-          score: awayTeam?.score ? parseInt(awayTeam.score) : null,
+          abbreviation: getCompetitorAbbrev(awayTeam),
+          score: awayScore,
         },
         status: gameStatus,
-        startTime: competition.date,
-        displayClock: event.status?.displayClock,
-        period: event.status?.period,
+        startTime,
+        displayClock: competition.status?.displayClock || event.status?.displayClock,
+        period: competition.status?.period || event.status?.period,
       } as NormalizedGame;
     }).filter((game): game is NormalizedGame => Boolean(game));
 

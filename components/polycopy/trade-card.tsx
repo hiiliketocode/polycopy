@@ -2027,29 +2027,33 @@ export function TradeCard({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 mb-4">
-          <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
-            <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
-            <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
-              {market.slice(0, 2)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug">{market}</h3>
-            {/* External link icon for Premium users - at end of market name */}
-            {isPremium && polymarketUrl && (
-              <a
-                href={polymarketUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
-                title="View on Polymarket"
-              >
-                <ExternalLink className="w-4 h-4" />
-              </a>
-            )}
+        <div className="flex flex-col gap-3 mb-4 md:flex-row md:flex-wrap md:items-center">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
+              <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
+              <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
+                {market.slice(0, 2)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug break-words">
+                {market}
+              </h3>
+              {/* External link icon for Premium users - at end of market name */}
+              {isPremium && polymarketUrl && (
+                <a
+                  href={polymarketUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+                  title="View on Polymarket"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              )}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-1.5 ml-auto">
+          <div className="flex w-full flex-wrap items-center gap-1.5 md:w-auto md:justify-end md:ml-auto">
             {showEventTimeBadge && (
               <Badge
                 variant="secondary"
