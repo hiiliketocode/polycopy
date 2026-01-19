@@ -643,11 +643,12 @@ export function TradeCard({
       eventTimeKind === "start" ? "Starts" : eventTimeKind === "end" ? "Resolves" : "Time"
     const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(eventTimeValue)
     const isMidnightUtc = /T00:00:00(?:\.000)?(?:Z|[+-]00:00)$/.test(eventTimeValue)
-    const useDateOnly = eventTimeKind === "end" || isDateOnly || isMidnightUtc
+    const useDateOnly = isDateOnly || isMidnightUtc
     const parsed = new Date(eventTimeValue)
     if (Number.isNaN(parsed.getTime())) return "Time TBD"
     const options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }
-    if (!useDateOnly && (parsed.getHours() !== 0 || parsed.getMinutes() !== 0)) {
+    const allowTime = !useDateOnly && eventTimeKind !== "end"
+    if (allowTime && (parsed.getHours() !== 0 || parsed.getMinutes() !== 0)) {
       options.hour = "numeric"
       options.minute = "2-digit"
     }
@@ -2852,7 +2853,7 @@ export function TradeCard({
           )}
           </div>
           {showConfirmation && isFinalStatus && (
-            <div className="mt-3">
+            <div className="mt-3 flex justify-center">
               <Button
                 onClick={resetConfirmation}
                 className={`w-full max-w-[360px] mx-auto rounded-full font-semibold ${

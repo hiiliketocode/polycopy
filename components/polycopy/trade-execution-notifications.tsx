@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronDown, ChevronUp } from "lucide-react"
+import { ChevronDown, ChevronUp, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 
@@ -128,20 +128,30 @@ export function TradeExecutionNotifications({
             ))}
           </div>
         ) : null}
-        <button
-          type="button"
-          onClick={() => setIsExpanded(false)}
-          className="flex w-full items-center justify-between border-b border-slate-100 px-4 py-2.5 text-left"
-          aria-label="Collapse trade updates"
-        >
-          <span className="text-[11px] font-semibold tracking-wide text-slate-500">
-            Trade updates
-          </span>
-          <span className="flex items-center gap-2 text-[11px] font-medium text-slate-400">
-            {notifications.length}
-            <ChevronDown className="h-4 w-4" />
-          </span>
-        </button>
+        <div className="flex items-center justify-between border-b border-slate-100 px-2 py-1.5">
+          <button
+            type="button"
+            onClick={() => setIsExpanded(false)}
+            className="flex flex-1 items-center justify-between rounded-lg px-2 py-1 text-left"
+            aria-label="Collapse trade updates"
+          >
+            <span className="text-[11px] font-semibold tracking-wide text-slate-500">
+              Trade updates
+            </span>
+            <span className="flex items-center gap-2 text-[11px] font-medium text-slate-400">
+              {notifications.length}
+              <ChevronDown className="h-4 w-4" />
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsExpanded(false)}
+            className="ml-2 flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Close trade updates"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
         <div
           ref={listRef}
           className="max-h-[180px] divide-y divide-slate-100 overflow-y-auto"

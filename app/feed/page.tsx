@@ -2296,7 +2296,8 @@ export default function FeedPage() {
         {/* Page Header */}
         <div className="sticky top-0 z-10 bg-slate-50">
           <div className="max-w-[1200px] mx-auto px-4 md:px-6 pb-3 md:py-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="w-full md:w-[63%] md:mx-auto">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               {hasPremiumAccess && walletAddress && (
                 <a
                   href="https://polymarket.com/portfolio"
@@ -2381,6 +2382,7 @@ export default function FeedPage() {
                   </Button>
                 </div>
               </div>
+            </div>
             </div>
           </div>
         </div>
