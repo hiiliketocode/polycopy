@@ -246,7 +246,7 @@ export async function GET(request: NextRequest) {
           ? setScores.awaySets
           : null;
 
-      const startTime = competition.date || competition.startDate || event.date;
+      const startTime = competition.date || competition.startDate || null;
 
       const name = event.name || shortName || `${awayName} @ ${homeName}`;
 
