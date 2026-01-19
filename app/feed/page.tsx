@@ -1024,7 +1024,16 @@ export default function FeedPage() {
       return 'live';
     }
     if (payload.hasLiveScore) return 'live';
-    if (statusLooksScheduled(status)) return 'scheduled';
+    if (statusLooksScheduled(status)) {
+      if (payload.gameStartTime) {
+        const start = new Date(payload.gameStartTime);
+        const now = new Date();
+        if (!Number.isNaN(start.getTime())) {
+          return now >= start ? 'live' : 'scheduled';
+        }
+      }
+      return 'scheduled';
+    }
     if (payload.gameStartTime) {
       const start = new Date(payload.gameStartTime);
       const now = new Date();

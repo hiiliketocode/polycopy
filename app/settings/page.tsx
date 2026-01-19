@@ -61,6 +61,12 @@ export default function SettingsPage() {
   const hasLoadedNotificationPrefsRef = useRef(false);
 
   const truncateAddress = (address: string) => `${address.slice(0, 6)}...${address.slice(-4)}`;
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    await fetch('/api/auth/admin-logout', { method: 'POST' });
+    triggerLoggedOut('signed_out');
+    router.push('/login');
+  };
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -658,6 +664,13 @@ export default function SettingsPage() {
                     </span>
                   </div>
                 </div>
+                <Button
+                  onClick={handleSignOut}
+                  variant="outline"
+                  className="w-full border-red-200 text-red-700 hover:bg-red-50"
+                >
+                  Sign out
+                </Button>
               </Card>
 
               <Card className="p-6 space-y-4">

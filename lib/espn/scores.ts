@@ -182,6 +182,9 @@ function detectSportType(title: string, category?: string | null): SportGroup | 
     if (titleLower.match(/\b(afc|fc)\b/) && titleLower.match(/\bwin\b/)) {
       return 'soccer';
     }
+    if (titleLower.match(/\bwin\b/) && titleLower.match(/\b\d{4}-\d{2}-\d{2}\b/)) {
+      return 'soccer';
+    }
   }
 
   const soccerClubHints = [
@@ -311,6 +314,16 @@ function extractSingleTeamMatch(title: string): { team: string; dateKey?: string
   }
   const dateKey = normalizeDateKey(rawDate);
   return dateKey ? { team: rawTeam, dateKey } : { team: rawTeam };
+}
+
+function extractSingleTeamHint(title: string): { team: string } | null {
+  if (!/\b(spread|moneyline|ml|pick'?em)\b/i.test(title)) return null;
+  const cleaned = title
+    .replace(/\s*\([−+]?\d+\.?\d*\)/g, '')
+    .replace(/\b(spread|moneyline|ml|pick'?em)\b\s*:/i, '')
+    .trim();
+  if (!cleaned || /\b(vs\.?|v\.?|@|versus|at)\b/i.test(cleaned)) return null;
+  return { team: cleaned };
 }
 
 function normalizeDateKey(value: string): string | null {
@@ -537,7 +550,16 @@ function findMatchingGame(marketTitle: string, games: ESPNGame[]): ESPNGame | nu
       })
       .sort((a, b) => b.bestScore - a.bestScore)[0];
 
-    return bestMatch ? bestMatch.game : null;
+    if (bestMatch) return bestMatch.game;
+
+    if (targetDateKey) {
+      const liveFallback = scoredMatches
+        .filter(match => match.baseScore >= 4 && match.game.status === 'live')
+        .sort((a, b) => b.baseScore - a.baseScore)[0];
+      if (liveFallback) return liveFallback.game;
+    }
+
+    return null;
   }
 
   const scoredMatches = games.map(game => {

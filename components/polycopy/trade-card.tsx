@@ -559,13 +559,27 @@ export function TradeCard({
     if (normalizedLiveStatus === "final") return "final"
     if (normalizedLiveStatus === "scheduled") {
       if (looksLikeScore) return "live"
+      if (eventStartTime) {
+        const start = new Date(eventStartTime)
+        if (!Number.isNaN(start.getTime())) {
+          return Date.now() >= start.getTime() ? "live" : "scheduled"
+        }
+      }
       return "scheduled"
     }
     const normalized = normalizeEventStatus(eventStatus)
     if (statusLooksFinal(normalized)) return "final"
     if (statusLooksLive(normalized)) return "live"
     if (looksLikeScore) return "live"
-    if (statusLooksScheduled(normalized)) return "scheduled"
+    if (statusLooksScheduled(normalized)) {
+      if (eventStartTime) {
+        const start = new Date(eventStartTime)
+        if (!Number.isNaN(start.getTime())) {
+          return Date.now() >= start.getTime() ? "live" : "scheduled"
+        }
+      }
+      return "scheduled"
+    }
     if (eventStartTime) {
       const start = new Date(eventStartTime)
       if (!Number.isNaN(start.getTime())) {
