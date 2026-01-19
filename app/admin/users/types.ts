@@ -18,3 +18,16 @@ export type UserActivityEvent = {
   detail: string
   extra?: string
 }
+
+export type TradeActivitySummary = {
+  id: string
+  email: string | null
+  userType: 'Admin' | 'Premium' | 'Free'
+  signUpDate: string | null
+  premiumDate: string | null
+  tradeVolume: number
+  tradeCount: number
+  pnl: number
+  followsCount: number
+  activeDays: number
+}

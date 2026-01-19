@@ -2,16 +2,17 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { UserActivityEvent, UserProfile } from './types'
+import { TradeActivitySummary, UserActivityEvent, UserProfile } from './types'
 import AdminDashboardClient from '../content-data/AdminDashboardClient'
 import type { DashboardData } from '../content-data/data'
 import { ArrowLeft } from 'lucide-react'
 
-type Tab = 'activity' | 'users' | 'content-data' | 'wish-copied'
+type Tab = 'activity' | 'users' | 'trade-activity' | 'content-data' | 'wish-copied'
 
 const TAB_LABELS: Record<Tab, string> = {
   activity: 'User Activity',
   users: 'User Directory',
+  'trade-activity': 'Trade Activity',
   'content-data': 'Content Data',
   'wish-copied': 'Wish I Copied'
 }
@@ -53,13 +54,28 @@ const formatDate = (value: string | null) => {
   })
 }
 
+const formatNumber = (value: number | null) => {
+  if (value === null) return '--'
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value)
+}
+
+const formatCurrency = (value: number | null) => {
+  if (value === null) return '--'
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2
+  }).format(value)
+}
+
 type AdminUsersConsoleProps = {
   users: UserProfile[]
   events: UserActivityEvent[]
+  tradeActivity: TradeActivitySummary[]
   contentData: DashboardData | null
 }
 
-export default function AdminUsersConsole({ users, events, contentData }: AdminUsersConsoleProps) {
+export default function AdminUsersConsole({ users, events, tradeActivity, contentData }: AdminUsersConsoleProps) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<Tab>('activity')
 
@@ -108,7 +124,7 @@ export default function AdminUsersConsole({ users, events, contentData }: AdminU
         </div>
 
         <div className="flex gap-2">
-          {(['activity', 'users', 'content-data', 'wish-copied'] as Tab[]).map((tab) => (
+          {(['activity', 'users', 'trade-activity', 'content-data', 'wish-copied'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -195,6 +211,71 @@ export default function AdminUsersConsole({ users, events, contentData }: AdminU
                     </td>
                     <td className="px-3 py-3 text-slate-300">
                       {formatDate(user.updatedAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        ) : activeTab === 'trade-activity' ? (
+          <section className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5 p-4">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-[0.3em] text-slate-400">
+                  <th className="px-3 py-2">User</th>
+                  <th className="px-3 py-2">User type</th>
+                  <th className="px-3 py-2">Sign-up date</th>
+                  <th className="px-3 py-2">Premium date</th>
+                  <th className="px-3 py-2">Trade volume</th>
+                  <th className="px-3 py-2">Trade count</th>
+                  <th className="px-3 py-2">PnL</th>
+                  <th className="px-3 py-2">Follows</th>
+                  <th className="px-3 py-2">Days active</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tradeActivity.map((row) => (
+                  <tr key={row.id} className="border-t border-white/5">
+                    <td className="px-3 py-3" title={row.email || row.id}>
+                      <p className="font-medium text-white">
+                        {row.email || row.id}
+                      </p>
+                    </td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-widest ${
+                          row.userType === 'Admin'
+                            ? 'bg-emerald-500/10 text-emerald-300'
+                            : row.userType === 'Premium'
+                              ? 'bg-amber-500/10 text-amber-300'
+                              : 'bg-white/5 text-slate-300'
+                        }`}
+                      >
+                        {row.userType}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-slate-300">
+                      {formatDate(row.signUpDate)}
+                    </td>
+                    <td className="px-3 py-3 text-slate-300">
+                      {formatDate(row.premiumDate)}
+                    </td>
+                    <td className="px-3 py-3 text-slate-300">
+                      {formatCurrency(row.tradeVolume)}
+                    </td>
+                    <td className="px-3 py-3 text-slate-300">
+                      {formatNumber(row.tradeCount)}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className={row.pnl >= 0 ? 'text-emerald-300' : 'text-rose-300'}>
+                        {formatCurrency(row.pnl)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-slate-300">
+                      {formatNumber(row.followsCount)}
+                    </td>
+                    <td className="px-3 py-3 text-slate-300">
+                      {formatNumber(row.activeDays)}
                     </td>
                   </tr>
                 ))}

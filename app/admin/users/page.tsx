@@ -1,5 +1,5 @@
 import AdminUsersConsole from './AdminUsersConsole'
-import { UserActivityEvent, UserProfile } from './types'
+import { TradeActivitySummary, UserActivityEvent, UserProfile } from './types'
 import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin'
 import { fetchContentData } from '../content-data/data'
 import type { DashboardData } from '../content-data/data'
@@ -62,6 +62,7 @@ export default async function AdminUsersPage() {
   const authUsers = userListData?.users ?? []
 
   const profileMap = new Map(profiles.map((profile) => [profile.id, profile]))
+  const authCreatedAtMap = new Map(authUsers.map((user) => [user.id, user.created_at ?? null]))
 
   const events: UserActivityEvent[] = []
 
@@ -125,6 +126,85 @@ export default async function AdminUsersPage() {
     updatedAt: profile.updated_at ?? null
   }))
 
+  const userIds = users.map((user) => user.id)
+
+  const [tradesResult, followsResult] = userIds.length
+    ? await Promise.all([
+        supabase
+          .from('orders_copy_enriched')
+          .select('copy_user_id, trade_method, invested_usd, pnl_usd, created_at')
+          .in('copy_user_id', userIds),
+        supabase
+          .from('follows')
+          .select('user_id')
+          .in('user_id', userIds)
+      ])
+    : [{ data: [], error: null }, { data: [], error: null }]
+
+  if (tradesResult.error) {
+    console.error('[admin/users] failed to fetch trade activity', tradesResult.error)
+  }
+
+  if (followsResult.error) {
+    console.error('[admin/users] failed to fetch follows counts', followsResult.error)
+  }
+
+  const followCounts = new Map<string, number>()
+  for (const follow of followsResult.data ?? []) {
+    if (!follow.user_id) continue
+    followCounts.set(follow.user_id, (followCounts.get(follow.user_id) || 0) + 1)
+  }
+
+  const tradeStats = new Map<
+    string,
+    { tradeVolume: number; tradeCount: number; pnl: number; activeDays: Set<string> }
+  >()
+
+  for (const trade of tradesResult.data ?? []) {
+    const userId = trade.copy_user_id
+    if (!userId) continue
+    const method = trade.trade_method
+    if (method && method !== 'manual' && method !== 'quick') continue
+
+    const volume = Number(trade.invested_usd ?? 0)
+    const pnl = Number(trade.pnl_usd ?? 0)
+    const createdAt = trade.created_at ? new Date(trade.created_at) : null
+    const dayKey = createdAt && !Number.isNaN(createdAt.getTime())
+      ? createdAt.toISOString().slice(0, 10)
+      : null
+
+    const summary = tradeStats.get(userId) ?? {
+      tradeVolume: 0,
+      tradeCount: 0,
+      pnl: 0,
+      activeDays: new Set<string>()
+    }
+
+    if (Number.isFinite(volume)) summary.tradeVolume += volume
+    if (Number.isFinite(pnl)) summary.pnl += pnl
+    summary.tradeCount += 1
+    if (dayKey) summary.activeDays.add(dayKey)
+
+    tradeStats.set(userId, summary)
+  }
+
+  const tradeActivity: TradeActivitySummary[] = users.map((user) => {
+    const stats = tradeStats.get(user.id)
+    const userType = user.isAdmin ? 'Admin' : user.isPremium ? 'Premium' : 'Free'
+    return {
+      id: user.id,
+      email: user.email,
+      userType,
+      signUpDate: authCreatedAtMap.get(user.id) ?? user.createdAt,
+      premiumDate: user.premiumSince,
+      tradeVolume: stats?.tradeVolume ?? 0,
+      tradeCount: stats?.tradeCount ?? 0,
+      pnl: stats?.pnl ?? 0,
+      followsCount: followCounts.get(user.id) ?? 0,
+      activeDays: stats?.activeDays.size ?? 0
+    }
+  })
+
   let contentData: DashboardData | null = null
   try {
     contentData = await fetchContentData()
@@ -136,6 +216,7 @@ export default async function AdminUsersPage() {
     <AdminUsersConsole
       users={users}
       events={trimmedEvents}
+      tradeActivity={tradeActivity}
       contentData={contentData}
     />
   )
