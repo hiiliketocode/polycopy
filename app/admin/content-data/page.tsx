@@ -1,6 +1,5 @@
-import AdminDashboardClient from './AdminDashboardClient'
+import AdminContentDataLoader from './AdminContentDataLoader'
 import { createClient as createServerClient } from '@/lib/supabase/server'
-import { fetchContentData } from './data'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -38,7 +37,5 @@ export default async function AdminContentDataPage() {
     )
   }
 
-  const data = await fetchContentData()
-
-  return <AdminDashboardClient data={data} />
+  return <AdminContentDataLoader />
 }

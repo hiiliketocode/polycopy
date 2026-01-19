@@ -265,6 +265,7 @@ interface TraderDetails {
 
 interface AdminDashboardClientProps {
   data: DashboardData
+  onRefresh?: () => Promise<void> | void
 }
 
 // Sort options for leaderboard
@@ -282,7 +283,7 @@ const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
   'culture': 'Pop Culture'
 }
 
-export default function AdminDashboardClient({ data }: AdminDashboardClientProps) {
+export default function AdminDashboardClient({ data, onRefresh }: AdminDashboardClientProps) {
   const [, startTransition] = useTransition()
   const [copied, setCopied] = useState(false)
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null)
@@ -356,16 +357,20 @@ export default function AdminDashboardClient({ data }: AdminDashboardClientProps
   const handleRefresh = async () => {
     setRefreshing(true)
     setRefreshSuccess(false)
-    
-    startTransition(() => {
-      router.refresh()
-    })
-    
-    setTimeout(() => {
-      setRefreshing(false)
+
+    try {
+      if (onRefresh) {
+        await onRefresh()
+      } else {
+        startTransition(() => {
+          router.refresh()
+        })
+      }
       setRefreshSuccess(true)
+    } finally {
+      setRefreshing(false)
       setTimeout(() => setRefreshSuccess(false), 2000)
-    }, 1000)
+    }
   }
 
   const handleCopyAll = async () => {

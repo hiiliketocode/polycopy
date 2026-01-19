@@ -53,6 +53,15 @@ export const metadata: Metadata = {
     creator: '@polycopyapp',
     images: ['/og-image.png']
   },
+  icons: {
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon.png', type: 'image/png' }
+    ],
+    shortcut: '/favicon.ico',
+    apple: [{ url: '/apple-touch-icon.png' }]
+  },
   robots: {
     index: true,
     follow: true,

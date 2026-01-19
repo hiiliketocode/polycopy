@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { TradeActivitySummary, UserActivityEvent, UserProfile } from './types'
 import AdminDashboardClient from '../content-data/AdminDashboardClient'
+import AdminContentDataLoader from '../content-data/AdminContentDataLoader'
 import type { DashboardData } from '../content-data/data'
 import { ArrowLeft } from 'lucide-react'
 
@@ -72,7 +73,7 @@ type AdminUsersConsoleProps = {
   users: UserProfile[]
   events: UserActivityEvent[]
   tradeActivity: TradeActivitySummary[]
-  contentData: DashboardData | null
+  contentData?: DashboardData | null
 }
 
 export default function AdminUsersConsole({ users, events, tradeActivity, contentData }: AdminUsersConsoleProps) {
@@ -287,9 +288,7 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
             {contentData ? (
               <AdminDashboardClient data={contentData} />
             ) : (
-              <div className="p-8 text-slate-300">
-                Content data is unavailable right now.
-              </div>
+              <AdminContentDataLoader />
             )}
           </section>
         ) : (
