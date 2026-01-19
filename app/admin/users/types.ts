@@ -31,3 +31,10 @@ export type TradeActivitySummary = {
   followsCount: number
   activeDays: number
 }
+
+export type AdminUserSummary = {
+  totalUsers: number
+  premiumCount: number
+  walletCount: number
+  adminCount: number
+}

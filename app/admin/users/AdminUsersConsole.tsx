@@ -1,8 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { TradeActivitySummary, UserActivityEvent, UserProfile } from './types'
+import { useMemo } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { AdminUserSummary, TradeActivitySummary, UserActivityEvent, UserProfile } from './types'
 import AdminDashboardClient from '../content-data/AdminDashboardClient'
 import AdminContentDataLoader from '../content-data/AdminContentDataLoader'
 import type { DashboardData } from '../content-data/data'
@@ -74,18 +74,35 @@ type AdminUsersConsoleProps = {
   events: UserActivityEvent[]
   tradeActivity: TradeActivitySummary[]
   contentData?: DashboardData | null
+  summary?: AdminUserSummary
 }
 
-export default function AdminUsersConsole({ users, events, tradeActivity, contentData }: AdminUsersConsoleProps) {
+export default function AdminUsersConsole({ users, events, tradeActivity, contentData, summary: summaryOverride }: AdminUsersConsoleProps) {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<Tab>('activity')
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
 
-  const summary = useMemo(() => {
+  const activeTab = useMemo<Tab>(() => {
+    const tabParam = searchParams.get('tab')
+    const isValidTab = (['activity', 'users', 'trade-activity', 'content-data', 'wish-copied'] as Tab[]).includes(
+      tabParam as Tab
+    )
+    return isValidTab ? (tabParam as Tab) : 'activity'
+  }, [searchParams])
+
+  const updateTab = (tab: Tab) => {
+    const nextParams = new URLSearchParams(searchParams.toString())
+    nextParams.set('tab', tab)
+    router.push(`${pathname}?${nextParams.toString()}`)
+  }
+
+  const computedSummary = useMemo(() => {
     const premiumCount = users.filter((u) => u.isPremium).length
     const adminCount = users.filter((u) => u.isAdmin).length
     const walletCount = users.filter((u) => Boolean(u.wallet)).length
-    return { premiumCount, adminCount, walletCount }
+    return { totalUsers: users.length, premiumCount, adminCount, walletCount }
   }, [users])
+  const summary = summaryOverride ?? computedSummary
 
   return (
     <div className="min-h-screen bg-[#05070E] text-white p-6 md:p-10">
@@ -108,7 +125,7 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
         <div className="grid gap-4 md:grid-cols-4">
           <div className="border border-white/10 rounded-xl p-4">
             <p className="text-xs text-slate-400 uppercase">Total users</p>
-            <p className="text-2xl font-semibold">{users.length}</p>
+            <p className="text-2xl font-semibold">{summary.totalUsers}</p>
           </div>
           <div className="border border-white/10 rounded-xl p-4">
             <p className="text-xs text-slate-400 uppercase">Premium</p>
@@ -128,7 +145,7 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
           {(['activity', 'users', 'trade-activity', 'content-data', 'wish-copied'] as Tab[]).map((tab) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => updateTab(tab)}
               className={`flex-1 rounded-2xl border px-4 py-2 font-medium transition ${
                 activeTab === tab
                   ? 'border-[#FDB022] bg-[#FDB022]/20 text-white'

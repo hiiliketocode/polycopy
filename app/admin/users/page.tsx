@@ -1,5 +1,5 @@
 import AdminUsersConsole from './AdminUsersConsole'
-import { TradeActivitySummary, UserActivityEvent, UserProfile } from './types'
+import { AdminUserSummary, TradeActivitySummary, UserActivityEvent, UserProfile } from './types'
 import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin'
 import { fetchContentData } from '../content-data/data'
 import type { DashboardData } from '../content-data/data'
@@ -28,17 +28,39 @@ export default async function AdminUsersPage() {
 
   const supabase = createAdminServiceClient()
 
+  const { data: userListData, error: userListError } = await supabase.auth.admin.listUsers({
+    page: 1,
+    perPage: MAX_USERS
+  })
+
+  if (userListError) {
+    console.error('[admin/users] failed to list auth users', userListError)
+  }
+
+  const authUsers = userListData?.users ?? []
+  const authUserIds = authUsers.map((user) => user.id)
+
   const [profilesResult, walletsResult] = await Promise.all([
-    supabase
-      .from('profiles')
-      .select('id, email, is_admin, is_premium, premium_since, trading_wallet_address, created_at, updated_at')
-      .order('created_at', { ascending: false })
-      .limit(MAX_PROFILES),
-    supabase
-      .from('turnkey_wallets')
-      .select('id, user_id, wallet_type, eoa_address, polymarket_account_address, turnkey_private_key_id, created_at')
-      .order('created_at', { ascending: false })
-      .limit(MAX_WALLETS)
+    authUserIds.length
+      ? supabase
+          .from('profiles')
+          .select('*')
+          .in('id', authUserIds)
+      : supabase
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(MAX_PROFILES),
+    authUserIds.length
+      ? supabase
+          .from('turnkey_wallets')
+          .select('id, user_id, wallet_type, eoa_address, polymarket_account_address, turnkey_private_key_id, created_at')
+          .in('user_id', authUserIds)
+      : supabase
+          .from('turnkey_wallets')
+          .select('id, user_id, wallet_type, eoa_address, polymarket_account_address, turnkey_private_key_id, created_at')
+          .order('created_at', { ascending: false })
+          .limit(MAX_WALLETS)
   ])
 
   if (profilesResult.error) {
@@ -49,18 +71,8 @@ export default async function AdminUsersPage() {
     console.error('[admin/users] failed to fetch turnkey wallets', walletsResult.error)
   }
 
-  const { data: userListData, error: userListError } = await supabase.auth.admin.listUsers({
-    page: 1,
-    perPage: MAX_USERS
-  })
-
-  if (userListError) {
-    console.error('[admin/users] failed to list auth users', userListError)
-  }
-
   const profiles = profilesResult.data ?? []
   const wallets = walletsResult.data ?? []
-  const authUsers = userListData?.users ?? []
 
   const profileMap = new Map(profiles.map((profile) => [profile.id, profile]))
   const authCreatedAtMap = new Map(authUsers.map((user) => [user.id, user.created_at ?? null]))
@@ -131,9 +143,13 @@ export default async function AdminUsersPage() {
       id: user.id,
       email: profile?.email ?? user.email ?? null,
       isAdmin: Boolean(profile?.is_admin),
-      isPremium: Boolean(profile?.is_premium),
+      isPremium: Boolean(profile?.is_premium || profile?.is_admin),
       premiumSince: profile?.premium_since ?? null,
-      wallet: profile?.trading_wallet_address ?? null,
+      wallet:
+        profile?.trading_wallet_address ??
+        profile?.wallet_address ??
+        profile?.polymarket_account_address ??
+        null,
       createdAt: profile?.created_at ?? user.created_at ?? null,
       updatedAt: profile?.updated_at ?? user.updated_at ?? null
     }
@@ -260,7 +276,44 @@ export default async function AdminUsersPage() {
       followsCount: followCounts.get(user.id) ?? 0,
       activeDays: stats?.activeDays.size ?? 0
     }
+  }).sort((a, b) => {
+    if (b.tradeCount !== a.tradeCount) {
+      return b.tradeCount - a.tradeCount
+    }
+    return b.tradeVolume - a.tradeVolume
   })
+
+  const walletUserIds = new Set<string>()
+  for (const profile of profiles) {
+    const wallet =
+      profile?.trading_wallet_address ??
+      profile?.wallet_address ??
+      profile?.polymarket_account_address ??
+      null
+    if (wallet && profile?.id) {
+      walletUserIds.add(profile.id)
+    }
+  }
+  for (const wallet of wallets) {
+    if (wallet.user_id) {
+      walletUserIds.add(wallet.user_id)
+    }
+  }
+
+  const totalUsers = authUsers.length || profiles.length
+  const premiumCount = profiles.length
+    ? profiles.filter((profile) => profile.is_premium || profile.is_admin).length
+    : users.filter((user) => user.isPremium).length
+  const adminCount = profiles.length
+    ? profiles.filter((profile) => profile.is_admin).length
+    : users.filter((user) => user.isAdmin).length
+
+  const summary: AdminUserSummary = {
+    totalUsers,
+    premiumCount,
+    walletCount: walletUserIds.size || users.filter((user) => Boolean(user.wallet)).length,
+    adminCount
+  }
 
   let contentData: DashboardData | null = null
   try {
@@ -274,6 +327,7 @@ export default async function AdminUsersPage() {
       users={users}
       events={trimmedEvents}
       tradeActivity={tradeActivity}
+      summary={summary}
       contentData={contentData}
     />
   )
