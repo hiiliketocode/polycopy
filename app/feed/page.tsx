@@ -1101,12 +1101,19 @@ export default function FeedPage() {
                 const numericPrices = outcomePrices?.map((p: string | number) => Number(p)) || [];
                 
                 // Detect sports markets by checking for "vs." or "vs" in title, or common sports patterns
-                const isSportsMarket = trade.market.title.includes(' vs. ') || 
+                  const hasTeamMetadata =
+                    (typeof homeTeam === 'string' && homeTeam.trim().length > 0) ||
+                    (typeof awayTeam === 'string' && awayTeam.trim().length > 0);
+                  const hasScoreMetadata =
+                    Boolean(liveScore && (typeof liveScore === 'object' || (typeof liveScore === 'string' && liveScore.trim())));
+                  const isSportsMarket = trade.market.title.includes(' vs. ') || 
                                       trade.market.title.includes(' vs ') ||
                                       trade.market.title.includes(' v ') ||
                                       trade.market.title.includes(' versus ') ||
                                       trade.market.title.includes(' @ ') ||
                                       trade.market.category === 'sports' ||
+                                      hasTeamMetadata ||
+                                      hasScoreMetadata ||
                                       // Detect spread and over/under bets
                                       trade.market.title.match(/\(-?\d+\.?\d*\)/) || // (−9.5) or (+7)
                                       trade.market.title.includes('O/U') ||
@@ -1217,6 +1224,9 @@ export default function FeedPage() {
                       );
                       scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
                       console.log(`🏀 Polymarket score: ${scoreDisplay}`);
+                    } else if (typeof liveScore === 'string' && liveScore.trim()) {
+                      scoreDisplay = liveScore.trim();
+                      console.log(`🏀 Polymarket score string: ${scoreDisplay}`);
                     }
                   } else if (outcomes?.length === 2) {
                     // NON-SPORTS BINARY MARKETS: Show odds
@@ -1532,6 +1542,9 @@ export default function FeedPage() {
             'formula 1',
             'world cup',
             'champions league',
+            'premier league',
+            'premiership',
+            'epl',
             'super bowl',
           ].some((term) => text.includes(term));
         };
@@ -2303,9 +2316,9 @@ export default function FeedPage() {
                 <Image
                   src="/logos/polycopy-logo-primary.svg"
                   alt="Polycopy"
-                  width={24}
-                  height={24}
-                  className="h-6 w-6"
+                  width={120}
+                  height={32}
+                  className="h-7 w-auto"
                 />
                 {hasPremiumAccess && walletAddress && (
                   <a

@@ -971,12 +971,19 @@ export default function TraderProfilePage({
           let scoreDisplay: string | undefined;
 
           // Detect if this is a sports market
+          const hasTeamMetadata =
+            (typeof homeTeam === 'string' && homeTeam.trim().length > 0) ||
+            (typeof awayTeam === 'string' && awayTeam.trim().length > 0);
+          const hasScoreMetadata =
+            Boolean(liveScore && (typeof liveScore === 'object' || (typeof liveScore === 'string' && liveScore.trim())));
           const isSportsMarket = trade.market.includes(' vs. ') || 
                                 trade.market.includes(' vs ') ||
                                 trade.market.includes(' v ') ||
                                 trade.market.includes(' versus ') ||
                                 trade.market.includes(' @ ') ||
-                                trade.category === 'sports';
+                                trade.category === 'sports' ||
+                                hasTeamMetadata ||
+                                hasScoreMetadata;
 
           if (isSportsMarket && espnScore) {
             const { team1Label, team1Score, team2Label, team2Score } = getScoreDisplaySides(
@@ -1015,6 +1022,8 @@ export default function TraderProfilePage({
               derivedScore
             );
             scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
+          } else if (isSportsMarket && typeof liveScore === 'string' && liveScore.trim()) {
+            scoreDisplay = liveScore.trim();
           }
 
           if (espnScore || scoreDisplay) {

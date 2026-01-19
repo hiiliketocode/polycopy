@@ -100,6 +100,7 @@ const TEAM_NAME_STOP_WORDS = new Set([
 // Detect sport type from market title
 function detectSportType(title: string, category?: string | null): SportGroup | null {
   const titleLower = title.toLowerCase();
+  const categoryLower = category ? category.toLowerCase() : '';
 
   if (titleLower.includes('wnba')) return 'wnba';
   if (
@@ -168,6 +169,19 @@ function detectSportType(title: string, category?: string | null): SportGroup | 
     (titleLower.includes(' vs ') || titleLower.includes(' vs.') || titleLower.includes(' v ') || titleLower.includes(' @ ') || titleLower.includes(' versus '))
   ) {
     return 'soccer';
+  }
+
+  if (titleLower.match(/\b(afc|fc)\b/) && titleLower.match(/\bwin\b/) && titleLower.match(/\b\d{4}-\d{2}-\d{2}\b/)) {
+    return 'soccer';
+  }
+
+  if (categoryLower === 'sports') {
+    if (titleLower.match(/\b(premier league|premiership|epl|uefa|champions league|europa league|conference league|fa cup|carabao|community shield)\b/)) {
+      return 'soccer';
+    }
+    if (titleLower.match(/\b(afc|fc)\b/) && titleLower.match(/\bwin\b/)) {
+      return 'soccer';
+    }
   }
 
   const soccerClubHints = [
@@ -284,6 +298,35 @@ export function extractTeamNames(title: string): { team1: string; team2: string 
   }
   
   return null;
+}
+
+function extractSingleTeamMatch(title: string): { team: string; dateKey?: string } | null {
+  const match = title.match(/\bwill\s+(.+?)\s+win(?:\s+on\s+([0-9]{4}-[0-9]{2}-[0-9]{2}|[a-z]{3,9}\s+\d{1,2},?\s+\d{4}))?/i);
+  if (!match) return null;
+  const rawTeam = match[1]?.trim();
+  if (!rawTeam) return null;
+  const rawDate = match[2]?.trim();
+  if (!rawDate) {
+    return { team: rawTeam };
+  }
+  const dateKey = normalizeDateKey(rawDate);
+  return dateKey ? { team: rawTeam, dateKey } : { team: rawTeam };
+}
+
+function normalizeDateKey(value: string): string | null {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function getStartDateKey(value: string): string | null {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
 }
 
 function normalizeTeamTokens(value: string): string[] {
@@ -470,7 +513,32 @@ async function fetchESPNGroupScores(sport: SportGroup): Promise<ESPNGame[]> {
 
 function findMatchingGame(marketTitle: string, games: ESPNGame[]): ESPNGame | null {
   const teams = extractTeamNames(marketTitle);
-  if (!teams) return null;
+  if (!teams) {
+    const singleTeamMatch = extractSingleTeamMatch(marketTitle);
+    if (!singleTeamMatch) return null;
+    const targetDateKey = singleTeamMatch.dateKey || null;
+
+    const scoredMatches = games.map(game => {
+      const homeScore = scoreTeamMatch(singleTeamMatch.team, game.homeTeam.name, game.homeTeam.abbreviation);
+      const awayScore = scoreTeamMatch(singleTeamMatch.team, game.awayTeam.name, game.awayTeam.abbreviation);
+      const baseScore = Math.max(homeScore, awayScore);
+      const dateKey = getStartDateKey(game.startTime);
+      const dateMatch = targetDateKey && dateKey && targetDateKey === dateKey;
+      const bestScore = baseScore + (dateMatch ? 2 : 0);
+      return { game, baseScore, bestScore, dateMatch: Boolean(dateMatch) };
+    });
+
+    const bestMatch = scoredMatches
+      .filter(match => {
+        if (targetDateKey) {
+          return match.baseScore >= 4 && match.dateMatch;
+        }
+        return match.baseScore >= 6;
+      })
+      .sort((a, b) => b.bestScore - a.bestScore)[0];
+
+    return bestMatch ? bestMatch.game : null;
+  }
 
   const scoredMatches = games.map(game => {
     const team1Home = scoreTeamMatch(teams.team1, game.homeTeam.name, game.homeTeam.abbreviation);
