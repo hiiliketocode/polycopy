@@ -2348,15 +2348,7 @@ export default function FeedPage() {
                   </div>
                 </a>
               )}
-              <div className="flex items-start justify-between gap-3 md:flex-1">
-                <div className="space-y-1">
-                  <p className="text-xs md:text-base text-slate-500">Recent trades from traders you follow</p>
-                  {lastFeedFetchAt && (
-                    <div className="text-xs text-slate-500">
-                      {`Last updated ${getRelativeTime(lastFeedFetchAt)}`}
-                    </div>
-                  )}
-                </div>
+              <div className="flex flex-col gap-2 md:flex-1">
                 <div className="flex items-center gap-2">
                   <Button
                     onClick={filtersOpen ? closeFilters : openFilters}
@@ -2381,6 +2373,11 @@ export default function FeedPage() {
                     <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
                   </Button>
                 </div>
+                {lastFeedFetchAt && (
+                  <div className="text-xs text-slate-500">
+                    {`Last updated ${getRelativeTime(lastFeedFetchAt)}`}
+                  </div>
+                )}
               </div>
             </div>
             </div>
@@ -2390,35 +2387,37 @@ export default function FeedPage() {
         <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-4 md:py-8">
           <div className="space-y-6">
             <div className="min-w-0 space-y-4">
-              {filtersOpen && (
-                <div ref={filtersPanelRef} aria-label="Filters">
-                  {filterPanel}
-                </div>
-              )}
-              {activeFilterChips.length > 0 && (
-                <div className="border-b border-slate-200 pb-3">
-                  <div className="flex flex-wrap gap-2">
-                    {activeFilterChips.map((chip) => (
-                      <button
-                        key={chip.key}
-                        type="button"
-                        onClick={() => handleRemoveFilter(chip.key)}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300"
-                      >
-                        <span className="truncate">{chip.label}</span>
-                        <X className="h-3 w-3" />
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={clearAllFilters}
-                      className="text-xs font-semibold text-slate-500 hover:text-slate-700"
-                    >
-                      Clear all
-                    </button>
+              <div className="md:w-[63%] md:mx-auto">
+                {filtersOpen && (
+                  <div ref={filtersPanelRef} aria-label="Filters">
+                    {filterPanel}
                   </div>
-                </div>
-              )}
+                )}
+                {activeFilterChips.length > 0 && (
+                  <div className="border-b border-slate-200 pb-3">
+                    <div className="flex flex-wrap gap-2">
+                      {activeFilterChips.map((chip) => (
+                        <button
+                          key={chip.key}
+                          type="button"
+                          onClick={() => handleRemoveFilter(chip.key)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300"
+                        >
+                          <span className="truncate">{chip.label}</span>
+                          <X className="h-3 w-3" />
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Feed Content */}
               {loadingFeed ? (
