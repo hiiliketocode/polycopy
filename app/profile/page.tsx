@@ -2061,7 +2061,7 @@ function ProfilePageContent() {
       const data = await response.json();
       const tokens = Array.isArray(data?.tokens) ? data.tokens : [];
       const match = tokens.find(
-        (token) => normalizeOutcomeValue(token?.outcome) === normalizedOutcome
+        (token: any) => normalizeOutcomeValue(token?.outcome) === normalizedOutcome
       );
       if (typeof match?.token_id === 'string' && match.token_id.trim()) {
         return match.token_id.trim();
