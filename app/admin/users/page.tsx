@@ -263,7 +263,7 @@ export default async function AdminUsersPage() {
 
   const tradeActivity: TradeActivitySummary[] = users.map((user) => {
     const stats = tradeStats.get(user.id)
-    const userType = user.isAdmin ? 'Admin' : user.isPremium ? 'Premium' : 'Free'
+    const userType: 'Admin' | 'Premium' | 'Free' = user.isAdmin ? 'Admin' : user.isPremium ? 'Premium' : 'Free'
     return {
       id: user.id,
       email: user.email,
