@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Hero Preview - Polycopy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'brand-yellow': '#FDB022',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        .mobile-frame {
+            width: 375px;
+            height: 667px;
+            border: 8px solid #1e293b;
+            border-radius: 24px;
+            overflow-y: scroll;
+            background: white;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+        
+        .floating-card {
+            position: absolute;
+            background: white;
+            border-radius: 12px;
+            padding: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            animation: float 8s ease-in-out infinite;
+            border: 2px solid #e2e8f0;
+        }
+        
+        .card-mini {
+            width: 140px;
+            font-size: 11px;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotateY(0deg); }
+            50% { transform: translateY(-20px) rotateY(5deg); }
+        }
+        
+        .card-avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, #FDB022, #F59E0B);
+        }
+    </style>
+</head>
+<body class="bg-slate-900 p-8">
+    
+    <div class="bg-slate-800 text-white py-5 px-4 text-center mb-8 rounded-xl">
+        <h1 class="text-2xl font-bold mb-2">Mobile Hero Preview</h1>
+        <p class="text-slate-300 text-sm mb-3">Three approaches to Option 2 Hero on mobile (375×667px iPhone SE)</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-7xl mx-auto">
+        
+        <!-- OPTION A: Current Responsive Behavior -->
+        <div class="flex flex-col items-center">
+            <div class="bg-white rounded-t-2xl px-4 py-3 w-full max-w-[375px]">
+                <h3 class="font-bold text-slate-900 text-center">A: Current Responsive</h3>
+                <p class="text-xs text-slate-600 text-center">What we have now</p>
+            </div>
+            <div class="mobile-frame">
+                <div class="bg-slate-50 min-h-full relative overflow-hidden">
+                    <!-- Floating cards - same as desktop -->
+                    <div class="absolute inset-0 pointer-events-none" style="perspective: 1000px;">
+                        <div class="floating-card card-mini" style="top: 10%; left: -5%; animation-delay: 0s; z-index: 1;">
+                            <div class="flex items-center gap-2 mb-1">
+                                <div class="card-avatar"></div>
+                                <div>
+                                    <div class="font-semibold text-slate-900">CryptoWhale</div>
+                                    <div class="text-green-600">+45% ROI</div>
+                                </div>
+                            </div>
+                            <div class="text-slate-600">BTC $120k June?</div>
+                        </div>
+                        
+                        <div class="floating-card card-mini" style="top: 30%; right: -5%; animation-delay: 2s; z-index: 1;">
+                            <div class="flex items-center gap-2 mb-1">
+                                <div class="card-avatar" style="background: linear-gradient(135deg, #3B82F6, #1D4ED8);"></div>
+                                <div>
+                                    <div class="font-semibold text-slate-900">SportsKing</div>
+                                    <div class="text-green-600">+52% ROI</div>
+                                </div>
+                            </div>
+                            <div class="text-slate-600">Seahawks SB?</div>
+                        </div>
+                        
+                        <div class="floating-card card-mini" style="bottom: 20%; left: -8%; animation-delay: 4s; z-index: 1;">
+                            <div class="flex items-center gap-2 mb-1">
+                                <div class="card-avatar" style="background: linear-gradient(135deg, #EC4899, #DB2777);"></div>
+                                <div>
+                                    <div class="font-semibold text-slate-900">PropBetter</div>
+                                    <div class="text-green-600">+84% ROI</div>
+                                </div>
+                            </div>
+                            <div class="text-slate-600">Lakers playoffs?</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Content -->
+                    <div class="relative z-10 px-6 py-12">
+                        <div class="mb-4">
+                            <img src="public/logos/polycopy-logo-primary.svg" alt="Polycopy" class="h-8">
+                        </div>
+                        <h1 class="text-4xl font-black text-slate-900 mb-4 leading-tight">
+                            Your curated feed of winning Polymarket trades
+                        </h1>
+                        <p class="text-base text-slate-600 mb-6">
+                            Stop drowning in endless trader lists. Follow who you trust, filter what you need, copy what you love.
+                        </p>
+                        <div class="flex flex-col gap-3 mb-8">
+                            <button class="bg-slate-900 text-white px-6 py-3 rounded-lg font-bold">
+                                Start For Free
+                            </button>
+                            <button class="border-2 border-slate-200 text-slate-700 px-6 py-3 rounded-lg font-bold">
+                                See How It Works
+                            </button>
+                        </div>
+                        
+                        <!-- Featured Card -->
+                        <div class="bg-white rounded-2xl shadow-xl border-2 border-slate-200 p-5">
+                            <div class="flex items-center gap-3 mb-3 pb-3 border-b border-slate-200">
+                                <span class="font-bold text-slate-900 text-sm">Your Feed</span>
+                                <div class="ml-auto">
+                                    <span class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-semibold">Crypto</span>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white border-2 border-slate-200 rounded-xl p-4">
+                                <div class="flex items-center gap-3 mb-3">
+                                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700"></div>
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-slate-900 text-sm mb-1">Bitcoin hits $100k</div>
+                                        <div class="text-xs text-slate-500">by TopDog</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="grid grid-cols-2 gap-3 mb-3">
+                                    <div>
+                                        <div class="text-xs text-slate-500 uppercase font-medium mb-1">Action</div>
+                                        <div class="text-sm font-bold text-green-600">Buy Yes</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-xs text-slate-500 uppercase font-medium mb-1">Price</div>
+                                        <div class="text-sm font-bold text-slate-900">$0.72</div>
+                                    </div>
+                                </div>
+                                
+                                <button class="copy-trade-btn w-full bg-brand-yellow hover:bg-yellow-400 text-slate-900 py-2.5 px-4 rounded-xl font-bold text-sm">
+                                    Copy Trade
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- OPTION B: Simplified Mobile -->
+        <div class="flex flex-col items-center">
+            <div class="bg-white rounded-t-2xl px-4 py-3 w-full max-w-[375px]">
+                <h3 class="font-bold text-slate-900 text-center">B: Simplified</h3>
+                <p class="text-xs text-slate-600 text-center">No floating cards, cleaner</p>
+            </div>
+            <div class="mobile-frame">
+                <div class="bg-slate-50 min-h-full">
+                    <div class="px-6 py-12">
+                        <div class="mb-4">
+                            <img src="public/logos/polycopy-logo-primary.svg" alt="Polycopy" class="h-8">
+                        </div>
+                        <h1 class="text-4xl font-black text-slate-900 mb-4 leading-tight">
+                            Your curated feed of winning Polymarket trades
+                        </h1>
+                        <p class="text-base text-slate-600 mb-6">
+                            Stop drowning in endless trader lists. Follow who you trust, filter what you need, copy what you love.
+                        </p>
+                        
+                        <!-- Featured Card - More prominent -->
+                        <div class="bg-white rounded-2xl shadow-xl border-2 border-slate-200 p-5 mb-6">
+                            <div class="flex items-center gap-3 mb-3 pb-3 border-b border-slate-200">
+                                <span class="font-bold text-slate-900 text-sm">Your Feed</span>
+                                <div class="ml-auto">
+                                    <span class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-semibold">Crypto</span>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white border-2 border-slate-200 rounded-xl p-4">
+                                <div class="flex items-center gap-3 mb-3">
+                                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700"></div>
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-slate-900 text-sm mb-1">Bitcoin hits $100k</div>
+                                        <div class="text-xs text-slate-500">by TopDog</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="grid grid-cols-2 gap-3 mb-3">
+                                    <div>
+                                        <div class="text-xs text-slate-500 uppercase font-medium mb-1">Action</div>
+                                        <div class="text-sm font-bold text-green-600">Buy Yes</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-xs text-slate-500 uppercase font-medium mb-1">Price</div>
+                                        <div class="text-sm font-bold text-slate-900">$0.72</div>
+                                    </div>
+                                </div>
+                                
+                                <button class="copy-trade-btn w-full bg-brand-yellow hover:bg-yellow-400 text-slate-900 py-2.5 px-4 rounded-xl font-bold text-sm">
+                                    Copy Trade
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="flex flex-col gap-3">
+                            <button class="bg-slate-900 text-white px-6 py-3 rounded-lg font-bold">
+                                Start For Free
+                            </button>
+                            <button class="border-2 border-slate-200 text-slate-700 px-6 py-3 rounded-lg font-bold">
+                                See How It Works
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- OPTION C: Adaptive with subtle animation -->
+        <div class="flex flex-col items-center">
+            <div class="bg-white rounded-t-2xl px-4 py-3 w-full max-w-[375px]">
+                <h3 class="font-bold text-slate-900 text-center">C: Adaptive</h3>
+                <p class="text-xs text-slate-600 text-center">Subtle effects, optimized</p>
+            </div>
+            <div class="mobile-frame">
+                <div class="bg-gradient-to-b from-slate-50 to-white min-h-full relative">
+                    <!-- Very subtle background cards -->
+                    <div class="absolute inset-0 pointer-events-none opacity-30">
+                        <div class="floating-card card-mini" style="top: 8%; right: 5%; animation-delay: 0s;">
+                            <div class="flex items-center gap-2 mb-1">
+                                <div class="card-avatar"></div>
+                                <div>
+                                    <div class="font-semibold text-slate-900">Whale</div>
+                                    <div class="text-green-600">+45%</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="floating-card card-mini" style="top: 28%; left: 5%; animation-delay: 2s;">
+                            <div class="flex items-center gap-2 mb-1">
+                                <div class="card-avatar" style="background: linear-gradient(135deg, #3B82F6, #1D4ED8);"></div>
+                                <div>
+                                    <div class="font-semibold text-slate-900">Sports</div>
+                                    <div class="text-green-600">+52%</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="floating-card card-mini" style="bottom: 25%; right: 8%; animation-delay: 4s;">
+                            <div class="flex items-center gap-2 mb-1">
+                                <div class="card-avatar" style="background: linear-gradient(135deg, #EC4899, #DB2777);"></div>
+                                <div>
+                                    <div class="font-semibold text-slate-900">Prop</div>
+                                    <div class="text-green-600">+84%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="relative z-10 px-6 py-12">
+                        <div class="mb-4">
+                            <img src="public/logos/polycopy-logo-primary.svg" alt="Polycopy" class="h-8">
+                        </div>
+                        <h1 class="text-4xl font-black text-slate-900 mb-4 leading-tight">
+                            Your curated feed of winning Polymarket trades
+                        </h1>
+                        <p class="text-base text-slate-600 mb-6">
+                            Stop drowning in endless trader lists. Follow who you trust, filter what you need, copy what you love.
+                        </p>
+                        
+                        <!-- Featured Card with highlight -->
+                        <div class="relative mb-6">
+                            <div class="absolute -inset-1 bg-gradient-to-r from-brand-yellow to-yellow-400 rounded-2xl blur opacity-20"></div>
+                            <div class="relative bg-white rounded-2xl shadow-xl border-2 border-slate-200 p-5">
+                                <div class="flex items-center gap-3 mb-3 pb-3 border-b border-slate-200">
+                                    <span class="font-bold text-slate-900 text-sm">Your Feed</span>
+                                    <div class="ml-auto">
+                                        <span class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-semibold">Crypto</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="bg-white border-2 border-slate-200 rounded-xl p-4">
+                                    <div class="flex items-center gap-3 mb-3">
+                                        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700"></div>
+                                        <div class="flex-1">
+                                            <div class="font-semibold text-slate-900 text-sm mb-1">Bitcoin hits $100k</div>
+                                            <div class="text-xs text-slate-500">by TopDog</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="grid grid-cols-2 gap-3 mb-3">
+                                        <div>
+                                            <div class="text-xs text-slate-500 uppercase font-medium mb-1">Action</div>
+                                            <div class="text-sm font-bold text-green-600">Buy Yes</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs text-slate-500 uppercase font-medium mb-1">Price</div>
+                                            <div class="text-sm font-bold text-slate-900">$0.72</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <button class="copy-trade-btn w-full bg-brand-yellow hover:bg-yellow-400 text-slate-900 py-2.5 px-4 rounded-xl font-bold text-sm">
+                                        Copy Trade
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex flex-col gap-3">
+                            <button class="bg-slate-900 text-white px-6 py-3 rounded-lg font-bold">
+                                Start For Free
+                            </button>
+                            <button class="border-2 border-slate-200 text-slate-700 px-6 py-3 rounded-lg font-bold">
+                                See How It Works
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-slate-800 text-white rounded-xl p-6 mt-8 max-w-4xl mx-auto">
+        <h3 class="font-bold text-lg mb-4">Key Differences:</h3>
+        <div class="grid md:grid-cols-3 gap-4 text-sm">
+            <div>
+                <div class="font-semibold text-brand-yellow mb-2">Option A</div>
+                <ul class="space-y-1 text-slate-300">
+                    <li>• Same as desktop</li>
+                    <li>• Floating cards visible</li>
+                    <li>• Can feel busy</li>
+                    <li>• Cards partially off-screen</li>
+                </ul>
+            </div>
+            <div>
+                <div class="font-semibold text-brand-yellow mb-2">Option B</div>
+                <ul class="space-y-1 text-slate-300">
+                    <li>• No animations</li>
+                    <li>• Clean & fast</li>
+                    <li>• Card first, then CTAs</li>
+                    <li>• Best performance</li>
+                </ul>
+            </div>
+            <div>
+                <div class="font-semibold text-brand-yellow mb-2">Option C</div>
+                <ul class="space-y-1 text-slate-300">
+                    <li>• Subtle background</li>
+                    <li>• Card has glow effect</li>
+                    <li>• Gradient background</li>
+                    <li>• Balanced approach</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Add confetti to all Copy Trade buttons
+        document.querySelectorAll('.copy-trade-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                const rect = e.target.getBoundingClientRect();
+                const x = (rect.left + rect.width / 2) / window.innerWidth;
+                const y = (rect.top + rect.height / 2) / window.innerHeight;
+                
+                confetti({
+                    particleCount: 50,
+                    spread: 60,
+                    origin: { x: x, y: y },
+                    colors: ['#FDB022', '#F59E0B', '#FBBF24']
+                });
+            });
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polycopy Home Page - Design Options</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'brand-yellow': '#FDB022',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .design-label {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: #0F172A;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+            font-weight: 700;
+            font-size: 0.875rem;
+            border-bottom: 3px solid #FDB022;
+            letter-spacing: 0.05em;
+        }
+    </style>
+</head>
+<body class="bg-white">
+
+    <!-- Sticky Nav -->
+    <div class="bg-slate-900 text-white py-5 px-4 text-center sticky top-0 z-50 shadow-xl border-b-2 border-brand-yellow">
+        <h1 class="text-lg font-bold mb-2">Polycopy Home Page - Design Options</h1>
+        <p class="text-slate-300 text-xs mb-3">3 on-brand directions • Stripe/Airbnb/Cash App inspired</p>
+        <div class="flex gap-2 justify-center flex-wrap text-xs">
+            <a href="#option-1" class="bg-brand-yellow text-slate-900 px-3 py-1.5 rounded font-semibold hover:bg-yellow-400">Option 1</a>
+            <a href="#option-2" class="bg-brand-yellow text-slate-900 px-3 py-1.5 rounded font-semibold hover:bg-yellow-400">Option 2</a>
+            <a href="#option-3" class="bg-brand-yellow text-slate-900 px-3 py-1.5 rounded font-semibold hover:bg-yellow-400">Option 3</a>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- OPTION 1: BOLD & CENTERED (Stripe style) -->
+    <!-- ============================================ -->
+    <div id="option-1">
+        <div class="design-label">OPTION 1: Bold & Centered (Stripe-inspired, maximum impact)</div>
+        
+        <!-- Hero -->
+        <div class="bg-white py-24 lg:py-32">
+            <div class="max-w-5xl mx-auto px-6 text-center">
+                <h1 class="text-6xl lg:text-7xl font-black text-slate-900 mb-6 leading-[1.1] tracking-tight">
+                    Your curated feed of winning Polymarket trades
+                </h1>
+                <p class="text-xl lg:text-2xl text-slate-600 mb-10 max-w-3xl mx-auto leading-relaxed">
+                    Stop drowning in endless trader lists. Follow who you trust, filter what you need, copy what you love.
+                </p>
+                <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                    <button class="bg-slate-900 text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-slate-800 transition shadow-lg">
+                        Start For Free
+                    </button>
+                    <button class="border-2 border-slate-200 text-slate-700 px-8 py-4 rounded-lg font-semibold text-lg hover:border-slate-300 hover:bg-slate-50 transition">
+                        See How It Works
+                    </button>
+                </div>
+                <p class="text-sm text-slate-500 mt-6">No credit card • Always free tier</p>
+            </div>
+        </div>
+
+        <!-- Curation Comparison -->
+        <div class="bg-slate-50 py-24">
+            <div class="max-w-6xl mx-auto px-6">
+                <h2 class="text-5xl lg:text-6xl font-black text-slate-900 text-center mb-20">
+                    Most platforms overwhelm.<br/>
+                    <span class="text-slate-500">We curate.</span>
+                </h2>
+                
+                <div class="grid md:grid-cols-2 gap-12">
+                    <!-- Other Platforms -->
+                    <div>
+                        <div class="bg-white rounded-2xl p-8 border-2 border-red-200 shadow-sm">
+                            <div class="flex items-center gap-3 mb-6">
+                                <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-600 font-bold text-xl">✗</div>
+                                <h3 class="text-2xl font-bold text-slate-900">Other Platforms</h3>
+                            </div>
+                            
+                            <div class="bg-slate-50 rounded-lg p-4 mb-4 space-y-2 text-sm text-slate-600">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-6 h-6 bg-slate-300 rounded-full flex-shrink-0"></div>
+                                    <span>Trader #9,421</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-6 h-6 bg-slate-300 rounded-full flex-shrink-0"></div>
+                                    <span>Trader #9,422</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-6 h-6 bg-slate-300 rounded-full flex-shrink-0"></div>
+                                    <span>Trader #9,423</span>
+                                </div>
+                                <div class="pt-2 border-t border-slate-200 text-xs text-slate-400 text-center">
+                                    ...9,997 more traders to sort through
+                                </div>
+                            </div>
+                            
+                            <p class="text-center text-slate-600 italic text-sm">
+                                "Here are 10,000 traders. Good luck finding the good ones."
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Polycopy -->
+                    <div>
+                        <div class="bg-white rounded-2xl p-8 border-2 border-green-200 shadow-sm">
+                            <div class="flex items-center gap-3 mb-6">
+                                <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-600 font-bold text-xl">✓</div>
+                                <h3 class="text-2xl font-bold text-slate-900">Polycopy</h3>
+                            </div>
+                            
+                            <div class="bg-slate-50 rounded-lg p-4 mb-4">
+                                <div class="flex items-center justify-between mb-3 pb-3 border-b border-slate-200">
+                                    <span class="font-semibold text-sm text-slate-700">Your Feed</span>
+                                    <div class="flex gap-1.5">
+                                        <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">Politics</span>
+                                        <span class="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded font-medium">$100+</span>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-brand-yellow rounded-full flex-shrink-0"></div>
+                                    <div>
+                                        <div class="font-semibold text-sm text-slate-900">TopTrader69</div>
+                                        <div class="text-xs text-green-600 font-medium">+$2,400 | 68% Win Rate</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <p class="text-center text-slate-600 font-medium text-sm">
+                                "Follow. Filter. Find the right trade for you."
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- How It Works -->
+        <div class="bg-white py-24">
+            <div class="max-w-6xl mx-auto px-6">
+                <h2 class="text-4xl lg:text-5xl font-black text-slate-900 text-center mb-16">
+                    How it works
+                </h2>
+                
+                <div class="grid md:grid-cols-3 gap-12">
+                    <div class="text-center">
+                        <div class="w-16 h-16 bg-slate-900 text-white rounded-xl flex items-center justify-center text-2xl font-bold mx-auto mb-6">1</div>
+                        <h3 class="text-xl font-bold text-slate-900 mb-3">Discover & Follow</h3>
+                        <p class="text-slate-600 leading-relaxed">
+                            Browse top Polymarket traders and follow the ones you trust. No commitment, always free.
+                        </p>
+                    </div>
+                    
+                    <div class="text-center">
+                        <div class="w-16 h-16 bg-slate-900 text-white rounded-xl flex items-center justify-center text-2xl font-bold mx-auto mb-6">2</div>
+                        <h3 class="text-xl font-bold text-slate-900 mb-3">Your Curated Feed</h3>
+                        <p class="text-slate-600 leading-relaxed">
+                            See their trades in real-time. Filter by category, size, or market to find what matters.
+                        </p>
+                    </div>
+                    
+                    <div class="text-center">
+                        <div class="w-16 h-16 bg-brand-yellow text-slate-900 rounded-xl flex items-center justify-center text-2xl font-bold mx-auto mb-6">3</div>
+                        <h3 class="text-xl font-bold text-slate-900 mb-3">Copy Trades</h3>
+                        <p class="text-slate-600 leading-relaxed">
+                            Manual copy (free) or Quick Copy with one click (premium). You're in control.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="h-16 bg-gradient-to-b from-slate-50 to-slate-100 flex items-center justify-center text-slate-500 text-sm font-medium">
+        ⬇ Scroll to Option 2 ⬇
+    </div>
+
+    <!-- ============================================ -->
+    <!-- OPTION 2: PRODUCT-LED (Airbnb/Cash App style) -->
+    <!-- ============================================ -->
+    <div id="option-2">
+        <div class="design-label">OPTION 2: Product-Led (Airbnb/Cash App style, visual focus)</div>
+        
+        <!-- Hero with Mock Feed -->
+        <div class="bg-slate-50 py-20">
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="grid lg:grid-cols-2 gap-12 items-center">
+                    <!-- Left: Copy -->
+                    <div>
+                        <div class="inline-block bg-brand-yellow/10 border border-brand-yellow/20 px-3 py-1 rounded-full mb-6">
+                            <span class="text-brand-yellow font-semibold text-sm">Copy Trading for Polymarket</span>
+                        </div>
+                        
+                        <h1 class="text-5xl lg:text-6xl font-black text-slate-900 mb-6 leading-[1.1]">
+                            Your curated feed of winning trades
+                        </h1>
+                        
+                        <p class="text-xl text-slate-600 mb-8 leading-relaxed">
+                            Stop drowning in endless trader lists. Follow who you trust, filter what you need, copy what you love.
+                        </p>
+                        
+                        <div class="flex flex-col sm:flex-row gap-4">
+                            <button class="bg-slate-900 text-white px-8 py-4 rounded-lg font-semibold hover:bg-slate-800 transition shadow">
+                                Start For Free
+                            </button>
+                            <button class="border-2 border-slate-200 text-slate-700 px-8 py-4 rounded-lg font-semibold hover:border-slate-300 transition">
+                                See Demo
+                            </button>
+                        </div>
+                        
+                        <p class="text-sm text-slate-500 mt-4">Free forever • No credit card</p>
+                    </div>
+                    
+                    <!-- Right: Mock Feed UI -->
+                    <div>
+                        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 p-6">
+                            <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-200">
+                                <span class="font-bold text-slate-900">Your Feed</span>
+                                <div class="flex gap-2">
+                                    <span class="text-xs bg-blue-100 text-blue-700 px-3 py-1.5 rounded-full font-semibold">Politics</span>
+                                    <span class="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-full font-semibold">$500+</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Trade Card 1 -->
+                            <div class="bg-slate-50 rounded-xl p-4 mb-3 border border-slate-200">
+                                <div class="flex items-center gap-3 mb-3">
+                                    <div class="w-12 h-12 bg-brand-yellow rounded-full flex-shrink-0"></div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="font-bold text-slate-900 text-sm">TopDog</div>
+                                        <div class="text-xs text-slate-500">2 minutes ago</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-xs text-green-600 font-semibold">+68% ROI</div>
+                                        <div class="text-xs text-slate-500">$2.4K profit</div>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <div class="text-sm font-medium text-slate-900 mb-1">YES on "Bitcoin hits $100k"</div>
+                                    <div class="text-xs text-slate-600">Entry: 0.72 • Size: $500</div>
+                                </div>
+                                <button class="w-full bg-brand-yellow text-slate-900 py-2 px-4 rounded-lg font-semibold text-sm hover:bg-yellow-400 transition">
+                                    Copy Trade
+                                </button>
+                            </div>
+                            
+                            <!-- Trade Card 2 -->
+                            <div class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                                <div class="flex items-center gap-3 mb-3">
+                                    <div class="w-12 h-12 bg-purple-500 rounded-full flex-shrink-0"></div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="font-bold text-slate-900 text-sm">PoliPredictor</div>
+                                        <div class="text-xs text-slate-500">15 minutes ago</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-xs text-green-600 font-semibold">+72% ROI</div>
+                                        <div class="text-xs text-slate-500">$3.1K profit</div>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <div class="text-sm font-medium text-slate-900 mb-1">NO on "Fed rate cut March"</div>
+                                    <div class="text-xs text-slate-600">Entry: 0.45 • Size: $800</div>
+                                </div>
+                                <button class="w-full bg-brand-yellow text-slate-900 py-2 px-4 rounded-lg font-semibold text-sm hover:bg-yellow-400 transition">
+                                    Copy Trade
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Curation Section -->
+        <div class="bg-white py-24">
+            <div class="max-w-5xl mx-auto px-6 text-center">
+                <h2 class="text-4xl lg:text-5xl font-black text-slate-900 mb-6">
+                    We're not a list.
+                </h2>
+                <h3 class="text-3xl lg:text-4xl font-bold text-slate-600 mb-16">
+                    We're a curator.
+                </h3>
+                
+                <div class="grid md:grid-cols-2 gap-8 text-left">
+                    <div class="bg-slate-50 rounded-xl p-8">
+                        <div class="text-red-500 text-2xl mb-3">❌</div>
+                        <h4 class="font-bold text-lg text-slate-900 mb-3">Other Platforms</h4>
+                        <ul class="space-y-2 text-slate-600">
+                            <li class="flex items-start gap-2">
+                                <span class="text-slate-400">•</span>
+                                <span>10,000+ traders to sift through</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-slate-400">•</span>
+                                <span>No personalization or filtering</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-slate-400">•</span>
+                                <span>Information overload paralysis</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-slate-400">•</span>
+                                <span>Miss opportunities in the noise</span>
+                            </li>
+                        </ul>
+                    </div>
+                    
+                    <div class="bg-green-50 rounded-xl p-8 border-2 border-green-200">
+                        <div class="text-green-600 text-2xl mb-3">✓</div>
+                        <h4 class="font-bold text-lg text-slate-900 mb-3">Polycopy</h4>
+                        <ul class="space-y-2 text-slate-600">
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-600">✓</span>
+                                <span>Follow only traders you trust</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-600">✓</span>
+                                <span>Curated feed of relevant trades</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-600">✓</span>
+                                <span>Filter by category, size, market</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-600">✓</span>
+                                <span>Find the right trade, fast</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Free vs Premium -->
+        <div class="bg-slate-50 py-24">
+            <div class="max-w-5xl mx-auto px-6">
+                <h2 class="text-4xl font-black text-slate-900 text-center mb-16">
+                    Start free, upgrade when ready
+                </h2>
+                
+                <div class="grid md:grid-cols-2 gap-8">
+                    <div class="bg-white rounded-2xl p-8 border-2 border-slate-200">
+                        <h3 class="text-2xl font-bold text-slate-900 mb-2">Free</h3>
+                        <p class="text-slate-600 mb-6">Perfect for getting started</p>
+                        <div class="text-4xl font-black text-slate-900 mb-6">$0<span class="text-lg font-normal text-slate-500">/month</span></div>
+                        <ul class="space-y-3 mb-8">
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-600 mt-1">✓</span>
+                                <span class="text-slate-700">Follow unlimited traders</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-600 mt-1">✓</span>
+                                <span class="text-slate-700">Curated feed</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-600 mt-1">✓</span>
+                                <span class="text-slate-700">Manual copy trades</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-green-600 mt-1">✓</span>
+                                <span class="text-slate-700">Portfolio tracking</span>
+                            </li>
+                        </ul>
+                        <button class="w-full border-2 border-slate-300 text-slate-700 py-3 px-4 rounded-lg font-semibold hover:border-slate-400 hover:bg-slate-50 transition">
+                            Get Started
+                        </button>
+                    </div>
+                    
+                    <div class="bg-slate-900 rounded-2xl p-8 border-2 border-brand-yellow relative">
+                        <div class="absolute -top-3 right-8 bg-brand-yellow text-slate-900 px-3 py-1 rounded-full text-xs font-bold">POPULAR</div>
+                        <h3 class="text-2xl font-bold text-white mb-2">Premium</h3>
+                        <p class="text-slate-300 mb-6">For serious copy traders</p>
+                        <div class="text-4xl font-black text-white mb-6">$20<span class="text-lg font-normal text-slate-400">/month</span></div>
+                        <ul class="space-y-3 mb-8">
+                            <li class="flex items-start gap-2">
+                                <span class="text-brand-yellow mt-1">✓</span>
+                                <span class="text-slate-200">Everything in Free</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-brand-yellow mt-1">✓</span>
+                                <span class="text-slate-200">Quick Copy (1-click)</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-brand-yellow mt-1">✓</span>
+                                <span class="text-slate-200">Auto-close positions</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-brand-yellow mt-1">✓</span>
+                                <span class="text-slate-200">Advanced controls</span>
+                            </li>
+                        </ul>
+                        <button class="w-full bg-brand-yellow text-slate-900 py-3 px-4 rounded-lg font-semibold hover:bg-yellow-400 transition shadow-lg">
+                            Start Free Trial
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="h-16 bg-gradient-to-b from-slate-50 to-slate-100 flex items-center justify-center text-slate-500 text-sm font-medium">
+        ⬇ Scroll to Option 3 ⬇
+    </div>
+
+    <!-- ============================================ -->
+    <!-- OPTION 3: SPLIT LAYOUT (Coinbase style) -->
+    <!-- ============================================ -->
+    <div id="option-3">
+        <div class="design-label">OPTION 3: Split Layout (Coinbase-inspired, balanced)</div>
+        
+        <!-- Hero Split -->
+        <div class="min-h-screen flex items-center bg-white">
+            <div class="max-w-7xl mx-auto px-6 w-full py-20">
+                <div class="grid lg:grid-cols-5 gap-16 items-center">
+                    <!-- Left: 3/5 -->
+                    <div class="lg:col-span-3">
+                        <h1 class="text-5xl lg:text-6xl font-black text-slate-900 mb-6 leading-[1.1]">
+                            Your curated feed of<br/>winning Polymarket trades
+                        </h1>
+                        
+                        <p class="text-xl text-slate-600 mb-8 leading-relaxed">
+                            Most platforms overwhelm you with 10,000 traders. We curate. Follow who you trust, filter what you need, and copy what you love.
+                        </p>
+                        
+                        <div class="flex flex-col sm:flex-row gap-4 mb-8">
+                            <button class="bg-brand-yellow text-slate-900 px-8 py-4 rounded-lg font-bold text-lg hover:bg-yellow-400 transition shadow">
+                                Start For Free →
+                            </button>
+                            <button class="border-2 border-slate-200 text-slate-700 px-8 py-4 rounded-lg font-semibold text-lg hover:border-slate-300 transition">
+                                See How It Works
+                            </button>
+                        </div>
+                        
+                        <div class="flex items-center gap-8 text-sm text-slate-600">
+                            <div class="flex items-center gap-2">
+                                <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                </svg>
+                                <span>Always free tier</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                </svg>
+                                <span>No credit card</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Right: 2/5 Stats -->
+                    <div class="lg:col-span-2">
+                        <div class="space-y-4">
+                            <div class="bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                                <div class="text-sm text-slate-600 mb-1">Top Trader ROI</div>
+                                <div class="text-4xl font-black text-green-600">+127%</div>
+                            </div>
+                            <div class="bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                                <div class="text-sm text-slate-600 mb-1">Active Traders</div>
+                                <div class="text-4xl font-black text-slate-900">150+</div>
+                            </div>
+                            <div class="bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                                <div class="text-sm text-slate-600 mb-1">Volume Tracked</div>
+                                <div class="text-4xl font-black text-slate-900">$2.4M+</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Problem/Solution -->
+        <div class="bg-slate-50 py-24">
+            <div class="max-w-6xl mx-auto px-6">
+                <div class="text-center mb-16">
+                    <h2 class="text-4xl lg:text-5xl font-black text-slate-900 mb-4">
+                        The problem with other platforms
+                    </h2>
+                    <p class="text-xl text-slate-600">
+                        They dump 10,000 traders on you and wish you luck.
+                    </p>
+                </div>
+                
+                <div class="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+                    <div class="grid md:grid-cols-2 divide-x divide-slate-200">
+                        <div class="p-10">
+                            <div class="mb-6">
+                                <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mb-4">
+                                    <span class="text-red-600 text-2xl font-bold">✗</span>
+                                </div>
+                                <h3 class="text-2xl font-bold text-slate-900 mb-2">Other Platforms</h3>
+                                <p class="text-slate-600">Information overload</p>
+                            </div>
+                            <ul class="space-y-3">
+                                <li class="flex items-start gap-3">
+                                    <span class="text-red-500 mt-1">—</span>
+                                    <span class="text-slate-700">10,000+ traders to sift through manually</span>
+                                </li>
+                                <li class="flex items-start gap-3">
+                                    <span class="text-red-500 mt-1">—</span>
+                                    <span class="text-slate-700">No personalization or curation</span>
+                                </li>
+                                <li class="flex items-start gap-3">
+                                    <span class="text-red-500 mt-1">—</span>
+                                    <span class="text-slate-700">Miss good trades in the noise</span>
+                                </li>
+                                <li class="flex items-start gap-3">
+                                    <span class="text-red-500 mt-1">—</span>
+                                    <span class="text-slate-700">Paralysis by analysis</span>
+                                </li>
+                            </ul>
+                        </div>
+                        
+                        <div class="p-10 bg-gradient-to-br from-slate-50 to-white">
+                            <div class="mb-6">
+                                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mb-4">
+                                    <span class="text-green-600 text-2xl font-bold">✓</span>
+                                </div>
+                                <h3 class="text-2xl font-bold text-slate-900 mb-2">Polycopy</h3>
+                                <p class="text-slate-600">Curated for you</p>
+                            </div>
+                            <ul class="space-y-3">
+                                <li class="flex items-start gap-3">
+                                    <span class="text-green-600 mt-1">✓</span>
+                                    <span class="text-slate-700">Follow only traders you trust</span>
+                                </li>
+                                <li class="flex items-start gap-3">
+                                    <span class="text-green-600 mt-1">✓</span>
+                                    <span class="text-slate-700">Your personalized feed</span>
+                                </li>
+                                <li class="flex items-start gap-3">
+                                    <span class="text-green-600 mt-1">✓</span>
+                                    <span class="text-slate-700">Filter by category, size, market</span>
+                                </li>
+                                <li class="flex items-start gap-3">
+                                    <span class="text-green-600 mt-1">✓</span>
+                                    <span class="text-slate-700">Find the right trade, fast</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3-Step Process -->
+        <div class="bg-white py-24">
+            <div class="max-w-6xl mx-auto px-6">
+                <h2 class="text-4xl font-black text-slate-900 text-center mb-4">
+                    Three steps to smarter trading
+                </h2>
+                <p class="text-xl text-slate-600 text-center mb-16">
+                    Start copying the best Polymarket traders in minutes
+                </p>
+                
+                <div class="space-y-12">
+                    <div class="flex gap-8 items-start">
+                        <div class="flex-shrink-0 w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center font-bold text-xl">1</div>
+                        <div class="flex-1">
+                            <h3 class="text-2xl font-bold text-slate-900 mb-2">Discover & Follow</h3>
+                            <p class="text-lg text-slate-600 leading-relaxed">
+                                Browse our leaderboard of top Polymarket traders. Review their stats, strategy, and performance. Follow the ones you trust—it's free and you can unfollow anytime.
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-8 items-start">
+                        <div class="flex-shrink-0 w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center font-bold text-xl">2</div>
+                        <div class="flex-1">
+                            <h3 class="text-2xl font-bold text-slate-900 mb-2">Your Curated Feed</h3>
+                            <p class="text-lg text-slate-600 leading-relaxed">
+                                See trades from followed traders in real-time. Filter by market category (Politics, Sports, Crypto), trade size, or specific markets. No more sifting through thousands of irrelevant trades.
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-8 items-start">
+                        <div class="flex-shrink-0 w-12 h-12 bg-brand-yellow text-slate-900 rounded-xl flex items-center justify-center font-bold text-xl">3</div>
+                        <div class="flex-1">
+                            <h3 class="text-2xl font-bold text-slate-900 mb-2">Copy Trades Your Way</h3>
+                            <p class="text-lg text-slate-600 leading-relaxed">
+                                <strong>Free users:</strong> Manual copy opens the trade on Polymarket—you execute and mark as copied. <strong>Premium users:</strong> Quick Copy executes trades directly with one click.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Final CTA -->
+        <div class="bg-slate-900 py-24">
+            <div class="max-w-4xl mx-auto px-6 text-center">
+                <h2 class="text-4xl lg:text-5xl font-black text-white mb-6">
+                    Start with a curated feed, not a list
+                </h2>
+                <p class="text-xl text-slate-300 mb-10">
+                    Join copy traders who are tired of information overload
+                </p>
+                <button class="bg-brand-yellow text-slate-900 px-10 py-5 rounded-lg font-bold text-xl hover:bg-yellow-400 transition shadow-2xl">
+                    Start For Free →
+                </button>
+                <p class="text-sm text-slate-400 mt-6">No credit card required • Always free tier</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="bg-slate-50 py-12 border-t border-slate-200">
+        <div class="max-w-4xl mx-auto px-6 text-center">
+            <h3 class="text-xl font-bold text-slate-900 mb-4">End of Design Preview</h3>
+            <p class="text-slate-600 mb-6">Which option resonates most with you? Consider:</p>
+            <ul class="text-sm text-slate-600 space-y-2 max-w-2xl mx-auto text-left">
+                <li><strong>Option 1:</strong> Bold, centered, maximum impact (Stripe-inspired)</li>
+                <li><strong>Option 2:</strong> Product-led with UI mockups (Airbnb/Cash App style)</li>
+                <li><strong>Option 3:</strong> Split layout with stats (Coinbase-inspired)</li>
+            </ul>
+            <div class="mt-8">
+                <a href="#top" class="text-brand-yellow hover:text-yellow-600 font-semibold">↑ Back to Top</a>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

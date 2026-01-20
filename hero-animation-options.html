@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hero Animation Options - Polycopy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'brand-yellow': '#FDB022',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        .floating-card {
+            position: absolute;
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            border: 1px solid #e2e8f0;
+            animation: float 8s ease-in-out infinite;
+            opacity: 0.7;
+        }
+        
+        @keyframes float {
+            0%, 100% { 
+                transform: translateY(0) translateX(0) scale(0.9);
+                opacity: 0.5;
+            }
+            50% { 
+                transform: translateY(-30px) translateX(20px) scale(1);
+                opacity: 0.8;
+            }
+        }
+        
+        .card-mini {
+            width: 200px;
+            font-size: 0.75rem;
+        }
+        
+        .card-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #FDB022 0%, #F59E0B 100%);
+        }
+    </style>
+</head>
+<body class="bg-white">
+    
+    <div class="bg-slate-900 text-white py-5 px-4 text-center sticky top-0 z-50 border-b-2 border-brand-yellow">
+        <h1 class="text-lg font-bold mb-2">Hero Animation Placement Options</h1>
+        <p class="text-slate-300 text-xs mb-3">Which placement feels right for the flying cards effect?</p>
+        <div class="flex gap-2 justify-center flex-wrap text-xs">
+            <a href="#option-1" class="bg-brand-yellow text-slate-900 px-3 py-1.5 rounded font-semibold">Option 1: Background</a>
+            <a href="#option-2" class="bg-brand-yellow text-slate-900 px-3 py-1.5 rounded font-semibold">Option 2: Side Element</a>
+            <a href="#option-3" class="bg-brand-yellow text-slate-900 px-3 py-1.5 rounded font-semibold">Option 3: Full Screen</a>
+        </div>
+    </div>
+
+    <!-- OPTION 1: Background Effect -->
+    <div id="option-1" class="min-h-screen bg-slate-50 relative overflow-hidden">
+        <!-- Floating Cards in Background -->
+        <div class="absolute inset-0 pointer-events-none z-0" style="perspective: 1000px;">
+            <div class="floating-card card-mini" style="top: 15%; left: 10%; animation-delay: 0s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">CryptoWhale</div>
+                        <div class="text-xs text-green-600">+45% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Bitcoin $120k by June?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 60%; right: 15%; animation-delay: 2s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #8B5CF6, #6366F1);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">PoliPredictor</div>
+                        <div class="text-xs text-green-600">+68% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Fed cuts 50bps by March?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 35%; right: 25%; animation-delay: 4s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #3B82F6, #1D4ED8);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">SportsKing</div>
+                        <div class="text-xs text-green-600">+52% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Seahawks win Super Bowl?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="bottom: 25%; left: 20%; animation-delay: 6s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #10B981, #059669);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">TechOracle</div>
+                        <div class="text-xs text-green-600">+73% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Apple announces AI by Q2?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 45%; left: 5%; animation-delay: 1s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #F59E0B, #D97706);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">MarketMaven</div>
+                        <div class="text-xs text-green-600">+61% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Netflix beats Q1 earnings?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 8%; right: 35%; animation-delay: 3s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #EC4899, #DB2777);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">PropBetter</div>
+                        <div class="text-xs text-green-600">+84% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Lakers make playoffs?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="bottom: 40%; right: 8%; animation-delay: 5s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #14B8A6, #0D9488);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">GlobalTrader</div>
+                        <div class="text-xs text-green-600">+56% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Trump tariffs by April?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="bottom: 15%; right: 40%; animation-delay: 7s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #FDB022, #F59E0B);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">EthMaxi</div>
+                        <div class="text-xs text-green-600">+79% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Ethereum $5k by May 31?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 72%; left: 35%; animation-delay: 2.5s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #6366F1, #4F46E5);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">AIBull</div>
+                        <div class="text-xs text-green-600">+91% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">GPT-5 launches by summer?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 52%; right: 45%; animation-delay: 4.5s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #DC2626, #B91C1C);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">RateFiend</div>
+                        <div class="text-xs text-green-600">+63% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Recession by year end?</div>
+            </div>
+        </div>
+        
+        <!-- Hero Content - On Top -->
+        <div class="relative z-10 flex items-center justify-center min-h-screen px-6">
+            <div class="max-w-4xl text-center">
+                <div class="mb-6 flex justify-center">
+                    <img src="public/logos/polycopy-logo-primary.svg" alt="Polycopy" class="h-12">
+                </div>
+                <h1 class="text-6xl lg:text-7xl font-black text-slate-900 mb-6 leading-tight">
+                    Your curated feed of winning Polymarket trades
+                </h1>
+                <p class="text-xl text-slate-600 mb-8">
+                    Stop drowning in endless trader lists. Follow who you trust, filter what you need, copy what you love.
+                </p>
+                <div class="flex gap-4 justify-center">
+                    <button class="bg-slate-900 text-white px-8 py-4 rounded-lg font-bold hover:bg-slate-800">
+                        Start For Free
+                    </button>
+                    <button class="border-2 border-slate-200 text-slate-700 px-8 py-4 rounded-lg font-bold hover:border-slate-300">
+                        See How It Works
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Label -->
+        <div class="absolute bottom-8 left-8 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold z-20">
+            Option 1: Background Effect
+        </div>
+    </div>
+
+    <div class="h-16 bg-slate-200 flex items-center justify-center text-slate-500 text-sm font-medium">
+        ⬇ Scroll to Option 2 ⬇
+    </div>
+
+    <!-- OPTION 2: Side Element (Enhanced) -->
+    <div id="option-2" class="min-h-screen bg-slate-50 relative">
+        <div class="max-w-7xl mx-auto px-6 py-20 lg:py-32">
+            <div class="grid lg:grid-cols-2 gap-12 items-center">
+                <!-- Left: Text -->
+                <div>
+                    <div class="mb-6">
+                        <img src="public/logos/polycopy-logo-primary.svg" alt="Polycopy" class="h-10">
+                    </div>
+                    <h1 class="text-5xl lg:text-6xl font-black text-slate-900 mb-6 leading-tight">
+                        Your curated feed of winning Polymarket trades
+                    </h1>
+                    <p class="text-xl text-slate-600 mb-8">
+                        Stop drowning in endless trader lists. Follow who you trust, filter what you need, copy what you love.
+                    </p>
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <button class="bg-slate-900 text-white px-8 py-4 rounded-lg font-bold hover:bg-slate-800">
+                            Start For Free
+                        </button>
+                        <button class="border-2 border-slate-200 text-slate-700 px-8 py-4 rounded-lg font-bold hover:border-slate-300">
+                            See How It Works
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Right: Animated Cards Container with organized background cards -->
+                <div class="relative h-[600px]" style="perspective: 1000px;">
+                    <!-- Background Floating Cards - Spread out in a circle around main card -->
+                    
+                    <!-- Top arc - spread wider -->
+                    <div class="floating-card card-mini" style="top: 5%; left: 5%; animation-delay: 0s; z-index: 1;">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="card-avatar"></div>
+                            <div>
+                                <div class="font-semibold text-slate-900 text-xs">CryptoWhale</div>
+                                <div class="text-xs text-green-600">+45% ROI</div>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-600">BTC $120k June?</div>
+                    </div>
+                    
+                    <div class="floating-card card-mini" style="top: 0%; left: 50%; transform: translateX(-50%); animation-delay: 2s; z-index: 1;">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="card-avatar" style="background: linear-gradient(135deg, #8B5CF6, #6366F1);"></div>
+                            <div>
+                                <div class="font-semibold text-slate-900 text-xs">PoliPredictor</div>
+                                <div class="text-xs text-green-600">+68% ROI</div>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-600">Fed cuts 50bps?</div>
+                    </div>
+                    
+                    <div class="floating-card card-mini" style="top: 5%; right: 5%; animation-delay: 4s; z-index: 1;">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="card-avatar" style="background: linear-gradient(135deg, #3B82F6, #1D4ED8);"></div>
+                            <div>
+                                <div class="font-semibold text-slate-900 text-xs">SportsKing</div>
+                                <div class="text-xs text-green-600">+52% ROI</div>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-600">Seahawks SB?</div>
+                    </div>
+                    
+                    <!-- Middle left - push further left -->
+                    <div class="floating-card card-mini" style="top: 30%; left: -5%; animation-delay: 1.5s; z-index: 1;">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="card-avatar" style="background: linear-gradient(135deg, #10B981, #059669);"></div>
+                            <div>
+                                <div class="font-semibold text-slate-900 text-xs">TechOracle</div>
+                                <div class="text-xs text-green-600">+73% ROI</div>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-600">Apple AI Q2?</div>
+                    </div>
+                    
+                    <div class="floating-card card-mini" style="top: 55%; left: -2%; animation-delay: 2.5s; z-index: 1;">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="card-avatar" style="background: linear-gradient(135deg, #6366F1, #4F46E5);"></div>
+                            <div>
+                                <div class="font-semibold text-slate-900 text-xs">AIBull</div>
+                                <div class="text-xs text-green-600">+91% ROI</div>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-600">GPT-5 summer?</div>
+                    </div>
+                    
+                    <!-- Middle right - push further right -->
+                    <div class="floating-card card-mini" style="top: 22%; right: -8%; animation-delay: 4.5s; z-index: 1;">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="card-avatar" style="background: linear-gradient(135deg, #DC2626, #B91C1C);"></div>
+                            <div>
+                                <div class="font-semibold text-slate-900 text-xs">RateFiend</div>
+                                <div class="text-xs text-green-600">+63% ROI</div>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-600">Recession 2026?</div>
+                    </div>
+                    
+                    <div class="floating-card card-mini" style="top: 45%; right: -10%; animation-delay: 3.5s; z-index: 1;">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="card-avatar" style="background: linear-gradient(135deg, #F59E0B, #D97706);"></div>
+                            <div>
+                                <div class="font-semibold text-slate-900 text-xs">MarketMaven</div>
+                                <div class="text-xs text-green-600">+61% ROI</div>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-600">Netflix Q1?</div>
+                    </div>
+                    
+                    <div class="floating-card card-mini" style="top: 68%; right: -5%; animation-delay: 5.5s; z-index: 1;">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="card-avatar" style="background: linear-gradient(135deg, #0EA5E9, #0284C7);"></div>
+                            <div>
+                                <div class="font-semibold text-slate-900 text-xs">StableCoin</div>
+                                <div class="text-xs text-green-600">+48% ROI</div>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-600">USDC de-peg?</div>
+                    </div>
+                    
+                    <!-- Bottom arc - spread wider -->
+                    <div class="floating-card card-mini" style="bottom: 5%; left: 8%; animation-delay: 5s; z-index: 1;">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="card-avatar" style="background: linear-gradient(135deg, #EC4899, #DB2777);"></div>
+                            <div>
+                                <div class="font-semibold text-slate-900 text-xs">PropBetter</div>
+                                <div class="text-xs text-green-600">+84% ROI</div>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-600">Lakers playoffs?</div>
+                    </div>
+                    
+                    <div class="floating-card card-mini" style="bottom: 0%; left: 50%; transform: translateX(-50%); animation-delay: 6.5s; z-index: 1;">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="card-avatar" style="background: linear-gradient(135deg, #14B8A6, #0D9488);"></div>
+                            <div>
+                                <div class="font-semibold text-slate-900 text-xs">GlobalTrader</div>
+                                <div class="text-xs text-green-600">+56% ROI</div>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-600">Tariffs April?</div>
+                    </div>
+                    
+                    <div class="floating-card card-mini" style="bottom: 5%; right: 8%; animation-delay: 7.5s; z-index: 1;">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="card-avatar" style="background: linear-gradient(135deg, #FDB022, #F59E0B);"></div>
+                            <div>
+                                <div class="font-semibold text-slate-900 text-xs">EthMaxi</div>
+                                <div class="text-xs text-green-600">+79% ROI</div>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-600">ETH $5k May 31?</div>
+                    </div>
+                    
+                    <!-- Main Trade Card - CENTER STAGE, HIGH Z-INDEX -->
+                    <div class="absolute inset-0 flex items-center justify-center z-20">
+                        <div class="bg-white rounded-2xl shadow-2xl border-2 border-slate-200 p-6 w-full max-w-md">
+                            <div class="flex items-center gap-3 mb-4 pb-4 border-b border-slate-200">
+                                <span class="font-bold text-slate-900 text-sm">Your Feed</span>
+                                <div class="ml-auto flex gap-2">
+                                    <span class="text-xs bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-semibold">Crypto</span>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white border-2 border-slate-200 rounded-xl p-5">
+                                <div class="flex items-center gap-3 mb-4">
+                                    <div class="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700"></div>
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-slate-900 text-base mb-1">Bitcoin hits $100k</div>
+                                        <div class="text-sm text-slate-500">by TopDog</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="grid grid-cols-2 gap-3 mb-4">
+                                    <div>
+                                        <div class="text-xs text-slate-500 uppercase font-medium mb-1">Action</div>
+                                        <div class="text-base font-bold text-green-600">Buy Yes</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-xs text-slate-500 uppercase font-medium mb-1">Price</div>
+                                        <div class="text-base font-bold text-slate-900">$0.72</div>
+                                    </div>
+                                </div>
+                                
+                                <button id="copyTradeBtn" class="w-full bg-brand-yellow hover:bg-yellow-400 text-slate-900 py-3 px-4 rounded-xl font-bold text-base transition">
+                                    Copy Trade
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Label -->
+        <div class="absolute bottom-8 left-8 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold z-20">
+            Option 2: Enhanced Side Element (NEW)
+        </div>
+    </div>
+
+    <div class="h-16 bg-slate-200 flex items-center justify-center text-slate-500 text-sm font-medium">
+        ⬇ Scroll to Option 3 ⬇
+    </div>
+
+    <!-- OPTION 3: Full Screen Overlay -->
+    <div id="option-3" class="min-h-screen relative overflow-hidden">
+        <!-- Full Screen Animated Background -->
+        <div class="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900" style="perspective: 1500px;">
+            <!-- Many floating cards creating tunnel effect -->
+            <div class="floating-card card-mini" style="top: 5%; left: 5%; animation-delay: 0s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">CryptoWhale</div>
+                        <div class="text-xs text-green-600">+45% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Bitcoin $120k by June?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 10%; right: 10%; animation-delay: 1s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #8B5CF6, #6366F1);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">PoliPredictor</div>
+                        <div class="text-xs text-green-600">+68% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Fed cuts 50bps?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 25%; left: 15%; animation-delay: 2s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #3B82F6, #1D4ED8);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">SportsKing</div>
+                        <div class="text-xs text-green-600">+52% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Seahawks SB?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 30%; right: 20%; animation-delay: 3s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #10B981, #059669);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">TechOracle</div>
+                        <div class="text-xs text-green-600">+73% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Apple AI Q2?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 50%; left: 8%; animation-delay: 4s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #F59E0B, #D97706);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">MarketMaven</div>
+                        <div class="text-xs text-green-600">+61% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Netflix beats Q1?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 55%; right: 12%; animation-delay: 5s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #EC4899, #DB2777);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">PropBetter</div>
+                        <div class="text-xs text-green-600">+84% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Lakers playoffs?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="bottom: 20%; left: 18%; animation-delay: 6s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #14B8A6, #0D9488);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">GlobalTrader</div>
+                        <div class="text-xs text-green-600">+56% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Tariffs by April?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="bottom: 25%; right: 15%; animation-delay: 7s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #FDB022, #F59E0B);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">EthMaxi</div>
+                        <div class="text-xs text-green-600">+79% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">ETH $5k May 31?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 18%; left: 40%; animation-delay: 1.5s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #6366F1, #4F46E5);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">AIBull</div>
+                        <div class="text-xs text-green-600">+91% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">GPT-5 summer?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 42%; right: 35%; animation-delay: 2.5s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #DC2626, #B91C1C);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">RateFiend</div>
+                        <div class="text-xs text-green-600">+63% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Recession 2026?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 68%; left: 25%; animation-delay: 3.5s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #0EA5E9, #0284C7);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">StableCoin</div>
+                        <div class="text-xs text-green-600">+48% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">USDC de-pegs?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="bottom: 12%; right: 40%; animation-delay: 4.5s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #A855F7, #9333EA);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">SolanaMaxi</div>
+                        <div class="text-xs text-green-600">+102% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">SOL $200 by Q2?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 38%; left: 32%; animation-delay: 5.5s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #059669, #047857);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">ClimateBear</div>
+                        <div class="text-xs text-green-600">+77% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Paris accord exit?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="bottom: 35%; left: 12%; animation-delay: 6.5s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #FB923C, #F97316);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">MacroBull</div>
+                        <div class="text-xs text-green-600">+58% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">S&P 6000 by June?</div>
+            </div>
+            
+            <div class="floating-card card-mini" style="top: 75%; right: 28%; animation-delay: 7.5s;">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="card-avatar" style="background: linear-gradient(135deg, #E11D48, #BE123C);"></div>
+                    <div>
+                        <div class="font-semibold text-slate-900 text-xs">GeopBull</div>
+                        <div class="text-xs text-green-600">+66% ROI</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-600">Iran regime falls?</div>
+            </div>
+        </div>
+        
+        <!-- Hero Content Overlay -->
+        <div class="relative z-10 flex items-center justify-center min-h-screen px-6">
+            <div class="max-w-4xl text-center">
+                <div class="mb-6 flex justify-center">
+                    <img src="public/logos/polycopy-logo-white.svg" alt="Polycopy" class="h-12 drop-shadow-2xl">
+                </div>
+                <h1 class="text-6xl lg:text-7xl font-black text-white mb-6 leading-tight drop-shadow-2xl">
+                    Your curated feed of winning Polymarket trades
+                </h1>
+                <p class="text-xl text-slate-200 mb-8 drop-shadow-lg">
+                    Stop drowning in endless trader lists. Follow who you trust, filter what you need, copy what you love.
+                </p>
+                <div class="flex gap-4 justify-center">
+                    <button class="bg-brand-yellow text-slate-900 px-8 py-4 rounded-lg font-bold hover:bg-yellow-400 shadow-xl">
+                        Start For Free
+                    </button>
+                    <button class="bg-white/10 backdrop-blur-sm border-2 border-white/30 text-white px-8 py-4 rounded-lg font-bold hover:bg-white/20">
+                        See How It Works
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Label -->
+        <div class="absolute bottom-8 left-8 bg-white text-slate-900 px-4 py-2 rounded-lg text-sm font-semibold z-20">
+            Option 3: Full Screen Overlay
+        </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="bg-slate-50 py-16 px-6">
+        <div class="max-w-4xl mx-auto">
+            <h2 class="text-3xl font-black text-slate-900 mb-8 text-center">Which feels right?</h2>
+            
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="bg-white rounded-xl p-6 border-2 border-slate-200">
+                    <h3 class="font-bold text-lg mb-3">Option 1: Background</h3>
+                    <p class="text-sm text-slate-600 mb-4">Cards float subtly behind text. Clean, minimal, professional.</p>
+                    <p class="text-xs text-slate-500">Best for: Mature, sophisticated brand</p>
+                </div>
+                
+                <div class="bg-white rounded-xl p-6 border-2 border-brand-yellow">
+                    <div class="inline-block bg-brand-yellow text-slate-900 text-xs font-bold px-2 py-1 rounded mb-2">YOUR CHOICE</div>
+                    <h3 class="font-bold text-lg mb-3">Option 2: Side Element</h3>
+                    <p class="text-sm text-slate-600 mb-4">Featured card center stage with ambient floaters. Balanced approach.</p>
+                    <p class="text-xs text-slate-500">Best for: Showing product while staying clean</p>
+                </div>
+                
+                <div class="bg-white rounded-xl p-6 border-2 border-slate-200">
+                    <h3 class="font-bold text-lg mb-3">Option 3: Full Screen</h3>
+                    <p class="text-sm text-slate-600 mb-4">Immersive tunnel effect, bold statement. High visual impact.</p>
+                    <p class="text-xs text-slate-500">Best for: Making a dramatic first impression</p>
+                </div>
+            </div>
+            
+            <p class="text-center text-sm text-slate-600 mt-8">
+                Note: All three would use that 3D tunnel library you shared. The difference is just the placement and intensity.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Confetti effect for Copy Trade button
+        document.getElementById('copyTradeBtn').addEventListener('click', function(e) {
+            const rect = e.target.getBoundingClientRect();
+            const x = (rect.left + rect.width / 2) / window.innerWidth;
+            const y = (rect.top + rect.height / 2) / window.innerHeight;
+            
+            confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { x: x, y: y },
+                colors: ['#FDB022', '#F59E0B', '#FBBF24', '#FCD34D']
+            });
+        });
+    </script>
+
+</body>
+</html>

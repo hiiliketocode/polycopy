@@ -15,8 +15,8 @@ export default function RootPage() {
       if (session?.user) {
         router.push('/feed');
       } else {
-        // If not logged in, go to Discover
-        router.push('/discover');
+        // If not logged in, go to Home page
+        router.replace('/home');
       }
     };
 
