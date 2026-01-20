@@ -1700,55 +1700,54 @@ export default function TraderProfilePage({
       <SignupBanner isLoggedIn={!!user} />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Profile Header */}
-        <Card className="bg-white border-slate-200 p-8">
-          <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6 mb-5">
-            <Avatar className="h-20 w-20 border-2 border-white shadow-md flex-shrink-0" style={{ backgroundColor: avatarColor }}>
-              {traderData.profileImage && (
-                <AvatarImage src={traderData.profileImage} alt={traderData.displayName} />
-              )}
-              <AvatarFallback className="text-white text-xl font-semibold bg-transparent">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
+        <div className="grid gap-4 lg:grid-cols-12">
+          <Card className="bg-white border-slate-200 p-6 lg:col-span-8">
+            <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6">
+              <Avatar className="h-20 w-20 border-2 border-white shadow-md flex-shrink-0" style={{ backgroundColor: avatarColor }}>
+                {traderData.profileImage && (
+                  <AvatarImage src={traderData.profileImage} alt={traderData.displayName} />
+                )}
+                <AvatarFallback className="text-white text-xl font-semibold bg-transparent">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
 
-            <div className="flex-1 min-w-0">
-              <h1 className="text-2xl font-bold text-slate-900 mb-1">{traderData.displayName}</h1>
-              <div className="flex items-center gap-2 mb-3">
-                <p className="text-sm font-mono text-slate-500">
-                  {wallet.slice(0, 6)}...{wallet.slice(-4)}
-                </p>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(wallet);
-                    setWalletCopied(true);
-                    setTimeout(() => setWalletCopied(false), 2000);
-                  }}
-                  className="text-slate-400 hover:text-slate-600 transition-colors"
-                  title={walletCopied ? "Copied!" : "Copy wallet address"}
+              <div className="flex-1 min-w-0">
+                <h1 className="text-2xl font-bold text-slate-900 mb-1">{traderData.displayName}</h1>
+                <div className="flex items-center gap-2 mb-3">
+                  <p className="text-sm font-mono text-slate-500">
+                    {wallet.slice(0, 6)}...{wallet.slice(-4)}
+                  </p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(wallet);
+                      setWalletCopied(true);
+                      setTimeout(() => setWalletCopied(false), 2000);
+                    }}
+                    className="text-slate-400 hover:text-slate-600 transition-colors"
+                    title={walletCopied ? "Copied!" : "Copy wallet address"}
+                  >
+                    {walletCopied ? (
+                      <Check className="h-3.5 w-3.5 text-green-600" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </div>
+
+                <a
+                  href={`https://polymarket.com/profile/${wallet}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-yellow-600 transition-colors"
                 >
-                  {walletCopied ? (
-                    <Check className="h-3.5 w-3.5 text-green-600" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </button>
+                  View on Polymarket
+                  <ArrowUpRight className="h-3 w-3" />
+                </a>
               </div>
 
-              <a
-                href={`https://polymarket.com/profile/${wallet}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-yellow-600 transition-colors"
-              >
-                View on Polymarket
-                <ArrowUpRight className="h-3 w-3" />
-              </a>
-            </div>
-
-            {/* Follow Button */}
-            <div className="w-full sm:w-[260px] sm:ml-auto flex flex-col gap-3">
-              <div>
+              {/* Follow Button */}
+              <div className="w-full sm:w-auto sm:ml-auto">
                 {following ? (
                   <Button
                     variant="outline"
@@ -1771,66 +1770,72 @@ export default function TraderProfilePage({
                   </Button>
                 )}
               </div>
-              {hasMyTradeStats && myTradeStats && (
-                <Card className="border-slate-200 bg-slate-50/70 p-4 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-semibold text-slate-800">My Trades</p>
-                    <p className="text-[11px] text-slate-500">Your activity</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-xs text-slate-500">
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Trades</p>
-                      <p className="text-sm font-semibold text-slate-900">{myTradeStats.trader.totalTrades}</p>
-                      <p className="text-[11px] text-slate-500">{formatShare(myTradeStats.shares.tradesPct)} of total</p>
+            </div>
+          </Card>
+
+          {user && (
+            <Card className="bg-white border-slate-200 p-6 lg:col-span-4">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-base font-semibold text-slate-900">My Trades</p>
+              </div>
+              {myTradeStatsLoading ? (
+                <p className="text-sm text-slate-500">Loading your trade stats...</p>
+              ) : hasMyTradeStats && myTradeStats ? (
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <div className="grid grid-cols-2 gap-4 text-sm text-slate-600">
+                    <div className="rounded-xl border border-slate-200/70 bg-white p-3">
+                      <p className="text-xs font-medium text-slate-500">Trades</p>
+                      <p className="text-lg font-semibold text-slate-900">{myTradeStats.trader.totalTrades}</p>
+                      <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.tradesPct)} of total</p>
                     </div>
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Volume</p>
-                      <p className="text-sm font-semibold text-slate-900">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
+                    <div className="rounded-xl border border-slate-200/70 bg-white p-3">
+                      <p className="text-xs font-medium text-slate-500">Volume</p>
+                      <p className="text-lg font-semibold text-slate-900">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
                     </div>
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Total P&amp;L</p>
-                      <p className={`text-sm font-semibold ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                    <div className="rounded-xl border border-slate-200/70 bg-white p-3">
+                      <p className="text-xs font-medium text-slate-500">Total P&amp;L</p>
+                      <p className={`text-lg font-semibold ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                         {formatSignedCurrency(myTradeStats.trader.totalPnl)}
                       </p>
-                      <p className="text-[11px] text-slate-500">{formatShare(myTradeStats.shares.pnlPct)} of total</p>
+                      <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.pnlPct)} of total</p>
                     </div>
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Wins</p>
-                      <p className="text-sm font-semibold text-slate-900">{myTradeStats.trader.winningTrades}</p>
-                      <p className="text-[11px] text-slate-500">{formatShare(myTradeStats.shares.winsPct)} of wins</p>
+                    <div className="rounded-xl border border-slate-200/70 bg-white p-3">
+                      <p className="text-xs font-medium text-slate-500">Wins</p>
+                      <p className="text-lg font-semibold text-slate-900">{myTradeStats.trader.winningTrades}</p>
+                      <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.winsPct)} of wins</p>
                     </div>
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Losses</p>
-                      <p className="text-sm font-semibold text-slate-900">{myTradeStats.trader.losingTrades}</p>
-                      <p className="text-[11px] text-slate-500">{formatShare(myTradeStats.shares.lossesPct)} of losses</p>
+                    <div className="rounded-xl border border-slate-200/70 bg-white p-3">
+                      <p className="text-xs font-medium text-slate-500">Losses</p>
+                      <p className="text-lg font-semibold text-slate-900">{myTradeStats.trader.losingTrades}</p>
+                      <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.lossesPct)} of losses</p>
                     </div>
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Open</p>
-                      <p className="text-sm font-semibold text-slate-900">{myTradeStats.trader.openTrades}</p>
-                      <p className="text-[11px] text-slate-500">Open positions</p>
+                    <div className="rounded-xl border border-slate-200/70 bg-white p-3">
+                      <p className="text-xs font-medium text-slate-500">Open positions</p>
+                      <p className="text-lg font-semibold text-slate-900">{myTradeStats.trader.openTrades}</p>
+                      <p className="text-xs text-slate-500">Open right now</p>
                     </div>
                   </div>
-                </Card>
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+                  You have not copied {traderData.displayName} yet.
+                </div>
               )}
-              {myTradeStatsLoading && !hasMyTradeStats && (
-                <Card className="border-slate-200 bg-slate-50/60 p-4 shadow-sm">
-                  <p className="text-xs text-slate-500">Loading your trade stats...</p>
-                </Card>
-              )}
+            </Card>
+          )}
+
+          <Card className="bg-white border-slate-200 p-6 lg:col-span-12">
+            <div className="mb-4">
+              <h3 className="text-base font-semibold text-slate-800 mb-2">Performance stats</h3>
+              <p className="text-sm text-slate-500">
+                Performance stats from <a href="https://polymarket.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Polymarket</a>'s official leaderboard (all-time). 
+                Win rate uses the leaderboard when available, otherwise recent trades.
+              </p>
             </div>
-          </div>
 
-          {/* Header with Data Source Disclaimer */}
-          <div className="mb-4">
-            <h3 className="text-sm font-semibold text-slate-700 mb-2">Performance Stats</h3>
-            <p className="text-xs text-slate-500">
-              Performance stats from <a href="https://polymarket.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Polymarket</a>'s official leaderboard (all-time). 
-              Win rate uses the leaderboard when available, otherwise recent trades.
-            </p>
-          </div>
-
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
             <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
               <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 ROI
@@ -2023,7 +2028,9 @@ export default function TraderProfilePage({
               </div>
             </div>
           </div>
-        </Card>
+            </div>
+          </Card>
+        </div>
 
         {/* Tabs */}
         <div className="flex gap-2 mb-6">
