@@ -396,6 +396,7 @@ export function extractTeamNames(title: string): { team1: string; team2: string 
 }
 
 function extractSingleTeamMatch(title: string): { team: string; dateKey?: string } | null {
+  if (isSeasonLongMarketTitle(title)) return null;
   const match = title.match(/\bwill\s+(.+?)\s+win(?:\s+on\s+([0-9]{4}-[0-9]{2}-[0-9]{2}|[a-z]{3,9}\s+\d{1,2},?\s+\d{4}))?/i);
   if (!match) return null;
   const rawTeam = match[1]?.trim();
@@ -406,6 +407,15 @@ function extractSingleTeamMatch(title: string): { team: string; dateKey?: string
   }
   const dateKey = normalizeDateKey(rawDate);
   return dateKey ? { team: rawTeam, dateKey } : { team: rawTeam };
+}
+
+function isSeasonLongMarketTitle(title: string): boolean {
+  const lower = title.toLowerCase();
+  if (!/\bwin\b/.test(lower)) return false;
+  if (/\b20\d{2}\s*-\s*\d{2}\b/.test(lower) || /\b20\d{2}-\d{2}\b/.test(lower)) {
+    return true;
+  }
+  return /\b(season|league|premier league|champions league|championship|tournament|cup|title)\b/.test(lower);
 }
 
 function extractSingleTeamHint(title: string): { team: string } | null {

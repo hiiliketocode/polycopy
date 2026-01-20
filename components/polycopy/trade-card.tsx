@@ -669,6 +669,122 @@ export function TradeCard({
   const hasAnyPositionBadge = showTraderPositionBadge || showUserPositionBadge
   const activePositionBadge =
     positionDrawerTab === "user" ? userPositionBadge : traderPositionBadge
+  const traderHedgingInfo = useMemo(() => {
+    const trades = traderPositionBadge?.trades ?? []
+    if (trades.length === 0) {
+      return {
+        isHedging: false,
+        longerOutcome: null as string | null,
+        diff: 0,
+        percent: 0,
+        basis: "contracts" as "contracts" | "usd",
+        isEven: false,
+      }
+    }
+
+    const buyOutcomes = new Set<string>()
+    const outcomeData = new Map<
+      string,
+      {
+        label: string
+        netContracts: number
+        netAmount: number
+        hasSize: boolean
+        hasAmount: boolean
+      }
+    >()
+
+    trades.forEach((trade) => {
+      const rawOutcome = trade.outcome?.trim() || "Unknown"
+      const outcomeKey = rawOutcome.toLowerCase()
+      const direction = trade.side === "SELL" ? -1 : 1
+      const existing = outcomeData.get(outcomeKey) ?? {
+        label: rawOutcome,
+        netContracts: 0,
+        netAmount: 0,
+        hasSize: false,
+        hasAmount: false,
+      }
+
+      if (trade.side === "BUY") {
+        buyOutcomes.add(outcomeKey)
+      }
+      if (Number.isFinite(trade.size ?? NaN)) {
+        existing.netContracts += (trade.size ?? 0) * direction
+        existing.hasSize = true
+      }
+      if (Number.isFinite(trade.amountUsd ?? NaN)) {
+        existing.netAmount += (trade.amountUsd ?? 0) * direction
+        existing.hasAmount = true
+      }
+
+      outcomeData.set(outcomeKey, existing)
+    })
+
+    const isHedging = buyOutcomes.size >= 2
+    if (!isHedging) {
+      return {
+        isHedging: false,
+        longerOutcome: null,
+        diff: 0,
+        percent: 0,
+        basis: "contracts" as "contracts" | "usd",
+        isEven: false,
+      }
+    }
+
+    const entries = Array.from(outcomeData.values())
+    const sizeOutcomeCount = entries.filter((entry) => entry.hasSize).length
+    const amountOutcomeCount = entries.filter((entry) => entry.hasAmount).length
+    const basis: "contracts" | "usd" = sizeOutcomeCount >= 2 ? "contracts" : "usd"
+    const values = entries
+      .map((entry) => ({
+        label: entry.label,
+        value: basis === "contracts" ? entry.netContracts : entry.netAmount,
+      }))
+      .filter((entry) => Number.isFinite(entry.value ?? NaN))
+
+    if (values.length < 2) {
+      return {
+        isHedging: true,
+        longerOutcome: null,
+        diff: 0,
+        percent: 0,
+        basis,
+        isEven: true,
+      }
+    }
+
+    const sorted = [...values].sort(
+      (a, b) => Math.abs(b.value) - Math.abs(a.value)
+    )
+    const top = sorted[0]
+    const totalAbs = sorted.reduce((acc, entry) => acc + Math.abs(entry.value), 0)
+    if (!Number.isFinite(totalAbs) || totalAbs <= 0) {
+      return {
+        isHedging: true,
+        longerOutcome: null,
+        diff: 0,
+        percent: 0,
+        basis,
+        isEven: true,
+      }
+    }
+
+    const otherAbs = totalAbs - Math.abs(top.value)
+    const diff = Math.abs(top.value) - otherAbs
+    const percent = diff > 0 ? (diff / totalAbs) * 100 : 0
+    const isEven = diff <= 0.0001
+
+    return {
+      isHedging: true,
+      longerOutcome: top.label,
+      diff: diff > 0 ? diff : 0,
+      percent,
+      basis,
+      isEven,
+    }
+  }, [traderPositionBadge?.trades])
 
   const statusBadgeClass = cn(
     badgeBaseClass,
@@ -1051,6 +1167,12 @@ export function TradeCard({
         : "--"
     const traderPositionsCount = traderPositionBadge?.trades?.length ?? 0
     const userPositionsCount = userPositionBadge?.trades?.length ?? 0
+    const showHedgingDetails = traderHedgingInfo.isHedging && !isUserTab
+    const hedgingDiffLabel =
+      traderHedgingInfo.basis === "contracts"
+        ? `${formatContracts(traderHedgingInfo.diff)} contracts`
+        : formatCurrency(traderHedgingInfo.diff)
+    const hedgingPercentLabel = `${traderHedgingInfo.percent.toFixed(1)}%`
     const tabOptions = [
       {
         key: "trader" as const,
@@ -1084,9 +1206,32 @@ export function TradeCard({
               </button>
             ))}
           </div>
-          <span className="text-[11px] font-semibold text-slate-500">
-            {trades.length} trade{trades.length === 1 ? "" : "s"}
-          </span>
+          <div className="flex items-center gap-2">
+            {showHedgingDetails ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="secondary"
+                      className={cn(
+                        badgeBaseClass,
+                        "h-6 px-2 text-[11px] font-semibold bg-yellow-50 text-yellow-700 border-yellow-200"
+                      )}
+                    >
+                      <ArrowLeftRight className="h-3 w-3" />
+                      Trader Hedging
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[220px] text-xs">
+                    Trader has bought multiple outcomes in this market to reduce directional risk.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : null}
+            <span className="text-[11px] font-semibold text-slate-500">
+              {trades.length} trade{trades.length === 1 ? "" : "s"}
+            </span>
+          </div>
         </div>
         <div className="mt-2 space-y-2">
           {visibleTrades.map((trade, index) => {
@@ -1157,6 +1302,21 @@ export function TradeCard({
             <div className="text-[11px] font-medium text-slate-400">
               Ave Price {avgPriceLabel}
             </div>
+            {showHedgingDetails ? (
+              <div className="text-[11px] font-medium text-slate-500">
+                {traderHedgingInfo.isEven || !traderHedgingInfo.longerOutcome ? (
+                  "Evenly hedged across outcomes"
+                ) : (
+                  <>
+                    Longer on{" "}
+                    <span className="font-semibold text-slate-700">
+                      {formatOutcomeLabel(traderHedgingInfo.longerOutcome)}
+                    </span>{" "}
+                    by {hedgingDiffLabel} ({hedgingPercentLabel})
+                  </>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -2316,20 +2476,48 @@ export function TradeCard({
         "bg-white border-slate-200"
       )}
     >
-      {isSellTrade && (
-        <div className="absolute left-1/2 top-2 z-10 -translate-x-1/2">
-          <Badge
-            variant="secondary"
-            className={cn(
-              badgeBaseClass,
-              "h-6 px-2 text-[11px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
-            )}
-          >
-            Trader Sold
-          </Badge>
+      {(isSellTrade || traderHedgingInfo.isHedging) && (
+        <div className="absolute left-1/2 top-2 z-10 flex -translate-x-1/2 flex-col items-center gap-1">
+          {traderHedgingInfo.isHedging ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="secondary"
+                    className={cn(
+                      badgeBaseClass,
+                      "h-6 px-2 text-[11px] font-semibold bg-yellow-50 text-yellow-700 border-yellow-200"
+                    )}
+                  >
+                    <ArrowLeftRight className="h-3 w-3" />
+                    Trader Hedging
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[220px] text-xs">
+                  Trader has bought multiple outcomes in this market to reduce directional risk.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : null}
+          {isSellTrade ? (
+            <Badge
+              variant="secondary"
+              className={cn(
+                badgeBaseClass,
+                "h-6 px-2 text-[11px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
+              )}
+            >
+              Trader Sold
+            </Badge>
+          ) : null}
         </div>
       )}
-      <div className="p-5 md:p-6">
+      <div
+        className={cn(
+          "pt-5 px-5 md:pt-6 md:px-6",
+          shouldShowPrimaryCta ? "pb-0" : "pb-5 md:pb-6"
+        )}
+      >
         {/* Header Row */}
         <div className="flex items-start justify-between mb-3 gap-3">
           <Link
@@ -2354,31 +2542,33 @@ export function TradeCard({
         </div>
 
         <div className="flex flex-col gap-3 mb-4 md:flex-row md:flex-wrap md:items-center">
-          <div className="grid min-w-0 flex-1 grid-cols-[auto,1fr] items-start gap-x-3 md:items-center">
-            <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
-              <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
-              <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
-                {market.slice(0, 2)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
-              <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug break-words">
-                {market}
-                {/* External link icon for Premium users - at end of market name */}
-                {isPremium && polymarketUrl && (
-                  <a
-                    href={polymarketUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ml-2 inline-flex text-slate-400 hover:text-slate-600 transition-colors"
-                    title="View on Polymarket"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                )}
-              </h3>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start gap-2.5 md:items-center">
+              <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
+                <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
+                <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
+                  {market.slice(0, 2)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug break-words">
+                  {market}
+                  {/* External link icon for Premium users - at end of market name */}
+                  {isPremium && polymarketUrl && (
+                    <a
+                      href={polymarketUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-2 inline-flex text-slate-400 hover:text-slate-600 transition-colors"
+                      title="View on Polymarket"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  )}
+                </h3>
+              </div>
             </div>
-            <div className="col-span-2 mt-2 justify-self-start">
+            <div className="mt-2">
               <div className="flex flex-wrap items-center gap-2">
                 {hasAnyPositionBadge ? (
                   <Badge
@@ -2413,7 +2603,7 @@ export function TradeCard({
               </div>
             </div>
           </div>
-        <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end md:ml-auto">
+          <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end md:ml-auto">
             {showEventTimeBadge && (
               espnLink ? (
                 <Badge
@@ -2528,7 +2718,7 @@ export function TradeCard({
           </div>
         )}
 
-        <div className="border border-slate-200 rounded-lg px-4 py-3 mb-2 bg-slate-50/50">
+        <div className="border border-slate-200 rounded-lg px-4 py-3 mb-0 bg-slate-50/50">
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3 relative">
             <div className="text-center">
               <p className="text-xs text-slate-500 mb-1 font-medium">Outcome</p>
@@ -2678,7 +2868,7 @@ export function TradeCard({
         )}
 
         {!hideActions && shouldShowPrimaryCta && !(allowQuickCopyExperience && isExpanded) && (
-          <div className="mt-3">
+          <div className="py-4">
             {isSellTrade ? (
               <div className="w-full flex justify-center">
                 <div className="flex w-full max-w-[360px] items-center">
