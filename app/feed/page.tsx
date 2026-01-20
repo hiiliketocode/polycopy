@@ -195,6 +195,87 @@ const getMarketKeyForTrade = (trade: FeedTrade) =>
       null
   );
 
+type EspnScore = Awaited<ReturnType<typeof getESPNScoresForTrades>> extends Map<string, infer V>
+  ? V
+  : never;
+
+const buildEspnScoreDisplay = (trade: FeedTrade, espnScore: EspnScore) => {
+  const { team1Label, team1Score, team2Label, team2Score } = getScoreDisplaySides(
+    trade.market.title,
+    espnScore
+  );
+
+  if (espnScore.status === 'final') {
+    return {
+      scoreDisplay: `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`,
+      espnStatus: espnScore.status,
+    };
+  }
+
+  if (espnScore.status === 'live') {
+    let periodContext = '';
+    if (espnScore.displayClock) {
+      const sportType = trade.market.category || '';
+      let period = espnScore.period || 1;
+      if (period === 0) period = 1;
+
+      if (
+        sportType.includes('basketball') ||
+        trade.market.title.match(
+          /(lakers|celtics|warriors|heat|bucks|nuggets|suns|thunder|mavericks|clippers|76ers|nets|knicks)/i
+        )
+      ) {
+        if (period <= 4) {
+          periodContext = `Q${period} `;
+        } else {
+          periodContext = `OT${period - 4} `;
+        }
+      } else if (
+        sportType.includes('football') ||
+        trade.market.title.match(
+          /(chiefs|raiders|patriots|cowboys|packers|broncos|chargers|dolphins|bills|jets|ravens|49ers|eagles|steelers)/i
+        )
+      ) {
+        if (period <= 4) {
+          periodContext = `Q${period} `;
+        } else {
+          periodContext = `OT `;
+        }
+      } else if (
+        sportType.includes('hockey') ||
+        trade.market.title.match(
+          /(bruins|canadiens|rangers|penguins|oilers|flames|maple leafs|lightning|avalanche)/i
+        )
+      ) {
+        if (period <= 3) {
+          periodContext = `P${period} `;
+        } else {
+          periodContext = `OT `;
+        }
+      } else if (
+        sportType.includes('baseball') ||
+        trade.market.title.match(
+          /(yankees|dodgers|red sox|astros|cubs|mets|braves|padres|giants|cardinals)/i
+        )
+      ) {
+        periodContext = `I${period} `;
+      } else if (period > 0) {
+        periodContext = `Q${period} `;
+      }
+    }
+
+    const clock = espnScore.displayClock
+      ? ` (${periodContext}${espnScore.displayClock})`
+      : '';
+    return {
+      scoreDisplay: `${team1Label} ${team1Score} - ${team2Score} ${team2Label}${clock}`,
+      espnStatus: espnScore.status,
+    };
+  }
+
+  return { scoreDisplay: undefined, espnStatus: espnScore.status };
+};
+
 // Helper: Format relative time
 function getRelativeTime(timestamp: number): string {
   const now = Date.now();
@@ -1070,10 +1151,12 @@ export default function FeedPage() {
     
     console.log(`📊 Fetching live data for ${tradeByMarketKey.size} markets`);
     
-    // **NEW: Fetch ESPN scores for all sports trades first**
+    // Fetch ESPN scores in parallel so badges can render from price data first.
     console.log(`🏈 Fetching sports scores for sports markets...`);
-    const espnScores = await getESPNScoresForTrades(trades);
-    console.log(`✅ Got sports scores for ${espnScores.size} markets`);
+    const espnScoresPromise = getESPNScoresForTrades(trades).catch((error) => {
+      console.warn('Failed to fetch ESPN scores:', error);
+      return new Map();
+    });
     
     // Fetch prices for each market
     await Promise.all(
@@ -1136,79 +1219,11 @@ export default function FeedPage() {
                   
                   let scoreDisplay: string | undefined;
                   let espnStatus: 'scheduled' | 'live' | 'final' | null = null;
-                  
-                  // **NEW: Check ESPN scores first for sports markets**
-                  const espnScoreKey = trade.market.conditionId || trade.market.id || trade.market.title;
-                  const espnScore = espnScoreKey ? espnScores.get(espnScoreKey) : undefined;
-                  const effectiveGameStartTime = gameStartTime || espnScore?.startTime || undefined;
+                  const effectiveGameStartTime = gameStartTime || undefined;
                   
                   if (isSportsMarket) {
-                    // SPORTS MARKETS: Prioritize ESPN scores, then Polymarket data
-                    
-                    if (espnScore) {
-                      // **ESPN DATA AVAILABLE** 🎯
-                      espnStatus = espnScore.status;
-                      const { team1Label, team1Score, team2Label, team2Score } = getScoreDisplaySides(
-                        trade.market.title,
-                        espnScore
-                      );
-
-                      if (espnScore.status === 'final') {
-                        scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
-                        console.log(`🏁 ESPN Final score: ${scoreDisplay}`);
-                      } else if (espnScore.status === 'live') {
-                        let periodContext = '';
-                        if (espnScore.displayClock) {
-                          // Detect sport and format period accordingly
-                          const sportType = trade.market.category || '';
-                          let period = espnScore.period || 1; // Default to period 1 if 0 or missing
-                          
-                          // Fix: ESPN sometimes returns 0 for first period, normalize to 1
-                          if (period === 0) period = 1;
-                          
-                          // Basketball (NBA) - Use Quarters (Q1-Q4)
-                          if (sportType.includes('basketball') || trade.market.title.match(/(lakers|celtics|warriors|heat|bucks|nuggets|suns|thunder|mavericks|clippers|76ers|nets|knicks)/i)) {
-                            if (period <= 4) {
-                              periodContext = `Q${period} `;
-                            } else {
-                              periodContext = `OT${period - 4} `;
-                            }
-                          }
-                          // Football (NFL) - Use Quarters (Q1-Q4)
-                          else if (sportType.includes('football') || trade.market.title.match(/(chiefs|raiders|patriots|cowboys|packers|broncos|chargers|dolphins|bills|jets|ravens|49ers|eagles|steelers)/i)) {
-                            if (period <= 4) {
-                              periodContext = `Q${period} `;
-                            } else {
-                              periodContext = `OT `;
-                            }
-                          }
-                          // Hockey (NHL) - Use Periods (P1-P3)
-                          else if (sportType.includes('hockey') || trade.market.title.match(/(bruins|canadiens|rangers|penguins|oilers|flames|maple leafs|lightning|avalanche)/i)) {
-                            if (period <= 3) {
-                              periodContext = `P${period} `;
-                            } else {
-                              periodContext = `OT `;
-                            }
-                          }
-                          // Baseball (MLB) - Use Innings (I1-I9+)
-                          else if (sportType.includes('baseball') || trade.market.title.match(/(yankees|dodgers|red sox|astros|cubs|mets|braves|padres|giants|cardinals)/i)) {
-                            periodContext = `I${period} `;
-                          }
-                          // Default: Just use Q for quarters if sport not detected
-                          else if (period > 0) {
-                            periodContext = `Q${period} `;
-                          }
-                        }
-
-                        const clock = espnScore.displayClock ? ` (${periodContext}${espnScore.displayClock})` : '';
-                        scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}${clock}`;
-                        console.log(`🟢 ESPN Live score: ${scoreDisplay} | Period: ${espnScore.period}`);
-                      } else if (espnScore.status === 'scheduled') {
-                        console.log(`📅 ESPN Scheduled: ${espnScore.startTime}`);
-                      }
-                    }
-                    // Fallback to Polymarket data if no ESPN score
-                    else if (liveScore && typeof liveScore === 'object') {
+                    // SPORTS MARKETS: Use Polymarket data while ESPN loads.
+                    if (liveScore && typeof liveScore === 'object') {
                       // Has live score data from Polymarket
                       const homeScoreRaw = (liveScore as any).home ?? (liveScore as any).homeScore ?? (liveScore as any).home_score ?? 0;
                       const awayScoreRaw = (liveScore as any).away ?? (liveScore as any).awayScore ?? (liveScore as any).away_score ?? 0;
@@ -1306,6 +1321,44 @@ export default function FeedPage() {
       const merged = new Map(prev);
       newLiveData.forEach((value, key) => {
         merged.set(key, value);
+      });
+      return merged;
+    });
+
+    const espnScores = await espnScoresPromise;
+    console.log(`✅ Got sports scores for ${espnScores.size} markets`);
+    if (espnScores.size === 0) return;
+
+    setLiveMarketData((prev) => {
+      const merged = new Map(prev);
+      tradeByMarketKey.forEach((trade, marketKey) => {
+        const liveData = merged.get(marketKey);
+        if (!liveData) return;
+        const espnScoreKey = trade.market.conditionId || trade.market.id || trade.market.title;
+        const espnScore = espnScoreKey ? espnScores.get(espnScoreKey) : undefined;
+        if (!espnScore) return;
+
+        const { scoreDisplay, espnStatus } = buildEspnScoreDisplay(trade, espnScore);
+        const resolvedGameStartTime = liveData.gameStartTime || espnScore.startTime || undefined;
+        const scoreLooksLive = Boolean(
+          scoreDisplay && /\d+\s*-\s*\d+/.test(scoreDisplay)
+        );
+        const liveStatus = resolveLiveStatus({
+          eventStatus: liveData.eventStatus,
+          gameStartTime: resolvedGameStartTime,
+          espnStatus,
+          resolved: liveData.resolved,
+          hasLiveScore: scoreLooksLive,
+        });
+
+        merged.set(marketKey, {
+          ...liveData,
+          score: scoreDisplay ?? liveData.score,
+          liveStatus,
+          gameStartTime: resolvedGameStartTime,
+          espnUrl: espnScore.gameUrl || liveData.espnUrl,
+          updatedAt: Date.now(),
+        });
       });
       return merged;
     });

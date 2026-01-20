@@ -182,7 +182,7 @@ export default function TraderProfilePage({
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loadingTrades, setLoadingTrades] = useState(true);
   const [tradesToShow, setTradesToShow] = useState(15); // Start with 15 trades for faster loading
-  const [activeTab, setActiveTab] = useState<'positions' | 'performance'>('positions');
+  const [activeTab, setActiveTab] = useState<'positions' | 'performance'>('performance');
   const [showResolvedTrades, setShowResolvedTrades] = useState(false);
   
   const [showWalletConnectModal, setShowWalletConnectModal] = useState(false);
@@ -1700,142 +1700,117 @@ export default function TraderProfilePage({
       <SignupBanner isLoggedIn={!!user} />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        <div className="grid gap-4 lg:grid-cols-12">
-          <Card className="bg-white border-slate-200 p-6 lg:col-span-8">
-            <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6">
-              <Avatar className="h-20 w-20 border-2 border-white shadow-md flex-shrink-0" style={{ backgroundColor: avatarColor }}>
-                {traderData.profileImage && (
-                  <AvatarImage src={traderData.profileImage} alt={traderData.displayName} />
-                )}
-                <AvatarFallback className="text-white text-xl font-semibold bg-transparent">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-
-              <div className="flex-1 min-w-0">
-                <h1 className="text-2xl font-bold text-slate-900 mb-1">{traderData.displayName}</h1>
-                <div className="flex items-center gap-2 mb-3">
-                  <p className="text-sm font-mono text-slate-500">
-                    {wallet.slice(0, 6)}...{wallet.slice(-4)}
-                  </p>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(wallet);
-                      setWalletCopied(true);
-                      setTimeout(() => setWalletCopied(false), 2000);
-                    }}
-                    className="text-slate-400 hover:text-slate-600 transition-colors"
-                    title={walletCopied ? "Copied!" : "Copy wallet address"}
-                  >
-                    {walletCopied ? (
-                      <Check className="h-3.5 w-3.5 text-green-600" />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                </div>
-
-                <a
-                  href={`https://polymarket.com/profile/${wallet}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-yellow-600 transition-colors"
-                >
-                  View on Polymarket
-                  <ArrowUpRight className="h-3 w-3" />
-                </a>
-              </div>
-
-              {/* Follow Button */}
-              <div className="w-full sm:w-auto sm:ml-auto">
-                {following ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleFollowToggle}
-                    disabled={followLoading}
-                    className="border-slate-300 text-slate-700 hover:bg-slate-50 gap-1.5 px-3 w-full sm:w-auto justify-center"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    Following
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    onClick={handleFollowToggle}
-                    disabled={followLoading}
-                    className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm px-4 w-full sm:w-auto justify-center"
-                  >
-                    Follow
-                  </Button>
-                )}
-              </div>
-            </div>
-          </Card>
-
-          {user && (
-            <Card className="bg-white border-slate-200 p-6 lg:col-span-4">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-base font-semibold text-slate-900">My Trades</p>
-              </div>
-              {myTradeStatsLoading ? (
-                <p className="text-sm text-slate-500">Loading your trade stats...</p>
-              ) : hasMyTradeStats && myTradeStats ? (
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <div className="grid grid-cols-2 gap-4 text-sm text-slate-600">
-                    <div className="rounded-xl border border-slate-200/70 bg-white p-3">
-                      <p className="text-xs font-medium text-slate-500">Trades</p>
-                      <p className="text-lg font-semibold text-slate-900">{myTradeStats.trader.totalTrades}</p>
-                      <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.tradesPct)} of total</p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200/70 bg-white p-3">
-                      <p className="text-xs font-medium text-slate-500">Volume</p>
-                      <p className="text-lg font-semibold text-slate-900">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200/70 bg-white p-3">
-                      <p className="text-xs font-medium text-slate-500">Total P&amp;L</p>
-                      <p className={`text-lg font-semibold ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
-                        {formatSignedCurrency(myTradeStats.trader.totalPnl)}
-                      </p>
-                      <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.pnlPct)} of total</p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200/70 bg-white p-3">
-                      <p className="text-xs font-medium text-slate-500">Wins</p>
-                      <p className="text-lg font-semibold text-slate-900">{myTradeStats.trader.winningTrades}</p>
-                      <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.winsPct)} of wins</p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200/70 bg-white p-3">
-                      <p className="text-xs font-medium text-slate-500">Losses</p>
-                      <p className="text-lg font-semibold text-slate-900">{myTradeStats.trader.losingTrades}</p>
-                      <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.lossesPct)} of losses</p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200/70 bg-white p-3">
-                      <p className="text-xs font-medium text-slate-500">Open positions</p>
-                      <p className="text-lg font-semibold text-slate-900">{myTradeStats.trader.openTrades}</p>
-                      <p className="text-xs text-slate-500">Open right now</p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
-                  You have not copied {traderData.displayName} yet.
-                </div>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6">
+            <Avatar className="h-20 w-20 border-2 border-white shadow-md flex-shrink-0" style={{ backgroundColor: avatarColor }}>
+              {traderData.profileImage && (
+                <AvatarImage src={traderData.profileImage} alt={traderData.displayName} />
               )}
-            </Card>
-          )}
+              <AvatarFallback className="text-white text-xl font-semibold bg-transparent">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
 
-          <Card className="bg-white border-slate-200 p-6 lg:col-span-12">
-            <div className="mb-4">
-              <h3 className="text-base font-semibold text-slate-800 mb-2">Performance stats</h3>
-              <p className="text-sm text-slate-500">
-                Performance stats from <a href="https://polymarket.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Polymarket</a>'s official leaderboard (all-time). 
-                Win rate uses the leaderboard when available, otherwise recent trades.
-              </p>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-3xl font-semibold text-slate-900 mb-2">{traderData.displayName}</h1>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-sm font-mono text-slate-500">
+                  {wallet.slice(0, 6)}...{wallet.slice(-4)}
+                </p>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(wallet);
+                    setWalletCopied(true);
+                    setTimeout(() => setWalletCopied(false), 2000);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                  title={walletCopied ? "Copied!" : "Copy wallet address"}
+                >
+                  {walletCopied ? (
+                    <Check className="h-3.5 w-3.5 text-green-600" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
+
+              <a
+                href={`https://polymarket.com/profile/${wallet}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-yellow-600 transition-colors"
+              >
+                View on Polymarket
+                <ArrowUpRight className="h-3 w-3" />
+              </a>
             </div>
 
-            <div className="rounded-2xl bg-slate-50 p-4">
-              {/* Stats Grid */}
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            <div className="w-full sm:w-auto sm:ml-auto">
+              {following ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleFollowToggle}
+                  disabled={followLoading}
+                  className="border-slate-300 text-slate-700 hover:bg-slate-50 gap-1.5 px-3 w-full sm:w-auto justify-center"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Following
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={handleFollowToggle}
+                  disabled={followLoading}
+                  className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm px-4 w-full sm:w-auto justify-center"
+                >
+                  Follow
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setActiveTab('performance')}
+            variant="ghost"
+            className={cn(
+              "px-4 py-2 rounded-md font-medium text-sm transition-all whitespace-nowrap",
+              activeTab === 'performance'
+                ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+            )}
+          >
+            Performance
+          </Button>
+          <Button
+            onClick={() => setActiveTab('positions')}
+            variant="ghost"
+            className={cn(
+              "px-4 py-2 rounded-md font-medium text-sm transition-all whitespace-nowrap",
+              activeTab === 'positions'
+                ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+            )}
+          >
+            Trades
+          </Button>
+        </div>
+
+        {activeTab === 'performance' && (
+          <div className="grid gap-4 lg:grid-cols-12">
+            <Card className={`rounded-2xl border border-slate-200 bg-white p-6 shadow-sm ${user ? 'lg:col-span-8' : 'lg:col-span-12'}`}>
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-slate-800 mb-2">Performance stats</h3>
+                <p className="text-sm text-slate-500">
+                  Performance stats from <a href="https://polymarket.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Polymarket</a>'s official leaderboard (all-time). 
+                  Win rate uses the leaderboard when available, otherwise recent trades.
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
             <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
               <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 ROI
@@ -2028,37 +2003,61 @@ export default function TraderProfilePage({
               </div>
             </div>
           </div>
-            </div>
-          </Card>
-        </div>
+              </div>
+            </Card>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6">
-          <Button
-            onClick={() => setActiveTab('positions')}
-            variant="ghost"
-            className={cn(
-              "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
-              activeTab === 'positions'
-                ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+            {user && (
+              <Card className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-4">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-base font-semibold text-slate-900">My Trades</p>
+                </div>
+                {myTradeStatsLoading ? (
+                  <p className="text-sm text-slate-500">Loading your trade stats...</p>
+                ) : hasMyTradeStats && myTradeStats ? (
+                  <div className="rounded-2xl bg-slate-50 p-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm text-slate-600">
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                        <p className="text-sm font-medium text-slate-600">Trades</p>
+                        <p className="text-xl font-semibold text-slate-900">{myTradeStats.trader.totalTrades}</p>
+                        <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.tradesPct)} of total</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                        <p className="text-sm font-medium text-slate-600">Volume</p>
+                        <p className="text-xl font-semibold text-slate-900">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                        <p className="text-sm font-medium text-slate-600">Total P&amp;L</p>
+                        <p className={`text-xl font-semibold ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                          {formatSignedCurrency(myTradeStats.trader.totalPnl)}
+                        </p>
+                        <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.pnlPct)} of total</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                        <p className="text-sm font-medium text-slate-600">Wins</p>
+                        <p className="text-xl font-semibold text-slate-900">{myTradeStats.trader.winningTrades}</p>
+                        <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.winsPct)} of wins</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                        <p className="text-sm font-medium text-slate-600">Losses</p>
+                        <p className="text-xl font-semibold text-slate-900">{myTradeStats.trader.losingTrades}</p>
+                        <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.lossesPct)} of losses</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                        <p className="text-sm font-medium text-slate-600">Open positions</p>
+                        <p className="text-xl font-semibold text-slate-900">{myTradeStats.trader.openTrades}</p>
+                        <p className="text-xs text-slate-500">Open right now</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+                    You have not copied {traderData.displayName} yet.
+                  </div>
+                )}
+              </Card>
             )}
-          >
-            Trades
-          </Button>
-          <Button
-            onClick={() => setActiveTab('performance')}
-            variant="ghost"
-            className={cn(
-              "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
-              activeTab === 'performance'
-                ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
-            )}
-          >
-            Performance
-          </Button>
-        </div>
+          </div>
+        )}
 
         {/* Content */}
         {activeTab === 'positions' && (

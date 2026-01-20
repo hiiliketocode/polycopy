@@ -661,15 +661,15 @@ export function TradeCard({
     if (eventEndTime) return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
     return { eventTimeValue: null, eventTimeKind: "unknown" as const }
   }, [statusVariant, eventStartTime, eventEndTime])
-  const eventTimeLabel = useMemo(() => {
-    if (!eventTimeValue) return "Time TBD"
+  const { eventTimeLabel, isEventTimeLoading } = useMemo(() => {
+    if (!eventTimeValue) return { eventTimeLabel: null, isEventTimeLoading: true }
     const prefix =
       eventTimeKind === "start" ? "Starts" : eventTimeKind === "end" ? "Resolves" : "Time"
     const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(eventTimeValue)
     const isMidnightUtc = /T00:00:00(?:\.000)?(?:Z|[+-]00:00)$/.test(eventTimeValue)
     const useDateOnly = isDateOnly || isMidnightUtc
     const parsed = new Date(eventTimeValue)
-    if (Number.isNaN(parsed.getTime())) return "Time TBD"
+    if (Number.isNaN(parsed.getTime())) return { eventTimeLabel: null, isEventTimeLoading: true }
     const timeZone = useDateOnly ? "UTC" : undefined
     const formatter = new Intl.DateTimeFormat("en-US", {
       timeZone,
@@ -697,14 +697,21 @@ export function TradeCard({
             hour: "numeric",
             minute: "2-digit",
           }).format(parsed)
-          return `${prefix} ${label}, ${timeLabel}`
+          return {
+            eventTimeLabel: `${prefix} ${label}, ${timeLabel}`,
+            isEventTimeLoading: false,
+          }
         }
-        return `${prefix} ${label}`
+        return { eventTimeLabel: `${prefix} ${label}`, isEventTimeLoading: false }
       }
     }
     if (eventTimeKind === "end") {
-      if (targetKey === toYmd(today)) return `${prefix} Today`
-      if (targetKey === toYmd(tomorrow)) return `${prefix} Tomorrow`
+      if (targetKey === toYmd(today)) {
+        return { eventTimeLabel: `${prefix} Today`, isEventTimeLoading: false }
+      }
+      if (targetKey === toYmd(tomorrow)) {
+        return { eventTimeLabel: `${prefix} Tomorrow`, isEventTimeLoading: false }
+      }
     }
     const options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }
     const allowTime = !useDateOnly && eventTimeKind !== "end"
@@ -716,7 +723,7 @@ export function TradeCard({
       ...options,
       timeZone: useDateOnly ? "UTC" : undefined,
     }).format(parsed)
-    return `${prefix} ${formatted}`
+    return { eventTimeLabel: `${prefix} ${formatted}`, isEventTimeLoading: false }
   }, [eventTimeValue, eventTimeKind])
 
   useEffect(() => {
@@ -2087,8 +2094,12 @@ export function TradeCard({
                   )}
                 >
                   <a href={espnLink} target="_blank" rel="noopener noreferrer">
-                    <CalendarClock className="h-3.5 w-3.5" />
-                    {eventTimeLabel}
+                    {isEventTimeLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <CalendarClock className="h-3.5 w-3.5" />
+                    )}
+                    {eventTimeLabel ?? "Loading"}
                   </a>
                 </Badge>
               ) : (
@@ -2101,8 +2112,12 @@ export function TradeCard({
                       : "bg-slate-50 text-slate-400 border-slate-200",
                   )}
                 >
-                  <CalendarClock className="h-3.5 w-3.5" />
-                  {eventTimeLabel}
+                  {isEventTimeLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CalendarClock className="h-3.5 w-3.5" />
+                  )}
+                  {eventTimeLabel ?? "Loading"}
                 </Badge>
               )
             )}
