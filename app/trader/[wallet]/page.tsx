@@ -2874,11 +2874,14 @@ export default function TraderProfilePage({
                               <div className="space-y-1">
                                 <p className="text-base font-semibold text-slate-900">{trade.market}</p>
                                 <p className="text-sm text-slate-500">
-                                  {new Date(trade.timestamp).toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    year: 'numeric'
-                                  })}
+                                  {(() => {
+                                    const date = new Date(trade.timestamp);
+                                    return date.toLocaleDateString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: 'numeric'
+                                    });
+                                  })()}
                                 </p>
                               </div>
                             </div>
@@ -2914,146 +2917,6 @@ export default function TraderProfilePage({
                                 )}
                               >
                                 {formatSignedCurrency(trade.pnl, 2)} ({trade.roi >= 0 ? '+' : ''}{trade.roi.toFixed(1)}%)
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            </Card>
-          </div>
-        )}
-      </div>
-
-      {/* Wallet Connect Required Modal */}
-      {showWalletConnectModal && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-          onClick={() => setShowWalletConnectModal(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-4 mb-4">
-              <div className="flex-shrink-0 w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
-                <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">
-                  Wallet Connection Required
-                </h3>
-                <p className="text-sm text-slate-600 mb-4">
-                  To use auto-copy trading, you need to connect your Polymarket wallet first. This allows us to execute trades on your behalf.
-                </p>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => {
-                      setShowWalletConnectModal(false);
-                      router.push('/profile');
-                    }}
-                    className="flex-1 px-4 py-2.5 bg-[#FDB022] hover:bg-[#E69E1A] text-slate-900 font-semibold rounded-lg transition-colors"
-                  >
-                    Connect Wallet
-                  </button>
-                  <button
-                    onClick={() => setShowWalletConnectModal(false)}
-                    className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <TradeExecutionNotifications
-        notifications={tradeNotifications}
-        onNavigate={handleNavigateToTrade}
-      />
-      <ConnectWalletModal
-        open={showConnectWalletModal}
-        onOpenChange={setShowConnectWalletModal}
-        onConnect={handleWalletConnect}
-      />
-    </div>
-  );
-}
-                                {new Date(trade.timestamp).toLocaleDateString('en-US', { 
-                                  month: 'short', 
-                                  day: 'numeric', 
-                                  year: 'numeric' 
-                                })}
-                              </p>
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <span className="text-xs text-slate-500 md:hidden">Outcome</span>
-                              <Badge
-                                className={cn(
-                                  'w-fit font-semibold',
-                                  trade.outcome?.toLowerCase() === 'yes'
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    : 'bg-red-50 text-red-700 border-red-200'
-                                )}
-                              >
-                                {trade.outcome || 'N/A'}
-                              </Badge>
-                            </div>
-                            <div className="space-y-1 text-sm text-slate-700">
-                              <span className="text-xs text-slate-500 md:hidden">Amount</span>
-                              <p className="font-semibold text-slate-900">
-                                {formatSignedCurrency(trade.invested, 2)}
-                              </p>
-                              <p className="text-xs text-slate-500">{trade.size.toFixed(1)} contracts</p>
-                            </div>
-                            <div className="space-y-1 text-sm text-slate-700">
-                              <span className="text-xs text-slate-500 md:hidden">Entry -&gt; Current</span>
-                              <p className="font-semibold text-slate-900">
-                                ${trade.price.toFixed(3)} -&gt; ${trade.currentPrice?.toFixed(3)}
-                              </p>
-                              <p
-                                className={cn(
-                                  'text-xs font-semibold',
-                                  trade.roi >= 0 ? 'text-emerald-600' : 'text-red-600'
-                                )}
-                              >
-                                {trade.roi >= 0 ? '+' : ''}{trade.roi.toFixed(1)}%
-                              </p>
-                            </div>
-                            <div className="space-y-1 text-sm text-slate-700">
-                              <span className="text-xs text-slate-500 md:hidden">Current Value</span>
-                              <p className="font-semibold text-slate-900">
-                                {formatSignedCurrency(trade.currentValue, 2)}
-                              </p>
-                              <p
-                                className={cn(
-                                  'text-xs font-semibold',
-                                  trade.pnl >= 0 ? 'text-emerald-600' : 'text-red-600'
-                                )}
-                              >
-                                {formatSignedCurrency(trade.pnl, 2)}
-                              </p>
-                            </div>
-                            <div className="space-y-1 text-sm text-slate-700">
-                              <span className="text-xs text-slate-500 md:hidden">Time</span>
-                              <p className="font-semibold text-slate-900">
-                                {new Date(trade.timestamp).toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                })}
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                {new Date(trade.timestamp).toLocaleTimeString('en-US', {
-                                  hour: 'numeric',
-                                  minute: '2-digit',
-                                })}
                               </p>
                             </div>
                           </div>
