@@ -2755,7 +2755,7 @@ export default function TraderProfilePage({
                         <span>Market</span>
                         <span>Outcome</span>
                         <span>Amount</span>
-                        <span>Entry -> Current</span>
+                        <span>Entry -&gt; Current</span>
                         <span>Current Value</span>
                         <span>Time</span>
                       </div>
@@ -2793,9 +2793,9 @@ export default function TraderProfilePage({
                               <p className="text-xs text-slate-500">{trade.size.toFixed(1)} contracts</p>
                             </div>
                             <div className="space-y-1 text-sm text-slate-700">
-                              <span className="text-xs text-slate-500 md:hidden">Entry -> Current</span>
+                              <span className="text-xs text-slate-500 md:hidden">Entry -&gt; Current</span>
                               <p className="font-semibold text-slate-900">
-                                ${trade.price.toFixed(3)} -> ${trade.currentPrice?.toFixed(3)}
+                                ${trade.price.toFixed(3)} -&gt; ${trade.currentPrice?.toFixed(3)}
                               </p>
                               <p
                                 className={cn(
