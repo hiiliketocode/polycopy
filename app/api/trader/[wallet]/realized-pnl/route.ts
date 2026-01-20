@@ -145,7 +145,12 @@ export async function GET(
     rankMap.set(row.window_key, row)
   }
 
-  const rankings = currentKeys.reduce<Record<string, { rank: number | null; total: number | null; delta: number | null }>>(
+  const rankings = currentKeys.reduce<Record<string, {
+    rank: number | null;
+    total: number | null;
+    delta: number | null;
+    previousRank: number | null;
+  }>>(
     (acc, key) => {
       const current = rankMap.get(key)
       const prev = rankMap.get(`${key}_PREV`)
@@ -156,6 +161,7 @@ export async function GET(
         rank: currentRank,
         total: typeof current?.total_traders === 'number' ? current.total_traders : null,
         delta,
+        previousRank: prevRank,
       }
       return acc
     },
