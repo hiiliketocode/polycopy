@@ -79,7 +79,7 @@ export function CurationCarousel() {
       image: (
         <div className="bg-white rounded-xl p-6 border-2 border-slate-200">
           <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-200">
-            <span class="font-bold text-slate-900 text-sm">Your Feed</span>
+            <span className="font-bold text-slate-900 text-sm">Your Feed</span>
             <div className="ml-auto flex gap-2">
               <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-semibold">Crypto</span>
             </div>
