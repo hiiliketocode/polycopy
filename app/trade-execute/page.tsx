@@ -93,7 +93,35 @@ const PRICE_KEYS = ['price', 'avg_price', 'avgPrice', 'execution_price']
 const AMOUNT_KEYS = ['size', 'amount', 'quantity', 'shares']
 const SIDE_KEYS = ['side', 'order_side', 'trade_side']
 const OUTCOME_KEYS = ['outcome', 'outcome_name', 'outcomeName']
-const ICON_KEYS = ['icon', 'market_icon', 'marketIcon', 'image', 'image_url', 'imageUrl']
+const ICON_KEYS = [
+  'market_avatar',
+  'market_avatar_url',
+  'marketAvatar',
+  'marketAvatarUrl',
+  'market_image',
+  'market_image_url',
+  'marketImage',
+  'marketImageUrl',
+  'market_icon',
+  'market_icon_url',
+  'marketIcon',
+  'marketIconUrl',
+  'icon_url',
+  'iconUrl',
+  'icon',
+  'image',
+  'image_url',
+  'imageUrl',
+  'event_image',
+  'event_image_url',
+  'eventImage',
+  'eventImageUrl',
+  'logo',
+  'logo_url',
+  'logoUrl',
+  'twitter_card_image',
+  'twitterCardImage',
+]
 const TRADER_NAME_KEYS = ['trader_username', 'trader_name', 'traderName', 'display_name', 'displayName']
 const TRADER_ICON_KEYS = [
   'trader_avatar',

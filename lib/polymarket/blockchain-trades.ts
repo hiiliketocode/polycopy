@@ -22,6 +22,7 @@ interface EnrichedTrade extends BlockchainTrade {
   conditionId: string;
   marketSlug?: string;
   eventSlug?: string;
+  marketAvatarUrl?: string | null;
 }
 
 // Cache for market data to avoid repeated API calls
@@ -95,6 +96,12 @@ export async function enrichBlockchainTrades(
         const token = market.tokens?.find((t: any) => 
           t.token_id?.toLowerCase() === trade.tokenId.toLowerCase()
         );
+        const marketAvatarUrl =
+          typeof market?.icon === 'string' && market.icon.trim()
+            ? market.icon.trim()
+            : typeof market?.image === 'string' && market.image.trim()
+              ? market.image.trim()
+              : null;
 
         return {
           ...trade,
@@ -103,6 +110,7 @@ export async function enrichBlockchainTrades(
           conditionId: market.condition_id || trade.tokenId.slice(0, 66),
           marketSlug: market.slug,
           eventSlug: market.event_slug,
+          marketAvatarUrl,
         };
       } catch (error) {
         console.error('❌ Error enriching trade:', error);
@@ -215,4 +223,3 @@ export function matchTradesToPositions(trades: EnrichedTrade[]): MatchedPosition
 
   return positions;
 }
-

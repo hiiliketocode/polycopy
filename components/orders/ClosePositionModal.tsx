@@ -251,6 +251,7 @@ export default function ClosePositionModal({
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [orderType, setOrderType] = useState<'FAK' | 'GTC'>('FAK')
   const [minTickSize, setMinTickSize] = useState<number>(FALLBACK_MIN_TICK_SIZE)
+  const [livePrice, setLivePrice] = useState<number | null>(order.currentPrice ?? null)
   const [statusPhase, setStatusPhase] = useState<StatusPhase>('submitted')
   const [orderStatus, setOrderStatus] = useState<{
     status: string
@@ -313,6 +314,69 @@ export default function ClosePositionModal({
       canceled = true
     }
   }, [position.tokenId])
+
+  useEffect(() => {
+    let canceled = false
+    let inFlight = false
+    let intervalId: ReturnType<typeof setInterval> | null = null
+    let controller: AbortController | null = null
+    const conditionId = deriveConditionId(position.tokenId)
+    const tokenIdLower = position.tokenId?.toLowerCase?.() ?? null
+
+    setLivePrice(order.currentPrice ?? null)
+
+    if (!conditionId || !tokenIdLower) {
+      return
+    }
+
+    const fetchPrice = async () => {
+      if (canceled || inFlight) return
+      inFlight = true
+      try {
+        if (controller) controller.abort()
+        controller = new AbortController()
+        const response = await fetch(
+          `/api/polymarket/market?conditionId=${encodeURIComponent(conditionId)}`,
+          { cache: 'no-store', signal: controller.signal }
+        )
+        if (!response.ok) return
+        const data = await response.json()
+        let nextPrice: number | null = null
+        if (Array.isArray(data?.tokens)) {
+          for (const token of data.tokens) {
+            const tid = typeof token?.token_id === 'string' ? token.token_id.toLowerCase() : null
+            if (tid !== tokenIdLower) continue
+            const rawPrice =
+              typeof token?.price === 'number'
+                ? token.price
+                : typeof token?.price === 'string'
+                  ? Number(token.price)
+                  : null
+            if (Number.isFinite(rawPrice)) {
+              nextPrice = rawPrice as number
+              break
+            }
+          }
+        }
+        if (!canceled && nextPrice !== null) {
+          setLivePrice(nextPrice)
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return
+      } finally {
+        inFlight = false
+      }
+    }
+
+    fetchPrice()
+    intervalId = setInterval(fetchPrice, 250)
+
+    return () => {
+      canceled = true
+      if (intervalId) clearInterval(intervalId)
+      if (controller) controller.abort()
+    }
+  }, [order.currentPrice, position.tokenId])
 
   useEffect(() => {
     if (!orderId) {
@@ -451,7 +515,7 @@ export default function ClosePositionModal({
     [order.side]
   )
   const marketStatus = order.marketIsOpen ? 'market open' : 'market closed'
-  const currentPrice = order.currentPrice ?? null
+  const currentPrice = livePrice ?? order.currentPrice ?? null
   const entryPrice = order.priceOrAvgPrice ?? position.avgEntryPrice ?? null
   const referencePrice = currentPrice ?? entryPrice ?? null
   const amountInputValue = Number(amountInput)

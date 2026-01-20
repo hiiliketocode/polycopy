@@ -74,13 +74,27 @@ export async function GET(
     })
   }
 
+  const shiftDate = (dateStr: string, days: number) => {
+    const date = new Date(`${dateStr}T00:00:00Z`)
+    if (Number.isNaN(date.getTime())) return dateStr
+    date.setUTCDate(date.getUTCDate() + days)
+    return date.toISOString().slice(0, 10)
+  }
+
   const todayStr = new Date().toISOString().slice(0, 10)
-  let anchorIndex = parsed.length - 1
-  if (anchorIndex >= 0 && parsed[anchorIndex].date === todayStr && parsed.length > 1) {
+  const yesterdayStr = shiftDate(todayStr, -1)
+  const hasToday = parsed.some((row) => row.date === todayStr)
+  const hasYesterday = parsed.some((row) => row.date === yesterdayStr)
+  const normalized = hasToday && !hasYesterday
+    ? parsed.map((row) => ({ ...row, date: shiftDate(row.date, -1) }))
+    : parsed
+
+  let anchorIndex = normalized.length - 1
+  if (anchorIndex >= 0 && normalized[anchorIndex].date === todayStr && normalized.length > 1) {
     anchorIndex -= 1
   }
   const anchorDate = anchorIndex >= 0
-    ? new Date(`${parsed[anchorIndex].date}T00:00:00Z`)
+    ? new Date(`${normalized[anchorIndex].date}T00:00:00Z`)
     : new Date()
   const startOfAnchor = Date.UTC(
     anchorDate.getUTCFullYear(),
@@ -110,11 +124,11 @@ export async function GET(
   const summaries = periods.map(({ label, days }) => {
     const cutoff = cutoffDate(days)
     const windowRows = cutoff
-      ? parsed.filter((row) => {
+      ? normalized.filter((row) => {
           const rowDate = new Date(`${row.date}T00:00:00Z`)
           return rowDate >= cutoff
         })
-      : parsed
+      : normalized
 
     const pnl = windowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0)
     const returnPct = volume && volume !== 0 ? (pnl / volume) * 100 : null
@@ -141,8 +155,20 @@ export async function GET(
     .in('window_key', Array.from(new Set(rankKeys)))
 
   const rankMap = new Map<string, RankRow>()
+  const toNumber = (value: unknown) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string') {
+      const parsed = Number(value)
+      return Number.isFinite(parsed) ? parsed : null
+    }
+    return null
+  }
   for (const row of (rankRows as RankRow[] | null | undefined) ?? []) {
-    rankMap.set(row.window_key, row)
+    rankMap.set(row.window_key, {
+      window_key: row.window_key,
+      rank: toNumber(row.rank),
+      total_traders: toNumber(row.total_traders),
+    })
   }
 
   const rankings = currentKeys.reduce<Record<string, {
@@ -169,7 +195,7 @@ export async function GET(
   )
 
   return NextResponse.json({
-    daily: parsed,
+    daily: normalized,
     summaries,
     volume,
     rankings

@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { TradeCard } from '@/components/polycopy/trade-card';
 import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/components/polycopy/trade-execution-notifications';
@@ -67,6 +66,7 @@ interface Trade {
   tokenId?: string;
   status: 'Open' | 'Trader Closed' | 'Bonded';
   category?: string;
+  marketAvatarUrl?: string | null;
 }
 
 interface PositionSizeBucket {
@@ -245,6 +245,7 @@ export default function TraderProfilePage({
     endDateIso?: string;
     liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
     espnUrl?: string;
+    marketAvatarUrl?: string;
   }>>(new Map());
 
   useEffect(() => {
@@ -682,6 +683,8 @@ export default function TraderProfilePage({
             conditionId: trade.market_id || undefined,
             tokenId: extractTokenId(trade),
             status,
+            marketAvatarUrl:
+              trade.market_avatar_url ?? trade.marketAvatarUrl ?? extractMarketAvatarUrl(trade) ?? null,
           };
         });
 
@@ -746,6 +749,7 @@ export default function TraderProfilePage({
               conditionId: trade.conditionId || trade.condition_id || '',
               tokenId: extractTokenId(trade),
               status: status,
+              marketAvatarUrl: trade.marketAvatarUrl ?? extractMarketAvatarUrl(trade) ?? null,
             };
           });
 
@@ -803,6 +807,7 @@ export default function TraderProfilePage({
               conditionId: trade.conditionId || trade.condition_id || '',
               tokenId: extractTokenId(trade),
               status: status,
+              marketAvatarUrl: extractMarketAvatarUrl(trade) ?? null,
             };
           });
 
@@ -876,6 +881,7 @@ export default function TraderProfilePage({
                 homeTeam,
                 awayTeam,
                 endDateIso,
+                marketAvatarUrl,
               } = priceData.market;
               
               // Check if market is resolved
@@ -888,22 +894,23 @@ export default function TraderProfilePage({
                 : trade.price;
 
               // Update state immediately with price data (without score yet)
-              setLiveMarketData(prev => {
-                const next = new Map(prev);
-                const existing = next.get(trade.conditionId!);
-                next.set(trade.conditionId!, {
-                  price: currentPrice,
-                  closed: closed,
-                  resolved: isResolved,
-                  score: existing?.score,
-                  liveStatus: existing?.liveStatus,
-                  gameStartTime: gameStartTime || existing?.gameStartTime,
-                  eventStatus: eventStatus || existing?.eventStatus,
-                  endDateIso: endDateIso || existing?.endDateIso,
-                  espnUrl: existing?.espnUrl,
-                });
-                return next;
-              });
+                  setLiveMarketData(prev => {
+                    const next = new Map(prev);
+                    const existing = next.get(trade.conditionId!);
+                    next.set(trade.conditionId!, {
+                      price: currentPrice,
+                      closed: closed,
+                      resolved: isResolved,
+                      score: existing?.score,
+                      liveStatus: existing?.liveStatus,
+                      gameStartTime: gameStartTime || existing?.gameStartTime,
+                      eventStatus: eventStatus || existing?.eventStatus,
+                      endDateIso: endDateIso || existing?.endDateIso,
+                      espnUrl: existing?.espnUrl,
+                      marketAvatarUrl: marketAvatarUrl || existing?.marketAvatarUrl,
+                    });
+                    return next;
+                  });
 
               return {
                 trade,
@@ -917,6 +924,7 @@ export default function TraderProfilePage({
                 homeTeam,
                 awayTeam,
                 endDateIso,
+                marketAvatarUrl,
               };
             }
           }
@@ -949,6 +957,7 @@ export default function TraderProfilePage({
             homeTeam,
             awayTeam,
             endDateIso,
+            marketAvatarUrl,
           } = result;
 
           const espnScore = espnScores.get(trade.conditionId!);
@@ -1025,6 +1034,7 @@ export default function TraderProfilePage({
                 eventStatus: existing?.eventStatus ?? eventStatus,
                 endDateIso: existing?.endDateIso ?? endDateIso,
                 espnUrl: espnScore?.gameUrl ?? existing?.espnUrl,
+                marketAvatarUrl: existing?.marketAvatarUrl ?? marketAvatarUrl,
               });
               return next;
             });
@@ -1201,6 +1211,10 @@ export default function TraderProfilePage({
 
     try {
       const marketId = trade.conditionId || trade.marketSlug || trade.market;
+      const marketAvatarUrl =
+        (trade.conditionId ? liveMarketData.get(trade.conditionId)?.marketAvatarUrl : undefined) ||
+        trade.marketAvatarUrl ||
+        null;
 
       const response = await fetch('/api/copied-trades', {
         method: 'POST',
@@ -1217,6 +1231,7 @@ export default function TraderProfilePage({
           outcome: trade.outcome.toUpperCase(),
           priceWhenCopied: entryPrice,
           amountInvested: amountInvested || null,
+          marketAvatarUrl,
         }),
       });
 
@@ -1631,6 +1646,12 @@ export default function TraderProfilePage({
       ? 'No open or resolved trades to display'
       : 'No open trades to display';
 
+  const isOwnProfile = Boolean(
+    user &&
+      walletAddress &&
+      wallet &&
+      normalizeKeyPart(walletAddress) === normalizeKeyPart(wallet)
+  );
   const hasMyTradeStats = Boolean(myTradeStats && myTradeStats.trader.totalTrades > 0);
   const myDailyPnlSeries = useMemo(() => {
     const series = myTradeStats?.dailyPnl ?? [];
@@ -1820,7 +1841,11 @@ export default function TraderProfilePage({
         {activeTab === 'performance' && (
           <div className="space-y-6">
             <div className="grid gap-4 lg:grid-cols-12">
-              <Card className={`border-slate-200/80 bg-white/90 p-5 ${user ? 'lg:col-span-8' : 'lg:col-span-12'}`}>
+              <Card
+                className={`border-slate-200/80 bg-white/90 p-5 ${
+                  user && !isOwnProfile ? 'lg:col-span-8' : 'lg:col-span-12'
+                }`}
+              >
                 <div className="space-y-6">
                   <div className="flex flex-col gap-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1833,7 +1858,7 @@ export default function TraderProfilePage({
                             </span>
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs">
-                            <p>Shows profit or loss only from positions that are closed or resolved. Polymarket&#39;s profile P&amp;L includes open positions priced live (and may include fees), so totals can differ.</p>
+                            <p>Shows profit or loss only from positions that are closed or resolved. Polymarket&#39;s profile P&amp;L is account-level and factors in cash balance plus net deposits/withdrawals, so totals can differ.</p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -2155,7 +2180,7 @@ export default function TraderProfilePage({
                 </div>
               </Card>
 
-              {user && (
+              {user && !isOwnProfile && (
                 <Card className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -2457,17 +2482,6 @@ export default function TraderProfilePage({
         {/* Content */}
         {activeTab === 'positions' && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Checkbox
-                id="show-resolved-trades"
-                checked={showResolvedTrades}
-                onCheckedChange={(value) => setShowResolvedTrades(value === true)}
-              />
-              <Label htmlFor="show-resolved-trades" className="text-sm font-medium text-slate-600">
-                Show closed / lost / redeemed
-              </Label>
-            </div>
-
             {/* Trades */}
             {loadingTrades ? (
               <div className="text-center py-12">
@@ -2553,110 +2567,114 @@ export default function TraderProfilePage({
                   }
                   
                   // Extract market avatar URL
-                  const marketAvatar = extractMarketAvatarUrl({
-                    market: trade.market,
-                    slug: trade.marketSlug,
-                    eventSlug: trade.eventSlug,
-                  });
+                  const marketAvatar =
+                    liveData?.marketAvatarUrl ||
+                    trade.marketAvatarUrl ||
+                    extractMarketAvatarUrl({
+                      market: trade.market,
+                      slug: trade.marketSlug,
+                      eventSlug: trade.eventSlug,
+                    });
 
-                  return isPremium ? (
-                    <TradeCard
-                      key={`${trade.timestamp}-${index}`}
-                      tradeAnchorId={`trade-card-${wallet}-${trade.timestamp}-${index}`}
-                      onExecutionNotification={handleTradeExecutionNotification}
-                      trader={{
-                        name: traderData.displayName,
-                        avatar: undefined,
-                        address: wallet,
-                        id: wallet,
-                        roi: effectiveRoiValue,
-                      }}
-                      market={trade.market}
-                      marketAvatar={marketAvatar || undefined}
-                      position={trade.outcome}
-                      action={trade.side === 'BUY' ? 'Buy' : 'Sell'}
-                      price={trade.price}
-                      size={trade.size}
-                      total={trade.price * trade.size}
-                      timestamp={formattedTimestamp}
-                      onCopyTrade={() => {
-                        if (polymarketUrl) {
-                          window.open(polymarketUrl, '_blank');
-                        }
-                      }}
-                      onMarkAsCopied={(entryPrice, amountInvested) =>
-                        handleMarkAsCopied(trade, entryPrice, amountInvested)
-                      }
-                      onAdvancedCopy={() => {
-                        if (polymarketUrl) {
-                          window.open(polymarketUrl, '_blank');
-                        }
-                      }}
-                      isPremium={isPremium}
-                      isAdmin={isAdmin}
-                      isExpanded={isExpanded}
-                      onToggleExpand={() => toggleTradeExpanded(tradeKey)}
-                      isCopied={isAlreadyCopied}
-                      conditionId={trade.conditionId}
-                      tokenId={trade.tokenId}
-                      marketSlug={trade.marketSlug}
-                      currentMarketPrice={currentPrice}
-                      marketIsOpen={marketIsOpen}
-                      liveScore={liveScore}
-                      eventStartTime={liveData?.gameStartTime}
-                      eventEndTime={liveData?.endDateIso}
-                      eventStatus={liveData?.eventStatus}
-                      liveStatus={liveData?.liveStatus}
-                      category={trade.category}
-                      polymarketUrl={polymarketUrl}
-                      espnUrl={liveData?.espnUrl}
-                      defaultBuySlippage={defaultBuySlippage}
-                      defaultSellSlippage={defaultSellSlippage}
-                      walletAddress={walletAddress}
-                      manualTradingEnabled={manualModeEnabled}
-                      onSwitchToManualTrading={enableManualMode}
-                      onOpenConnectWallet={() => setShowConnectWalletModal(true)}
-                    />
-                  ) : (
-                    <Card key={`${trade.timestamp}-${index}`} className="p-6">
-                      <div className="flex items-start justify-between gap-4 mb-4">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-medium text-slate-900 mb-2 leading-snug">{trade.market}</h3>
-                          <div className="flex items-center gap-2 text-sm text-slate-500">
-                            <span>{trade.formattedDate}</span>
-                            <span>•</span>
-                            <Badge
-                              variant="secondary"
-                              className={cn(
-                                'font-semibold text-xs',
-                                trade.outcome.toLowerCase() === 'yes'
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : 'bg-red-50 text-red-700 border-red-200'
+                  return (
+                    <div className="w-full md:w-[63%] md:mx-auto" key={`${trade.timestamp}-${index}`}>
+                      {isPremium ? (
+                        <TradeCard
+                          tradeAnchorId={`trade-card-${wallet}-${trade.timestamp}-${index}`}
+                          onExecutionNotification={handleTradeExecutionNotification}
+                          trader={{
+                            name: traderData.displayName,
+                            avatar: undefined,
+                            address: wallet,
+                            id: wallet,
+                            roi: effectiveRoiValue,
+                          }}
+                          market={trade.market}
+                          marketAvatar={marketAvatar || undefined}
+                          position={trade.outcome}
+                          action={trade.side === 'BUY' ? 'Buy' : 'Sell'}
+                          price={trade.price}
+                          size={trade.size}
+                          total={trade.price * trade.size}
+                          timestamp={formattedTimestamp}
+                          onCopyTrade={() => {
+                            if (polymarketUrl) {
+                              window.open(polymarketUrl, '_blank');
+                            }
+                          }}
+                          onMarkAsCopied={(entryPrice, amountInvested) =>
+                            handleMarkAsCopied(trade, entryPrice, amountInvested)
+                          }
+                          onAdvancedCopy={() => {
+                            if (polymarketUrl) {
+                              window.open(polymarketUrl, '_blank');
+                            }
+                          }}
+                          isPremium={isPremium}
+                          isAdmin={isAdmin}
+                          isExpanded={isExpanded}
+                          onToggleExpand={() => toggleTradeExpanded(tradeKey)}
+                          isCopied={isAlreadyCopied}
+                          conditionId={trade.conditionId}
+                          tokenId={trade.tokenId}
+                          marketSlug={trade.marketSlug}
+                          currentMarketPrice={currentPrice}
+                          marketIsOpen={marketIsOpen}
+                          liveScore={liveScore}
+                          eventStartTime={liveData?.gameStartTime}
+                          eventEndTime={liveData?.endDateIso}
+                          eventStatus={liveData?.eventStatus}
+                          liveStatus={liveData?.liveStatus}
+                          category={trade.category}
+                          polymarketUrl={polymarketUrl}
+                          espnUrl={liveData?.espnUrl}
+                          defaultBuySlippage={defaultBuySlippage}
+                          defaultSellSlippage={defaultSellSlippage}
+                          walletAddress={walletAddress}
+                          manualTradingEnabled={manualModeEnabled}
+                          onSwitchToManualTrading={enableManualMode}
+                          onOpenConnectWallet={() => setShowConnectWalletModal(true)}
+                        />
+                      ) : (
+                        <Card className="p-6">
+                          <div className="flex items-start justify-between gap-4 mb-4">
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-medium text-slate-900 mb-2 leading-snug">{trade.market}</h3>
+                              <div className="flex items-center gap-2 text-sm text-slate-500">
+                                <span>{trade.formattedDate}</span>
+                                <span>•</span>
+                                <Badge
+                                  variant="secondary"
+                                  className={cn(
+                                    'font-semibold text-xs',
+                                    trade.outcome.toLowerCase() === 'yes'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : 'bg-red-50 text-red-700 border-red-200'
+                                  )}
+                                >
+                                  {trade.outcome}
+                                </Badge>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {tradeStatus !== 'Open' && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
+                                >
+                                  {tradeStatus === 'Bonded' ? 'Resolved' : tradeStatus}
+                                </Badge>
                               )}
-                            >
-                              {trade.outcome}
-                            </Badge>
+                              {!isAlreadyCopied && (
+                                <button
+                                  onClick={() => toggleTradeExpanded(tradeKey)}
+                                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                                >
+                                  {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {tradeStatus !== 'Open' && (
-                            <Badge
-                              variant="secondary"
-                              className="text-[10px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
-                            >
-                              {tradeStatus === 'Bonded' ? 'Resolved' : tradeStatus}
-                            </Badge>
-                          )}
-                          {!isAlreadyCopied && (
-                            <button
-                              onClick={() => toggleTradeExpanded(tradeKey)}
-                              className="text-slate-400 hover:text-slate-600 transition-colors"
-                            >
-                              {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-                            </button>
-                          )}
-                        </div>
-                      </div>
 
                       {/* Stats Box */}
                       <div className="bg-slate-50 rounded-lg p-4 mb-4">
@@ -2898,7 +2916,9 @@ export default function TraderProfilePage({
                           )}
                         </div>
                       )}
-                    </Card>
+                        </Card>
+                      )}
+                    </div>
                   );
                 })}
                 
@@ -3098,12 +3118,18 @@ export default function TraderProfilePage({
                       firstTimestamp: trade.timestamp,
                       lastTimestamp: trade.timestamp,
                       sampleTrade: trade,
-                    marketAvatar: extractMarketAvatarUrl({
-                        market: trade.market,
-                        slug: trade.marketSlug,
-                        eventSlug: trade.eventSlug,
-                    }) ?? undefined,
-                    currentPrice: undefined,
+                      marketAvatar:
+                        (trade.conditionId
+                          ? liveMarketData.get(trade.conditionId)?.marketAvatarUrl
+                          : undefined) ||
+                        trade.marketAvatarUrl ||
+                        extractMarketAvatarUrl({
+                          market: trade.market,
+                          slug: trade.marketSlug,
+                          eventSlug: trade.eventSlug,
+                        }) ||
+                        undefined,
+                      currentPrice: undefined,
                     };
 
                     existing.firstTimestamp = Math.min(existing.firstTimestamp, trade.timestamp);

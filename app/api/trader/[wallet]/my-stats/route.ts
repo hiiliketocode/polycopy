@@ -359,11 +359,13 @@ const computeStatsFromPositions = (
     position.realizedPnl = realizedPnl
     totalRealizedPnl += realizedPnl
 
-    if (!position.closedByResolution && position.remainingSize > 0 && position.currentPrice !== null) {
-      const currentValue = position.remainingSize * position.currentPrice
-      position.unrealizedPnl = currentValue - position.remainingCost
-      totalUnrealizedPnl += position.unrealizedPnl
+    if (!position.closedByResolution && position.remainingSize > 0) {
       openPositionsCount++
+      if (position.currentPrice !== null) {
+        const currentValue = position.remainingSize * position.currentPrice
+        position.unrealizedPnl = currentValue - position.remainingCost
+        totalUnrealizedPnl += position.unrealizedPnl
+      }
     }
 
     totalVolume += position.totalCost + position.totalProceeds

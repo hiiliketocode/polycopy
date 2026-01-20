@@ -12,6 +12,7 @@ import {
   Check,
   HelpCircle,
   ExternalLink,
+  Pin,
   X,
   Loader2,
   CalendarClock,
@@ -21,6 +22,7 @@ import {
   Trophy,
   CircleDot,
   Clock,
+  Star,
 } from "lucide-react"
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -45,6 +47,21 @@ import {
   statusLooksScheduled,
 } from "@/lib/market-status"
 import { getTraderAvatarInitials } from "@/lib/trader-name"
+
+type PositionTradeSummary = {
+  side: "BUY" | "SELL"
+  outcome: string
+  size: number | null
+  price: number | null
+  amountUsd: number | null
+  timestamp?: number | null
+}
+
+type PositionBadgeData = {
+  label: string
+  trades: PositionTradeSummary[]
+  variant: "trader" | "user"
+}
 
 interface TradeCardProps {
   trader: {
@@ -95,6 +112,11 @@ interface TradeCardProps {
   onSwitchToManualTrading?: () => void
   onOpenConnectWallet?: () => void
   hideActions?: boolean
+  isPinned?: boolean
+  onTogglePin?: () => void
+  traderPositionBadge?: PositionBadgeData
+  userPositionBadge?: PositionBadgeData
+  onSellPosition?: () => void
 }
 
 type StatusPhase =
@@ -451,6 +473,11 @@ export function TradeCard({
   onSwitchToManualTrading,
   onOpenConnectWallet,
   hideActions = false,
+  isPinned = false,
+  onTogglePin,
+  traderPositionBadge,
+  userPositionBadge,
+  onSellPosition,
 }: TradeCardProps) {
   const resolvedDefaultSlippage =
     action === "Buy"
@@ -484,6 +511,8 @@ export function TradeCard({
   const [cancelStatus, setCancelStatus] = useState<CancelStatus | null>(null)
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [showTradeDetails, setShowTradeDetails] = useState(false)
+  const [isPositionDrawerOpen, setIsPositionDrawerOpen] = useState(false)
+  const [positionDrawerTab, setPositionDrawerTab] = useState<"trader" | "user">("trader")
   const [livePrice, setLivePrice] = useState<number | null>(
     typeof currentMarketPrice === "number" && !Number.isNaN(currentMarketPrice)
       ? currentMarketPrice
@@ -530,28 +559,6 @@ export function TradeCard({
   const displayAddress = formatWallet(trader.address || "")
   const copiedTraderId = isUuid(trader.id) ? trader.id! : null
 
-  const orderBookPrice = action === "Buy" ? bestAskPrice : bestBidPrice
-  const resolvedLivePrice =
-    typeof livePrice === "number" && !Number.isNaN(livePrice) ? livePrice : null
-  const currentPrice =
-    typeof orderBookPrice === "number" && Number.isFinite(orderBookPrice)
-      ? orderBookPrice
-      : resolvedLivePrice !== null
-        ? resolvedLivePrice
-        : price
-  const hasCurrentPrice = Number.isFinite(currentPrice)
-  const priceChange =
-    hasCurrentPrice && price > 0 ? ((currentPrice - price) / price) * 100 : 0
-  const priceDirection = priceChange > 0 ? 'up' : priceChange < 0 ? 'down' : 'neutral'
-  const defaultManualPrice = hasCurrentPrice ? currentPrice : price
-  const inferredMarketOpen =
-    typeof marketIsOpen === "boolean"
-      ? marketIsOpen
-      : hasCurrentPrice
-        ? currentPrice > 0.01 && currentPrice < 0.99
-        : null
-  const isMarketEnded = inferredMarketOpen === false
-
   const cleanedLiveScore = useMemo(() => {
     if (!liveScore) return null
     const cleaned = liveScore.replace(/^[^A-Za-z0-9]+/, "").trim()
@@ -595,6 +602,31 @@ export function TradeCard({
     return "unknown"
   }, [liveStatus, eventStatus, eventStartTime, looksLikeScore])
 
+  const orderBookPrice = action === "Buy" ? bestAskPrice : bestBidPrice
+  const resolvedLivePrice =
+    typeof livePrice === "number" && !Number.isNaN(livePrice) ? livePrice : null
+  const marketOpenHint = typeof marketIsOpen === "boolean" ? marketIsOpen : null
+  const shouldUseOrderBook =
+    resolvedLiveStatus !== "final" && marketOpenHint !== false
+  const currentPrice =
+    shouldUseOrderBook && typeof orderBookPrice === "number" && Number.isFinite(orderBookPrice)
+      ? orderBookPrice
+      : resolvedLivePrice !== null
+        ? resolvedLivePrice
+        : price
+  const hasCurrentPrice = Number.isFinite(currentPrice)
+  const priceChange =
+    hasCurrentPrice && price > 0 ? ((currentPrice - price) / price) * 100 : 0
+  const priceDirection = priceChange > 0 ? 'up' : priceChange < 0 ? 'down' : 'neutral'
+  const defaultManualPrice = hasCurrentPrice ? currentPrice : price
+  const inferredMarketOpen =
+    typeof marketIsOpen === "boolean"
+      ? marketIsOpen
+      : hasCurrentPrice
+        ? currentPrice > 0.01 && currentPrice < 0.99
+        : null
+  const isMarketEnded = inferredMarketOpen === false
+
   const statusVariant = isMarketEnded
     ? "resolved"
     : resolvedLiveStatus === "live"
@@ -632,11 +664,16 @@ export function TradeCard({
   const badgeBaseClass =
     "h-7 px-2.5 text-[11px] font-semibold border shadow-[0_1px_0_rgba(15,23,42,0.06)]"
   const espnLink = espnUrl?.trim() ? espnUrl : undefined
+  const showTraderPositionBadge = Boolean(traderPositionBadge?.trades?.length)
+  const showUserPositionBadge = Boolean(userPositionBadge?.trades?.length)
+  const hasAnyPositionBadge = showTraderPositionBadge || showUserPositionBadge
+  const activePositionBadge =
+    positionDrawerTab === "user" ? userPositionBadge : traderPositionBadge
 
   const statusBadgeClass = cn(
     badgeBaseClass,
     statusBadgeVariant === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200",
-    statusBadgeVariant === "ended" && "bg-slate-100 text-slate-700 border-slate-200",
+    statusBadgeVariant === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
     statusBadgeVariant === "resolved" && "bg-rose-50 text-rose-700 border-rose-200",
     statusBadgeVariant === "scheduled" && "bg-amber-50 text-amber-700 border-amber-200",
     statusBadgeVariant === "open" && "bg-slate-50 text-slate-600 border-slate-200",
@@ -645,6 +682,16 @@ export function TradeCard({
   const showScoreBadge =
     Boolean(cleanedLiveScore && looksLikeScore) &&
     (resolvedLiveStatus === "live" || resolvedLiveStatus === "final")
+
+  const showCombinedScoreBadge =
+    showScoreBadge && (statusBadgeVariant === "live" || statusBadgeVariant === "ended")
+  const combinedScoreLabel = statusBadgeVariant === "ended" ? "Ended" : "Live"
+  const combinedScoreBadgeClass = cn(
+    badgeBaseClass,
+    "relative h-auto min-h-[34px] flex-col gap-0 px-3 pt-1 pb-3 leading-none",
+    statusBadgeVariant === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200",
+    statusBadgeVariant === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
+  )
 
   const showEventTimeBadge =
     statusBadgeVariant !== "live" &&
@@ -942,6 +989,180 @@ export function TradeCard({
       .join(" ")
   }
 
+  const formatPositionQuantity = (trade: PositionTradeSummary) => {
+    if (Number.isFinite(trade.size ?? NaN)) {
+      return formatContracts(trade.size ?? 0)
+    }
+    if (Number.isFinite(trade.amountUsd ?? NaN)) {
+      return formatCurrency(trade.amountUsd ?? 0)
+    }
+    return "--"
+  }
+
+  const handlePositionBadgeClick = () => {
+    if (!hasAnyPositionBadge) return
+    if (isPositionDrawerOpen) {
+      setIsPositionDrawerOpen(false)
+      return
+    }
+    const preferredTab = showUserPositionBadge ? "user" : "trader"
+    setPositionDrawerTab(preferredTab)
+    setIsPositionDrawerOpen(true)
+  }
+
+  const formatPositionTimestamp = (timestamp?: number | null) => {
+    if (!timestamp || !Number.isFinite(timestamp)) return null
+    const formatted = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(timestamp))
+    return formatted
+  }
+
+  const renderPositionDrawer = () => {
+    if (!isPositionDrawerOpen || !activePositionBadge) return null
+    const trades = activePositionBadge.trades ?? []
+    if (trades.length === 0) return null
+    const visibleTrades = trades
+    const isUserTab = positionDrawerTab === "user"
+    let netContracts = 0
+    let netAmount = 0
+    let hasContractData = false
+    let hasAmountData = false
+    trades.forEach((trade) => {
+      const size = Number.isFinite(trade.size ?? NaN) ? (trade.size ?? 0) : null
+      const amount = Number.isFinite(trade.amountUsd ?? NaN) ? (trade.amountUsd ?? 0) : null
+      const direction = trade.side === "SELL" ? -1 : 1
+      if (size !== null) {
+        netContracts += size * direction
+        hasContractData = true
+      }
+      if (amount !== null) {
+        netAmount += amount * direction
+        hasAmountData = true
+      }
+    })
+    const totalAmountLabel = hasAmountData ? formatCurrency(netAmount) : "--"
+    const avgPriceLabel =
+      hasAmountData && hasContractData && netContracts !== 0
+        ? formatPrice(Math.abs(netAmount / netContracts))
+        : "--"
+    const traderPositionsCount = traderPositionBadge?.trades?.length ?? 0
+    const userPositionsCount = userPositionBadge?.trades?.length ?? 0
+    const tabOptions = [
+      {
+        key: "trader" as const,
+        label: traderPositionsCount === 1 ? "Traders' Position" : "Traders' Positions",
+        enabled: showTraderPositionBadge,
+      },
+      {
+        key: "user" as const,
+        label: userPositionsCount === 1 ? "Your Position" : "Your Positions",
+        enabled: showUserPositionBadge,
+      },
+    ].filter((option) => option.enabled)
+
+    return (
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1">
+            {tabOptions.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setPositionDrawerTab(option.key)}
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-[11px] font-semibold transition",
+                  positionDrawerTab === option.key
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:text-slate-700"
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-[11px] font-semibold text-slate-500">
+            {trades.length} trade{trades.length === 1 ? "" : "s"}
+          </span>
+        </div>
+        <div className="mt-2 space-y-2">
+          {visibleTrades.map((trade, index) => {
+            const sideLabel = trade.side === "SELL" ? "Sell" : "Buy"
+            const sideClass = trade.side === "SELL" ? "text-rose-600" : "text-emerald-600"
+            const quantityLabel = formatPositionQuantity(trade)
+            const contractsLabel =
+              Number.isFinite(trade.size ?? NaN) ? formatContracts(trade.size ?? 0) : "--"
+            const amountLabel =
+              Number.isFinite(trade.amountUsd ?? NaN) ? formatCurrency(trade.amountUsd ?? 0) : "--"
+            const priceLabel =
+              Number.isFinite(trade.price ?? NaN) ? formatPrice(trade.price ?? null) : null
+            const detailLabel = priceLabel ? `${quantityLabel} @ ${priceLabel}` : quantityLabel
+            const timestampLabel = formatPositionTimestamp(trade.timestamp)
+            const investedLabel =
+              Number.isFinite(trade.amountUsd ?? NaN)
+                ? formatCurrency(trade.amountUsd ?? 0)
+                : "--"
+            const outcomeBadgeClass = (() => {
+              const normalized = trade.outcome?.trim().toLowerCase()
+              if (normalized === "yes") return "bg-emerald-50 text-emerald-700 border-emerald-200"
+              if (normalized === "no") return "bg-red-50 text-red-700 border-red-200"
+              return "bg-slate-100 text-slate-600 border-slate-200"
+            })()
+            const primaryDetail = isUserTab
+              ? amountLabel !== "--"
+                ? priceLabel
+                  ? `${amountLabel} @ ${priceLabel}`
+                  : amountLabel
+                : detailLabel
+              : detailLabel
+            const secondaryDetail = isUserTab
+              ? contractsLabel !== "--"
+                ? `${contractsLabel} contracts`
+                : "--"
+              : investedLabel
+            return (
+              <div
+                key={`${trade.side}-${trade.outcome}-${trade.timestamp ?? index}`}
+                className="flex items-start justify-between gap-3 text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1 truncate text-slate-700">
+                    <span className={cn("font-semibold", sideClass)}>{sideLabel}</span>
+                    <Badge
+                      variant="secondary"
+                      className={`font-semibold text-xs ${outcomeBadgeClass}`}
+                    >
+                      {formatOutcomeLabel(trade.outcome)}
+                    </Badge>
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    {timestampLabel ?? "--"}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-slate-500">{primaryDetail}</p>
+                  <p className="text-[11px] text-slate-400">{secondaryDetail}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <div className="mt-2 flex items-end justify-between gap-3 border-t border-slate-200 pt-2">
+          <div className="text-[11px] font-semibold text-slate-500">
+            Total Amount (Buys - Sells) USD
+            <div className="text-sm font-semibold text-slate-700">{totalAmountLabel}</div>
+            <div className="text-[11px] font-medium text-slate-400">
+              Ave Price {avgPriceLabel}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const normalizeOutcome = (value: string) => value?.trim().toLowerCase()
   const findOutcomeIndex = (outcomes: string[], target: string) => {
     const normalizedTarget = normalizeOutcome(target)
@@ -1052,6 +1273,33 @@ export function TradeCard({
   }, [isCopied])
 
   useEffect(() => {
+    if (!hasAnyPositionBadge && isPositionDrawerOpen) {
+      setIsPositionDrawerOpen(false)
+      return
+    }
+    if (
+      positionDrawerTab === "user" &&
+      !showUserPositionBadge &&
+      showTraderPositionBadge
+    ) {
+      setPositionDrawerTab("trader")
+    }
+    if (
+      positionDrawerTab === "trader" &&
+      !showTraderPositionBadge &&
+      showUserPositionBadge
+    ) {
+      setPositionDrawerTab("user")
+    }
+  }, [
+    hasAnyPositionBadge,
+    isPositionDrawerOpen,
+    positionDrawerTab,
+    showTraderPositionBadge,
+    showUserPositionBadge,
+  ])
+
+  useEffect(() => {
     if (!isExpanded) return
     if (tokenId) return
     if (!conditionId && !marketSlug && !market) return
@@ -1085,7 +1333,7 @@ export function TradeCard({
         const outcomeIndex = findOutcomeIndex(outcomes, position)
         if (outcomeIndex < 0 || outcomeIndex >= prices.length) return
         const nextPrice = Number(prices[outcomeIndex])
-        if (!Number.isFinite(nextPrice) || nextPrice <= 0) return
+        if (!Number.isFinite(nextPrice) || nextPrice < 0) return
         if (!canceled) setLivePrice(nextPrice)
       } catch {
         // Ignore transient fetch errors for live price polling.
@@ -1672,10 +1920,45 @@ export function TradeCard({
   const allowManualExperience = !isPremium || (isPremiumWithoutWallet && manualTradingEnabled)
   const showQuickCopyExperience = Boolean(isPremium) && hasConnectedWallet
   const showLinkWalletHint = isPremiumWithoutWallet && manualTradingEnabled
+  const isSellTrade = action === "Sell"
+  const normalizedPosition = normalizeOutcome(position)
+  const userHasMatchingPosition = Boolean(
+    normalizedPosition &&
+      userPositionBadge?.trades?.some(
+        (trade) => normalizeOutcome(trade.outcome) === normalizedPosition
+      )
+  )
+  const shouldShowCopyCta = !isSellTrade || userHasMatchingPosition
+  const shouldShowPrimaryCta = isSellTrade || shouldShowCopyCta
+  const copyCtaLabel = isSellTrade ? "Sell As Well" : "Copy Trade"
+  const copyAgainLabel = "Buy Again"
+  const allowQuickCopyExperience = showQuickCopyExperience && !isSellTrade
+  const canSellAsWell =
+    isSellTrade && userHasMatchingPosition && Boolean(onSellPosition) && !isMarketEnded
+  const canBuyAgain = !isMarketEnded && Boolean(onCopyTrade)
+  const showSellAction =
+    !isSellTrade && userHasMatchingPosition && localCopied && Boolean(onSellPosition)
+  const canSellAction = showSellAction && !isMarketEnded
+
+  const handleSellClick = () => {
+    if (isSellTrade) {
+      if (!canSellAsWell) return
+      onSellPosition?.()
+      return
+    }
+    if (!canSellAction) return
+    onSellPosition?.()
+  }
+
+  const handleBuyAgainClick = () => {
+    if (!canBuyAgain) return
+    onCopyTrade?.()
+  }
 
   const handleCopyTradeClick = () => {
     if (isMarketEnded) return
-    if (showQuickCopyExperience && onToggleExpand) {
+    if (!shouldShowCopyCta) return
+    if (allowQuickCopyExperience && onToggleExpand) {
       onToggleExpand()
       return
     }
@@ -2028,8 +2311,24 @@ export function TradeCard({
     <div
       ref={cardRef}
       id={tradeAnchorId}
-      className="group bg-white border border-slate-200 rounded-xl overflow-hidden transition-all hover:shadow-lg"
+      className={cn(
+        "group relative border rounded-xl overflow-hidden transition-all hover:shadow-lg",
+        "bg-white border-slate-200"
+      )}
     >
+      {isSellTrade && (
+        <div className="absolute left-1/2 top-2 z-10 -translate-x-1/2">
+          <Badge
+            variant="secondary"
+            className={cn(
+              badgeBaseClass,
+              "h-6 px-2 text-[11px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
+            )}
+          >
+            Trader Sold
+          </Badge>
+        </div>
+      )}
       <div className="p-5 md:p-6">
         {/* Header Row */}
         <div className="flex items-start justify-between mb-3 gap-3">
@@ -2055,14 +2354,14 @@ export function TradeCard({
         </div>
 
         <div className="flex flex-col gap-3 mb-4 md:flex-row md:flex-wrap md:items-center">
-          <div className="flex min-w-0 flex-1 items-start gap-3 md:items-center">
+          <div className="grid min-w-0 flex-1 grid-cols-[auto,1fr] items-start gap-x-3 md:items-center">
             <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
               <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
               <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
                 {market.slice(0, 2)}
               </AvatarFallback>
             </Avatar>
-            <div className="flex min-w-0 flex-1 items-center">
+            <div className="min-w-0">
               <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug break-words">
                 {market}
                 {/* External link icon for Premium users - at end of market name */}
@@ -2079,8 +2378,42 @@ export function TradeCard({
                 )}
               </h3>
             </div>
+            <div className="col-span-2 mt-2 justify-self-start">
+              <div className="flex flex-wrap items-center gap-2">
+                {hasAnyPositionBadge ? (
+                  <Badge
+                    asChild
+                    variant="secondary"
+                    className={cn(
+                      badgeBaseClass,
+                      "h-6 px-2 text-[11px] font-semibold bg-white text-slate-600 border-slate-200 hover:bg-slate-50 cursor-pointer"
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={handlePositionBadgeClick}
+                      aria-expanded={isPositionDrawerOpen}
+                    >
+                      <Star className="h-3 w-3 text-slate-500" />
+                      {isSellTrade ? "Exiting Positions" : "Existing Positions"}
+                    </button>
+                  </Badge>
+                ) : !isSellTrade ? (
+                  <Badge
+                    variant="secondary"
+                    className={cn(
+                      badgeBaseClass,
+                      "h-6 px-2 text-[11px] font-semibold bg-white text-slate-400 border-slate-200"
+                    )}
+                  >
+                    <Star className="h-3 w-3 text-slate-400" />
+                    First Trade
+                  </Badge>
+                ) : null}
+              </div>
+            </div>
           </div>
-          <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end md:ml-auto">
+        <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end md:ml-auto">
             {showEventTimeBadge && (
               espnLink ? (
                 <Badge
@@ -2089,8 +2422,8 @@ export function TradeCard({
                   className={cn(
                     badgeBaseClass,
                     hasEventTime
-                      ? "bg-white text-slate-700 border-slate-200"
-                      : "bg-slate-50 text-slate-400 border-slate-200",
+                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                      : "bg-amber-50 text-amber-400 border-amber-200",
                   )}
                 >
                   <a href={espnLink} target="_blank" rel="noopener noreferrer">
@@ -2108,8 +2441,8 @@ export function TradeCard({
                   className={cn(
                     badgeBaseClass,
                     hasEventTime
-                      ? "bg-white text-slate-700 border-slate-200"
-                      : "bg-slate-50 text-slate-400 border-slate-200",
+                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                      : "bg-amber-50 text-amber-400 border-amber-200",
                   )}
                 >
                   {isEventTimeLoading ? (
@@ -2121,44 +2454,79 @@ export function TradeCard({
                 </Badge>
               )
             )}
-            {(statusBadgeVariant === "live" ||
-              statusBadgeVariant === "ended" ||
-              statusBadgeVariant === "resolved") && (
-              <Badge variant="secondary" className={statusBadgeClass}>
-                <StatusIcon className="h-3.5 w-3.5" />
-                {eventStatusLabel}
-              </Badge>
-            )}
-            {showScoreBadge && (
-              espnLink ? (
-                <Badge
-                  asChild
-                  variant="secondary"
-                  className={cn(
-                    badgeBaseClass,
-                    "bg-indigo-50 text-indigo-700 border-indigo-200",
-                  )}
-                >
-                  <a href={espnLink} target="_blank" rel="noopener noreferrer">
+            {!showCombinedScoreBadge &&
+              (statusBadgeVariant === "live" ||
+                statusBadgeVariant === "ended" ||
+                statusBadgeVariant === "resolved") && (
+                <Badge variant="secondary" className={statusBadgeClass}>
+                  <StatusIcon className="h-3.5 w-3.5" />
+                  {eventStatusLabel}
+                </Badge>
+              )}
+            {showCombinedScoreBadge ? (
+              <div className="ml-auto md:ml-0">
+                {espnLink ? (
+                  <Badge asChild variant="secondary" className={combinedScoreBadgeClass}>
+                    <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                      <span className="flex items-center gap-1">
+                        <Trophy className="h-3.5 w-3.5" />
+                        <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                      </span>
+                      <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
+                        {combinedScoreLabel}
+                      </span>
+                    </a>
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className={combinedScoreBadgeClass}>
+                    <span className="flex items-center gap-1">
+                      <Trophy className="h-3.5 w-3.5" />
+                      <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                    </span>
+                    <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
+                      {combinedScoreLabel}
+                    </span>
+                  </Badge>
+                )}
+              </div>
+            ) : showScoreBadge ? (
+              <div className="ml-auto md:ml-0">
+                {espnLink ? (
+                  <Badge
+                    asChild
+                    variant="secondary"
+                    className={cn(
+                      badgeBaseClass,
+                      "bg-indigo-50 text-indigo-700 border-indigo-200",
+                    )}
+                  >
+                    <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                      <Trophy className="h-3.5 w-3.5" />
+                      <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                    </a>
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="secondary"
+                    className={cn(
+                      badgeBaseClass,
+                      "bg-indigo-50 text-indigo-700 border-indigo-200",
+                    )}
+                  >
                     <Trophy className="h-3.5 w-3.5" />
                     <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
-                  </a>
-                </Badge>
-              ) : (
-                <Badge
-                  variant="secondary"
-                  className={cn(
-                    badgeBaseClass,
-                    "bg-indigo-50 text-indigo-700 border-indigo-200",
-                  )}
-                >
-                  <Trophy className="h-3.5 w-3.5" />
-                  <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
-                </Badge>
-              )
-            )}
+                  </Badge>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
+
+        {isPositionDrawerOpen && activePositionBadge && (
+          <div className="mb-3 -mt-2">
+            {renderPositionDrawer()}
+          </div>
+        )}
 
         <div className="border border-slate-200 rounded-lg px-4 py-3 mb-2 bg-slate-50/50">
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3 relative">
@@ -2215,7 +2583,7 @@ export function TradeCard({
           </div>
         </div>
 
-        {!hideActions && allowManualExperience && manualDrawerOpen && (
+        {!hideActions && allowManualExperience && manualDrawerOpen && shouldShowCopyCta && (
           <div className="p-4 mt-4 space-y-4 border border-slate-200 rounded-xl bg-slate-50">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-slate-900">Manual Copy</h4>
@@ -2309,103 +2677,148 @@ export function TradeCard({
           </div>
         )}
 
-        {!hideActions && !(showQuickCopyExperience && isExpanded) && (
-          showQuickCopyExperience ? (
-            <div className="w-full flex justify-center">
-              <Button
-                onClick={handleCopyTradeClick}
-                disabled={isCopyDisabled}
-                className={`w-full max-w-[360px] rounded-full font-semibold shadow-sm text-sm ${
-                  localCopied
-                    ? "bg-emerald-500 hover:bg-emerald-600 text-white"
-                    : isMarketEnded
-                      ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                      : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
-                }`}
-                size="lg"
-              >
-                {isMarketEnded ? (
-                  "Market Resolved"
-                ) : localCopied ? (
-                  <>
-                    <Check className="w-4 h-4 mr-2" />
-                    Copy Again
-                  </>
-                ) : (
-                  "Copy Trade"
-                )}
-              </Button>
-            </div>
-          ) : allowManualExperience ? (
-            <div className="w-full flex justify-center">
-              {!manualDrawerOpen && (
-                isCopied ? (
+        {!hideActions && shouldShowPrimaryCta && !(allowQuickCopyExperience && isExpanded) && (
+          <div className="mt-3">
+            {isSellTrade ? (
+              <div className="w-full flex justify-center">
+                <div className="flex w-full max-w-[360px] items-center">
                   <Button
-                    disabled
-                    className="w-full max-w-[360px] rounded-full bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
+                    onClick={handleSellClick}
+                    disabled={!canSellAsWell}
+                    className={cn(
+                      "w-full rounded-full font-semibold shadow-sm text-sm",
+                      canSellAsWell
+                        ? "bg-rose-500 hover:bg-rose-600 text-white"
+                        : "bg-slate-200 text-slate-500 cursor-not-allowed"
+                    )}
                     size="lg"
                   >
-                    <Check className="w-4 h-4 mr-2" />
-                    Copied
+                    Sell As Well
                   </Button>
-                ) : (
+                </div>
+              </div>
+            ) : allowQuickCopyExperience ? (
+              <div className="w-full flex justify-center">
+                <div
+                  className={cn(
+                    "flex w-full max-w-[360px] items-center",
+                    showSellAction ? "gap-2" : ""
+                  )}
+                >
                   <Button
                     onClick={handleCopyTradeClick}
                     disabled={isCopyDisabled}
-                    className={`w-full max-w-[360px] rounded-full font-semibold shadow-sm text-sm ${
-                      isMarketEnded
-                        ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                        : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
-                    }`}
+                    className={cn(
+                      "rounded-full font-semibold shadow-sm text-sm",
+                      showSellAction ? "flex-1" : "w-full",
+                      localCopied
+                        ? "bg-emerald-500 hover:bg-emerald-600 text-white"
+                        : isMarketEnded
+                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                          : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
+                    )}
                     size="lg"
                   >
                     {isMarketEnded ? (
                       "Market Resolved"
-                    ) : manualFlowStep === 'open-polymarket' ? (
+                    ) : localCopied ? (
                       <>
-                        Open Polymarket to enter trade
-                        <ExternalLink className="w-4 h-4 ml-2" />
+                        <Check className="w-4 h-4 mr-2" />
+                        {copyAgainLabel}
                       </>
                     ) : (
-                      'Enter order details'
+                      copyCtaLabel
                     )}
                   </Button>
-                )
-              )}
-              {showLinkWalletHint && (
-                <div className="mt-3 flex justify-center">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
-                    onClick={() => onOpenConnectWallet?.()}
-                  >
-                    Link my wallet for quick trades
-                  </Button>
+                  {showSellAction && (
+                    <Button
+                      onClick={handleSellClick}
+                      disabled={!canSellAction}
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        "h-9 rounded-full px-4 text-xs font-semibold",
+                        canSellAction
+                          ? "border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-600"
+                          : "border-slate-200 text-slate-400"
+                      )}
+                    >
+                      Sell
+                    </Button>
+                  )}
                 </div>
-              )}
-            </div>
-          ) : (
-            <div className="w-full flex justify-center">
-              <Button
-                onClick={handleCopyTradeClick}
-                disabled={isCopyDisabled}
-                className={`w-full max-w-[360px] mx-auto font-semibold shadow-sm text-sm ${
-                  isMarketEnded
-                    ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                    : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
-                }`}
-                size="lg"
-              >
-                {isMarketEnded ? "Market Resolved" : "Copy Trade"}
-              </Button>
-            </div>
-          )
+              </div>
+            ) : allowManualExperience ? (
+              <div className="w-full flex justify-center">
+                {!manualDrawerOpen && (
+                  isCopied ? (
+                    <Button
+                      disabled
+                      className="w-full max-w-[360px] rounded-full bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
+                      size="lg"
+                    >
+                      <Check className="w-4 h-4 mr-2" />
+                      Copied
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleCopyTradeClick}
+                      disabled={isCopyDisabled}
+                      className={`w-full max-w-[360px] rounded-full font-semibold shadow-sm text-sm ${
+                        isMarketEnded
+                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                          : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
+                      }`}
+                      size="lg"
+                    >
+                      {isMarketEnded ? (
+                        "Market Resolved"
+                      ) : manualFlowStep === 'open-polymarket' ? (
+                        <>
+                          Open Polymarket to enter trade
+                          <ExternalLink className="w-4 h-4 ml-2" />
+                        </>
+                      ) : (
+                        'Enter order details'
+                      )}
+                    </Button>
+                  )
+                )}
+                {showLinkWalletHint && (
+                  <div className="mt-3 flex justify-center">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
+                      onClick={() => onOpenConnectWallet?.()}
+                    >
+                      Link my wallet for quick trades
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="w-full flex justify-center">
+                <Button
+                  onClick={handleCopyTradeClick}
+                  disabled={isCopyDisabled}
+                  className={`w-full max-w-[360px] mx-auto font-semibold shadow-sm text-sm ${
+                    isMarketEnded
+                      ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                      : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
+                  }`}
+                  size="lg"
+                >
+                  {isMarketEnded ? "Market Resolved" : copyCtaLabel}
+                </Button>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      {!hideActions && showQuickCopyExperience && isExpanded && (
+        {!hideActions && allowQuickCopyExperience && isExpanded && shouldShowCopyCta && (
         <div className="bg-white px-6 pb-3 pt-0">
           <div className="-mt-4 mb-2 flex justify-center">
             <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">
@@ -2984,7 +3397,7 @@ export function TradeCard({
                 }`}
                 size="lg"
               >
-                {isFilledStatus ? "Copy Again" : "Try Again"}
+                {isFilledStatus ? copyAgainLabel : "Try Again"}
               </Button>
             </div>
           )}
@@ -3023,6 +3436,30 @@ export function TradeCard({
             </div>
           </DialogContent>
         </Dialog>
+      )}
+
+      {onTogglePin && (
+        <div className="absolute bottom-3 right-3">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onTogglePin}
+                  aria-pressed={isPinned}
+                  aria-label={isPinned ? "Unpin trade" : "Pin trade"}
+                  className={cn(
+                    "flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition hover:text-slate-600",
+                    isPinned && "border-amber-200 bg-amber-50 text-amber-500 hover:text-amber-600"
+                  )}
+                >
+                  <Pin className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{isPinned ? "Unpin trade" : "Pin trade"}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       )}
     </div>
   )

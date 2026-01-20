@@ -143,6 +143,7 @@ export async function GET(request: NextRequest) {
         market_resolved,
         market_resolved_at,
         trade_method,
+        side,
         notification_closed_sent,
         notification_resolved_sent,
         last_checked_at,
@@ -201,6 +202,8 @@ export async function GET(request: NextRequest) {
         user_closed_at: order.user_closed_at,
         user_exit_price: order.user_exit_price,
         trade_method: order.trade_method ?? null,
+        side: order.side ?? null,
+        entry_size: order.entry_size ?? null,
       }
     })
 

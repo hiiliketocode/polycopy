@@ -6,6 +6,13 @@ function toNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function pickFirstString(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return null
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const conditionId = searchParams.get('conditionId')?.trim()
@@ -39,13 +46,55 @@ export async function GET(request: Request) {
         })) :
         []
 
+    let icon = pickFirstString(market?.icon, market?.image)
+    let image = pickFirstString(market?.image, market?.icon)
+
+    if (!icon || !image) {
+      try {
+        const gammaResponse = await fetch(
+          `https://gamma-api.polymarket.com/markets?condition_id=${encodeURIComponent(conditionId)}`,
+          { cache: 'no-store' }
+        )
+        if (gammaResponse.ok) {
+          const gammaData = await gammaResponse.json()
+          const gammaMarket = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null
+          const gammaEvent =
+            gammaMarket && Array.isArray(gammaMarket.events) && gammaMarket.events.length > 0
+              ? gammaMarket.events[0]
+              : null
+          if (!icon) {
+            icon = pickFirstString(
+              gammaMarket?.icon,
+              gammaMarket?.image,
+              gammaMarket?.twitterCardImage,
+              gammaMarket?.twitter_card_image,
+              gammaEvent?.icon,
+              gammaEvent?.image
+            )
+          }
+          if (!image) {
+            image = pickFirstString(
+              gammaMarket?.image,
+              gammaMarket?.icon,
+              gammaMarket?.twitterCardImage,
+              gammaMarket?.twitter_card_image,
+              gammaEvent?.image,
+              gammaEvent?.icon
+            )
+          }
+        }
+      } catch {
+        // Ignore gamma fallback errors.
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       conditionId: market?.condition_id ?? conditionId,
       question: market?.question ?? null,
       tokens,
-      icon: market?.icon ?? null,
-      image: market?.image ?? null,
+      icon: icon,
+      image: image,
       minimumOrderSize: minimumOrderSize ?? minOrderSize,
       minOrderSize,
       tickSize,

@@ -49,11 +49,15 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 const BASE_URL = 'https://api.domeapi.io/v1'
 const SLEEP_MS = 250 // tune if hitting rate limits
 const UPSERT_BATCH = 500
+const TRADER_PAGE_SIZE = 1000
 const MAX_RETRIES = 3
 const HISTORICAL_BASELINE = Date.UTC(2023, 0, 1) / 1000 // Jan 1 2023 UTC, adjust if you want deeper history
 const FETCH_TIMEOUT_MS = Number.parseInt(process.env.FETCH_TIMEOUT_MS, 10) || 60000
 const SKIP_EXISTING_WALLETS = ['1', 'true', 'yes'].includes(
   String(process.env.SKIP_EXISTING_WALLETS || '').toLowerCase()
+)
+const SKIP_UP_TO_DATE_WALLETS = ['1', 'true', 'yes'].includes(
+  String(process.env.SKIP_UP_TO_DATE_WALLETS ?? 'true').toLowerCase()
 )
 
 async function sleep(ms) {
@@ -108,6 +112,20 @@ function diffDays(startDate, endDate) {
   const start = Date.parse(`${startDate}T00:00:00Z`)
   const end = Date.parse(`${endDate}T00:00:00Z`)
   return Math.floor((end - start) / (24 * 3600 * 1000))
+}
+
+function isUpToDate(latestDate) {
+  if (!latestDate) return false
+  const parsed = Date.parse(`${latestDate}T00:00:00Z`)
+  if (Number.isNaN(parsed)) return false
+  const yesterday = new Date()
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+  const cutoff = Date.UTC(
+    yesterday.getUTCFullYear(),
+    yesterday.getUTCMonth(),
+    yesterday.getUTCDate()
+  )
+  return parsed >= cutoff
 }
 
 async function fetchLatestDateForWallet(wallet) {
@@ -263,7 +281,10 @@ async function backfillWallet(wallet, options = {}) {
   const lower = wallet.toLowerCase()
   const latestDate = await fetchLatestDateForWallet(lower)
   if (options.skipIfExisting && latestDate) {
-    return { upserted: 0, hadData: false, skipped: true }
+    return { upserted: 0, hadData: false, skipped: true, reason: 'has-data', latestDate }
+  }
+  if (options.skipIfUpToDate && latestDate && isUpToDate(latestDate)) {
+    return { upserted: 0, hadData: false, skipped: true, reason: 'up-to-date', latestDate }
   }
   const startTime = latestDate
     ? Math.floor((new Date(latestDate).getTime() - 24 * 3600 * 1000) / 1000) // one day before latest to get baseline
@@ -283,21 +304,34 @@ async function backfillWallet(wallet, options = {}) {
 }
 
 async function loadActiveTraders() {
-  const { data, error } = await supabase
-    .from('traders')
-    .select('wallet_address')
-    .eq('is_active', true)
-    .not('pnl', 'is', null)
-    .order('pnl', { ascending: false })
-    .limit(1000)
-  if (error) throw error
-  return (data || []).map((r) => r.wallet_address).filter(Boolean)
+  const wallets = []
+  let offset = 0
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('traders')
+      .select('wallet_address')
+      .eq('is_active', true)
+      .order('wallet_address', { ascending: true })
+      .range(offset, offset + TRADER_PAGE_SIZE - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+
+    wallets.push(...data)
+    if (data.length < TRADER_PAGE_SIZE) break
+    offset += TRADER_PAGE_SIZE
+  }
+
+  return wallets.map((r) => r.wallet_address).filter(Boolean)
 }
 
 async function runBackfillWalletPnl() {
   const wallets = await loadActiveTraders()
   if (SKIP_EXISTING_WALLETS) {
     console.log('Skipping wallets that already have PnL history.')
+  }
+  if (SKIP_UP_TO_DATE_WALLETS) {
+    console.log('Skipping wallets that are up to date (latest date is today or yesterday).')
   }
   console.log(`Found ${wallets.length} active traders; starting backfill...`)
 
@@ -306,13 +340,18 @@ async function runBackfillWalletPnl() {
 
   for (const wallet of wallets) {
     try {
-      const { upserted, hadData, skipped } = await backfillWallet(wallet, {
-        skipIfExisting: SKIP_EXISTING_WALLETS
+      const { upserted, hadData, skipped, reason, latestDate } = await backfillWallet(wallet, {
+        skipIfExisting: SKIP_EXISTING_WALLETS,
+        skipIfUpToDate: SKIP_UP_TO_DATE_WALLETS
       })
       totalRows += upserted
       processed += 1
       if (skipped) {
-        console.log(`[${processed}/${wallets.length}] ${wallet} -> skipped (already has PnL history)`)
+        if (reason === 'up-to-date') {
+          console.log(`[${processed}/${wallets.length}] ${wallet} -> skipped (up to date: ${latestDate})`)
+        } else {
+          console.log(`[${processed}/${wallets.length}] ${wallet} -> skipped (already has PnL history)`)
+        }
       } else {
         console.log(`[${processed}/${wallets.length}] ${wallet} -> upserted ${upserted} rows${hadData ? '' : ' (no new data)'}`)
       }

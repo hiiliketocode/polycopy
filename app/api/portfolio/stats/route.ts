@@ -345,11 +345,13 @@ export async function GET(request: Request) {
       totalRealizedPnl += realizedPnl
 
       // Calculate unrealized P&L on remaining position
-      if (!position.closedByResolution && position.remainingSize > 0 && position.currentPrice !== null) {
-        const currentValue = position.remainingSize * position.currentPrice
-        position.unrealizedPnl = currentValue - position.remainingCost
-        totalUnrealizedPnl += position.unrealizedPnl
+      if (!position.closedByResolution && position.remainingSize > 0) {
         openPositionsCount++
+        if (position.currentPrice !== null) {
+          const currentValue = position.remainingSize * position.currentPrice
+          position.unrealizedPnl = currentValue - position.remainingCost
+          totalUnrealizedPnl += position.unrealizedPnl
+        }
       }
 
       // Add to total volume (buys + sells, matching Polymarket's volume calculation)

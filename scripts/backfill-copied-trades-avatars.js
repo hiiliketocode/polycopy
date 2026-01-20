@@ -63,12 +63,29 @@ function extractMarketAvatarUrl(record) {
     'market_avatar_url',
     'marketAvatar',
     'marketAvatarUrl',
-    'icon',
+    'market_image',
+    'market_image_url',
+    'marketImage',
+    'marketImageUrl',
     'market_icon',
+    'market_icon_url',
     'marketIcon',
+    'marketIconUrl',
+    'icon_url',
+    'iconUrl',
+    'icon',
     'image',
     'image_url',
     'imageUrl',
+    'event_image',
+    'event_image_url',
+    'eventImage',
+    'eventImageUrl',
+    'logo',
+    'logo_url',
+    'logoUrl',
+    'twitter_card_image',
+    'twitterCardImage',
   ]
   
   // Check direct properties
@@ -79,10 +96,26 @@ function extractMarketAvatarUrl(record) {
     }
   }
   
-  // Check nested market object
-  if (record.market) {
+  const nestedCandidates = [
+    record.market,
+    record.event,
+    Array.isArray(record.events) ? record.events[0] : null,
+    record.metadata,
+    record.raw_gamma,
+    record.rawGamma,
+    record.raw,
+    record.raw?.market,
+    record.raw?.event,
+    Array.isArray(record.raw?.events) ? record.raw.events[0] : null,
+    record.market?.event,
+    Array.isArray(record.market?.events) ? record.market.events[0] : null,
+    record.market?.metadata,
+  ]
+
+  for (const candidate of nestedCandidates) {
+    if (!candidate) continue
     for (const key of avatarKeys) {
-      const value = record.market[key]
+      const value = candidate[key]
       if (typeof value === 'string' && value.trim()) {
         return value
       }

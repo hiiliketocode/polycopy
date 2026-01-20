@@ -21,6 +21,51 @@ export async function GET(request: Request) {
     return null;
   };
 
+  const pickFirstString = (...values: Array<string | null | undefined>) => {
+    for (const value of values) {
+      if (typeof value === 'string' && value.trim()) return value;
+    }
+    return null;
+  };
+
+  const extractTeamsFromTitle = (value?: string | null) => {
+    if (!value) return null;
+    const match = value.match(/(.+?)\s+(?:vs\.?|v\.?|@|versus|at)\s+(.+?)(?:\s|$)/i);
+    if (!match) return null;
+    return {
+      homeTeam: match[1].trim(),
+      awayTeam: match[2].trim(),
+    };
+  };
+
+  const parseScoreLine = (value?: string | null) => {
+    if (!value || typeof value !== 'string') return null;
+    const match = value.match(/(\d+)\s*-\s*(\d+)/);
+    if (!match) return null;
+    return {
+      home: Number.parseInt(match[1], 10),
+      away: Number.parseInt(match[2], 10),
+    };
+  };
+
+  const hasSportsTag = (tags: any) => {
+    if (!Array.isArray(tags)) return false;
+    return tags.some((tag) => {
+      if (!tag) return false;
+      const normalized = String(tag).toLowerCase();
+      return (
+        normalized.includes('sports') ||
+        normalized.includes('soccer') ||
+        normalized.includes('football') ||
+        normalized.includes('basketball') ||
+        normalized.includes('baseball') ||
+        normalized.includes('hockey') ||
+        normalized.includes('tennis') ||
+        normalized.includes('golf')
+      );
+    });
+  };
+
   try {
     // Try 1: CLOB API with condition_id (most accurate for real-time prices)
     if (conditionId && conditionId.startsWith('0x')) {
@@ -53,8 +98,9 @@ export async function GET(request: Request) {
 
           let endDateIso =
             normalizeEndDate(market.end_date_iso || market.end_date || market.endDate || null);
+          let marketAvatarUrl = pickFirstString(market.icon, market.image);
 
-          if (!endDateIso) {
+          if (!endDateIso || !marketAvatarUrl) {
             try {
               const gammaResponse = await fetch(
                 `https://gamma-api.polymarket.com/markets?condition_id=${conditionId}`,
@@ -63,18 +109,108 @@ export async function GET(request: Request) {
               if (gammaResponse.ok) {
                 const gammaData = await gammaResponse.json();
                 const gammaMarket = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null;
+                const gammaEvent =
+                  gammaMarket && Array.isArray(gammaMarket.events) && gammaMarket.events.length > 0
+                    ? gammaMarket.events[0]
+                    : null;
                 if (gammaMarket) {
-                  endDateIso = normalizeEndDate(
-                    gammaMarket.end_date_iso ||
-                      gammaMarket.end_date ||
-                      gammaMarket.endDate ||
-                      gammaMarket.close_time ||
-                      null
-                  );
+                  if (!endDateIso) {
+                    endDateIso = normalizeEndDate(
+                      gammaMarket.end_date_iso ||
+                        gammaMarket.end_date ||
+                        gammaMarket.endDate ||
+                        gammaMarket.close_time ||
+                        null
+                    );
+                  }
+                  if (!marketAvatarUrl) {
+                    marketAvatarUrl = pickFirstString(
+                      marketAvatarUrl,
+                      gammaMarket?.icon,
+                      gammaMarket?.image,
+                      gammaMarket?.twitterCardImage,
+                      gammaMarket?.twitter_card_image,
+                      gammaEvent?.icon,
+                      gammaEvent?.image
+                    );
+                  }
                 }
               }
             } catch (error) {
               console.warn('[Price API] Gamma end date fallback failed:', error);
+            }
+          }
+
+          let score = market.score || market.live_score || null;
+          let homeTeam = market.home_team || null;
+          let awayTeam = market.away_team || null;
+          let eventStatus = market.event_status || market.status || null;
+          let gameStartTime =
+            market.game_start_time || market.start_date_iso || market.event_start_date || null;
+
+          const shouldFetchGammaEvent =
+            Boolean(market.market_slug) &&
+            (hasSportsTag(market.tags) || Boolean(gameStartTime)) &&
+            (!score || !homeTeam || !awayTeam || !eventStatus);
+          const shouldFetchGammaMarket =
+            Boolean(market.market_slug) && (shouldFetchGammaEvent || !marketAvatarUrl);
+
+          if (shouldFetchGammaMarket) {
+            try {
+              const gammaResponse = await fetch(
+                `https://gamma-api.polymarket.com/markets?slug=${encodeURIComponent(market.market_slug)}`,
+                { cache: 'no-store' }
+              );
+              if (gammaResponse.ok) {
+                const gammaData = await gammaResponse.json();
+                const gammaMarket = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null;
+                const event =
+                  gammaMarket && Array.isArray(gammaMarket.events) && gammaMarket.events.length > 0
+                    ? gammaMarket.events[0]
+                    : null;
+
+                marketAvatarUrl = pickFirstString(
+                  marketAvatarUrl,
+                  gammaMarket?.icon,
+                  gammaMarket?.image,
+                  gammaMarket?.twitterCardImage,
+                  gammaMarket?.twitter_card_image,
+                  event?.icon,
+                  event?.image
+                );
+
+                if (!gameStartTime) {
+                  gameStartTime =
+                    event?.startTime ||
+                    event?.startDate ||
+                    gammaMarket?.gameStartTime ||
+                    null;
+                }
+
+                if (!endDateIso) {
+                  endDateIso = normalizeEndDate(event?.endDate || null);
+                }
+
+                if (!eventStatus && event) {
+                  if (event.live) eventStatus = 'live';
+                  else if (event.ended) eventStatus = 'final';
+                }
+
+                if ((!homeTeam || !awayTeam) && event?.title) {
+                  const teams = extractTeamsFromTitle(event.title);
+                  if (teams) {
+                    homeTeam = teams.homeTeam;
+                    awayTeam = teams.awayTeam;
+                  }
+                }
+
+                if (!score && event?.score && (event.live || event.ended)) {
+                  const parsedScore = parseScoreLine(event.score);
+                  score = parsedScore ? parsedScore : event.score;
+                }
+              }
+            } catch (error) {
+              console.warn('[Price API] Gamma event fallback failed:', error);
             }
           }
 
@@ -92,13 +228,14 @@ export async function GET(request: Request) {
               description: market.description,
               category: market.category,
               endDateIso,
-              gameStartTime: market.game_start_time || market.start_date_iso || market.event_start_date || null,
+              gameStartTime,
               enableOrderBook: market.enable_order_book || false,
               // Additional sports metadata if available
-              eventStatus: market.event_status || market.status || null,
-              score: market.score || market.live_score || null,
-              homeTeam: market.home_team || null,
-              awayTeam: market.away_team || null,
+              eventStatus,
+              score,
+              homeTeam,
+              awayTeam,
+              marketAvatarUrl,
             }
           });
         }
@@ -143,6 +280,16 @@ export async function GET(request: Request) {
           const endDateIso = normalizeEndDate(
             market.end_date_iso || market.end_date || market.endDate || market.close_time || null
           );
+          const event =
+            Array.isArray(market?.events) && market.events.length > 0 ? market.events[0] : null;
+          const marketAvatarUrl = pickFirstString(
+            market.icon,
+            market.image,
+            market.twitterCardImage,
+            market.twitter_card_image,
+            event?.icon,
+            event?.image
+          );
 
           return NextResponse.json({
             success: true,
@@ -155,6 +302,7 @@ export async function GET(request: Request) {
               outcomePrices: prices,
               outcomes: outcomes,
               endDateIso,
+              marketAvatarUrl,
             }
           });
         }
@@ -210,6 +358,16 @@ export async function GET(request: Request) {
           const endDateIso = normalizeEndDate(
             match.end_date_iso || match.end_date || match.endDate || match.close_time || null
           );
+          const event =
+            Array.isArray(match?.events) && match.events.length > 0 ? match.events[0] : null;
+          const marketAvatarUrl = pickFirstString(
+            match.icon,
+            match.image,
+            match.twitterCardImage,
+            match.twitter_card_image,
+            event?.icon,
+            event?.image
+          );
 
           return NextResponse.json({
             success: true,
@@ -222,6 +380,7 @@ export async function GET(request: Request) {
               outcomePrices: prices,
               outcomes: outcomes,
               endDateIso,
+              marketAvatarUrl,
             }
           });
         }
