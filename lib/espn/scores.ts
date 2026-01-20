@@ -99,21 +99,42 @@ const TEAM_NAME_STOP_WORDS = new Set([
 ]);
 
 // Detect sport type from market title
-function detectSportType(title: string, category?: string | null): SportGroup | null {
+function detectSportType(
+  title: string,
+  category?: string | null,
+  slug?: string | null,
+  eventSlug?: string | null
+): SportGroup | null {
   const titleLower = title.toLowerCase();
   const categoryLower = category ? category.toLowerCase() : '';
+  const slugLower = [slug, eventSlug].filter(Boolean).join(' ').toLowerCase();
 
   if (titleLower.includes('wnba')) return 'wnba';
+  if (slugLower.includes('wnba')) return 'wnba';
+  if (slugLower.includes('nfl')) return 'nfl';
+  if (slugLower.includes('nba')) return 'nba';
+  if (slugLower.includes('mlb')) return 'mlb';
+  if (slugLower.includes('nhl')) return 'nhl';
+  if (slugLower.includes('tennis')) return 'tennis';
+  if (slugLower.match(/\b(ncaaf|college-football|cfb)\b/)) return 'ncaaf';
+  if (slugLower.match(/\b(ncaaw|womens?-college-basketball)\b/)) return 'ncaaw';
+  if (slugLower.match(/\b(ncaab|mens?-college-basketball|college-basketball|march-madness)\b/)) return 'ncaab';
+  if (slugLower.includes('soccer') || slugLower.includes('fifa') || slugLower.includes('uefa')) return 'soccer';
+  if (categoryLower.includes('tennis')) return 'tennis';
   if (
     titleLower.match(/\b(ncaaf|college football|cfb)\b/) ||
-    (titleLower.includes('ncaa') && titleLower.includes('football'))
+    (titleLower.includes('ncaa') && titleLower.includes('football')) ||
+    (categoryLower.includes('college') && categoryLower.includes('football')) ||
+    categoryLower.includes('ncaaf')
   ) {
     return 'ncaaf';
   }
   if (titleLower.match(/\b(ncaaw|women's college basketball|womens college basketball|wcbb)\b/)) return 'ncaaw';
   if (
     titleLower.match(/\b(ncaab|college basketball|march madness)\b/) ||
-    (titleLower.includes('ncaa') && titleLower.includes('basketball'))
+    (titleLower.includes('ncaa') && titleLower.includes('basketball')) ||
+    (categoryLower.includes('college') && categoryLower.includes('basketball')) ||
+    categoryLower.includes('ncaab')
   ) {
     return 'ncaab';
   }
@@ -328,8 +349,16 @@ function isLikelySportsTitle(title: string, category?: string | null): boolean {
 
 // Extract team names from market title
 export function extractTeamNames(title: string): { team1: string; team2: string } | null {
+  let workingTitle = title.trim();
+  if (workingTitle.includes(':')) {
+    const afterColon = workingTitle.split(':').slice(1).join(':').trim();
+    if (/\b(vs\.?|v\.?|@|versus|at)\b/i.test(afterColon)) {
+      workingTitle = afterColon;
+    }
+  }
+
   // Remove spread/O-U indicators first: "Thunder (−9.5)" → "Thunder"
-  const cleanTitle = title
+  const cleanTitle = workingTitle
     .replace(/\s*\([−+]?\d+\.?\d*\)/g, '') // Remove (−9.5) or (+7)
     .replace(/\s*O\/U\s*\d+\.?\d*/gi, '') // Remove O/U 215.5
     .replace(/\s*(Over|Under)\s*\d+\.?\d*/gi, '') // Remove Over/Under 215.5
@@ -705,7 +734,12 @@ export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<s
   const unknownTrades: FeedTrade[] = [];
   
   trades.forEach(trade => {
-    const sport = detectSportType(trade.market.title, trade.market.category);
+    const sport = detectSportType(
+      trade.market.title,
+      trade.market.category,
+      trade.market.slug,
+      trade.market.eventSlug
+    );
     if (sport && sportGroups[sport]) {
       sportGroups[sport].push(trade);
     } else if (isLikelySportsTitle(trade.market.title, trade.market.category)) {
