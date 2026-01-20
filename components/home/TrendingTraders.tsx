@@ -40,13 +40,6 @@ function formatLargeNumber(num: number): string {
   }
 }
 
-function formatDisplayName(name: string, wallet: string): string {
-  if (name.startsWith('0x') && name.length > 20) {
-    return `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
-  }
-  return name;
-}
-
 export function TrendingTraders() {
   const [traders, setTraders] = useState<Trader[]>([]);
   const [loading, setLoading] = useState(true);
