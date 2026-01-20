@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Check } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getTraderAvatarInitials } from "@/lib/trader-name"
 
 interface TraderCardProps {
   name: string
@@ -39,9 +40,9 @@ export function TraderCard({
       <div className="p-6 pb-4">
         <div className="flex items-start gap-4">
           <Avatar className="h-14 w-14 ring-2 ring-slate-100">
-            <AvatarImage src={avatar || "/placeholder.svg"} alt={name} />
+            {avatar ? <AvatarImage src={avatar} alt={name} /> : null}
             <AvatarFallback className="bg-white text-slate-700 text-base font-semibold">
-              {name.slice(0, 2).toUpperCase()}
+              {getTraderAvatarInitials({ displayName: name, wallet: username })}
             </AvatarFallback>
           </Avatar>
 

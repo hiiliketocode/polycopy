@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Check } from "lucide-react"
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { getTraderAvatarInitials } from "@/lib/trader-name"
 
 interface TraderDiscoveryCardProps {
   trader: {
@@ -12,6 +13,7 @@ interface TraderDiscoveryCardProps {
     name: string
     handle: string
     avatar?: string
+    wallet?: string
     roi: number
     profit: number
     volume: number
@@ -35,15 +37,6 @@ export function TraderDiscoveryCard({ trader, onFollowToggle }: TraderDiscoveryC
     onFollowToggle?.(trader.id, newFollowingState)
   }
 
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2)
-  }
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -65,7 +58,7 @@ export function TraderDiscoveryCard({ trader, onFollowToggle }: TraderDiscoveryC
             <Avatar className="h-12 w-12 border-2 border-white shadow-sm flex-shrink-0">
               {trader.avatar ? <AvatarImage src={trader.avatar} alt={trader.name} /> : null}
               <AvatarFallback className="bg-white text-slate-700 font-semibold">
-                {getInitials(trader.name)}
+                {getTraderAvatarInitials({ displayName: trader.name, wallet: trader.wallet })}
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">

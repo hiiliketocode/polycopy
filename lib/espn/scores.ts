@@ -6,6 +6,7 @@ interface ESPNGame {
   id: string;
   name: string;
   shortName: string;
+  link?: string;
   homeTeam: {
     name: string;
     abbreviation: string;
@@ -31,6 +32,7 @@ interface ESPNScoreResult {
   awayTeamAbbrev: string;
   status: 'scheduled' | 'live' | 'final';
   startTime: string;
+  gameUrl?: string;
   displayClock?: string;
   period?: number;
 }
@@ -689,6 +691,7 @@ function buildScoreResult(matchingGame: ESPNGame): ESPNScoreResult {
     awayTeamAbbrev: matchingGame.awayTeam.abbreviation,
     status: matchingGame.status,
     startTime: matchingGame.startTime,
+    gameUrl: matchingGame.link,
     displayClock: matchingGame.displayClock,
     period: matchingGame.period,
   };

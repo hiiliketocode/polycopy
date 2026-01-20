@@ -28,6 +28,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { TradeCard } from '@/components/polycopy/trade-card';
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
+import { getTraderAvatarInitials } from '@/lib/trader-name';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 import type { User } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
@@ -215,6 +216,7 @@ export default function TraderProfilePage({
     eventStatus?: string;
     endDateIso?: string;
     liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
+    espnUrl?: string;
   }>>(new Map());
 
   useEffect(() => {
@@ -918,6 +920,7 @@ export default function TraderProfilePage({
                   gameStartTime: gameStartTime || existing?.gameStartTime,
                   eventStatus: eventStatus || existing?.eventStatus,
                   endDateIso: endDateIso || existing?.endDateIso,
+                  espnUrl: existing?.espnUrl,
                 });
                 return next;
               });
@@ -1041,6 +1044,7 @@ export default function TraderProfilePage({
                 gameStartTime: existing?.gameStartTime ?? gameStartTime ?? espnScore?.startTime,
                 eventStatus: existing?.eventStatus ?? eventStatus,
                 endDateIso: existing?.endDateIso ?? endDateIso,
+                espnUrl: espnScore?.gameUrl ?? existing?.espnUrl,
               });
               return next;
             });
@@ -1368,10 +1372,6 @@ export default function TraderProfilePage({
     return value.toFixed(0);
   };
 
-  const getInitials = (address: string) => {
-    return address.slice(2, 4).toUpperCase();
-  };
-
   const getAvatarColor = (address: string) => {
     let hash = 0;
     for (let i = 0; i < address.length; i++) {
@@ -1569,7 +1569,7 @@ export default function TraderProfilePage({
   }
 
   const avatarColor = getAvatarColor(wallet);
-  const initials = getInitials(wallet);
+  const initials = getTraderAvatarInitials({ displayName: traderData.displayName, wallet });
   // CRITICAL: Prioritize traderData (Polymarket leaderboard) over computedStats (calculated from limited trades)
   // Polymarket has the accurate all-time stats; computedStats is based on max 100 recent trades
   const effectivePnl = traderData.pnl ?? computedStats?.totalPnl ?? 0;
@@ -1682,68 +1682,197 @@ export default function TraderProfilePage({
           </div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-            <div className="text-center p-4 bg-slate-50 rounded-lg relative group min-w-0">
-              <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+              <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 ROI
-                <div className="relative">
-                  <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
-                    All-time return on investment from Polymarket leaderboard
-                  </div>
-                </div>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
+                        ?
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>All-time return on investment from the Polymarket leaderboard.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
-              <div className={`text-xl sm:text-2xl font-bold ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+              <div className={`text-2xl font-semibold ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                 {effectiveVolume > 0 ? formatPercentage(effectiveRoiValue) : 'N/A'}
               </div>
             </div>
-            <div className="text-center p-4 bg-slate-50 rounded-lg relative group min-w-0">
-              <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
-                P&L
-                <div className="relative">
-                  <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
-                    All-time profit/loss from Polymarket leaderboard
-                  </div>
-                </div>
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+              <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
+                Lifetime Realized P&amp;L
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
+                        ?
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>All-time realized profit/loss from the Polymarket leaderboard.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
-              <div className={`text-xl sm:text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+              <div className={`text-2xl font-semibold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                 {effectivePnl >= 0 ? '+' : ''}{formatCurrency(effectivePnl)}
               </div>
             </div>
-            <div className="text-center p-4 bg-slate-50 rounded-lg relative group min-w-0">
-              <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+              <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 Win Rate
-                <div className="relative">
-                  <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-52 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
-                    From Polymarket leaderboard when available, otherwise estimated from recent trades
-                  </div>
-                </div>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
+                        ?
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>From Polymarket leaderboard when available, otherwise estimated from recent trades.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
-              <div className="text-xl sm:text-2xl font-bold text-slate-900">
+              <div className="text-2xl font-semibold text-slate-900">
                 {effectiveWinRate !== null && Number.isFinite(effectiveWinRate) ? `${effectiveWinRate.toFixed(1)}%` : 'N/A'}
               </div>
             </div>
-            <div className="text-center p-4 bg-slate-50 rounded-lg relative group min-w-0">
-              <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+              <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 Volume
-                <div className="relative">
-                  <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
-                    Total trading volume across all markets on Polymarket
-                  </div>
-                </div>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
+                        ?
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>Total trading volume across all markets on Polymarket.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
-              <div className="text-xl sm:text-2xl font-bold text-slate-900">{formatCurrency(effectiveVolume)}</div>
+              <div className="text-2xl font-semibold text-slate-900">{formatCurrency(effectiveVolume)}</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+              <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
+                Best Position
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
+                        ?
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>Largest position size from the recent trade sample.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <div className="text-2xl font-semibold text-slate-900">
+                {(() => {
+                  if (trades.length === 0) return '$0';
+                  const maxNotional = Math.max(...trades.map(t => (t.size || 0) * (t.price || 0)));
+                  return formatCurrency(maxNotional);
+                })()}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+              <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
+                Total Trades
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
+                        ?
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>Count of trades in the recent sample (up to 100).</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <div className="text-2xl font-semibold text-slate-900">
+                {(() => {
+                  const count = trades.length;
+                  return count === 100 ? '100+' : count;
+                })()}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+              <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
+                Net P&amp;L / Trade
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
+                        ?
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>Lifetime realized P&amp;L divided by trades in the sample.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <div className={`text-2xl font-semibold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                {(() => {
+                  const avgPnL = trades.length > 0 ? effectivePnl / trades.length : 0;
+                  return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
+                })()}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+              <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
+                Open Positions
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
+                        ?
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>Open positions within the current trade sample.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <div className="text-2xl font-semibold text-slate-900">
+                {trades.filter(t => t.status === 'Open').length}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+              <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
+                Avg P&amp;L / Trade
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
+                        ?
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>Average realized P&amp;L per trade in the recent sample.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <div className={`text-2xl font-semibold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                {(() => {
+                  const avgPnL = trades.length > 0 ? effectivePnl / trades.length : 0;
+                  return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
+                })()}
+              </div>
             </div>
           </div>
         </Card>
@@ -1929,6 +2058,7 @@ export default function TraderProfilePage({
                       liveStatus={liveData?.liveStatus}
                       category={trade.category}
                       polymarketUrl={polymarketUrl}
+                      espnUrl={liveData?.espnUrl}
                       defaultBuySlippage={defaultBuySlippage}
                       defaultSellSlippage={defaultSellSlippage}
                       walletAddress={walletAddress}
@@ -2598,88 +2728,6 @@ export default function TraderProfilePage({
               </div>
             </Card>
 
-            {/* Performance Metrics */}
-            <Card className="p-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Performance Metrics</h3>
-              <p className="text-sm text-slate-500 mb-6">Showing lifetime performance across all trades</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {/* Lifetime ROI */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Lifetime ROI</p>
-                  <p className={`text-2xl font-bold ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-600' : 'text-slate-900'}`}>
-                    {effectiveVolume > 0 ? `${effectiveRoiValue > 0 ? '+' : ''}${effectiveRoiValue.toFixed(1)}%` : 'N/A'}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">All time</p>
-                </div>
-
-                {/* Total P&L */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Total P&L</p>
-                  <p className={`text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
-                    {effectivePnl > 0 ? '+' : ''}{formatCurrency(effectivePnl)}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">All time</p>
-                </div>
-
-                {/* Best Position */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Best Position</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {(() => {
-                      if (trades.length === 0) return '$0';
-                      const maxNotional = Math.max(...trades.map(t => (t.size || 0) * (t.price || 0)));
-                      return formatCurrency(maxNotional);
-                    })()}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Largest trade</p>
-                </div>
-
-                {/* Total Trades */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Total Trades</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {(() => {
-                      const count = trades.length;
-                      return count === 100 ? '100+' : count;
-                    })()}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">In sample</p>
-                </div>
-
-                {/* Net P&L / Trade */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Net P&L / Trade</p>
-                  <p className={`text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
-                    {(() => {
-                      const avgPnL = trades.length > 0 ? effectivePnl / trades.length : 0;
-                      return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
-                    })()}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Per trade</p>
-                </div>
-
-                {/* Open Positions */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Open Positions</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {trades.filter(t => t.status === 'Open').length}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Currently active</p>
-                </div>
-
-                {/* Avg P&L / Trade */}
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm text-slate-500 mb-1">Avg P&L / Trade</p>
-                  <p className={`text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
-                    {(() => {
-                      const avgPnL = trades.length > 0 ? effectivePnl / trades.length : 0;
-                      return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
-                    })()}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Average</p>
-                </div>
-              </div>
-            </Card>
 
             {/* Position Size Distribution */}
             <Card className="p-6">

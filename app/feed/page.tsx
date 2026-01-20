@@ -265,6 +265,7 @@ export default function FeedPage() {
     resolved?: boolean;
     endDateIso?: string;
     liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
+    espnUrl?: string;
     updatedAt?: number;
   }>>(new Map());
 
@@ -1055,6 +1056,7 @@ export default function FeedPage() {
       resolved?: boolean;
       endDateIso?: string;
       liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
+      espnUrl?: string;
       updatedAt?: number;
     }>();
     
@@ -1285,6 +1287,7 @@ export default function FeedPage() {
                     resolved: isMarketResolved,
                     endDateIso: endDateIso || undefined,
                     liveStatus,
+                    espnUrl: espnScore?.gameUrl,
                     updatedAt: Date.now(),
                   });
                 }
@@ -2564,6 +2567,7 @@ export default function FeedPage() {
                               ? `https://polymarket.com/market/${trade.market.slug}`
                               : undefined
                           }
+                          espnUrl={liveMarket?.espnUrl}
                           defaultBuySlippage={defaultBuySlippage}
                           defaultSellSlippage={defaultSellSlippage}
                           walletAddress={walletAddress}

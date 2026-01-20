@@ -44,6 +44,7 @@ import {
   statusLooksLive,
   statusLooksScheduled,
 } from "@/lib/market-status"
+import { getTraderAvatarInitials } from "@/lib/trader-name"
 
 interface TradeCardProps {
   trader: {
@@ -84,6 +85,7 @@ interface TradeCardProps {
   liveStatus?: "live" | "scheduled" | "final" | "unknown"
   category?: string
   polymarketUrl?: string
+  espnUrl?: string
   defaultBuySlippage?: number
   defaultSellSlippage?: number
   tradeAnchorId?: string
@@ -92,6 +94,7 @@ interface TradeCardProps {
   manualTradingEnabled?: boolean
   onSwitchToManualTrading?: () => void
   onOpenConnectWallet?: () => void
+  hideActions?: boolean
 }
 
 type StatusPhase =
@@ -438,6 +441,7 @@ export function TradeCard({
   liveStatus,
   category,
   polymarketUrl,
+  espnUrl,
   defaultBuySlippage,
   defaultSellSlippage,
   tradeAnchorId,
@@ -446,6 +450,7 @@ export function TradeCard({
   manualTradingEnabled = false,
   onSwitchToManualTrading,
   onOpenConnectWallet,
+  hideActions = false,
 }: TradeCardProps) {
   const resolvedDefaultSlippage =
     action === "Buy"
@@ -535,7 +540,8 @@ export function TradeCard({
         ? resolvedLivePrice
         : price
   const hasCurrentPrice = Number.isFinite(currentPrice)
-  const priceChange = hasCurrentPrice ? ((currentPrice - price) / price) * 100 : 0
+  const priceChange =
+    hasCurrentPrice && price > 0 ? ((currentPrice - price) / price) * 100 : 0
   const priceDirection = priceChange > 0 ? 'up' : priceChange < 0 ? 'down' : 'neutral'
   const defaultManualPrice = hasCurrentPrice ? currentPrice : price
   const inferredMarketOpen =
@@ -625,6 +631,7 @@ export function TradeCard({
 
   const badgeBaseClass =
     "h-7 px-2.5 text-[11px] font-semibold border shadow-[0_1px_0_rgba(15,23,42,0.06)]"
+  const espnLink = espnUrl?.trim() ? espnUrl : undefined
 
   const statusBadgeClass = cn(
     badgeBaseClass,
@@ -2024,9 +2031,9 @@ export function TradeCard({
             className="flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
           >
             <Avatar className="h-10 w-10 ring-2 ring-slate-100 transition-all">
-              <AvatarImage src={trader.avatar || "/placeholder.svg"} alt={trader.name} />
+              {trader.avatar ? <AvatarImage src={trader.avatar} alt={trader.name} /> : null}
               <AvatarFallback className="bg-white text-slate-700 text-sm font-semibold">
-                {trader.name.slice(0, 2).toUpperCase()}
+                {getTraderAvatarInitials({ displayName: trader.name, wallet: trader.address })}
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0">
@@ -2048,38 +2055,56 @@ export function TradeCard({
                 {market.slice(0, 2)}
               </AvatarFallback>
             </Avatar>
-            <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center">
               <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug break-words">
                 {market}
+                {/* External link icon for Premium users - at end of market name */}
+                {isPremium && polymarketUrl && (
+                  <a
+                    href={polymarketUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 inline-flex text-slate-400 hover:text-slate-600 transition-colors"
+                    title="View on Polymarket"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                )}
               </h3>
-              {/* External link icon for Premium users - at end of market name */}
-              {isPremium && polymarketUrl && (
-                <a
-                  href={polymarketUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
-                  title="View on Polymarket"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-              )}
             </div>
           </div>
           <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end md:ml-auto">
             {showEventTimeBadge && (
-              <Badge
-                variant="secondary"
-                className={cn(
-                  badgeBaseClass,
-                  hasEventTime
-                    ? "bg-white text-slate-700 border-slate-200"
-                    : "bg-slate-50 text-slate-400 border-slate-200",
-                )}
-              >
-                <CalendarClock className="h-3.5 w-3.5" />
-                {eventTimeLabel}
-              </Badge>
+              espnLink ? (
+                <Badge
+                  asChild
+                  variant="secondary"
+                  className={cn(
+                    badgeBaseClass,
+                    hasEventTime
+                      ? "bg-white text-slate-700 border-slate-200"
+                      : "bg-slate-50 text-slate-400 border-slate-200",
+                  )}
+                >
+                  <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                    <CalendarClock className="h-3.5 w-3.5" />
+                    {eventTimeLabel}
+                  </a>
+                </Badge>
+              ) : (
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    badgeBaseClass,
+                    hasEventTime
+                      ? "bg-white text-slate-700 border-slate-200"
+                      : "bg-slate-50 text-slate-400 border-slate-200",
+                  )}
+                >
+                  <CalendarClock className="h-3.5 w-3.5" />
+                  {eventTimeLabel}
+                </Badge>
+              )
             )}
             {(statusBadgeVariant === "live" ||
               statusBadgeVariant === "ended" ||
@@ -2090,16 +2115,32 @@ export function TradeCard({
               </Badge>
             )}
             {showScoreBadge && (
-              <Badge
-                variant="secondary"
-                className={cn(
-                  badgeBaseClass,
-                  "bg-indigo-50 text-indigo-700 border-indigo-200",
-                )}
-              >
-                <Trophy className="h-3.5 w-3.5" />
-                <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
-              </Badge>
+              espnLink ? (
+                <Badge
+                  asChild
+                  variant="secondary"
+                  className={cn(
+                    badgeBaseClass,
+                    "bg-indigo-50 text-indigo-700 border-indigo-200",
+                  )}
+                >
+                  <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                    <Trophy className="h-3.5 w-3.5" />
+                    <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                  </a>
+                </Badge>
+              ) : (
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    badgeBaseClass,
+                    "bg-indigo-50 text-indigo-700 border-indigo-200",
+                  )}
+                >
+                  <Trophy className="h-3.5 w-3.5" />
+                  <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                </Badge>
+              )
             )}
           </div>
         </div>
@@ -2159,7 +2200,7 @@ export function TradeCard({
           </div>
         </div>
 
-        {allowManualExperience && manualDrawerOpen && (
+        {!hideActions && allowManualExperience && manualDrawerOpen && (
           <div className="p-4 mt-4 space-y-4 border border-slate-200 rounded-xl bg-slate-50">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-slate-900">Manual Copy</h4>
@@ -2253,7 +2294,7 @@ export function TradeCard({
           </div>
         )}
 
-        {!(showQuickCopyExperience && isExpanded) && (
+        {!hideActions && !(showQuickCopyExperience && isExpanded) && (
           showQuickCopyExperience ? (
             <div className="w-full flex justify-center">
               <Button
@@ -2349,7 +2390,7 @@ export function TradeCard({
         )}
       </div>
 
-      {showQuickCopyExperience && isExpanded && (
+      {!hideActions && showQuickCopyExperience && isExpanded && (
         <div className="bg-white px-6 pb-3 pt-0">
           <div className="-mt-4 mb-2 flex justify-center">
             <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">
@@ -2571,6 +2612,8 @@ export function TradeCard({
                     <input
                       id="amount"
                       type="number"
+                      inputMode={amountMode === "usd" ? "decimal" : "numeric"}
+                      pattern={amountMode === "usd" ? "[0-9]*[.,]?[0-9]*" : "[0-9]*"}
                       step={amountMode === "contracts" ? contractStep : 0.01}
                       value={amountInput}
                             onChange={(e) => {
@@ -2933,37 +2976,39 @@ export function TradeCard({
         </div>
       )}
 
-      <Dialog open={showWalletPrompt} onOpenChange={setShowWalletPrompt}>
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>Connect your wallet to trade</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-slate-600">
-            You need to connect your Polymarket wallet to continue trading with quick copy.
-          </p>
-          <div className="mt-4 space-y-2">
-            <Button
-              className="w-full bg-slate-900 text-white hover:bg-slate-800"
-              onClick={() => {
-                setShowWalletPrompt(false)
-                onOpenConnectWallet?.()
-              }}
-            >
-              Link my wallet for quick trades
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                onSwitchToManualTrading?.()
-                setShowWalletPrompt(false)
-              }}
-            >
-              Switch to manual trading
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {!hideActions && (
+        <Dialog open={showWalletPrompt} onOpenChange={setShowWalletPrompt}>
+          <DialogContent className="sm:max-w-[420px]">
+            <DialogHeader>
+              <DialogTitle>Connect your wallet to trade</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-slate-600">
+              You need to connect your Polymarket wallet to continue trading with quick copy.
+            </p>
+            <div className="mt-4 space-y-2">
+              <Button
+                className="w-full bg-slate-900 text-white hover:bg-slate-800"
+                onClick={() => {
+                  setShowWalletPrompt(false)
+                  onOpenConnectWallet?.()
+                }}
+              >
+                Link my wallet for quick trades
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  onSwitchToManualTrading?.()
+                  setShowWalletPrompt(false)
+                }}
+              >
+                Switch to manual trading
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

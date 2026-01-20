@@ -2728,7 +2728,7 @@ function ProfilePageContent() {
                           </th>
                           <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">Time</th>
                           <th className="px-3 py-3 text-center font-semibold md:hidden md:px-4">Detail</th>
-                          <th className="px-3 py-3 text-right font-semibold w-[68px] md:w-[80px] md:px-4"></th>
+                          <th className="px-3 py-3 text-right font-semibold w-[120px] md:w-[80px] md:px-4"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2773,7 +2773,7 @@ function ProfilePageContent() {
                           </th>
                           <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">Time</th>
                           <th className="px-3 py-3 text-center font-semibold md:hidden md:px-4">Detail</th>
-                          <th className="px-3 py-3 text-right font-semibold w-[68px] md:w-[80px] md:px-4"></th>
+                          <th className="px-3 py-3 text-right font-semibold w-[120px] md:w-[80px] md:px-4"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2909,8 +2909,16 @@ function ProfilePageContent() {
                                             {trade.market_title}
                                           </span>
                                         )}
+                                        <span className={cn("hidden md:inline-flex", statusBadgeClass)}>
+                                          {displayStatus}
+                                        </span>
+                                      </div>
+                                      <div className="mt-1 flex flex-wrap items-center gap-2 md:hidden">
                                         <span className={cn("inline-flex", statusBadgeClass)}>
                                           {displayStatus}
+                                        </span>
+                                        <span className={cn("inline-flex", outcomeBadgeClass)}>
+                                          {formatOutcomeLabel(trade.outcome)}
                                         </span>
                                       </div>
                                     </div>
@@ -2955,7 +2963,7 @@ function ProfilePageContent() {
                                     {mobileDetail}
                                   </p>
                                 </td>
-                                <td className="px-3 py-2 align-top text-right md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
+                                <td className="px-3 py-2 align-top text-right w-[120px] md:w-[80px] md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <div className="mt-1 flex flex-col items-end gap-1">
                                     {(canCopyAgain || canSell) && (
                                       <div className="flex items-center gap-2">

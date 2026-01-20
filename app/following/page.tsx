@@ -286,12 +286,13 @@ function FollowingPageContent() {
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <TraderDiscoveryCard 
+                      <TraderDiscoveryCard 
                       trader={{
                         id: trader.wallet,
                         name: formatDisplayName(trader.displayName, trader.wallet),
                         handle: `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}`,
                         avatar: trader.profileImage || '',
+                        wallet: trader.wallet,
                         roi: trader.roi || 0,
                         profit: trader.pnl,
                         volume: trader.volume,

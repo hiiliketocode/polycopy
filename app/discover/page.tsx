@@ -13,6 +13,7 @@ import { TraderDiscoveryCard } from '@/components/polycopy/trader-discovery-card
 import { Button } from '@/components/ui/button';
 import { Search, X, Check } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { getTraderAvatarInitials } from '@/lib/trader-name';
 
 interface Trader {
   wallet: string;
@@ -24,6 +25,7 @@ interface Trader {
   rank: number;
   followerCount: number;
   roi?: number;
+  profileImage?: string | null;
 }
 
 // Helper function to format large numbers
@@ -525,7 +527,6 @@ function DiscoverPageContent() {
                   <div className="flex gap-4" style={{ width: "max-content" }}>
                   {featuredTraders.map((trader) => {
                     const isFollowing = followedWallets.has(trader.wallet.toLowerCase());
-                    const getInitials = (name: string) => name.slice(0, 2).toUpperCase();
                     
                     return (
                       <div
@@ -535,8 +536,11 @@ function DiscoverPageContent() {
                         <Link href={`/trader/${trader.wallet}`} className="block">
                           <div className="flex items-center gap-4 mb-6">
                             <Avatar className="h-16 w-16 border-2 border-white shadow-sm flex-shrink-0">
+                              {trader.profileImage ? (
+                                <AvatarImage src={trader.profileImage} alt={trader.displayName} />
+                              ) : null}
                               <AvatarFallback className="bg-white text-slate-700 font-semibold text-xl">
-                                {getInitials(trader.displayName)}
+                                {getTraderAvatarInitials({ displayName: trader.displayName, wallet: trader.wallet })}
                               </AvatarFallback>
                             </Avatar>
                             <div className="flex-1 min-w-0">
@@ -681,7 +685,8 @@ function DiscoverPageContent() {
                           id: trader.wallet,
                           name: formatDisplayName(trader.displayName, trader.wallet),
                           handle: `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}`,
-                          avatar: '',
+                          avatar: trader.profileImage || '',
+                          wallet: trader.wallet,
                           roi: trader.roi || 0,
                           profit: trader.pnl,
                           volume: trader.volume,

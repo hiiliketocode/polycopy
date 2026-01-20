@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+import { getTraderAvatarInitials } from "@/lib/trader-name"
 
 type ManualCopiedTrade = {
   id: string
@@ -143,9 +144,14 @@ function ManualCopiedTradeCard({
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
-            <AvatarImage src={trade.trader_profile_image_url || "/placeholder.svg"} alt={trade.trader_username || trade.trader_wallet} />
+            {trade.trader_profile_image_url ? (
+              <AvatarImage src={trade.trader_profile_image_url} alt={trade.trader_username || trade.trader_wallet} />
+            ) : null}
             <AvatarFallback className="bg-white text-slate-700 text-sm font-semibold uppercase">
-              {initials(trade.trader_username || trade.trader_wallet)}
+              {getTraderAvatarInitials({
+                displayName: trade.trader_username,
+                wallet: trade.trader_wallet,
+              })}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
@@ -259,17 +265,6 @@ function formatWallet(value?: string | null): string | null {
   if (!trimmed) return null
   if (trimmed.length <= 10) return trimmed
   return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`
-}
-
-function initials(value: string | null | undefined) {
-  if (!value) return "UU"
-  const words = value.trim().split(" ").filter(Boolean)
-  if (words.length === 0) return "UU"
-  if (words.length === 1) {
-    const word = words[0]
-    return (word.slice(0, 2) || "UU").toUpperCase()
-  }
-  return (words[0][0] + words[1][0]).toUpperCase()
 }
 
 function formatCurrency(value: number | null | undefined) {

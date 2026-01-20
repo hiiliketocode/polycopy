@@ -31,6 +31,24 @@ export function extractTraderNameFromRecord(record?: Record<string, any> | null)
   return null
 }
 
+export function getTraderAvatarInitials({
+  displayName,
+  wallet,
+}: {
+  displayName?: string | null
+  wallet?: string | null
+}) {
+  const normalizedName = normalizeTraderDisplayName(displayName)
+  const normalizedWallet = normalizeTraderDisplayName(wallet)
+  const raw = normalizedName || normalizedWallet || wallet?.trim() || ''
+  if (!raw) return '??'
+  const trimmed = raw.trim()
+  const withoutPrefix =
+    trimmed.startsWith('0x') || trimmed.startsWith('0X') ? trimmed.slice(2) : trimmed
+  const base = withoutPrefix || trimmed
+  return base.slice(0, 2).toUpperCase()
+}
+
 function collectNameScopes(record?: Record<string, any> | null) {
   if (!record || typeof record !== 'object') return []
   const scopes: Record<string, any>[] = [record]

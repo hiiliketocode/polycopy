@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
+import { getTraderAvatarInitials } from "@/lib/trader-name"
 
 interface ActivityItemProps {
   traderName: string
@@ -28,9 +29,9 @@ export function ActivityItem({
     <div className="flex gap-4 p-4 bg-white border border-slate-200 rounded-xl hover:shadow-sm transition-shadow duration-200">
       {/* Avatar */}
       <Avatar className="h-10 w-10 ring-2 ring-slate-100 shrink-0">
-        <AvatarImage src={traderAvatar || "/placeholder.svg"} alt={traderName} />
+        {traderAvatar ? <AvatarImage src={traderAvatar} alt={traderName} /> : null}
         <AvatarFallback className="bg-white text-slate-700 text-xs font-semibold">
-          {traderName.slice(0, 2).toUpperCase()}
+          {getTraderAvatarInitials({ displayName: traderName, wallet: traderUsername })}
         </AvatarFallback>
       </Avatar>
 

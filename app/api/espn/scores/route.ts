@@ -7,6 +7,10 @@ interface ESPNGame {
   id: string;
   name: string; // "Team A at Team B"
   shortName: string; // "TEAM1 @ TEAM2"
+  links?: Array<{
+    href?: string;
+    rel?: string[];
+  }>;
   status: {
     type: {
       name: string; // "STATUS_SCHEDULED", "STATUS_IN_PROGRESS", "STATUS_FINAL"
@@ -63,6 +67,7 @@ interface NormalizedGame {
   id: string;
   name: string;
   shortName: string;
+  link?: string;
   homeTeam: {
     name: string;
     abbreviation: string;
@@ -250,11 +255,18 @@ export async function GET(request: NextRequest) {
       const startTime = competition.date || competition.startDate || null;
 
       const name = event.name || shortName || `${awayName} @ ${homeName}`;
+      const eventLink = Array.isArray(event.links)
+        ? event.links.find((link) =>
+            Array.isArray(link?.rel) &&
+            (link.rel.includes('event') || link.rel.includes('summary'))
+          )?.href
+        : undefined;
 
       return {
         id: event.id,
         name,
         shortName,
+        link: eventLink,
         homeTeam: {
           name: homeName,
           abbreviation: getCompetitorAbbrev(homeTeam),

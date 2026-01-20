@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Navigation } from '@/components/polycopy/navigation'
+import { TradeCard } from '@/components/polycopy/trade-card'
 import { USDC_DECIMALS } from '@/lib/turnkey/config'
 import {
   adjustSizeForImpliedAmount,
@@ -363,36 +364,6 @@ function formatElapsedDetailed(timestamp: string | number | null | undefined, no
   return `${days}d ${hours % 24}h`
 }
 
-function formatFilledDateTime(value: string | number | null | undefined) {
-  if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  const dateLabel = date.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-  const timeLabel = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  return `${dateLabel} · ${timeLabel}`
-}
-
-function getAvatarColor(seed: string) {
-  let hash = 0
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = seed.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  const hue = Math.abs(hash) % 360
-  return `hsl(${hue} 65% 45%)`
-}
-
-function getInitials(label: string) {
-  if (!label) return '??'
-  const parts = label.trim().split(/\s+/)
-  const first = parts[0]?.[0] || ''
-  const second = parts.length > 1 ? parts[1][0] : parts[0]?.[1] || ''
-  return `${first}${second}`.toUpperCase()
-}
-
 function abbreviateWallet(wallet: string) {
   if (!wallet) return '—'
   return `${wallet.slice(0, 6)}...${wallet.slice(-4)}`
@@ -547,10 +518,6 @@ function TradeExecutePageInner() {
   const traderIcon = record ? extractTraderIcon(record) : ''
   const traderWallet = record?.trader_wallet ? String(record.trader_wallet) : ''
   const marketTitle = record ? formatValue(record.market_title || record.market_slug) : '—'
-  const fallbackIdentity =
-    traderName || (traderWallet ? abbreviateWallet(traderWallet) : '') || 'Trade'
-  const iconLabel = marketTitle !== '—' ? marketTitle : fallbackIdentity
-  const iconImage = marketIcon || traderIcon
   const traderDisplayName =
     traderName || (traderWallet ? abbreviateWallet(traderWallet) : '') || 'Trader'
   const directionValue = normalizeSide(String(record?.side ?? form.side ?? 'BUY'))
@@ -651,12 +618,17 @@ function TradeExecutePageInner() {
     : availableCashAmount
       ? `$${availableCashAmount}`
       : '—'
-  const payoutIfWins = tradeSize
-  const filledLabel = record ? formatFilledDateTime(record.trade_timestamp) : '—'
   const priceDelta =
     currentPrice !== null && tradePrice !== null ? currentPrice - tradePrice : null
   const priceDeltaPct =
     priceDelta !== null && tradePrice ? (priceDelta / tradePrice) * 100 : null
+  const polymarketEventSlug = record?.event_slug || record?.eventSlug
+  const polymarketMarketSlug = record?.market_slug || record?.marketSlug
+  const polymarketUrl = polymarketEventSlug
+    ? `https://polymarket.com/event/${polymarketEventSlug}`
+    : polymarketMarketSlug
+      ? `https://polymarket.com/market/${polymarketMarketSlug}`
+      : null
   
   const isOrderSent = Boolean(orderId)
   const submittedContracts =
@@ -1533,135 +1505,41 @@ function TradeExecutePageInner() {
     record?.outcome_index,
   ])
 
-  const showLinkWalletHint = isPremiumUser && !walletAddress
-
   return (
     <div>
       <Navigation />
       <main className="mx-auto max-w-3xl px-4 py-10 space-y-6">
-        <section className="rounded-md border border-slate-200 bg-white px-5 py-6 shadow-sm space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-6">
-              <h1 className="text-2xl font-semibold text-slate-900">Trade You're Copying</h1>
-              <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-sm">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-500">
-                  {traderIcon ? (
-                    <img src={traderIcon} alt={traderDisplayName} className="h-9 w-9 rounded-2xl object-cover" />
-                  ) : (
-                    <span className="text-sm font-semibold text-slate-700">
-                      {getInitials(traderDisplayName)}
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <div className="text-xs text-slate-400">Trader</div>
-                  <div className="text-sm font-semibold text-slate-900">{traderDisplayName}</div>
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  marketStatus === 'Open'
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : marketStatus === 'Closed'
-                      ? 'bg-rose-100 text-rose-700'
-                      : 'bg-slate-100 text-slate-500'
-                }`}
-              >
-                {marketStatus ? `Market ${marketStatus}` : 'Market status pending'}
-              </div>
-              {showLinkWalletHint && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
-                  onClick={() => setShowConnectWalletModal(true)}
-                >
-                  Link my wallet for quick trades
-                </Button>
-              )}
-            </div>
-          </div>
-          <div className="flex items-start gap-4">
-            {iconImage ? (
-              <img
-                src={iconImage}
-                alt={iconLabel}
-                className="h-14 w-14 rounded-2xl border border-slate-200 object-cover"
-              />
-            ) : (
-              <div
-                className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700"
-                style={{ backgroundColor: getAvatarColor(iconLabel || 'trade') }}
-              >
-                {getInitials(iconLabel)}
-              </div>
-            )}
-            <div className="flex-1">
-              <div className="text-lg font-semibold text-slate-900">{marketTitle}</div>
-              <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                <div className="flex flex-col gap-1">
-                  <span className="text-[11px] font-semibold tracking-wide text-slate-500">
-                    Direction
-                  </span>
-                  <span
-                    className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold shadow-sm ${
-                      directionLabel?.toLowerCase() === 'buy'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : directionLabel?.toLowerCase() === 'sell'
-                          ? 'bg-rose-100 text-rose-700'
-                          : 'bg-slate-100 text-slate-600'
-                    }`}
-                  >
-                    {directionLabel}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-[11px] font-semibold tracking-wide text-slate-500">
-                    Outcome
-                  </span>
-                  <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                    {outcomeLabel}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 grid gap-4 text-xs text-slate-500 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <div className="text-[11px] font-semibold tracking-wide text-slate-400">
-                Filled Price
-              </div>
-              <div className="text-sm font-semibold text-slate-900">{formatPrice(tradePrice)}</div>
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold tracking-wide text-slate-400">
-                Contracts
-              </div>
-              <div className="text-sm font-semibold text-slate-900">
-                {formatContractsDisplay(tradeSize, sizeDecimals)}
-              </div>
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold tracking-wide text-slate-400">
-                Total Cost
-              </div>
-              <div className="text-sm font-semibold text-slate-900">{formatMoney(totalCost)}</div>
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold tracking-wide text-slate-400">
-                Payout If Wins
-              </div>
-              <div className="text-sm font-semibold text-slate-900">{formatMoney(payoutIfWins)}</div>
-            </div>
-          </div>
-          <div className="flex flex-col gap-1 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span>{filledLabel}</span>
-            <span>Elapsed {elapsed}</span>
-          </div>
-        </section>
+        <div className="space-y-4">
+          <div className="text-2xl font-semibold text-slate-900">Trade You're Copying</div>
+          <TradeCard
+            trader={{
+              name: traderDisplayName,
+              avatar: traderIcon || undefined,
+              address: traderWallet,
+              id: traderWallet || undefined,
+            }}
+            market={marketTitle}
+            marketAvatar={marketIcon || undefined}
+            position={outcomeLabel}
+            action={directionLabel === 'Sell' ? 'Sell' : 'Buy'}
+            price={tradePrice ?? 0}
+            size={tradeSize ?? 0}
+            total={totalCost ?? 0}
+            timestamp={elapsed}
+            isPremium={isPremiumUser}
+            conditionId={record?.condition_id || record?.conditionId}
+            tokenId={form.tokenId || extractTokenId(record ?? {})}
+            marketSlug={record?.market_slug || record?.marketSlug || undefined}
+            currentMarketPrice={currentPrice ?? undefined}
+            marketIsOpen={
+              marketStatus === 'Open' ? true : marketStatus === 'Closed' ? false : null
+            }
+            polymarketUrl={polymarketUrl ?? undefined}
+            walletAddress={walletAddress}
+            onOpenConnectWallet={() => setShowConnectWalletModal(true)}
+            hideActions
+          />
+        </div>
 
         <div className="flex justify-center py-0.5">
           <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-base text-slate-500">
