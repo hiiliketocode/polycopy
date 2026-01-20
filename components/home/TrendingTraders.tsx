@@ -6,6 +6,15 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { getTraderAvatarInitials } from '@/lib/trader-name';
 import { Button } from '@/components/ui/button';
 
+// Helper function to truncate wallet addresses that are used as display names
+function formatDisplayName(name: string, wallet: string): string {
+  // Check if the display name is actually a wallet address (starts with 0x and is long)
+  if (name.startsWith('0x') && name.length > 20) {
+    return `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
+  }
+  return name;
+}
+
 interface Trader {
   wallet: string;
   displayName: string;
@@ -120,7 +129,7 @@ export function TrendingTraders() {
                           <AvatarImage src={trader.profileImage} alt={trader.displayName} />
                         ) : null}
                         <AvatarFallback className="bg-gradient-to-br from-slate-700 to-slate-900 text-white font-bold text-lg">
-                          {getTraderAvatarInitials(formatDisplayName(trader.displayName, trader.wallet))}
+                          {getTraderAvatarInitials({ displayName: trader.displayName, wallet: trader.wallet })}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1 min-w-0">
