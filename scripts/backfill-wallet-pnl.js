@@ -98,6 +98,18 @@ function toDateString(tsSeconds) {
   return new Date(tsSeconds * 1000).toISOString().slice(0, 10) // YYYY-MM-DD in UTC
 }
 
+function addDays(dateStr, days) {
+  const date = new Date(`${dateStr}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function diffDays(startDate, endDate) {
+  const start = Date.parse(`${startDate}T00:00:00Z`)
+  const end = Date.parse(`${endDate}T00:00:00Z`)
+  return Math.floor((end - start) / (24 * 3600 * 1000))
+}
+
 async function fetchLatestDateForWallet(wallet) {
   const { data, error } = await supabase
     .from('wallet_realized_pnl_daily')
@@ -145,6 +157,7 @@ function deriveRows(wallet, series) {
   const rows = []
   const sorted = [...series].sort((a, b) => Number(a.timestamp) - Number(b.timestamp))
   let prev = null
+  let prevDate = null
 
   for (const point of sorted) {
     const ts = Number(point.timestamp)
@@ -154,11 +167,27 @@ function deriveRows(wallet, series) {
     }
     if (prev === null) {
       prev = cumulative // baseline; no delta row yet
+      prevDate = toDateString(ts)
       continue
     }
     const realized = cumulative - prev
     prev = cumulative
     const date = toDateString(ts)
+    if (prevDate && date !== prevDate) {
+      const gapDays = diffDays(prevDate, date) - 1
+      if (gapDays > 0) {
+        for (let i = 1; i <= gapDays; i += 1) {
+          const gapDate = addDays(prevDate, i)
+          rows.push({
+            wallet_address: wallet,
+            date: gapDate,
+            realized_pnl: 0,
+            pnl_to_date: cumulative - realized,
+            source: 'dome'
+          })
+        }
+      }
+    }
     if (!Number.isFinite(realized)) continue
     rows.push({
       wallet_address: wallet,
@@ -167,6 +196,7 @@ function deriveRows(wallet, series) {
       pnl_to_date: cumulative,
       source: 'dome'
     })
+    prevDate = date
   }
 
   return rows

@@ -1814,7 +1814,7 @@ export default function TraderProfilePage({
                             </span>
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs">
-                            <p>Realized P&amp;L is the profit or loss from closed positions. Unrealized P&amp;L reflects open positions priced at current markets.</p>
+                            <p>Shows profit or loss only from positions that are closed or resolved. Polymarket&#39;s profile P&amp;L includes open positions priced live (and may include fees), so totals can differ.</p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -2148,33 +2148,33 @@ export default function TraderProfilePage({
                       <div className="grid grid-cols-2 gap-4 text-sm text-slate-600">
                         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
                           <p className="text-sm font-medium text-slate-600">Trades</p>
-                          <p className="text-xl font-semibold text-slate-900 break-words leading-tight">{myTradeStats.trader.totalTrades}</p>
+                          <p className="text-lg sm:text-xl font-semibold text-slate-900 whitespace-nowrap tabular-nums">{myTradeStats.trader.totalTrades}</p>
                           <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.tradesPct)} of total</p>
                         </div>
                         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
                           <p className="text-sm font-medium text-slate-600">Volume</p>
-                          <p className="text-xl font-semibold text-slate-900 break-words leading-tight">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
+                          <p className="text-lg sm:text-xl font-semibold text-slate-900 whitespace-nowrap tabular-nums">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
                         </div>
                         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
                           <p className="text-sm font-medium text-slate-600">Total P&amp;L</p>
-                          <p className={`text-xl font-semibold break-words leading-tight ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                          <p className={`text-lg sm:text-xl font-semibold whitespace-nowrap tabular-nums ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                             {formatSignedCurrency(myTradeStats.trader.totalPnl)}
                           </p>
                           <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.pnlPct)} of total</p>
                         </div>
                         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
                           <p className="text-sm font-medium text-slate-600">Wins</p>
-                          <p className="text-xl font-semibold text-slate-900 break-words leading-tight">{myTradeStats.trader.winningTrades}</p>
+                          <p className="text-lg sm:text-xl font-semibold text-slate-900 whitespace-nowrap tabular-nums">{myTradeStats.trader.winningTrades}</p>
                           <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.winsPct)} of wins</p>
                         </div>
                         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
                           <p className="text-sm font-medium text-slate-600">Losses</p>
-                          <p className="text-xl font-semibold text-slate-900 break-words leading-tight">{myTradeStats.trader.losingTrades}</p>
+                          <p className="text-lg sm:text-xl font-semibold text-slate-900 whitespace-nowrap tabular-nums">{myTradeStats.trader.losingTrades}</p>
                           <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.lossesPct)} of losses</p>
                         </div>
                         <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
                           <p className="text-sm font-medium text-slate-600">Open positions</p>
-                          <p className="text-xl font-semibold text-slate-900 break-words leading-tight">{myTradeStats.trader.openTrades}</p>
+                          <p className="text-lg sm:text-xl font-semibold text-slate-900 whitespace-nowrap tabular-nums">{myTradeStats.trader.openTrades}</p>
                           <p className="text-xs text-slate-500">Open right now</p>
                         </div>
                       </div>
@@ -2217,26 +2217,6 @@ export default function TraderProfilePage({
                     </div>
                     <div className={`text-2xl font-semibold break-words leading-tight ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                       {effectiveVolume > 0 ? formatPercentage(effectiveRoiValue) : 'N/A'}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                    <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
-                      Lifetime Realized P&amp;L
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
-                              ?
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            <p>All-time realized profit/loss from the Polymarket leaderboard.</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                    <div className={`text-2xl font-semibold break-words leading-tight ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
-                      {effectivePnl >= 0 ? '+' : ''}{formatCurrency(effectivePnl)}
                     </div>
                   </div>
                   <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
@@ -3004,37 +2984,99 @@ export default function TraderProfilePage({
               </div>
               <div className="space-y-3">
                 {(() => {
-                  // Calculate top closed winners by PnL using live market data
-                  const tradesWithROI = trades
-                    .filter((trade) => trade.status !== 'Open')
-                    .map(t => {
-                      // Get current price from live market data or fall back to trade's currentPrice
-                      const liveData = t.conditionId ? liveMarketData.get(t.conditionId) : undefined;
-                      const currentPrice = liveData?.price || t.currentPrice || t.price;
-                      const invested = (t.size || 0) * (t.price || 0);
-                      const currentValue = (t.size || 0) * (currentPrice || 0);
-                      const pnl = currentValue - invested;
-                      const marketAvatar = extractMarketAvatarUrl({
-                        market: t.market,
-                        slug: t.marketSlug,
-                        eventSlug: t.eventSlug,
-                      });
-                      
+                  const positionMap = new Map<string, {
+                    market: string;
+                    outcome: string;
+                    buyNotional: number;
+                    sellNotional: number;
+                    totalBought: number;
+                    size: number;
+                    avgCost: number;
+                    firstTimestamp: number;
+                    lastTimestamp: number;
+                    sampleTrade: Trade;
+                    marketAvatar?: string;
+                    currentPrice?: number | null;
+                  }>();
+
+                  const priceFor = (trade: Trade) => {
+                    const live = trade.conditionId ? liveMarketData.get(trade.conditionId) : undefined;
+                    if (live && typeof live.price === 'number') return live.price;
+                    const fallback = trade.currentPrice ?? trade.price;
+                    return Number.isFinite(fallback) ? fallback : null;
+                  };
+
+                  for (const trade of trades) {
+                    if (!trade.price || !trade.size) continue;
+                    const key = `${trade.conditionId || trade.market}-${trade.outcome || 'outcome'}`;
+                    const existing = positionMap.get(key) ?? {
+                      market: trade.market,
+                      outcome: trade.outcome,
+                      buyNotional: 0,
+                      sellNotional: 0,
+                      totalBought: 0,
+                      size: 0,
+                      avgCost: 0,
+                      firstTimestamp: trade.timestamp,
+                      lastTimestamp: trade.timestamp,
+                      sampleTrade: trade,
+                    marketAvatar: extractMarketAvatarUrl({
+                        market: trade.market,
+                        slug: trade.marketSlug,
+                        eventSlug: trade.eventSlug,
+                    }) ?? undefined,
+                    currentPrice: undefined,
+                    };
+
+                    existing.firstTimestamp = Math.min(existing.firstTimestamp, trade.timestamp);
+                    existing.lastTimestamp = Math.max(existing.lastTimestamp, trade.timestamp);
+
+                    if (trade.side === 'BUY') {
+                      existing.totalBought += trade.size;
+                      existing.buyNotional += trade.size * trade.price;
+                      existing.size += trade.size;
+                      existing.avgCost = existing.totalBought > 0 ? existing.buyNotional / existing.totalBought : 0;
+                    } else {
+                      const sellQty = trade.size;
+                      existing.sellNotional += sellQty * trade.price;
+                      existing.size -= sellQty;
+                    }
+
+                    if (existing.currentPrice === undefined) {
+                      existing.currentPrice = priceFor(trade) ?? undefined;
+                    }
+
+                    positionMap.set(key, existing);
+                  }
+
+                  const topPositions = Array.from(positionMap.values())
+                    .map((position) => {
+                      const currentPrice = position.currentPrice ?? priceFor(position.sampleTrade);
+                      const openValue =
+                        currentPrice !== null && Number.isFinite(currentPrice)
+                          ? position.size * currentPrice
+                          : 0;
+                      const isClosed = Math.abs(position.size) < 1e-9;
+                      const amountWon = isClosed ? position.sellNotional : position.sellNotional + openValue;
+                      const invested = position.buyNotional;
+                      const pnl = amountWon - invested;
+                      const roi = invested > 0 ? (pnl / invested) * 100 : 0;
+
                       return {
-                        ...t,
-                        currentPrice: currentPrice,
-                        roi: ((currentPrice - t.price) / t.price) * 100,
+                        ...position,
+                        currentPrice,
                         invested,
-                        currentValue,
+                        amountWon,
                         pnl,
-                        marketAvatar,
+                        roi,
+                        isClosed,
                       };
                     })
-                    .filter(t => t.price && t.price > 0 && t.pnl > 0) // Only closed winners with valid entry price
+                    .filter((position) => position.isClosed && position.invested > 0 && position.pnl > 0)
                     .sort((a, b) => b.pnl - a.pnl)
                     .slice(0, 5);
 
-                  if (tradesWithROI.length === 0) {
+                  if (topPositions.length === 0) {
                     return (
                       <div className="text-center py-8">
                         <p className="text-slate-500 mb-2">No trade data available yet</p>
@@ -3054,7 +3096,7 @@ export default function TraderProfilePage({
                         <span>Amount Won</span>
                       </div>
                       <div className="divide-y divide-slate-100">
-                        {tradesWithROI.map((trade, index) => (
+                        {topPositions.map((trade, index) => (
                           <div key={index} className="grid grid-cols-1 gap-5 px-4 py-5 md:grid-cols-4 md:items-center">
                             <div className="flex items-start gap-3">
                               {trade.marketAvatar ? (
@@ -3072,7 +3114,7 @@ export default function TraderProfilePage({
                                 <p className="text-base font-semibold text-slate-900">{trade.market}</p>
                                 <p className="text-sm text-slate-500">
                                   {(() => {
-                                    const date = new Date(trade.timestamp);
+                                    const date = new Date(trade.lastTimestamp);
                                     return date.toLocaleDateString('en-US', {
                                       month: 'short',
                                       day: 'numeric',
@@ -3100,12 +3142,12 @@ export default function TraderProfilePage({
                               <p className="font-semibold text-slate-900">
                                 {formatSignedCurrency(trade.invested, 2)}
                               </p>
-                              <p className="text-sm text-slate-500">{trade.size.toFixed(1)} contracts</p>
+                              <p className="text-sm text-slate-500">{trade.totalBought.toFixed(1)} contracts</p>
                             </div>
                             <div className="space-y-1 text-base text-slate-700">
                               <span className="text-xs text-slate-500 md:hidden">Amount Won</span>
                               <p className="font-semibold text-slate-900">
-                                {formatSignedCurrency(trade.currentValue, 2)}
+                                {formatSignedCurrency(trade.amountWon, 2)}
                               </p>
                               <p
                                 className={cn(
