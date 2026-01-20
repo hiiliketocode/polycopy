@@ -97,6 +97,31 @@ interface RealizedPnlRow {
   pnl_to_date: number | null;
 }
 
+interface MyTradeStatsSummary {
+  totalPnl: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  totalVolume: number;
+  roi: number;
+  winRate: number;
+  totalTrades: number;
+  openTrades: number;
+  closedTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+}
+
+interface MyTradeStatsResponse {
+  trader: MyTradeStatsSummary;
+  overall: MyTradeStatsSummary;
+  shares: {
+    tradesPct: number | null;
+    pnlPct: number | null;
+    winsPct: number | null;
+    lossesPct: number | null;
+  };
+}
+
 const pnlWindowOptions = [
   { key: '1D', label: 'Yesterday', range: 'rolling', days: 1 },
   { key: '7D', label: 'Last 7 Days', range: 'rolling', days: 7 },
@@ -195,6 +220,8 @@ export default function TraderProfilePage({
     total: number | null;
     delta: number | null;
   }>>({});
+  const [myTradeStats, setMyTradeStats] = useState<MyTradeStatsResponse | null>(null);
+  const [myTradeStatsLoading, setMyTradeStatsLoading] = useState(false);
   
   // Copy wallet address state
   const [walletCopied, setWalletCopied] = useState(false);
@@ -510,6 +537,45 @@ export default function TraderProfilePage({
 
     loadRealizedPnl();
   }, [wallet]);
+
+  useEffect(() => {
+    if (!wallet || !user) {
+      setMyTradeStats(null);
+      setMyTradeStatsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadMyTradeStats = async () => {
+      setMyTradeStatsLoading(true);
+      try {
+        const response = await fetch(`/api/trader/${wallet}/my-stats`, { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error('Failed to load my trade stats');
+        }
+        const data = await response.json();
+        if (!cancelled) {
+          setMyTradeStats(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Error loading my trade stats:', err);
+          setMyTradeStats(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setMyTradeStatsLoading(false);
+        }
+      }
+    };
+
+    loadMyTradeStats();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet, user]);
 
   // Check follow status
   useEffect(() => {
@@ -1304,6 +1370,12 @@ export default function TraderProfilePage({
     return `${num > 0 ? '+' : ''}${num.toFixed(1)}%`;
   };
 
+  const formatShare = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return '—';
+    if (!Number.isFinite(value)) return '—';
+    return `${value.toFixed(1)}%`;
+  };
+
   const pnlWindowLabel = useMemo(
     () => pnlWindowOptions.find((option) => option.key === pnlWindow)?.label ?? '30 Days',
     [pnlWindow]
@@ -1605,6 +1677,7 @@ export default function TraderProfilePage({
   // Win rate: Calculated from scorable positions (closed or priced open) with positive ROI
   // Show N/A only if we have no scorable positions
   const effectiveWinRate = traderData.winRate ?? (computedStats && computedStats.winRate !== null && computedStats.winRate !== undefined ? computedStats.winRate : null);
+  const hasMyTradeStats = Boolean(myTradeStats && myTradeStats.trader.totalTrades > 0);
 
   console.log('📊 Trader Profile Stats Priority:', {
     wallet: wallet.substring(0, 8),
@@ -1674,27 +1747,75 @@ export default function TraderProfilePage({
             </div>
 
             {/* Follow Button */}
-            <div className="w-full sm:w-auto sm:ml-auto">
-              {following ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleFollowToggle}
-                  disabled={followLoading}
-                  className="border-slate-300 text-slate-700 hover:bg-slate-50 gap-1.5 px-3 w-full sm:w-auto justify-center"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  Following
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  onClick={handleFollowToggle}
-                  disabled={followLoading}
-                  className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm px-4 w-full sm:w-auto justify-center"
-                >
-                  Follow
-                </Button>
+            <div className="w-full sm:w-[260px] sm:ml-auto flex flex-col gap-3">
+              <div>
+                {following ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleFollowToggle}
+                    disabled={followLoading}
+                    className="border-slate-300 text-slate-700 hover:bg-slate-50 gap-1.5 px-3 w-full sm:w-auto justify-center"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    Following
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={handleFollowToggle}
+                    disabled={followLoading}
+                    className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm px-4 w-full sm:w-auto justify-center"
+                  >
+                    Follow
+                  </Button>
+                )}
+              </div>
+              {hasMyTradeStats && myTradeStats && (
+                <Card className="border-slate-200 bg-slate-50/70 p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-semibold text-slate-800">My Trades</p>
+                    <p className="text-[11px] text-slate-500">Your activity</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-xs text-slate-500">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Trades</p>
+                      <p className="text-sm font-semibold text-slate-900">{myTradeStats.trader.totalTrades}</p>
+                      <p className="text-[11px] text-slate-500">{formatShare(myTradeStats.shares.tradesPct)} of total</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Volume</p>
+                      <p className="text-sm font-semibold text-slate-900">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Total P&amp;L</p>
+                      <p className={`text-sm font-semibold ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                        {formatSignedCurrency(myTradeStats.trader.totalPnl)}
+                      </p>
+                      <p className="text-[11px] text-slate-500">{formatShare(myTradeStats.shares.pnlPct)} of total</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Wins</p>
+                      <p className="text-sm font-semibold text-slate-900">{myTradeStats.trader.winningTrades}</p>
+                      <p className="text-[11px] text-slate-500">{formatShare(myTradeStats.shares.winsPct)} of wins</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Losses</p>
+                      <p className="text-sm font-semibold text-slate-900">{myTradeStats.trader.losingTrades}</p>
+                      <p className="text-[11px] text-slate-500">{formatShare(myTradeStats.shares.lossesPct)} of losses</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Open</p>
+                      <p className="text-sm font-semibold text-slate-900">{myTradeStats.trader.openTrades}</p>
+                      <p className="text-[11px] text-slate-500">Open positions</p>
+                    </div>
+                  </div>
+                </Card>
+              )}
+              {myTradeStatsLoading && !hasMyTradeStats && (
+                <Card className="border-slate-200 bg-slate-50/60 p-4 shadow-sm">
+                  <p className="text-xs text-slate-500">Loading your trade stats...</p>
+                </Card>
               )}
             </div>
           </div>
