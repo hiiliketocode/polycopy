@@ -186,6 +186,11 @@ export default function TraderProfilePage({
   const [realizedPnlError, setRealizedPnlError] = useState<string | null>(null);
   const [pnlWindow, setPnlWindow] = useState<PnlWindowKey>('30D');
   const [pnlView, setPnlView] = useState<'daily' | 'cumulative'>('daily');
+  const [rankingsByWindow, setRankingsByWindow] = useState<Record<string, {
+    rank: number | null;
+    total: number | null;
+    delta: number | null;
+  }>>({});
   
   // Copy wallet address state
   const [walletCopied, setWalletCopied] = useState(false);
@@ -483,10 +488,16 @@ export default function TraderProfilePage({
               .sort((a: RealizedPnlRow, b: RealizedPnlRow) => new Date(a.date).getTime() - new Date(b.date).getTime())
           : [];
         setRealizedPnlRows(daily);
+        if (data?.rankings && typeof data.rankings === 'object') {
+          setRankingsByWindow(data.rankings);
+        } else {
+          setRankingsByWindow({});
+        }
       } catch (err: any) {
         console.error('Error fetching realized PnL:', err);
         setRealizedPnlRows([]);
         setRealizedPnlError(err?.message || 'Failed to load realized PnL');
+        setRankingsByWindow({});
       } finally {
         setLoadingRealizedPnl(false);
       }
@@ -1318,11 +1329,12 @@ export default function TraderProfilePage({
     const daysUp = realizedWindowRows.filter((row) => row.realized_pnl > 0).length;
     const daysDown = realizedWindowRows.filter((row) => row.realized_pnl < 0).length;
     const daysActive = realizedWindowRows.filter((row) => row.realized_pnl !== 0).length;
-    const rankEstimate = realizedWindowRows.length > 0
-      ? Math.max(1, Math.min(1000, Math.round(500 - totalPnl / 250)))
-      : null;
-    return { totalPnl, avgDaily, daysUp, daysDown, daysActive, rankEstimate };
+    return { totalPnl, avgDaily, daysUp, daysDown, daysActive };
   }, [realizedWindowRows]);
+
+  const rankInfo = useMemo(() => {
+    return rankingsByWindow[pnlWindow] ?? { rank: null, total: null, delta: null };
+  }, [rankingsByWindow, pnlWindow]);
 
   const realizedRangeLabel = useMemo(() => {
     if (realizedWindowRows.length === 0) return pnlWindowLabel;
@@ -2295,9 +2307,20 @@ export default function TraderProfilePage({
                     <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
                       <p className="text-sm font-semibold text-slate-600">Platform Rank</p>
                       <p className="mt-2 text-3xl font-semibold text-slate-900">
-                        {realizedSummary.rankEstimate ? `#${realizedSummary.rankEstimate}` : '--'}
+                        {rankInfo.rank ? `#${rankInfo.rank}` : '--'}
                       </p>
-                      <p className="text-xs text-slate-500 mt-1">of 1,000 traders (preview)</p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {rankInfo.total ? `of ${rankInfo.total} traders` : 'Ranking pending'}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {rankInfo.delta === null || rankInfo.delta === undefined
+                          ? 'No prior rank'
+                          : rankInfo.delta === 0
+                            ? 'No change'
+                            : rankInfo.delta > 0
+                              ? `Up ${rankInfo.delta}`
+                              : `Down ${Math.abs(rankInfo.delta)}`}
+                      </p>
                     </div>
                   </div>
 

@@ -73,6 +73,7 @@ const ESPN_SPORT_GROUPS: Record<SportGroup, string[]> = {
     'soccer_uefa_champions',
     'soccer_uefa_europa',
     'soccer_uefa_conference',
+    'soccer_liga_mx',
     'soccer_fifa_world_cup',
     'soccer_fifa_womens_world_cup',
     'soccer_uefa_euro',
@@ -160,7 +161,7 @@ function detectSportType(title: string, category?: string | null): SportGroup | 
   if (mlbTeams.some(team => titleLower.includes(team))) return 'mlb';
   if (nhlTeams.some(team => titleLower.includes(team))) return 'nhl';
 
-  if (titleLower.match(/\b(premier league|la liga|serie a|bundesliga|ligue 1|eredivisie|primeira|uefa|champions league|europa league|conference league|world cup|fifa|copa|conmebol|concacaf|afc|caf|mls)\b/)) {
+  if (titleLower.match(/\b(premier league|la liga|serie a|bundesliga|ligue 1|eredivisie|primeira|uefa|champions league|europa league|conference league|world cup|fifa|copa|conmebol|concacaf|afc|caf|mls|liga mx|ligamx)\b/)) {
     return 'soccer';
   }
 
@@ -176,7 +177,7 @@ function detectSportType(title: string, category?: string | null): SportGroup | 
   }
 
   if (categoryLower === 'sports') {
-    if (titleLower.match(/\b(premier league|premiership|epl|uefa|champions league|europa league|conference league|fa cup|carabao|community shield)\b/)) {
+    if (titleLower.match(/\b(premier league|premiership|epl|uefa|champions league|europa league|conference league|fa cup|carabao|community shield|liga mx|ligamx)\b/)) {
       return 'soccer';
     }
     if (titleLower.match(/\b(afc|cf|fc)\b/) && titleLower.match(/\bwin\b/)) {
@@ -239,6 +240,17 @@ function detectSportType(title: string, category?: string | null): SportGroup | 
     'chivas',
     'pumas',
     'cruz azul',
+    'club america',
+    'atlas',
+    'pachuca',
+    'toluca',
+    'leon',
+    'santos laguna',
+    'necaxa',
+    'queretaro',
+    'tijuana',
+    'juarez',
+    'mazatlan',
     'inter miami',
     'al nassr',
     'al hilal',
@@ -265,6 +277,53 @@ function detectSportType(title: string, category?: string | null): SportGroup | 
   if (titleLower.match(/\bboxing\b/)) return 'boxing';
 
   return null;
+}
+
+function isLikelySportsTitle(title: string, category?: string | null): boolean {
+  const titleLower = title.toLowerCase();
+  const categoryLower = category ? category.toLowerCase() : '';
+
+  if (categoryLower === 'sports') return true;
+
+  if (
+    titleLower.includes(' vs ') ||
+    titleLower.includes(' vs.') ||
+    titleLower.includes(' v ') ||
+    titleLower.includes(' @ ') ||
+    titleLower.includes(' versus ')
+  ) {
+    return true;
+  }
+
+  return [
+    'nfl',
+    'nba',
+    'wnba',
+    'mlb',
+    'nhl',
+    'ncaa',
+    'soccer',
+    'football',
+    'basketball',
+    'baseball',
+    'hockey',
+    'tennis',
+    'golf',
+    'mma',
+    'ufc',
+    'boxing',
+    'wimbledon',
+    'roland garros',
+    'australian open',
+    'us open',
+    'atp',
+    'wta',
+    'liga mx',
+    'ligamx',
+    'world cup',
+    'champions league',
+    'premier league',
+  ].some(term => titleLower.includes(term));
 }
 
 // Extract team names from market title
@@ -649,7 +708,7 @@ export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<s
     const sport = detectSportType(trade.market.title, trade.market.category);
     if (sport && sportGroups[sport]) {
       sportGroups[sport].push(trade);
-    } else if (trade.market.category?.toLowerCase() === 'sports') {
+    } else if (isLikelySportsTitle(trade.market.title, trade.market.category)) {
       unknownTrades.push(trade);
     }
   });

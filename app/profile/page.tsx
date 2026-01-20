@@ -2879,40 +2879,40 @@ function ProfilePageContent() {
                                 </td>
                                 <td className="px-3 py-2 align-top md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <div className="mt-1 flex items-start gap-2 md:gap-3">
-                                    <div className="flex flex-col items-start gap-1 shrink-0">
-                                      <span className={cn("inline-flex", statusBadgeClass)}>
-                                        {displayStatus}
-                                      </span>
-                                      <div className="h-7 w-7 md:h-8 md:w-8 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200">
-                                        {trade.market_avatar_url ? (
-                                          <img
-                                            src={trade.market_avatar_url}
-                                            alt={trade.market_title}
-                                            className="h-full w-full object-cover"
-                                          />
-                                        ) : (
-                                          <span className="flex h-full w-full items-center justify-center text-[11px] font-semibold text-slate-500">
-                                            {trade.market_title.slice(0, 2)}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="min-w-0 md:max-w-[260px] pt-0.5">
-                                      {trade.market_slug ? (
-                                        <a
-                                          href={`https://polymarket.com/market/${trade.market_slug}`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-sm font-semibold text-slate-900 hover:underline line-clamp-2"
-                                          onClick={(event) => event.stopPropagation()}
-                                        >
-                                          {trade.market_title}
-                                        </a>
+                                    <div className="h-7 w-7 md:h-8 md:w-8 shrink-0 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200">
+                                      {trade.market_avatar_url ? (
+                                        <img
+                                          src={trade.market_avatar_url}
+                                          alt={trade.market_title}
+                                          className="h-full w-full object-cover"
+                                        />
                                       ) : (
-                                        <span className="text-sm font-semibold text-slate-900 line-clamp-2">
-                                          {trade.market_title}
+                                        <span className="flex h-full w-full items-center justify-center text-[11px] font-semibold text-slate-500">
+                                          {trade.market_title.slice(0, 2)}
                                         </span>
                                       )}
+                                    </div>
+                                    <div className="min-w-0 md:max-w-[260px]">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        {trade.market_slug ? (
+                                          <a
+                                            href={`https://polymarket.com/market/${trade.market_slug}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-sm font-semibold text-slate-900 hover:underline line-clamp-2"
+                                            onClick={(event) => event.stopPropagation()}
+                                          >
+                                            {trade.market_title}
+                                          </a>
+                                        ) : (
+                                          <span className="text-sm font-semibold text-slate-900 line-clamp-2">
+                                            {trade.market_title}
+                                          </span>
+                                        )}
+                                        <span className={cn("inline-flex", statusBadgeClass)}>
+                                          {displayStatus}
+                                        </span>
+                                      </div>
                                     </div>
                                   </div>
                                 </td>
@@ -2957,25 +2957,29 @@ function ProfilePageContent() {
                                 </td>
                                 <td className="px-3 py-2 align-top text-right md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <div className="mt-1 flex flex-col items-end gap-1">
-                                    {canCopyAgain && (
-                                      <Button
-                                        onClick={() => handleCopyAgain(trade)}
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-6 px-3 text-[11px] font-semibold text-amber-700 border border-amber-300 bg-white hover:bg-amber-50 hover:text-amber-700"
-                                      >
-                                        Copy Again
-                                      </Button>
-                                    )}
-                                    {canSell && (
-                                      <Button
-                                        onClick={() => handleSellTrade(trade)}
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-6 px-3 text-[11px] font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 hover:text-red-600"
-                                      >
-                                        Sell
-                                      </Button>
+                                    {(canCopyAgain || canSell) && (
+                                      <div className="flex items-center gap-2">
+                                        {canCopyAgain && (
+                                          <Button
+                                            onClick={() => handleCopyAgain(trade)}
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 px-3 text-[11px] font-semibold text-amber-700 border border-amber-300 bg-white hover:bg-amber-50 hover:text-amber-700"
+                                          >
+                                            Copy Again
+                                          </Button>
+                                        )}
+                                        {canSell && (
+                                          <Button
+                                            onClick={() => handleSellTrade(trade)}
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 px-3 text-[11px] font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 hover:text-red-600"
+                                          >
+                                            Sell
+                                          </Button>
+                                        )}
+                                      </div>
                                     )}
                                     {(trade.type === 'quick' && trade.raw) || trade.type === 'manual' ? (
                                       <button

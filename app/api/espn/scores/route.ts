@@ -102,6 +102,7 @@ const SPORT_ENDPOINTS: Record<string, string> = {
   soccer_uefa_champions: 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard',
   soccer_uefa_europa: 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.europa/scoreboard',
   soccer_uefa_conference: 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.europa.conf/scoreboard',
+  soccer_liga_mx: 'https://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/scoreboard',
   soccer_fifa_world_cup: 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard',
   soccer_fifa_womens_world_cup: 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.womens.world/scoreboard',
   soccer_uefa_euro: 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.euro/scoreboard',

@@ -7,6 +7,12 @@ type PnlRow = {
   pnl_to_date: number | string | null
 }
 
+type RankRow = {
+  window_key: string
+  rank: number | null
+  total_traders: number | null
+}
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
@@ -125,9 +131,40 @@ export async function GET(
     }
   })
 
+  const currentKeys = ['1D', '7D', '30D', '3M', '6M', 'ALL']
+  const prevKeys = ['1D_PREV', '7D_PREV', '30D_PREV', '3M_PREV', '6M_PREV']
+  const { data: rankRows } = await supabase
+    .from('wallet_realized_pnl_rankings')
+    .select('window_key, rank, total_traders')
+    .eq('wallet_address', normalizedWallet)
+    .in('window_key', [...currentKeys, ...prevKeys])
+
+  const rankMap = new Map<string, RankRow>()
+  for (const row of (rankRows as RankRow[] | null | undefined) ?? []) {
+    rankMap.set(row.window_key, row)
+  }
+
+  const rankings = currentKeys.reduce<Record<string, { rank: number | null; total: number | null; delta: number | null }>>(
+    (acc, key) => {
+      const current = rankMap.get(key)
+      const prev = rankMap.get(`${key}_PREV`)
+      const currentRank = typeof current?.rank === 'number' ? current.rank : null
+      const prevRank = typeof prev?.rank === 'number' ? prev.rank : null
+      const delta = currentRank !== null && prevRank !== null ? prevRank - currentRank : null
+      acc[key] = {
+        rank: currentRank,
+        total: typeof current?.total_traders === 'number' ? current.total_traders : null,
+        delta,
+      }
+      return acc
+    },
+    {}
+  )
+
   return NextResponse.json({
     daily: parsed,
     summaries,
-    volume
+    volume,
+    rankings
   })
 }
