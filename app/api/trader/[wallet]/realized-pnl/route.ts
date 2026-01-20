@@ -133,11 +133,7 @@ export async function GET(
 
   const currentKeys = ['1D', '7D', '30D', '3M', '6M', 'ALL']
   const prevKeys = ['1D_PREV', '7D_PREV', '30D_PREV', '3M_PREV', '6M_PREV']
-  const lastIndex = parsed.length - 1
-  const hasTodayRow = lastIndex >= 0 && parsed[lastIndex].date === todayStr
-  const usePreviousWindows = hasTodayRow && parsed.length > 1
-  const sourceKeys = currentKeys.map((key) => (usePreviousWindows && key !== 'ALL' ? `${key}_PREV` : key))
-  const rankKeys = usePreviousWindows ? sourceKeys : [...currentKeys, ...prevKeys]
+  const rankKeys = [...currentKeys, ...prevKeys]
   const { data: rankRows } = await supabase
     .from('wallet_realized_pnl_rankings')
     .select('window_key, rank, total_traders')
@@ -151,12 +147,11 @@ export async function GET(
 
   const rankings = currentKeys.reduce<Record<string, { rank: number | null; total: number | null; delta: number | null }>>(
     (acc, key) => {
-      const sourceKey = usePreviousWindows && key !== 'ALL' ? `${key}_PREV` : key
-      const current = rankMap.get(sourceKey)
-      const prev = usePreviousWindows ? null : rankMap.get(`${key}_PREV`)
+      const current = rankMap.get(key)
+      const prev = rankMap.get(`${key}_PREV`)
       const currentRank = typeof current?.rank === 'number' ? current.rank : null
       const prevRank = typeof prev?.rank === 'number' ? prev.rank : null
-      const delta = !usePreviousWindows && currentRank !== null && prevRank !== null ? prevRank - currentRank : null
+      const delta = currentRank !== null && prevRank !== null ? prevRank - currentRank : null
       acc[key] = {
         rank: currentRank,
         total: typeof current?.total_traders === 'number' ? current.total_traders : null,

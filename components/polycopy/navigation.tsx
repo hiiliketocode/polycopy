@@ -36,6 +36,13 @@ const FeedIcon = ({ className }: { className?: string }) => (
 const LOW_BALANCE_TOOLTIP =
   "Quick trades use your Polymarket USDC balance. Add funds before retrying this order."
 
+const usdFormatter = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+const formatUsd = (value: number) => `$${usdFormatter.format(value)}`
+
 export function Navigation({ user, isPremium = false, walletAddress = null, profileImageUrl = null }: NavigationProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -381,7 +388,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                       Portfolio
                     </div>
                     <div className="text-xs font-medium text-emerald-600">
-                      {loadingBalance ? '...' : portfolioValue !== null ? `$${portfolioValue.toFixed(2)}` : '$0.00'}
+                      {loadingBalance ? "..." : portfolioValue !== null ? formatUsd(portfolioValue) : "$0.00"}
                     </div>
                   </div>
                   <div className="text-center">
@@ -406,7 +413,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                       )}
                     </div>
                     <div className="text-xs font-medium text-slate-600">
-                      {loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toFixed(2)}` : '$0.00'}
+                      {loadingBalance ? "..." : cashBalance !== null ? formatUsd(cashBalance) : "$0.00"}
                     </div>
                   </div>
                 </div>

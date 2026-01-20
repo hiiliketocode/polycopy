@@ -2370,14 +2370,6 @@ export default function TraderProfilePage({
 
         {activeTab === 'performance' && (
           <div className="space-y-6">
-            {/* Header Section */}
-            <div className="mb-6">
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Historical Performance</h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Realized PnL is sourced from Dome (realized-only). Position sizing/category charts below still use the most recent 100 trades.
-              </p>
-            </div>
-
             {/* Realized PnL (Dome) */}
             <Card className="p-6">
               <div className="flex flex-col gap-5">

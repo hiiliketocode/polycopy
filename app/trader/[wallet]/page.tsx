@@ -1809,9 +1809,9 @@ export default function TraderProfilePage({
                 </p>
               </div>
 
-              <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="rounded-2xl p-4">
                 <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
               <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 ROI
                 <TooltipProvider>
@@ -1827,11 +1827,11 @@ export default function TraderProfilePage({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className={`text-2xl font-semibold ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+              <div className={`text-2xl font-semibold break-words leading-tight ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                 {effectiveVolume > 0 ? formatPercentage(effectiveRoiValue) : 'N/A'}
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
               <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 Lifetime Realized P&amp;L
                 <TooltipProvider>
@@ -1847,11 +1847,11 @@ export default function TraderProfilePage({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className={`text-2xl font-semibold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+              <div className={`text-2xl font-semibold break-words leading-tight ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                 {effectivePnl >= 0 ? '+' : ''}{formatCurrency(effectivePnl)}
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
               <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 Win Rate
                 <TooltipProvider>
@@ -1867,11 +1867,11 @@ export default function TraderProfilePage({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className="text-2xl font-semibold text-slate-900">
+              <div className="text-2xl font-semibold text-slate-900 break-words leading-tight">
                 {effectiveWinRate !== null && Number.isFinite(effectiveWinRate) ? `${effectiveWinRate.toFixed(1)}%` : 'N/A'}
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
               <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 Volume
                 <TooltipProvider>
@@ -1887,9 +1887,9 @@ export default function TraderProfilePage({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className="text-2xl font-semibold text-slate-900">{formatCurrency(effectiveVolume)}</div>
+              <div className="text-2xl font-semibold text-slate-900 break-words leading-tight">{formatCurrency(effectiveVolume)}</div>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
               <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 Best Position
                 <TooltipProvider>
@@ -1905,7 +1905,7 @@ export default function TraderProfilePage({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className="text-2xl font-semibold text-slate-900">
+              <div className="text-2xl font-semibold text-slate-900 break-words leading-tight">
                 {(() => {
                   if (trades.length === 0) return '$0';
                   const maxNotional = Math.max(...trades.map(t => (t.size || 0) * (t.price || 0)));
@@ -1913,7 +1913,7 @@ export default function TraderProfilePage({
                 })()}
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
               <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 Total Trades
                 <TooltipProvider>
@@ -1929,14 +1929,14 @@ export default function TraderProfilePage({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className="text-2xl font-semibold text-slate-900">
+              <div className="text-2xl font-semibold text-slate-900 break-words leading-tight">
                 {(() => {
                   const count = trades.length;
                   return count === 100 ? '100+' : count;
                 })()}
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
               <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 Net P&amp;L / Trade
                 <TooltipProvider>
@@ -1952,14 +1952,14 @@ export default function TraderProfilePage({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className={`text-2xl font-semibold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+              <div className={`text-2xl font-semibold break-words leading-tight ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                 {(() => {
                   const avgPnL = trades.length > 0 ? effectivePnl / trades.length : 0;
                   return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
                 })()}
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
               <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 Open Positions
                 <TooltipProvider>
@@ -1975,11 +1975,11 @@ export default function TraderProfilePage({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className="text-2xl font-semibold text-slate-900">
+              <div className="text-2xl font-semibold text-slate-900 break-words leading-tight">
                 {trades.filter(t => t.status === 'Open').length}
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
               <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
                 Avg P&amp;L / Trade
                 <TooltipProvider>
@@ -1995,7 +1995,7 @@ export default function TraderProfilePage({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className={`text-2xl font-semibold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+              <div className={`text-2xl font-semibold break-words leading-tight ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                 {(() => {
                   const avgPnL = trades.length > 0 ? effectivePnl / trades.length : 0;
                   return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
@@ -2014,43 +2014,43 @@ export default function TraderProfilePage({
                 {myTradeStatsLoading ? (
                   <p className="text-sm text-slate-500">Loading your trade stats...</p>
                 ) : hasMyTradeStats && myTradeStats ? (
-                  <div className="rounded-2xl bg-slate-50 p-4">
+                  <div className="rounded-2xl p-4">
                     <div className="grid grid-cols-2 gap-4 text-sm text-slate-600">
-                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
                         <p className="text-sm font-medium text-slate-600">Trades</p>
-                        <p className="text-xl font-semibold text-slate-900">{myTradeStats.trader.totalTrades}</p>
+                        <p className="text-xl font-semibold text-slate-900 break-words leading-tight">{myTradeStats.trader.totalTrades}</p>
                         <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.tradesPct)} of total</p>
                       </div>
-                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
                         <p className="text-sm font-medium text-slate-600">Volume</p>
-                        <p className="text-xl font-semibold text-slate-900">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
+                        <p className="text-xl font-semibold text-slate-900 break-words leading-tight">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
                       </div>
-                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
                         <p className="text-sm font-medium text-slate-600">Total P&amp;L</p>
-                        <p className={`text-xl font-semibold ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                        <p className={`text-xl font-semibold break-words leading-tight ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                           {formatSignedCurrency(myTradeStats.trader.totalPnl)}
                         </p>
                         <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.pnlPct)} of total</p>
                       </div>
-                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
                         <p className="text-sm font-medium text-slate-600">Wins</p>
-                        <p className="text-xl font-semibold text-slate-900">{myTradeStats.trader.winningTrades}</p>
+                        <p className="text-xl font-semibold text-slate-900 break-words leading-tight">{myTradeStats.trader.winningTrades}</p>
                         <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.winsPct)} of wins</p>
                       </div>
-                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
                         <p className="text-sm font-medium text-slate-600">Losses</p>
-                        <p className="text-xl font-semibold text-slate-900">{myTradeStats.trader.losingTrades}</p>
+                        <p className="text-xl font-semibold text-slate-900 break-words leading-tight">{myTradeStats.trader.losingTrades}</p>
                         <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.lossesPct)} of losses</p>
                       </div>
-                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
                         <p className="text-sm font-medium text-slate-600">Open positions</p>
-                        <p className="text-xl font-semibold text-slate-900">{myTradeStats.trader.openTrades}</p>
+                        <p className="text-xl font-semibold text-slate-900 break-words leading-tight">{myTradeStats.trader.openTrades}</p>
                         <p className="text-xs text-slate-500">Open right now</p>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+                  <div className="rounded-2xl border border-slate-200/70 p-4 text-sm text-slate-500">
                     You have not copied {traderData.displayName} yet.
                   </div>
                 )}
@@ -2526,12 +2526,6 @@ export default function TraderProfilePage({
 
         {activeTab === 'performance' && (
           <div className="space-y-6">
-            {/* Header Section */}
-            <div className="mb-6">
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Historical Performance</h2>
-              <p className="text-sm text-slate-500 mt-1">The data below covers this trader's last 100 trades. Please note this does not cover complete historical performance data.</p>
-            </div>
-
             <Card className="border-slate-200/80 bg-white/90 p-6">
               <div className="space-y-6">
                 <div className="flex flex-col gap-3">
@@ -3052,7 +3046,7 @@ export default function TraderProfilePage({
                         <span>Market</span>
                         <span>Outcome</span>
                         <span>Amount Invested</span>
-                        <span>Current Value</span>
+                        <span>Amount Won</span>
                       </div>
                       <div className="divide-y divide-slate-100">
                         {tradesWithROI.map((trade, index) => (
@@ -3104,7 +3098,7 @@ export default function TraderProfilePage({
                               <p className="text-sm text-slate-500">{trade.size.toFixed(1)} contracts</p>
                             </div>
                             <div className="space-y-1 text-base text-slate-700">
-                              <span className="text-xs text-slate-500 md:hidden">Current Value</span>
+                              <span className="text-xs text-slate-500 md:hidden">Amount Won</span>
                               <p className="font-semibold text-slate-900">
                                 {formatSignedCurrency(trade.currentValue, 2)}
                               </p>
