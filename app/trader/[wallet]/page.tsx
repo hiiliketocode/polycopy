@@ -47,6 +47,7 @@ interface TraderData {
   profileImage?: string | null;
   roi?: number;
   tradesCount?: number;
+  winRate?: number | null;
 }
 
 interface Trade {
@@ -85,7 +86,7 @@ interface TraderComputedStats {
   unrealizedPnl: number;
   volume: number;
   roi: number;
-  winRate: number;
+  winRate: number | null;
 }
 
 interface RealizedPnlRow {
@@ -1426,30 +1427,29 @@ export default function TraderProfilePage({
       
       const sample = p.sampleTrade || trades.find((t) => keyFor(t) === key);
       if (!sample) return;
-      
-      // Always count this position in win rate calculation
-      totalPositions += 1;
-      
-      // Determine if this position is a winner
+
+      // Only count positions we can actually score
       let isWinner = false;
-      
+      let isScorable = false;
+
       // For closed positions (size = 0), check realized profit
       if (Math.abs(p.size) < 1e-9) {
+        isScorable = true;
         isWinner = p.realized > 0;
-      } 
-      // For open positions, check if current price > entry price
-      else {
+      } else {
+        // For open positions, use live price if available
         const currentPrice = priceForTrade(sample);
-        // Only count as winner if we have current price AND it's above entry
-        // If no current price available, count as neutral (not winner, not loser)
-        if (currentPrice !== null) {
+        if (currentPrice !== null && Number.isFinite(currentPrice)) {
+          isScorable = true;
           const unrealizedPnl = (currentPrice - p.avgCost) * p.size;
           isWinner = unrealizedPnl > 0;
         }
-        // If currentPrice is null, isWinner stays false (neutral position)
       }
-      
-      if (isWinner) winningPositions += 1;
+
+      if (isScorable) {
+        totalPositions += 1;
+        if (isWinner) winningPositions += 1;
+      }
     });
 
     let unrealizedPnl = 0;
@@ -1464,7 +1464,7 @@ export default function TraderProfilePage({
 
     const totalPnl = realizedPnl + unrealizedPnl;
     const roi = volume > 0 ? (totalPnl / volume) * 100 : 0;
-    // Win rate: percentage of ALL positions (open + closed) with positive ROI
+    // Win rate: percentage of scorable positions (closed or priced open) with positive ROI
     const winRate = totalPositions > 0 ? (winningPositions / totalPositions) * 100 : null;
 
     console.log('🧮 Computed stats from trades:', {
@@ -1472,10 +1472,10 @@ export default function TraderProfilePage({
       totalPnl: totalPnl.toFixed(2),
       volume: volume.toFixed(2),
       roi: roi.toFixed(1) + '%',
-      winRate: winRate !== null ? winRate.toFixed(1) + '%' : 'N/A (no positions yet)',
+      winRate: winRate !== null ? winRate.toFixed(1) + '%' : 'N/A (no scorable positions)',
       totalPositions,
       winningPositions,
-      note: 'Win rate = % of ALL positions (open + closed) with positive ROI (current price > entry price)'
+      note: 'Win rate = % of scorable positions (closed or priced open) with positive ROI'
     });
 
     setComputedStats({
@@ -1484,7 +1484,7 @@ export default function TraderProfilePage({
       unrealizedPnl,
       volume,
       roi,
-      winRate: winRate ?? 0, // Store 0 if null, but we'll display N/A in UI
+      winRate,
     });
   }, [trades, liveMarketData]);
 
@@ -1552,9 +1552,9 @@ export default function TraderProfilePage({
   const effectivePnl = traderData.pnl ?? computedStats?.totalPnl ?? 0;
   const effectiveVolume = traderData.volume ?? computedStats?.volume ?? 0;
   const effectiveRoiValue = traderData.roi ?? computedStats?.roi ?? (effectiveVolume > 0 ? (effectivePnl / effectiveVolume) * 100 : 0);
-  // Win rate: Calculated from ALL positions (open + closed) with positive ROI
-  // Show N/A only if we have no positions at all
-  const effectiveWinRate = (computedStats && computedStats.winRate !== null && computedStats.winRate !== undefined) ? computedStats.winRate : null;
+  // Win rate: Calculated from scorable positions (closed or priced open) with positive ROI
+  // Show N/A only if we have no scorable positions
+  const effectiveWinRate = traderData.winRate ?? (computedStats && computedStats.winRate !== null && computedStats.winRate !== undefined ? computedStats.winRate : null);
 
   console.log('📊 Trader Profile Stats Priority:', {
     wallet: wallet.substring(0, 8),
@@ -1654,7 +1654,7 @@ export default function TraderProfilePage({
             <h3 className="text-sm font-semibold text-slate-700 mb-2">Performance Stats</h3>
             <p className="text-xs text-slate-500">
               Performance stats from <a href="https://polymarket.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Polymarket</a>'s official leaderboard (all-time). 
-              Win rate calculated from up to 100 recent trades.
+              Win rate uses the leaderboard when available, otherwise recent trades.
             </p>
           </div>
 
@@ -1699,8 +1699,8 @@ export default function TraderProfilePage({
                   <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
-                    Calculated from recent trades only (limited data)
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-52 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
+                    From Polymarket leaderboard when available, otherwise estimated from recent trades
                   </div>
                 </div>
               </div>

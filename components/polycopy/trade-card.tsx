@@ -2041,7 +2041,7 @@ export function TradeCard({
         </div>
 
         <div className="flex flex-col gap-3 mb-4 md:flex-row md:flex-wrap md:items-center">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-start gap-3 md:items-center">
             <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
               <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
               <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
@@ -2066,7 +2066,7 @@ export function TradeCard({
               )}
             </div>
           </div>
-          <div className="flex w-full flex-wrap items-center gap-1.5 md:w-auto md:justify-end md:ml-auto">
+          <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end md:ml-auto">
             {showEventTimeBadge && (
               <Badge
                 variant="secondary"

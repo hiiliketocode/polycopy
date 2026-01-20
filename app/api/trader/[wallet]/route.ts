@@ -40,6 +40,7 @@ export async function GET(
     let pnl = 0
     let volume = 0
     let roi = 0
+    let winRate: number | null = null
     let profileImage: string | null = null
     let foundInLeaderboard = false
     
@@ -77,6 +78,10 @@ export async function GET(
           volume = trader.vol ?? 0;
           roi = volume > 0 ? ((pnl / volume) * 100) : 0;
           profileImage = trader.profileImage ?? null;
+          const parsedWinRate = Number(trader.winRate ?? trader.win_rate);
+          if (Number.isFinite(parsedWinRate)) {
+            winRate = parsedWinRate;
+          }
           
           console.log('✅ Found trader stats from V1 API:', {
             displayName,
@@ -168,6 +173,7 @@ export async function GET(
       displayName,
       pnl: hasStats ? Math.round(pnl) : null,
       roi: hasStats ? parseFloat(roi.toFixed(1)) : null,
+      winRate: hasStats ? winRate : null,
       volume: hasStats ? Math.round(volume) : null,
       followerCount,
       profileImage,
@@ -192,4 +198,3 @@ function abbreviateWallet(address: string): string {
   if (!address || address.length < 10) return address
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
-
