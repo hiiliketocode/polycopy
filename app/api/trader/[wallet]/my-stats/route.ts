@@ -136,6 +136,11 @@ interface Position {
   closedByResolution: boolean
 }
 
+type DailyPnlPoint = {
+  date: string
+  pnl: number
+}
+
 const buildPositionsMap = (orders: Order[]) => {
   const positionsMap = new Map<string, Position>()
 
@@ -212,6 +217,21 @@ const buildPositionsMap = (orders: Order[]) => {
   return positionsMap
 }
 
+const toDateKey = (timestamp?: string | null) => {
+  if (!timestamp) return null
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toISOString().slice(0, 10)
+}
+
+const getLatestTimestamp = (position: Position) => {
+  const timestamps = [...position.buys, ...position.sells]
+    .map((entry) => new Date(entry.timestamp).getTime())
+    .filter((value) => Number.isFinite(value))
+  if (timestamps.length === 0) return null
+  return new Date(Math.max(...timestamps)).toISOString()
+}
+
 type Stats = {
   totalPnl: number
   realizedPnl: number
@@ -224,6 +244,56 @@ type Stats = {
   closedTrades: number
   winningTrades: number
   losingTrades: number
+}
+
+const buildDailyPnlSeries = (positionsMap: Map<string, Position>) => {
+  const daily = new Map<string, number>()
+
+  const addDaily = (dateKey: string | null, value: number) => {
+    if (!dateKey || !Number.isFinite(value)) return
+    daily.set(dateKey, (daily.get(dateKey) ?? 0) + value)
+  }
+
+  for (const position of positionsMap.values()) {
+    let remainingBuys = position.buys.map((buy) => ({ ...buy }))
+
+    for (const sell of position.sells) {
+      let remainingSellSize = sell.size
+      const sellDateKey = toDateKey(sell.timestamp)
+
+      while (remainingSellSize > 0 && remainingBuys.length > 0) {
+        const buy = remainingBuys[0]
+        const matchSize = Math.min(remainingSellSize, buy.size)
+        const matchCost = (buy.cost / buy.size) * matchSize
+        const matchProceeds = (sell.proceeds / sell.size) * matchSize
+        const matchPnl = matchProceeds - matchCost
+
+        addDaily(sellDateKey, matchPnl)
+
+        remainingSellSize -= matchSize
+        buy.size -= matchSize
+        buy.cost -= matchCost
+
+        if (buy.size <= POSITION_EPSILON) {
+          remainingBuys.shift()
+        }
+      }
+    }
+
+    const remainingSize = remainingBuys.reduce((sum, b) => sum + b.size, 0)
+    const remainingCost = remainingBuys.reduce((sum, b) => sum + b.cost, 0)
+    const resolutionPrice = inferResolutionPrice(position)
+    if (remainingSize > 0 && resolutionPrice !== null) {
+      const resolutionValue = remainingSize * resolutionPrice
+      const resolutionPnl = resolutionValue - remainingCost
+      const resolutionTimestamp = getLatestTimestamp(position) ?? new Date().toISOString()
+      addDaily(toDateKey(resolutionTimestamp), resolutionPnl)
+    }
+  }
+
+  return Array.from(daily.entries())
+    .map(([date, pnl]) => ({ date, pnl }))
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 }
 
 const computeStatsFromPositions = (
@@ -412,9 +482,12 @@ export async function GET(
       ? (traderStats.losingTrades / overallStats.losingTrades) * 100
       : null
 
+    const dailyPnl = buildDailyPnlSeries(traderPositions)
+
     return NextResponse.json({
       trader: traderStats,
       overall: overallStats,
+      dailyPnl,
       shares: {
         tradesPct,
         pnlPct,

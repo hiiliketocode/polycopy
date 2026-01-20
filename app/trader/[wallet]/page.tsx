@@ -97,6 +97,11 @@ interface RealizedPnlRow {
   pnl_to_date: number | null;
 }
 
+interface DailyPnlPoint {
+  date: string;
+  pnl: number;
+}
+
 interface MyTradeStatsSummary {
   totalPnl: number;
   realizedPnl: number;
@@ -114,6 +119,7 @@ interface MyTradeStatsSummary {
 interface MyTradeStatsResponse {
   trader: MyTradeStatsSummary;
   overall: MyTradeStatsSummary;
+  dailyPnl: DailyPnlPoint[];
   shares: {
     tradesPct: number | null;
     pnlPct: number | null;
@@ -223,6 +229,7 @@ export default function TraderProfilePage({
   }>>({});
   const [myTradeStats, setMyTradeStats] = useState<MyTradeStatsResponse | null>(null);
   const [myTradeStatsLoading, setMyTradeStatsLoading] = useState(false);
+  const [myPnlWindow, setMyPnlWindow] = useState<'1D' | '7D' | '30D' | 'ALL'>('30D');
   
   // Copy wallet address state
   const [walletCopied, setWalletCopied] = useState(false);
@@ -1679,6 +1686,16 @@ export default function TraderProfilePage({
   // Show N/A only if we have no scorable positions
   const effectiveWinRate = traderData.winRate ?? (computedStats && computedStats.winRate !== null && computedStats.winRate !== undefined ? computedStats.winRate : null);
   const hasMyTradeStats = Boolean(myTradeStats && myTradeStats.trader.totalTrades > 0);
+  const myDailyPnlSeries = useMemo(() => {
+    const series = myTradeStats?.dailyPnl ?? [];
+    if (series.length === 0) return [];
+    const sorted = [...series].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+    if (myPnlWindow === 'ALL') return sorted;
+    const days = myPnlWindow === '1D' ? 1 : myPnlWindow === '7D' ? 7 : 30;
+    return sorted.slice(Math.max(0, sorted.length - days));
+  }, [myTradeStats, myPnlWindow]);
 
   console.log('📊 Trader Profile Stats Priority:', {
     wallet: wallet.substring(0, 8),
@@ -1801,7 +1818,7 @@ export default function TraderProfilePage({
         {activeTab === 'performance' && (
           <div className="space-y-6">
             <div className="grid gap-4 lg:grid-cols-12">
-              <Card className={`border-slate-200/80 bg-white/90 p-6 ${user ? 'lg:col-span-9' : 'lg:col-span-12'}`}>
+              <Card className={`border-slate-200/80 bg-white/90 p-5 ${user ? 'lg:col-span-8' : 'lg:col-span-12'}`}>
                 <div className="space-y-6">
                   <div className="flex flex-col gap-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -2137,50 +2154,109 @@ export default function TraderProfilePage({
               </Card>
 
               {user && (
-                <Card className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-3">
-                  <div className="flex items-center justify-between mb-4">
-                    <p className="text-base font-semibold text-slate-900">My Trades</p>
+                <Card className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-base font-semibold text-slate-900">My Trades</p>
+                      <p className="text-xs text-slate-500">Your copy stats for this trader</p>
+                    </div>
                   </div>
                   {myTradeStatsLoading ? (
-                    <p className="text-sm text-slate-500">Loading your trade stats...</p>
+                    <p className="mt-4 text-sm text-slate-500">Loading your trade stats...</p>
                   ) : hasMyTradeStats && myTradeStats ? (
-                    <div className="rounded-2xl p-4">
-                      <div className="grid grid-cols-2 gap-4 text-sm text-slate-600">
-                        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                          <p className="text-sm font-medium text-slate-600">Trades</p>
-                          <p className="text-lg sm:text-xl font-semibold text-slate-900 whitespace-nowrap tabular-nums">{myTradeStats.trader.totalTrades}</p>
+                    <div className="mt-4 space-y-4">
+                      <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 sm:grid-cols-3">
+                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                          <p className="text-xs font-medium text-slate-500">Trades</p>
+                          <p className="text-xl font-semibold text-slate-900 tabular-nums">{myTradeStats.trader.totalTrades}</p>
                           <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.tradesPct)} of total</p>
                         </div>
-                        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                          <p className="text-sm font-medium text-slate-600">Volume</p>
-                          <p className="text-lg sm:text-xl font-semibold text-slate-900 whitespace-nowrap tabular-nums">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
+                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                          <p className="text-xs font-medium text-slate-500">Volume</p>
+                          <p className="text-xl font-semibold text-slate-900 tabular-nums">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
                         </div>
-                        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                          <p className="text-sm font-medium text-slate-600">Total P&amp;L</p>
-                          <p className={`text-lg sm:text-xl font-semibold whitespace-nowrap tabular-nums ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                          <p className="text-xs font-medium text-slate-500">Total P&amp;L</p>
+                          <p className={`text-xl font-semibold tabular-nums ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                             {formatSignedCurrency(myTradeStats.trader.totalPnl)}
                           </p>
                           <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.pnlPct)} of total</p>
                         </div>
-                        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                          <p className="text-sm font-medium text-slate-600">Wins</p>
-                          <p className="text-lg sm:text-xl font-semibold text-slate-900 whitespace-nowrap tabular-nums">{myTradeStats.trader.winningTrades}</p>
+                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                          <p className="text-xs font-medium text-slate-500">Wins</p>
+                          <p className="text-xl font-semibold text-slate-900 tabular-nums">{myTradeStats.trader.winningTrades}</p>
                           <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.winsPct)} of wins</p>
                         </div>
-                        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                          <p className="text-sm font-medium text-slate-600">Losses</p>
-                          <p className="text-lg sm:text-xl font-semibold text-slate-900 whitespace-nowrap tabular-nums">{myTradeStats.trader.losingTrades}</p>
+                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                          <p className="text-xs font-medium text-slate-500">Losses</p>
+                          <p className="text-xl font-semibold text-slate-900 tabular-nums">{myTradeStats.trader.losingTrades}</p>
                           <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.lossesPct)} of losses</p>
                         </div>
-                        <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                          <p className="text-sm font-medium text-slate-600">Open positions</p>
-                          <p className="text-lg sm:text-xl font-semibold text-slate-900 whitespace-nowrap tabular-nums">{myTradeStats.trader.openTrades}</p>
+                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                          <p className="text-xs font-medium text-slate-500">Open positions</p>
+                          <p className="text-xl font-semibold text-slate-900 tabular-nums">{myTradeStats.trader.openTrades}</p>
                           <p className="text-xs text-slate-500">Open right now</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold text-slate-600">Daily P&amp;L</p>
+                          <div className="flex items-center gap-1 text-[11px]">
+                            {(['1D', '7D', '30D', 'ALL'] as const).map((option) => (
+                              <button
+                                key={option}
+                                onClick={() => setMyPnlWindow(option)}
+                                className={cn(
+                                  'rounded-full border px-2 py-0.5 font-semibold transition',
+                                  myPnlWindow === option
+                                    ? 'border-slate-900 bg-slate-900 text-white'
+                                    : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                                )}
+                              >
+                                {option === 'ALL' ? 'All' : option}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mt-2 h-24">
+                          {myDailyPnlSeries.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={myDailyPnlSeries}>
+                                <XAxis dataKey="date" hide />
+                                <YAxis hide domain={['auto', 'auto']} />
+                                <RechartsTooltip
+                                  contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
+                                  formatter={(value: any) => formatSignedCurrency(Number(value), 2)}
+                                  labelFormatter={(label) =>
+                                    new Date(`${label}T00:00:00Z`).toLocaleDateString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: 'numeric',
+                                    })
+                                  }
+                                />
+                                <ReferenceLine y={0} stroke="#e2e8f0" />
+                                <Bar dataKey="pnl" radius={[6, 6, 6, 6]}>
+                                  {myDailyPnlSeries.map((entry, index) => (
+                                    <Cell
+                                      key={`${entry.date}-${index}`}
+                                      fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'}
+                                    />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-xs text-slate-500">
+                              No daily P&amp;L yet.
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-2xl border border-slate-200/70 p-4 text-sm text-slate-500">
+                    <div className="mt-4 rounded-2xl border border-slate-200/70 p-4 text-sm text-slate-500">
                       You have not copied {traderData.displayName} yet.
                     </div>
                   )}
@@ -3049,32 +3125,41 @@ export default function TraderProfilePage({
                     positionMap.set(key, existing);
                   }
 
-                  const topPositions = Array.from(positionMap.values())
-                    .map((position) => {
-                      const currentPrice = position.currentPrice ?? priceFor(position.sampleTrade);
-                      const openValue =
-                        currentPrice !== null && Number.isFinite(currentPrice)
-                          ? position.size * currentPrice
-                          : 0;
-                      const isClosed = Math.abs(position.size) < 1e-9;
-                      const amountWon = isClosed ? position.sellNotional : position.sellNotional + openValue;
-                      const invested = position.buyNotional;
-                      const pnl = amountWon - invested;
-                      const roi = invested > 0 ? (pnl / invested) * 100 : 0;
+                  const allPositions = Array.from(positionMap.values()).map((position) => {
+                    const currentPrice = position.currentPrice ?? priceFor(position.sampleTrade);
+                    const openValue =
+                      currentPrice !== null && Number.isFinite(currentPrice)
+                        ? position.size * currentPrice
+                        : 0;
+                    const isClosed = Math.abs(position.size) < 1e-9;
+                    const amountWon = isClosed ? position.sellNotional : position.sellNotional + openValue;
+                    const invested = position.buyNotional;
+                    const pnl = amountWon - invested;
+                    const roi = invested > 0 ? (pnl / invested) * 100 : 0;
 
-                      return {
-                        ...position,
-                        currentPrice,
-                        invested,
-                        amountWon,
-                        pnl,
-                        roi,
-                        isClosed,
-                      };
-                    })
+                    return {
+                      ...position,
+                      currentPrice,
+                      invested,
+                      amountWon,
+                      pnl,
+                      roi,
+                      isClosed,
+                    };
+                  });
+
+                  const closedWinners = allPositions
                     .filter((position) => position.isClosed && position.invested > 0 && position.pnl > 0)
                     .sort((a, b) => b.pnl - a.pnl)
                     .slice(0, 5);
+
+                  const fallbackPositions = allPositions
+                    .filter((position) => position.invested > 0 && position.currentPrice !== null)
+                    .sort((a, b) => b.pnl - a.pnl)
+                    .slice(0, 5);
+
+                  const topPositions = closedWinners.length > 0 ? closedWinners : fallbackPositions;
+                  const showingOpenPositions = closedWinners.length === 0 && topPositions.length > 0;
 
                   if (topPositions.length === 0) {
                     return (
@@ -3089,6 +3174,11 @@ export default function TraderProfilePage({
 
                   return (
                     <div className="space-y-2">
+                      {showingOpenPositions && (
+                        <p className="px-4 text-xs text-slate-500">
+                          Showing open positions (mark-to-market).
+                        </p>
+                      )}
                       <div className="hidden md:grid grid-cols-4 gap-6 rounded-lg bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600">
                         <span>Market</span>
                         <span>Outcome</span>
