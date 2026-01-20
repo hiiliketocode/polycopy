@@ -15,7 +15,8 @@ import { SignatureType } from '@/lib/polymarket/clob'
 import { createHash, createCipheriv, randomBytes } from 'crypto'
 import { createL1Headers } from '@polymarket/clob-client/dist/headers/index.js'
 import { POLYMARKET_CLOB_BASE_URL } from '@/lib/turnkey/config'
-import { verifyTypedData } from 'ethers/utils'
+import { utils } from 'ethers'
+const { verifyTypedData } = utils
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
