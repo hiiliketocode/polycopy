@@ -1,176 +1,42 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Copy, Check } from 'lucide-react';
+import { Check, ArrowUpRight, ChevronDown, ChevronUp, Loader2, Info, ExternalLink, Copy } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import Header from '@/app/components/Header';
+import { triggerLoggedOut } from '@/lib/auth/logout-events';
+import { Navigation } from '@/components/polycopy/navigation';
+import { SignupBanner } from '@/components/polycopy/signup-banner';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { TradeCard } from '@/components/polycopy/trade-card';
+import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/components/polycopy/trade-execution-notifications';
+import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
+import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
+import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 import type { User } from '@supabase/supabase-js';
-
-// Copy Trade Modal Component
-function CopyTradeModal({ 
-  isOpen, 
-  trade, 
-  traderWallet,
-  traderName,
-  onClose, 
-  onConfirm, 
-  isSubmitting 
-}: { 
-  isOpen: boolean; 
-  trade: Trade | null;
-  traderWallet: string;
-  traderName: string;
-  onClose: () => void; 
-  onConfirm: (entryPrice: number, amountInvested?: number) => void;
-  isSubmitting: boolean;
-}) {
-  const [entryPrice, setEntryPrice] = useState('');
-  const [amountInvested, setAmountInvested] = useState('');
-
-  useEffect(() => {
-    if (trade) {
-      setEntryPrice(trade.price.toFixed(2));
-      setAmountInvested('');
-    }
-  }, [trade]);
-
-  if (!isOpen || !trade) return null;
-
-  const handleConfirm = () => {
-    const price = entryPrice ? parseFloat(entryPrice) : trade.price;
-    const amount = amountInvested ? parseFloat(amountInvested) : undefined;
-    onConfirm(price, amount);
-  };
-
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
-  return (
-    <div 
-      className="fixed inset-0 z-50 bg-black/60 overflow-hidden"
-      onClick={handleBackdropClick}
-    >
-      <div className="h-full w-full overflow-y-auto flex items-start justify-center pt-8 pb-24 px-4 sm:items-center sm:pt-4 sm:pb-4">
-        <div 
-          className="w-full max-w-md bg-white rounded-2xl shadow-xl mx-auto"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="p-6 max-h-[calc(100vh-8rem)] sm:max-h-[85vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-neutral-900">Mark Trade as Copied</h3>
-              <button 
-                onClick={onClose}
-                className="text-neutral-400 hover:text-neutral-600 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Trade Details */}
-            <div className="bg-neutral-50 rounded-xl p-3 sm:p-4 mb-4">
-              <p className="text-sm text-neutral-600 mb-1">Market</p>
-              <p className="font-medium text-neutral-900 mb-3 text-sm sm:text-base break-words">{trade.market}</p>
-              
-              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-                <div className="min-w-0">
-                  <p className="text-sm text-neutral-600 mb-1">Trader</p>
-                  <p className="font-medium text-neutral-900 text-sm sm:text-base truncate">{traderName}</p>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm text-neutral-600 mb-1">Position</p>
-                  <p className="font-medium text-neutral-900 text-sm sm:text-base">
-                    <span className={trade.outcome.toUpperCase() === 'YES' ? 'text-[#10B981]' : 'text-[#EF4444]'}>
-                      {trade.outcome.toUpperCase()}
-                    </span>
-                    {' '}at {Math.round(trade.price * 100)}¢
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Entry Price Input */}
-            <div className="mb-4 w-full">
-              <label className="block w-full text-sm font-medium text-neutral-700 mb-2">
-                Your entry price <span className="text-red-500">*</span>
-              </label>
-              <div className="relative w-full">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
-                <input
-                  type="number"
-                  value={entryPrice}
-                  onChange={(e) => setEntryPrice(e.target.value)}
-                  placeholder="0.58"
-                  min="0.01"
-                  max="0.99"
-                  step="0.01"
-                  className="w-full pl-8 pr-4 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
-                />
-              </div>
-              <p className="text-xs text-neutral-500 mt-1">
-                The price you bought/sold at (trader's price: ${trade.price.toFixed(2)})
-              </p>
-            </div>
-
-            {/* Amount Input */}
-            <div className="mb-6 w-full">
-              <label className="block w-full text-sm font-medium text-neutral-700 mb-2">
-                Amount invested (optional)
-              </label>
-              <div className="relative w-full">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
-                <input
-                  type="number"
-                  value={amountInvested}
-                  onChange={(e) => setAmountInvested(e.target.value)}
-                  placeholder="0.00"
-                  min="0"
-                  step="0.01"
-                  className="w-full pl-8 pr-4 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
-                />
-              </div>
-              <p className="text-xs text-neutral-500 mt-1">
-                Track how much you invested to calculate your ROI later
-              </p>
-            </div>
-
-            {/* Buttons */}
-            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 w-full">
-              <button
-                onClick={onClose}
-                disabled={isSubmitting}
-                className="w-full sm:flex-1 py-2.5 px-4 border border-neutral-300 rounded-lg font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirm}
-                disabled={isSubmitting}
-                className="w-full sm:flex-1 py-2.5 px-4 bg-[#FDB022] hover:bg-[#E69E1A] rounded-lg font-semibold text-neutral-900 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isSubmitting ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-neutral-900/30 border-t-neutral-900 rounded-full animate-spin"></div>
-                    Saving...
-                  </>
-                ) : (
-                  'Confirm'
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+import { cn } from '@/lib/utils';
+import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
+import {
+  ResponsiveContainer,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip as RechartsTooltip,
+  AreaChart,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  ReferenceLine,
+  Area,
+} from 'recharts';
 
 interface TraderData {
   wallet: string;
@@ -178,17 +44,9 @@ interface TraderData {
   pnl: number;
   volume: number;
   followerCount: number;
-  roi?: number; // Optional: calculated value
-  roiFormatted?: string; // Optional: pre-formatted ROI
-  tradesCount?: number; // Total number of trades
-}
-
-interface LeaderboardData {
-  username?: string;
-  total_pnl?: number;
-  volume?: number;
-  total_trades?: number;
+  profileImage?: string | null;
   roi?: number;
+  tradesCount?: number;
 }
 
 interface Trade {
@@ -198,147 +56,393 @@ interface Trade {
   outcome: string;
   size: number;
   price: number;
-  avgPrice?: number;
   currentPrice?: number;
   formattedDate: string;
   marketSlug?: string;
   conditionId?: string;
   eventSlug?: string;
+  tokenId?: string;
   status: 'Open' | 'Trader Closed' | 'Bonded';
+  category?: string;
 }
 
-interface Position {
-  conditionId: string;
-  asset?: string;
-  eventSlug?: string;
-  slug?: string;
-  title?: string;
-  outcome?: string;
-  size?: number;
-  avgPrice?: number;
-  curPrice?: number;
+interface PositionSizeBucket {
+  range: string;
+  count: number;
+  percentage: number;
 }
 
+interface CategoryDistribution {
+  category: string;
+  count: number;
+  percentage: number;
+  color: string;
+}
+
+interface TraderComputedStats {
+  totalPnl: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  volume: number;
+  roi: number;
+  winRate: number;
+}
+
+interface RealizedPnlRow {
+  date: string;
+  realized_pnl: number;
+  pnl_to_date: number | null;
+}
+
+const pnlWindowOptions = [
+  { key: '1D', label: 'Yesterday', range: 'rolling', days: 1 },
+  { key: '7D', label: 'Last 7 Days', range: 'rolling', days: 7 },
+  { key: '30D', label: '30 Days', range: 'rolling', days: 30 },
+  { key: '3M', label: '3 Months', range: 'rolling', days: 90 },
+  { key: '6M', label: '6 Months', range: 'rolling', days: 180 },
+  { key: 'ALL', label: 'All Time', range: 'all', days: null },
+] as const;
+
+type PnlWindowKey = typeof pnlWindowOptions[number]['key'];
+
+const normalizeOutcome = (value: string) => value?.trim().toLowerCase();
+
+const findOutcomeIndex = (outcomes: string[] | null | undefined, target: string) => {
+  if (!outcomes || outcomes.length === 0) return -1;
+  const normalizedTarget = normalizeOutcome(target);
+  if (!normalizedTarget) return -1;
+  const normalizedOutcomes = outcomes.map((outcome) => normalizeOutcome(outcome));
+  const exactIndex = normalizedOutcomes.findIndex((outcome) => outcome === normalizedTarget);
+  if (exactIndex >= 0) return exactIndex;
+  return normalizedOutcomes.findIndex(
+    (outcome) => outcome.includes(normalizedTarget) || normalizedTarget.includes(outcome)
+  );
+};
+
+const pickOutcomeTeams = (outcomes?: string[] | null) => {
+  if (!outcomes || outcomes.length === 0) return [];
+  const filtered = outcomes.filter(outcome => !/^(draw|tie)$/i.test(outcome.trim()));
+  if (filtered.length >= 2) return filtered.slice(0, 2);
+  return outcomes.slice(0, 2);
+};
+
+const normalizeKeyPart = (value?: string | null) => value?.trim().toLowerCase() || '';
+const buildCopiedTradeKey = (marketKey?: string | null, traderWallet?: string | null) => {
+  const market = normalizeKeyPart(marketKey);
+  const wallet = normalizeKeyPart(traderWallet);
+  if (!market || !wallet) return '';
+  return `${market}-${wallet}`;
+};
+const getMarketKeyForTrade = (trade: Trade) =>
+  normalizeKeyPart(trade.conditionId || trade.marketSlug || trade.market || null);
 export default function TraderProfilePage({
   params,
 }: {
   params: Promise<{ wallet: string }>;
 }) {
+  const router = useRouter();
   const [wallet, setWallet] = useState<string>('');
+  const [user, setUser] = useState<User | null>(null);
+  const [isPremium, setIsPremium] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [traderData, setTraderData] = useState<TraderData | null>(null);
-  const [leaderboardData, setLeaderboardData] = useState<LeaderboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
-  const [checkingFollow, setCheckingFollow] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [trades, setTrades] = useState<Trade[]>([]);
-  const [loadingTrades, setLoadingTrades] = useState(true); // Start as true to show loading state initially
-  const [openMarketIds, setOpenMarketIds] = useState<Set<string>>(new Set());
-  const [positions, setPositions] = useState<Position[]>([]);  // Store full position data for URL construction
-  const [positionsLoaded, setPositionsLoaded] = useState(false); // Track if positions have been fetched
-  const router = useRouter();
+  const [loadingTrades, setLoadingTrades] = useState(true);
+  const [tradesToShow, setTradesToShow] = useState(15); // Start with 15 trades for faster loading
+  const [activeTab, setActiveTab] = useState<'positions' | 'performance'>('positions');
+  const [showResolvedTrades, setShowResolvedTrades] = useState(false);
   
-  // User state
-  const [user, setUser] = useState<User | null>(null);
-  
-  // Modal state for Mark as Copied
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
+  const [showWalletConnectModal, setShowWalletConnectModal] = useState(false);
+  const [showConnectWalletModal, setShowConnectWalletModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // Toast state
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  
-  // Copied trades tracking
   const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
+  const { manualModeEnabled, enableManualMode } = useManualTradingMode(
+    isPremium,
+    Boolean(walletAddress)
+  );
+  
+  // Premium user expandable cards
+  const [expandedTradeKeys, setExpandedTradeKeys] = useState<Set<string>>(new Set());
+  const [tradeNotifications, setTradeNotifications] = useState<TradeExecutionNotification[]>([]);
+  const [usdAmount, setUsdAmount] = useState<string>('');
+  const [autoClose, setAutoClose] = useState(false);
+  const [manualCopyTradeIndex, setManualCopyTradeIndex] = useState<number | null>(null);
+  const [manualUsdAmount, setManualUsdAmount] = useState<string>('');
+  const [defaultBuySlippage, setDefaultBuySlippage] = useState(3);
+  const [defaultSellSlippage, setDefaultSellSlippage] = useState(3);
+  
+  // Performance tab data
+  const [positionSizeBuckets, setPositionSizeBuckets] = useState<PositionSizeBucket[]>([]);
+  const [categoryDistribution, setCategoryDistribution] = useState<CategoryDistribution[]>([]);
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
+  const [computedStats, setComputedStats] = useState<TraderComputedStats | null>(null);
+  const [realizedPnlRows, setRealizedPnlRows] = useState<RealizedPnlRow[]>([]);
+  const [loadingRealizedPnl, setLoadingRealizedPnl] = useState(false);
+  const [realizedPnlError, setRealizedPnlError] = useState<string | null>(null);
+  const [pnlWindow, setPnlWindow] = useState<PnlWindowKey>('30D');
+  const [pnlView, setPnlView] = useState<'daily' | 'cumulative'>('daily');
+  const [rankingsByWindow, setRankingsByWindow] = useState<Record<string, {
+    rank: number | null;
+    total: number | null;
+    delta: number | null;
+  }>>({});
+  
+  // Copy wallet address state
+  const [walletCopied, setWalletCopied] = useState(false);
+  
+  // Live market data for trade cards
+  const [liveMarketData, setLiveMarketData] = useState<Map<string, { 
+    price: number; 
+    score?: string;
+    closed?: boolean;
+    resolved?: boolean;
+    gameStartTime?: string;
+    eventStatus?: string;
+    endDateIso?: string;
+    liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
+  }>>(new Map());
 
-  // Unwrap params Promise
   useEffect(() => {
-    params.then((p) => {
-      console.log('🔍 Wallet from URL:', p.wallet);
-      console.log('🔍 Wallet format check:', {
-        length: p.wallet.length,
-        startsWithOx: p.wallet.startsWith('0x'),
-        isValidFormat: p.wallet.startsWith('0x') && p.wallet.length === 42,
-        isUsername: !p.wallet.startsWith('0x'),
-      });
-      setWallet(p.wallet);
+    if (!isAdmin) {
+      setAutoClose(false);
+      return;
+    }
+    setAutoClose((prev) => (prev ? prev : true));
+  }, [isAdmin]);
+
+  const handleTradeExecutionNotification = useCallback((notification: TradeExecutionNotification) => {
+    setTradeNotifications((prev) => {
+      if (prev.some((item) => item.id === notification.id)) return prev;
+      return [notification, ...prev];
     });
+  }, []);
+
+  const handleNavigateToTrade = useCallback((notice: TradeExecutionNotification) => {
+    const target = document.getElementById(notice.tradeAnchorId);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+
+  const mergeTrades = useCallback((existing: Trade[], incoming: Trade[]) => {
+    const all = [...incoming, ...existing];
+    const seen = new Set<string>();
+
+    const normalizeTradeKey = (trade: Trade) => {
+      const marketKey = getMarketKeyForTrade(trade);
+      const outcomeKey = normalizeKeyPart(trade.outcome);
+      const sideKey = normalizeKeyPart(trade.side);
+      const priceKey = Math.round((trade.price || 0) * 1e6);
+      const sizeKey = Math.round((trade.size || 0) * 1e6);
+      const tsKey = Math.round((trade.timestamp || 0) / 1000);
+      return [marketKey, outcomeKey, sideKey, priceKey, sizeKey, tsKey].join('|');
+    };
+
+    const deduped: Trade[] = [];
+    for (const trade of all) {
+      const key = normalizeTradeKey(trade);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(trade);
+    }
+
+    deduped.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return deduped;
+  }, []);
+
+  const buildExpandedTradeKey = (trade: Trade, index: number) => {
+    const parts = [
+      trade.conditionId,
+      trade.marketSlug,
+      trade.market,
+      trade.outcome,
+      trade.side,
+      trade.timestamp ? String(trade.timestamp) : null,
+      String(index),
+    ]
+      .map((value) => value?.toString().trim())
+      .filter(Boolean);
+    return parts.join('|');
+  };
+
+  const toggleTradeExpanded = (tradeKey: string) => {
+    setExpandedTradeKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(tradeKey)) {
+        next.delete(tradeKey);
+      } else {
+        next.add(tradeKey);
+      }
+      return next;
+    });
+  };
+
+  // Unwrap params
+  useEffect(() => {
+    params.then((p) => setWallet(p.wallet));
   }, [params]);
 
   // Fetch current user
   useEffect(() => {
     const fetchUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
       
-      // If user is logged in, fetch their copied trades
-      if (user) {
-        const { data: copiedTrades } = await supabase
-          .from('copied_trades')
-          .select('market_id, trader_wallet')
-          .eq('user_id', user.id);
+      if (session?.user) {
+        const isMeaningfulError = (err: any) => {
+          if (!err || typeof err !== 'object') return !!err;
+          if (err.code === 'PGRST116') return false;
+          const values = [err.code, err.message, err.details, err.hint, err.status];
+          return values.some((value) => {
+            if (typeof value === 'string') return value.trim().length > 0;
+            return Boolean(value);
+          });
+        };
+
+        const formatSupabaseError = (err: any) => {
+          if (!err || typeof err !== 'object') return err;
+          return {
+            code: err.code,
+            message: err.message,
+            details: err.details,
+            hint: err.hint,
+            status: err.status,
+          };
+        };
+
+        // Fetch premium status
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_premium, is_admin')
+          .eq('id', session.user.id)
+          .single();
         
-        if (copiedTrades) {
-          const ids = new Set(copiedTrades.map(t => `${t.market_id}-${t.trader_wallet}`));
-          setCopiedTradeIds(ids);
+        setIsPremium(profile?.is_premium || profile?.is_admin || false);
+        setIsAdmin(profile?.is_admin || false);
+        
+        // Fetch wallet address
+        const { data: walletData } = await supabase
+          .from('turnkey_wallets')
+          .select('polymarket_account_address, eoa_address')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+        
+        if (walletData) {
+          setWalletAddress(walletData.polymarket_account_address || walletData.eoa_address || null);
+        }
+
+        try {
+          const { data, error } = await supabase
+            .from('notification_preferences')
+            .select('default_buy_slippage, default_sell_slippage')
+            .eq('user_id', session.user.id)
+            .maybeSingle();
+
+          if (isMeaningfulError(error)) {
+            console.error('Error fetching slippage preferences:', formatSupabaseError(error));
+          }
+
+          if (data) {
+            setDefaultBuySlippage(data.default_buy_slippage ?? 3);
+            setDefaultSellSlippage(data.default_sell_slippage ?? 3);
+          }
+        } catch (err) {
+          if (isMeaningfulError(err)) {
+            console.error('Error fetching slippage preferences:', formatSupabaseError(err));
+          }
+        }
+        
+        // Fetch copied trades (service-backed to bypass RLS issues)
+        try {
+          const apiResponse = await fetch(`/api/copied-trades?userId=${session.user.id}`);
+          if (apiResponse.ok) {
+            const payload = await apiResponse.json();
+            const ids = new Set<string>();
+            payload?.trades?.forEach(
+              (t: { market_id?: string; market_slug?: string; market_title?: string; trader_wallet?: string }) => {
+                const walletKey = normalizeKeyPart(t.trader_wallet);
+                if (!walletKey) return;
+                const marketKeys = [t.market_id, t.market_slug, t.market_title]
+                  .map(normalizeKeyPart)
+                  .filter(Boolean);
+                if (marketKeys.length === 0) return;
+                for (const key of new Set(marketKeys)) {
+                  ids.add(`${key}-${walletKey}`);
+                }
+              }
+            );
+            setCopiedTradeIds(ids);
+          }
+        } catch (err) {
+          console.error('Error fetching copied trades via API:', err);
         }
       }
     };
     
     fetchUser();
-    
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-    
-    return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch trader data (hybrid approach: check sessionStorage first for instant load)
+  const handleWalletConnect = async (address: string) => {
+    if (!user) return;
+
+    try {
+      const { data: walletData } = await supabase
+        .from('turnkey_wallets')
+        .select('polymarket_account_address, eoa_address')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      const connectedWallet =
+        walletData?.polymarket_account_address ||
+        walletData?.eoa_address ||
+        address;
+
+      setWalletAddress(connectedWallet || null);
+
+      try {
+        await fetch('/api/polymarket/reset-credentials', {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+        });
+      } catch {
+        // Non-blocking
+      }
+
+      if (connectedWallet) {
+        try {
+          await fetch('/api/polymarket/l2-credentials', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-store',
+            body: JSON.stringify({ polymarketAccountAddress: connectedWallet }),
+          });
+        } catch {
+          // Non-blocking
+        }
+      }
+    } catch (err) {
+      console.error('Error updating wallet after connection:', err);
+      setWalletAddress(address);
+    }
+  };
+
+  // Fetch trader data
   useEffect(() => {
     if (!wallet) return;
 
     const loadTraderData = async () => {
-      // First, check if we have cached data from clicking a TraderCard
-      const cachedData = sessionStorage.getItem(`trader-${wallet}`);
-      
-      if (cachedData) {
-        try {
-          const parsed = JSON.parse(cachedData);
-          console.log('✅ Using cached trader data (instant load, no API call)');
-          console.log('📦 Cached data:', parsed);
-          
-          // Set trader data immediately (no loading state!)
-          setTraderData(parsed);
-          setLoading(false);
-          
-          // Clear the cache after use
-          sessionStorage.removeItem(`trader-${wallet}`);
-          
-          // DO NOT fetch from API - use cached data as-is
-          // This ensures the profile shows EXACTLY the same data as the card
-          return;
-        } catch (err) {
-          console.log('❌ Failed to parse cached data, will fetch from API');
-          // If cache is corrupted, continue to API fetch
-        }
-      }
-
-      // No cached data, fetch from API (direct URL visit)
-      console.log('📡 No cached data found, fetching from internal API...');
-      console.log('📡 Internal API URL:', `/api/trader/${wallet}`);
       setLoading(true);
       setError(null);
 
       try {
-        const response = await fetch(`/api/trader/${wallet}`);
-        
-        console.log('📡 Internal API response status:', response.status);
+        // Always fetch all-time stats from Polymarket leaderboard
+        const response = await fetch(`/api/trader/${wallet}?timePeriod=all`);
 
         if (!response.ok) {
           throw new Error('Failed to fetch trader data');
@@ -347,7 +451,7 @@ export default function TraderProfilePage({
         const data = await response.json();
         setTraderData(data);
       } catch (err: any) {
-        console.error('❌ Error fetching trader:', err);
+        console.error('Error fetching trader:', err);
         setError(err.message || 'Failed to load trader data');
       } finally {
         setLoading(false);
@@ -357,867 +461,893 @@ export default function TraderProfilePage({
     loadTraderData();
   }, [wallet]);
 
-  // Fetch username and stats directly from Polymarket V1 leaderboard API
-  // NOTE: This duplicates some data from /api/trader/[wallet] but ensures we have
-  // the username and all-time stats even if the API route fails
+  // Fetch realized PnL daily series
   useEffect(() => {
     if (!wallet) return;
 
-    const fetchLeaderboardData = async () => {
-      // CORRECT API: V1 endpoint that Polymarket actually uses
-      const apiUrl = `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${wallet}`;
-      console.log('📊 Fetching V1 leaderboard data...');
-      console.log('📊 V1 Leaderboard API URL:', apiUrl);
-      
+    const loadRealizedPnl = async () => {
+      setLoadingRealizedPnl(true);
+      setRealizedPnlError(null);
       try {
-        const response = await fetch(apiUrl);
-        
-        console.log('📊 V1 Leaderboard response status:', response.status);
-        
+        const response = await fetch(`/api/trader/${wallet}/realized-pnl`);
         if (!response.ok) {
-          console.log('⚠️ V1 Leaderboard request failed:', response.status);
-          return;
+          throw new Error('Failed to fetch realized PnL');
         }
-
         const data = await response.json();
-        console.log('📊 V1 Leaderboard RAW response:', JSON.stringify(data, null, 2));
-        console.log('📊 V1 Leaderboard data type:', typeof data);
-        console.log('📊 Is array:', Array.isArray(data));
-        console.log('📊 Data length:', Array.isArray(data) ? data.length : 'N/A');
-        
-        // The V1 API returns an array, get the first result
-        const trader = Array.isArray(data) && data.length > 0 ? data[0] : null;
-        
-        if (trader) {
-          console.log('📊 V1 Trader data found:', {
-            userName: trader.userName,  // Note: userName not username!
-            proxyWallet: trader.proxyWallet,
-            pnl: trader.pnl,
-            vol: trader.vol,  // Note: vol not volume!
-            rank: trader.rank,
-            allKeys: Object.keys(trader),
-          });
-          
-          setLeaderboardData({
-            username: trader.userName,  // userName from V1 API
-            total_pnl: trader.pnl,      // pnl is all-time in V1 API
-            volume: trader.vol,         // vol from V1 API
-            total_trades: undefined,    // Not provided by V1 API
-            roi: undefined,             // Will calculate from pnl/vol
-          });
-          
-          // Update trader data with V1 API stats (most accurate)
-          setTraderData(prev => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              displayName: trader.userName || prev.displayName,
-              pnl: trader.pnl ?? prev.pnl,
-              volume: trader.vol ?? prev.volume,
-            };
-          });
+        const daily = Array.isArray(data?.daily)
+          ? data.daily
+              .map((row: any) => ({
+                date: row?.date,
+                realized_pnl: Number(row?.realized_pnl ?? 0),
+                pnl_to_date:
+                  row?.pnl_to_date === null || row?.pnl_to_date === undefined
+                    ? null
+                    : Number(row.pnl_to_date),
+              }))
+              .filter((row: RealizedPnlRow) => row.date && Number.isFinite(row.realized_pnl))
+              .sort((a: RealizedPnlRow, b: RealizedPnlRow) => new Date(a.date).getTime() - new Date(b.date).getTime())
+          : [];
+        setRealizedPnlRows(daily);
+        if (data?.rankings && typeof data.rankings === 'object') {
+          setRankingsByWindow(data.rankings);
         } else {
-          console.log('⚠️ No V1 leaderboard data found for this wallet (empty array)');
+          setRankingsByWindow({});
         }
-      } catch (err) {
-        console.error('❌ Error fetching V1 leaderboard data:', err);
+      } catch (err: any) {
+        console.error('Error fetching realized PnL:', err);
+        setRealizedPnlRows([]);
+        setRealizedPnlError(err?.message || 'Failed to load realized PnL');
+        setRankingsByWindow({});
+      } finally {
+        setLoadingRealizedPnl(false);
       }
     };
 
-    fetchLeaderboardData();
-  }, [wallet]);
-  
-  // Fetch trader's current positions from Polymarket
-  // Positions represent OPEN markets that the trader currently has
-  useEffect(() => {
-    if (!wallet) return;
-
-    // Reset positions loaded state when wallet changes
-    setPositionsLoaded(false);
-
-    const fetchPositions = async () => {
-      console.log('📈 Fetching ALL positions with pagination...');
-      
-      try {
-        let allPositions: any[] = [];
-        let offset = 0;
-        const limit = 500; // API seems to cap at 500 per request
-        let hasMore = true;
-        
-        // Fetch positions in batches until we get all of them
-        while (hasMore) {
-          const apiUrl = `https://data-api.polymarket.com/positions?user=${wallet}&limit=${limit}&offset=${offset}`;
-          console.log(`📈 Fetching positions batch: offset=${offset}, limit=${limit}`);
-          
-          const response = await fetch(apiUrl);
-          
-          if (!response.ok) {
-            console.log('⚠️ Positions request failed:', response.status);
-            break;
-          }
-
-          const positionsData = await response.json();
-          const batchSize = positionsData?.length || 0;
-          
-          console.log(`📈 Batch received: ${batchSize} positions`);
-          
-          if (batchSize > 0) {
-            allPositions = allPositions.concat(positionsData);
-            offset += batchSize;
-            
-            // If we got fewer positions than the limit, we've reached the end
-            hasMore = batchSize === limit;
-          } else {
-            hasMore = false;
-          }
-        }
-        
-        console.log('📈 TOTAL positions fetched:', allPositions.length);
-        const positionsData = allPositions;
-        
-        // 🏀 NBA DIAGNOSTIC: Check if raw response contains NBA positions
-        if (positionsData && positionsData.length > 0) {
-          const nbaPositions = positionsData.filter((p: any) => 
-            p.title?.toLowerCase().includes('nba') ||
-            p.title?.toLowerCase().includes('magic') ||
-            p.title?.toLowerCase().includes('heat') ||
-            p.market?.toLowerCase().includes('nba')
-          );
-          console.log('🏀 NBA positions in raw API response:', nbaPositions.length);
-          if (nbaPositions.length > 0) {
-            console.log('🏀 NBA position examples (raw):', nbaPositions.slice(0, 3).map((p: any) => ({
-              title: p.title,
-              slug: p.slug,
-              market_slug: p.market_slug,
-              outcome: p.outcome,
-              conditionId: p.conditionId
-            })));
-          }
-        }
-        
-        // Build Set of open position keys for matching
-        // Use slug:outcome as primary (most reliable), with ID fallbacks
-        const openPositionKeys = new Set<string>();
-        const positionsList: Position[] = [];
-        
-        positionsData?.forEach((position: any) => {
-          // PRIMARY: slug + outcome (most reliable matching method)
-          const posSlug = position.slug || position.market_slug || '';
-          const posOutcome = position.outcome || '';
-          if (posSlug && posOutcome) {
-            openPositionKeys.add(`${posSlug.toLowerCase()}:${posOutcome.toLowerCase()}`);
-          }
-          
-          // FALLBACK: Add ID-based identifiers for positions without slug
-          const identifiers = [
-            position.conditionId,
-            position.condition_id,
-            position.asset,
-            position.assetId,
-            position.asset_id,
-            position.marketId,
-            position.market_id,
-            position.id,
-          ].filter(Boolean);
-          
-          identifiers.forEach(id => {
-            if (id && typeof id === 'string') {
-              openPositionKeys.add(id.toLowerCase());
-            }
-          });
-          
-          // Store full position data for URL construction AND price data
-          const conditionId = position.conditionId || position.condition_id || position.asset || position.marketId || '';
-          positionsList.push({
-            conditionId: conditionId,
-            asset: position.asset,
-            eventSlug: position.eventSlug || position.event_slug || position.slug || '',
-            slug: posSlug,
-            title: position.title || position.market,
-            outcome: posOutcome,
-            size: position.size,
-            avgPrice: position.avgPrice ? parseFloat(position.avgPrice) : undefined,
-            curPrice: position.curPrice || position.currentPrice ? parseFloat(position.curPrice || position.currentPrice) : undefined,
-          });
-        });
-        
-        console.log('📈 Open position keys:', openPositionKeys.size);
-        console.log('🔍 DIAGNOSTIC: Sample position keys (first 10):', [...openPositionKeys].slice(0, 10));
-        
-        // Log position price data availability
-        const positionsWithPrice = positionsList.filter(p => p.curPrice).length;
-        console.log('💰 Position price data:', {
-          totalPositions: positionsList.length,
-          withCurPrice: positionsWithPrice,
-          withoutCurPrice: positionsList.length - positionsWithPrice,
-          coverage: ((positionsWithPrice / positionsList.length) * 100).toFixed(1) + '%'
-        });
-        
-        // Sample of positions with price data
-        const sampleWithPrice = positionsList
-          .filter(p => p.curPrice)
-          .slice(0, 3)
-          .map(p => ({
-            title: p.title?.substring(0, 30),
-            outcome: p.outcome,
-            avgPrice: p.avgPrice,
-            curPrice: p.curPrice
-          }));
-        if (sampleWithPrice.length > 0) {
-          console.log('💰 Sample positions with curPrice:', sampleWithPrice);
-        }
-        
-        // 🏀 NBA/TODAY DIAGNOSTIC: Check if current NBA/today positions exist
-        const nbaKeys = [...openPositionKeys].filter(key => 
-          key.includes('nba') || key.includes('magic') || key.includes('heat') || key.includes('2025-12-05')
-        );
-        console.log('🏀 NBA/Today position keys found:', nbaKeys.length);
-        console.log('🏀 NBA/Today position keys:', nbaKeys);
-        
-        // Log first 10 position objects to see actual slug values
-        console.log('🏀 First 10 position objects (raw):', positionsList.slice(0, 10).map(p => ({
-          title: p.title,
-          slug: p.slug,
-          outcome: p.outcome,
-          conditionId: p.conditionId?.substring(0, 20)
-        })));
-        
-        // Also check if positions contain today's date at all
-        const todayKeys = [...openPositionKeys].filter(key => key.includes('2025-12-05'));
-        console.log('🏀 Positions with today\'s date (2025-12-05):', todayKeys.length, todayKeys);
-        
-        // 🔥 Check for all Heat vs Magic positions (moneyline + spread)
-        const miaOrlKeys = [...openPositionKeys].filter(key => 
-          key.includes('mia-orl') || key.includes('magic') || key.includes('heat')
-        );
-        console.log('🔥 All Heat vs Magic position keys:', miaOrlKeys.length);
-        console.log('🔥 Heat vs Magic keys LIST:', JSON.stringify(miaOrlKeys, null, 2));
-        
-        // 📊 Check for all spread positions
-        const spreadKeys = [...openPositionKeys].filter(key => key.includes('spread'));
-        console.log('📊 All spread position keys:', spreadKeys.length);
-        if (spreadKeys.length > 0) {
-          console.log('📊 Spread position examples LIST:', JSON.stringify(spreadKeys.slice(0, 20), null, 2));
-        }
-        
-        setOpenMarketIds(openPositionKeys);
-        setPositions(positionsList);
-        setPositionsLoaded(true); // Mark positions as loaded
-        
-      } catch (err) {
-        console.error('❌ Error fetching positions:', err);
-        setPositionsLoaded(true); // Mark as loaded even on error so trades can proceed
-      }
-    };
-
-    fetchPositions();
+    loadRealizedPnl();
   }, [wallet]);
 
-  // Check if user is following this trader
+  // Check follow status
   useEffect(() => {
-    if (!wallet) return;
+    if (!wallet || !user) return;
 
     const checkFollowStatus = async () => {
-      setCheckingFollow(true);
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        
-        if (user) {
-          // IMPORTANT: Normalize wallet to lowercase for consistent database queries
-          const normalizedWallet = wallet.toLowerCase();
-          
-          const { data, error } = await supabase
-            .from('follows')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('trader_wallet', normalizedWallet)
-            .single();
+      const normalizedWallet = wallet.toLowerCase();
+      
+      const { data } = await supabase
+        .from('follows')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('trader_wallet', normalizedWallet)
+        .single();
 
-          if (error && error.code !== 'PGRST116') {
-            console.error('Error checking follow status:', error);
-          } else if (data) {
-            setFollowing(true);
-          }
-        }
-      } catch (error) {
-        console.error('Error in checkFollowStatus:', error);
-      } finally {
-        // Always set loading to false, even if there's an error
-        setCheckingFollow(false);
+      if (data) {
+        setFollowing(true);
       }
     };
+    
     checkFollowStatus();
-  }, [wallet]);
+  }, [wallet, user]);
 
-  // Fetch trader's ALL trades (no limit)
+  // Fetch trades from blockchain (complete history, no limits!)
   useEffect(() => {
     if (!wallet) return;
 
-    const fetchTraderTrades = async () => {
-      // Note: Using 'user' parameter instead of 'wallet' for the Polymarket API
-      // Removed limit to get ALL trades
-      const apiUrl = `https://data-api.polymarket.com/trades?user=${wallet}`;
-      console.log('🔄 Fetching ALL trades (no limit)...');
-      console.log('🔄 Trades API URL:', apiUrl);
-      setLoadingTrades(true);
+    let cancelled = false;
 
+    const formatDate = (timestampMs: number) =>
+      new Date(timestampMs).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+
+    const mergeIntoState = (incoming: Trade[]) => {
+      if (incoming.length === 0) return;
+      setTrades((prev) => mergeTrades(prev, incoming));
+    };
+
+    const extractTokenId = (rawTrade: any): string | undefined => {
+      const candidates = [
+        rawTrade.token_id,
+        rawTrade.tokenId,
+        rawTrade.tokenID,
+        rawTrade.asset_id,
+        rawTrade.assetId,
+        rawTrade.asset,
+      ];
+      for (const candidate of candidates) {
+        if (candidate === undefined || candidate === null) continue;
+        const value =
+          typeof candidate === 'number' ? candidate.toString() : String(candidate).trim();
+        if (value) return value;
+      }
+      return undefined;
+    };
+
+    const fetchPolycopyTrades = async () => {
       try {
-        const response = await fetch(apiUrl);
-        
-        console.log('🔄 Trades response status:', response.status);
+        const response = await fetch(`/api/trader/${wallet}/copy-trades`, { cache: 'no-store' });
+        if (!response.ok) return;
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch trades');
-        }
+        const payload = await response.json();
+        const normalized: Trade[] = (payload?.trades || []).map((trade: any) => {
+          const timestampMs = trade.copied_at
+            ? Date.parse(trade.copied_at)
+            : trade.created_at
+              ? Date.parse(trade.created_at)
+              : Date.now();
 
-        const tradesData = await response.json();
-        console.log('🔄 TOTAL trades fetched:', tradesData?.length || 0);
-        console.log('🔍 DIAGNOSTIC: openMarketIds size when formatting trades:', openMarketIds.size);
-        console.log('🔍 DIAGNOSTIC: openMarketIds sample:', [...openMarketIds].slice(0, 5));
+          const priceWhenCopied = Number(trade.price_when_copied ?? trade.current_price ?? 0) || 0;
+          const entrySize = Number(trade.entry_size ?? 0) || 0;
+          const amountInvested = Number(trade.amount_invested ?? 0) || 0;
+          const inferredSize =
+            entrySize || (priceWhenCopied > 0 && amountInvested > 0 ? amountInvested / priceWhenCopied : 0);
 
-        // Batch fetch prices for unique markets using our API proxy (avoids CORS)
-        // Store cache as Map<conditionId, {prices: number[], outcomes: string[]}>
-        const marketPriceCache = new Map<string, { prices: number[]; outcomes: string[] }>();
-        const uniqueConditionIds = new Set<string>();
-        
-        // Collect unique condition IDs
-        tradesData.forEach((trade: any) => {
-          const conditionId = trade.conditionId || trade.condition_id || trade.asset || trade.marketId || '';
-          if (conditionId) {
-            uniqueConditionIds.add(conditionId);
-          }
-        });
-
-        // Fetch prices via CLOB API (returns actual outcome names like "PARIVISION", "3DMAX")
-        console.log('📊 Fetching current prices for', uniqueConditionIds.size, 'unique markets via CLOB API...');
-        
-        try {
-          const conditionIdsArray = Array.from(uniqueConditionIds);
-          
-          // Fetch all markets in parallel using CLOB API
-          const fetchPromises = conditionIdsArray.map(async (conditionId) => {
-            try {
-              const response = await fetch(`https://clob.polymarket.com/markets/${conditionId}`);
-              
-              if (response.ok) {
-                const market = await response.json();
-                
-                // CLOB returns tokens array with actual outcome names
-                if (market.tokens && Array.isArray(market.tokens)) {
-                  const outcomes = market.tokens.map((t: any) => t.outcome);
-                  const prices = market.tokens.map((t: any) => parseFloat(t.price));
-                  
-                  return {
-                    conditionId,
-                    outcomes,
-                    prices
-                  };
-                }
-              }
-              return null;
-            } catch (err) {
-              console.error('Error fetching market:', conditionId.substring(0, 12), err);
-              return null;
-            }
-          });
-          
-          const results = await Promise.all(fetchPromises);
-          
-          // Populate cache with successful results
-          let successCount = 0;
-          results.forEach((result) => {
-            if (result) {
-              marketPriceCache.set(result.conditionId.toLowerCase(), {
-                prices: result.prices,
-                outcomes: result.outcomes
-              });
-              successCount++;
-              
-              // Debug: Log for first market to show structure
-              if (marketPriceCache.size <= 3) {
-                console.log('🔍 Cache entry example (CLOB):', {
-                  conditionId: result.conditionId.substring(0, 12) + '...',
-                  outcomes: result.outcomes,
-                  prices: result.prices
-                });
-              }
-            }
-          });
-          
-          console.log(`📊 Successfully cached ${successCount} out of ${conditionIdsArray.length} markets from CLOB`);
-          
-          // Calculate total outcome prices
-          const totalOutcomes = Array.from(marketPriceCache.values()).reduce((sum, data) => sum + data.outcomes.length, 0);
-          console.log('📊 Total outcome prices available:', totalOutcomes);
-        } catch (err) {
-          console.error('📊 Error fetching CLOB prices:', err);
-        }
-
-        // Format trades for display
-        const formattedTrades: Trade[] = tradesData.map((trade: any, index: number) => {
-          // Parse timestamp - handle both Unix seconds and milliseconds
-          let timestampMs = trade.timestamp;
-          // If timestamp is in seconds (10 digits), convert to milliseconds
-          if (timestampMs < 10000000000) {
-            timestampMs = timestampMs * 1000;
-          }
-          
-          const tradeDate = new Date(timestampMs);
-          const formattedDate = tradeDate.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
-          });
-          
-          // Determine trade status using slug matching (without outcome to catch both sides)
-          let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open'; // Default to Open
-          
-          if (trade.status === 'bonded' || trade.marketStatus === 'bonded') {
+          let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open';
+          if (trade.market_resolved) {
             status = 'Bonded';
-          } else if (openMarketIds.size > 0) {
-            const tradeSlug = trade.slug || trade.market_slug || '';
-            const tradeOutcome = trade.outcome || '';
-            const tradeSlugKey = tradeSlug && tradeOutcome 
-              ? `${tradeSlug.toLowerCase()}:${tradeOutcome.toLowerCase()}`
-              : null;
-            
-            let isOpen = false;
-            let matchMethod = 'none';
-            
-            // PRIMARY: Try slug:outcome match
-            if (tradeSlugKey && openMarketIds.has(tradeSlugKey)) {
-              isOpen = true;
-              matchMethod = 'slug:outcome';
-            } 
-            // SECONDARY: Try slug-only match (catches opposite side of same market)
-            else if (tradeSlug) {
-              const slugOnlyMatch = Array.from(openMarketIds).some(key => 
-                key.startsWith(tradeSlug.toLowerCase() + ':')
-              );
-              if (slugOnlyMatch) {
-                isOpen = true;
-                matchMethod = 'slug-only';
-              }
-            }
-            
-            // FALLBACK: Try ID-based matching
-            if (!isOpen) {
-              const tradeIdentifiers = [
-                trade.conditionId,
-                trade.condition_id,
-                trade.asset,
-                trade.assetId,
-                trade.asset_id,
-                trade.marketId,
-                trade.market_id,
-                trade.id,
-              ].filter(Boolean);
-              
-              isOpen = tradeIdentifiers.some(id => 
-                id && typeof id === 'string' && openMarketIds.has(id.toLowerCase())
-              );
-              
-              if (isOpen) {
-                matchMethod = 'id-based';
-              }
-            }
-            
-            status = isOpen ? 'Open' : 'Trader Closed';
-            // 🎯 SPREAD MAGIC TRADE: Special logging for spread Magic trades
-            if ((trade.title?.toLowerCase().includes('spread') && 
-                 (trade.title?.toLowerCase().includes('magic') || trade.outcome?.toLowerCase().includes('magic'))) ||
-                (trade.slug?.includes('spread') && trade.slug?.includes('mia-orl'))) {
-              console.log('🎯 SPREAD MAGIC TRADE:', {
-                tradeTitle: trade.title?.substring(0, 60),
-                tradeSlug: trade.slug,
-                tradeOutcome: trade.outcome,
-                slugKey: tradeSlugKey,
-                searchingFor: tradeSlug ? tradeSlug + ':' : 'N/A',
-                matchingPositionKeys: [...openMarketIds].filter(k => k.includes(tradeSlug || 'NO_SLUG')),
-                matchMethod: matchMethod,
-                status: status
-              });
-            }
-            
-            // 🔍 DIAGNOSTIC: Log first few trades with detailed matching info
-            if (index < 5) {
-              console.log('🔍 DIAGNOSTIC: Trade', index, {
-                title: trade.title?.substring(0, 50),
-                slug: tradeSlug,
-                outcome: tradeOutcome,
-                slugKey: tradeSlugKey,
-                conditionId: trade.conditionId?.substring(0, 20),
-                asset: trade.asset?.substring(0, 20),
-                matchMethod: matchMethod,
-                isOpen: isOpen,
-                status: status,
-                setSize: openMarketIds.size
-              });
-              
-              // Show if slug exists in any form
-              if (tradeSlug) {
-                const slugMatches = Array.from(openMarketIds)
-                  .filter(key => key.includes(tradeSlug.toLowerCase()))
-                  .slice(0, 3);
-                if (slugMatches.length > 0) {
-                  console.log('  └─ Slug found in position keys:', slugMatches);
-                } else {
-                  console.log('  └─ Slug NOT found in any position keys');
-                }
-              }
-            }
+          } else if (trade.trader_still_has_position === false || trade.user_closed_at) {
+            status = 'Trader Closed';
           }
-          
-          // Store first identifier for other uses
-          const tradeConditionId = trade.conditionId || trade.condition_id || trade.asset || trade.marketId || '';
-          
-          // Find matching position to get current price for ROI calculation
-          let matchingPosition = null;
-          if (status === 'Open') {
-            // Try to find position by slug:outcome
-            const tradeSlug = trade.slug || trade.market_slug || '';
-            const tradeOutcome = trade.outcome || '';
-            
-            if (tradeSlug && tradeOutcome) {
-              matchingPosition = positions.find(pos => 
-                pos.slug?.toLowerCase() === tradeSlug.toLowerCase() &&
-                pos.outcome?.toLowerCase() === tradeOutcome.toLowerCase()
-              );
-            }
-            
-            // Fallback: Find by conditionId
-            if (!matchingPosition && tradeConditionId) {
-              matchingPosition = positions.find(pos => 
-                pos.conditionId?.toLowerCase() === tradeConditionId.toLowerCase()
-              );
-            }
-          }
-          
-          // Determine current price: try position data first, then cache
-          let currentPrice: number | undefined;
-          let priceSource = 'none';
-          
-          if (matchingPosition?.curPrice !== undefined && matchingPosition?.curPrice !== null) {
-            currentPrice = matchingPosition.curPrice;
-            priceSource = 'position';
-          } else if (trade.currentPrice !== undefined && trade.currentPrice !== null) {
-            currentPrice = parseFloat(trade.currentPrice);
-            priceSource = 'trade-data';
-          } else {
-            // Try to get from cache using conditionId
-            const cachedMarket = marketPriceCache.get(tradeConditionId?.toLowerCase() || '');
-            
-            if (cachedMarket) {
-              // For binary markets (2 outcomes), match by position
-              // Gamma returns ["Yes", "No"] but trades have actual names
-              // We need to determine which outcome index this trade represents
-              
-              // Try to match by outcome name first (case-insensitive)
-              const outcomeIndex = cachedMarket.outcomes.findIndex((o: string) => 
-                o.toLowerCase() === trade.outcome?.toLowerCase()
-              );
-              
-              if (outcomeIndex >= 0 && cachedMarket.prices[outcomeIndex] !== undefined) {
-                currentPrice = cachedMarket.prices[outcomeIndex];
-                priceSource = 'clob-cache';
-                console.log(`✅ Matched by outcome name: ${trade.outcome} → index ${outcomeIndex} → price ${currentPrice}`);
-              } else if (cachedMarket.prices.length === 2) {
-                // Binary market fallback: if we can't match by name, 
-                // we can't reliably determine which outcome without more data
-                // Log this case for debugging
-                console.log(`⚠️ Binary market: couldn't match "${trade.outcome}" to outcomes [${cachedMarket.outcomes.join(', ')}]`);
-              }
-            }
-            
-            // Debug logging for first 5 trades without price
-            if ((currentPrice === undefined || currentPrice === null) && index < 5) {
-              const cachedForCondition = marketPriceCache.get(tradeConditionId?.toLowerCase() || '');
-              
-              console.log(`❌ Trade ${index} missing price:`, {
-                market: trade.title?.substring(0, 30),
-                tradeOutcome: trade.outcome,
-                conditionId: tradeConditionId?.substring(0, 12),
-                cacheHasCondition: !!cachedForCondition,
-                cachedOutcomes: cachedForCondition?.outcomes,
-                cachedPrices: cachedForCondition?.prices,
-                cacheSize: marketPriceCache.size
-              });
-            }
-          }
-          
-          // MARKET RESOLUTION DETECTION: Check if market has resolved based on price
-          // If current price is $1 or $0, the market has resolved regardless of position status
-          if (currentPrice !== undefined && currentPrice !== null && status !== 'Bonded') {
-            if (currentPrice >= 0.99) {
-              // Market resolved in favor of this outcome
-              status = 'Trader Closed';
-            } else if (currentPrice <= 0.01) {
-              // Market resolved against this outcome
-              status = 'Trader Closed';
-            }
-          }
-          
+
           return {
-            timestamp: timestampMs, // Use converted milliseconds timestamp
-            market: trade.title || trade.market?.title || trade.marketTitle || 'Unknown Market',
-            side: trade.side || 'BUY',
-            outcome: trade.outcome || trade.option || '',
-            size: parseFloat(trade.size || 0),
-            price: parseFloat(trade.price || 0),
-            avgPrice: matchingPosition?.avgPrice || trade.avgPrice ? parseFloat(trade.avgPrice || matchingPosition?.avgPrice || 0) : undefined,
-            currentPrice: currentPrice,
-            priceSource: priceSource, // Track where price came from
-            formattedDate: formattedDate,
-            marketSlug: trade.slug || trade.market?.slug || trade.marketSlug || '',
-            eventSlug: trade.eventSlug || trade.event_slug || '',
-            conditionId: tradeConditionId,
-            status: status,
+            timestamp: Number.isFinite(timestampMs) ? timestampMs : Date.now(),
+            market: trade.market_title || trade.market_slug || trade.market_id || 'Unknown Market',
+            side: (trade.side || 'BUY').toUpperCase(),
+            outcome: trade.outcome || '',
+            size: inferredSize,
+            price: priceWhenCopied,
+            currentPrice: trade.current_price ?? undefined,
+            formattedDate: formatDate(Number.isFinite(timestampMs) ? timestampMs : Date.now()),
+            marketSlug: trade.market_slug || undefined,
+            conditionId: trade.market_id || undefined,
+            tokenId: extractTokenId(trade),
+            status,
           };
         });
 
-        // Sort by timestamp descending (newest first)
-        formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
-
-        // Log ROI coverage statistics with price sources
-        // Note: 0 is a valid price (trade lost), so check for null/undefined explicitly
-        const tradesWithPrice = formattedTrades.filter(t => t.currentPrice !== undefined && t.currentPrice !== null).length;
-        const tradesWithoutPrice = formattedTrades.length - tradesWithPrice;
-        
-        // Break down by price source
-        const priceSourceStats = {
-          position: formattedTrades.filter(t => (t as any).priceSource === 'position').length,
-          'clob-cache': formattedTrades.filter(t => (t as any).priceSource === 'clob-cache').length,
-          'trade-data': formattedTrades.filter(t => (t as any).priceSource === 'trade-data').length,
-          none: formattedTrades.filter(t => (t as any).priceSource === 'none').length
-        };
-        
-        console.log('✅ Formatted', formattedTrades.length, 'trades for display');
-        console.log('📊 ROI Coverage:', {
-          withCurrentPrice: tradesWithPrice,
-          withoutCurrentPrice: tradesWithoutPrice,
-          coveragePercent: ((tradesWithPrice / formattedTrades.length) * 100).toFixed(1) + '%'
-        });
-        console.log('📊 Price Sources:', priceSourceStats);
-
-        setTrades(formattedTrades);
+        if (!cancelled) {
+          mergeIntoState(normalized);
+        }
       } catch (err) {
-        console.error('❌ Error fetching trades:', err);
-        setTrades([]);
-      } finally {
-        setLoadingTrades(false);
+        console.error('Error fetching Polycopy trades for trader page:', err);
       }
     };
 
-    fetchTraderTrades();
-  }, [wallet, openMarketIds]); // Fetch trades immediately when wallet loads
+    const fetchAllTrades = async () => {
+      setLoadingTrades(true);
 
-  // Toggle follow status
-  const handleFollowToggle = async () => {
-    setFollowLoading(true);
+      await fetchPolycopyTrades();
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      try {
+        console.log('🔗 Fetching complete trade history from blockchain for:', wallet);
+        
+        // Try blockchain approach first (unlimited history)
+        const blockchainResponse = await fetch(`/api/polymarket/trades-blockchain/${wallet}`);
+        
+        if (blockchainResponse.ok) {
+          const blockchainData = await blockchainResponse.json();
+          
+          if (blockchainData.success && blockchainData.trades) {
+            console.log(`✅ Blockchain: Fetched ${blockchainData.trades.length} trades`);
+            
+            const formattedTrades: Trade[] = blockchainData.trades.map((trade: any) => {
+              // Ensure timestamp is in milliseconds
+              let timestampMs = trade.timestamp;
+              if (timestampMs < 10000000000) {
+                timestampMs = timestampMs * 1000;
+              }
+              
+              const tradeDate = new Date(timestampMs);
+              const formattedDate = tradeDate.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+              });
+              
+              // Determine trade status based on market data
+              let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open';
+              if (trade.closed === true || trade.is_closed === true) {
+                status = 'Trader Closed';
+              } else if (trade.resolved === true || trade.is_resolved === true || trade.marketResolved === true) {
+                status = 'Bonded';
+              }
+              
+              return {
+                timestamp: timestampMs,
+                market: trade.title || trade.question || trade.market || trade.marketTitle || 'Unknown Market',
+                side: trade.side || 'BUY',
+              outcome: trade.outcome || '',
+              size: parseFloat(trade.size || 0),
+              price: parseFloat(trade.price || 0),
+              currentPrice: trade.closedPrice || trade.resolvedPrice || trade.exitPrice ? parseFloat(trade.closedPrice || trade.resolvedPrice || trade.exitPrice) : undefined,
+              formattedDate,
+              marketSlug: trade.marketSlug || trade.slug || '',
+              eventSlug: trade.eventSlug || trade.event_slug || '',
+              conditionId: trade.conditionId || trade.condition_id || '',
+              tokenId: extractTokenId(trade),
+              status: status,
+            };
+          });
 
-    if (!user) {
-      router.push('/login');
-      setFollowLoading(false);
+            formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
+            if (!cancelled) {
+              setTrades((prev) => mergeTrades(prev, formattedTrades));
+            }
+            if (!cancelled) setLoadingTrades(false);
+            return;
+          }
+        }
+        
+        // Fallback to data-api if blockchain fails
+        console.log('⚠️ Blockchain fetch failed, falling back to data-api (100 trades max)');
+        const fallbackResponse = await fetch(
+          `https://data-api.polymarket.com/trades?user=${wallet}&limit=100`,
+          { cache: 'no-store' }
+        );
+        
+        if (fallbackResponse.ok) {
+          const fallbackData = await fallbackResponse.json();
+          
+          const formattedTrades: Trade[] = fallbackData.map((trade: any) => {
+            let timestampMs = trade.timestamp;
+            if (timestampMs < 10000000000) {
+              timestampMs = timestampMs * 1000;
+            }
+            
+            const tradeDate = new Date(timestampMs);
+            const formattedDate = tradeDate.toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric'
+            });
+            
+            // Determine trade status based on market data
+            let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open';
+            if (trade.closed === true || trade.is_closed === true) {
+              status = 'Trader Closed';
+            } else if (trade.resolved === true || trade.is_resolved === true || trade.marketResolved === true) {
+              status = 'Bonded';
+            }
+            
+            return {
+              timestamp: timestampMs,
+              market: trade.title || trade.question || trade.market?.title || trade.marketTitle || 'Unknown Market',
+              side: trade.side || 'BUY',
+              outcome: trade.outcome || '',
+              size: parseFloat(trade.size || 0),
+              price: parseFloat(trade.price || 0),
+              currentPrice: trade.currentPrice || trade.closedPrice || trade.resolvedPrice || trade.exitPrice ? parseFloat(trade.currentPrice || trade.closedPrice || trade.resolvedPrice || trade.exitPrice) : undefined,
+              formattedDate,
+              marketSlug: trade.slug || trade.marketSlug || trade.market?.slug || '',
+              eventSlug: trade.eventSlug || trade.event_slug || '',
+              conditionId: trade.conditionId || trade.condition_id || '',
+              tokenId: extractTokenId(trade),
+              status: status,
+            };
+          });
+
+          formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
+          if (!cancelled) {
+            setTrades((prev) => mergeTrades(prev, formattedTrades));
+          }
+        }
+      } catch (err) {
+        console.error('❌ Error fetching trades:', err);
+        if (!cancelled) {
+          setTrades([]);
+        }
+      } finally {
+        if (!cancelled) setLoadingTrades(false);
+      }
+    };
+
+    fetchAllTrades();
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet, mergeTrades]);
+
+  // Fetch live market data for trades (prices, scores, and resolution status)
+  // Using progressive loading - updates state as data comes in
+  useEffect(() => {
+    if (trades.length === 0) return;
+
+    const fetchLiveMarketData = async () => {
+      // Only fetch data for the trades we're currently displaying
+      const displayedTrades = trades.slice(0, tradesToShow);
+      
+      console.log(`📊 Fetching live data for ${displayedTrades.length} trades...`);
+      
+      // Convert trades to the format expected by getESPNScoresForTrades
+      const tradesForESPN = displayedTrades.map(trade => ({
+        market: {
+          conditionId: trade.conditionId,
+          title: trade.market,
+          category: trade.category,
+        },
+        trade: {
+          outcome: trade.outcome,
+        },
+      }));
+
+      // Start ESPN scores fetch (don't await - let it run in parallel)
+      const espnScoresPromise = getESPNScoresForTrades(tradesForESPN as any);
+      console.log('🏈 Fetching sports scores in background...');
+
+      // Immediately start fetching prices for all trades in parallel
+      const pricePromises = displayedTrades.map(async (trade) => {
+        if (!trade.conditionId) return;
+
+        try {
+          // Fetch market data to check resolution status and get price
+          const response = await fetch(`/api/polymarket/price?conditionId=${trade.conditionId}`);
+          if (response.ok) {
+            const priceData = await response.json();
+            
+            if (priceData.success && priceData.market) {
+              const {
+                outcomes,
+                outcomePrices,
+                closed,
+                resolved,
+                gameStartTime,
+                eventStatus,
+                score,
+                homeTeam,
+                awayTeam,
+                endDateIso,
+              } = priceData.market;
+              
+              // Check if market is resolved
+              const isResolved = typeof resolved === 'boolean' ? resolved : closed === true;
+              
+              // Find the price for this specific outcome
+              const outcomeIndex = findOutcomeIndex(outcomes, trade.outcome);
+              const currentPrice = (outcomeIndex !== -1 && outcomePrices && outcomePrices[outcomeIndex]) 
+                ? Number(outcomePrices[outcomeIndex])
+                : trade.price;
+
+              // Update state immediately with price data (without score yet)
+              setLiveMarketData(prev => {
+                const next = new Map(prev);
+                const existing = next.get(trade.conditionId!);
+                next.set(trade.conditionId!, {
+                  price: currentPrice,
+                  closed: closed,
+                  resolved: isResolved,
+                  score: existing?.score,
+                  liveStatus: existing?.liveStatus,
+                  gameStartTime: gameStartTime || existing?.gameStartTime,
+                  eventStatus: eventStatus || existing?.eventStatus,
+                  endDateIso: endDateIso || existing?.endDateIso,
+                });
+                return next;
+              });
+
+              return {
+                trade,
+                outcomes,
+                currentPrice,
+                closed,
+                isResolved,
+                gameStartTime,
+                eventStatus,
+                score,
+                homeTeam,
+                awayTeam,
+                endDateIso,
+              };
+            }
+          }
+        } catch (error) {
+          console.error(`Failed to fetch market data for ${trade.conditionId}:`, error);
+        }
+        return null;
+      });
+
+      // Wait for all price fetches to complete
+      const priceResults = await Promise.all(pricePromises);
+
+      // Now wait for ESPN scores and update trades with scores
+      try {
+        const espnScores = await espnScoresPromise;
+        console.log(`✅ Got sports scores for ${espnScores.size} markets`);
+
+        // Update trades with scores
+        priceResults.forEach(result => {
+          if (!result) return;
+          const {
+            trade,
+            outcomes,
+            currentPrice,
+            closed,
+            isResolved,
+            gameStartTime,
+            eventStatus,
+            score: liveScore,
+            homeTeam,
+            awayTeam,
+            endDateIso,
+          } = result;
+
+          const espnScore = espnScores.get(trade.conditionId!);
+          let scoreDisplay: string | undefined;
+
+          // Detect if this is a sports market
+          const hasTeamMetadata =
+            (typeof homeTeam === 'string' && homeTeam.trim().length > 0) ||
+            (typeof awayTeam === 'string' && awayTeam.trim().length > 0);
+          const hasScoreMetadata =
+            Boolean(liveScore && (typeof liveScore === 'object' || (typeof liveScore === 'string' && liveScore.trim())));
+          const isSportsMarket = trade.market.includes(' vs. ') || 
+                                trade.market.includes(' vs ') ||
+                                trade.market.includes(' v ') ||
+                                trade.market.includes(' versus ') ||
+                                trade.market.includes(' @ ') ||
+                                trade.category === 'sports' ||
+                                hasTeamMetadata ||
+                                hasScoreMetadata;
+
+          if (isSportsMarket && espnScore) {
+            const { team1Label, team1Score, team2Label, team2Score } = getScoreDisplaySides(
+              trade.market,
+              espnScore
+            );
+            const clock = espnScore.displayClock ? ` (${espnScore.displayClock})` : '';
+
+            if (espnScore.status === 'final') {
+              scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
+            } else if (espnScore.status === 'live') {
+              scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}${clock}`;
+            }
+          } else if (isSportsMarket && liveScore && typeof liveScore === 'object') {
+            const homeScoreRaw = (liveScore as any).home ?? (liveScore as any).homeScore ?? (liveScore as any).home_score ?? 0;
+            const awayScoreRaw = (liveScore as any).away ?? (liveScore as any).awayScore ?? (liveScore as any).away_score ?? 0;
+            const homeScore = Number.isFinite(Number(homeScoreRaw)) ? Number(homeScoreRaw) : 0;
+            const awayScore = Number.isFinite(Number(awayScoreRaw)) ? Number(awayScoreRaw) : 0;
+            const fallbackTeams = pickOutcomeTeams(outcomes);
+            const homeTeamName = typeof homeTeam === 'string' ? homeTeam : fallbackTeams[0] || '';
+            const awayTeamName = typeof awayTeam === 'string' ? awayTeam : fallbackTeams[1] || '';
+            const derivedScore = {
+              homeScore,
+              awayScore,
+              homeTeamName,
+              awayTeamName,
+              homeTeamAbbrev: '',
+              awayTeamAbbrev: '',
+              status: 'live' as const,
+              startTime: gameStartTime || '',
+              displayClock: undefined,
+              period: undefined,
+            };
+            const { team1Label, team1Score, team2Label, team2Score } = getScoreDisplaySides(
+              trade.market,
+              derivedScore
+            );
+            scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
+          } else if (isSportsMarket && typeof liveScore === 'string' && liveScore.trim()) {
+            scoreDisplay = liveScore.trim();
+          }
+
+          if (espnScore || scoreDisplay) {
+            const liveStatus = espnScore?.status;
+            setLiveMarketData(prev => {
+              const next = new Map(prev);
+              const existing = next.get(trade.conditionId!);
+              next.set(trade.conditionId!, {
+                price: currentPrice,
+                closed: closed,
+                resolved: isResolved,
+                score: scoreDisplay ?? existing?.score,
+                liveStatus: liveStatus ?? existing?.liveStatus,
+                gameStartTime: existing?.gameStartTime ?? gameStartTime ?? espnScore?.startTime,
+                eventStatus: existing?.eventStatus ?? eventStatus,
+                endDateIso: existing?.endDateIso ?? endDateIso,
+              });
+              return next;
+            });
+          }
+        });
+      } catch (error) {
+        console.error('Failed to fetch ESPN scores:', error);
+      }
+    };
+
+    fetchLiveMarketData();
+  }, [trades, tradesToShow]);
+
+  // Process trades for performance metrics
+  useEffect(() => {
+    if (trades.length === 0 || !traderData) {
+      setPositionSizeBuckets([]);
+      setCategoryDistribution([]);
       return;
     }
 
+    console.log('📊 Processing performance metrics for position sizing');
+
+    // Calculate Position Size Distribution
+    const positionSizes = trades.map(trade => trade.size * trade.price);
+    
+    // Define buckets based on the data
+    const buckets = [
+      { min: 0, max: 10, label: '0-9' },
+      { min: 10, max: 50, label: '10-49' },
+      { min: 50, max: 100, label: '50-99' },
+      { min: 100, max: 250, label: '100-249' },
+      { min: 250, max: 499, label: '250-499' },
+      { min: 499, max: Infinity, label: '499+' },
+    ];
+    
+    const bucketCounts = buckets.map(bucket => ({
+      range: bucket.label,
+      count: positionSizes.filter(size => size >= bucket.min && size < bucket.max).length,
+      percentage: 0
+    }));
+    
+    // Calculate percentages
+    const totalTradesForBuckets = trades.length;
+    bucketCounts.forEach(bucket => {
+      bucket.percentage = (bucket.count / totalTradesForBuckets) * 100;
+    });
+    
+    console.log('✅ Position size buckets:', bucketCounts);
+
+    setPositionSizeBuckets(bucketCounts);
+
+    // Calculate Category Distribution
+    const categoryMap: { [key: string]: number } = {};
+    const categoryColors: { [key: string]: string } = {
+      'Politics': '#3b82f6',
+      'Sports': '#10b981',
+      'Crypto': '#f59e0b',
+      'Culture': '#ec4899',
+      'Finance': '#8b5cf6',
+      'Economics': '#06b6d4',
+      'Tech': '#6366f1',
+      'Weather': '#14b8a6',
+      'Other': '#64748b'
+    };
+
+    trades.forEach(trade => {
+      // Categorize based on market title keywords with comprehensive patterns
+      const title = trade.market.toLowerCase();
+      let category = 'Other';
+      
+      // Politics - elections, government, political figures
+      if (title.match(/trump|biden|harris|election|president|congress|senate|governor|democrat|republican|political|vote|campaign|white house|administration|policy|parliament|prime minister|cabinet|legislation/)) {
+        category = 'Politics';
+      }
+      // Sports - all major sports and events (including "vs", spread betting terms)
+      else if (title.match(/\svs\s|\svs\.|spread:|o\/u\s|over\/under|moneyline|nfl|nba|nhl|mlb|soccer|football|basketball|baseball|hockey|tennis|golf|mma|ufc|boxing|olympics|world cup|super bowl|playoffs|championship|athlete|team|game|match|score|tournament|league|premier league|fifa|celtics|lakers|warriors|bulls|knicks|heat|nets|bucks|raptors|76ers|sixers|pacers|pistons|cavaliers|hornets|magic|hawks|wizards|spurs|mavericks|rockets|grizzlies|pelicans|thunder|jazz|suns|trail blazers|kings|clippers|nuggets|timberwolves|chiefs|bills|bengals|ravens|browns|steelers|texans|colts|jaguars|titans|broncos|raiders|chargers|cowboys|giants|eagles|commanders|packers|bears|lions|vikings|saints|falcons|panthers|buccaneers|rams|49ers|cardinals|seahawks|yankees|red sox|dodgers|astros|mets|braves|cubs|white sox|red wings|maple leafs|canadiens|bruins|rangers|flyers|penguins|capitals|lightning|panthers|hurricanes|islanders|devils|blue jackets|predators|jets|avalanche|stars|blues|wild|blackhawks|ducks|sharks|kraken|flames|oilers|canucks|golden knights/)) {
+        category = 'Sports';
+      }
+      // Crypto - cryptocurrencies and blockchain
+      else if (title.match(/bitcoin|btc|ethereum|eth|crypto|blockchain|defi|nft|solana|sol|dogecoin|doge|cardano|ada|polkadot|dot|binance|bnb|ripple|xrp|litecoin|ltc|satoshi|mining|wallet|token|coin/)) {
+        category = 'Crypto';
+      }
+      // Culture - entertainment, celebrities, media
+      else if (title.match(/movie|film|music|song|album|artist|celebrity|actor|actress|director|oscar|grammy|emmy|tv show|series|netflix|disney|spotify|concert|tour|premiere|box office|streaming|podcast|youtube|tiktok|instagram|social media|influencer|viral|trending|fashion|style|beauty/)) {
+        category = 'Culture';
+      }
+      // Finance - markets, stocks, companies
+      else if (title.match(/stock|s&p|nasdaq|dow|market|ipo|shares|trading|wall street|investor|portfolio|dividend|earnings|revenue|profit|valuation|acquisition|merger|bankruptcy|sec|ftx|robinhood|index|etf|mutual fund|hedge fund|investment|asset/)) {
+        category = 'Finance';
+      }
+      // Economics - macro indicators, central banks
+      else if (title.match(/gdp|inflation|recession|unemployment|interest rate|fed|federal reserve|central bank|cpi|ppi|economy|economic|jobs report|payroll|consumer|spending|debt|deficit|fiscal|monetary|quantitative easing|treasury|bond|yield/)) {
+        category = 'Economics';
+      }
+      // Tech - technology companies and innovations
+      else if (title.match(/ai|artificial intelligence|tech|technology|apple|google|microsoft|amazon|meta|facebook|tesla|spacex|nvidia|amd|intel|chip|semiconductor|software|hardware|startup|silicon valley|ipo|app|platform|cloud|data|cybersecurity|robot|autonomous|electric vehicle|ev|5g|quantum|vr|ar|metaverse|openai|chatgpt|gpt/)) {
+        category = 'Tech';
+      }
+      // Weather - climate and weather events
+      else if (title.match(/temperature|weather|climate|hurricane|storm|tornado|flood|drought|snow|rain|heat wave|cold|frost|wind|forecast|meteorolog|el nino|la nina|global warming|celsius|fahrenheit/)) {
+        category = 'Weather';
+      }
+      
+      categoryMap[category] = (categoryMap[category] || 0) + 1;
+    });
+
+    // Convert to array with percentages
+    const totalTradesForCategories = trades.length;
+    const categoryData: CategoryDistribution[] = Object.entries(categoryMap)
+      .map(([category, count]) => ({
+        category,
+        count,
+        percentage: (count / totalTradesForCategories) * 100,
+        color: categoryColors[category] || '#64748b'
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    setCategoryDistribution(categoryData);
+  }, [trades, traderData]);
+
+  // Toggle follow
+  const handleFollowToggle = async () => {
+    if (!user) {
+      triggerLoggedOut('session_missing');
+      router.push('/login');
+      return;
+    }
+
+    setFollowLoading(true);
+
     try {
-      // IMPORTANT: Normalize wallet to lowercase for consistent database storage
       const normalizedWallet = wallet.toLowerCase();
       
       if (following) {
-        // Unfollow
-        const { error: deleteError } = await supabase
+        await supabase
           .from('follows')
           .delete()
           .eq('user_id', user.id)
           .eq('trader_wallet', normalizedWallet);
 
-        if (deleteError) {
-          throw deleteError;
-        }
         setFollowing(false);
       } else {
-        // Follow
-        const { data: insertData, error: insertError } = await supabase
+        await supabase
           .from('follows')
-          .insert({ user_id: user.id, trader_wallet: normalizedWallet })
-          .select();
-        
-        if (insertError) {
-          throw insertError;
-        }
-        
-        if (!insertData || insertData.length === 0) {
-          throw new Error('Failed to create follow - please try again');
-        }
+          .insert({ user_id: user.id, trader_wallet: normalizedWallet });
         
         setFollowing(true);
       }
       
       // Refetch trader data to update follower count
-      try {
-        const response = await fetch(`/api/trader/${wallet}`);
-        
-        if (response.ok) {
-          const data = await response.json();
-          
-          setTraderData(prev => {
-            if (!prev) return prev;
-            console.log('🔄 Previous follower count:', prev.followerCount);
-            console.log('🔄 New follower count:', data.followerCount);
-            return {
-              ...prev,
-              followerCount: data.followerCount
-            };
-          });
-          console.log('✅ Updated follower count:', data.followerCount);
-        } else {
-          console.error('❌ API response not OK:', response.status);
-        }
-      } catch (err) {
-        console.error('❌ Failed to refetch follower count:', err);
+      const response = await fetch(`/api/trader/${wallet}`);
+      if (response.ok) {
+        const data = await response.json();
+        setTraderData(prev => prev ? { ...prev, followerCount: data.followerCount } : prev);
       }
     } catch (err: any) {
       console.error('Error toggling follow:', err);
-      alert(err.message || 'Failed to update follow status.');
     } finally {
       setFollowLoading(false);
     }
   };
 
-  // Handle Mark as Copied click
-  const handleMarkAsCopied = (trade: Trade) => {
+  const handleMarkAsCopied = async (
+    trade: Trade,
+    entryPrice: number,
+    amountInvested?: number
+  ) => {
     if (!user) {
+      triggerLoggedOut('session_missing');
       router.push('/login');
       return;
     }
-    setSelectedTrade(trade);
-    setModalOpen(true);
-  };
-
-  // Handle confirm copy from modal
-  const handleConfirmCopy = async (entryPrice: number, amountInvested?: number) => {
-    if (!selectedTrade || !user) return;
-
-    setIsSubmitting(true);
 
     try {
-      // Generate market ID from trade data
-      const marketId = selectedTrade.conditionId || selectedTrade.marketSlug || selectedTrade.market;
-      
-      // Log what we're about to save for debugging
-      console.log('📝 Copying trade:', {
-        market_title: selectedTrade.market,
-        market_slug: selectedTrade.marketSlug || selectedTrade.eventSlug,
-        conditionId: selectedTrade.conditionId,
-        outcome: selectedTrade.outcome,
-        entryPrice,
-      });
-      
-      // Insert directly into Supabase (like follow/unfollow does)
-      const { data: createdTrade, error: insertError } = await supabase
-        .from('copied_trades')
-        .insert({
-          user_id: user.id,
-          trader_wallet: wallet,
-          trader_username: traderData?.displayName || wallet.slice(0, 8),
-          market_id: marketId,
-          market_title: selectedTrade.market,
-          market_slug: selectedTrade.marketSlug || selectedTrade.eventSlug || null,
-          outcome: selectedTrade.outcome.toUpperCase(),
-          price_when_copied: entryPrice,
-          amount_invested: amountInvested || null,
-        })
-        .select()
-        .single();
+      const marketId = trade.conditionId || trade.marketSlug || trade.market;
 
-      if (insertError) {
-        console.error('❌ Insert error:', insertError);
-        throw new Error(insertError.message || 'Failed to save copied trade');
+      const response = await fetch('/api/copied-trades', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          traderWallet: wallet,
+          traderUsername: traderData?.displayName || wallet.slice(0, 8),
+          marketId,
+          marketTitle: trade.market,
+          marketSlug: trade.marketSlug || trade.eventSlug || null,
+          outcome: trade.outcome.toUpperCase(),
+          priceWhenCopied: entryPrice,
+          amountInvested: amountInvested || null,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error('Error copying trade:', result);
+        throw new Error(result.error || 'Failed to save copied trade');
       }
 
-      console.log('✅ Trade copied successfully:', createdTrade?.id);
-
-      // Update local state
-      const tradeKey = `${marketId}-${wallet}`;
-      setCopiedTradeIds(prev => new Set([...prev, tradeKey]));
-
-      // Close modal
-      setModalOpen(false);
-      setSelectedTrade(null);
-
-      // Show success toast
-      setToastMessage('Trade marked as copied!');
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
-
+      const tradeKey = buildCopiedTradeKey(marketId, wallet);
+      if (tradeKey) {
+        setCopiedTradeIds((prev) => {
+          const next = new Set(prev);
+          next.add(tradeKey);
+          return next;
+        });
+      }
     } catch (err: any) {
       console.error('Error saving copied trade:', err);
       alert(err.message || 'Failed to save copied trade');
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
-  // Check if a trade is already copied
+  // Check if trade is copied
   const isTradeCopied = (trade: Trade): boolean => {
-    const marketId = trade.conditionId || trade.marketSlug || trade.market;
-    const tradeKey = `${marketId}-${wallet}`;
-    return copiedTradeIds.has(tradeKey);
+    const tradeKey = buildCopiedTradeKey(getMarketKeyForTrade(trade), wallet);
+    return tradeKey ? copiedTradeIds.has(tradeKey) : false;
   };
 
-  // Find position for a trade (to get correct eventSlug)
-  const findPositionForTrade = (trade: Trade): Position | undefined => {
-    if (!trade.conditionId) return undefined;
-    // IMPORTANT: Case-insensitive matching for hex conditionIds
-    const tradeConditionLower = trade.conditionId.toLowerCase();
-    return positions.find(p => 
-      p.conditionId?.toLowerCase() === tradeConditionLower || 
-      p.asset?.toLowerCase() === tradeConditionLower
-    );
-  };
-
-  // Get Polymarket URL for a trade - always try to construct a URL
-  const getPolymarketUrl = (trade: Trade): string => {
-    // Try 1: Find matching position (has most accurate eventSlug)
-    const position = findPositionForTrade(trade);
-    if (position) {
-      const eventSlug = position.eventSlug || position.slug;
-      if (eventSlug) {
-        return `https://polymarket.com/event/${eventSlug}`;
-      }
+  // Handle quick copy for premium users
+  const handleQuickCopy = async (trade: Trade) => {
+    // Check if wallet is connected
+    if (!walletAddress) {
+      setShowWalletConnectModal(true);
+      return;
     }
     
-    // Try 2: Use trade's own slug/eventSlug data
+    setIsSubmitting(true);
+    
+    // Simulate trade execution
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    
+    // Mark as copied
+    const tradeKey = buildCopiedTradeKey(getMarketKeyForTrade(trade), wallet);
+    if (tradeKey) {
+      setCopiedTradeIds(prev => {
+        const next = new Set(prev);
+        next.add(tradeKey);
+        return next;
+      });
+    }
+    
+    setIsSubmitting(false);
+    setExpandedTradeKeys(new Set());
+    setUsdAmount('');
+  };
+
+  const handleManualCopyToggle = (index: number, url: string | null) => {
+    const nextIndex = manualCopyTradeIndex === index ? null : index;
+    setManualCopyTradeIndex(nextIndex);
+    if (nextIndex === index && url && typeof window !== 'undefined') {
+      window.open(url, '_blank');
+    }
+    setManualUsdAmount('');
+  };
+
+  const handleManualCopyCta = (url: string | null) => {
+    if (!url || typeof window === 'undefined') return;
+    window.open(url, '_blank');
+  };
+
+  // Calculate contracts for premium quick copy
+  const calculateContracts = (usdInput: string, price: number) => {
+    const amount = Number.parseFloat(usdInput);
+    if (isNaN(amount) || amount <= 0 || price <= 0) return 0;
+    return Math.floor(amount / price);
+  };
+
+  // Get Polymarket URL
+  const getPolymarketUrl = (trade: Trade): string => {
     if (trade.eventSlug) {
       return `https://polymarket.com/event/${trade.eventSlug}`;
     }
     if (trade.marketSlug) {
       return `https://polymarket.com/event/${trade.marketSlug}`;
     }
-    
-    // Try 3: Fallback to search URL using market title
     return `https://polymarket.com/search?q=${encodeURIComponent(trade.market)}`;
   };
 
-  /**
-   * Generate a consistent avatar color from wallet address
-   * 
-   * This is a custom implementation (not using external library like Dicebear or Boring Avatars)
-   * - Uses a simple hash function on the wallet address string
-   * - Converts hash to a hue value (0-360) for HSL color
-   * - Saturation fixed at 65%, Lightness at 50% for vibrant, readable colors
-   * - The initials are taken from characters 2-4 of the wallet (after "0x" prefix)
-   * 
-   * Example: "0xabc123..." -> hash -> hue 180 -> "hsl(180, 65%, 50%)" with initials "AB"
-   */
+  // Format helpers
+  const formatCurrency = (amount: number) => {
+    if (amount >= 1000000) {
+      return `$${(amount / 1000000).toFixed(1)}M`;
+    }
+    if (amount >= 1000) {
+      return `$${(amount / 1000).toFixed(1)}K`;
+    }
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const formatSignedCurrency = (amount: number, decimals = 0) => {
+    const formatted = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(Math.abs(amount));
+    if (amount > 0) return `+${formatted}`;
+    if (amount < 0) return `-${formatted}`;
+    return formatted;
+  };
+
+  const formatCompactCurrency = (amount: number) => {
+    const abs = Math.abs(amount);
+    const sign = amount > 0 ? '+' : amount < 0 ? '-' : '';
+    if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+    if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
+    return `${sign}$${abs.toFixed(0)}`;
+  };
+
+  const toDateObj = (dateStr: string) => new Date(`${dateStr}T00:00:00Z`);
+
+  const formatPercentage = (value: number | string) => {
+    const num = typeof value === 'string' ? parseFloat(value) : value;
+    return `${num > 0 ? '+' : ''}${num.toFixed(1)}%`;
+  };
+
+  const pnlWindowLabel = useMemo(
+    () => pnlWindowOptions.find((option) => option.key === pnlWindow)?.label ?? '30 Days',
+    [pnlWindow]
+  );
+
+  const realizedWindowRows = useMemo(() => {
+    if (realizedPnlRows.length === 0) return [];
+    const option = pnlWindowOptions.find((entry) => entry.key === pnlWindow) ?? pnlWindowOptions[3];
+    const lastIndex = realizedPnlRows.length - 1;
+    let anchorDate = toDateObj(realizedPnlRows[lastIndex].date);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (realizedPnlRows[lastIndex].date === todayStr && lastIndex > 0) {
+      anchorDate = toDateObj(realizedPnlRows[lastIndex - 1].date);
+    }
+
+    let startDate: Date | null = null;
+    let endDate: Date | null = null;
+
+    if (option.key === 'ALL') {
+      startDate = null;
+      endDate = null;
+    } else if (option.days !== null) {
+      const start = new Date(Date.UTC(
+        anchorDate.getUTCFullYear(),
+        anchorDate.getUTCMonth(),
+        anchorDate.getUTCDate()
+      ));
+      start.setUTCDate(start.getUTCDate() - (option.days - 1));
+      startDate = start;
+      endDate = anchorDate;
+    }
+
+    return realizedPnlRows
+      .filter((row) => {
+        const day = toDateObj(row.date);
+        if (startDate && day < startDate) return false;
+        if (endDate && day > endDate) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [realizedPnlRows, pnlWindow]);
+
+  const realizedChartSeries = useMemo(() => {
+    let running = 0;
+    return realizedWindowRows.map((row) => {
+      running += row.realized_pnl;
+      return {
+        date: row.date,
+        dailyPnl: row.realized_pnl,
+        cumulativePnl: running,
+      };
+    });
+  }, [realizedWindowRows]);
+
+  const realizedSummary = useMemo(() => {
+    const totalPnl = realizedWindowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0);
+    const avgDaily = realizedWindowRows.length > 0 ? totalPnl / realizedWindowRows.length : 0;
+    const daysUp = realizedWindowRows.filter((row) => row.realized_pnl > 0).length;
+    const daysDown = realizedWindowRows.filter((row) => row.realized_pnl < 0).length;
+    const daysActive = realizedWindowRows.filter((row) => row.realized_pnl !== 0).length;
+    return { totalPnl, avgDaily, daysUp, daysDown, daysActive };
+  }, [realizedWindowRows]);
+
+  const rankInfo = useMemo(() => {
+    return rankingsByWindow[pnlWindow] ?? { rank: null, total: null, delta: null };
+  }, [rankingsByWindow, pnlWindow]);
+
+  const realizedRangeLabel = useMemo(() => {
+    if (realizedWindowRows.length === 0) return pnlWindowLabel;
+    const start = new Date(`${realizedWindowRows[0].date}T00:00:00Z`);
+    const end = new Date(`${realizedWindowRows[realizedWindowRows.length - 1].date}T00:00:00Z`);
+    const format = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `${format(start)} - ${format(end)}`;
+  }, [realizedWindowRows, pnlWindowLabel]);
+
+  const getInitials = (address: string) => {
+    return address.slice(2, 4).toUpperCase();
+  };
+
   const getAvatarColor = (address: string) => {
     let hash = 0;
     for (let i = 0; i < address.length; i++) {
@@ -1227,76 +1357,162 @@ export default function TraderProfilePage({
     return `hsl(${hue}, 65%, 50%)`;
   };
 
-  // Copy wallet to clipboard
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(wallet);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
+  // Compute PnL/ROI/WinRate from full trade history (mark-to-market with live prices)
+  useEffect(() => {
+    if (trades.length === 0) {
+      setComputedStats(null);
+      return;
     }
-  };
 
-  // Format P&L with sign and currency - returns "--" if no data
-  const formatPnL = (value: number | null | undefined) => {
-    if (value === null || value === undefined) {
-      return '--';
-    }
-    const sign = value >= 0 ? '+' : '';
-    return `${sign}$${value.toLocaleString('en-US', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    })}`;
-  };
+    type Position = {
+      size: number;
+      avgCost: number;
+      realized: number;
+      buyNotional: number;
+      sellCount: number;
+      winSells: number;
+      sampleTrade: Trade | null;
+    };
 
-  // Calculate ROI - returns "--" string if cannot calculate
-  const calculateROI = (pnl: number | null | undefined, volume: number | null | undefined): string => {
-    if (pnl === null || pnl === undefined || volume === null || volume === undefined || volume === 0) {
-      return '--';
-    }
-    return ((pnl / volume) * 100).toFixed(1);
-  };
+    const positions = new Map<string, Position>();
 
-  // Format volume with M/K abbreviations - returns "--" if no data
-  const formatVolume = (value: number | null | undefined) => {
-    if (value === null || value === undefined) {
-      return '--';
-    }
-    if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`;
-    } else if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`;
-    } else {
-      return `$${value.toFixed(0)}`;
-    }
-  };
+    const priceForTrade = (trade: Trade) => {
+      const live = trade.conditionId ? liveMarketData.get(trade.conditionId) : undefined;
+      if (live && typeof live.price === 'number') return live.price;
+      return trade.currentPrice ?? null;
+    };
 
-  // Format trades count - returns "--" if no data, or "100+" if we've hit the load limit
-  const formatTradesCount = (count: number | null | undefined, showPlus: boolean = false): string => {
-    if (count === null || count === undefined) {
-      // If we have loaded trades but no official count, show loaded count with "+"
-      if (showPlus && trades.length > 0) {
-        return `${trades.length}+`;
+    const keyFor = (t: Trade) => `${t.conditionId || t.market}-${t.outcome}`;
+
+    trades.forEach((trade) => {
+      const key = keyFor(trade);
+      const existing = positions.get(key) ?? {
+        size: 0,
+        avgCost: 0,
+        realized: 0,
+        buyNotional: 0,
+        sellCount: 0,
+        winSells: 0,
+        sampleTrade: null,
+      };
+
+      if (trade.side === 'BUY') {
+        const totalCost = existing.avgCost * existing.size + trade.price * trade.size;
+        const newSize = existing.size + trade.size;
+        existing.size = newSize;
+        existing.avgCost = newSize > 0 ? totalCost / newSize : 0;
+        existing.buyNotional += trade.size * trade.price;
+      } else {
+        const sellQty = trade.size;
+        const realized = (trade.price - existing.avgCost) * sellQty;
+        existing.realized += realized;
+        existing.size -= sellQty;
+        existing.sellCount += 1;
+        if (realized > 0) existing.winSells += 1;
       }
-      return '--';
-    }
-    return count.toLocaleString('en-US', { maximumFractionDigits: 0 });
-  };
 
-  // Abbreviate wallet address
-  const abbreviateWallet = (address: string) => {
-    if (address.length < 10) return address;
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
-  };
+      if (!existing.sampleTrade) existing.sampleTrade = trade;
+      positions.set(key, existing);
+    });
+
+    let realizedPnl = 0;
+    let volume = 0;
+    let totalPositions = 0;
+    let winningPositions = 0;
+    
+    positions.forEach((p, key) => {
+      realizedPnl += p.realized;
+      volume += p.buyNotional;
+      
+      const sample = p.sampleTrade || trades.find((t) => keyFor(t) === key);
+      if (!sample) return;
+      
+      // Always count this position in win rate calculation
+      totalPositions += 1;
+      
+      // Determine if this position is a winner
+      let isWinner = false;
+      
+      // For closed positions (size = 0), check realized profit
+      if (Math.abs(p.size) < 1e-9) {
+        isWinner = p.realized > 0;
+      } 
+      // For open positions, check if current price > entry price
+      else {
+        const currentPrice = priceForTrade(sample);
+        // Only count as winner if we have current price AND it's above entry
+        // If no current price available, count as neutral (not winner, not loser)
+        if (currentPrice !== null) {
+          const unrealizedPnl = (currentPrice - p.avgCost) * p.size;
+          isWinner = unrealizedPnl > 0;
+        }
+        // If currentPrice is null, isWinner stays false (neutral position)
+      }
+      
+      if (isWinner) winningPositions += 1;
+    });
+
+    let unrealizedPnl = 0;
+    positions.forEach((p, key) => {
+      if (Math.abs(p.size) < 1e-9) return;
+      const sample = p.sampleTrade || trades.find((t) => keyFor(t) === key);
+      if (!sample) return;
+      const currentPrice = priceForTrade(sample);
+      if (currentPrice === null) return;
+      unrealizedPnl += (currentPrice - p.avgCost) * p.size;
+    });
+
+    const totalPnl = realizedPnl + unrealizedPnl;
+    const roi = volume > 0 ? (totalPnl / volume) * 100 : 0;
+    // Win rate: percentage of ALL positions (open + closed) with positive ROI
+    const winRate = totalPositions > 0 ? (winningPositions / totalPositions) * 100 : null;
+
+    console.log('🧮 Computed stats from trades:', {
+      tradesCount: trades.length,
+      totalPnl: totalPnl.toFixed(2),
+      volume: volume.toFixed(2),
+      roi: roi.toFixed(1) + '%',
+      winRate: winRate !== null ? winRate.toFixed(1) + '%' : 'N/A (no positions yet)',
+      totalPositions,
+      winningPositions,
+      note: 'Win rate = % of ALL positions (open + closed) with positive ROI (current price > entry price)'
+    });
+
+    setComputedStats({
+      totalPnl,
+      realizedPnl,
+      unrealizedPnl,
+      volume,
+      roi,
+      winRate: winRate ?? 0, // Store 0 if null, but we'll display N/A in UI
+    });
+  }, [trades, liveMarketData]);
+
+  // Filter trades
+  const filteredTrades = trades.filter(trade => {
+    if (trade.status === 'Open') return true;
+    if (!showResolvedTrades) return false;
+    return trade.status === 'Trader Closed' || trade.status === 'Bonded';
+  });
+  const noTradesMessage =
+    trades.length === 0
+      ? "This trader hasn't made any trades yet"
+      : showResolvedTrades
+      ? 'No open or resolved trades to display'
+      : 'No open trades to display';
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 pb-20">
-        <Header />
+      <div className="min-h-screen bg-slate-50">
+        <Navigation 
+          user={user ? { id: user.id, email: user.email || '' } : null} 
+          isPremium={isPremium} 
+          walletAddress={walletAddress} 
+        />
+        <SignupBanner isLoggedIn={!!user} />
         <div className="flex items-center justify-center pt-20">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-brand-yellow mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
             <p className="text-slate-600 text-lg">Loading trader data...</p>
           </div>
         </div>
@@ -1305,25 +1521,24 @@ export default function TraderProfilePage({
   }
 
   if (error || !traderData) {
-    return (
-      <div className="min-h-screen bg-slate-50 pb-20">
-        <Header />
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <Navigation 
+        user={user ? { id: user.id, email: user.email || '' } : null} 
+        isPremium={isPremium} 
+        walletAddress={walletAddress} 
+      />
+      <SignupBanner isLoggedIn={!!user} />
         <div className="max-w-4xl mx-auto px-4 py-8">
-          <button
-            onClick={() => router.back()}
-            className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 mb-6 transition-colors"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-            </svg>
-            Back
-          </button>
           <div className="flex flex-col items-center justify-center py-20 px-4">
             <div className="text-6xl mb-6">😞</div>
             <h2 className="text-2xl font-bold text-slate-900 mb-4">Trader Not Found</h2>
             <p className="text-slate-600 text-lg mb-6">
               {error || 'Unable to load trader data'}
             </p>
+            <Button onClick={() => router.back()} variant="outline">
+              Go Back
+            </Button>
           </div>
         </div>
       </div>
@@ -1331,666 +1546,1385 @@ export default function TraderProfilePage({
   }
 
   const avatarColor = getAvatarColor(wallet);
-  // Avatar initials: first 2 characters after "0x" prefix, uppercased
-  const initials = wallet.slice(2, 4).toUpperCase();
-  // Use roi from API if available, otherwise calculate it
-  const roi = traderData.roi !== null && traderData.roi !== undefined 
-    ? traderData.roi.toFixed(1)
-    : calculateROI(traderData.pnl, traderData.volume);
-  
-  // Calculate win rate: (Profitable Trades / Total Trades) × 100%
-  // Only count trades where we have price data to calculate ROI
-  const tradesWithROI = trades.filter(t => {
-    const entryPrice = t.price;
-    const currentPrice = t.currentPrice;
-    return entryPrice && currentPrice !== undefined && currentPrice !== null && entryPrice !== 0;
-  });
-  
-  const profitableTrades = tradesWithROI.filter(t => {
-    const entryPrice = t.price;
-    const currentPrice = t.currentPrice;
-    if (entryPrice && currentPrice !== undefined && currentPrice !== null && entryPrice !== 0) {
-      const tradeROI = ((currentPrice - entryPrice) / entryPrice) * 100;
-      return tradeROI > 0;
-    }
-    return false;
-  });
-  
-  const winRate = tradesWithROI.length > 0 
-    ? ((profitableTrades.length / tradesWithROI.length) * 100).toFixed(1)
-    : '--';
-  
-  // Only show trades count if we have it from leaderboard data (reliable source)
-  // If we only have loaded trades, show that count with "+" to indicate there are more
-  const tradesCount = traderData.tradesCount ?? leaderboardData?.total_trades ?? null;
-  const hasMoreTrades = !tradesCount && trades.length >= 100; // API default limit is 100
+  const initials = getInitials(wallet);
+  // CRITICAL: Prioritize traderData (Polymarket leaderboard) over computedStats (calculated from limited trades)
+  // Polymarket has the accurate all-time stats; computedStats is based on max 100 recent trades
+  const effectivePnl = traderData.pnl ?? computedStats?.totalPnl ?? 0;
+  const effectiveVolume = traderData.volume ?? computedStats?.volume ?? 0;
+  const effectiveRoiValue = traderData.roi ?? computedStats?.roi ?? (effectiveVolume > 0 ? (effectivePnl / effectiveVolume) * 100 : 0);
+  // Win rate: Calculated from ALL positions (open + closed) with positive ROI
+  // Show N/A only if we have no positions at all
+  const effectiveWinRate = (computedStats && computedStats.winRate !== null && computedStats.winRate !== undefined) ? computedStats.winRate : null;
 
-  // Determine display name: prefer leaderboard username, then traderData, then "Anonymous Trader"
-  const displayName = leaderboardData?.username || traderData.displayName || 'Anonymous Trader';
+  console.log('📊 Trader Profile Stats Priority:', {
+    wallet: wallet.substring(0, 8),
+    leaderboardPnl: traderData.pnl,
+    computedPnl: computedStats?.totalPnl,
+    effectivePnl,
+    leaderboardRoi: traderData.roi,
+    computedRoi: computedStats?.roi,
+    effectiveRoiValue,
+    source: traderData.pnl ? 'leaderboard' : computedStats ? 'computed' : 'none'
+  });
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
-      <Header />
-
-      {/* Back Button */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <button
-            onClick={() => router.back()}
-            className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-            </svg>
-            Back
-          </button>
-        </div>
-      </div>
-
-      {/* Profile Header Section */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-4xl mx-auto px-4 py-6">
-          {/* Mobile: Avatar + Name + Follow Button (single row with button right-aligned) */}
-          <div className="md:hidden mb-6">
-            <div className="flex items-start justify-between gap-3 mb-3">
-              {/* Left side: Avatar + Name */}
-              <div className="flex items-start gap-3 min-w-0 flex-1">
-                {/* Avatar */}
-                <div
-                  className="h-12 w-12 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 ring-2 ring-white shadow-sm"
-                  style={{ backgroundColor: avatarColor }}
-                >
-                  {initials}
-                </div>
-                
-                {/* Name and Wallet */}
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-xl font-bold text-slate-900 truncate">
-                    {displayName}
-                  </h1>
-                </div>
-              </div>
-
-              {/* Right side: Follow Button */}
-              <button
-                onClick={handleFollowToggle}
-                disabled={followLoading || checkingFollow}
-                className={`rounded-lg px-4 py-2 text-xs font-bold transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed border-b-4 active:border-b-0 active:translate-y-1 flex-shrink-0 ${
-                  following
-                    ? 'bg-slate-200 text-slate-700 hover:bg-slate-300 border-slate-400'
-                    : 'bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 border-[#D97706]'
-                }`}
-              >
-                {checkingFollow || followLoading ? (
-                  <span className="flex items-center justify-center gap-1">
-                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                  </span>
-                ) : following ? (
-                  '✓ Following'
-                ) : (
-                  '+ Follow'
-                )}
-              </button>
-            </div>
-            
-            {/* Wallet address and copy button (second row) */}
-            <div className="flex items-center gap-2 pl-15 mb-1">
-              <span className="text-sm text-slate-500 font-mono">
-                {abbreviateWallet(wallet)}
-              </span>
-              <button
-                onClick={handleCopy}
-                className="p-1 hover:bg-slate-100 rounded transition-colors"
-                title="Copy wallet address"
-              >
-                {copied ? (
-                  <Check className="w-4 h-4 text-emerald-600" />
-                ) : (
-                  <Copy className="w-4 h-4 text-slate-400 hover:text-slate-600" />
-                )}
-              </button>
-            </div>
-            
-            {/* Follower count (third row) */}
-            <p className="text-sm text-slate-500 pl-15">
-              {traderData.followerCount.toLocaleString()} {traderData.followerCount === 1 ? 'follower' : 'followers'} on Polycopy
-            </p>
-          </div>
-
-          {/* Desktop: Avatar + Name + Follow Button (original layout) */}
-          <div className="hidden md:flex flex-row items-center justify-between gap-6 mb-6">
-            <div className="flex items-center gap-4">
-              {/* Avatar */}
-              <div
-                className="h-16 w-16 rounded-full flex items-center justify-center text-white font-bold text-2xl flex-shrink-0 ring-2 ring-white shadow-sm"
-                style={{ backgroundColor: avatarColor }}
-              >
+      <Navigation 
+        user={user ? { id: user.id, email: user.email || '' } : null} 
+        isPremium={isPremium} 
+        walletAddress={walletAddress} 
+      />
+      <SignupBanner isLoggedIn={!!user} />
+      
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* Profile Header */}
+        <Card className="bg-white border-slate-200 p-8">
+          <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6 mb-5">
+            <Avatar className="h-20 w-20 border-2 border-white shadow-md flex-shrink-0" style={{ backgroundColor: avatarColor }}>
+              {traderData.profileImage && (
+                <AvatarImage src={traderData.profileImage} alt={traderData.displayName} />
+              )}
+              <AvatarFallback className="text-white text-xl font-semibold bg-transparent">
                 {initials}
-              </div>
-              
-              {/* Name and Wallet */}
-              <div>
-                <h1 className="text-3xl font-bold text-slate-900">
-                  {displayName}
-                </h1>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-sm text-slate-500 font-mono">
-                    {abbreviateWallet(wallet)}
-                  </span>
-                  <button
-                    onClick={handleCopy}
-                    className="p-1 hover:bg-slate-100 rounded transition-colors"
-                    title="Copy wallet address"
-                  >
-                    {copied ? (
-                      <Check className="w-4 h-4 text-emerald-600" />
-                    ) : (
-                      <Copy className="w-4 h-4 text-slate-400 hover:text-slate-600" />
-                    )}
-                  </button>
-                </div>
-                <p className="text-sm text-slate-500 mt-1">
-                  {traderData.followerCount.toLocaleString()} {traderData.followerCount === 1 ? 'follower' : 'followers'} on Polycopy
+              </AvatarFallback>
+            </Avatar>
+
+            <div className="flex-1 min-w-0">
+              <h1 className="text-2xl font-bold text-slate-900 mb-1">{traderData.displayName}</h1>
+              <div className="flex items-center gap-2 mb-3">
+                <p className="text-sm font-mono text-slate-500">
+                  {wallet.slice(0, 6)}...{wallet.slice(-4)}
                 </p>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(wallet);
+                    setWalletCopied(true);
+                    setTimeout(() => setWalletCopied(false), 2000);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                  title={walletCopied ? "Copied!" : "Copy wallet address"}
+                >
+                  {walletCopied ? (
+                    <Check className="h-3.5 w-3.5 text-green-600" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </button>
               </div>
+
+              <a
+                href={`https://polymarket.com/profile/${wallet}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-yellow-600 transition-colors"
+              >
+                View on Polymarket
+                <ArrowUpRight className="h-3 w-3" />
+              </a>
             </div>
 
             {/* Follow Button */}
-            <button
-              onClick={handleFollowToggle}
-              disabled={followLoading || checkingFollow}
-              className={`rounded-lg px-6 py-3 text-sm font-bold transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed border-b-4 active:border-b-0 active:translate-y-1 ${
-                following
-                  ? 'bg-slate-200 text-slate-700 hover:bg-slate-300 border-slate-400'
-                  : 'bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 border-[#D97706]'
-              }`}
-            >
-              {checkingFollow || followLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                  {following ? 'Unfollowing...' : 'Following...'}
-                </span>
-              ) : following ? (
-                '✓ Following'
+            <div className="w-full sm:w-auto sm:ml-auto">
+              {following ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleFollowToggle}
+                  disabled={followLoading}
+                  className="border-slate-300 text-slate-700 hover:bg-slate-50 gap-1.5 px-3 w-full sm:w-auto justify-center"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Following
+                </Button>
               ) : (
-                '+ Follow'
+                <Button
+                  size="sm"
+                  onClick={handleFollowToggle}
+                  disabled={followLoading}
+                  className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm px-4 w-full sm:w-auto justify-center"
+                >
+                  Follow
+                </Button>
               )}
-            </button>
-          </div>
-
-          {/* Stats Section Header */}
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Performance</span>
-            <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-medium rounded-full">Lifetime</span>
-          </div>
-
-          {/* Stats Grid - Desktop: 5 separate cards, Mobile: Combined card */}
-          <div className="hidden md:grid grid-cols-5 gap-3">
-            {/* Desktop Stat Cards */}
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">P&L</div>
-              <div className={`text-xl font-bold ${
-                traderData.pnl > 0 ? 'text-emerald-600' : traderData.pnl < 0 ? 'text-red-500' : 'text-slate-900'
-              }`}>
-                {formatPnL(traderData.pnl)}
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">ROI</div>
-              <div className={`text-xl font-bold ${
-                roi !== '--' && parseFloat(String(roi)) > 0 ? 'text-emerald-600' : 
-                roi !== '--' && parseFloat(String(roi)) < 0 ? 'text-red-500' : 'text-slate-900'
-              }`}>
-                {roi !== '--' ? `${roi}%` : '--'}
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">WIN RATE</div>
-              <div className={`text-xl font-bold ${
-                winRate !== '--' && parseFloat(String(winRate)) >= 50 ? 'text-emerald-600' : 
-                winRate !== '--' && parseFloat(String(winRate)) < 50 ? 'text-slate-600' : 'text-slate-900'
-              }`}>
-                {winRate !== '--' ? `${winRate}%` : '--'}
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">VOLUME</div>
-              <div className="text-xl font-bold text-slate-900">
-                {formatVolume(traderData.volume)}
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">TRADES</div>
-              <div className="text-xl font-bold text-slate-900">
-                {formatTradesCount(tradesCount, hasMoreTrades)}
-              </div>
             </div>
           </div>
 
-          {/* Mobile: Combined stat card - 5 columns in one card */}
-          <div className="md:hidden bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-            <div className="grid grid-cols-5 gap-1 text-center">
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase mb-1">P&L</div>
-                <div className={`text-xs font-bold ${
-                  traderData.pnl > 0 ? 'text-emerald-600' : traderData.pnl < 0 ? 'text-red-500' : 'text-slate-900'
-                }`}>
-                  {formatPnL(traderData.pnl)}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase mb-1">ROI</div>
-                <div className={`text-xs font-bold ${
-                  roi !== '--' && parseFloat(String(roi)) > 0 ? 'text-emerald-600' : 
-                  roi !== '--' && parseFloat(String(roi)) < 0 ? 'text-red-500' : 'text-slate-900'
-                }`}>
-                  {roi !== '--' ? `${roi}%` : '--'}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase mb-1">Win</div>
-                <div className={`text-xs font-bold ${
-                  winRate !== '--' && parseFloat(String(winRate)) >= 50 ? 'text-emerald-600' : 
-                  winRate !== '--' && parseFloat(String(winRate)) < 50 ? 'text-slate-600' : 'text-slate-900'
-                }`}>
-                  {winRate !== '--' ? `${winRate}%` : '--'}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase mb-1">Vol</div>
-                <div className="text-xs font-bold text-slate-900">
-                  {formatVolume(traderData.volume)}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase mb-1">Trades</div>
-                <div className="text-xs font-bold text-slate-900">
-                  {formatTradesCount(tradesCount, hasMoreTrades)}
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          {/* Stats availability explanation */}
-          {(traderData.pnl === null || traderData.pnl === undefined || !leaderboardData) && (
-            <p className="text-xs text-slate-500 mt-3 text-center md:text-left">
-              ℹ️ Stats unavailable - This trader is not on Polymarket's leaderboard
+          {/* Header with Data Source Disclaimer */}
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-slate-700 mb-2">Performance Stats</h3>
+            <p className="text-xs text-slate-500">
+              Performance stats from <a href="https://polymarket.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Polymarket</a>'s official leaderboard (all-time). 
+              Win rate calculated from up to 100 recent trades.
             </p>
-          )}
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <div className="text-center p-4 bg-slate-50 rounded-lg relative group min-w-0">
+              <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
+                ROI
+                <div className="relative">
+                  <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
+                    All-time return on investment from Polymarket leaderboard
+                  </div>
+                </div>
+              </div>
+              <div className={`text-xl sm:text-2xl font-bold ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                {effectiveVolume > 0 ? formatPercentage(effectiveRoiValue) : 'N/A'}
+              </div>
+            </div>
+            <div className="text-center p-4 bg-slate-50 rounded-lg relative group min-w-0">
+              <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
+                P&L
+                <div className="relative">
+                  <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
+                    All-time profit/loss from Polymarket leaderboard
+                  </div>
+                </div>
+              </div>
+              <div className={`text-xl sm:text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                {effectivePnl >= 0 ? '+' : ''}{formatCurrency(effectivePnl)}
+              </div>
+            </div>
+            <div className="text-center p-4 bg-slate-50 rounded-lg relative group min-w-0">
+              <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
+                Win Rate
+                <div className="relative">
+                  <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
+                    Calculated from recent trades only (limited data)
+                  </div>
+                </div>
+              </div>
+              <div className="text-xl sm:text-2xl font-bold text-slate-900">
+                {effectiveWinRate !== null && Number.isFinite(effectiveWinRate) ? `${effectiveWinRate.toFixed(1)}%` : 'N/A'}
+              </div>
+            </div>
+            <div className="text-center p-4 bg-slate-50 rounded-lg relative group min-w-0">
+              <div className="text-xs font-medium text-slate-500 mb-1 flex items-center justify-center gap-1">
+                Volume
+                <div className="relative">
+                  <svg className="w-3.5 h-3.5 text-slate-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10">
+                    Total trading volume across all markets on Polymarket
+                  </div>
+                </div>
+              </div>
+              <div className="text-xl sm:text-2xl font-bold text-slate-900">{formatCurrency(effectiveVolume)}</div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6">
+          <Button
+            onClick={() => setActiveTab('positions')}
+            variant="ghost"
+            className={cn(
+              "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
+              activeTab === 'positions'
+                ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+            )}
+          >
+            Trades
+          </Button>
+          <Button
+            onClick={() => setActiveTab('performance')}
+            variant="ghost"
+            className={cn(
+              "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
+              activeTab === 'performance'
+                ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-300"
+            )}
+          >
+            Performance
+          </Button>
         </div>
-      </div>
 
-      {/* Trade History Section */}
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <h3 className="text-xl font-bold text-slate-900 mb-6">
-          Trade History {trades.length > 0 && <span className="text-slate-400 font-normal">({trades.length})</span>}
-        </h3>
-        
-        {loadingTrades ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-brand-yellow mx-auto mb-4"></div>
-            <p className="text-slate-500">Loading trades...</p>
-          </div>
-        ) : trades.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
-            <div className="text-6xl mb-4">📊</div>
-            <p className="text-slate-600 text-lg font-medium mb-2">
-              No trade history found
-            </p>
-            <p className="text-slate-500 text-sm">
-              This trader hasn't made any trades yet
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* Desktop: Table View */}
-            <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[700px]">
-                  <thead className="bg-slate-50 border-b-2 border-slate-200">
-                    <tr>
-                      <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[90px]">Date</th>
-                      <th className="px-3 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Market</th>
-                      <th className="px-2 py-3 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[80px]">Outcome</th>
-                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[85px]">Status</th>
-                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[70px]">Size</th>
-                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[60px]">Price</th>
-                      <th className="px-3 py-3 text-right text-xs font-bold text-slate-600 uppercase tracking-wider w-[65px]">ROI</th>
-                      <th className="px-3 py-3 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[100px]">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {trades.map((trade, index) => {
-                      const polymarketUrl = getPolymarketUrl(trade);
-                      const isAlreadyCopied = isTradeCopied(trade);
-                      
-                      // Calculate ROI
-                      // For ROI calculation, use:
-                      // - Entry price: trade.price (the actual trade execution price)
-                      // - Current price: trade.currentPrice (from position or Gamma API)
-                      let roi: number | null = null;
-                      const entryPrice = trade.price; // This is the actual trade price
-                      const currentPrice = trade.currentPrice;
-                      
-                      // Calculate ROI if we have both prices (0 is valid for currentPrice)
-                      if ((entryPrice !== undefined && entryPrice !== null && entryPrice !== 0) && 
-                          (currentPrice !== undefined && currentPrice !== null)) {
-                        roi = ((currentPrice - entryPrice) / entryPrice) * 100;
-                      }
-                      
-                      // Enhanced debug logging for first 5 trades to diagnose ROI issues
-                      if (index < 5) {
-                        console.log(`Trade ${index}: "${trade.market.substring(0, 35)}..."`, {
-                          outcome: trade.outcome,
-                          status: trade.status,
-                          entryPrice: trade.price,
-                          avgPrice: trade.avgPrice,
-                          currentPrice: trade.currentPrice,
-                          conditionId: trade.conditionId?.substring(0, 12) + '...',
-                          roi: roi !== null ? `${roi.toFixed(1)}%` : 'NULL - missing currentPrice',
-                          hasCurrentPrice: trade.currentPrice !== undefined && trade.currentPrice !== null,
-                          roiCalculated: roi !== null,
-                          entryPriceValid: entryPrice !== undefined && entryPrice !== null && entryPrice !== 0
-                        });
-                      }
+        {/* Content */}
+        {activeTab === 'positions' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="show-resolved-trades"
+                checked={showResolvedTrades}
+                onCheckedChange={(value) => setShowResolvedTrades(value === true)}
+              />
+              <Label htmlFor="show-resolved-trades" className="text-sm font-medium text-slate-600">
+                Show closed / lost / redeemed
+              </Label>
+            </div>
 
-                      return (
-                        <tr 
-                          key={`${trade.timestamp}-${index}`}
-                          className="hover:bg-slate-50 transition-colors"
-                        >
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            <div className="flex flex-col">
-                              <span className="text-sm text-slate-500">{trade.formattedDate}</span>
-                              <span className="text-xs text-slate-400">
-                                {new Date(trade.timestamp).toLocaleTimeString('en-US', { 
-                                  hour: 'numeric', 
-                                  minute: '2-digit',
-                                  hour12: true,
-                                  timeZoneName: 'short'
-                                })}
-                              </span>
-                            </div>
-                          </td>
-                          
-                          <td className="py-3 px-3 max-w-[220px]">
-                            <span className="text-sm text-slate-900 font-medium break-words leading-snug">{trade.market}</span>
-                          </td>
-                          
-                          <td className="py-3 pl-3 pr-2">
-                            <span className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full uppercase truncate max-w-[70px] ${
-                              ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
-                                ? 'bg-green-100 text-green-700'
-                                : 'bg-red-100 text-red-700'
-                            }`}>
+            {/* Trades */}
+            {loadingTrades ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
+                <p className="text-slate-500">Loading trades...</p>
+              </div>
+            ) : filteredTrades.length === 0 ? (
+              <Card className="p-12 text-center">
+                <div className="text-6xl mb-4">📊</div>
+                <p className="text-slate-600 text-lg font-medium mb-2">No trades found</p>
+                <p className="text-slate-500 text-sm">{noTradesMessage}</p>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {filteredTrades.slice(0, tradesToShow).map((trade, index) => {
+                  const polymarketUrl = getPolymarketUrl(trade);
+                  const isAlreadyCopied = isTradeCopied(trade);
+                  const tradeKey = buildExpandedTradeKey(trade, index);
+                  const isExpanded = expandedTradeKeys.has(tradeKey);
+                  
+                  // Get live market data
+                  const liveData = trade.conditionId ? liveMarketData.get(trade.conditionId) : undefined;
+                  const currentPrice = liveData?.price || trade.currentPrice || trade.price;
+                  const liveScore = liveData?.score;
+                  const isClosed = liveData?.closed || false;
+                  const isResolved = liveData?.resolved || false;
+                  const marketIsOpen = isResolved ? false : (liveData?.closed === undefined ? undefined : !liveData.closed);
+                  const manualAmountValue = Number.parseFloat(manualUsdAmount);
+                  const manualAmountValid = !Number.isNaN(manualAmountValue) && manualAmountValue > 0;
+                  const manualDisplayPrice = currentPrice ?? trade.price ?? 0;
+                  const manualPriceChange =
+                    trade.price && trade.price > 0
+                      ? ((manualDisplayPrice - trade.price) / trade.price) * 100
+                      : null;
+                  const manualPriceChangeColor =
+                    manualPriceChange === null
+                      ? 'text-slate-400'
+                      : manualPriceChange >= 0
+                        ? 'text-emerald-600'
+                        : 'text-red-600';
+                  const manualPriceChangeLabel =
+                    manualPriceChange === null
+                      ? '--'
+                      : `${manualPriceChange >= 0 ? '+' : ''}${manualPriceChange.toFixed(2)}% from entry`;
+                  const manualContractsEstimate =
+                    manualAmountValid && manualDisplayPrice > 0
+                      ? calculateContracts(manualUsdAmount, manualDisplayPrice)
+                      : 0;
+                  
+                  // Calculate ROI
+                  let roi: number | null = null;
+                  const entryPrice = trade.price;
+                  
+                  if ((entryPrice && entryPrice !== 0) && (currentPrice !== undefined && currentPrice !== null)) {
+                    roi = ((currentPrice - entryPrice) / entryPrice) * 100;
+                  }
+                  
+                  // Determine trade status based on live data
+                  let tradeStatus: 'Open' | 'Trader Closed' | 'Bonded' = 'Open';
+                  if (isResolved) {
+                    tradeStatus = 'Bonded';
+                  } else if (isClosed) {
+                    tradeStatus = 'Trader Closed';
+                  }
+                  
+                  // Format timestamp
+                  const tradeDate = new Date(trade.timestamp);
+                  const now = new Date();
+                  const diffMs = now.getTime() - tradeDate.getTime();
+                  const diffMins = Math.floor(diffMs / 60000);
+                  const diffHours = Math.floor(diffMs / 3600000);
+                  const diffDays = Math.floor(diffMs / 86400000);
+                  
+                  let formattedTimestamp = '';
+                  if (diffMins < 60) {
+                    formattedTimestamp = `${diffMins}m ago`;
+                  } else if (diffHours < 24) {
+                    formattedTimestamp = `${diffHours}h ago`;
+                  } else if (diffDays < 7) {
+                    formattedTimestamp = `${diffDays}d ago`;
+                  } else {
+                    formattedTimestamp = tradeDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                  }
+                  
+                  // Extract market avatar URL
+                  const marketAvatar = extractMarketAvatarUrl({
+                    market: trade.market,
+                    slug: trade.marketSlug,
+                    eventSlug: trade.eventSlug,
+                  });
+
+                  return isPremium ? (
+                    <TradeCard
+                      key={`${trade.timestamp}-${index}`}
+                      tradeAnchorId={`trade-card-${wallet}-${trade.timestamp}-${index}`}
+                      onExecutionNotification={handleTradeExecutionNotification}
+                      trader={{
+                        name: traderData.displayName,
+                        avatar: undefined,
+                        address: wallet,
+                        id: wallet,
+                        roi: effectiveRoiValue,
+                      }}
+                      market={trade.market}
+                      marketAvatar={marketAvatar || undefined}
+                      position={trade.outcome}
+                      action={trade.side === 'BUY' ? 'Buy' : 'Sell'}
+                      price={trade.price}
+                      size={trade.size}
+                      total={trade.price * trade.size}
+                      timestamp={formattedTimestamp}
+                      onCopyTrade={() => {
+                        if (polymarketUrl) {
+                          window.open(polymarketUrl, '_blank');
+                        }
+                      }}
+                      onMarkAsCopied={(entryPrice, amountInvested) =>
+                        handleMarkAsCopied(trade, entryPrice, amountInvested)
+                      }
+                      onAdvancedCopy={() => {
+                        if (polymarketUrl) {
+                          window.open(polymarketUrl, '_blank');
+                        }
+                      }}
+                      isPremium={isPremium}
+                      isAdmin={isAdmin}
+                      isExpanded={isExpanded}
+                      onToggleExpand={() => toggleTradeExpanded(tradeKey)}
+                      isCopied={isAlreadyCopied}
+                      conditionId={trade.conditionId}
+                      tokenId={trade.tokenId}
+                      marketSlug={trade.marketSlug}
+                      currentMarketPrice={currentPrice}
+                      marketIsOpen={marketIsOpen}
+                      liveScore={liveScore}
+                      eventStartTime={liveData?.gameStartTime}
+                      eventEndTime={liveData?.endDateIso}
+                      eventStatus={liveData?.eventStatus}
+                      liveStatus={liveData?.liveStatus}
+                      category={trade.category}
+                      polymarketUrl={polymarketUrl}
+                      defaultBuySlippage={defaultBuySlippage}
+                      defaultSellSlippage={defaultSellSlippage}
+                      walletAddress={walletAddress}
+                      manualTradingEnabled={manualModeEnabled}
+                      onSwitchToManualTrading={enableManualMode}
+                      onOpenConnectWallet={() => setShowConnectWalletModal(true)}
+                    />
+                  ) : (
+                    <Card key={`${trade.timestamp}-${index}`} className="p-6">
+                      <div className="flex items-start justify-between gap-4 mb-4">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium text-slate-900 mb-2 leading-snug">{trade.market}</h3>
+                          <div className="flex items-center gap-2 text-sm text-slate-500">
+                            <span>{trade.formattedDate}</span>
+                            <span>•</span>
+                            <Badge
+                              variant="secondary"
+                              className={cn(
+                                'font-semibold text-xs',
+                                trade.outcome.toLowerCase() === 'yes'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-red-50 text-red-700 border-red-200'
+                              )}
+                            >
                               {trade.outcome}
-                            </span>
-                          </td>
-                          
-                          <td className="py-3 px-3 text-center whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full ${
-                              trade.status === 'Open'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : trade.status === 'Bonded'
-                                ? 'bg-blue-100 text-blue-700'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {trade.status}
-                            </span>
-                          </td>
-                          
-                          <td className="py-3 px-3 text-right whitespace-nowrap">
-                            <span className="text-sm font-semibold text-slate-900">
-                              ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                            </span>
-                          </td>
-                          
-                          <td className="py-3 px-3 text-right whitespace-nowrap">
-                            <span className="text-sm font-semibold text-slate-900">
-                              ${trade.price.toFixed(2)}
-                            </span>
-                          </td>
-                          
-                          <td className="py-3 px-3 text-right whitespace-nowrap">
-                            <span className={`text-sm font-semibold ${
-                              roi === null ? 'text-slate-400' :
-                              roi > 0 ? 'text-green-600' :
-                              roi < 0 ? 'text-red-600' :
-                              'text-slate-500'
-                            }`}>
-                              {roi === null ? '--' : `${roi > 0 ? '+' : ''}${roi.toFixed(1)}%`}
-                            </span>
-                          </td>
-                          
-                          <td className="py-3 px-3">
-                            <div className="flex flex-col gap-1">
-                              {/* Copy Trade button - opens Polymarket */}
-                              <a
-                                href={polymarketUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-2 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap text-center bg-[#FDB022] text-white hover:bg-[#E69E1A]"
-                              >
-                                Copy Trade
-                              </a>
-                              
-                              {/* Mark as Copied button */}
-                              <button
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleMarkAsCopied(trade);
-                                }}
-                                disabled={isAlreadyCopied}
-                                className={`px-2 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${
-                                  isAlreadyCopied
-                                    ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                                    : 'bg-slate-200 text-slate-700 hover:bg-slate-300 cursor-pointer'
-                                }`}
-                                title={isAlreadyCopied ? "Already marked as copied" : "Mark as Copied"}
-                              >
-                                {isAlreadyCopied ? '✓ Copied' : 'Mark as Copied'}
-                              </button>
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {tradeStatus !== 'Open' && (
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
+                            >
+                              {tradeStatus === 'Bonded' ? 'Resolved' : tradeStatus}
+                            </Badge>
+                          )}
+                          {!isAlreadyCopied && (
+                            <button
+                              onClick={() => toggleTradeExpanded(tradeKey)}
+                              className="text-slate-400 hover:text-slate-600 transition-colors"
+                            >
+                              {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Stats Box */}
+                      <div className="bg-slate-50 rounded-lg p-4 mb-4">
+                        <div className="grid grid-cols-4 gap-4 text-center">
+                          <div>
+                            <div className="text-xs text-slate-500 mb-1">Entry</div>
+                            <div className="text-sm font-semibold text-slate-900">${trade.price.toFixed(2)}</div>
+                          </div>
+                          <div className="border-l border-slate-200">
+                            <div className="text-xs text-slate-500 mb-1">Size</div>
+                            <div className="text-sm font-semibold text-slate-900">${trade.size.toFixed(0)}</div>
+                          </div>
+                          <div className="border-l border-slate-200">
+                            <div className="text-xs text-slate-500 mb-1">Total</div>
+                            <div className="text-sm font-semibold text-slate-900">
+                              ${(trade.price * trade.size).toFixed(0)}
                             </div>
-                          </td>
-                        </tr>
+                          </div>
+                          <div className="border-l border-slate-200">
+                            <div className="text-xs text-slate-500 mb-1">ROI</div>
+                            <div className={cn(
+                              'text-sm font-semibold',
+                              roi === null ? 'text-slate-400' :
+                              roi > 0 ? 'text-emerald-600' :
+                              roi < 0 ? 'text-red-600' : 'text-slate-500'
+                            )}>
+                              {roi === null ? '--' : `${roi > 0 ? '+' : ''}${roi.toFixed(1)}%`}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons - Different for Premium vs Free */}
+                      {isPremium ? (
+                        <>
+                          <Button
+                            onClick={() => {
+                              if (isAlreadyCopied) return;
+                              if (trade.status === 'Trader Closed' || trade.status === 'Bonded') return;
+                              toggleTradeExpanded(tradeKey);
+                            }}
+                            disabled={isAlreadyCopied || trade.status === 'Trader Closed' || trade.status === 'Bonded'}
+                            className={cn(
+                              'w-full font-semibold shadow-sm text-sm',
+                              isAlreadyCopied
+                                ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                                : 'bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900'
+                            )}
+                            size="lg"
+                          >
+                            {isAlreadyCopied ? (
+                              <>
+                                <Check className="w-4 h-4 mr-2" />
+                                Trade Copied
+                              </>
+                            ) : trade.status === 'Trader Closed' || trade.status === 'Bonded' ? (
+                              'Market Closed'
+                            ) : (
+                              'Copy Trade'
+                            )}
+                          </Button>
+
+                          {/* Premium: Expanded Quick Copy Interface */}
+                          {isExpanded && !isAlreadyCopied && (
+                            <div className="mt-4 p-4 bg-slate-50 rounded-lg space-y-4">
+                              <h4 className="text-sm font-semibold text-slate-900">Quick Copy</h4>
+
+                              {/* Current Price */}
+                              <div className="bg-white border border-slate-200 rounded-lg p-2.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-medium text-slate-600">Current Price</span>
+                                  <div className="text-right">
+                                    <p className="text-base font-semibold text-slate-900">${(currentPrice || trade.price).toFixed(2)}</p>
+                                    <p className={`text-xs font-medium ${(currentPrice || 0) >= trade.price ? 'text-emerald-600' : 'text-red-600'}`}>
+                                      {(currentPrice || 0) >= trade.price ? '+' : ''}
+                                      {(((currentPrice || trade.price) - trade.price) / trade.price * 100).toFixed(2)}% from entry
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Amount Input */}
+                              <div className="space-y-2">
+                                <label htmlFor={`amount-${index}`} className="text-xs font-medium text-slate-700">
+                                  Amount (USD)
+                                </label>
+                                <div className="relative">
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                                  <input
+                                    id={`amount-${index}`}
+                                    type="number"
+                                    value={usdAmount}
+                                    onChange={(e) => setUsdAmount(e.target.value)}
+                                    placeholder="0.00"
+                                    disabled={isSubmitting}
+                                    className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                </div>
+                                {usdAmount && Number.parseFloat(usdAmount) > 0 && (
+                                  <p className="text-xs text-slate-500">≈ {calculateContracts(usdAmount, currentPrice || trade.price).toLocaleString()} contracts</p>
+                                )}
+                              </div>
+
+                              {/* Execute Button */}
+                              <Button
+                                onClick={() => handleQuickCopy(trade)}
+                                disabled={!usdAmount || Number.parseFloat(usdAmount) <= 0 || isSubmitting}
+                                className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
+                                size="lg"
+                              >
+                                {isSubmitting ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    Executing Trade...
+                                  </>
+                                ) : (
+                                  'Execute Trade'
+                                )}
+                              </Button>
+                              {/* Auto-close Checkbox */}
+                              {isAdmin && (
+                                <div className="flex items-start space-x-2.5 p-2.5 bg-white rounded-lg border border-slate-200">
+                                  <Checkbox
+                                    id={`auto-close-${index}`}
+                                    checked={autoClose}
+                                    onCheckedChange={(checked) => setAutoClose(!!checked)}
+                                    disabled={isSubmitting}
+                                    className="mt-0.5"
+                                  />
+                                  <div className="flex-1">
+                                    <label
+                                      htmlFor={`auto-close-${index}`}
+                                      className="text-xs font-medium text-slate-900 cursor-pointer leading-tight"
+                                    >
+                                      Auto-close when trader closes
+                                    </label>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                      Automatically close your position when {traderData?.displayName || 'trader'} closes theirs
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="space-y-3">
+                          {trade.status === 'Trader Closed' || trade.status === 'Bonded' ? (
+                            <Button
+                              disabled
+                              className="w-full bg-slate-300 text-slate-600 font-semibold cursor-not-allowed"
+                            >
+                              Market Closed
+                            </Button>
+                          ) : (
+                            <>
+                              <Button
+                                type="button"
+                                onClick={() => handleManualCopyToggle(index, polymarketUrl)}
+                                className="w-full flex items-center justify-center gap-2 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm text-sm"
+                              >
+                                Manual Copy
+                                <ExternalLink className="w-4 h-4" />
+                              </Button>
+                              {manualCopyTradeIndex === index && (
+                                <div className="space-y-4 mt-1 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                  <h4 className="text-sm font-semibold text-slate-900">
+                                    Manual Copy
+                                  </h4>
+                                  <div className="bg-white border border-slate-200 rounded-lg p-2.5">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs font-medium text-slate-600">Current Price</span>
+                                      <div className="text-right">
+                                        <p className="text-base font-semibold text-slate-900">
+                                          ${manualDisplayPrice.toFixed(2)}
+                                        </p>
+                                        <p className={`text-xs font-medium ${manualPriceChangeColor}`}>
+                                          {manualPriceChangeLabel}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <label htmlFor={`manual-amount-${index}`} className="text-xs font-medium text-slate-700">
+                                      Amount (USD)
+                                    </label>
+                                    <div className="relative">
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                                      <input
+                                        id={`manual-amount-${index}`}
+                                        type="number"
+                                        inputMode="decimal"
+                                        step="0.01"
+                                        value={manualUsdAmount}
+                                        onChange={(e) => setManualUsdAmount(e.target.value)}
+                                        placeholder="0.00"
+                                        className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      />
+                                    </div>
+                                    {manualAmountValid && (
+                                      <p className="text-xs text-slate-500">
+                                        ≈ {manualContractsEstimate.toLocaleString()} contracts
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  <Button
+                                    onClick={() => handleManualCopyCta(polymarketUrl)}
+                                    disabled={!manualAmountValid}
+                                    className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
+                                    size="lg"
+                                  >
+                                    Manual Copy
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleMarkAsCopied(trade, trade.price)}
+                                    disabled={isAlreadyCopied}
+                                    variant="outline"
+                                    className={cn(
+                                      'w-full font-medium text-sm',
+                                      isAlreadyCopied
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                                    )}
+                                  >
+                                    {isAlreadyCopied ? (
+                                      <>
+                                        <Check className="h-4 w-4 mr-2" />
+                                        Copied
+                                      </>
+                                    ) : (
+                                      'Mark as Copied'
+                                    )}
+                                  </Button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+                
+                {/* Load More Button */}
+                {filteredTrades.length > tradesToShow && (
+                  <div className="flex justify-center pt-4">
+                    <Button
+                      onClick={() => setTradesToShow(prev => prev + 15)}
+                      variant="outline"
+                      className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                    >
+                      Load More Trades ({filteredTrades.length - tradesToShow} remaining)
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'performance' && (
+          <div className="space-y-6">
+            {/* Header Section */}
+            <div className="mb-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Historical Performance</h2>
+              <p className="text-sm text-slate-500 mt-1">The data below covers this trader's last 100 trades. Please note this does not cover complete historical performance data.</p>
+            </div>
+
+            <Card className="border-slate-200/80 bg-white/90 p-6">
+              <div className="space-y-6">
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <h3 className="text-2xl font-semibold text-slate-900">Realized P&amp;L</h3>
+                    <p className="text-sm text-slate-500 mt-1">Daily</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {pnlWindowOptions.map((option) => {
+                      const isActive = option.key === pnlWindow;
+                      return (
+                        <button
+                          key={option.key}
+                          onClick={() => setPnlWindow(option.key)}
+                          className={cn(
+                            'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                            isActive
+                              ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                          )}
+                        >
+                          {option.label}
+                        </button>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                  </div>
+                </div>
 
-            {/* Mobile: Card-Based View */}
-            <div className="md:hidden space-y-4">
-              {trades.map((trade, index) => {
-                const polymarketUrl = getPolymarketUrl(trade);
-                const isAlreadyCopied = isTradeCopied(trade);
-                
-                // Calculate ROI - same logic as desktop
-                let roi: number | null = null;
-                const entryPrice = trade.price;
-                const currentPrice = trade.currentPrice;
-                
-                // Calculate ROI if we have both prices (0 is valid for currentPrice)
-                if ((entryPrice !== undefined && entryPrice !== null && entryPrice !== 0) && 
-                    (currentPrice !== undefined && currentPrice !== null)) {
-                  roi = ((currentPrice - entryPrice) / entryPrice) * 100;
-                }
+                {realizedPnlError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {realizedPnlError}
+                  </div>
+                )}
 
-                return (
-                  <div key={`${trade.timestamp}-${index}`} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-                    {/* Header: Date + Status + Outcome Badge */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex flex-col">
-                          <span className="text-sm text-slate-500">{trade.formattedDate}</span>
-                          <span className="text-xs text-slate-400">
-                            {new Date(trade.timestamp).toLocaleTimeString('en-US', { 
-                              hour: 'numeric', 
-                              minute: '2-digit',
-                              hour12: true,
-                              timeZoneName: 'short'
-                            })}
-                          </span>
-                        </div>
-                        <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full ${
-                          trade.status === 'Open'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : trade.status === 'Bonded'
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {trade.status}
-                        </span>
-                      </div>
-                      <span className={`badge ${
-                        ['yes', 'up', 'over'].includes(trade.outcome.toLowerCase())
-                          ? 'badge-yes'
-                          : 'badge-no'
-                      }`}>
-                        {trade.outcome.toUpperCase()}
-                      </span>
-                    </div>
-                    
-                    {/* Market Name */}
-                    <div className="font-semibold text-base text-slate-900 mb-3 leading-tight">
-                      {trade.market}
-                    </div>
-                    
-                    {/* Trade Details Grid */}
-                    <div className="bg-slate-50 rounded-xl p-4 mb-3">
-                      <div className="grid grid-cols-4 gap-3 text-center">
-                        <div>
-                          <div className="text-xs text-slate-500 mb-1">Size</div>
-                          <div className="font-semibold text-slate-900 text-sm">
-                            ${trade.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-slate-500 mb-1">Avg Price</div>
-                          <div className="font-semibold text-slate-900 text-sm">${trade.price.toFixed(2)}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-slate-500 mb-1">ROI</div>
-                          <div className={`font-semibold text-sm ${
-                            roi === null ? 'text-slate-400' :
-                            roi > 0 ? 'text-green-600' :
-                            roi < 0 ? 'text-red-600' :
-                            'text-slate-500'
-                          }`}>
-                            {roi === null ? '--' : `${roi > 0 ? '+' : ''}${roi.toFixed(1)}%`}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-slate-500 mb-1">Total</div>
-                          <div className="font-semibold text-slate-900 text-sm">
-                            ${(trade.size * trade.price).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Action Buttons */}
-                    <div className="flex gap-2">
-                      {/* Copy Trade - always show link to Polymarket */}
-                      <a
-                        href={polymarketUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#FDB022] hover:bg-[#F59E0B] text-slate-900 text-sm font-bold rounded-full cursor-pointer transition-colors"
-                      >
-                        <span>Copy Trade</span>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                      </a>
-                      
-                      {/* Mark as Copied - available for ALL trades */}
-                      <button
-                        onClick={() => handleMarkAsCopied(trade)}
-                        disabled={isAlreadyCopied}
-                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-full transition-colors ${
-                          isAlreadyCopied
-                            ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer'
-                        }`}
-                      >
-                        {isAlreadyCopied ? (
-                          <>
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span>Copied</span>
-                          </>
-                        ) : (
-                          <span>Mark as Copied</span>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div
+                      className={cn(
+                        'rounded-2xl border p-4 text-center shadow-sm',
+                        realizedSummary.totalPnl > 0
+                          ? 'border-emerald-100/80 bg-emerald-50/70'
+                          : realizedSummary.totalPnl < 0
+                            ? 'border-red-100/80 bg-red-50/70'
+                            : 'border-slate-200/70 bg-white'
+                      )}
+                    >
+                      <p className="text-sm font-semibold text-slate-600">Total P&amp;L</p>
+                      <p
+                        className={cn(
+                          'mt-2 text-3xl font-semibold',
+                          realizedSummary.totalPnl > 0
+                            ? 'text-emerald-700'
+                            : realizedSummary.totalPnl < 0
+                              ? 'text-red-600'
+                              : 'text-slate-900'
                         )}
-                      </button>
+                      >
+                        {formatSignedCurrency(realizedSummary.totalPnl)}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">{pnlWindowLabel}</p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <p className="text-sm font-semibold text-slate-600">Average Daily</p>
+                      <p
+                        className={cn(
+                          'mt-2 text-3xl font-semibold',
+                          realizedSummary.avgDaily > 0
+                            ? 'text-emerald-700'
+                            : realizedSummary.avgDaily < 0
+                              ? 'text-red-600'
+                              : 'text-slate-900'
+                        )}
+                      >
+                        {formatSignedCurrency(realizedSummary.avgDaily, 2)}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">Average per day</p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <p className="text-sm font-semibold text-slate-600">Platform Rank</p>
+                      <p className="mt-2 text-3xl font-semibold text-slate-900">
+                        {rankInfo.rank ? `#${rankInfo.rank}` : '--'}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {rankInfo.total ? `of ${rankInfo.total} traders` : 'Ranking pending'}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {rankInfo.delta === null || rankInfo.delta === undefined
+                          ? 'No prior rank'
+                          : rankInfo.delta === 0
+                            ? 'No change'
+                            : rankInfo.delta > 0
+                              ? `Up ${rankInfo.delta}`
+                              : `Down ${Math.abs(rankInfo.delta)}`}
+                      </p>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm">
+                      <p className="text-sm font-semibold text-slate-600">Days Active</p>
+                      <p className="mt-2 text-2xl font-semibold text-slate-900">{realizedSummary.daysActive}</p>
+                      <p className="text-xs text-slate-500 mt-1">Daily P&amp;L != 0</p>
+                    </div>
+
+                    <div className="rounded-2xl border border-emerald-100/80 bg-emerald-50/70 px-4 py-3 text-center shadow-sm">
+                      <p className="text-sm font-semibold text-emerald-700">Days Up</p>
+                      <p className="mt-2 text-2xl font-semibold text-emerald-700">{realizedSummary.daysUp}</p>
+                      <p className="text-xs text-emerald-700/70 mt-1">Daily P&amp;L {'>'} 0</p>
+                    </div>
+
+                    <div className="rounded-2xl border border-red-100/80 bg-red-50/70 px-4 py-3 text-center shadow-sm">
+                      <p className="text-sm font-semibold text-red-600">Days Down</p>
+                      <p className="mt-2 text-2xl font-semibold text-red-600">{realizedSummary.daysDown}</p>
+                      <p className="text-xs text-red-600/70 mt-1">Daily P&amp;L {'<'} 0</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm sm:p-6">
+                  <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <div className="text-sm font-semibold text-slate-900">P&amp;L Trend</div>
+                    <div className="text-xs text-slate-500">{realizedRangeLabel}</div>
+                    <div className="ml-auto flex items-center gap-2 rounded-full border border-slate-200 bg-white/70 p-1 shadow-sm">
+                      {(['daily', 'cumulative'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setPnlView(mode)}
+                          className={cn(
+                            'rounded-full px-3 py-1.5 text-xs font-semibold transition',
+                            pnlView === mode
+                              ? 'bg-slate-900 text-white'
+                              : 'text-slate-600 hover:text-slate-900'
+                          )}
+                        >
+                          {mode === 'daily' ? 'Daily Change' : 'Accumulated'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {loadingRealizedPnl && realizedChartSeries.length === 0 ? (
+                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading realized P&amp;L...
+                    </div>
+                  ) : realizedChartSeries.length > 0 ? (
+                    <div className="h-72 w-full animate-in fade-in duration-700 sm:h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        {pnlView === 'daily' ? (
+                          <BarChart data={realizedChartSeries} barSize={10} barCategoryGap="25%">
+                            <defs>
+                              <linearGradient id="pnlUp" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#10b981" stopOpacity={0.95} />
+                                <stop offset="100%" stopColor="#34d399" stopOpacity={0.6} />
+                              </linearGradient>
+                              <linearGradient id="pnlDown" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#f87171" stopOpacity={0.95} />
+                                <stop offset="100%" stopColor="#ef4444" stopOpacity={0.7} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis
+                              dataKey="date"
+                              tickLine={false}
+                              axisLine={false}
+                              interval="preserveStartEnd"
+                              tickFormatter={(value) =>
+                                new Date(`${value}T00:00:00Z`).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                })
+                              }
+                              tickMargin={10}
+                              minTickGap={32}
+                              tick={{ fontSize: 11, fill: '#475569' }}
+                            />
+                            <YAxis
+                              tickLine={false}
+                              axisLine={false}
+                              width={64}
+                              tickMargin={10}
+                              tick={{ fontSize: 11, fill: '#475569' }}
+                              tickCount={6}
+                              domain={[
+                                (min: number) => Math.min(min, 0),
+                                (max: number) => Math.max(max, 0),
+                              ]}
+                              tickFormatter={(value) => formatCompactCurrency(value)}
+                            />
+                            <RechartsTooltip
+                              contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
+                              formatter={(value: any) => formatSignedCurrency(Number(value), 2)}
+                              labelFormatter={(label) =>
+                                new Date(`${label}T00:00:00Z`).toLocaleDateString('en-US', {
+                                  weekday: 'short',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })
+                              }
+                            />
+                            <ReferenceLine y={0} stroke="#cbd5e1" />
+                            <Bar
+                              dataKey="dailyPnl"
+                              name="Daily PnL"
+                              minPointSize={2}
+                              radius={[6, 6, 6, 6]}
+                              isAnimationActive
+                              animationDuration={900}
+                            >
+                              {realizedChartSeries.map((entry, index) => (
+                                <Cell
+                                  key={`cell-${index}`}
+                                  fill={entry.dailyPnl >= 0 ? 'url(#pnlUp)' : 'url(#pnlDown)'}
+                                />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        ) : (
+                          <AreaChart data={realizedChartSeries}>
+                            <defs>
+                              <linearGradient id="pnlCumulative" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#0f172a" stopOpacity={0.35} />
+                                <stop offset="100%" stopColor="#0f172a" stopOpacity={0.05} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis
+                              dataKey="date"
+                              tickLine={false}
+                              axisLine={false}
+                              interval="preserveStartEnd"
+                              tickFormatter={(value) =>
+                                new Date(`${value}T00:00:00Z`).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                })
+                              }
+                              tickMargin={10}
+                              minTickGap={32}
+                              tick={{ fontSize: 11, fill: '#475569' }}
+                            />
+                            <YAxis
+                              tickLine={false}
+                              axisLine={false}
+                              width={64}
+                              tickMargin={10}
+                              tick={{ fontSize: 11, fill: '#475569' }}
+                              tickCount={6}
+                              domain={[
+                                (min: number) => Math.min(min, 0),
+                                (max: number) => Math.max(max, 0),
+                              ]}
+                              tickFormatter={(value) => formatCompactCurrency(value)}
+                            />
+                            <RechartsTooltip
+                              contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
+                              formatter={(value: any) => formatSignedCurrency(Number(value), 2)}
+                              labelFormatter={(label) =>
+                                new Date(`${label}T00:00:00Z`).toLocaleDateString('en-US', {
+                                  weekday: 'short',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })
+                              }
+                            />
+                            <ReferenceLine y={0} stroke="#cbd5e1" />
+                            <Area
+                              type="monotone"
+                              dataKey="cumulativePnl"
+                              name="Cumulative PnL"
+                              stroke="#0f172a"
+                              fill="url(#pnlCumulative)"
+                              strokeWidth={2.5}
+                              dot={false}
+                              isAnimationActive
+                              animationDuration={1000}
+                            />
+                          </AreaChart>
+                        )}
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">No realized P&amp;L data available for this window.</p>
+                  )}
+                </div>
+              </div>
+            </Card>
+
+            {/* Performance Metrics */}
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">Performance Metrics</h3>
+              <p className="text-sm text-slate-500 mb-6">Showing lifetime performance across all trades</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* Lifetime ROI */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Lifetime ROI</p>
+                  <p className={`text-2xl font-bold ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                    {effectiveVolume > 0 ? `${effectiveRoiValue > 0 ? '+' : ''}${effectiveRoiValue.toFixed(1)}%` : 'N/A'}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">All time</p>
+                </div>
+
+                {/* Total P&L */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Total P&L</p>
+                  <p className={`text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                    {effectivePnl > 0 ? '+' : ''}{formatCurrency(effectivePnl)}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">All time</p>
+                </div>
+
+                {/* Best Position */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Best Position</p>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {(() => {
+                      if (trades.length === 0) return '$0';
+                      const maxNotional = Math.max(...trades.map(t => (t.size || 0) * (t.price || 0)));
+                      return formatCurrency(maxNotional);
+                    })()}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Largest trade</p>
+                </div>
+
+                {/* Total Trades */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Total Trades</p>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {(() => {
+                      const count = trades.length;
+                      return count === 100 ? '100+' : count;
+                    })()}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">In sample</p>
+                </div>
+
+                {/* Net P&L / Trade */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Net P&L / Trade</p>
+                  <p className={`text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                    {(() => {
+                      const avgPnL = trades.length > 0 ? effectivePnl / trades.length : 0;
+                      return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
+                    })()}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Per trade</p>
+                </div>
+
+                {/* Open Positions */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Open Positions</p>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {trades.filter(t => t.status === 'Open').length}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Currently active</p>
+                </div>
+
+                {/* Avg P&L / Trade */}
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-500 mb-1">Avg P&L / Trade</p>
+                  <p className={`text-2xl font-bold ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                    {(() => {
+                      const avgPnL = trades.length > 0 ? effectivePnl / trades.length : 0;
+                      return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
+                    })()}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Average</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Position Size Distribution */}
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-slate-900">Position Size Distribution</h3>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-4 w-4 text-slate-400 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p>Shows how this trader sizes their positions. Larger positions indicate higher conviction or risk tolerance. Most traders should have a consistent sizing strategy.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-medium">Recent Trades</span>
+              </div>
+              {positionSizeBuckets.length > 0 ? (
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={positionSizeBuckets} barSize={36} barCategoryGap="20%">
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis
+                        dataKey="range"
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={10}
+                        tick={{ fontSize: 11, fill: '#475569' }}
+                      />
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        width={52}
+                        tickMargin={10}
+                        tick={{ fontSize: 11, fill: '#475569' }}
+                        allowDecimals={false}
+                        tickCount={5}
+                      />
+                      <RechartsTooltip
+                        contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
+                        formatter={(value: any, _name, props: any) => [
+                          `${value} ${value === 1 ? 'trade' : 'trades'}`,
+                          props?.payload?.range || 'Range',
+                        ]}
+                      />
+                      <Bar dataKey="count" name="Trades" fill="#10b981" radius={[6, 6, 6, 6]} isAnimationActive />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-64 flex items-center justify-center text-slate-500">
+                  <p>Not enough trade data to display position sizing</p>
+                </div>
+              )}
+            </Card>
+
+            {/* Category Distribution Pie Chart */}
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-slate-900">Trading Categories</h3>
+                <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-medium">Recent Trades</span>
+              </div>
+              {categoryDistribution.length > 0 ? (
+                <div className="flex flex-col md:flex-row gap-8 items-center justify-center max-w-3xl mx-auto">
+                  <div className="relative w-64 h-64 flex-shrink-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={categoryDistribution}
+                          dataKey="count"
+                          nameKey="category"
+                          innerRadius={60}
+                          outerRadius={100}
+                          stroke="white"
+                          strokeWidth={2}
+                          onMouseEnter={(entry) => setHoveredCategory(entry?.category || null)}
+                          onMouseLeave={() => setHoveredCategory(null)}
+                          isAnimationActive
+                        >
+                          {categoryDistribution.map((cat) => (
+                            <Cell
+                              key={cat.category}
+                              fill={cat.color}
+                              opacity={hoveredCategory && hoveredCategory !== cat.category ? 0.35 : 1}
+                            />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip
+                          contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
+                          formatter={(value: any, _name, props: any) => [
+                            `${value} ${value === 1 ? 'trade' : 'trades'}`,
+                            props?.payload?.category || 'Category',
+                          ]}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Legend */}
+                  <div className="flex-1 space-y-2">
+                    {categoryDistribution.map((cat) => (
+                      <div
+                        key={cat.category}
+                        className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
+                        onMouseEnter={() => setHoveredCategory(cat.category)}
+                        onMouseLeave={() => setHoveredCategory(null)}
+                        style={{ opacity: hoveredCategory && hoveredCategory !== cat.category ? 0.5 : 1 }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-4 h-4 rounded"
+                            style={{ backgroundColor: cat.color }}
+                          />
+                          <span className="text-sm font-medium text-slate-700">{cat.category}</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm text-slate-500">{cat.count} trades</span>
+                          <span className="text-sm font-semibold text-slate-900 min-w-[3rem] text-right">
+                            {cat.percentage.toFixed(1)}%
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="h-64 flex items-center justify-center text-slate-500">
+                  <p>No trade data available</p>
+                </div>
+              )}
+            </Card>
+
+            {/* Top Performing Trades */}
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Performing Trades</h3>
+              <div className="space-y-3">
+                {(() => {
+                  // Calculate ROI for all trades using live market data
+                  const tradesWithROI = trades
+                    .map(t => {
+                      // Get current price from live market data or fall back to trade's currentPrice
+                      const liveData = t.conditionId ? liveMarketData.get(t.conditionId) : undefined;
+                      const currentPrice = liveData?.price || t.currentPrice || t.price;
+                      const invested = (t.size || 0) * (t.price || 0);
+                      const currentValue = (t.size || 0) * (currentPrice || 0);
+                      const pnl = currentValue - invested;
+                      
+                      return {
+                        ...t,
+                        currentPrice: currentPrice,
+                        roi: ((currentPrice - t.price) / t.price) * 100,
+                        invested,
+                        currentValue,
+                        pnl,
+                      };
+                    })
+                    .filter(t => t.price && t.price > 0) // Only trades with valid entry price
+                    .sort((a, b) => b.roi - a.roi)
+                    .slice(0, 5);
+
+                  if (tradesWithROI.length === 0) {
+                    return (
+                      <div className="text-center py-8">
+                        <p className="text-slate-500 mb-2">No trade data available yet</p>
+                        <p className="text-sm text-slate-400">
+                          Top performing trades will appear here once data is loaded
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-2">
+                      <div className="hidden md:grid grid-cols-6 gap-4 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+                        <span>Market</span>
+                        <span>Outcome</span>
+                        <span>Amount</span>
+                        <span>Entry -&gt; Current</span>
+                        <span>Current Value</span>
+                        <span>Time</span>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {tradesWithROI.map((trade, index) => (
+                          <div key={index} className="grid grid-cols-1 gap-4 px-3 py-4 md:grid-cols-6 md:items-center">
+                            <div className="space-y-1">
+                              <p className="font-semibold text-slate-900">{trade.market}</p>
+                              <p className="text-xs text-slate-500">
+                                {new Date(trade.timestamp).toLocaleDateString('en-US', { 
+                                  month: 'short', 
+                                  day: 'numeric', 
+                                  year: 'numeric' 
+                                })}
+                              </p>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-xs text-slate-500 md:hidden">Outcome</span>
+                              <Badge
+                                className={cn(
+                                  'w-fit font-semibold',
+                                  trade.outcome?.toLowerCase() === 'yes'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-red-50 text-red-700 border-red-200'
+                                )}
+                              >
+                                {trade.outcome || 'N/A'}
+                              </Badge>
+                            </div>
+                            <div className="space-y-1 text-sm text-slate-700">
+                              <span className="text-xs text-slate-500 md:hidden">Amount</span>
+                              <p className="font-semibold text-slate-900">
+                                {formatSignedCurrency(trade.invested, 2)}
+                              </p>
+                              <p className="text-xs text-slate-500">{trade.size.toFixed(1)} contracts</p>
+                            </div>
+                            <div className="space-y-1 text-sm text-slate-700">
+                              <span className="text-xs text-slate-500 md:hidden">Entry -&gt; Current</span>
+                              <p className="font-semibold text-slate-900">
+                                ${trade.price.toFixed(3)} -&gt; ${trade.currentPrice?.toFixed(3)}
+                              </p>
+                              <p
+                                className={cn(
+                                  'text-xs font-semibold',
+                                  trade.roi >= 0 ? 'text-emerald-600' : 'text-red-600'
+                                )}
+                              >
+                                {trade.roi >= 0 ? '+' : ''}{trade.roi.toFixed(1)}%
+                              </p>
+                            </div>
+                            <div className="space-y-1 text-sm text-slate-700">
+                              <span className="text-xs text-slate-500 md:hidden">Current Value</span>
+                              <p className="font-semibold text-slate-900">
+                                {formatSignedCurrency(trade.currentValue, 2)}
+                              </p>
+                              <p
+                                className={cn(
+                                  'text-xs font-semibold',
+                                  trade.pnl >= 0 ? 'text-emerald-600' : 'text-red-600'
+                                )}
+                              >
+                                {formatSignedCurrency(trade.pnl, 2)}
+                              </p>
+                            </div>
+                            <div className="space-y-1 text-sm text-slate-700">
+                              <span className="text-xs text-slate-500 md:hidden">Time</span>
+                              <p className="font-semibold text-slate-900">
+                                {new Date(trade.timestamp).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {new Date(trade.timestamp).toLocaleTimeString('en-US', {
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                })}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </Card>
+          </div>
         )}
       </div>
-      
-      {/* Copy Trade Modal */}
-      <CopyTradeModal
-        isOpen={modalOpen}
-        trade={selectedTrade}
-        traderWallet={wallet}
-        traderName={traderData?.displayName || wallet.slice(0, 8)}
-        onClose={() => {
-          setModalOpen(false);
-          setSelectedTrade(null);
-        }}
-        onConfirm={handleConfirmCopy}
-        isSubmitting={isSubmitting}
-      />
-      
-      {/* Success Toast */}
-      {showToast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
-          <div className="bg-neutral-900 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2">
-            <svg className="w-5 h-5 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-            </svg>
-            <span>{toastMessage}</span>
+
+      {/* Wallet Connect Required Modal */}
+      {showWalletConnectModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+          onClick={() => setShowWalletConnectModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-4 mb-4">
+              <div className="flex-shrink-0 w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                  Wallet Connection Required
+                </h3>
+                <p className="text-sm text-slate-600 mb-4">
+                  To use auto-copy trading, you need to connect your Polymarket wallet first. This allows us to execute trades on your behalf.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setShowWalletConnectModal(false);
+                      router.push('/profile');
+                    }}
+                    className="flex-1 px-4 py-2.5 bg-[#FDB022] hover:bg-[#E69E1A] text-slate-900 font-semibold rounded-lg transition-colors"
+                  >
+                    Connect Wallet
+                  </button>
+                  <button
+                    onClick={() => setShowWalletConnectModal(false)}
+                    className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
+
+      <TradeExecutionNotifications
+        notifications={tradeNotifications}
+        onNavigate={handleNavigateToTrade}
+      />
+      <ConnectWalletModal
+        open={showConnectWalletModal}
+        onOpenChange={setShowConnectWalletModal}
+        onConnect={handleWalletConnect}
+      />
     </div>
   );
 }

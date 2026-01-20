@@ -8,6 +8,19 @@ export async function GET(request: Request) {
   const slug = searchParams.get('slug');
   const title = searchParams.get('title');
 
+  const normalizeEndDate = (value: any) => {
+    if (!value) return null;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number') {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+    }
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    return null;
+  };
+
   try {
     // Try 1: CLOB API with condition_id (most accurate for real-time prices)
     if (conditionId && conditionId.startsWith('0x')) {
@@ -26,8 +39,45 @@ export async function GET(request: Request) {
           const outcomes = market.tokens.map((t: any) => t.outcome);
           const prices = market.tokens.map((t: any) => t.price.toString());
           
-          console.log(`[Price API] Outcomes: ${JSON.stringify(outcomes)}, Prices: ${JSON.stringify(prices)}`);
+          // Market prices are public data - safe to log summary
+          console.log(`[Price API] Fetched ${prices?.length || 0} prices for ${outcomes?.length || 0} outcomes`);
           
+          const resolved =
+            typeof market.resolved === 'boolean'
+              ? market.resolved
+              : typeof market.is_resolved === 'boolean'
+                ? market.is_resolved
+                : typeof market.isResolved === 'boolean'
+                  ? market.isResolved
+                  : undefined;
+
+          let endDateIso =
+            normalizeEndDate(market.end_date_iso || market.end_date || market.endDate || null);
+
+          if (!endDateIso) {
+            try {
+              const gammaResponse = await fetch(
+                `https://gamma-api.polymarket.com/markets?condition_id=${conditionId}`,
+                { cache: 'no-store' }
+              );
+              if (gammaResponse.ok) {
+                const gammaData = await gammaResponse.json();
+                const gammaMarket = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null;
+                if (gammaMarket) {
+                  endDateIso = normalizeEndDate(
+                    gammaMarket.end_date_iso ||
+                      gammaMarket.end_date ||
+                      gammaMarket.endDate ||
+                      gammaMarket.close_time ||
+                      null
+                  );
+                }
+              }
+            } catch (error) {
+              console.warn('[Price API] Gamma end date fallback failed:', error);
+            }
+          }
+
           return NextResponse.json({
             success: true,
             market: {
@@ -35,8 +85,20 @@ export async function GET(request: Request) {
               conditionId: market.condition_id,
               slug: market.market_slug,
               closed: market.closed,
+              resolved,
               outcomePrices: prices,
               outcomes: outcomes,
+              // Sports/Event metadata
+              description: market.description,
+              category: market.category,
+              endDateIso,
+              gameStartTime: market.game_start_time || market.start_date_iso || market.event_start_date || null,
+              enableOrderBook: market.enable_order_book || false,
+              // Additional sports metadata if available
+              eventStatus: market.event_status || market.status || null,
+              score: market.score || market.live_score || null,
+              homeTeam: market.home_team || null,
+              awayTeam: market.away_team || null,
             }
           });
         }
@@ -69,6 +131,19 @@ export async function GET(request: Request) {
             try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
           }
 
+          const resolved =
+            typeof market.resolved === 'boolean'
+              ? market.resolved
+              : typeof market.is_resolved === 'boolean'
+                ? market.is_resolved
+                : typeof market.isResolved === 'boolean'
+                  ? market.isResolved
+                  : undefined;
+
+          const endDateIso = normalizeEndDate(
+            market.end_date_iso || market.end_date || market.endDate || market.close_time || null
+          );
+
           return NextResponse.json({
             success: true,
             market: {
@@ -76,8 +151,10 @@ export async function GET(request: Request) {
               conditionId: market.conditionId,
               slug: market.slug,
               closed: market.closed,
+              resolved,
               outcomePrices: prices,
               outcomes: outcomes,
+              endDateIso,
             }
           });
         }
@@ -121,6 +198,19 @@ export async function GET(request: Request) {
             try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
           }
 
+          const resolved =
+            typeof match.resolved === 'boolean'
+              ? match.resolved
+              : typeof match.is_resolved === 'boolean'
+                ? match.is_resolved
+                : typeof match.isResolved === 'boolean'
+                  ? match.isResolved
+                  : undefined;
+
+          const endDateIso = normalizeEndDate(
+            match.end_date_iso || match.end_date || match.endDate || match.close_time || null
+          );
+
           return NextResponse.json({
             success: true,
             market: {
@@ -128,8 +218,10 @@ export async function GET(request: Request) {
               conditionId: match.conditionId,
               slug: match.slug,
               closed: match.closed,
+              resolved,
               outcomePrices: prices,
               outcomes: outcomes,
+              endDateIso,
             }
           });
         }
@@ -150,4 +242,3 @@ export async function GET(request: Request) {
     );
   }
 }
-

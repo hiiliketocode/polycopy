@@ -9,10 +9,10 @@ export default function RootPage() {
 
   useEffect(() => {
     const checkAuthAndRedirect = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
       
       // If logged in, go to Feed
-      if (user) {
+      if (session?.user) {
         router.push('/feed');
       } else {
         // If not logged in, go to Discover

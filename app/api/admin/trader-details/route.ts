@@ -1,8 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { cookies } from 'next/headers'
+import { createClient as createAuthClient } from '@/lib/supabase/server'
+import { resolveOrdersTableName } from '@/lib/orders/table'
 
-// Create service role client
+/**
+ * SECURITY: Service Role Usage - ADMIN ENDPOINT
+ * 
+ * Why service role is required:
+ * - Admin viewing OTHER traders' data (not their own)
+ * - Needs to query orders table for copy metrics across all users
+ * - RLS policies restrict users to their own data
+ * 
+ * Security measures:
+ * - ✅ Verifies user is authenticated via Supabase
+ * - ✅ Checks user has `is_admin` flag in profiles table
+ * - ✅ Returns 401 if not admin
+ * - ✅ Service role only used AFTER admin check passes
+ * 
+ * RLS policies bypassed:
+ * - orders table (to count copiers across all users)
+ * 
+ * Reviewed: January 10, 2025
+ * Status: SECURE (proper admin authorization)
+ */
+
+// Create service role client (only used after admin check)
 function createServiceClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,11 +38,47 @@ function createServiceClient() {
   )
 }
 
-// Check admin auth
-async function isAuthenticated() {
-  const cookieStore = await cookies()
-  const authCookie = cookieStore.get('admin_dashboard_auth')
-  return authCookie?.value === 'authenticated'
+/**
+ * SECURITY FIX: Proper admin authentication
+ * - Checks Supabase auth (not just cookie)
+ * - Verifies is_admin flag in database
+ * - Returns user object for audit logging
+ */
+async function verifyAdminAuth(): Promise<{ isAdmin: boolean; userId?: string; error?: string }> {
+  try {
+    // Get authenticated user from Supabase
+    const supabase = await createAuthClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return { isAdmin: false, error: 'Not authenticated' }
+    }
+    
+    // Check if user has admin role in database
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', user.id)
+      .single()
+    
+    if (profileError || !profile) {
+      console.error('[ADMIN] Failed to fetch profile:', profileError)
+      return { isAdmin: false, error: 'Profile not found' }
+    }
+    
+    if (!profile.is_admin) {
+      console.warn('[ADMIN] Unauthorized access attempt by user:', user.id)
+      return { isAdmin: false, userId: user.id, error: 'Not authorized - admin access required' }
+    }
+    
+    // Log successful admin access
+    console.log('[ADMIN] Authorized admin access:', user.id)
+    return { isAdmin: true, userId: user.id }
+    
+  } catch (error) {
+    console.error('[ADMIN] Auth check error:', error)
+    return { isAdmin: false, error: 'Authentication failed' }
+  }
 }
 
 // Helper to categorize markets
@@ -45,10 +103,18 @@ function categorizeMarket(title: string): string {
 }
 
 export async function GET(request: NextRequest) {
-  // Verify admin auth
-  if (!(await isAuthenticated())) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // SECURITY: Verify admin auth BEFORE any service role operations
+  const authResult = await verifyAdminAuth()
+  
+  if (!authResult.isAdmin) {
+    console.warn('[ADMIN] Unauthorized access attempt:', authResult.error)
+    return NextResponse.json(
+      { error: authResult.error || 'Unauthorized - admin access required' },
+      { status: 401 }
+    )
   }
+  
+  console.log('[ADMIN] Processing trader details request by admin:', authResult.userId)
 
   const { searchParams } = new URL(request.url)
   const wallet = searchParams.get('wallet')
@@ -57,6 +123,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Wallet address required' }, { status: 400 })
   }
 
+  // NOW safe to use service role (admin verified)
   const supabase = createServiceClient()
 
   try {
@@ -210,12 +277,14 @@ export async function GET(request: NextRequest) {
       .slice(0, 10)
     
     // POLYCOPY copy metrics (internal tracking)
+    const ordersTable = await resolveOrdersTableName(supabase)
     const { data: copyData, error: copyError } = await supabase
-      .from('copied_trades')
-      .select('user_id, created_at')
-      .eq('trader_wallet', wallet)
+      .from(ordersTable)
+      .select('copy_user_id, created_at')
+      .eq('copied_trader_wallet', wallet)
+      .not('copied_trade_id', 'is', null)
     
-    const uniqueCopiers = new Set(copyData?.map(c => c.user_id) || []).size
+    const uniqueCopiers = new Set(copyData?.map(c => c.copy_user_id) || []).size
     const copyDates = copyData?.map(c => new Date(c.created_at).getTime()) || []
     
     const copyMetrics = {
@@ -243,4 +312,3 @@ export async function GET(request: NextRequest) {
     )
   }
 }
-

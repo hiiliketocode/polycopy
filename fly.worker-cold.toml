@@ -1,0 +1,26 @@
+# Fly.io configuration for Cold Worker
+# Deploy with: flyctl deploy -c fly.worker-cold.toml -a polycopy-cold-worker
+
+app = "polycopy-cold-worker"
+primary_region = "lhr"  # London, United Kingdom
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+
+# No HTTP service - this is a worker process
+# Use flyctl ssh console to connect if needed
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
+
+[processes]
+  app = "node workers/worker-cold.js"
+
+# Optional: Use Dockerfile instead of buildpacks
+# [build]
+#   dockerfile = "workers/Dockerfile"
+#   dockerignore = [".git", ".github", "node_modules"]

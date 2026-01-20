@@ -5,7 +5,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/api/', '/profile', '/admin/'],
+      disallow: ['/api/', '/admin/'],
     },
     sitemap: 'https://polycopy.app/sitemap.xml',
   }

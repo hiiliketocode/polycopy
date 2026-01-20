@@ -1,14 +1,39 @@
-import { createClient } from '@supabase/supabase-js'
-import { NextResponse } from 'next/server'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
+  const adminRefreshCookieName = 'pc_admin_refresh'
   
   if (code) {
-    const supabase = createClient(
+    let redirectUrl = `${requestUrl.origin}/feed`
+    const response = NextResponse.redirect(redirectUrl)
+    
+    const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return request.cookies.get(name)?.value
+          },
+          set(name: string, value: string, options: CookieOptions) {
+            response.cookies.set({
+              name,
+              value,
+              ...options,
+            })
+          },
+          remove(name: string, options: CookieOptions) {
+            response.cookies.set({
+              name,
+              value: '',
+              ...options,
+            })
+          },
+        },
+      }
     )
     
     try {
@@ -44,13 +69,86 @@ export async function GET(request: Request) {
       } else {
         console.log('Profile created successfully')
       }
+
+      const { data: adminProfile, error: adminProfileError } = await supabase
+        .from('profiles')
+        .select('is_admin, has_completed_onboarding')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (adminProfileError) {
+        console.error('Admin profile lookup error:', adminProfileError)
+      }
+
+      const isAdmin = Boolean(adminProfile?.is_admin)
+      if (isAdmin) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.refresh_token) {
+          response.cookies.set({
+            name: adminRefreshCookieName,
+            value: session.refresh_token,
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            path: '/',
+            maxAge: 60 * 60 * 24 * 365,
+          })
+        }
+      } else {
+        response.cookies.set({
+          name: adminRefreshCookieName,
+          value: '',
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 0,
+        })
+      }
+      
+      // Check if user needs to complete onboarding
+      const hasCompletedOnboarding = adminProfile?.has_completed_onboarding ?? false
+      if (!hasCompletedOnboarding) {
+        console.log('User has not completed onboarding, redirecting to onboarding')
+        redirectUrl = `${requestUrl.origin}/onboarding`
+        const finalResponse = NextResponse.redirect(redirectUrl)
+        response.cookies.getAll().forEach(cookie => {
+          finalResponse.cookies.set(cookie)
+        })
+        return finalResponse
+      }
+      
+      // Check if user has any follows to determine redirect destination
+      const { data: follows, error: followsError } = await supabase
+        .from('follows')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1)
+      
+      if (!followsError && follows && follows.length > 0) {
+        console.log('User has follows, redirecting to feed')
+        redirectUrl = `${requestUrl.origin}/feed`
+      } else {
+        console.log('User has no follows, redirecting to discover')
+        redirectUrl = `${requestUrl.origin}/discover`
+      }
+      
+      // Update the response with the correct redirect URL
+      const finalResponse = NextResponse.redirect(redirectUrl)
+      
+      // Copy all cookies from the original response to the final response
+      response.cookies.getAll().forEach(cookie => {
+        finalResponse.cookies.set(cookie)
+      })
+      
+      return finalResponse
       
     } catch (error) {
       console.error('Callback error:', error)
+      return NextResponse.redirect(`${requestUrl.origin}?error=auth_error`)
     }
   }
   
-  // Redirect to home page
-  return NextResponse.redirect(requestUrl.origin)
+  // No code provided, redirect to home
+  return NextResponse.redirect(`${requestUrl.origin}/feed`)
 }
-

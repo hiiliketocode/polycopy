@@ -85,7 +85,8 @@ export async function GET(request: Request) {
     console.log('✅ Leaderboard data fetched:', data?.length || 0, 'traders');
     
     // Log raw sample to see exact structure
-    console.log('📦 Raw leaderboard sample:', JSON.stringify(data?.slice(0, 2), null, 2));
+    // SECURITY: Removed full data logging (contains user trading data)
+    // Use logInfo for safe logging instead
 
     // Check if data is an array
     if (!Array.isArray(data)) {
@@ -97,16 +98,22 @@ export async function GET(request: Request) {
     }
 
     // Transform leaderboard data into our trader format
-    const traders = data.map((trader: PolymarketLeaderboardEntry) => ({
-      wallet: trader.proxyWallet || '',
-      displayName: trader.userName || abbreviateWallet(trader.proxyWallet || ''),
-      pnl: Math.round((trader.pnl || 0) * 100) / 100, // Round to 2 decimals
-      winRate: 0, // Not available in leaderboard data
-      totalTrades: 0, // Not available in leaderboard data
-      volume: Math.round((trader.vol || 0) * 100) / 100, // Round to 2 decimals
-      rank: parseInt(trader.rank) || 0,
-      followerCount: 0, // Will be fetched from our database in the future
-    }));
+    const traders = data.map((trader: PolymarketLeaderboardEntry) => {
+      const pnl = trader.pnl || 0;
+      const volume = trader.vol || 0;
+      
+      return {
+        wallet: trader.proxyWallet || '',
+        displayName: trader.userName || abbreviateWallet(trader.proxyWallet || ''),
+        pnl: Math.round(pnl * 100) / 100, // Round to 2 decimals
+        winRate: 0, // Not calculated for leaderboard (too slow)
+        totalTrades: 0, // Not available in leaderboard data
+        volume: Math.round(volume * 100) / 100, // Round to 2 decimals
+        rank: parseInt(trader.rank) || 0,
+        followerCount: 0, // Will be fetched from our database in the future
+        profileImage: trader.profileImage || null, // Polymarket profile picture URL
+      };
+    });
 
     console.log('✅ Transformed', traders.length, 'traders');
 

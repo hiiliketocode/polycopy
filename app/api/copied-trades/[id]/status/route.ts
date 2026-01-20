@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { resolveOrdersTableName } from '@/lib/orders/table'
 
 // Type for Polymarket position
 interface PolymarketPosition {
@@ -30,6 +31,23 @@ function createServiceClient() {
       }
     }
   )
+}
+
+async function resolveTraderWallet(
+  client: ReturnType<typeof createServiceClient>,
+  traderId: string | null | undefined
+): Promise<string | null> {
+  if (!traderId) return null
+  const { data, error } = await client
+    .from('traders')
+    .select('wallet_address')
+    .eq('id', traderId)
+    .maybeSingle()
+  if (error) {
+    console.warn('[copy-status] failed to resolve trader wallet', { traderId, error })
+    return null
+  }
+  return data?.wallet_address ?? null
 }
 
 /**
@@ -64,35 +82,94 @@ export async function GET(
     
     // Use service role client to bypass RLS
     const supabase = createServiceClient()
+    const ordersTable = await resolveOrdersTableName(supabase)
+    if (ordersTable !== 'orders') {
+      console.error('❌ Orders table unavailable for copy trade status (resolved to', ordersTable, ')')
+      return NextResponse.json({ error: 'Orders table unavailable' }, { status: 503 })
+    }
 
     // SECURITY: Fetch the copied trade and verify ownership
     // This ensures the user owns the trade before returning any data
-    const { data: trade, error: fetchError } = await supabase
-      .from('copied_trades')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', userId)
-      .single()
+    // Read from the enriched view to get derived entry/exit fields for PnL,
+    // while still updating the base orders table later.
+    const selectFields = `
+        order_id,
+        trader_id,
+        created_at,
+        copied_trade_id,
+        copy_user_id,
+        copied_trader_wallet,
+        copied_trader_username,
+        market_id,
+        copied_market_title,
+        outcome,
+        price_when_copied,
+        trade_method,
+        trader_still_has_position,
+        trader_closed_at,
+        current_price,
+        market_resolved,
+        market_resolved_at,
+        notification_closed_sent,
+        notification_resolved_sent,
+        last_checked_at,
+        resolved_outcome,
+        user_closed_at,
+        user_exit_price,
+        entry_price,
+        entry_size,
+        invested_usd,
+        exit_price,
+        pnl_pct,
+        pnl_usd
+      `
 
-    if (fetchError || !trade) {
+    const buildBaseQuery = () =>
+      supabase
+        .from('orders_copy_enriched')
+        .select(selectFields)
+        .eq('copy_user_id', userId)
+
+    const attemptFetch = async (column: 'copied_trade_id' | 'order_id') => {
+      return buildBaseQuery()
+        .eq(column, id)
+        .maybeSingle()
+    }
+
+    let tradeRow = null
+    let fetchError = null
+
+    let fetchResult = await attemptFetch('copied_trade_id')
+    tradeRow = fetchResult.data
+    fetchError = fetchResult.error
+
+    if (!tradeRow && !fetchError) {
+      fetchResult = await attemptFetch('order_id')
+      tradeRow = fetchResult.data
+      fetchError = fetchResult.error
+    }
+
+    if (fetchError || !tradeRow) {
       console.error('❌ Trade not found or unauthorized:', fetchError?.message)
       return NextResponse.json({ error: 'Trade not found or unauthorized' }, { status: 404 })
     }
     
-    // If user manually closed this trade, return existing values without updates
-    if (trade.user_closed_at) {
-      console.log(`⏭️ User-closed trade ${id} - returning locked values (user_exit_price: ${trade.user_exit_price})`);
-      return NextResponse.json({
-        traderStillHasPosition: trade.trader_still_has_position,
-        traderClosedAt: trade.trader_closed_at,
-        currentPrice: trade.user_exit_price, // Use user's exit price
-        roi: trade.roi, // Use locked ROI
-        marketResolved: trade.market_resolved,
-        resolvedOutcome: trade.resolved_outcome,
-        priceSource: 'user-closed'
-      });
+    const trade = {
+      ...tradeRow,
+      trader_wallet: tradeRow.copied_trader_wallet ?? null,
+      market_title: tradeRow.copied_market_title || '',
+      entry_price: tradeRow.entry_price ?? tradeRow.price_when_copied ?? null,
     }
-    
+
+    const isUserClosed = Boolean(trade.user_closed_at)
+
+    // Choose whose position to track for PnL: follower for quick, source trader for manual.
+    let walletForStatus = trade.trader_wallet
+    if (trade.trade_method === 'quick') {
+      const followerWallet = await resolveTraderWallet(supabase, trade.trader_id)
+      walletForStatus = followerWallet ?? trade.trader_wallet
+    }
+
     // Additional auth check for non-cron requests (optional, ownership already verified)
     if (!isCronRequest) {
       try {
@@ -126,7 +203,7 @@ export async function GET(
     }
 
     // Check if trade was recently copied (< 5 minutes ago)
-    const copiedAt = new Date(trade.copied_at)
+    const copiedAt = new Date(trade.created_at)
     const now = new Date()
     const minutesSinceCopied = (now.getTime() - copiedAt.getTime()) / (1000 * 60)
     const isRecentlyCopied = minutesSinceCopied < 5
@@ -134,95 +211,112 @@ export async function GET(
     // Initialize update fields
     let traderStillHasPosition = trade.trader_still_has_position
     let traderClosedAt = trade.trader_closed_at
+    let traderPositionSize: number | null = null
     let currentPrice: number | null = null
     let roi: number | null = null
     let priceSource: string = 'none'
     let traderAvgPrice: number | null = null
     let marketResolved: boolean = trade.market_resolved || false
     let resolvedOutcome: string | null = null
+    const lockedRoi =
+      trade.entry_price && trade.user_exit_price
+        ? ((trade.user_exit_price - trade.entry_price) / trade.entry_price) * 100
+        : trade.pnl_pct ?? null
 
-    // STEP 1: Fetch trader's current positions from Polymarket (with pagination)
-    try {
-      let positions: PolymarketPosition[] = [];
-      let offset = 0;
-      const limit = 500; // API seems to cap at 500 per request
-      let hasMore = true;
-      
-      // Fetch ALL positions using pagination
-      while (hasMore) {
-        const positionsUrl = `https://data-api.polymarket.com/positions?user=${trade.trader_wallet}&limit=${limit}&offset=${offset}`
-        const positionsResponse = await fetch(positionsUrl, { cache: 'no-store' })
+    if (isUserClosed) {
+      currentPrice = trade.user_exit_price ?? trade.current_price ?? null
+      priceSource = 'user-closed'
+    }
 
-        if (positionsResponse.ok) {
-          const batch: PolymarketPosition[] = await positionsResponse.json()
-          const batchSize = batch?.length || 0;
-          
-          if (batchSize > 0) {
-            positions = positions.concat(batch);
-            offset += batchSize;
-            hasMore = batchSize === limit;
+    // STEP 1: Fetch current positions from Polymarket (with pagination)
+    if (!isUserClosed) {
+      try {
+        let positions: PolymarketPosition[] = [];
+        let offset = 0;
+        const limit = 500; // API seems to cap at 500 per request
+        let hasMore = true;
+        
+        // Fetch ALL positions using pagination
+        while (hasMore) {
+          const positionsUrl = `https://data-api.polymarket.com/positions?user=${walletForStatus}&limit=${limit}&offset=${offset}`
+          const positionsResponse = await fetch(positionsUrl, { cache: 'no-store' })
+
+          if (positionsResponse.ok) {
+            const batch: PolymarketPosition[] = await positionsResponse.json()
+            const batchSize = batch?.length || 0;
+            
+            if (batchSize > 0) {
+              positions = positions.concat(batch);
+              offset += batchSize;
+              hasMore = batchSize === limit;
+            } else {
+              hasMore = false;
+            }
           } else {
             hasMore = false;
           }
-        } else {
-          hasMore = false;
         }
-      }
-      
-      if (positions.length > 0) {
+        
+        if (positions.length > 0) {
 
-        // Find ALL positions matching this market (any outcome)
-        const marketPositions = positions.filter((pos) => {
-          return pos.conditionId === trade.market_id ||
-            pos.asset === trade.market_id ||
-            (pos.conditionId && trade.market_id && trade.market_id.includes(pos.conditionId))
-        })
+          // Find ALL positions matching this market (any outcome)
+          const marketPositions = positions.filter((pos) => {
+            return pos.conditionId === trade.market_id ||
+              pos.asset === trade.market_id ||
+              (pos.conditionId && trade.market_id && trade.market_id.includes(pos.conditionId))
+          })
 
-        // Find matching position by conditionId AND outcome (case-insensitive)
-        const matchingPosition = positions.find((pos) => {
-          const idMatch = 
-            pos.conditionId === trade.market_id ||
-            pos.asset === trade.market_id ||
-            (pos.conditionId && trade.market_id && trade.market_id.includes(pos.conditionId))
-          
-          // Case-insensitive outcome comparison
-          const outcomeMatch = pos.outcome?.toUpperCase() === trade.outcome?.toUpperCase()
-          const hasSize = parseFloat(String(pos.size || 0)) > 0
-          
-          return idMatch && outcomeMatch && hasSize
-        })
+          // Find matching position by conditionId AND outcome (case-insensitive)
+          const matchingPosition = positions.find((pos) => {
+            const idMatch = 
+              pos.conditionId === trade.market_id ||
+              pos.asset === trade.market_id ||
+              (pos.conditionId && trade.market_id && trade.market_id.includes(pos.conditionId))
+            
+            // Case-insensitive outcome comparison
+            const outcomeMatch = pos.outcome?.toUpperCase() === trade.outcome?.toUpperCase()
+            const hasSize = parseFloat(String(pos.size || 0)) > 0
+            
+            return idMatch && outcomeMatch && hasSize
+          })
 
-        if (matchingPosition) {
-          traderStillHasPosition = true
-          
-          // Capture trader's average price for ROI calculation
-          if (matchingPosition.avgPrice !== undefined && matchingPosition.avgPrice !== null) {
-            traderAvgPrice = parseFloat(String(matchingPosition.avgPrice))
-          }
-          
-          // Get current price from position
-          if (matchingPosition.curPrice !== undefined && matchingPosition.curPrice !== null) {
-            currentPrice = parseFloat(String(matchingPosition.curPrice))
-            priceSource = 'position.curPrice'
-          } else if (matchingPosition.avgPrice !== undefined && matchingPosition.avgPrice !== null) {
-            currentPrice = parseFloat(String(matchingPosition.avgPrice))
-            priceSource = 'position.avgPrice'
-          }
-        } else {
-          // No matching position found
-          if (isRecentlyCopied) {
-            // Keep current position status for recent trades
+          if (matchingPosition) {
+            traderStillHasPosition = true
+            if (matchingPosition.size !== undefined && matchingPosition.size !== null) {
+              const parsedSize = parseFloat(String(matchingPosition.size))
+              traderPositionSize = Number.isFinite(parsedSize) ? parsedSize : null
+            }
+            
+            // Capture trader's average price for ROI calculation
+            if (matchingPosition.avgPrice !== undefined && matchingPosition.avgPrice !== null) {
+              traderAvgPrice = parseFloat(String(matchingPosition.avgPrice))
+            }
+            
+            // Get current price from position
+            if (matchingPosition.curPrice !== undefined && matchingPosition.curPrice !== null) {
+              currentPrice = parseFloat(String(matchingPosition.curPrice))
+              priceSource = 'position.curPrice'
+            } else if (matchingPosition.avgPrice !== undefined && matchingPosition.avgPrice !== null) {
+              currentPrice = parseFloat(String(matchingPosition.avgPrice))
+              priceSource = 'position.avgPrice'
+            }
           } else {
-            // Trader may have closed position
-            if (traderStillHasPosition !== false) {
-              traderStillHasPosition = false
-              traderClosedAt = new Date().toISOString()
+            // No matching position found
+            if (isRecentlyCopied) {
+              // Keep current position status for recent trades
+            } else {
+              // Trader may have closed position
+              if (traderStillHasPosition !== false) {
+                traderStillHasPosition = false
+                traderClosedAt = new Date().toISOString()
+              }
+              traderPositionSize = 0
             }
           }
         }
+      } catch (err: any) {
+        console.error('❌ Error fetching positions:', err.message)
       }
-    } catch (err: any) {
-      console.error('❌ Error fetching positions:', err.message)
     }
 
     // STEP 2: Try Gamma API for price and market resolution status
@@ -258,7 +352,8 @@ export async function GET(
             
             // Method 3: Check if prices show clear resolution
             // A truly resolved market has one outcome at ~$1.00 and others at ~$0.00
-            if (!isActuallyResolved) {
+            // IMPORTANT: Only check prices if market is closed to avoid false positives from heavy favorites
+            if (!isActuallyResolved && market.closed === true) {
               try {
                 let outcomes = market.outcomes
                 let prices = market.outcomePrices
@@ -277,9 +372,10 @@ export async function GET(
                   const minPrice = Math.min(...priceNumbers)
                   
                   // Market is resolved ONLY if:
-                  // - One outcome is at 99%+ ($0.99+) AND another is at 1% or less ($0.01-)
-                  // This ensures we only catch truly resolved markets, not just heavy favorites
-                  if (maxPrice >= 0.99 && minPrice <= 0.01) {
+                  // - Market is closed AND
+                  // - One outcome is at 99.5%+ ($0.995+) AND another is at 0.5% or less ($0.005-)
+                  // This prevents false positives from heavy favorites that are still live
+                  if (maxPrice >= 0.995 && minPrice <= 0.005) {
                     isActuallyResolved = true
                     const winningIndex = priceNumbers.indexOf(maxPrice)
                     if (winningIndex >= 0 && winningIndex < outcomes.length) {
@@ -287,8 +383,9 @@ export async function GET(
                     }
                     
                     // Log resolution detection
-                    console.log('✅ Market resolved detected:', {
+                    console.log('✅ Market resolved detected (closed + extreme prices):', {
                       marketId: trade.market_id?.substring(0, 10),
+                      closed: market.closed,
                       maxPrice,
                       minPrice,
                       resolvedOutcome
@@ -305,8 +402,8 @@ export async function GET(
               marketResolved = true
             }
             
-            // Get price if we don't have one yet
-            if (currentPrice === null) {
+            // Get price if we don't have one yet (skip for user-closed trades)
+            if (!isUserClosed && currentPrice === null) {
               let prices = market.outcomePrices
               let outcomes = market.outcomes
               
@@ -349,7 +446,7 @@ export async function GET(
     }
 
     // STEP 3: Fallbacks if still no price
-    if (currentPrice === null) {
+    if (!isUserClosed && currentPrice === null) {
       if (trade.current_price !== null && trade.current_price > 0) {
         currentPrice = trade.current_price
         priceSource = 'db.last_known'
@@ -360,7 +457,7 @@ export async function GET(
     }
     
     // SAFETY: Never set price to 0 unless valid
-    if (currentPrice !== null && currentPrice === 0) {
+    if (!isUserClosed && currentPrice !== null && currentPrice === 0) {
       if (trade.current_price !== null && trade.current_price > 0) {
         currentPrice = trade.current_price
         priceSource = 'safety_fallback'
@@ -371,17 +468,11 @@ export async function GET(
     }
 
     // STEP 4: Calculate ROI
-    if (currentPrice !== null && trade.price_when_copied) {
-      const entryPrice = parseFloat(String(trade.price_when_copied))
-      if (entryPrice > 0) {
-        roi = ((currentPrice - entryPrice) / entryPrice) * 100
-        roi = parseFloat(roi.toFixed(2))
-      }
-    }
+    const entryPrice = trade.entry_price ? parseFloat(String(trade.entry_price)) : null
     
     // ADDITIONAL: Check if current price indicates resolution
     // If this trade's outcome is at $0 or $1, the market is likely resolved
-    if (!marketResolved && currentPrice !== null) {
+    if (!isUserClosed && !marketResolved && currentPrice !== null) {
       if (currentPrice >= 0.99 || currentPrice <= 0.01) {
         marketResolved = true;
         
@@ -400,15 +491,45 @@ export async function GET(
         });
       }
     }
+    
+    // Calculate ROI - use final outcome prices for resolved markets
+    if (!isUserClosed && entryPrice && entryPrice > 0) {
+      let priceForRoi = currentPrice;
+      
+      // For resolved markets, use the final outcome (1.00 for win, 0.00 for loss)
+      if (marketResolved && currentPrice !== null) {
+        if (currentPrice >= 0.99) {
+          priceForRoi = 1.00; // Winner gets 1.00
+        } else if (currentPrice <= 0.01) {
+          priceForRoi = 0.00; // Loser gets 0.00
+        }
+      }
+      
+      if (priceForRoi !== null) {
+        roi = ((priceForRoi - entryPrice) / entryPrice) * 100
+        roi = parseFloat(roi.toFixed(2))
+      }
+    }
 
     // STEP 5: Update the database
     const updateData: Record<string, any> = {
-      trader_still_has_position: traderStillHasPosition,
-      trader_closed_at: traderClosedAt,
-      current_price: currentPrice,
-      roi: roi,
       last_checked_at: new Date().toISOString(),
       market_resolved: marketResolved,
+    }
+
+    if (!isUserClosed) {
+      updateData.trader_still_has_position = traderStillHasPosition
+      updateData.trader_closed_at = traderClosedAt
+      updateData.current_price = currentPrice
+
+      if (traderPositionSize !== null) {
+        updateData.trader_position_size = traderPositionSize
+      }
+
+      // Persist ROI only when we have a stable entry/exit pair.
+      if (roi !== null && entryPrice !== null && entryPrice > 0) {
+        updateData.roi = roi
+      }
     }
     
     // Only set resolved_outcome if we have one
@@ -416,11 +537,19 @@ export async function GET(
       updateData.resolved_outcome = resolvedOutcome
     }
     
+    const identifierColumn: 'copied_trade_id' | 'order_id' = trade.copied_trade_id ? 'copied_trade_id' : 'order_id'
+    const identifierValue = trade.copied_trade_id || trade.order_id || id
+
+    if (!identifierValue) {
+      console.error('❌ Missing identifier for trade', id)
+      return NextResponse.json({ error: 'Trade identifier missing' }, { status: 500 })
+    }
+
     const { data: updatedTrade, error: updateError } = await supabase
-      .from('copied_trades')
+      .from(ordersTable)
       .update(updateData)
-      .eq('id', id)
-      .eq('user_id', userId)  // SECURITY: Only update if it belongs to this user
+      .eq(identifierColumn, identifierValue)
+      .eq('copy_user_id', userId)  // SECURITY: Only update if it belongs to this user
       .select()
       .single()
 
@@ -433,23 +562,27 @@ export async function GET(
     }
 
     // Log summary for debugging
-    console.log(`✅ Status updated: ${trade.market_title?.slice(0, 30)}... | ${trade.outcome} | ${currentPrice !== null ? Math.round(currentPrice * 100) + '¢' : 'no price'} | ROI: ${roi !== null ? roi + '%' : 'n/a'} | source: ${priceSource}`)
+        console.log(
+          `✅ Status updated: ${trade.market_title?.slice(0, 30)}... | ${trade.outcome} | wallet=${walletForStatus} | ${currentPrice !== null ? Math.round(currentPrice * 100) + '¢' : 'no price'} | ROI: ${roi !== null ? roi + '%' : 'n/a'} | source: ${priceSource}`
+        )
 
     return NextResponse.json({
       trade: updatedTrade,
       status: {
         checked: true,
         traderStillHasPosition,
-        currentPrice,
-        roi,
+        traderPositionSize,
+        currentPrice: isUserClosed ? (trade.user_exit_price ?? currentPrice) : currentPrice,
+        roi: isUserClosed ? lockedRoi : roi,
         traderAvgPrice,
         marketResolved,
         resolvedOutcome,
       },
       // Also expose at top level for easier access by cron
       traderStillHasPosition,
-      currentPrice,
-      roi,
+      traderPositionSize,
+      currentPrice: isUserClosed ? (trade.user_exit_price ?? currentPrice) : currentPrice,
+      roi: isUserClosed ? lockedRoi : roi,
       traderAvgPrice,
       marketResolved,
       resolvedOutcome,

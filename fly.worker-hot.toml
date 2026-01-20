@@ -1,0 +1,23 @@
+# Fly.io configuration for Hot Worker
+# Deploy with: flyctl deploy -c fly.worker-hot.toml -a polycopy-hot-worker
+
+app = "polycopy-hot-worker"
+primary_region = "iad"
+
+[build]
+  dockerfile = "workers/Dockerfile"
+  dockerignore = [".git", ".github", "node_modules", "app", "polycopy", "public", "assets", "*.md", "docs", "scripts", "supabase/migrations"]
+
+[env]
+  NODE_ENV = "production"
+
+# No HTTP service - this is a worker process
+# Use flyctl ssh console to connect if needed
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
+
+[processes]
+  app = "node workers/worker-hot.js"

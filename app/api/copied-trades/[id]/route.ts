@@ -3,6 +3,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveOrdersTableName } from '@/lib/orders/table'
 
 // Create service role client that bypasses RLS for database operations
 function createServiceClient() {
@@ -60,35 +61,64 @@ export async function DELETE(
     }
 
     const supabase = createServiceClient()
+    const ordersTable = await resolveOrdersTableName(supabase)
+    if (ordersTable !== 'orders') {
+      console.error('❌ Orders table unavailable for copy trade deletes (resolved to', ordersTable, ')')
+      return NextResponse.json({ error: 'Orders table unavailable' }, { status: 503 })
+    }
     
     // Verify the trade belongs to this user before deleting
-    const { data: trade, error: fetchError } = await supabase
-      .from('copied_trades')
-      .select('id, user_id')
-      .eq('id', id)
-      .eq('user_id', userId)
-      .single()
-    
-    if (fetchError || !trade) {
+    const fetchByColumn = async (column: 'copied_trade_id' | 'order_id') => {
+      return supabase
+        .from(ordersTable)
+        .select('order_id')
+        .eq(column, id)
+        .eq('copy_user_id', userId)
+        .maybeSingle()
+    }
+
+    let fetchResult = await fetchByColumn('copied_trade_id')
+    let { data: order, error: fetchError } = fetchResult
+
+    if (!order && !fetchError) {
+      fetchResult = await fetchByColumn('order_id')
+      order = fetchResult.data
+      fetchError = fetchResult.error
+    }
+
+    if (fetchError || !order) {
       console.log('❌ Trade not found or unauthorized:', fetchError?.message)
       return NextResponse.json({ error: 'Trade not found or unauthorized' }, { status: 404 })
     }
     
-    // Delete the trade
-    const { error: deleteError } = await supabase
-      .from('copied_trades')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', userId)
+    const { error: updateError } = await supabase
+      .from(ordersTable)
+      .update({
+        copy_user_id: null,
+        copied_trade_id: null,
+        copied_trader_id: null,
+        copied_trader_wallet: null,
+        copied_trader_username: null,
+        copied_market_title: null,
+        price_when_copied: null,
+        amount_invested: null,
+        trader_still_has_position: null,
+        current_price: null,
+        market_resolved: false,
+        notification_closed_sent: false,
+        notification_resolved_sent: false,
+        last_checked_at: new Date().toISOString(),
+      })
+      .eq('order_id', order.order_id)
     
-    if (deleteError) {
-      console.error('❌ Error deleting trade:', deleteError)
-      return NextResponse.json({ error: 'Failed to delete trade' }, { status: 500 })
+    if (updateError) {
+      console.error('❌ Error clearing copied trade metadata:', updateError)
+      return NextResponse.json({ error: 'Failed to clear copied trade', details: updateError.message }, { status: 500 })
     }
     
-    console.log('✅ Trade deleted successfully:', id, 'for user', userId)
+    console.log('✅ Copied trade metadata cleared:', id, 'for user', userId)
     
-    return NextResponse.json({ success: true, message: 'Trade deleted' })
+    return NextResponse.json({ success: true, message: 'Copied trade removed from feed' })
     
   } catch (error) {
     console.error('❌ Delete trade error:', error)

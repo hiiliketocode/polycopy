@@ -2,7 +2,7 @@ import { Resend } from 'resend'
 
 // Initialize Resend client
 // Add RESEND_API_KEY to your .env.local file
-const resend = new Resend(process.env.RESEND_API_KEY)
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
 export { resend }
 
@@ -19,6 +19,11 @@ export async function sendEmail({
   subject: string
   react: React.ReactElement
 }) {
+  if (!resend) {
+    console.error('Resend not initialized - missing RESEND_API_KEY')
+    return { success: false, error: 'Email service not configured' }
+  }
+  
   try {
     const { data, error } = await resend.emails.send({
       from: EMAIL_FROM,

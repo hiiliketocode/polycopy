@@ -5,6 +5,7 @@ import "./globals.css";
 import "./styles/design-system.css";
 import BottomNav from "./components/BottomNav";
 import Footer from "./components/Footer";
+import { LoggedOutModal } from "@/components/auth/LoggedOutModal";
 
 const inter = Inter({ 
   subsets: ['latin'],
@@ -51,6 +52,15 @@ export const metadata: Metadata = {
     site: '@polycopyapp',
     creator: '@polycopyapp',
     images: ['/og-image.png']
+  },
+  icons: {
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon.png', type: 'image/png' }
+    ],
+    shortcut: '/favicon.ico',
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }]
   },
   robots: {
     index: true,
@@ -102,6 +112,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         </div>
         <Footer />
         <BottomNav />
+        <LoggedOutModal />
       </body>
     </html>
   );

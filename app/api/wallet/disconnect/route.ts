@@ -1,10 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { unauthorized, internalError } from '@/lib/http/error-response';
 
-// Create Supabase client with service role for server-side operations
+/**
+ * SECURITY NOTE: This endpoint uses authenticated client (not service role).
+ * 
+ * Why NO service role:
+ * - User is disconnecting THEIR OWN wallet
+ * - RLS policies on `profiles` allow users to update own records
+ * - Service role would be unnecessary RLS bypass
+ * 
+ * Authentication: Bearer token in Authorization header
+ * 
+ * Fixed: January 10, 2025
+ */
+
+// Create regular Supabase client (not service role)
+// Will use Bearer token for auth
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
 export async function POST(request: NextRequest) {
@@ -31,9 +46,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // SECURITY FIX: Use authenticated client (not service role)
+    // RLS policies allow users to update their own profiles
     // Remove wallet data from user's profile
     // NOTE: We only store the wallet address, not private keys
-    // Private keys are managed by Privy on their infrastructure
+    // Private keys are managed by Turnkey on their infrastructure
     const { error: updateError } = await supabase
       .from('profiles')
       .update({
@@ -57,10 +74,6 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Wallet disconnect error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
+    return internalError('Wallet disconnect failed', error);
   }
 }

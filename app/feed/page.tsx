@@ -1,14 +1,34 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
+import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from '@/lib/feature-tier';
+import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
+import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import type { User } from '@supabase/supabase-js';
-import Header from '@/app/components/Header';
+import { Navigation } from '@/components/polycopy/navigation';
+import { SignupBanner } from '@/components/polycopy/signup-banner';
+import { TradeCard } from '@/components/polycopy/trade-card';
+import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/components/polycopy/trade-execution-notifications';
+import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
+import { EmptyState } from '@/components/polycopy/empty-state';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { RefreshCw, Activity, Filter, X, Check, Search } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
+import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
+import {
+  normalizeEventStatus,
+  statusLooksFinal,
+  statusLooksLive,
+  statusLooksScheduled,
+} from '@/lib/market-status';
 
 // Types
-interface FeedTrade {
+export interface FeedTrade {
   id: string;
   trader: {
     wallet: string;
@@ -16,10 +36,12 @@ interface FeedTrade {
   };
   market: {
     id?: string;
+    conditionId?: string;
     title: string;
     slug: string;
     eventSlug?: string;
     category?: string;
+    avatarUrl?: string;
   };
   trade: {
     side: 'BUY' | 'SELL';
@@ -27,29 +49,151 @@ interface FeedTrade {
     size: number;
     price: number;
     timestamp: number;
+    tradeId?: string;
+    tokenId?: string;
   };
 }
 
-interface TradeCardProps {
-  traderName: string;
-  traderAddress: string;
-  market: string;
-  marketId?: string;
-  side: string;
-  type: 'buy' | 'sell';
-  price: number;
-  size: number;
-  timestamp: number;
-  isCopied: boolean;
-  onCopyTrade: () => void;
-  onMarkAsCopied: () => void;
-}
+type Category = "all" | "politics" | "sports" | "crypto" | "culture" | "finance" | "economics" | "tech" | "weather";
+type FilterStatus = "all" | "live";
+type ResolvingWindow = "any" | "hour" | "today" | "tomorrow" | "week";
 
-interface CopiedTrade {
-  id: string;
-  market_id: string;
-  trader_wallet: string;
-}
+type FilterState = {
+  category: Category;
+  status: FilterStatus;
+  tradeSizeMin: number;
+  resolvingWindow: ResolvingWindow;
+  priceMinCents: number;
+  priceMaxCents: number;
+  traderIds: string[];
+};
+
+const FILTERS_STORAGE_KEY = 'feed-filters-v1';
+
+const CATEGORY_OPTIONS = [
+  { value: "all" as Category, label: "All" },
+  { value: "politics" as Category, label: "Politics" },
+  { value: "sports" as Category, label: "Sports" },
+  { value: "crypto" as Category, label: "Crypto" },
+  { value: "culture" as Category, label: "Pop Culture" },
+  { value: "finance" as Category, label: "Business" },
+  { value: "economics" as Category, label: "Economics" },
+  { value: "tech" as Category, label: "Tech" },
+  { value: "weather" as Category, label: "Weather" },
+];
+
+const STATUS_OPTIONS = [
+  { value: "all" as FilterStatus, label: "All" },
+  { value: "live" as FilterStatus, label: "Live Games Only" },
+];
+
+const TRADE_SIZE_OPTIONS = [
+  { value: 0, label: 'Any size' },
+  { value: 100, label: '$100+' },
+  { value: 500, label: '$500+' },
+  { value: 1000, label: '$1,000+' },
+];
+
+const RESOLVING_OPTIONS = [
+  { value: 'any' as ResolvingWindow, label: 'Any time' },
+  { value: 'hour' as ResolvingWindow, label: 'Next hour' },
+  { value: 'today' as ResolvingWindow, label: 'Today' },
+  { value: 'tomorrow' as ResolvingWindow, label: 'Tomorrow' },
+  { value: 'week' as ResolvingWindow, label: 'This week' },
+];
+
+const PRICE_RANGE = { min: 0, max: 100 };
+const PRICE_PRESET_OPTIONS = [
+  { label: 'Any', min: PRICE_RANGE.min, max: PRICE_RANGE.max },
+  { label: '0-25¢', min: 0, max: 25 },
+  { label: '25-50¢', min: 25, max: 50 },
+  { label: '50-75¢', min: 50, max: 75 },
+  { label: '90¢+', min: 90, max: PRICE_RANGE.max },
+];
+
+const defaultFilters: FilterState = {
+  category: "all",
+  status: "all",
+  tradeSizeMin: 0,
+  resolvingWindow: "any",
+  priceMinCents: PRICE_RANGE.min,
+  priceMaxCents: PRICE_RANGE.max,
+  traderIds: [],
+};
+
+const LOW_BALANCE_TOOLTIP =
+  'Quick trades use your Polymarket USDC balance. Add funds before retrying this order.';
+
+const CATEGORY_VALUES = new Set(CATEGORY_OPTIONS.map((option) => option.value));
+const STATUS_VALUES = new Set(STATUS_OPTIONS.map((option) => option.value));
+const RESOLVING_VALUES = new Set(RESOLVING_OPTIONS.map((option) => option.value));
+
+const clampNumber = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+const normalizeFilters = (value: Partial<FilterState> | null): FilterState => {
+  const fallback = { ...defaultFilters, traderIds: [] };
+  if (!value || typeof value !== 'object') return fallback;
+
+  const category = CATEGORY_VALUES.has(value.category as Category)
+    ? (value.category as Category)
+    : fallback.category;
+  const status = STATUS_VALUES.has(value.status as FilterStatus)
+    ? (value.status as FilterStatus)
+    : fallback.status;
+  const tradeSizeMin =
+    typeof value.tradeSizeMin === 'number' && value.tradeSizeMin >= 0
+      ? value.tradeSizeMin
+      : fallback.tradeSizeMin;
+  const resolvingWindow = RESOLVING_VALUES.has(value.resolvingWindow as ResolvingWindow)
+    ? (value.resolvingWindow as ResolvingWindow)
+    : fallback.resolvingWindow;
+  const minCents =
+    typeof value.priceMinCents === 'number'
+      ? clampNumber(value.priceMinCents, PRICE_RANGE.min, PRICE_RANGE.max)
+      : fallback.priceMinCents;
+  const maxCents =
+    typeof value.priceMaxCents === 'number'
+      ? clampNumber(value.priceMaxCents, PRICE_RANGE.min, PRICE_RANGE.max)
+      : fallback.priceMaxCents;
+  const normalizedMin = Math.min(minCents, maxCents);
+  const normalizedMax = Math.max(minCents, maxCents);
+  const traderIds = Array.isArray(value.traderIds)
+    ? Array.from(
+        new Set(
+          value.traderIds
+            .map((id) => String(id).toLowerCase())
+            .filter(Boolean)
+        )
+      )
+    : [];
+
+  return {
+    category,
+    status,
+    tradeSizeMin,
+    resolvingWindow,
+    priceMinCents: normalizedMin,
+    priceMaxCents: normalizedMax,
+    traderIds,
+  };
+};
+
+const normalizeKeyPart = (value?: string | null) => value?.trim().toLowerCase() || '';
+const buildCopiedTradeKey = (marketKey?: string | null, traderWallet?: string | null) => {
+  const market = normalizeKeyPart(marketKey);
+  const wallet = normalizeKeyPart(traderWallet);
+  if (!market || !wallet) return '';
+  return `${market}-${wallet}`;
+};
+const getMarketKeyForTrade = (trade: FeedTrade) =>
+  normalizeKeyPart(
+    trade.market.conditionId ||
+      trade.market.slug ||
+      trade.market.title ||
+      trade.market.id ||
+      null
+  );
 
 // Helper: Format relative time
 function getRelativeTime(timestamp: number): string {
@@ -72,404 +216,429 @@ function getRelativeTime(timestamp: number): string {
   return new Date(tradeTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-// TradeCard Component
-function TradeCard({
-  traderName,
-  traderAddress,
-  market,
-  marketId,
-  side,
-  type,
-  price,
-  size,
-  timestamp,
-  isCopied,
-  onCopyTrade,
-  onMarkAsCopied,
-}: TradeCardProps) {
-  const timeAgo = getRelativeTime(timestamp);
-  const isYes = ['yes', 'up', 'over'].includes(side.toLowerCase());
-  const isBuy = type === 'buy';
-  const total = price * size;
-
-  return (
-    <div className="bg-white rounded-xl border border-neutral-200 shadow-sm hover:shadow-md transition-all w-full max-w-full overflow-hidden">
-      <div className="p-4 w-full">
-        {/* Header: Trader info + Timestamp */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2.5">
-            {/* Avatar: 40x40, yellow gradient */}
-            <Link href={`/trader/${traderAddress}`}>
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#FDB022] to-[#E69E1A] flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity">
-                <span className="text-sm text-white font-semibold">
-                  {traderName.slice(0, 2).toUpperCase()}
-                </span>
-              </div>
-            </Link>
-            <div>
-              <Link
-                href={`/trader/${traderAddress}`}
-                className="font-medium text-neutral-900 hover:text-[#FDB022] transition-colors"
-              >
-                {traderName}
-              </Link>
-              <p className="text-xs text-neutral-500 font-mono">
-                {traderAddress.slice(0, 6)}...{traderAddress.slice(-4)}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Warning for SELL trades - trader is exiting their position */}
-            {!isBuy && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
-                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                Exiting
-              </span>
-            )}
-            <div className="flex items-center gap-1.5 text-xs text-neutral-500">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>{timeAgo}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Market question */}
-        <div className="mb-3 w-full">
-          <p className="text-neutral-900 leading-snug mb-2 break-words">{market}</p>
-          <div className="flex items-center gap-2">
-            <span className={`badge ${isYes ? 'badge-yes' : 'badge-no'}`}>
-              {side.toUpperCase()}
-            </span>
-            <div className={`flex items-center gap-1 text-sm font-medium ${
-              isBuy ? 'text-[#10B981]' : 'text-[#EF4444]'
-            }`}>
-              {isBuy ? (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                  <span>Buy</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
-                  </svg>
-                  <span>Sell</span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-        
-        {/* Trade details - gray box */}
-        <div className="flex items-center justify-between mb-4 p-3 bg-neutral-50 rounded-lg">
-          <div>
-            <p className="text-xs text-neutral-600 mb-0.5">Price</p>
-            <p className="font-semibold text-neutral-900">${price.toFixed(2)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-neutral-600 mb-0.5">Size</p>
-            <p className="font-semibold text-neutral-900">{size.toLocaleString()}</p>
-          </div>
-          <div>
-            <p className="text-xs text-neutral-600 mb-0.5">Total</p>
-            <p className="font-semibold text-neutral-900">
-              ${total < 1 
-                ? total.toFixed(2) 
-                : total.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-              }
-            </p>
-          </div>
-        </div>
-        
-        {/* Buttons */}
-        <div className="flex gap-2">
-          {/* Copy Trade button - opens Polymarket */}
-          <button
-            onClick={onCopyTrade}
-            className="flex-1 bg-[#FDB022] hover:bg-[#E69E1A] text-neutral-900 font-semibold py-2.5 rounded-lg transition-colors"
-          >
-            Copy Trade
-          </button>
-          
-          {/* Mark as Copied button */}
-          <button
-            onClick={onMarkAsCopied}
-            disabled={isCopied}
-            className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-              isCopied
-                ? 'bg-[#10B981] text-white font-bold cursor-not-allowed shadow-[0_0_12px_rgba(16,185,129,0.4)]'
-                : 'bg-[#FDB022] hover:bg-[#E69E1A] text-black font-semibold'
-            }`}
-          >
-            {isCopied ? (
-              <>
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
-                </svg>
-                <span className="text-base">Copied</span>
-              </>
-            ) : (
-              <span>Mark as Copied</span>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Confirmation Modal Component
-interface ConfirmModalProps {
-  isOpen: boolean;
-  trade: FeedTrade | null;
-  onClose: () => void;
-  onConfirm: (entryPrice: number, amountInvested?: number) => void;
-  isSubmitting: boolean;
-}
-
-function ConfirmModal({ isOpen, trade, onClose, onConfirm, isSubmitting }: ConfirmModalProps) {
-  const [entryPrice, setEntryPrice] = useState<string>('');
-  const [amountInvested, setAmountInvested] = useState<string>('');
-
-  // Pre-fill entry price when trade changes (in dollars)
-  useEffect(() => {
-    if (trade) {
-      // Convert to dollars with 2 decimal places
-      setEntryPrice(trade.trade.price.toFixed(2));
-    }
-  }, [trade]);
-
-  if (!isOpen || !trade) return null;
-
-  const handleConfirm = () => {
-    // Entry price is already in dollars
-    const price = entryPrice ? parseFloat(entryPrice) : trade.trade.price;
-    const amount = amountInvested ? parseFloat(amountInvested) : undefined;
-    onConfirm(price, amount);
-  };
-
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
-  return (
-    <div 
-      className="fixed inset-0 z-50 bg-black/60 overflow-hidden"
-      onClick={handleBackdropClick}
-    >
-      <div className="h-full w-full overflow-y-auto flex items-start justify-center pt-8 pb-24 px-4 sm:items-center sm:pt-4 sm:pb-4">
-        <div 
-          className="w-full max-w-md bg-white rounded-2xl shadow-xl mx-auto"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="p-6 max-h-[calc(100vh-8rem)] sm:max-h-[85vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-neutral-900">Mark Trade as Copied</h3>
-              <button 
-                onClick={onClose}
-                className="text-neutral-400 hover:text-neutral-600 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Trade Details */}
-            <div className="bg-neutral-50 rounded-xl p-3 sm:p-4 mb-4">
-              <p className="text-sm text-neutral-600 mb-1">Market</p>
-              <p className="font-medium text-neutral-900 mb-3 text-sm sm:text-base break-words">{trade.market.title}</p>
-              
-              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-                <div className="min-w-0">
-                  <p className="text-sm text-neutral-600 mb-1">Trader</p>
-                  <p className="font-medium text-neutral-900 text-sm sm:text-base truncate">{trade.trader.displayName}</p>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm text-neutral-600 mb-1">Position</p>
-                  <p className="font-medium text-neutral-900 text-sm sm:text-base">
-                    <span className={trade.trade.outcome.toUpperCase() === 'YES' ? 'text-[#10B981]' : 'text-[#EF4444]'}>
-                      {trade.trade.outcome.toUpperCase()}
-                    </span>
-                    {' '}at {Math.round(trade.trade.price * 100)}¢
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Entry Price Input */}
-            <div className="mb-4 w-full">
-              <label className="block w-full text-sm font-medium text-neutral-700 mb-2">
-                Your entry price <span className="text-red-500">*</span>
-              </label>
-              <div className="relative w-full">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
-                <input
-                  type="number"
-                  value={entryPrice}
-                  onChange={(e) => setEntryPrice(e.target.value)}
-                  placeholder="0.58"
-                  min="0.01"
-                  max="0.99"
-                  step="0.01"
-                  className="w-full pl-8 pr-4 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
-                />
-              </div>
-              <p className="text-xs text-neutral-500 mt-1">
-                The price you bought/sold at (trader's price: ${trade.trade.price.toFixed(2)})
-              </p>
-            </div>
-
-            {/* Amount Input */}
-            <div className="mb-6 w-full">
-              <label className="block w-full text-sm font-medium text-neutral-700 mb-2">
-                Amount invested (optional)
-              </label>
-              <div className="relative w-full">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
-                <input
-                  type="number"
-                  value={amountInvested}
-                  onChange={(e) => setAmountInvested(e.target.value)}
-                  placeholder="0.00"
-                  min="0"
-                  step="0.01"
-                  className="w-full pl-8 pr-4 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FDB022] focus:border-transparent"
-                />
-              </div>
-              <p className="text-xs text-neutral-500 mt-1">
-                Track how much you invested to calculate your ROI later
-              </p>
-            </div>
-
-            {/* Buttons */}
-            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 w-full">
-              <button
-                onClick={onClose}
-                disabled={isSubmitting}
-                className="w-full sm:flex-1 py-2.5 px-4 border border-neutral-300 rounded-lg font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirm}
-                disabled={isSubmitting}
-                className="w-full sm:flex-1 py-2.5 px-4 bg-[#FDB022] hover:bg-[#E69E1A] rounded-lg font-semibold text-neutral-900 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isSubmitting ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-neutral-900/30 border-t-neutral-900 rounded-full animate-spin"></div>
-                    Saving...
-                  </>
-                ) : (
-                  'Confirm'
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Success Toast Component
-function SuccessToast({ message, isVisible }: { message: string; isVisible: boolean }) {
-  if (!isVisible) return null;
-  
-  return (
-    <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
-      <div className="bg-neutral-900 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2">
-        <svg className="w-5 h-5 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-        </svg>
-        <span>{message}</span>
-      </div>
-    </div>
-  );
-}
-
-// Main Feed Page Component
 export default function FeedPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'buys' | 'sells'>('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [userTier, setUserTier] = useState<FeatureTier>('anon');
+  const [isPremium, setIsPremium] = useState(false);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
+  const [showConnectWalletModal, setShowConnectWalletModal] = useState(false);
+  const [defaultBuySlippage, setDefaultBuySlippage] = useState(3);
+  const [defaultSellSlippage, setDefaultSellSlippage] = useState(3);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilters);
+  const [draftFilters, setDraftFilters] = useState<FilterState>(defaultFilters);
+  const [traderSearch, setTraderSearch] = useState('');
+  const [showAllTraders, setShowAllTraders] = useState(false);
+  const filtersPanelRef = useRef<HTMLDivElement | null>(null);
   
   // Data state
-  const [allTrades, setAllTrades] = useState<FeedTrade[]>([]); // Store all trades
-  const [displayedTradesCount, setDisplayedTradesCount] = useState(35); // How many to show
-  const [trades, setTrades] = useState<FeedTrade[]>([]); // Currently displayed trades
+  const [allTrades, setAllTrades] = useState<FeedTrade[]>([]);
+  const [displayedTradesCount, setDisplayedTradesCount] = useState(35);
   const [followingCount, setFollowingCount] = useState(0);
   const [loadingFeed, setLoadingFeed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastFeedFetchAt, setLastFeedFetchAt] = useState<number | null>(null);
+  const [latestTradeTimestamp, setLatestTradeTimestamp] = useState<number | null>(null);
   
   // Stats
   const [todayVolume, setTodayVolume] = useState(0);
   const [todaysTradeCount, setTodaysTradeCount] = useState(0);
   
-  // Category mapping (same as discover page)
-  const categoryMap: Record<string, string> = {
-    'All': 'all',
-    'Politics': 'politics',
-    'Sports': 'sports',
-    'Crypto': 'crypto',
-    'Pop Culture': 'culture',
-    'Business': 'finance',
-    'Economics': 'economics',
-    'Tech': 'tech',
-    'Weather': 'weather'
-  };
-  
-  const categories = [
-    'All',
-    'Politics', 
-    'Sports',
-    'Crypto',
-    'Pop Culture',
-    'Business',
-    'Economics',
-    'Tech',
-    'Weather'
-  ];
-
   // Copied trades state
   const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(false);
+  const { manualModeEnabled, enableManualMode } = useManualTradingMode(
+    isPremium,
+    Boolean(walletAddress)
+  );
+  
+  // Live market data (prices, scores, and game metadata)
+  const [liveMarketData, setLiveMarketData] = useState<Map<string, { 
+    outcomes?: string[];
+    outcomePrices?: number[];
+    score?: string;
+    gameStartTime?: string;
+    eventStatus?: string;
+    resolved?: boolean;
+    endDateIso?: string;
+    liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
+    updatedAt?: number;
+  }>>(new Map());
 
-  // Modal state
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selectedTrade, setSelectedTrade] = useState<FeedTrade | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Toast state
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
+  const [expandedTradeIds, setExpandedTradeIds] = useState<Set<string>>(new Set());
   
   // Manual refresh state
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [tradeNotifications, setTradeNotifications] = useState<TradeExecutionNotification[]>([]);
+  const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
+  const [cashBalance, setCashBalance] = useState<number | null>(null);
+  const [loadingBalance, setLoadingBalance] = useState(false);
+  const hasPremiumAccess = tierHasPremiumAccess(userTier);
+  const showLowBalanceCallout =
+    hasPremiumAccess &&
+    Boolean(walletAddress) &&
+    !loadingBalance &&
+    typeof cashBalance === 'number' &&
+    cashBalance < 1;
+
+  const traderFilters = useMemo(() => {
+    const map = new Map<string, string>();
+    allTrades.forEach((trade) => {
+      const wallet = trade.trader.wallet?.toLowerCase();
+      if (!wallet) return;
+      if (!map.has(wallet)) {
+        map.set(wallet, trade.trader.displayName);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([wallet, name]) => ({ wallet, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [allTrades]);
+
+  const traderLabelMap = useMemo(
+    () => new Map(traderFilters.map((trader) => [trader.wallet, trader.name])),
+    [traderFilters]
+  );
+
+  const filteredTraderOptions = useMemo(() => {
+    const query = traderSearch.trim().toLowerCase();
+    if (!query) return traderFilters;
+    return traderFilters.filter((trader) =>
+      trader.name.toLowerCase().includes(query) || trader.wallet.includes(query)
+    );
+  }, [traderFilters, traderSearch]);
+
+  const visibleTraderOptions = useMemo(
+    () => (showAllTraders ? filteredTraderOptions : filteredTraderOptions.slice(0, 8)),
+    [filteredTraderOptions, showAllTraders]
+  );
+
+  const appliedTraderSet = useMemo(
+    () => new Set(appliedFilters.traderIds),
+    [appliedFilters.traderIds]
+  );
+
+  const draftTraderSet = useMemo(
+    () => new Set(draftFilters.traderIds),
+    [draftFilters.traderIds]
+  );
+
+  const countActiveFilters = useCallback((filters: FilterState) => {
+    let count = 0;
+    if (filters.category !== 'all') count += 1;
+    if (filters.status !== 'all') count += 1;
+    if (filters.tradeSizeMin > 0) count += 1;
+    if (filters.traderIds.length > 0) count += 1;
+    if (filters.resolvingWindow !== 'any') count += 1;
+    if (filters.priceMinCents > PRICE_RANGE.min || filters.priceMaxCents < PRICE_RANGE.max) count += 1;
+    return count;
+  }, []);
+
+  const activeFiltersCount = useMemo(
+    () => countActiveFilters(appliedFilters),
+    [appliedFilters, countActiveFilters]
+  );
+
+  const draftFiltersCount = useMemo(
+    () => countActiveFilters(draftFilters),
+    [draftFilters, countActiveFilters]
+  );
+
+  const formatPriceCents = (value: number) => `${value}¢`;
+  const formatTradeSize = (value: number) => `$${value.toLocaleString('en-US')}+`;
+  const formatWallet = (wallet: string) =>
+    wallet.length > 10 ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : wallet;
+  const filterTabBase = "rounded-full px-2.5 py-1 text-[11px] font-medium transition-all whitespace-nowrap";
+  const filterTabActive = "bg-slate-900 text-white shadow-sm";
+  const filterTabInactive = "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50";
+  const categoryPillBase = "rounded-full px-3 py-1.5 text-xs font-medium transition-all whitespace-nowrap";
+  const categoryPillActive = "bg-gradient-to-r from-yellow-400 to-amber-500 text-slate-900 shadow-sm";
+  const categoryPillInactive = "bg-slate-100 text-slate-700 hover:bg-slate-200";
+
+  const buildDefaultFilters = useCallback(
+    () => ({ ...defaultFilters, traderIds: [] }),
+    []
+  );
+
+  const updateAppliedFilters = useCallback(
+    (updater: (previous: FilterState) => FilterState) => {
+      setAppliedFilters((previous) => {
+        const next = updater(previous);
+        if (!filtersOpen) {
+          setDraftFilters(next);
+        }
+        return next;
+      });
+    },
+    [filtersOpen]
+  );
+
+  const openFilters = useCallback(() => {
+    setDraftFilters(appliedFilters);
+    setTraderSearch('');
+    setShowAllTraders(false);
+    setFiltersOpen(true);
+  }, [appliedFilters]);
+
+  const closeFilters = useCallback(() => {
+    setDraftFilters(appliedFilters);
+    setFiltersOpen(false);
+  }, [appliedFilters]);
+
+  const clearAllFilters = useCallback(() => {
+    updateAppliedFilters(() => buildDefaultFilters());
+  }, [buildDefaultFilters, updateAppliedFilters]);
+
+  const clearDraftFilters = useCallback(() => {
+    setDraftFilters(buildDefaultFilters());
+  }, [buildDefaultFilters]);
+
+  const toggleDraftTrader = useCallback((wallet: string) => {
+    setDraftFilters((prev) => {
+      const next = new Set(prev.traderIds);
+      if (next.has(wallet)) {
+        next.delete(wallet);
+      } else {
+        next.add(wallet);
+      }
+      return { ...prev, traderIds: Array.from(next) };
+    });
+  }, []);
+
+  const updateDraftPriceRange = useCallback((minCents: number, maxCents: number) => {
+    const normalizedMin = clampNumber(Math.min(minCents, maxCents), PRICE_RANGE.min, PRICE_RANGE.max);
+    const normalizedMax = clampNumber(Math.max(minCents, maxCents), PRICE_RANGE.min, PRICE_RANGE.max);
+    setDraftFilters((prev) => ({
+      ...prev,
+      priceMinCents: normalizedMin,
+      priceMaxCents: normalizedMax,
+    }));
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(FILTERS_STORAGE_KEY);
+      if (!stored) return;
+      const parsed = JSON.parse(stored) as Partial<FilterState>;
+      const nextFilters = normalizeFilters(parsed);
+      setAppliedFilters(nextFilters);
+      setDraftFilters(nextFilters);
+    } catch {
+      // Ignore storage errors
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(appliedFilters));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [appliedFilters]);
+
+  useEffect(() => {
+    if (!filtersOpen) {
+      setDraftFilters(appliedFilters);
+    }
+  }, [appliedFilters, filtersOpen]);
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    updateAppliedFilters(() => draftFilters);
+  }, [draftFilters, filtersOpen, updateAppliedFilters]);
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    filtersPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [filtersOpen]);
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeFilters();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeFilters, filtersOpen]);
+
+  const handleRemoveFilter = useCallback(
+    (filterKey: 'category' | 'status' | 'tradeSize' | 'resolvingWindow' | 'price' | 'traders') => {
+      updateAppliedFilters((previous) => {
+        const next = { ...previous };
+        switch (filterKey) {
+          case 'category':
+            next.category = defaultFilters.category;
+            break;
+          case 'status':
+            next.status = defaultFilters.status;
+            break;
+          case 'tradeSize':
+            next.tradeSizeMin = defaultFilters.tradeSizeMin;
+            break;
+          case 'resolvingWindow':
+            next.resolvingWindow = defaultFilters.resolvingWindow;
+            break;
+          case 'price':
+            next.priceMinCents = defaultFilters.priceMinCents;
+            next.priceMaxCents = defaultFilters.priceMaxCents;
+            break;
+          case 'traders':
+            next.traderIds = [];
+            break;
+          default:
+            break;
+        }
+        return next;
+      });
+    },
+    [updateAppliedFilters]
+  );
+
+  const activeFilterChips = useMemo(() => {
+    const chips: { key: 'category' | 'status' | 'tradeSize' | 'resolvingWindow' | 'price' | 'traders'; label: string }[] = [];
+
+    if (appliedFilters.category !== 'all') {
+      const label = CATEGORY_OPTIONS.find((option) => option.value === appliedFilters.category)?.label ?? 'Category';
+      chips.push({ key: 'category', label: `Category: ${label}` });
+    }
+
+    if (appliedFilters.status !== 'all') {
+      chips.push({ key: 'status', label: 'Event Status: Live Games Only' });
+    }
+
+    if (appliedFilters.tradeSizeMin > 0) {
+      const label = TRADE_SIZE_OPTIONS.find((option) => option.value === appliedFilters.tradeSizeMin)?.label ?? formatTradeSize(appliedFilters.tradeSizeMin);
+      chips.push({ key: 'tradeSize', label: `Trade Size: ${label}` });
+    }
+
+    if (appliedFilters.resolvingWindow !== 'any') {
+      const label = RESOLVING_OPTIONS.find((option) => option.value === appliedFilters.resolvingWindow)?.label ?? 'Market Resolves';
+      chips.push({ key: 'resolvingWindow', label: `Market Resolves: ${label}` });
+    }
+
+    if (appliedFilters.priceMinCents > PRICE_RANGE.min || appliedFilters.priceMaxCents < PRICE_RANGE.max) {
+      const min = appliedFilters.priceMinCents;
+      const max = appliedFilters.priceMaxCents;
+      let label = '';
+      if (min > PRICE_RANGE.min && max < PRICE_RANGE.max) {
+        label = `${formatPriceCents(min)}-${formatPriceCents(max)}`;
+      } else if (min > PRICE_RANGE.min) {
+        label = `${formatPriceCents(min)}+`;
+      } else {
+        label = `Up to ${formatPriceCents(max)}`;
+      }
+      chips.push({ key: 'price', label: `Current Price: ${label}` });
+    }
+
+    if (appliedFilters.traderIds.length > 0) {
+      const names = appliedFilters.traderIds.map((wallet) => traderLabelMap.get(wallet) || formatWallet(wallet));
+      const label = names.length === 1 ? `Trader: ${names[0]}` : `Traders: ${names[0]} + ${names.length - 1}`;
+      chips.push({ key: 'traders', label });
+    }
+
+    return chips;
+  }, [appliedFilters, traderLabelMap, formatPriceCents, formatTradeSize, formatWallet]);
+
+  const handleTradeExecutionNotification = useCallback((notification: TradeExecutionNotification) => {
+    setTradeNotifications((prev) => {
+      if (prev.some((item) => item.id === notification.id)) return prev;
+      return [notification, ...prev];
+    });
+  }, []);
+
+  const handleNavigateToTrade = useCallback((notice: TradeExecutionNotification) => {
+    const target = document.getElementById(notice.tradeAnchorId);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+
+  const isLiveMarket = useCallback(
+    (trade: FeedTrade) => {
+      const marketKey = getMarketKeyForTrade(trade);
+      const liveData = marketKey ? liveMarketData.get(marketKey) : undefined;
+      if (!liveData) return false;
+      return liveData.liveStatus === 'live';
+    },
+    [liveMarketData]
+  );
+
+  const matchesResolvingWindow = useCallback(
+    (trade: FeedTrade) => {
+      const { resolvingWindow } = appliedFilters;
+      if (resolvingWindow === 'any') return true;
+      const marketKey = getMarketKeyForTrade(trade);
+      const liveData = marketKey ? liveMarketData.get(marketKey) : undefined;
+      if (!liveData?.endDateIso || liveData.resolved) return false;
+      const endTime = new Date(liveData.endDateIso);
+      if (Number.isNaN(endTime.getTime())) return false;
+      const now = new Date();
+      if (endTime.getTime() < now.getTime()) return false;
+
+      if (resolvingWindow === 'hour') {
+        return endTime.getTime() <= now.getTime() + 60 * 60 * 1000;
+      }
+
+      const endOfToday = new Date(now);
+      endOfToday.setHours(23, 59, 59, 999);
+
+      if (resolvingWindow === 'today') {
+        return endTime.getTime() <= endOfToday.getTime();
+      }
+
+      const startOfTomorrow = new Date(now);
+      startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+      startOfTomorrow.setHours(0, 0, 0, 0);
+      const endOfTomorrow = new Date(startOfTomorrow);
+      endOfTomorrow.setHours(23, 59, 59, 999);
+
+      if (resolvingWindow === 'tomorrow') {
+        return endTime.getTime() >= startOfTomorrow.getTime() && endTime.getTime() <= endOfTomorrow.getTime();
+      }
+
+      const endOfWeek = new Date(now);
+      const day = endOfWeek.getDay();
+      const daysUntilEnd = (7 - day) % 7;
+      endOfWeek.setDate(endOfWeek.getDate() + daysUntilEnd);
+      endOfWeek.setHours(23, 59, 59, 999);
+
+      return endTime.getTime() <= endOfWeek.getTime();
+    },
+    [appliedFilters.resolvingWindow, liveMarketData]
+  );
+
+  const getCurrentOutcomePrice = useCallback(
+    (trade: FeedTrade) => {
+      const marketKey = getMarketKeyForTrade(trade);
+      const liveData = marketKey ? liveMarketData.get(marketKey) : undefined;
+      if (!liveData?.outcomes || !liveData?.outcomePrices) return undefined;
+      const outcomeIndex = liveData.outcomes.findIndex(
+        (o: string) => o.toUpperCase() === trade.trade.outcome.toUpperCase()
+      );
+      if (outcomeIndex === -1 || outcomeIndex >= liveData.outcomePrices.length) return undefined;
+      return liveData.outcomePrices[outcomeIndex];
+    },
+    [liveMarketData]
+  );
 
   // Auth check
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (!user) {
+      if (!session?.user) {
+        triggerLoggedOut('session_missing');
         router.push('/login');
         return;
       }
       
-      setUser(user);
+      setUser(session.user);
       setLoading(false);
     };
     
@@ -477,54 +646,675 @@ export default function FeedPage() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
+        triggerLoggedOut('signed_out');
         router.push('/login');
-      } else {
-        setUser(session.user);
       }
+      // Don't update user state on every auth change to prevent unnecessary re-renders
+      // The user state is already set above and will persist
     });
 
     return () => subscription.unsubscribe();
   }, [router]);
 
-  // Fetch copied trades when user is available - using direct Supabase (like follow)
   useEffect(() => {
     if (!user) return;
-    
-    const fetchCopiedTrades = async () => {
-      setLoadingCopiedTrades(true);
+    let isMounted = true;
+
+    const isMeaningfulError = (err: any) => {
+      if (!err || typeof err !== 'object') return !!err;
+      if (err.code === 'PGRST116') return false;
+      const values = [err.code, err.message, err.details, err.hint, err.status];
+      return values.some((value) => {
+        if (typeof value === 'string') return value.trim().length > 0;
+        return Boolean(value);
+      });
+    };
+
+    const formatSupabaseError = (err: any) => {
+      if (!err || typeof err !== 'object') return err;
+      return {
+        code: err.code,
+        message: err.message,
+        details: err.details,
+        hint: err.hint,
+        status: err.status,
+      };
+    };
+    const hasStructuredDetails = (payload: any) => {
+      if (!payload || typeof payload !== 'object') return Boolean(payload);
+      return Object.values(payload).some((value) => {
+        if (typeof value === 'string') {
+          return value.trim().length > 0;
+        }
+        return Boolean(value);
+      });
+    };
+
+    const applySlippageDefaults = (prefs?: { default_buy_slippage?: any; default_sell_slippage?: any }) => {
+      if (!isMounted) return;
+      const normalize = (value: any) => {
+        const numericValue = typeof value === 'string' ? parseFloat(value) : value;
+        return Number.isFinite(numericValue) ? Number(numericValue) : 3;
+      };
+      setDefaultBuySlippage(normalize(prefs?.default_buy_slippage));
+      setDefaultSellSlippage(normalize(prefs?.default_sell_slippage));
+    };
+
+    const isEmptyPostgrestError = (err: any) => {
+      if (!err || typeof err !== 'object') return false;
+      return Object.values(err).every((value) => {
+        if (value === null || value === undefined) return true;
+        if (typeof value === 'string') return value.trim().length === 0;
+        return false;
+      });
+    };
+
+    const fetchSlippageDefaults = async () => {
       try {
-        // Direct Supabase query - same pattern as follow/unfollow
-        const { data: trades, error } = await supabase
-          .from('copied_trades')
-          .select('market_id, trader_wallet')
-          .eq('user_id', user.id);
-        
-        if (error) {
-          console.error('Error fetching copied trades:', error);
-          setCopiedTradeIds(new Set());
-        } else {
-          const copiedIds = new Set<string>(
-            trades?.map((t: { market_id: string; trader_wallet: string }) => 
-              `${t.market_id}-${t.trader_wallet}`
-            ) || []
-          );
-          setCopiedTradeIds(copiedIds);
+        const apiResponse = await fetch(`/api/notification-preferences?userId=${user.id}`);
+        if (apiResponse.ok) {
+          const prefs = await apiResponse.json();
+          applySlippageDefaults(prefs);
+          return;
+        }
+      } catch (apiError) {
+        if (isMeaningfulError(apiError)) {
+          const payload = formatSupabaseError(apiError);
+          if (hasStructuredDetails(payload)) {
+            console.error('Error fetching slippage preferences via API:', payload);
+          }
+        }
+      }
+
+      try {
+        const { data, error, status } = await supabase
+          .from('notification_preferences')
+          .select('default_buy_slippage, default_sell_slippage')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        const missingPreferences =
+          (!data && !error) ||
+          error?.code === 'PGRST116' ||
+          status === 406 ||
+          isEmptyPostgrestError(error);
+
+        if (missingPreferences) {
+          applySlippageDefaults();
+          return;
+        }
+
+        if (isMeaningfulError(error)) {
+          const payload = formatSupabaseError(error);
+          if (hasStructuredDetails(payload)) {
+            console.error('Error fetching slippage preferences:', payload);
+          }
+        }
+
+        if (data) {
+          applySlippageDefaults(data);
         }
       } catch (err) {
-        console.error('Error fetching copied trades:', err);
-        setCopiedTradeIds(new Set());
-      } finally {
-        setLoadingCopiedTrades(false);
+        if (isMeaningfulError(err)) {
+          const payload = formatSupabaseError(err);
+          if (hasStructuredDetails(payload)) {
+            console.error('Error fetching slippage preferences:', payload);
+          }
+        }
       }
     };
 
-    fetchCopiedTrades();
+    fetchSlippageDefaults();
+
+    return () => {
+      isMounted = false;
+    };
   }, [user]);
 
-  // Extract fetchFeed as a stable function using useCallback
-  // This prevents unnecessary re-renders and ensures it only changes when user changes
-  const fetchFeed = useCallback(async () => {
+  const fetchCopiedTrades = useCallback(async () => {
+    if (!user) {
+      setCopiedTradeIds(new Set());
+      return;
+    }
+
+    setLoadingCopiedTrades(true);
+    try {
+      const apiResponse = await fetch(`/api/copied-trades?userId=${user.id}`);
+      if (apiResponse.ok) {
+        const payload = await apiResponse.json();
+        const copiedIds = new Set<string>();
+        payload?.trades?.forEach(
+          (t: { market_id?: string; market_slug?: string; market_title?: string; trader_wallet?: string }) => {
+            const walletKey = normalizeKeyPart(t.trader_wallet);
+            if (!walletKey) return;
+            const marketKeys = [t.market_id, t.market_slug, t.market_title]
+              .map(normalizeKeyPart)
+              .filter(Boolean);
+            if (marketKeys.length === 0) return;
+            for (const key of new Set(marketKeys)) {
+              copiedIds.add(`${key}-${walletKey}`);
+            }
+          }
+        );
+        setCopiedTradeIds(copiedIds);
+        return;
+      }
+
+      console.warn('Falling back to direct Supabase query for copied trades');
+      const { data: trades, error } = await supabase
+        .from('orders')
+        .select('market_id, copied_trader_wallet, market_slug, copied_market_title')
+        .eq('copy_user_id', user.id);
+
+      if (error) {
+        console.error('Error fetching copied trades:', error);
+      } else {
+        const copiedIds = new Set<string>();
+        trades?.forEach((t: { market_id?: string; copied_trader_wallet?: string; market_slug?: string; copied_market_title?: string }) => {
+          const walletKey = normalizeKeyPart(t.copied_trader_wallet);
+          if (!walletKey) return;
+          const marketKeys = [t.market_id, t.market_slug, t.copied_market_title]
+            .map(normalizeKeyPart)
+            .filter(Boolean);
+          if (marketKeys.length === 0) return;
+          for (const key of new Set(marketKeys)) {
+            copiedIds.add(`${key}-${walletKey}`);
+          }
+        });
+        setCopiedTradeIds(copiedIds);
+      }
+    } catch (err) {
+      console.error('Error fetching copied trades:', err);
+    } finally {
+      setLoadingCopiedTrades(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchCopiedTrades();
+  }, [fetchCopiedTrades]);
+
+  useEffect(() => {
+    if (!hasPremiumAccess || !walletAddress || !user) {
+      setPortfolioValue(null);
+      setCashBalance(null);
+      setLoadingBalance(false);
+      return;
+    }
+
+    let mounted = true;
+
+    const fetchBalance = async () => {
+      setLoadingBalance(true);
+      try {
+        if (!walletAddress?.trim()) return;
+        const response = await fetch(`/api/polymarket/wallet/${walletAddress}`);
+        if (!response.ok) {
+          return;
+        }
+        const data = await response.json();
+        if (!mounted) return;
+        setCashBalance(data.cashBalance || 0);
+        setPortfolioValue(data.portfolioValue || 0);
+      } catch {
+        // Non-blocking: balance is optional on the feed header.
+      } finally {
+        if (mounted) {
+          setLoadingBalance(false);
+        }
+      }
+    };
+
+    fetchBalance();
+    const interval = setInterval(fetchBalance, 30000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [hasPremiumAccess, walletAddress, user]);
+
+  // Fetch feature tier and wallet
+  useEffect(() => {
+    if (!user) {
+      setUserTier('anon');
+      setIsPremium(false);
+      setWalletAddress(null);
+      setProfileImageUrl(null);
+      return;
+    }
+
+    setUserTier('registered');
+
+    let cancelled = false;
+
+    const fetchProfileAndWallet = async () => {
+      try {
+        const [profileRes, walletRes] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('is_premium, is_admin, profile_image_url')
+            .eq('id', user.id)
+            .single(),
+          supabase
+            .from('turnkey_wallets')
+            .select('polymarket_account_address, eoa_address')
+            .eq('user_id', user.id)
+            .maybeSingle()
+        ]);
+
+        if (profileRes.error) {
+          console.error('Error fetching profile:', profileRes.error);
+          if (!cancelled) {
+            setUserTier(resolveFeatureTier(true, null));
+            setIsPremium(false);
+            setProfileImageUrl(null);
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setUserTier(resolveFeatureTier(true, profileRes.data));
+          setIsPremium(profileRes.data?.is_premium || false);
+          setProfileImageUrl(profileRes.data?.profile_image_url || null);
+          setWalletAddress(
+            walletRes.data?.polymarket_account_address || 
+            walletRes.data?.eoa_address || 
+            null
+          );
+        }
+      } catch (err) {
+        console.error('Error fetching profile:', err);
+        if (!cancelled) {
+          setUserTier('registered');
+          setIsPremium(false);
+          setWalletAddress(null);
+          setProfileImageUrl(null);
+        }
+      }
+    };
+
+    fetchProfileAndWallet();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const handleWalletConnect = async (address: string) => {
     if (!user) return;
+
+    try {
+      const { data: walletData } = await supabase
+        .from('turnkey_wallets')
+        .select('polymarket_account_address, eoa_address')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      const connectedWallet =
+        walletData?.polymarket_account_address ||
+        walletData?.eoa_address ||
+        address;
+
+      setWalletAddress(connectedWallet || null);
+
+      try {
+        await fetch('/api/polymarket/reset-credentials', {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+        });
+      } catch {
+        // Non-blocking
+      }
+
+      if (connectedWallet) {
+        try {
+          await fetch('/api/polymarket/l2-credentials', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-store',
+            body: JSON.stringify({ polymarketAccountAddress: connectedWallet }),
+          });
+        } catch {
+          // Non-blocking
+        }
+      }
+    } catch (err) {
+      console.error('Error updating wallet after connection:', err);
+      setWalletAddress(address);
+    }
+  };
+
+  const normalizeTeamAbbrev = (value?: string | null) => {
+    if (!value) return '';
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    if (/^[A-Z]{2,4}$/.test(trimmed)) return trimmed;
+    if (trimmed.length <= 4) return trimmed.toUpperCase();
+    return '';
+  };
+
+  const pickOutcomeTeams = (outcomes?: string[] | null) => {
+    if (!outcomes || outcomes.length === 0) return [];
+    const filtered = outcomes.filter(outcome => !/^(draw|tie)$/i.test(outcome.trim()));
+    if (filtered.length >= 2) return filtered.slice(0, 2);
+    return outcomes.slice(0, 2);
+  };
+
+  const resolveLiveStatus = (payload: {
+    eventStatus?: string | null;
+    gameStartTime?: string | null;
+    espnStatus?: 'scheduled' | 'live' | 'final' | null;
+    resolved?: boolean;
+    hasLiveScore?: boolean;
+  }) => {
+    if (payload.resolved) return 'final';
+    const status = normalizeEventStatus(payload.espnStatus || payload.eventStatus);
+    if (statusLooksFinal(status)) return 'final';
+    if (statusLooksLive(status)) {
+      if (payload.espnStatus === 'live' || payload.hasLiveScore) return 'live';
+      if (payload.gameStartTime) {
+        const start = new Date(payload.gameStartTime);
+        const now = new Date();
+        if (!Number.isNaN(start.getTime()) && start.getTime() - now.getTime() > 5 * 60 * 1000) {
+          return 'scheduled';
+        }
+      }
+      return 'live';
+    }
+    if (payload.hasLiveScore) return 'live';
+    if (statusLooksScheduled(status)) {
+      if (payload.gameStartTime) {
+        const start = new Date(payload.gameStartTime);
+        const now = new Date();
+        if (!Number.isNaN(start.getTime())) {
+          return now >= start ? 'live' : 'scheduled';
+        }
+      }
+      return 'scheduled';
+    }
+    if (payload.gameStartTime) {
+      const start = new Date(payload.gameStartTime);
+      const now = new Date();
+      if (!Number.isNaN(start.getTime())) {
+        return now >= start ? 'live' : 'scheduled';
+      }
+    }
+    return 'unknown';
+  };
+
+  // Fetch live market data (prices, scores, and game metadata)
+  const fetchLiveMarketData = useCallback(async (trades: FeedTrade[]) => {
+    const newLiveData = new Map<string, { 
+      outcomes?: string[];
+      outcomePrices?: number[];
+      score?: string;
+      gameStartTime?: string;
+      eventStatus?: string;
+      resolved?: boolean;
+      endDateIso?: string;
+      liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
+      updatedAt?: number;
+    }>();
+    
+    // Group trades by market key to avoid duplicate API calls
+    const tradeByMarketKey = new Map<string, FeedTrade>();
+    trades.forEach((trade) => {
+      const marketKey = getMarketKeyForTrade(trade);
+      if (!marketKey || tradeByMarketKey.has(marketKey)) return;
+      tradeByMarketKey.set(marketKey, trade);
+    });
+    
+    console.log(`📊 Fetching live data for ${tradeByMarketKey.size} markets`);
+    
+    // **NEW: Fetch ESPN scores for all sports trades first**
+    console.log(`🏈 Fetching sports scores for sports markets...`);
+    const espnScores = await getESPNScoresForTrades(trades);
+    console.log(`✅ Got sports scores for ${espnScores.size} markets`);
+    
+    // Fetch prices for each market
+    await Promise.all(
+      Array.from(tradeByMarketKey.entries()).map(async ([marketKey, trade]) => {
+        if (!marketKey) return;
+        
+        try {
+          const params = new URLSearchParams();
+          if (trade.market.conditionId) params.set('conditionId', trade.market.conditionId);
+          if (trade.market.slug) params.set('slug', trade.market.slug);
+          if (trade.market.title) params.set('title', trade.market.title);
+
+          // Fetch current price from Polymarket API
+          const priceResponse = await fetch(`/api/polymarket/price?${params.toString()}`);
+          if (priceResponse.ok) {
+            const priceData = await priceResponse.json();
+            
+            if (priceData.success && priceData.market) {
+              if (trade) {
+                const { 
+                  outcomes, 
+                  outcomePrices, 
+                  gameStartTime, 
+                  eventStatus,
+                  score: liveScore,
+                  homeTeam,
+                  awayTeam,
+                  closed,
+                  resolved,
+                  endDateIso,
+                } = priceData.market;
+                
+                console.log(`✅ Got data for ${trade.market.title.slice(0, 40)}... | Status: ${eventStatus} | Score:`, liveScore);
+                
+                // Convert string prices to numbers
+                const numericPrices = outcomePrices?.map((p: string | number) => Number(p)) || [];
+                
+                // Detect sports markets by checking for "vs." or "vs" in title, or common sports patterns
+                  const hasTeamMetadata =
+                    (typeof homeTeam === 'string' && homeTeam.trim().length > 0) ||
+                    (typeof awayTeam === 'string' && awayTeam.trim().length > 0);
+                  const hasScoreMetadata =
+                    Boolean(liveScore && (typeof liveScore === 'object' || (typeof liveScore === 'string' && liveScore.trim())));
+                  const isSportsMarket = trade.market.title.includes(' vs. ') || 
+                                      trade.market.title.includes(' vs ') ||
+                                      trade.market.title.includes(' v ') ||
+                                      trade.market.title.includes(' versus ') ||
+                                      trade.market.title.includes(' @ ') ||
+                                      trade.market.category === 'sports' ||
+                                      hasTeamMetadata ||
+                                      hasScoreMetadata ||
+                                      // Detect spread and over/under bets
+                                      trade.market.title.match(/\(-?\d+\.?\d*\)/) || // (−9.5) or (+7)
+                                      trade.market.title.includes('O/U') ||
+                                      trade.market.title.includes('Over') ||
+                                      trade.market.title.includes('Under') ||
+                                      trade.market.title.includes('Spread') ||
+                                      (outcomes?.length === 2 && 
+                                       trade.market.title.match(/\w+ (vs\.?|@) \w+/));
+                  
+                  let scoreDisplay: string | undefined;
+                  let espnStatus: 'scheduled' | 'live' | 'final' | null = null;
+                  
+                  // **NEW: Check ESPN scores first for sports markets**
+                  const espnScoreKey = trade.market.conditionId || trade.market.id || trade.market.title;
+                  const espnScore = espnScoreKey ? espnScores.get(espnScoreKey) : undefined;
+                  const effectiveGameStartTime = gameStartTime || espnScore?.startTime || undefined;
+                  
+                  if (isSportsMarket) {
+                    // SPORTS MARKETS: Prioritize ESPN scores, then Polymarket data
+                    
+                    if (espnScore) {
+                      // **ESPN DATA AVAILABLE** 🎯
+                      espnStatus = espnScore.status;
+                      const { team1Label, team1Score, team2Label, team2Score } = getScoreDisplaySides(
+                        trade.market.title,
+                        espnScore
+                      );
+
+                      if (espnScore.status === 'final') {
+                        scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
+                        console.log(`🏁 ESPN Final score: ${scoreDisplay}`);
+                      } else if (espnScore.status === 'live') {
+                        let periodContext = '';
+                        if (espnScore.displayClock) {
+                          // Detect sport and format period accordingly
+                          const sportType = trade.market.category || '';
+                          let period = espnScore.period || 1; // Default to period 1 if 0 or missing
+                          
+                          // Fix: ESPN sometimes returns 0 for first period, normalize to 1
+                          if (period === 0) period = 1;
+                          
+                          // Basketball (NBA) - Use Quarters (Q1-Q4)
+                          if (sportType.includes('basketball') || trade.market.title.match(/(lakers|celtics|warriors|heat|bucks|nuggets|suns|thunder|mavericks|clippers|76ers|nets|knicks)/i)) {
+                            if (period <= 4) {
+                              periodContext = `Q${period} `;
+                            } else {
+                              periodContext = `OT${period - 4} `;
+                            }
+                          }
+                          // Football (NFL) - Use Quarters (Q1-Q4)
+                          else if (sportType.includes('football') || trade.market.title.match(/(chiefs|raiders|patriots|cowboys|packers|broncos|chargers|dolphins|bills|jets|ravens|49ers|eagles|steelers)/i)) {
+                            if (period <= 4) {
+                              periodContext = `Q${period} `;
+                            } else {
+                              periodContext = `OT `;
+                            }
+                          }
+                          // Hockey (NHL) - Use Periods (P1-P3)
+                          else if (sportType.includes('hockey') || trade.market.title.match(/(bruins|canadiens|rangers|penguins|oilers|flames|maple leafs|lightning|avalanche)/i)) {
+                            if (period <= 3) {
+                              periodContext = `P${period} `;
+                            } else {
+                              periodContext = `OT `;
+                            }
+                          }
+                          // Baseball (MLB) - Use Innings (I1-I9+)
+                          else if (sportType.includes('baseball') || trade.market.title.match(/(yankees|dodgers|red sox|astros|cubs|mets|braves|padres|giants|cardinals)/i)) {
+                            periodContext = `I${period} `;
+                          }
+                          // Default: Just use Q for quarters if sport not detected
+                          else if (period > 0) {
+                            periodContext = `Q${period} `;
+                          }
+                        }
+
+                        const clock = espnScore.displayClock ? ` (${periodContext}${espnScore.displayClock})` : '';
+                        scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}${clock}`;
+                        console.log(`🟢 ESPN Live score: ${scoreDisplay} | Period: ${espnScore.period}`);
+                      } else if (espnScore.status === 'scheduled') {
+                        console.log(`📅 ESPN Scheduled: ${espnScore.startTime}`);
+                      }
+                    }
+                    // Fallback to Polymarket data if no ESPN score
+                    else if (liveScore && typeof liveScore === 'object') {
+                      // Has live score data from Polymarket
+                      const homeScoreRaw = (liveScore as any).home ?? (liveScore as any).homeScore ?? (liveScore as any).home_score ?? 0;
+                      const awayScoreRaw = (liveScore as any).away ?? (liveScore as any).awayScore ?? (liveScore as any).away_score ?? 0;
+                      const homeScore = Number.isFinite(Number(homeScoreRaw)) ? Number(homeScoreRaw) : 0;
+                      const awayScore = Number.isFinite(Number(awayScoreRaw)) ? Number(awayScoreRaw) : 0;
+                      const fallbackTeams = pickOutcomeTeams(outcomes);
+                      const homeTeamName = typeof homeTeam === 'string' ? homeTeam : fallbackTeams[0] || '';
+                      const awayTeamName = typeof awayTeam === 'string' ? awayTeam : fallbackTeams[1] || '';
+                      const derivedScore = {
+                        homeScore,
+                        awayScore,
+                        homeTeamName,
+                        awayTeamName,
+                        homeTeamAbbrev: normalizeTeamAbbrev(homeTeamName),
+                        awayTeamAbbrev: normalizeTeamAbbrev(awayTeamName),
+                        status: 'live' as const,
+                        startTime: effectiveGameStartTime || '',
+                        displayClock: undefined,
+                        period: undefined,
+                      };
+                      const { team1Label, team1Score, team2Label, team2Score } = getScoreDisplaySides(
+                        trade.market.title,
+                        derivedScore
+                      );
+                      scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
+                      console.log(`🏀 Polymarket score: ${scoreDisplay}`);
+                    } else if (typeof liveScore === 'string' && liveScore.trim()) {
+                      scoreDisplay = liveScore.trim();
+                      console.log(`🏀 Polymarket score string: ${scoreDisplay}`);
+                    }
+                  } else if (outcomes?.length === 2) {
+                    // NON-SPORTS BINARY MARKETS: Show odds
+                    const prob1 = (Number(outcomePrices[0]) * 100).toFixed(0);
+                    const prob2 = (Number(outcomePrices[1]) * 100).toFixed(0);
+                    scoreDisplay = `${outcomes[0]}: ${prob1}% | ${outcomes[1]}: ${prob2}%`;
+                    console.log(`📊 Binary market: ${scoreDisplay}`);
+                  }
+                  
+                  const priceSamples = numericPrices.filter(Number.isFinite);
+                  const maxPrice = priceSamples.length > 0 ? Math.max(...priceSamples) : null;
+                  const minPrice = priceSamples.length > 0 ? Math.min(...priceSamples) : null;
+                  
+                  // Market is resolved ONLY if:
+                  // 1. API explicitly says it's resolved, OR
+                  // 2. Market is closed AND prices are at extremes (>=99.5%/<=0.5%)
+                  // This prevents false positives from heavy favorites (e.g., 99%/1% markets that are still live)
+                  const isMarketResolved =
+                    typeof resolved === 'boolean' && resolved === true
+                      ? true
+                      : closed === true && maxPrice !== null && minPrice !== null && maxPrice >= 0.995 && minPrice <= 0.005;
+
+                  console.log(
+                    `🔒 Market resolved status for ${trade.market.title.slice(0, 40)}... | closed=${closed} | apiResolved=${resolved} | max=${maxPrice} | min=${minPrice} | resolved=${isMarketResolved}`
+                  );
+
+                  const scoreLooksLive = Boolean(
+                    scoreDisplay && /\d+\s*-\s*\d+/.test(scoreDisplay)
+                  );
+                  const hasLiveScore =
+                    scoreLooksLive || Boolean(liveScore && typeof liveScore === 'object');
+
+                  const liveStatus = resolveLiveStatus({
+                    eventStatus,
+                    gameStartTime: effectiveGameStartTime,
+                    espnStatus,
+                    resolved: isMarketResolved,
+                    hasLiveScore,
+                  });
+                  
+                  newLiveData.set(marketKey, { 
+                    outcomes: outcomes || [],
+                    outcomePrices: numericPrices,
+                    score: scoreDisplay,
+                    gameStartTime: effectiveGameStartTime || undefined,
+                    eventStatus: eventStatus || undefined,
+                    resolved: isMarketResolved,
+                    endDateIso: endDateIso || undefined,
+                    liveStatus,
+                    updatedAt: Date.now(),
+                  });
+                }
+            }
+          } else {
+            console.warn(`❌ Price API failed for ${trade.market.title}: ${priceResponse.status}`);
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch live data for ${trade.market.title}:`, error);
+        }
+      })
+    );
+    
+    console.log(`💾 Stored live data for ${newLiveData.size} markets`);
+    setLiveMarketData((prev) => {
+      const merged = new Map(prev);
+      newLiveData.forEach((value, key) => {
+        merged.set(key, value);
+      });
+      return merged;
+    });
+  }, []);
+
+  // Fetch feed data
+  const fetchFeed = useCallback(async (userOverride?: User) => {
+    const currentUser = userOverride || user;
+    
+    if (!currentUser) {
+      return;
+    }
     
     setLoadingFeed(true);
     setError(null);
@@ -534,11 +1324,11 @@ export default function FeedPage() {
         const { data: follows, error: followsError } = await supabase
           .from('follows')
           .select('trader_wallet')
-          .eq('user_id', user.id);
+          .eq('user_id', currentUser.id);
 
         if (followsError) throw new Error('Failed to fetch follows');
         if (!follows || follows.length === 0) {
-          setTrades([]);
+          setAllTrades([]);
           setFollowingCount(0);
           setLoadingFeed(false);
           return;
@@ -546,45 +1336,14 @@ export default function FeedPage() {
 
         setFollowingCount(follows.length);
 
-        // 2. Fetch trader names from leaderboard API (max 100 per request)
-        const traderNames: Record<string, string> = {};
-        try {
-          console.log('📡 Fetching trader names from leaderboard...');
-          const leaderboardRes = await fetch('/api/polymarket/leaderboard?limit=100&orderBy=PNL&timePeriod=all');
-          if (leaderboardRes.ok) {
-            const leaderboardData = await leaderboardRes.json();
-            console.log(`📊 Leaderboard returned ${leaderboardData.traders?.length || 0} traders`);
-            
-            // Map names for followed traders
-            for (const follow of follows) {
-              const walletKey = follow.trader_wallet.toLowerCase();
-              const trader = leaderboardData.traders?.find(
-                (t: any) => t.wallet.toLowerCase() === walletKey
-              );
-              if (trader?.displayName) {
-                traderNames[walletKey] = trader.displayName;
-                console.log(`✅ Found name: ${trader.displayName} for ${follow.trader_wallet.slice(0, 10)}...`);
-              } else {
-                console.warn(`⚠️ No name found for ${follow.trader_wallet.slice(0, 10)}... (not in top 100)`);
-              }
-            }
-          } else {
-            console.error(`❌ Leaderboard API error: ${leaderboardRes.status}`);
-          }
-
-          console.log('📛 Final trader names:', JSON.stringify(traderNames, null, 2));
-          console.log('📛 Total names found:', Object.keys(traderNames).length, 'out of', follows.length);
-        } catch (err) {
-          console.error('Failed to fetch trader names:', err);
-        }
-
-        // 3. Fetch trades for each followed wallet (parallel)
+        // 2. Fetch trades
         const tradePromises = follows.map(async (follow) => {
           const wallet = follow.trader_wallet;
           
           try {
             const response = await fetch(
-              `https://data-api.polymarket.com/trades?limit=50&user=${wallet}`
+              `https://data-api.polymarket.com/trades?limit=15&user=${wallet}`,
+              { cache: 'no-store' }
             );
             
             if (!response.ok) return [];
@@ -601,36 +1360,135 @@ export default function FeedPage() {
           }
         });
         
-        const allTradesArrays = await Promise.all(tradePromises);
+        // 3. Fetch trader names in parallel
+        const traderNames: Record<string, string> = {};
+        const namePromise = (async () => {
+          try {
+            const leaderboardRes = await fetch('/api/polymarket/leaderboard?limit=100&orderBy=PNL&timePeriod=all');
+            if (leaderboardRes.ok) {
+              const leaderboardData = await leaderboardRes.json();
+              
+              for (const follow of follows) {
+                const walletKey = follow.trader_wallet.toLowerCase();
+                const trader = leaderboardData.traders?.find(
+                  (t: any) => t.wallet.toLowerCase() === walletKey
+                );
+                if (trader?.displayName) {
+                  traderNames[walletKey] = trader.displayName;
+                }
+              }
+            }
+
+            const walletsNeedingNames = follows
+              .filter(f => !traderNames[f.trader_wallet.toLowerCase()])
+              .map(f => f.trader_wallet.toLowerCase());
+            
+            if (walletsNeedingNames.length > 0) {
+              const batchSize = 10;
+              const batches = [];
+              
+              for (let i = 0; i < walletsNeedingNames.length; i += batchSize) {
+                const batch = walletsNeedingNames.slice(i, i + batchSize);
+                batches.push(
+                  Promise.allSettled(
+                    batch.map(async (wallet) => {
+                      try {
+                        const res = await fetch(
+                          `https://data-api.polymarket.com/trades?limit=1&user=${wallet}`,
+                          { cache: 'no-store' }
+                        );
+                        if (res.ok) {
+                          const trades = await res.json();
+                          if (Array.isArray(trades) && trades.length > 0) {
+                            const name = trades[0].name || trades[0].userName;
+                            if (name) {
+                              traderNames[wallet] = name;
+                            }
+                          }
+                        }
+                      } catch (err) {
+                        // Silent fail
+                      }
+                    })
+                  )
+                );
+              }
+              
+              await Promise.all(batches);
+            }
+          } catch (err) {
+            console.error('Failed to fetch trader names:', err);
+          }
+        })();
+        
+        const [allTradesArrays] = await Promise.all([
+          Promise.all(tradePromises),
+          namePromise
+        ]);
+        
         const allTradesRaw = allTradesArrays.flat();
         
         if (allTradesRaw.length === 0) {
-          setTrades([]);
+          setAllTrades([]);
           setLoadingFeed(false);
           return;
         }
 
-        // Sort by timestamp
         allTradesRaw.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
 
         // 4. Format trades
+        const extractTokenId = (rawTrade: any): string | undefined => {
+          const candidates = [
+            rawTrade.asset,
+            rawTrade.asset_id,
+            rawTrade.assetId,
+            rawTrade.token_id,
+            rawTrade.tokenId,
+            rawTrade.tokenID,
+          ];
+          for (const candidate of candidates) {
+            if (candidate === undefined || candidate === null) continue;
+            const value =
+              typeof candidate === 'number' ? candidate.toString() : String(candidate).trim();
+            if (value) return value;
+          }
+          return undefined;
+        };
+
+        const normalizedCategory = (value?: string | null) =>
+          value ? value.trim().toLowerCase() : undefined;
+        const getMarketTitle = (rawTrade: any) => {
+          const candidates = [
+            rawTrade.title,
+            rawTrade.market_title,
+            rawTrade.marketTitle,
+            rawTrade.question,
+            rawTrade.market,
+          ];
+          for (const candidate of candidates) {
+            if (typeof candidate === 'string' && candidate.trim()) {
+              return candidate;
+            }
+          }
+          return 'Unknown Market';
+        };
+
         const formattedTrades: FeedTrade[] = allTradesRaw.map((trade: any) => {
           const wallet = trade._followedWallet || trade.user || trade.wallet || '';
           const walletKey = wallet.toLowerCase();
           const displayName = traderNames[walletKey] || 
                              (wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : 'Unknown');
           
-          // Debug logging for first few trades
-          if (allTradesRaw.indexOf(trade) < 3) {
-            console.log(`🔍 Trade ${allTradesRaw.indexOf(trade)}:`, {
-              wallet,
-              walletKey,
-              displayName,
-              hasNameInMap: !!traderNames[walletKey],
-              traderNamesKeys: Object.keys(traderNames)
-            });
-          }
-          
+          const marketId =
+            trade.conditionId ||
+            trade.condition_id ||
+            trade.market_slug ||
+            trade.slug ||
+            trade.asset_id ||
+            trade.market ||
+            trade.title ||
+            '';
+          const conditionId = trade.conditionId || trade.condition_id || '';
           return {
             id: `${trade.id || trade.timestamp}-${Math.random()}`,
             trader: {
@@ -638,12 +1496,18 @@ export default function FeedPage() {
               displayName: displayName,
             },
             market: {
-              // IMPORTANT: Prioritize conditionId for Gamma API price lookups
-              id: trade.conditionId || trade.market_slug || trade.asset_id || trade.id || '',
-              title: trade.market || trade.title || 'Unknown Market',
+              id: marketId,
+              conditionId,
+              title: getMarketTitle(trade),
               slug: trade.market_slug || trade.slug || '',
               eventSlug: trade.eventSlug || trade.event_slug || '',
-              category: undefined, // Will be populated next
+              category: normalizedCategory(
+                trade.category ||
+                  trade.market_category ||
+                  trade.marketCategory ||
+                  trade.market?.category
+              ),
+              avatarUrl: extractMarketAvatarUrl(trade) || undefined,
             },
             trade: {
               side: (trade.side || 'BUY').toUpperCase() as 'BUY' | 'SELL',
@@ -651,158 +1515,106 @@ export default function FeedPage() {
               size: parseFloat(trade.size || trade.amount || 0),
               price: parseFloat(trade.price || 0),
               timestamp: (trade.timestamp || Date.now() / 1000) * 1000,
+              tradeId: trade.trade_id || trade.id || trade.tx_hash || trade.transactionHash || '',
+              tokenId: extractTokenId(trade),
             },
           };
         });
 
-        // 5. Categorize trades using comprehensive keyword matching
-        // This is much faster and more reliable than API calls
+        // 5. Categorize trades
+        const isSportsTitle = (title: string) => {
+          const text = title.toLowerCase();
+          if (
+            text.includes('vs.') ||
+            text.includes(' vs ') ||
+            text.includes(' v ') ||
+            text.includes(' at ') ||
+            text.includes('@')
+          ) {
+            return true;
+          }
+          return [
+            'nfl',
+            'nba',
+            'wnba',
+            'mlb',
+            'nhl',
+            'ncaa',
+            'soccer',
+            'tennis',
+            'golf',
+            'mma',
+            'ufc',
+            'boxing',
+            'football',
+            'basketball',
+            'baseball',
+            'hockey',
+            'pga',
+            'lpga',
+            'atp',
+            'wta',
+            'wimbledon',
+            'roland garros',
+            'australian open',
+            'us open',
+            'liga mx',
+            'ligamx',
+            'f1',
+            'formula 1',
+            'world cup',
+            'champions league',
+            'premier league',
+            'premiership',
+            'epl',
+            'super bowl',
+          ].some((term) => text.includes(term));
+        };
+
         formattedTrades.forEach(trade => {
+          if (trade.market.category) return;
           const title = trade.market.title.toLowerCase();
           
-          // Politics
           if (title.includes('trump') || title.includes('biden') || title.includes('election') || 
-              title.includes('senate') || title.includes('congress') || title.includes('president') ||
-              title.includes('vote') || title.includes('poll') || title.includes('democrat') || 
-              title.includes('republican') || title.includes('white house') || title.includes('governor') ||
-              title.includes('kamala') || title.includes('desantis') || title.includes('nikki haley')) {
+              title.includes('senate') || title.includes('congress') || title.includes('president')) {
             trade.market.category = 'politics';
           }
-          // Sports - comprehensive coverage
-          else if (
-            // General sports keywords
-            title.includes('nba') || title.includes('nfl') || title.includes('mlb') || title.includes('nhl') ||
-            title.includes('soccer') || title.includes('football') || title.includes('basketball') || 
-            title.includes('baseball') || title.includes('hockey') || title.includes('championship') || 
-            title.includes('super bowl') || title.includes('world cup') || title.includes('playoffs') || 
-            title.includes(' vs ') || title.includes(' v ') || title.includes(' @ ') ||
-            title.includes('game') || title.includes('match') || title.includes('bowl') ||
-            title.includes('series') || title.includes('finals') || title.includes('spread') ||
-            title.includes('over/under') || title.includes('win on 20') || title.includes('score') ||
-            title.includes('points') || title.includes('season') || title.includes('playoff') ||
-            
-            // NBA Teams
-            title.includes('lakers') || title.includes('celtics') || title.includes('warriors') || 
-            title.includes('heat') || title.includes('bucks') || title.includes('nuggets') || 
-            title.includes('suns') || title.includes('mavs') || title.includes('mavericks') ||
-            title.includes('clippers') || title.includes('nets') || title.includes('bulls') || 
-            title.includes('pacers') || title.includes('thunder') || title.includes('knicks') ||
-            title.includes('76ers') || title.includes('sixers') || title.includes('rockets') ||
-            title.includes('spurs') || title.includes('raptors') || title.includes('jazz') ||
-            title.includes('grizzlies') || title.includes('pelicans') || title.includes('blazers') ||
-            title.includes('kings') || title.includes('hornets') || title.includes('pistons') ||
-            title.includes('magic') || title.includes('wizards') || title.includes('cavaliers') ||
-            title.includes('cavs') || title.includes('timberwolves') || title.includes('wolves') ||
-            
-            // NFL Teams
-            title.includes('chiefs') || title.includes('eagles') || title.includes('bills') ||
-            title.includes('49ers') || title.includes('niners') || title.includes('cowboys') ||
-            title.includes('ravens') || title.includes('bengals') || title.includes('dolphins') ||
-            title.includes('chargers') || title.includes('jaguars') || title.includes('jets') ||
-            title.includes('patriots') || title.includes('raiders') || title.includes('steelers') ||
-            title.includes('broncos') || title.includes('colts') || title.includes('titans') ||
-            title.includes('browns') || title.includes('packers') || title.includes('vikings') ||
-            title.includes('lions') || title.includes('bears') || title.includes('saints') ||
-            title.includes('falcons') || title.includes('panthers') || title.includes('buccaneers') ||
-            title.includes('bucs') || title.includes('cardinals') || title.includes('rams') ||
-            title.includes('seahawks') || title.includes('commanders') || title.includes('giants') ||
-            
-            // MLB Teams
-            title.includes('yankees') || title.includes('red sox') || title.includes('dodgers') ||
-            title.includes('astros') || title.includes('braves') || title.includes('mets') ||
-            title.includes('phillies') || title.includes('padres') || title.includes('cardinals') ||
-            title.includes('cubs') || title.includes('white sox') || title.includes('giants') ||
-            title.includes('mariners') || title.includes('angels') || title.includes('rangers') ||
-            title.includes('blue jays') || title.includes('orioles') || title.includes('rays') ||
-            title.includes('guardians') || title.includes('twins') || title.includes('royals') ||
-            title.includes('tigers') || title.includes('athletics') || title.includes('brewers') ||
-            title.includes('pirates') || title.includes('reds') || title.includes('marlins') ||
-            title.includes('nationals') || title.includes('rockies') || title.includes('diamondbacks') ||
-            
-            // NHL Teams
-            title.includes('bruins') || title.includes('maple leafs') || title.includes('canadiens') ||
-            title.includes('habs') || title.includes('senators') || title.includes('sabres') ||
-            title.includes('red wings') || title.includes('lightning') || title.includes('panthers') ||
-            title.includes('hurricanes') || title.includes('blue jackets') || title.includes('devils') ||
-            title.includes('islanders') || title.includes('flyers') || title.includes('penguins') ||
-            title.includes('capitals') || title.includes('blackhawks') || title.includes('avalanche') ||
-            title.includes('stars') || title.includes('wild') || title.includes('predators') ||
-            title.includes('blues') || title.includes('flames') || title.includes('oilers') ||
-            title.includes('canucks') || title.includes('ducks') || title.includes('sharks') ||
-            title.includes('golden knights') || title.includes('kraken') || title.includes('coyotes') ||
-            title.includes('jets') || title.includes('rangers') ||
-            
-            // Soccer/Football
-            title.includes('premier league') || title.includes('champions league') ||
-            title.includes('la liga') || title.includes('serie a') || title.includes('bundesliga') ||
-            title.includes('mls') || title.includes('world cup') || title.includes('uefa') ||
-            title.includes('fifa') || title.includes('manchester') || title.includes('liverpool') ||
-            title.includes('chelsea') || title.includes('arsenal') || title.includes('tottenham') ||
-            title.includes('barcelona') || title.includes('real madrid') || title.includes('bayern') ||
-            title.includes('psg') || title.includes('juventus') || title.includes('milan') ||
-            title.includes('inter') || title.includes('atletico') || title.includes('dortmund') ||
-            
-            // Individual Athletes (examples - add more as needed)
-            title.includes('lebron') || title.includes('curry') || title.includes('jokic') ||
-            title.includes('giannis') || title.includes('embiid') || title.includes('luka') ||
-            title.includes('mahomes') || title.includes('josh allen') || title.includes('lamar') ||
-            title.includes('burrow') || title.includes('herbert') || title.includes('prescott') ||
-            title.includes('messi') || title.includes('ronaldo') || title.includes('mbappe') ||
-            title.includes('haaland') || title.includes('neymar') || title.includes('salah') ||
-            
-            // Other sports
-            title.includes('ufc') || title.includes('boxing') || title.includes('mma') ||
-            title.includes('tennis') || title.includes('golf') || title.includes('f1') ||
-            title.includes('formula 1') || title.includes('nascar') || title.includes('olympics')
-          ) {
+          else if (isSportsTitle(title)) {
             trade.market.category = 'sports';
           }
-          // Crypto
           else if (title.includes('bitcoin') || title.includes('btc') || title.includes('ethereum') || 
-                   title.includes('eth') || title.includes('crypto') || title.includes('blockchain') ||
-                   title.includes('solana') || title.includes('dogecoin') || title.includes('xrp') ||
-                   title.includes('cardano') || title.includes('polygon') || title.includes('matic')) {
+                   title.includes('eth') || title.includes('crypto')) {
             trade.market.category = 'crypto';
           }
-          // Economics
-          else if (title.includes('stock') || title.includes('trading') ||
-                   title.includes('economy') || title.includes('fed') || title.includes('interest rate') ||
-                   title.includes('inflation') || title.includes('recession') || title.includes('gdp') ||
-                   title.includes('unemployment') || title.includes('jobs report')) {
+          else if (title.includes('stock') || title.includes('economy') || title.includes('inflation')) {
             trade.market.category = 'economics';
           }
-          // Tech
           else if (title.includes('ai') || title.includes('tech') || title.includes('apple') || 
-                   title.includes('google') || title.includes('microsoft') || title.includes('meta') ||
-                   title.includes('tesla') || title.includes('openai') || title.includes('chatgpt') ||
-                   title.includes('amazon') || title.includes('nvidia') || title.includes('spacex')) {
+                   title.includes('google') || title.includes('microsoft')) {
             trade.market.category = 'tech';
           }
-          // Weather
-          else if (title.includes('temperature') || title.includes('snow') || title.includes('rain') ||
-                   title.includes('weather') || title.includes('forecast') || title.includes('climate') ||
-                   title.includes('hurricane') || title.includes('storm') || title.includes('tornado')) {
+          else if (title.includes('weather') || title.includes('temperature')) {
             trade.market.category = 'weather';
           }
-          // Pop Culture
-          else if (title.includes('movie') || title.includes('oscars') || title.includes('grammy') ||
-                   title.includes('celebrity') || title.includes('album') || title.includes('box office') ||
-                   title.includes('emmy') || title.includes('tv show') || title.includes('netflix') ||
-                   title.includes('spotify') || title.includes('billboard')) {
+          else if (title.includes('movie') || title.includes('album') || title.includes('celebrity')) {
             trade.market.category = 'culture';
           }
-          // Business/Finance
-          else if (title.includes('company') || title.includes('ceo') || title.includes('revenue') ||
-                   title.includes('earnings') || title.includes('ipo') || title.includes('acquisition') ||
-                   title.includes('market cap') || title.includes('stock price')) {
+          else if (title.includes('company') || title.includes('ceo') || title.includes('revenue')) {
             trade.market.category = 'finance';
           }
         });
 
-        // Store all trades and reset display count
+        const latestTimestamp = formattedTrades.length > 0
+          ? Math.max(...formattedTrades.map(t => t.trade.timestamp))
+          : null;
+
         setAllTrades(formattedTrades);
         setDisplayedTradesCount(35);
-        setTrades(formattedTrades.slice(0, 35));
+        setLatestTradeTimestamp(latestTimestamp);
+        setLastFeedFetchAt(Date.now());
+        
+        // Fetch live market data for displayed trades
+        fetchLiveMarketData(formattedTrades.slice(0, 35));
 
         // Calculate today's volume and trade count
         const today = new Date();
@@ -822,40 +1634,70 @@ export default function FeedPage() {
     } catch (err: any) {
       console.error('Error fetching feed:', err);
       setError(err.message || 'Failed to load feed');
+      setLastFeedFetchAt(Date.now());
     } finally {
       setLoadingFeed(false);
     }
-  }, [user]); // Only recreate when user changes, not category
+  }, [user]);
 
   // Manual refresh handler
   const handleManualRefresh = async () => {
-    setIsRefreshing(true);
-    await fetchFeed();
-    setIsRefreshing(false);
-    
-    // Show success toast
-    setToastMessage('Feed refreshed!');
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 2000);
-  };
-
-  // Track if we've done the initial fetch
-  const hasFetchedRef = useRef(false);
-
-  // Fetch feed data ONLY on initial mount
-  // Do NOT refetch when user switches tabs or changes category filter
-  useEffect(() => {
     if (!user) return;
     
-    // Only fetch if haven't fetched yet (initial load)
-    if (!hasFetchedRef.current) {
-      console.log('📊 Initial feed fetch');
-      fetchFeed();
-      hasFetchedRef.current = true;
-    } else {
-      console.log('📊 Skipping fetch - data already loaded');
+    setIsRefreshing(true);
+    
+    const sessionKey = `feed-fetched-${user.id}`;
+    sessionStorage.removeItem(sessionKey);
+    hasFetchedRef.current = false;
+    
+    await fetchFeed();
+    
+    hasFetchedRef.current = true;
+    sessionStorage.setItem(sessionKey, 'true');
+    
+    setIsRefreshing(false);
+  };
+
+  const hasFetchedRef = useRef(false);
+  const hasAttemptedFetchRef = useRef(false);
+  const liveRefreshTimeoutRef = useRef<number | null>(null);
+  const lastLiveRefreshRef = useRef(0);
+
+  // Fetch feed data ONLY ONCE on initial mount
+  useEffect(() => {
+    if (hasAttemptedFetchRef.current) {
+      return;
     }
-  }, [user, fetchFeed]);
+    hasAttemptedFetchRef.current = true;
+
+    const attemptFetch = async () => {
+      let currentUser = user;
+      
+      if (!currentUser) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const { data: { user: freshUser } } = await supabase.auth.getUser();
+        currentUser = freshUser;
+      }
+
+      if (!currentUser) {
+        return;
+      }
+
+      const sessionKey = `feed-fetched-${currentUser.id}`;
+      const alreadyFetched = sessionStorage.getItem(sessionKey);
+      
+      if (alreadyFetched === 'true' && hasFetchedRef.current) {
+        return;
+      }
+      
+      await fetchFeed(currentUser);
+      hasFetchedRef.current = true;
+      sessionStorage.setItem(sessionKey, 'true');
+    };
+
+    attemptFetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Load more trades
   const handleLoadMore = () => {
@@ -863,41 +1705,164 @@ export default function FeedPage() {
     setDisplayedTradesCount(newCount);
   };
 
-  // Filter trades by buy/sell AND category
-  const filteredAllTrades = allTrades.filter(trade => {
-    // Filter by buy/sell
-    if (filter === 'buys' && trade.trade.side !== 'BUY') return false;
-    if (filter === 'sells' && trade.trade.side !== 'SELL') return false;
-    
-    // Filter by category
-    if (categoryFilter !== 'all') {
+  // Filter trades to only show BUY trades AND by category
+  const filteredAllTrades = useMemo(() => allTrades.filter(trade => {
+    // Only show BUY trades
+    if (trade.trade.side !== 'BUY') return false;
+
+    if (appliedFilters.category !== 'all') {
       const tradeCategory = trade.market.category?.toLowerCase();
-      
-      // Map filter values to expected category values
-      const categoryMapping: Record<string, string[]> = {
-        'politics': ['politics'],
-        'sports': ['sports'],
-        'crypto': ['crypto'],
-        'culture': ['pop culture', 'culture'],
-        'finance': ['business', 'finance'],
-        'economics': ['economics'],
-        'tech': ['technology', 'tech'],
-        'weather': ['weather']
-      };
-      
-      const validCategories = categoryMapping[categoryFilter] || [categoryFilter];
-      if (!tradeCategory || !validCategories.some(cat => tradeCategory.includes(cat))) {
+      if (!tradeCategory || tradeCategory !== appliedFilters.category) {
+        return false;
+      }
+    }
+
+    if (appliedFilters.tradeSizeMin > 0) {
+      const totalValue = trade.trade.price * trade.trade.size;
+      if (!Number.isFinite(totalValue) || totalValue < appliedFilters.tradeSizeMin) {
+        return false;
+      }
+    }
+
+    if (appliedFilters.status === 'live' && !isLiveMarket(trade)) {
+      return false;
+    }
+
+    if (appliedFilters.resolvingWindow !== 'any' && !matchesResolvingWindow(trade)) {
+      return false;
+    }
+
+    if (appliedFilters.priceMinCents > PRICE_RANGE.min || appliedFilters.priceMaxCents < PRICE_RANGE.max) {
+      const livePrice = getCurrentOutcomePrice(trade);
+      const priceValue = Number.isFinite(livePrice) ? livePrice : trade.trade.price;
+      if (!Number.isFinite(priceValue) || priceValue === undefined || priceValue === null) return false;
+      const priceCents = Math.round(Number(priceValue) * 100);
+      if (priceCents < appliedFilters.priceMinCents || priceCents > appliedFilters.priceMaxCents) {
+        return false;
+      }
+    }
+
+    if (appliedFilters.traderIds.length > 0) {
+      const wallet = trade.trader.wallet?.toLowerCase() || '';
+      if (!appliedTraderSet.has(wallet)) {
         return false;
       }
     }
     
     return true;
-  });
+  }), [allTrades, appliedFilters, appliedTraderSet, isLiveMarket, matchesResolvingWindow, getCurrentOutcomePrice]);
   
-  const filteredTrades = filteredAllTrades.slice(0, displayedTradesCount);
+  const displayedTrades = useMemo(
+    () => filteredAllTrades.slice(0, displayedTradesCount),
+    [filteredAllTrades, displayedTradesCount]
+  );
   const hasMoreTrades = filteredAllTrades.length > displayedTradesCount;
 
-  // Copy trade handler - opens Polymarket
+  const needsMarketData = useMemo(
+    () =>
+      appliedFilters.status !== 'all' ||
+      appliedFilters.resolvingWindow !== 'any' ||
+      appliedFilters.priceMinCents > PRICE_RANGE.min ||
+      appliedFilters.priceMaxCents < PRICE_RANGE.max,
+    [
+      appliedFilters.status,
+      appliedFilters.resolvingWindow,
+      appliedFilters.priceMinCents,
+      appliedFilters.priceMaxCents,
+    ]
+  );
+
+  useEffect(() => {
+    if (!needsMarketData || allTrades.length === 0) return;
+    fetchLiveMarketData(allTrades);
+  }, [needsMarketData, allTrades, fetchLiveMarketData]);
+
+  const refreshDisplayedMarketData = useCallback(() => {
+    if (displayedTrades.length === 0) return;
+    const now = Date.now();
+    const refreshWindowMs = 15000;
+    const tradesNeedingRefresh = displayedTrades.filter((trade) => {
+      const marketKey = getMarketKeyForTrade(trade);
+      if (!marketKey) return false;
+      const liveData = liveMarketData.get(marketKey);
+      if (!liveData?.updatedAt) return true;
+      return now - liveData.updatedAt > refreshWindowMs;
+    });
+
+    if (tradesNeedingRefresh.length === 0) return;
+
+    const hasMissingData = tradesNeedingRefresh.some((trade) => {
+      const marketKey = getMarketKeyForTrade(trade);
+      if (!marketKey) return false;
+      const liveData = liveMarketData.get(marketKey);
+      return !liveData?.updatedAt;
+    });
+
+    if (!hasMissingData && now - lastLiveRefreshRef.current < refreshWindowMs) {
+      return;
+    }
+
+    lastLiveRefreshRef.current = now;
+    fetchLiveMarketData(tradesNeedingRefresh);
+  }, [displayedTrades, fetchLiveMarketData, liveMarketData]);
+
+  useEffect(() => {
+    refreshDisplayedMarketData();
+  }, [refreshDisplayedMarketData]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (liveRefreshTimeoutRef.current) {
+        window.clearTimeout(liveRefreshTimeoutRef.current);
+      }
+      liveRefreshTimeoutRef.current = window.setTimeout(() => {
+        refreshDisplayedMarketData();
+      }, 250);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      if (liveRefreshTimeoutRef.current) {
+        window.clearTimeout(liveRefreshTimeoutRef.current);
+      }
+    };
+  }, [refreshDisplayedMarketData]);
+
+  // Real-time polling for expanded trade cards (Priority 2 enhancement)
+  useEffect(() => {
+    if (expandedTradeIds.size === 0) return;
+
+    console.log(`🔄 Starting real-time polling for ${expandedTradeIds.size} expanded trades`);
+
+    // Get trades that are currently expanded
+    const expandedTrades = displayedTrades.filter(trade => {
+      const tradeKey = buildCopiedTradeKey(
+        getMarketKeyForTrade(trade),
+        trade.trader.wallet
+      );
+      return tradeKey && expandedTradeIds.has(tradeKey);
+    });
+
+    if (expandedTrades.length === 0) return;
+
+    // Fetch immediately
+    fetchLiveMarketData(expandedTrades);
+
+    // Then poll every 1 second for real-time updates
+    const intervalId = setInterval(() => {
+      console.log(`📡 Polling ${expandedTrades.length} expanded markets`);
+      fetchLiveMarketData(expandedTrades);
+    }, 1000);
+
+    return () => {
+      console.log(`⏹️ Stopped real-time polling for expanded trades`);
+      clearInterval(intervalId);
+    };
+  }, [expandedTradeIds, displayedTrades, fetchLiveMarketData]);
+
+  // Copy trade handler
   const handleCopyTrade = (trade: FeedTrade) => {
     let url = 'https://polymarket.com';
     
@@ -912,363 +1877,733 @@ export default function FeedPage() {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  // Mark as copied handler - opens modal
-  const handleMarkAsCopied = (trade: FeedTrade) => {
-    setSelectedTrade(trade);
-    setModalOpen(true);
-  };
-
-  // Confirm mark as copied - using Supabase directly (like follow/unfollow)
-  const handleConfirmCopy = async (entryPrice: number, amountInvested?: number) => {
-    if (!selectedTrade || !user) return;
-
-    setIsSubmitting(true);
+  const handleMarkAsCopied = async (
+    trade: FeedTrade,
+    entryPrice: number,
+    amountInvested?: number
+  ) => {
+    if (!user) {
+      triggerLoggedOut('session_missing');
+      router.push('/login');
+      return;
+    }
 
     try {
-      // Insert directly into Supabase (like follow/unfollow does)
-      // This works because the client-side Supabase client already has auth
-      const { data: createdTrade, error: insertError } = await supabase
-        .from('copied_trades')
-        .insert({
-          user_id: user.id,
-          trader_wallet: selectedTrade.trader.wallet,
-          trader_username: selectedTrade.trader.displayName,
-          market_id: selectedTrade.market.id || selectedTrade.market.slug || selectedTrade.market.title,
-          market_title: selectedTrade.market.title,
-          outcome: selectedTrade.trade.outcome.toUpperCase(),
-          price_when_copied: entryPrice,
-          amount_invested: amountInvested || null,
-        })
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error('❌ Insert error:', insertError);
-        throw new Error(insertError.message || 'Failed to save copied trade');
+      let traderProfileImage: string | null = null;
+      try {
+        console.log('🖼️ Fetching trader profile image for wallet:', trade.trader.wallet);
+        const leaderboardResponse = await fetch(
+          `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${trade.trader.wallet}`
+        );
+        if (leaderboardResponse.ok) {
+          const leaderboardData = await leaderboardResponse.json();
+          if (Array.isArray(leaderboardData) && leaderboardData.length > 0) {
+            traderProfileImage = leaderboardData[0].profileImage || null;
+            console.log('✅ Found trader profile image:', traderProfileImage ? 'yes' : 'no');
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ Failed to fetch trader profile image:', err);
       }
 
-      if (!createdTrade?.id) {
-        console.error('❌ No trade ID in response');
-        throw new Error('Trade created but no ID returned');
+      const marketId =
+        trade.market.conditionId ||
+        trade.market.slug ||
+        trade.market.title;
+      const response = await fetch('/api/copied-trades', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          traderWallet: trade.trader.wallet,
+          traderUsername: trade.trader.displayName,
+          marketId,
+          marketTitle: trade.market.title,
+          marketSlug: trade.market.slug || null,
+          outcome: trade.trade.outcome.toUpperCase(),
+          priceWhenCopied: entryPrice,
+          amountInvested: amountInvested || null,
+          traderProfileImage,
+          marketAvatarUrl: trade.market.avatarUrl || null,
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        console.error('Copy trade API error:', payload);
+        throw new Error(payload.error || 'Failed to save copied trade');
       }
 
-      console.log('✅ Trade copied successfully:', createdTrade.id);
+      const tradeKey = buildCopiedTradeKey(marketId, trade.trader.wallet);
+      if (tradeKey) {
+        setCopiedTradeIds((prev) => {
+          const next = new Set(prev);
+          next.add(tradeKey);
+          return next;
+        });
+      }
 
-      // Update local state
-      const tradeKey = `${selectedTrade.market.id || selectedTrade.market.slug || selectedTrade.market.title}-${selectedTrade.trader.wallet}`;
-      setCopiedTradeIds(prev => new Set([...prev, tradeKey]));
-
-      // Close modal
-      setModalOpen(false);
-      setSelectedTrade(null);
-
-      // Show success toast
-      setToastMessage('Trade marked as copied!');
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
-
+      await fetchCopiedTrades();
     } catch (err: any) {
       console.error('Error saving copied trade:', err);
       alert(err.message || 'Failed to save copied trade');
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
-  // Check if a trade is copied
-  const isTradecopied = (trade: FeedTrade): boolean => {
-    const tradeKey = `${trade.market.id || trade.market.slug || trade.market.title}-${trade.trader.wallet}`;
-    return copiedTradeIds.has(tradeKey);
+  const handleRealCopy = (trade: FeedTrade) => {
+    const params = new URLSearchParams();
+    params.set('prefill', '1');
+    if (trade.trade.tradeId) params.set('tradeId', trade.trade.tradeId);
+    if (trade.market.conditionId) params.set('conditionId', trade.market.conditionId);
+    if (trade.market.slug) params.set('marketSlug', trade.market.slug);
+    if (trade.market.eventSlug) params.set('eventSlug', trade.market.eventSlug);
+    if (trade.market.title) params.set('marketTitle', trade.market.title);
+    if (trade.trade.outcome) params.set('outcome', trade.trade.outcome);
+    if (trade.trade.side) params.set('side', trade.trade.side);
+    if (Number.isFinite(trade.trade.price)) params.set('price', String(trade.trade.price));
+    if (Number.isFinite(trade.trade.size)) params.set('size', String(trade.trade.size));
+    if (Number.isFinite(trade.trade.timestamp)) params.set('timestamp', String(trade.trade.timestamp));
+    if (trade.trader.displayName) params.set('traderName', trade.trader.displayName);
+    if (trade.trader.wallet) params.set('traderWallet', trade.trader.wallet);
+
+    router.push(`/trade-execute?${params.toString()}`);
   };
+
+  // Check if a trade is copied
+  const isTraceCopied = (trade: FeedTrade): boolean => {
+    const tradeKey = buildCopiedTradeKey(
+      getMarketKeyForTrade(trade),
+      trade.trader.wallet
+    );
+    return tradeKey ? copiedTradeIds.has(tradeKey) : false;
+  };
+
+  const toggleTradeExpanded = (tradeId: string) => {
+    setExpandedTradeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(tradeId)) {
+        next.delete(tradeId);
+      } else {
+        next.add(tradeId);
+      }
+      return next;
+    });
+  };
+
+  const draftStatusLabel = draftFilters.status === 'live' ? 'Live Games Only' : 'All';
+  const draftCategoryLabel =
+    CATEGORY_OPTIONS.find((option) => option.value === draftFilters.category)?.label ?? 'All';
+  const draftTradeSizeLabel =
+    TRADE_SIZE_OPTIONS.find((option) => option.value === draftFilters.tradeSizeMin)?.label ??
+    (draftFilters.tradeSizeMin > 0 ? formatTradeSize(draftFilters.tradeSizeMin) : 'Any');
+  const draftResolvingLabel =
+    RESOLVING_OPTIONS.find((option) => option.value === draftFilters.resolvingWindow)?.label ?? 'Any';
+  const draftPriceLabel = (() => {
+    const min = draftFilters.priceMinCents;
+    const max = draftFilters.priceMaxCents;
+    if (min <= PRICE_RANGE.min && max >= PRICE_RANGE.max) return 'Any';
+    if (min > PRICE_RANGE.min && max < PRICE_RANGE.max) {
+      return `${formatPriceCents(min)}-${formatPriceCents(max)}`;
+    }
+    if (min > PRICE_RANGE.min) return `${formatPriceCents(min)}+`;
+    return `Up to ${formatPriceCents(max)}`;
+  })();
+  const draftTradersLabel = draftFilters.traderIds.length > 0
+    ? `${draftFilters.traderIds.length} selected`
+    : 'Any';
+
+  const filterPanel = (
+    <div className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+        <div className="space-y-0.5">
+          <p className="text-sm font-semibold text-slate-900">Filters</p>
+          <p className="text-[11px] text-slate-500">
+            {draftFiltersCount > 0 ? `${draftFiltersCount} active` : 'No filters applied'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={clearDraftFilters}
+          className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+        >
+          Reset
+        </button>
+      </div>
+
+      <div className="flex-1 px-4 py-3">
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 lg:col-span-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Category</span>
+              <span className="text-xs font-medium text-slate-500">{draftCategoryLabel}</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {CATEGORY_OPTIONS.map((category) => (
+                <button
+                  key={category.value}
+                  onClick={() =>
+                    setDraftFilters((prev) => ({ ...prev, category: category.value }))
+                  }
+                  aria-pressed={draftFilters.category === category.value}
+                  className={cn(
+                    categoryPillBase,
+                    draftFilters.category === category.value
+                      ? categoryPillActive
+                      : categoryPillInactive
+                  )}
+                >
+                  {category.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Event Status</span>
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  draftFilters.status === 'live'
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-slate-100 text-slate-500"
+                )}
+              >
+                {draftStatusLabel}
+              </span>
+            </div>
+            <div className="mt-1.5">
+              <button
+                type="button"
+                onClick={() =>
+                  setDraftFilters((prev) => ({
+                    ...prev,
+                    status: prev.status === 'live' ? 'all' : 'live',
+                  }))
+                }
+                role="switch"
+                aria-checked={draftFilters.status === 'live'}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-full border px-3 py-2 text-xs font-semibold transition",
+                  draftFilters.status === 'live'
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                )}
+              >
+                <span>Live Games Only</span>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                    draftFilters.status === 'live' ? "bg-emerald-500" : "bg-slate-300"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "inline-block h-4 w-4 transform rounded-full bg-white shadow transition",
+                      draftFilters.status === 'live' ? "translate-x-4" : "translate-x-0.5"
+                    )}
+                  />
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Market Resolves</span>
+              <span className="text-xs font-medium text-slate-500">{draftResolvingLabel}</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {RESOLVING_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() =>
+                    setDraftFilters((prev) => ({
+                      ...prev,
+                      resolvingWindow: option.value,
+                    }))
+                  }
+                  aria-pressed={draftFilters.resolvingWindow === option.value}
+                  className={cn(
+                    filterTabBase,
+                    draftFilters.resolvingWindow === option.value
+                      ? filterTabActive
+                      : filterTabInactive
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Trade Size</span>
+              <span className="text-xs font-medium text-slate-500">{draftTradeSizeLabel}</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {TRADE_SIZE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() =>
+                    setDraftFilters((prev) => ({
+                      ...prev,
+                      tradeSizeMin: option.value,
+                    }))
+                  }
+                  aria-pressed={draftFilters.tradeSizeMin === option.value}
+                  className={cn(
+                    filterTabBase,
+                    draftFilters.tradeSizeMin === option.value
+                      ? filterTabActive
+                      : filterTabInactive
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Current Price</span>
+              <span className="text-xs font-medium text-slate-500">{draftPriceLabel}</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {PRICE_PRESET_OPTIONS.map((preset) => {
+                const isActive =
+                  draftFilters.priceMinCents === preset.min &&
+                  draftFilters.priceMaxCents === preset.max;
+                return (
+                  <button
+                    key={preset.label}
+                    onClick={() => updateDraftPriceRange(preset.min, preset.max)}
+                    aria-pressed={isActive}
+                    className={cn(filterTabBase, isActive ? filterTabActive : filterTabInactive)}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 lg:col-span-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-slate-900">Traders</span>
+                <span className="text-xs font-medium text-slate-500">{draftTradersLabel}</span>
+              </div>
+              {draftFilters.traderIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDraftFilters((prev) => ({ ...prev, traderIds: [] }))
+                  }
+                  className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="relative mt-2">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                value={traderSearch}
+                onChange={(event) => {
+                  setTraderSearch(event.target.value);
+                  setShowAllTraders(false);
+                }}
+                placeholder="Search followed traders"
+                className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              />
+            </div>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {visibleTraderOptions.map((trader) => {
+                const isSelected = draftTraderSet.has(trader.wallet);
+                const displayName = trader.name || formatWallet(trader.wallet);
+                return (
+                  <button
+                    key={trader.wallet}
+                    type="button"
+                    onClick={() => toggleDraftTrader(trader.wallet)}
+                    aria-pressed={isSelected}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-left transition",
+                      isSelected
+                        ? "border-slate-900/15 bg-slate-100 text-slate-900"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                    )}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">
+                        {displayName.charAt(0).toUpperCase()}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-slate-900">
+                          {displayName}
+                        </span>
+                        <span className="block truncate text-[11px] text-slate-500">
+                          {formatWallet(trader.wallet)}
+                        </span>
+                      </span>
+                    </span>
+                    {isSelected && <Check className="h-4 w-4 text-slate-900" />}
+                  </button>
+                );
+              })}
+            </div>
+            {filteredTraderOptions.length === 0 && (
+              <p className="mt-2 text-sm text-slate-500">No traders match your search.</p>
+            )}
+            {filteredTraderOptions.length > 8 && (
+              <button
+                type="button"
+                onClick={() => setShowAllTraders((prev) => !prev)}
+                className="mt-2 text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+              >
+                {showAllTraders
+                  ? 'Show less'
+                  : `Show more (${filteredTraderOptions.length - 8})`}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-200 px-4 py-2.5">
+        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2">
+          <span>{`Showing ${filteredAllTrades.length} trades`}</span>
+          {draftFiltersCount > 0 && <span>{draftFiltersCount} active</span>}
+        </div>
+        <div className="flex flex-col items-center gap-2">
+          {draftFiltersCount > 0 && (
+            <button
+              type="button"
+              onClick={clearDraftFilters}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 pb-24 w-full max-w-full overflow-x-hidden">
-        <Header />
-        <div className="flex items-center justify-center pt-20">
+      <>
+        <Navigation 
+        user={user ? { id: user.id, email: user.email || '' } : null} 
+        isPremium={isPremium}
+        walletAddress={walletAddress}
+        profileImageUrl={profileImageUrl}
+      />
+        <SignupBanner isLoggedIn={!!user} />
+        <div className="min-h-screen bg-slate-50 pb-24 w-full max-w-full overflow-x-hidden flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
             <p className="text-slate-600 text-lg">Loading...</p>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-24 w-full max-w-full overflow-x-hidden">
-      <Header />
+    <>
+      <Navigation 
+        user={user ? { id: user.id, email: user.email || '' } : null} 
+        isPremium={isPremium}
+        walletAddress={walletAddress}
+        profileImageUrl={profileImageUrl}
+      />
+      <SignupBanner isLoggedIn={!!user} />
 
-      {/* Main Content */}
-      <div className="w-full max-w-4xl mx-auto px-4 md:px-8 py-4 md:py-6">
-        {/* Page Title - Condensed */}
-        <div className="mb-4">
-          {/* Title and Refresh button row for mobile */}
-          <div className="flex items-center justify-between md:block">
-            <h1 className="text-2xl font-semibold text-neutral-900">
-              <span className="md:hidden">Feed</span>
-              <span className="hidden md:inline">Activity Feed</span>
-            </h1>
-            {/* Mobile Refresh button - matches mobile Refresh Status style */}
-            <button
-              onClick={handleManualRefresh}
-              disabled={isRefreshing || loadingFeed}
-              className="md:hidden text-sm text-[#FDB022] hover:text-[#E69E1A] font-medium flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
-              aria-label="Refresh feed"
-            >
-              <svg 
-                className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {isRefreshing ? 'Refreshing...' : 'Refresh'}
-            </button>
-          </div>
-          {/* Desktop: Subheading with Refresh button on the same line */}
-          <div className="hidden md:flex items-center justify-between mt-1">
-            <p className="text-neutral-600">
-              Recent trades from traders you follow
-            </p>
-            {/* Desktop Refresh button - matches Refresh Status button from profile page */}
-            <button
-              onClick={handleManualRefresh}
-              disabled={isRefreshing || loadingFeed}
-              className="flex items-center gap-1.5 text-sm text-[#FDB022] hover:text-[#E69E1A] font-medium disabled:opacity-50 whitespace-nowrap"
-            >
-              {isRefreshing ? (
-                <>
-                  <svg className={`w-4 h-4 animate-spin`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <span>Refreshing...</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <span>Refresh Feed</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Stats Banner - Desktop Only - Reordered to match Figma */}
-        <div className="hidden lg:grid grid-cols-3 gap-4 mb-4">
-          {/* Card 1: Today's Volume - with green trending icon */}
-          <div className="bg-white rounded-xl p-4 border border-neutral-200">
-            <div className="flex items-center gap-2 mb-1">
-              <svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-              </svg>
-              <span className="text-sm text-neutral-600">Today's Volume</span>
-            </div>
-            <p className="text-2xl font-semibold text-neutral-900">
-              ${todayVolume >= 1000 
-                ? `${(todayVolume / 1000).toFixed(1)}K` 
-                : todayVolume.toFixed(0)
-              }
-            </p>
-          </div>
-          
-          {/* Card 2: Following */}
-          <div className="bg-white rounded-xl p-4 border border-neutral-200">
-            <span className="text-sm text-neutral-600 block mb-1">Following</span>
-            <p className="text-2xl font-semibold text-neutral-900">{followingCount} traders</p>
-          </div>
-          
-          {/* Card 3: Trades Today */}
-          <div className="bg-white rounded-xl p-4 border border-neutral-200">
-            <span className="text-sm text-neutral-600 block mb-1">Trades Today</span>
-            <p className="text-2xl font-semibold text-neutral-900">
-              {todaysTradeCount} {todaysTradeCount === 1 ? 'trade' : 'trades'}
-            </p>
-          </div>
-        </div>
-
-        {/* Filter Buttons - Centered with equal width */}
-        <div className="flex items-center justify-center gap-2 mb-4">
-          <button
-            onClick={() => setFilter('all')}
-            className={`flex-1 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-              filter === 'all'
-                ? 'bg-neutral-900 text-white'
-                : 'bg-white text-neutral-700 border border-neutral-200 hover:border-neutral-300'
-            }`}
-          >
-            All Trades
-          </button>
-          <button
-            onClick={() => setFilter('buys')}
-            className={`flex-1 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-              filter === 'buys'
-                ? 'bg-neutral-900 text-white'
-                : 'bg-white text-neutral-700 border border-neutral-200 hover:border-neutral-300'
-            }`}
-          >
-            Buys Only
-          </button>
-          <button
-            onClick={() => setFilter('sells')}
-            className={`flex-1 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-              filter === 'sells'
-                ? 'bg-neutral-900 text-white'
-                : 'bg-white text-neutral-700 border border-neutral-200 hover:border-neutral-300'
-            }`}
-          >
-            Sells Only
-          </button>
-        </div>
-
-        {/* Category Filter Pills */}
-        <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
-          {categories.map((category) => {
-            const categoryValue = categoryMap[category];
-            const isActive = categoryFilter === categoryValue;
-            
-            return (
-              <button
-                key={category}
-                onClick={() => setCategoryFilter(categoryValue)}
-                disabled={loadingFeed}
-                className={`
-                  px-4 py-2 rounded-full font-medium whitespace-nowrap text-sm
-                  transition-all duration-200 flex-shrink-0
-                  ${
-                    isActive
-                      ? 'bg-[#FDB022] text-slate-900 shadow-sm border-b-2 border-[#D97706]'
-                      : 'bg-white text-slate-900 shadow-[0_2px_8px_rgb(0,0,0,0.04)] ring-1 ring-slate-900/5 hover:ring-slate-900/10'
-                  }
-                  ${loadingFeed ? 'opacity-50 cursor-not-allowed' : ''}
-                `}
-              >
-                {category}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Feed Content */}
-        {loadingFeed ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-white rounded-xl border border-neutral-200 shadow-sm p-4 animate-pulse">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-neutral-200 rounded-full"></div>
-                  <div className="flex-1">
-                    <div className="h-4 bg-neutral-200 rounded w-1/3 mb-2"></div>
-                    <div className="h-4 bg-neutral-200 rounded w-3/4 mb-3"></div>
-                    <div className="h-3 bg-neutral-200 rounded w-1/4"></div>
-                  </div>
+      <div className="min-h-screen bg-slate-50 pt-3 md:pt-0 pb-36 md:pb-8 overflow-x-hidden">
+        {/* Page Header */}
+        <div className="sticky top-0 z-10 bg-slate-50">
+          <div className="max-w-[1200px] mx-auto px-4 md:px-6 pb-3 md:py-4">
+            <div className="w-full md:w-[63%] md:mx-auto">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="md:hidden flex items-center justify-between gap-3">
+                <Image
+                  src="/logos/polycopy-logo-primary.svg"
+                  alt="Polycopy"
+                  width={120}
+                  height={32}
+                  className="h-9 w-auto"
+                />
+                {hasPremiumAccess && walletAddress && (
+                  <a
+                    href="https://polymarket.com/portfolio"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm"
+                  >
+                    <span className="text-[11px] font-semibold leading-tight text-slate-600">
+                      <span className="block">Polymarket</span>
+                      <span className="block">Account</span>
+                    </span>
+                    <div className="flex items-center gap-4">
+                      <div className="text-center">
+                        <div className="text-[11px] font-semibold text-slate-900">Portfolio</div>
+                        <div className="text-xs font-medium text-emerald-600">
+                          {loadingBalance
+                            ? '...'
+                            : portfolioValue !== null
+                            ? `$${portfolioValue.toFixed(2)}`
+                            : '$0.00'}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-900">
+                          <span>Cash</span>
+                          {showLowBalanceCallout && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span
+                                    className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-[10px] font-bold text-rose-600"
+                                    aria-label="Low cash balance"
+                                  >
+                                    !
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-[220px]">
+                                  <p>{LOW_BALANCE_TOOLTIP}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </div>
+                        <div className="text-xs font-medium text-slate-600">
+                          {loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toFixed(2)}` : '$0.00'}
+                        </div>
+                      </div>
+                    </div>
+                  </a>
+                )}
+              </div>
+              <div className="flex flex-col gap-2 md:flex-1">
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={filtersOpen ? closeFilters : openFilters}
+                    variant="outline"
+                    size="sm"
+                    className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white flex items-center gap-2"
+                    aria-label="Open filters"
+                  >
+                    <Filter className="h-4 w-4" />
+                    <span className="text-sm font-semibold">
+                      Filter{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ''}
+                    </span>
+                  </Button>
+                  <Button
+                    onClick={handleManualRefresh}
+                    disabled={isRefreshing || loadingFeed}
+                    variant="outline"
+                    size="icon"
+                    className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent flex-shrink-0 transition-all"
+                    aria-label="Refresh feed"
+                  >
+                    <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+                  </Button>
                 </div>
+                {lastFeedFetchAt && (
+                  <div className="text-xs text-slate-500">
+                    {`Last updated ${getRelativeTime(lastFeedFetchAt)}`}
+                  </div>
+                )}
               </div>
-            ))}
+            </div>
+            </div>
           </div>
-        ) : error ? (
-          <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-8 text-center">
-            <div className="text-6xl mb-4">⚠️</div>
-            <h3 className="text-xl font-bold text-neutral-900 mb-2">Failed to load feed</h3>
-            <p className="text-neutral-600 mb-6">{error}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-[#FDB022] hover:bg-[#E69E1A] text-neutral-900 font-semibold py-2.5 px-6 rounded-lg transition-colors"
-            >
-              Try Again
-            </button>
-          </div>
-        ) : followingCount === 0 ? (
-          <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-8 text-center">
-            <div className="text-6xl mb-4">📋</div>
-            <h3 className="text-xl font-bold text-neutral-900 mb-2">Your feed is empty</h3>
-            <p className="text-neutral-600 mb-6">
-              Follow traders on the Discover page to see their activity here
-            </p>
-            <Link 
-              href="/discover"
-              className="inline-block bg-[#FDB022] hover:bg-[#E69E1A] text-neutral-900 font-semibold py-2.5 px-6 rounded-lg transition-colors"
-            >
-              Discover Traders
-            </Link>
-          </div>
-        ) : filteredTrades.length === 0 ? (
-          <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-8 text-center">
-            <div className="text-6xl mb-4">🔍</div>
-            {categoryFilter !== 'all' ? (
-              <>
-                <h3 className="text-xl font-bold text-neutral-900 mb-2">No trades in this category</h3>
-                <p className="text-neutral-600 mb-6">
-                  None of the traders you follow have traded in this category. Find traders that do on the Discover page.
-                </p>
-                <Link
-                  href="/discover"
-                  className="inline-block bg-[#FDB022] hover:bg-[#E69E1A] text-neutral-900 font-semibold py-2.5 px-6 rounded-lg transition-colors"
-                >
-                  Discover Page
-                </Link>
-              </>
-            ) : (
-              <>
-                <h3 className="text-xl font-bold text-neutral-900 mb-2">No {filter} trades</h3>
-                <p className="text-neutral-600">
-                  Try selecting a different filter to see more trades.
-                </p>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredTrades.map((trade) => (
-              <TradeCard
-                key={trade.id}
-                traderName={trade.trader.displayName}
-                traderAddress={trade.trader.wallet}
-                market={trade.market.title}
-                marketId={trade.market.id}
-                side={trade.trade.outcome}
-                type={trade.trade.side === 'BUY' ? 'buy' : 'sell'}
-                price={trade.trade.price}
-                size={trade.trade.size}
-                timestamp={trade.trade.timestamp}
-                isCopied={isTradecopied(trade)}
-                onCopyTrade={() => handleCopyTrade(trade)}
-                onMarkAsCopied={() => handleMarkAsCopied(trade)}
-              />
-            ))}
-            
-            {/* Load More Button */}
-            {hasMoreTrades && (
-              <div className="flex justify-center pt-4">
-                <button
-                  onClick={handleLoadMore}
-                  className="bg-white hover:bg-neutral-50 text-neutral-900 font-semibold py-3 px-8 rounded-lg border-2 border-neutral-200 transition-colors"
-                >
-                  Load More Trades
-                </button>
+        </div>
+
+        <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-4 md:py-8">
+          <div className="space-y-6">
+            <div className="min-w-0 space-y-4">
+              <div className="md:w-[63%] md:mx-auto">
+                {filtersOpen && (
+                  <div ref={filtersPanelRef} aria-label="Filters">
+                    {filterPanel}
+                  </div>
+                )}
+                {activeFilterChips.length > 0 && (
+                  <div className="border-b border-slate-200 pb-3">
+                    <div className="flex flex-wrap gap-2">
+                      {activeFilterChips.map((chip) => (
+                        <button
+                          key={chip.key}
+                          type="button"
+                          onClick={() => handleRemoveFilter(chip.key)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300"
+                        >
+                          <span className="truncate">{chip.label}</span>
+                          <X className="h-3 w-3" />
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* Feed Content */}
+              {loadingFeed ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 animate-pulse">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-slate-200 rounded-full"></div>
+                        <div className="flex-1">
+                          <div className="h-4 bg-slate-200 rounded w-1/3 mb-2"></div>
+                          <div className="h-4 bg-slate-200 rounded w-3/4 mb-3"></div>
+                          <div className="h-3 bg-slate-200 rounded w-1/4"></div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : error ? (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+                  <div className="text-6xl mb-4">⚠️</div>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">Failed to load feed</h3>
+                  <p className="text-slate-600 mb-6">{error}</p>
+                  <Button
+                    onClick={() => window.location.reload()}
+                    className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold"
+                  >
+                    Try Again
+                  </Button>
+                </div>
+              ) : followingCount === 0 ? (
+                <EmptyState
+                  icon={Activity}
+                  title="Your feed is empty"
+                  description="Follow traders on the Discover page to see their activity here"
+                />
+              ) : displayedTrades.length === 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+                  <div className="text-6xl mb-4">🔍</div>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">No trades match your filters</h3>
+                  <p className="text-slate-600">
+                    Try selecting a different filter to see more trades.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {displayedTrades.map((trade) => {
+                    const marketKey = getMarketKeyForTrade(trade);
+                    const liveMarket = marketKey ? liveMarketData.get(marketKey) : undefined
+                    const currentPrice = getCurrentOutcomePrice(trade);
+                    
+                    const tradeKey = String(trade.id);
+                    const tradeAnchorId = `trade-card-${trade.id}`;
+
+                    return (
+                      <div className="w-full md:w-[63%] md:mx-auto">
+                        <TradeCard
+                          key={trade.id}
+                          tradeAnchorId={tradeAnchorId}
+                          onExecutionNotification={handleTradeExecutionNotification}
+                          trader={{
+                            name: trade.trader.displayName,
+                            address: trade.trader.wallet,
+                            id: trade.trader.wallet,
+                          }}
+                          market={trade.market.title}
+                          marketAvatar={trade.market.avatarUrl}
+                          position={trade.trade.outcome}
+                          action={trade.trade.side === 'BUY' ? 'Buy' : 'Sell'}
+                          price={trade.trade.price}
+                          size={trade.trade.size}
+                          total={trade.trade.price * trade.trade.size}
+                          timestamp={getRelativeTime(trade.trade.timestamp)}
+                          onCopyTrade={() => handleCopyTrade(trade)}
+                          onMarkAsCopied={(entryPrice, amountInvested) =>
+                            handleMarkAsCopied(trade, entryPrice, amountInvested)
+                          }
+                          onAdvancedCopy={() => handleRealCopy(trade)}
+                          isPremium={tierHasPremiumAccess(userTier)}
+                          isAdmin={userTier === 'admin'}
+                          isExpanded={expandedTradeIds.has(tradeKey)}
+                          onToggleExpand={() => toggleTradeExpanded(tradeKey)}
+                          isCopied={isTraceCopied(trade)}
+                          conditionId={trade.market.conditionId}
+                          tokenId={trade.trade.tokenId}
+                          marketSlug={trade.market.slug}
+                          currentMarketPrice={currentPrice}
+                          currentMarketUpdatedAt={liveMarket?.updatedAt}
+                          marketIsOpen={liveMarket?.resolved === undefined ? undefined : !liveMarket.resolved}
+                          liveScore={liveMarket?.score}
+                          eventStartTime={liveMarket?.gameStartTime}
+                          eventEndTime={liveMarket?.endDateIso}
+                          eventStatus={liveMarket?.eventStatus}
+                          liveStatus={liveMarket?.liveStatus}
+                          category={trade.market.category}
+                          polymarketUrl={
+                            trade.market.eventSlug 
+                              ? `https://polymarket.com/event/${trade.market.eventSlug}`
+                              : trade.market.slug 
+                              ? `https://polymarket.com/market/${trade.market.slug}`
+                              : undefined
+                          }
+                          defaultBuySlippage={defaultBuySlippage}
+                          defaultSellSlippage={defaultSellSlippage}
+                          walletAddress={walletAddress}
+                          manualTradingEnabled={manualModeEnabled}
+                          onSwitchToManualTrading={enableManualMode}
+                          onOpenConnectWallet={() => setShowConnectWalletModal(true)}
+                        />
+                      </div>
+                    )
+                  })}
+                  
+                  {/* Load More Button */}
+                  {hasMoreTrades && (
+                    <div className="flex justify-center pt-4">
+                      <Button
+                        onClick={handleLoadMore}
+                        variant="outline"
+                        className="bg-white hover:bg-slate-50 text-slate-900 font-semibold py-3 px-8 border-2 border-slate-200"
+                      >
+                        Load More Trades
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        )}
+        </div>
+
       </div>
 
-      {/* Confirmation Modal */}
-      <ConfirmModal
-        isOpen={modalOpen}
-        trade={selectedTrade}
-        onClose={() => {
-          setModalOpen(false);
-          setSelectedTrade(null);
-        }}
-        onConfirm={handleConfirmCopy}
-        isSubmitting={isSubmitting}
+      <TradeExecutionNotifications
+        notifications={tradeNotifications}
+        onNavigate={handleNavigateToTrade}
       />
-
-      {/* Success Toast */}
-      <SuccessToast message={toastMessage} isVisible={showToast} />
-    </div>
+      <ConnectWalletModal
+        open={showConnectWalletModal}
+        onOpenChange={setShowConnectWalletModal}
+        onConnect={handleWalletConnect}
+      />
+    </>
   );
 }

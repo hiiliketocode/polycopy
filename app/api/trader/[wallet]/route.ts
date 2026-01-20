@@ -30,27 +30,32 @@ export async function GET(
     )
   }
 
+  // Get time period from query params (default to 'all')
+  const { searchParams } = new URL(request.url)
+  const timePeriod = searchParams.get('timePeriod') || 'all'
+
   try {
     // Initialize with defaults
     let displayName = abbreviateWallet(wallet)
     let pnl = 0
     let volume = 0
     let roi = 0
+    let profileImage: string | null = null
     let foundInLeaderboard = false
     
     // STEP 1: Get data from V1 leaderboard endpoint (CORRECT API)
     // This is the same endpoint Polymarket's website uses
     try {
-      console.log('🔍 Looking up trader using V1 leaderboard API:', wallet);
+      console.log('🔍 Looking up trader using V1 leaderboard API:', wallet, 'timePeriod:', timePeriod);
       
-      // IMPORTANT: Use V1 endpoint with user parameter for accurate all-time stats
-      const v1LeaderboardUrl = `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${wallet}`;
+      // Use V1 endpoint with user parameter and specified time period
+      const v1LeaderboardUrl = `https://data-api.polymarket.com/v1/leaderboard?timePeriod=${timePeriod}&orderBy=VOL&limit=1&offset=0&category=overall&user=${wallet}`;
       
       const leaderboardResponse = await fetch(v1LeaderboardUrl, { cache: 'no-store' });
       
       if (leaderboardResponse.ok) {
         const leaderboardData = await leaderboardResponse.json();
-        console.log('✅ V1 Leaderboard response:', JSON.stringify(leaderboardData, null, 2));
+        // SECURITY: Removed full response logging (contains trading data)
         
         // API returns array - get first result
         const trader = Array.isArray(leaderboardData) && leaderboardData.length > 0 ? leaderboardData[0] : null;
@@ -58,14 +63,8 @@ export async function GET(
         if (trader) {
           foundInLeaderboard = true;
           
-          // Log raw trader object to verify field names
-          console.log('🔍 Raw V1 trader data:', JSON.stringify({
-            userName: trader.userName,
-            proxyWallet: trader.proxyWallet,
-            pnl: trader.pnl,
-            vol: trader.vol,
-            rank: trader.rank
-          }));
+          // SECURITY: Log only non-sensitive summary
+          console.log('🔍 V1 trader data loaded:', trader.userName || 'unknown')
           
           // Map V1 API response fields (CORRECT mapping):
           // - userName (not username!)
@@ -77,6 +76,7 @@ export async function GET(
           pnl = trader.pnl ?? 0;
           volume = trader.vol ?? 0;
           roi = volume > 0 ? ((pnl / volume) * 100) : 0;
+          profileImage = trader.profileImage ?? null;
           
           console.log('✅ Found trader stats from V1 API:', {
             displayName,
@@ -170,6 +170,7 @@ export async function GET(
       roi: hasStats ? parseFloat(roi.toFixed(1)) : null,
       volume: hasStats ? Math.round(volume) : null,
       followerCount,
+      profileImage,
       hasStats, // Indicates if stats are available (user on leaderboard)
       source: foundInLeaderboard ? 'v1_leaderboard' : 'none',
     })

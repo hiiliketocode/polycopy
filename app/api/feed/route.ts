@@ -113,9 +113,14 @@ export async function GET(request: Request) {
     console.log('📊 Follows count:', follows?.length || 0);
 
     if (followsError) {
-      console.error('❌ Error fetching follows:', followsError);
+      console.error('❌ Error fetching follows:', {
+        message: followsError.message,
+        details: followsError.details,
+        hint: followsError.hint,
+      });
+      const details = followsError.message || String(followsError)
       return NextResponse.json(
-        { error: 'Failed to fetch follows', details: followsError },
+        { error: 'Failed to fetch follows', details },
         { status: 500 }
       );
     }
@@ -231,4 +236,3 @@ export async function GET(request: Request) {
     );
   }
 }
-

@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import { POLYGON_RPC_URL, POLYGON_CHAIN_ID } from '@/lib/turnkey/config'
+import { badRequest, externalApiError } from '@/lib/http/error-response'
 
 /**
  * POST /api/turnkey/polymarket/validate-account
- * 
+ *
  * Validates a Polymarket profile wallet address by checking if it's a contract on Polygon
- * 
+ *
  * Input: { accountAddress: string }
  * Output: { isValidAddress: boolean, isContract: boolean, chainId: number }
  */
@@ -69,12 +70,7 @@ export async function POST(request: Request) {
       chainId: POLYGON_CHAIN_ID,
     })
   } catch (error: any) {
-    console.error('[POLYMARKET-LAB] Validation error:', error.message)
-    return NextResponse.json(
-      { error: error.message || 'Failed to validate account' },
-      { status: 500 }
-    )
+    return externalApiError('Polygon', error, 'account validation')
   }
 }
-
 

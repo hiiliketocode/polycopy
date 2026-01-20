@@ -2,8 +2,15 @@
   "crons": [
     {
       "path": "/api/cron/check-notifications",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/admin/auto-copy/run",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/backfill-wallet-pnl",
+      "schedule": "0 2 * * *"
     }
   ]
 }
-

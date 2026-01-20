@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { verifyMessage } from 'ethers'
+import { useCallback, useEffect, useState } from 'react'
+import { verifyMessage } from 'ethers/lib/utils'
+import { Navigation } from '@/components/polycopy/navigation'
 
 const TURNKEY_UI_ENABLED = process.env.NEXT_PUBLIC_TURNKEY_ENABLED === 'true'
 
@@ -33,6 +34,14 @@ type BalanceResponse = {
   error?: string
 }
 
+type LinkStatus = {
+  polymarket_account_address: string | null
+  has_imported_key: boolean
+  eoa_address: string | null
+  has_l2_credentials: boolean
+  last_error?: string | null
+}
+
 export default function ConnectWalletTurnkeyPage() {
   const [createLoading, setCreateLoading] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -54,31 +63,102 @@ export default function ConnectWalletTurnkeyPage() {
   const [validateLoading, setValidateLoading] = useState(false)
   const [validateError, setValidateError] = useState<string | null>(null)
   const [validateData, setValidateData] = useState<ValidateResponse | null>(null)
-
-  // USDC balance state
   const [balanceLoading, setBalanceLoading] = useState(false)
   const [balanceError, setBalanceError] = useState<string | null>(null)
   const [balanceData, setBalanceData] = useState<BalanceResponse | null>(null)
 
-  // L2 credentials state
+// L2 credentials state
   const [l2Loading, setL2Loading] = useState(false)
   const [l2Error, setL2Error] = useState<string | null>(null)
-  const [l2Data, setL2Data] = useState<{
-    ok: boolean
-    apiKey: string
-    validated: boolean
-    createdAt: string
-    isExisting?: boolean
-  } | null>(null)
-
   // Import wallet state
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
-  const [importData, setImportData] = useState<{
-    walletId: string
-    address: string
-    alreadyImported?: boolean
-  } | null>(null)
+  const [magicPrivateKey, setMagicPrivateKey] = useState('')
+  const [importBundle, setImportBundle] = useState<string | null>(null)
+  const [importOrgId, setImportOrgId] = useState<string | null>(null)
+  const [importUserId, setImportUserId] = useState<string | null>(null)
+
+  const [linkStatus, setLinkStatus] = useState<LinkStatus | null>(null)
+  const [linkStatusError, setLinkStatusError] = useState<string | null>(null)
+  const [accountChecked, setAccountChecked] = useState(false)
+  const [activeStage, setActiveStage] = useState<'profile' | 'key'>('profile')
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [openPositionsCount, setOpenPositionsCount] = useState<number | null>(null)
+  const [positionsLoading, setPositionsLoading] = useState(false)
+  const [positionsError, setPositionsError] = useState<string | null>(null)
+  const [autoCheckedAddress, setAutoCheckedAddress] = useState(false)
+  const [linkingMessage, setLinkingMessage] = useState<string | null>(null)
+  const [linkingError, setLinkingError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchImportBundle = async () => {
+      try {
+        const res = await fetch('/api/turnkey/import-private-key', {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-store',
+        })
+        const data = await res.json()
+
+        if (!res.ok) {
+          throw new Error(data?.error || 'Failed to load import configuration')
+        }
+
+        if (!cancelled) {
+          setImportBundle(data.importBundle || null)
+          setImportOrgId(data.organizationId || null)
+          setImportUserId(data.userId || null)
+          console.log(
+            `[Import] Loaded import bundle len=${(data.importBundle || '').length}`
+          )
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setImportError(err?.message || 'Failed to load import configuration')
+        }
+      }
+    }
+
+    if (TURNKEY_UI_ENABLED) {
+      fetchImportBundle()
+    }
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const loadLinkStatus = useCallback(async () => {
+    setLinkStatusError(null)
+
+    try {
+      const res = await fetch('/api/polymarket/link-status', {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to fetch link status')
+      }
+
+      setLinkStatus(data)
+      setPolymarketAddress(data?.polymarket_account_address || '')
+    } catch (err: any) {
+      setLinkStatusError(err?.message || 'Failed to fetch link status')
+      setLinkStatus(null)
+    } finally {
+      // no-op
+    }
+  }, [])
+
+  useEffect(() => {
+    loadLinkStatus()
+  }, [loadLinkStatus])
+
 
   const createWallet = async () => {
     setCreateLoading(true)
@@ -91,6 +171,7 @@ export default function ConnectWalletTurnkeyPage() {
       const res = await fetch('/api/turnkey/wallet/create', {
         method: 'POST',
         credentials: 'include', // Include cookies for auth
+        cache: 'no-store',
       })
       const data = (await res.json()) as WalletCreateResponse
 
@@ -122,6 +203,7 @@ export default function ConnectWalletTurnkeyPage() {
         method: 'POST',
         credentials: 'include', // Include cookies for auth
         headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({ message }),
       })
 
@@ -153,22 +235,24 @@ export default function ConnectWalletTurnkeyPage() {
     }
   }
 
-  const validateAccount = async () => {
-    if (!polymarketAddress.trim()) {
+  const validateAccount = useCallback(async (addressOverride?: string) => {
+    const targetAddress = (addressOverride ?? polymarketAddress).trim()
+    if (!targetAddress) {
       setValidateError('Please enter a Polymarket wallet address')
-      return
+      return null
     }
 
     setValidateLoading(true)
     setValidateError(null)
     setValidateData(null)
-    setBalanceData(null)
 
     try {
       const res = await fetch('/api/turnkey/polymarket/validate-account', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountAddress: polymarketAddress }),
+        cache: 'no-store',
+        body: JSON.stringify({ accountAddress: targetAddress }),
       })
 
       const data = (await res.json()) as ValidateResponse
@@ -178,17 +262,21 @@ export default function ConnectWalletTurnkeyPage() {
       }
 
       setValidateData(data)
+      return data
     } catch (err: any) {
       setValidateError(err?.message || 'Failed to validate account')
+      return null
     } finally {
       setValidateLoading(false)
     }
-  }
+  }, [polymarketAddress])
 
-  const fetchBalance = async () => {
-    if (!polymarketAddress.trim()) {
-      setBalanceError('Please enter a Polymarket wallet address')
-      return
+  const fetchBalance = useCallback(async (addressOverride?: string) => {
+    const targetAddress = (addressOverride ?? polymarketAddress).trim()
+    if (!targetAddress) {
+      setBalanceError('Enter a Polymarket wallet address first')
+      setBalanceData(null)
+      return null
     }
 
     setBalanceLoading(true)
@@ -198,47 +286,80 @@ export default function ConnectWalletTurnkeyPage() {
     try {
       const res = await fetch('/api/turnkey/polymarket/usdc-balance', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountAddress: polymarketAddress }),
+        cache: 'no-store',
+        body: JSON.stringify({ accountAddress: targetAddress }),
       })
-
       const data = (await res.json()) as BalanceResponse
-
       if (!res.ok) {
-        throw new Error(data?.error || 'Failed to fetch balance')
+        throw new Error(data?.error || 'Failed to fetch account value')
       }
-
       setBalanceData(data)
+      return data
     } catch (err: any) {
-      setBalanceError(err?.message || 'Failed to fetch balance')
+      setBalanceError(err?.message || 'Failed to fetch account value')
+      return null
     } finally {
       setBalanceLoading(false)
     }
-  }
+  }, [polymarketAddress])
 
-  const generateL2Credentials = async () => {
-    if (!polymarketAddress.trim()) {
-      setL2Error('Please enter and validate a Polymarket wallet address first')
-      return
+  const fetchOpenPositions = useCallback(async (addressOverride?: string) => {
+    const targetAddress = (addressOverride ?? polymarketAddress).trim()
+    if (!targetAddress) {
+      setPositionsError('Enter a Polymarket wallet address first')
+      setOpenPositionsCount(null)
+      return null
     }
 
-    if (!validateData?.isContract) {
+    setPositionsLoading(true)
+    setPositionsError(null)
+    setOpenPositionsCount(null)
+
+    try {
+      const res = await fetch(`/api/polymarket/open-positions?wallet=${targetAddress}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to fetch open positions')
+      }
+      const count = typeof data?.open_positions === 'number' ? data.open_positions : 0
+      setOpenPositionsCount(count)
+      return count
+    } catch (err: any) {
+      setPositionsError(err?.message || 'Failed to fetch open positions')
+      setOpenPositionsCount(null)
+      return null
+    } finally {
+      setPositionsLoading(false)
+    }
+  }, [polymarketAddress])
+
+  const generateL2Credentials = async (options?: { skipValidationCheck?: boolean }) => {
+    if (!polymarketAddress.trim()) {
+      setL2Error('Please enter and validate a Polymarket wallet address first')
+      return null
+    }
+
+    if (!options?.skipValidationCheck && !validateData?.isContract && !linkStatus?.has_imported_key) {
       setL2Error('Please validate that the address is a contract wallet first')
-      return
+      return null
     }
 
     setL2Loading(true)
     setL2Error(null)
-    setL2Data(null)
 
     try {
       const res = await fetch('/api/polymarket/l2-credentials', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        cache: 'no-store',
+        body: JSON.stringify({
           polymarketAccountAddress: polymarketAddress,
-          signatureType: 0 // 0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE
         }),
       })
 
@@ -248,9 +369,11 @@ export default function ConnectWalletTurnkeyPage() {
         throw new Error(data?.error || 'Failed to generate L2 credentials')
       }
 
-      setL2Data(data)
+      await loadLinkStatus()
+      return data
     } catch (err: any) {
       setL2Error(err?.message || 'Failed to generate L2 credentials')
+      return null
     } finally {
       setL2Loading(false)
     }
@@ -261,764 +384,545 @@ export default function ConnectWalletTurnkeyPage() {
     window.open('https://reveal.magic.link/polymarket', '_blank', 'noreferrer')
   }
 
-  const startImportFlow = async () => {
+  const openPolymarketSite = () => {
+    window.open('https://polymarket.com/', '_blank', 'noreferrer')
+  }
+
+  const resetProfileReview = () => {
+    setEditingProfile(true)
+    setAccountChecked(false)
+    setValidateData(null)
+    setBalanceData(null)
+    setOpenPositionsCount(null)
+    setValidateError(null)
+    setBalanceError(null)
+    setPositionsError(null)
+    setActiveStage('profile')
+  }
+
+  const startImportFlow = async (): Promise<{
+    walletId: string
+    address: string
+    alreadyImported?: boolean
+  } | null> => {
+    const trimmedKey = magicPrivateKey.trim()
+    if (!trimmedKey) {
+      setImportError('Paste your Magic private key (0x...) before importing')
+      return null
+    }
+    if (!trimmedKey.startsWith('0x') || trimmedKey.length !== 66) {
+      setImportError('Private key must start with 0x and be 66 chars long')
+      return null
+    }
+    if (!polymarketAddress.trim()) {
+      setImportError('Enter your Polymarket wallet address before importing')
+      return null
+    }
+    if (!importBundle || !importOrgId || !importUserId) {
+      setImportError('Import bundle not loaded. Please refresh and try again.')
+      return null
+    }
+
     setImportLoading(true)
     setImportError(null)
-    setImportData(null)
-
-    let iframeContainer: HTMLDivElement | null = null
-    let tempContainer: HTMLDivElement | null = null
-    let iframeStamper: any = null
 
     try {
-      // Step 1: Initialize import - get import bundle from backend
-      console.log('[Import] Step 1: Initializing import...')
-      
-      const initRes = await fetch('/api/turnkey/import/init', {
+      const { encryptPrivateKeyToBundle } = await import('@turnkey/crypto')
+
+      const encryptedBundleString = await encryptPrivateKeyToBundle({
+        privateKey: trimmedKey,
+        keyFormat: 'HEXADECIMAL',
+        importBundle,
+        userId: importUserId,
+        organizationId: importOrgId,
+      })
+
+      console.log(
+        `[Import] Encrypted bundle created (len=${encryptedBundleString.length})`
+      )
+
+      let encryptedBundle: Record<string, any>
+      try {
+        encryptedBundle = JSON.parse(encryptedBundleString)
+      } catch {
+        throw new Error('Failed to parse encrypted bundle JSON from Turnkey SDK')
+      }
+
+      const res = await fetch('/api/turnkey/import-private-key', {
         method: 'POST',
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          polymarket_account_address: polymarketAddress.trim(),
+          encryptedBundle,
+        }),
       })
 
-      const initData = await initRes.json()
-
-      if (!initRes.ok) {
-        throw new Error(initData?.error || 'Failed to initialize import')
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to import wallet')
       }
 
-      const { organizationId, privateKeyName, userId, importBundle } = initData
-
-      console.log('[Import] Organization ID:', organizationId)
-      console.log('[Import] Private key name:', privateKeyName)
-      console.log('[Import] Import bundle obtained')
-
-      // Step 2: Create Turnkey iframe with import UI
-      // https://docs.turnkey.com/embedded-wallets/code-examples/import
-      console.log('[Import] Step 2: Creating Turnkey import iframe...')
-      
-      const { IframeStamper } = await import('@turnkey/iframe-stamper')
-
-      // Create container for iframe
-      tempContainer = document.createElement('div')
-      tempContainer.id = 'turnkey-iframe-container'
-      document.body.appendChild(tempContainer)
-
-      // Create iframe stamper pointing to official Turnkey import UI
-      iframeStamper = new IframeStamper({
-        iframeUrl: 'https://import.turnkey.com',
-        iframeContainer: tempContainer,
-        iframeElementId: 'turnkey-import-iframe',
-      })
-
-      // Initialize the iframe (inserts it in the DOM)
-      await iframeStamper.init()
-      
-      console.log('[Import] Iframe initialized - Turnkey import UI loaded')
-
-      // Inject the import bundle into the iframe
-      // This configures the iframe with the encryption keys
-      console.log('[Import] Injecting import bundle...')
-      const injected = await iframeStamper.injectImportBundle(importBundle, organizationId)
-
-      if (!injected) {
-        throw new Error('Failed to inject import bundle into iframe')
+      await loadLinkStatus()
+      return {
+        walletId: data.walletId,
+        address: data.address,
+        alreadyImported: data.alreadyImported,
       }
-
-      console.log('[Import] Import bundle injected successfully')
-      console.log('[Import] User can now enter their private key in the iframe')
-
-      // Step 3: Get the iframe element to display in modal
-      const iframeElement = document.getElementById('turnkey-import-iframe') as HTMLIFrameElement
-      if (!iframeElement) {
-        throw new Error('Turnkey iframe not found after initialization')
-      }
-
-      // Create modal UI
-      iframeContainer = document.createElement('div')
-      iframeContainer.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.9);
-        z-index: 10000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        backdrop-filter: blur(4px);
-      `
-
-      const modal = document.createElement('div')
-      modal.style.cssText = `
-        background: white;
-        border-radius: 16px;
-        padding: 32px;
-        max-width: 700px;
-        width: 90%;
-        max-height: 90vh;
-        overflow-y: auto;
-        box-shadow: 0 25px 100px rgba(0,0,0,0.5);
-      `
-
-      const title = document.createElement('h2')
-      title.textContent = '🔑 Import Private Key Securely'
-      title.style.cssText = 'margin: 0 0 12px 0; font-size: 24px; font-weight: 700; color: #1a1a1a;'
-
-      const subtitle = document.createElement('p')
-      subtitle.innerHTML = `
-        <strong style="color: #059669;">✅ Secure Turnkey Import</strong><br>
-        Paste your Magic Link private key below.<br>
-        <span style="color: #666; font-size: 13px;">Get it from: <a href="https://reveal.magic.link/polymarket" target="_blank">reveal.magic.link/polymarket</a></span>
-      `
-      subtitle.style.cssText = 'margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #333;'
-
-      const securityNote = document.createElement('div')
-      securityNote.innerHTML = `
-        <strong>🔒 Security:</strong><br>
-        • Your key is encrypted in this Turnkey iframe<br>
-        • PolyCopy backend NEVER sees your plaintext key<br>
-        • Key is transmitted directly to Turnkey's secure enclave
-      `
-      securityNote.style.cssText = 'margin: 0 0 20px 0; padding: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; font-size: 13px; color: #166534; line-height: 1.6;'
-
-      // Style the iframe
-      iframeElement.style.cssText = 'width: 100%; height: 400px; border: 2px solid #e5e7eb; border-radius: 12px; background: #f9fafb; margin-bottom: 20px;'
-
-      const buttonContainer = document.createElement('div')
-      buttonContainer.style.cssText = 'display: flex; gap: 12px; justify-content: flex-end;'
-
-      const cancelBtn = document.createElement('button')
-      cancelBtn.textContent = 'Cancel'
-      cancelBtn.style.cssText = `
-        padding: 12px 24px;
-        background: #ef4444;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: 600;
-        font-size: 14px;
-      `
-      cancelBtn.onclick = () => {
-        if (iframeContainer) document.body.removeChild(iframeContainer)
-        iframeStamper.clear()
-        setImportLoading(false)
-        setImportError('Import cancelled by user')
-      }
-
-      const completeBtn = document.createElement('button')
-      completeBtn.textContent = 'I\'ve Entered My Key - Complete Import'
-      completeBtn.style.cssText = `
-        padding: 12px 24px;
-        background: #10b981;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: 600;
-        font-size: 14px;
-      `
-      completeBtn.onclick = async () => {
-        completeBtn.textContent = 'Extracting & Importing...'
-        completeBtn.disabled = true
-        completeBtn.style.opacity = '0.6'
-
-        try {
-          // Step 4: Extract the encrypted bundle from the iframe
-          // https://docs.turnkey.com/embedded-wallets/code-examples/import
-          console.log('[Import] Extracting encrypted bundle from iframe...')
-          
-          // Use 'HEXADECIMAL' format for Ethereum keys (default for MetaMask, etc.)
-          const encryptedBundle = await iframeStamper.extractKeyEncryptedBundle('HEXADECIMAL')
-          
-          if (!encryptedBundle) {
-            throw new Error('Failed to extract encrypted bundle. Please make sure you entered your private key in the form above.')
-          }
-
-          console.log('[Import] Encrypted bundle extracted successfully')
-          console.log('[Import] Private key was encrypted client-side by Turnkey iframe')
-
-          // Step 5: Import the encrypted private key via Turnkey API
-          console.log('[Import] Importing encrypted private key to Turnkey...')
-          
-          // We need to call the Turnkey API directly here with the encrypted bundle
-          // This happens client-side but the encrypted bundle is sent to Turnkey, not PolyCopy
-          const { Turnkey } = await import('@turnkey/sdk-browser')
-          
-          const turnkey = new Turnkey({
-            apiBaseUrl: 'https://api.turnkey.com',
-            defaultOrganizationId: organizationId,
-            stamper: iframeStamper,
-          })
-
-          const importResult = await turnkey.importPrivateKey({
-            type: 'ACTIVITY_TYPE_IMPORT_PRIVATE_KEY',
-            timestampMs: String(Date.now()),
-            organizationId,
-            parameters: {
-              privateKeyName,
-              encryptedBundle,
-              curve: 'CURVE_SECP256K1',
-              addressFormats: ['ADDRESS_FORMAT_ETHEREUM'],
-            },
-          })
-
-          console.log('[Import] Private key imported to Turnkey successfully')
-
-          // Step 6: Store wallet reference in our database
-          console.log('[Import] Storing wallet reference...')
-
-          const completeRes = await fetch('/api/turnkey/import/complete', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ privateKeyName }),
-          })
-
-          const completeData = await completeRes.json()
-
-          if (!completeRes.ok) {
-            throw new Error(completeData?.error || 'Failed to store wallet reference')
-          }
-
-          // Success!
-          if (iframeContainer) document.body.removeChild(iframeContainer)
-          if (tempContainer) document.body.removeChild(tempContainer)
-          iframeStamper.clear()
-          setImportData(completeData)
-          setImportLoading(false)
-        } catch (err: any) {
-          completeBtn.textContent = 'Retry'
-          completeBtn.disabled = false
-          completeBtn.style.opacity = '1'
-          alert(`❌ ${err.message}\n\nMake sure you entered your private key in the Turnkey form above.`)
-        }
-      }
-
-      buttonContainer.appendChild(cancelBtn)
-      buttonContainer.appendChild(completeBtn)
-
-      modal.appendChild(title)
-      modal.appendChild(subtitle)
-      modal.appendChild(securityNote)
-      modal.appendChild(iframeElement)
-      modal.appendChild(buttonContainer)
-      iframeContainer.appendChild(modal)
-      document.body.appendChild(iframeContainer)
-
-      console.log('[Import] Import iframe UI ready - waiting for user to paste key...')
     } catch (err: any) {
-      if (iframeContainer) {
-        try {
-          document.body.removeChild(iframeContainer)
-        } catch (e) {
-          // Iframe already removed
-        }
-      }
       setImportError(err?.message || 'Failed to import wallet')
+      return null
+    } finally {
       setImportLoading(false)
     }
   }
 
+  const handleAccountCheck = useCallback(async (addressOverride?: string) => {
+    const targetAddress = (addressOverride ?? polymarketAddress).trim()
+    if (!targetAddress) {
+      setValidateError('Please enter a Polymarket wallet address')
+      setAccountChecked(false)
+      return
+    }
+
+    setAccountChecked(false)
+    setLinkingMessage(null)
+    setLinkingError(null)
+
+    const validation = await validateAccount(targetAddress)
+    await fetchBalance(targetAddress)
+    await fetchOpenPositions(targetAddress)
+
+    if (validation?.isContract) {
+      setAccountChecked(true)
+      setEditingProfile(false)
+    }
+  }, [fetchBalance, fetchOpenPositions, polymarketAddress, validateAccount])
+
+  const hasPolymarketAddress = Boolean(linkStatus?.polymarket_account_address)
+  const hasL2Credentials = Boolean(linkStatus?.has_l2_credentials)
+  const profileLinked = hasPolymarketAddress || accountChecked
+  const profileReady = profileLinked && !editingProfile
+  const tradingReady = hasL2Credentials
+  const linkingInProgress = importLoading || l2Loading
+  const checkingProfile = validateLoading || balanceLoading || positionsLoading
+  const localAddressEntered = Boolean(polymarketAddress.trim())
+  useEffect(() => {
+    if (!profileReady && activeStage !== 'profile') {
+      setActiveStage('profile')
+    }
+  }, [activeStage, profileReady])
+
+
+  const handleLinkAccount = async () => {
+    if (!TURNKEY_UI_ENABLED) {
+      setImportError('Turnkey is disabled in this environment')
+      return
+    }
+
+    if (!profileReady) {
+      setImportError('Link your public profile before continuing')
+      return
+    }
+
+    if (!polymarketAddress.trim()) {
+      setImportError('Enter your Polymarket wallet address before linking')
+      return
+    }
+
+    if (!magicPrivateKey.trim()) {
+      setImportError('Paste your Magic private key before linking')
+      return
+    }
+
+    setLinkingError(null)
+    setLinkingMessage(null)
+
+    const importResult = await startImportFlow()
+    if (!importResult) {
+      return
+    }
+
+    setLinkingMessage(
+      importResult.alreadyImported
+        ? 'Wallet already imported. Refreshing credentials...'
+        : 'Magic key imported. Creating credentials...'
+    )
+
+    const credentials = await generateL2Credentials({ skipValidationCheck: true })
+    if (!credentials) {
+      setLinkingError('Failed to create Polymarket credentials')
+      return
+    }
+
+    setLinkingMessage(
+      credentials.isExisting
+        ? 'Existing Polymarket credentials found and ready.'
+      : 'Polymarket credentials generated successfully.'
+    )
+  }
+
+  useEffect(() => {
+    if (linkStatus?.polymarket_account_address && !autoCheckedAddress) {
+      const address = linkStatus.polymarket_account_address
+      setPolymarketAddress(address)
+      handleAccountCheck(address)
+      setAutoCheckedAddress(true)
+      if (linkStatus.has_imported_key || linkStatus.has_l2_credentials) {
+        setAccountChecked(true)
+      }
+    }
+  }, [autoCheckedAddress, handleAccountCheck, linkStatus])
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Turnkey Wallet MVP Tester</h1>
-        <p className="text-slate-600 mt-2">
-          Test wallet creation (idempotent) and message signing with Turnkey.
-        </p>
-      </div>
-
-      {!TURNKEY_UI_ENABLED && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
-          Set <code className="bg-amber-100 px-2 py-1 rounded">NEXT_PUBLIC_TURNKEY_ENABLED=true</code> in <code className="bg-amber-100 px-2 py-1 rounded">.env.local</code> to
-          interact with this page. Backend also requires <code className="bg-amber-100 px-2 py-1 rounded">TURNKEY_ENABLED=true</code>.
-        </div>
-      )}
-
-      {/* Step 1: Create Wallet */}
-      <section className="rounded-lg border border-slate-200 p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold">Step 1: Create/Retrieve Wallet</h2>
-            <p className="text-sm text-slate-600">Idempotent operation - returns same wallet if already exists</p>
-          </div>
-          <button
-            onClick={createWallet}
-            disabled={createLoading || !TURNKEY_UI_ENABLED}
-            className="rounded-md bg-purple-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-purple-700 transition-colors"
-          >
-            {createLoading ? 'Creating...' : 'Create Wallet'}
-          </button>
-        </div>
-
-        {createError && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-            ❌ {createError}
+    <>
+      <Navigation />
+      <div className="max-w-xl mx-auto p-6 space-y-6">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+        {linkStatusError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            ❌ {linkStatusError}
           </div>
         )}
 
-        {walletData && (
-          <div className="space-y-2 rounded-md border border-emerald-200 bg-emerald-50 p-4">
-            <div className="flex items-center gap-2 text-emerald-800 font-semibold">
-              ✅ Wallet {walletData.isNew ? 'Created' : 'Retrieved'} Successfully
-            </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex flex-col gap-1">
-                <span className="font-semibold text-slate-700">Wallet ID:</span>
-                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all">
-                  {walletData.walletId}
-                </code>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="font-semibold text-slate-700">Address:</span>
-                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all">
-                  {walletData.address}
-                </code>
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* Step 2: Sign Message */}
-      <section className="rounded-lg border border-slate-200 p-4 space-y-3">
-        <div>
-          <h2 className="text-xl font-semibold">Step 2: Sign Test Message</h2>
-          <p className="text-sm text-slate-600">Sign a message and verify signature recovery</p>
-        </div>
-
-        <div className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Message to Sign:
-            </label>
-            <input
-              type="text"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-              placeholder="Enter message to sign"
-              disabled={!TURNKEY_UI_ENABLED}
-            />
-          </div>
-
-          <button
-            onClick={signMessage}
-            disabled={signLoading || !TURNKEY_UI_ENABLED || !message.trim()}
-            className="rounded-md bg-emerald-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-emerald-700 transition-colors"
-          >
-            {signLoading ? 'Signing...' : 'Sign Message'}
-          </button>
-        </div>
-
-        {signError && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-            ❌ {signError}
+        {!TURNKEY_UI_ENABLED && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            Turnkey is disabled in this environment. Set the env vars to enable linking.
           </div>
         )}
 
-        {signData && (
-          <div className="space-y-3">
-            <div className="space-y-2 rounded-md border border-blue-200 bg-blue-50 p-4">
-              <div className="flex items-center gap-2 text-blue-800 font-semibold">
-                📝 Message Signed Successfully
+        {activeStage === 'profile' ? (
+          profileReady ? (
+            <div className="space-y-4">
+              <h1 className="text-2xl font-bold text-slate-900">Account linked</h1>
+              <p className="text-sm text-slate-600">
+                Your public Polymarket ID is saved. Continue to connect your private key or go back to change the address.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Account value</p>
+                  <p className="text-2xl font-semibold text-slate-900 mt-2">
+                    {balanceLoading ? 'Loading…' : balanceData?.usdcBalanceFormatted || '—'}
+                  </p>
+                  {balanceError && <p className="text-xs text-red-600 mt-1">{balanceError}</p>}
+                </div>
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Open positions</p>
+                  <p className="text-2xl font-semibold text-slate-900 mt-2">
+                    {positionsLoading
+                      ? 'Loading…'
+                      : typeof openPositionsCount === 'number'
+                        ? openPositionsCount
+                        : '—'}
+                  </p>
+                  {positionsError && <p className="text-xs text-red-600 mt-1">{positionsError}</p>}
+                </div>
               </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex flex-col gap-1">
-                  <span className="font-semibold text-slate-700">Signer Address:</span>
-                  <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all">
-                    {signData.address}
-                  </code>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="font-semibold text-slate-700">Message:</span>
-                  <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all">
-                    {signData.message}
-                  </code>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="font-semibold text-slate-700">Signature:</span>
-                  <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs">
-                    {signData.signature}
-                  </code>
-                </div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={resetProfileReview}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => setActiveStage('key')}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  Next
+                </button>
               </div>
             </div>
-
-            {verificationResult && (
-              <div className={`rounded-md border p-4 ${
-                verificationResult.success 
-                  ? 'border-emerald-200 bg-emerald-50' 
-                  : 'border-red-200 bg-red-50'
-              }`}>
-                <div className={`flex items-center gap-2 font-semibold ${
-                  verificationResult.success ? 'text-emerald-800' : 'text-red-800'
-                }`}>
-                  {verificationResult.success ? '✅ Signature Verified!' : '❌ Signature Verification Failed'}
-                </div>
-                <div className="space-y-2 text-sm mt-2">
-                  <div className="flex flex-col gap-1">
-                    <span className="font-semibold text-slate-700">Recovered Address:</span>
-                    <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all">
-                      {verificationResult.recoveredAddress}
-                    </code>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <span className="font-semibold text-slate-700">Expected Address:</span>
-                    <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all">
-                      {verificationResult.expectedAddress}
-                    </code>
-                  </div>
-                  {verificationResult.success && (
-                    <p className="text-emerald-700 font-medium mt-2">
-                      ✨ The signature was created by the expected wallet address!
-                    </p>
-                  )}
-                </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <h1 className="text-3xl font-bold text-slate-900">Link your Polymarket account</h1>
+                <p className="text-sm text-slate-600 mt-2">Step one: Connect your public profile.</p>
+                <p className="text-sm text-slate-500">Visit Polymarket and enter the code.</p>
               </div>
-            )}
-          </div>
-        )}
-      </section>
 
-      {/* Test Results Summary */}
-      <section className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-2 text-sm text-slate-700">
-        <p className="font-semibold">Acceptance Criteria</p>
-        <ul className="space-y-1">
-          <li className={walletData ? 'text-emerald-700 font-medium' : ''}>
-            {walletData ? '✅' : '⬜'} Create wallet returns {'{walletId, address}'} and is idempotent
-          </li>
-          <li className={verificationResult?.success ? 'text-emerald-700 font-medium' : ''}>
-            {verificationResult?.success ? '✅' : '⬜'} Sign-test returns signature that verifies to the returned address
-          </li>
-        </ul>
-      </section>
-
-      {/* STAGE 3: Polymarket Account Validation */}
-      <section className="rounded-lg border border-purple-200 bg-purple-50 p-4 space-y-3">
-        <div>
-          <h2 className="text-xl font-semibold text-purple-900">Stage 3: Polymarket Account</h2>
-          <p className="text-sm text-purple-700">Validate your Polymarket profile wallet address and check USDC balance</p>
-        </div>
-
-        <div className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Polymarket Profile Wallet Address
-            </label>
-            <input
-              type="text"
-              value={polymarketAddress}
-              onChange={(e) => setPolymarketAddress(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 font-mono text-sm"
-              placeholder="0x..."
-              disabled={!TURNKEY_UI_ENABLED}
-            />
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={validateAccount}
-              disabled={validateLoading || !TURNKEY_UI_ENABLED || !polymarketAddress.trim()}
-              className="rounded-md bg-purple-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-purple-700 transition-colors"
-            >
-              {validateLoading ? 'Validating...' : 'Validate'}
-            </button>
-
-            {validateData?.isContract && (
               <button
-                onClick={fetchBalance}
-                disabled={balanceLoading || !TURNKEY_UI_ENABLED}
-                className="rounded-md bg-emerald-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-emerald-700 transition-colors"
+                onClick={openPolymarketSite}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
               >
-                {balanceLoading ? 'Fetching...' : 'Fetch USDC Balance'}
+                Get my ID
               </button>
-            )}
-          </div>
-        </div>
 
-        {validateError && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-            ❌ {validateError}
-          </div>
-        )}
-
-        {validateData && (
-          <div className={`rounded-md border p-4 ${
-            validateData.isContract 
-              ? 'border-emerald-200 bg-emerald-50' 
-              : 'border-red-200 bg-red-50'
-          }`}>
-            <div className={`flex items-center gap-2 font-semibold ${
-              validateData.isContract ? 'text-emerald-800' : 'text-red-800'
-            }`}>
-              {validateData.isContract 
-                ? '✅ Contract wallet detected (Safe/proxy)' 
-                : '❌ Not a contract. You probably pasted the wrong address.'}
-            </div>
-            <div className="space-y-1 text-sm mt-2">
-              <div className="flex justify-between">
-                <span className="font-semibold text-slate-700">Chain ID:</span>
-                <span>{validateData.chainId} (Polygon)</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-semibold text-slate-700">Valid Address:</span>
-                <span>{validateData.isValidAddress ? 'Yes' : 'No'}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {balanceError && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-            ❌ {balanceError}
-          </div>
-        )}
-
-        {balanceData && (
-          <div className="space-y-2 rounded-md border border-blue-200 bg-blue-50 p-4">
-            <div className="flex items-center gap-2 text-blue-800 font-semibold">
-              💰 USDC Balance Fetched
-            </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex flex-col gap-1">
-                <span className="font-semibold text-slate-700">Address:</span>
-                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs">
-                  {balanceData.accountAddress}
-                </code>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-slate-700">Balance:</span>
-                <span className="text-2xl font-bold text-blue-900">{balanceData.usdcBalanceFormatted}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs text-slate-600">
-                <span>Raw Value:</span>
-                <code>{balanceData.usdcBalanceRaw}</code>
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* Import Wallet (Magic Link) */}
-      <section className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 space-y-3">
-        <div>
-          <h2 className="text-xl font-semibold text-indigo-900">Import Wallet (Magic Link Private Key)</h2>
-          <p className="text-sm text-indigo-700">
-            Securely import your Magic Link private key via Turnkey iframe.
-            <br />
-            <strong>Note:</strong> Your private key never touches PolyCopy servers - it goes directly to Turnkey.
-          </p>
-        </div>
-
-        <div className="space-y-3">
-          <button
-            onClick={startImportFlow}
-            disabled={importLoading || !TURNKEY_UI_ENABLED}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-indigo-700 transition-colors"
-          >
-            {importLoading ? 'Importing...' : 'Import Magic Link Key'}
-          </button>
-
-          <div className="text-xs text-indigo-600 border border-indigo-300 bg-white rounded p-2">
-            ℹ️ <strong>MVP Note:</strong> Full Turnkey iframe integration requires @turnkey/iframe-stamper component.
-            This demo uses manual walletId input for testing.
-          </div>
-        </div>
-
-        {importError && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-            ❌ {importError}
-          </div>
-        )}
-
-        {importData && (
-          <div className="space-y-2 rounded-md border border-green-200 bg-green-50 p-4">
-            <div className="flex items-center gap-2 text-green-800 font-semibold text-lg">
-              {importData.alreadyImported ? '✅ Existing Wallet Retrieved' : '🔑 Wallet Imported Successfully'}
-            </div>
-            
-            <div className="space-y-2 text-sm">
-              <div className="flex flex-col gap-1">
-                <span className="font-semibold text-slate-700">Wallet ID:</span>
-                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
-                  {importData.walletId}
-                </code>
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-slate-700">Polymarket address</label>
+                <input
+                  type="text"
+                  value={polymarketAddress}
+                  onChange={(e) => {
+                    setPolymarketAddress(e.target.value)
+                    setAccountChecked(false)
+                  }}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 font-mono text-sm"
+                  placeholder="0x..."
+                />
               </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="font-semibold text-slate-700">Address (EOA):</span>
-                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
-                  {importData.address}
-                </code>
-              </div>
-
-              {importData.alreadyImported && (
-                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
-                  ℹ️ This wallet was already imported (idempotent - no duplicate created)
+              {validateError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {validateError}
                 </div>
               )}
-            </div>
 
-            <div className="border-t border-green-300 pt-2 mt-2">
-              <p className="text-xs text-slate-600">
-                🔒 <strong>Security:</strong> Your private key was imported directly to Turnkey and never exposed to PolyCopy.
-              </p>
+              <button
+                onClick={() => handleAccountCheck()}
+                disabled={checkingProfile || !localAddressEntered}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 hover:bg-indigo-500"
+              >
+                {checkingProfile ? 'Linking…' : 'Link'}
+              </button>
             </div>
+          )
+        ) : tradingReady ? (
+          <div className="space-y-4">
+            <h1 className="text-2xl font-bold text-slate-900">Account linked</h1>
+            <p className="text-sm text-slate-600">Private key connected. You’re ready to trade.</p>
+            <button
+              onClick={() => setActiveStage('profile')}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
+            >
+              Back
+            </button>
           </div>
-        )}
-      </section>
-
-      {/* Stage 4: Generate L2 CLOB Credentials */}
-      <section className="rounded-lg border border-orange-200 bg-orange-50 p-4 space-y-3">
-        <div>
-          <h2 className="text-xl font-semibold text-orange-900">Stage 4: Generate L2 CLOB Credentials</h2>
-          <p className="text-sm text-orange-700">Create API credentials for Polymarket CLOB trading (requires validated contract wallet)</p>
-        </div>
-
-        <div className="space-y-3">
-          <button
-            onClick={generateL2Credentials}
-            disabled={l2Loading || !TURNKEY_UI_ENABLED || !validateData?.isContract}
-            className="rounded-md bg-orange-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-orange-700 transition-colors"
-          >
-            {l2Loading ? 'Generating...' : 'Generate L2 Credentials'}
-          </button>
-
-          {!validateData?.isContract && (
-            <p className="text-sm text-orange-700">
-              ⚠️ Please validate a contract wallet address in Stage 3 first
-            </p>
-          )}
-        </div>
-
-        {l2Error && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-            ❌ {l2Error}
-          </div>
-        )}
-
-        {l2Data && (
-          <div className="space-y-3 rounded-md border border-green-200 bg-green-50 p-4">
-            <div className="flex items-center gap-2 text-green-800 font-semibold text-lg">
-              {l2Data.isExisting ? '✅ Existing Credentials Retrieved' : '🔑 L2 Credentials Generated'}
-            </div>
-            
-            <div className="space-y-2 text-sm">
-              <div className="flex flex-col gap-1">
-                <span className="font-semibold text-slate-700">API Key:</span>
-                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
-                  {l2Data.apiKey}
-                </code>
-              </div>
-
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-slate-700">Validated:</span>
-                <span className={`font-bold ${l2Data.validated ? 'text-green-700' : 'text-red-700'}`}>
-                  {l2Data.validated ? '✅ Yes' : '❌ No'}
-                </span>
-              </div>
-
-              <div className="flex justify-between items-center text-xs text-slate-600">
-                <span>Created:</span>
-                <span>{new Date(l2Data.createdAt).toLocaleString()}</span>
-              </div>
-
-              {l2Data.isExisting && (
-                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
-                  ℹ️ Using existing credentials (idempotent - no new key created)
-                </div>
-              )}
+        ) : (
+          <div className="space-y-4">
+            <button
+              onClick={() => setActiveStage('profile')}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white w-fit"
+            >
+              Back
+            </button>
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900">Enter your private key</h1>
+              <p className="text-sm text-slate-600 mt-2">Enter your private key in order to execute trading.</p>
             </div>
 
-            <div className="border-t border-green-300 pt-2 mt-2">
-              <p className="text-xs text-slate-600">
-                🔒 <strong>Security Note:</strong> API secret and passphrase are stored encrypted in the database and never exposed to the client.
-              </p>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* Import Magic Link Wallet */}
-      <section className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 space-y-3">
-        <div>
-          <h2 className="text-xl font-semibold text-indigo-900">Import Magic Link Wallet</h2>
-          <p className="text-sm text-indigo-700">Securely import your Magic Link private key via Turnkey iframe</p>
-        </div>
-
-        <div className="space-y-3">
-          <div className="flex gap-3">
             <button
               onClick={openPolymarketExport}
               disabled={!TURNKEY_UI_ENABLED}
-              className="rounded-md bg-purple-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-purple-700 transition-colors"
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60 hover:bg-white"
             >
-              🔑 Open Polymarket Key Export (Magic)
+              Open Magic Link process
             </button>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-slate-700">Magic private key (0x…)</label>
+              <textarea
+                value={magicPrivateKey}
+                onChange={(e) => setMagicPrivateKey(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono text-sm"
+                placeholder="Paste the key you copied"
+                rows={3}
+                disabled={!TURNKEY_UI_ENABLED}
+              />
+            </div>
 
             <button
-              onClick={startImportFlow}
-              disabled={importLoading || !TURNKEY_UI_ENABLED}
-              className="rounded-md bg-indigo-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-indigo-700 transition-colors"
+              onClick={handleLinkAccount}
+              disabled={!TURNKEY_UI_ENABLED || !magicPrivateKey.trim() || linkingInProgress}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 hover:bg-indigo-500"
             >
-              {importLoading ? 'Importing...' : '➡️ Import to Turnkey'}
+              {linkingInProgress ? 'Linking…' : 'Link'}
             </button>
-          </div>
 
-          <div className="text-xs text-indigo-600 border border-indigo-300 bg-white rounded p-2">
-            <p className="font-semibold mb-1">📋 Instructions:</p>
-            <ol className="list-decimal list-inside space-y-1 text-slate-700">
-              <li>Click <strong>"Open Polymarket Key Export (Magic)"</strong> to open the Polymarket page in a new tab</li>
-              <li>Copy the private key from the Polymarket page</li>
-              <li>Return here and click <strong>"Import to Turnkey"</strong></li>
-              <li>Follow the prompts to complete the secure import</li>
-            </ol>
-          </div>
-
-          <div className="text-xs text-amber-600 border border-amber-300 bg-amber-50 rounded p-2">
-            🔒 <strong>Security:</strong> Copy the private key from the Polymarket page and return here to import securely into Turnkey. Your key never touches PolyCopy servers.
-          </div>
-        </div>
-
-        {importError && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
-            ❌ {importError}
-          </div>
-        )}
-
-        {importData && (
-          <div className="space-y-2 rounded-md border border-green-200 bg-green-50 p-4">
-            <div className="flex items-center gap-2 text-green-800 font-semibold text-lg">
-              ✅ Wallet Imported Successfully
-            </div>
-            
-            <div className="space-y-2 text-sm">
-              <div className="flex flex-col gap-1">
-                <span className="font-semibold text-slate-700">Wallet ID:</span>
-                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
-                  {importData.walletId}
-                </code>
+            {(linkingError || importError || l2Error) && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 space-y-1">
+                {linkingError && <p>❌ {linkingError}</p>}
+                {!linkingError && importError && <p>❌ {importError}</p>}
+                {!linkingError && l2Error && <p>❌ {l2Error}</p>}
               </div>
+            )}
 
-              <div className="flex flex-col gap-1">
-                <span className="font-semibold text-slate-700">Address:</span>
-                <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs font-mono">
-                  {importData.address}
-                </code>
+            {linkingMessage && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                ℹ️ {linkingMessage}
               </div>
-            </div>
-
-            <div className="border-t border-green-300 pt-2 mt-2">
-              <p className="text-xs text-slate-600">
-                🔒 <strong>Security Note:</strong> Your private key was imported securely via Turnkey's iframe. PolyCopy never saw your plaintext key.
-              </p>
-            </div>
+            )}
           </div>
         )}
       </section>
-    </div>
+
+      <details className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <summary className="flex cursor-pointer items-center justify-between px-6 py-4 text-slate-900 font-semibold select-none">
+          <span>Developer tools</span>
+          <span className="text-sm text-slate-500">Toggle</span>
+        </summary>
+        <div className="border-t border-slate-100 p-6 space-y-6 text-sm text-slate-700">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">Turnkey Wallet MVP Tester</h2>
+            <p className="text-slate-600 mt-1">
+              Manual harness for wallet creation and signature verification.
+            </p>
+          </div>
+
+          {/* Step 1: Create Wallet */}
+          <section className="rounded-lg border border-slate-200 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Create/Retrieve Wallet</h3>
+                <p className="text-sm text-slate-600">Idempotent operation - returns same wallet if it already exists.</p>
+              </div>
+              <button
+                onClick={createWallet}
+                disabled={createLoading || !TURNKEY_UI_ENABLED}
+                className="rounded-md bg-purple-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-purple-700 transition-colors"
+              >
+                {createLoading ? 'Creating...' : 'Create Wallet'}
+              </button>
+            </div>
+
+            {createError && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
+                ❌ {createError}
+              </div>
+            )}
+
+            {walletData && (
+              <div className="space-y-2 rounded-md border border-emerald-200 bg-emerald-50 p-4">
+                <div className="flex items-center gap-2 text-emerald-800 font-semibold">
+                  ✅ Wallet {walletData.isNew ? 'Created' : 'Retrieved'} Successfully
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex flex-col gap-1">
+                    <span className="font-semibold text-slate-700">Wallet ID:</span>
+                    <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all">
+                      {walletData.walletId}
+                    </code>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="font-semibold text-slate-700">Address:</span>
+                    <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all">
+                      {walletData.address}
+                    </code>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Step 2: Sign Message */}
+          <section className="rounded-lg border border-slate-200 p-4 space-y-3">
+            <div>
+              <h3 className="text-lg font-semibold">Sign Test Message</h3>
+              <p className="text-sm text-slate-600">Sign a message and verify signature recovery.</p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Message to Sign:
+                </label>
+                <input
+                  type="text"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  placeholder="Enter message to sign"
+                  disabled={!TURNKEY_UI_ENABLED}
+                />
+              </div>
+
+              <button
+                onClick={signMessage}
+                disabled={signLoading || !TURNKEY_UI_ENABLED || !message.trim()}
+                className="rounded-md bg-emerald-600 px-4 py-2 text-white font-semibold disabled:opacity-60 hover:bg-emerald-700 transition-colors"
+              >
+                {signLoading ? 'Signing...' : 'Sign Message'}
+              </button>
+            </div>
+
+            {signError && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">
+                ❌ {signError}
+              </div>
+            )}
+
+            {signData && (
+              <div className="space-y-3">
+                <div className="space-y-2 rounded-md border border-blue-200 bg-blue-50 p-4">
+                  <div className="flex items-center gap-2 text-blue-800 font-semibold">
+                    📝 Message Signed Successfully
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-semibold text-slate-700">Signer Address:</span>
+                      <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all">
+                        {signData.address}
+                      </code>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="font-semibold text-slate-700">Message:</span>
+                      <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all">
+                        {signData.message}
+                      </code>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="font-semibold text-slate-700">Signature:</span>
+                      <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all text-xs">
+                        {signData.signature}
+                      </code>
+                    </div>
+                  </div>
+                </div>
+
+                {verificationResult && (
+                  <div
+                    className={`rounded-md border p-4 ${
+                      verificationResult.success ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'
+                    }`}
+                  >
+                    <div
+                      className={`flex items-center gap-2 font-semibold ${
+                        verificationResult.success ? 'text-emerald-800' : 'text-red-800'
+                      }`}
+                    >
+                      {verificationResult.success ? '✅ Signature Verified!' : '❌ Signature Verification Failed'}
+                    </div>
+                    <div className="space-y-2 text-sm mt-2">
+                      <div className="flex flex-col gap-1">
+                        <span className="font-semibold text-slate-700">Recovered Address:</span>
+                        <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all">
+                          {verificationResult.recoveredAddress}
+                        </code>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <span className="font-semibold text-slate-700">Expected Address:</span>
+                        <code className="bg-white px-2 py-1 border border-slate-200 rounded break-all">
+                          {verificationResult.expectedAddress}
+                        </code>
+                      </div>
+                      {verificationResult.success && (
+                        <p className="text-emerald-700 font-medium mt-2">
+                          ✨ The signature was created by the expected wallet address!
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* Acceptance summary */}
+          <section className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-2 text-sm text-slate-700">
+            <p className="font-semibold">Acceptance Criteria</p>
+            <ul className="space-y-1">
+              <li className={walletData ? 'text-emerald-700 font-medium' : ''}>
+                {walletData ? '✅' : '⬜'} Create wallet returns {'{walletId, address}'} and is idempotent
+              </li>
+              <li className={verificationResult?.success ? 'text-emerald-700 font-medium' : ''}>
+                {verificationResult?.success ? '✅' : '⬜'} Sign-test returns signature that verifies to the returned address
+              </li>
+            </ul>
+          </section>
+        </div>
+        </details>
+      </div>
+    </>
   )
 }
