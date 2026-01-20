@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { verifyMessage } from 'ethers'
+import { verifyMessage } from 'ethers/utils'
 import { Navigation } from '@/components/polycopy/navigation'
 
 const TURNKEY_UI_ENABLED = process.env.NEXT_PUBLIC_TURNKEY_ENABLED === 'true'
