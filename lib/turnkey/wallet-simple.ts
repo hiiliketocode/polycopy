@@ -123,3 +123,75 @@ export async function getOrCreateWalletForUser(userId: string): Promise<{
     isExisting: false,
   }
 }
+
+/**
+ * Sign a message using the user's Turnkey wallet
+ */
+export async function signMessageForUser(
+  userId: string,
+  message: string
+): Promise<{ address: string; signature: string; message: string }> {
+  const { getTurnkeyClient } = await import('./client')
+  const { utils } = await import('ethers')
+  
+  // Get user's wallet
+  const wallet = await getOrCreateWalletForUser(userId)
+  
+  if (!wallet.walletId) {
+    throw new Error('Wallet not found for user')
+  }
+
+  const client = getTurnkeyClient()
+  if (!client) {
+    throw new Error('Turnkey client not available')
+  }
+
+  // Create Ethereum message hash (EIP-191)
+  const messageHash = utils.hashMessage(message)
+  
+  // Sign the hash with Turnkey
+  const signResponse = await client.turnkeyClient.signRawPayload({
+    organizationId: client.config.organizationId,
+    timestampMs: String(Date.now()),
+    type: 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2',
+    parameters: {
+      signWith: wallet.walletId,
+      payload: messageHash,
+      encoding: 'PAYLOAD_ENCODING_HEXADECIMAL',
+      hashFunction: 'HASH_FUNCTION_NO_OP',
+    },
+  })
+
+  const { createActivityPoller } = await import('@turnkey/http')
+  let signActivity = signResponse.activity
+
+  if (signActivity.status === 'ACTIVITY_STATUS_PENDING') {
+    const poller = createActivityPoller({
+      client: client.turnkeyClient,
+      requestFn: (input: { organizationId: string; activityId: string }) =>
+        client.turnkeyClient.getActivity(input),
+    })
+    signActivity = await poller({
+      organizationId: client.config.organizationId,
+      activityId: signActivity.id,
+    })
+  }
+
+  if (signActivity.status !== 'ACTIVITY_STATUS_COMPLETED') {
+    throw new Error(`Message signing failed with status: ${signActivity.status}`)
+  }
+
+  const result = signActivity.result?.signRawPayloadResult
+  if (!result || !result.r || !result.s || !result.v) {
+    throw new Error('Signature components not found in activity result')
+  }
+
+  const normalize = (component: string) => (component.startsWith('0x') ? component.slice(2) : component)
+  const signature = `0x${normalize(result.r)}${normalize(result.s)}${normalize(result.v)}`
+
+  return {
+    address: wallet.address,
+    signature,
+    message,
+  }
+}

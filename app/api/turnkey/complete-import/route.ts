@@ -85,7 +85,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await completeTurnkeyImport(payload, userId)
+    // The completeTurnkeyImport function searches by privateKeyName, but we have privateKeyId
+    // We need to construct the name or find the key by ID. For now, use a pattern that matches
+    // the naming convention from initTurnkeyImport: imported-magic-${userId}-${timestamp}
+    // Since we don't have the exact timestamp, we'll search for keys matching the pattern
+    const privateKeyName = `imported-magic-${userId}`
+    const result = await completeTurnkeyImport(userId, privateKeyName)
     return NextResponse.json({
       enabled: true,
       userId,
