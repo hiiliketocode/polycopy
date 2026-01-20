@@ -1631,13 +1631,26 @@ export default function TraderProfilePage({
       ? 'No open or resolved trades to display'
       : 'No open trades to display';
 
+  const hasMyTradeStats = Boolean(myTradeStats && myTradeStats.trader.totalTrades > 0);
+  const myDailyPnlSeries = useMemo(() => {
+    const series = myTradeStats?.dailyPnl ?? [];
+    if (series.length === 0) return [];
+    const sorted = [...series].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+    if (myPnlWindow === 'ALL') return sorted;
+    const days = myPnlWindow === '1D' ? 1 : myPnlWindow === '7D' ? 7 : 30;
+    return sorted.slice(Math.max(0, sorted.length - days));
+  }, [myTradeStats, myPnlWindow]);
+
+  // IMPORTANT: Loading/error guards must come AFTER hooks to avoid changing hook order between renders.
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50">
-        <Navigation 
-          user={user ? { id: user.id, email: user.email || '' } : null} 
-          isPremium={isPremium} 
-          walletAddress={walletAddress} 
+        <Navigation
+          user={user ? { id: user.id, email: user.email || '' } : null}
+          isPremium={isPremium}
+          walletAddress={walletAddress}
         />
         <SignupBanner isLoggedIn={!!user} />
         <div className="flex items-center justify-center pt-20">
@@ -1651,14 +1664,14 @@ export default function TraderProfilePage({
   }
 
   if (error || !traderData) {
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <Navigation 
-        user={user ? { id: user.id, email: user.email || '' } : null} 
-        isPremium={isPremium} 
-        walletAddress={walletAddress} 
-      />
-      <SignupBanner isLoggedIn={!!user} />
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <Navigation
+          user={user ? { id: user.id, email: user.email || '' } : null}
+          isPremium={isPremium}
+          walletAddress={walletAddress}
+        />
+        <SignupBanner isLoggedIn={!!user} />
         <div className="max-w-4xl mx-auto px-4 py-8">
           <div className="flex flex-col items-center justify-center py-20 px-4">
             <div className="text-6xl mb-6">😞</div>
@@ -1685,17 +1698,6 @@ export default function TraderProfilePage({
   // Win rate: Calculated from scorable positions (closed or priced open) with positive ROI
   // Show N/A only if we have no scorable positions
   const effectiveWinRate = traderData.winRate ?? (computedStats && computedStats.winRate !== null && computedStats.winRate !== undefined ? computedStats.winRate : null);
-  const hasMyTradeStats = Boolean(myTradeStats && myTradeStats.trader.totalTrades > 0);
-  const myDailyPnlSeries = useMemo(() => {
-    const series = myTradeStats?.dailyPnl ?? [];
-    if (series.length === 0) return [];
-    const sorted = [...series].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
-    if (myPnlWindow === 'ALL') return sorted;
-    const days = myPnlWindow === '1D' ? 1 : myPnlWindow === '7D' ? 7 : 30;
-    return sorted.slice(Math.max(0, sorted.length - days));
-  }, [myTradeStats, myPnlWindow]);
 
   console.log('📊 Trader Profile Stats Priority:', {
     wallet: wallet.substring(0, 8),
