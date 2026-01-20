@@ -1302,7 +1302,8 @@ export default function FeedPage() {
                     resolved: isMarketResolved,
                     endDateIso: endDateIso || undefined,
                     liveStatus,
-                    espnUrl: espnScore?.gameUrl,
+                    // ESPN URL is injected later once the ESPN fetch completes
+                    espnUrl: undefined,
                     updatedAt: Date.now(),
                   });
                 }
