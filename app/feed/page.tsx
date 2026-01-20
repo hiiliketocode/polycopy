@@ -1605,6 +1605,7 @@ export default function FeedPage() {
       endDateIso?: string;
       liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
       espnUrl?: string;
+      marketAvatarUrl?: string;
       updatedAt?: number;
     }>();
     
