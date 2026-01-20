@@ -251,7 +251,7 @@ export async function GET(request: NextRequest) {
       const name = event.name || shortName || `${awayName} @ ${homeName}`;
 
       return {
-        id: competition.id || event.id,
+        id: event.id,
         name,
         shortName,
         homeTeam: {
