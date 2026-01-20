@@ -2,7 +2,7 @@ import { TurnkeyClient, createActivityPoller } from '@turnkey/http'
 import { ApiKeyStamper } from '@turnkey/api-key-stamper'
 import { TURNKEY_ENABLED, loadTurnkeyConfig } from './config'
 import { TypedDataDomain, TypedDataField } from 'ethers'
-import { _TypedDataEncoder as TypedDataEncoder } from 'ethers/lib/utils'
+import { TypedDataEncoder } from 'ethers'
 
 type TurnkeyRequestOptions<TBody = unknown> = {
   endpoint: string
