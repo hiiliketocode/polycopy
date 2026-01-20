@@ -31,6 +31,8 @@ import {
   AreaChart,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
   Cell,
   ReferenceLine,
   Area,
@@ -178,7 +180,6 @@ export default function TraderProfilePage({
   const [positionSizeBuckets, setPositionSizeBuckets] = useState<PositionSizeBucket[]>([]);
   const [categoryDistribution, setCategoryDistribution] = useState<CategoryDistribution[]>([]);
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
-  const [hoveredBucket, setHoveredBucket] = useState<{ range: string; count: number; percentage: number; x: number; y: number } | null>(null);
   const [computedStats, setComputedStats] = useState<TraderComputedStats | null>(null);
   const [realizedPnlRows, setRealizedPnlRows] = useState<RealizedPnlRow[]>([]);
   const [loadingRealizedPnl, setLoadingRealizedPnl] = useState(false);
@@ -2595,79 +2596,36 @@ export default function TraderProfilePage({
                 <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-medium">Recent Trades</span>
               </div>
               {positionSizeBuckets.length > 0 ? (
-                  <div className="relative h-64">
-                    {/* Y-axis labels */}
-                    <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-xs text-slate-500">
-                      {(() => {
-                        const maxCount = Math.max(...positionSizeBuckets.map(b => b.count), 1);
-                        const steps = 5;
-                        return Array.from({ length: steps }, (_, i) => {
-                          const value = maxCount - (i / (steps - 1)) * maxCount;
-                          return <span key={i}>{Math.round(value)}</span>;
-                        });
-                      })()}
-                    </div>
-                  
-                  {/* Chart area */}
-                  <div className="ml-12 h-full border-l border-b border-slate-200 relative">
-                    <svg className="w-full h-full" viewBox="0 0 600 200" preserveAspectRatio="none">
-                        {/* Bar chart */}
-                        {positionSizeBuckets.map((bucket, i) => {
-                          const maxCount = Math.max(...positionSizeBuckets.map(b => b.count), 1);
-                          const barWidth = 600 / positionSizeBuckets.length * 0.7;
-                          const x = (i / positionSizeBuckets.length) * 600 + (600 / positionSizeBuckets.length - barWidth) / 2;
-                          const height = (bucket.count / maxCount) * 200;
-                          const y = 200 - height;
-                          
-                          return (
-                            <rect
-                              key={i}
-                              x={x}
-                              y={y}
-                              width={barWidth}
-                              height={height}
-                              fill="#10b981"
-                              className="cursor-pointer hover:opacity-80 transition-opacity"
-                              onMouseEnter={() => setHoveredBucket({ range: bucket.range, count: bucket.count, percentage: bucket.percentage, x: x + barWidth / 2, y })}
-                              onMouseLeave={() => setHoveredBucket(null)}
-                            />
-                          );
-                        })}
-                    </svg>
-                    
-                    {/* Tooltip for bars */}
-                    {hoveredBucket && (
-                      <div 
-                        className="absolute bg-slate-900 text-white rounded-lg shadow-lg p-3 pointer-events-none z-10 text-sm"
-                        style={{
-                          left: `${(hoveredBucket.x / 600) * 100}%`,
-                          top: `${(hoveredBucket.y / 200) * 100}%`,
-                          transform: 'translate(-50%, -120%)'
-                        }}
-                      >
-                        <div className="font-semibold">{hoveredBucket.range}</div>
-                        <div className="text-emerald-400">
-                          {hoveredBucket.count} {hoveredBucket.count === 1 ? 'trade' : 'trades'}
-                        </div>
-                        <div className="text-slate-300 text-xs">
-                          {hoveredBucket.percentage.toFixed(1)}% of total
-                        </div>
-                      </div>
-                    )}
-
-                    
-                    {/* X-axis labels */}
-                    <div
-                      className="absolute -bottom-6 left-0 right-0 grid text-xs text-slate-500"
-                      style={{ gridTemplateColumns: `repeat(${positionSizeBuckets.length}, minmax(0, 1fr))` }}
-                    >
-                      {positionSizeBuckets.map((bucket, i) => (
-                        <span key={i} className="text-center">
-                          {bucket.range}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={positionSizeBuckets} barSize={36} barCategoryGap="20%">
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis
+                        dataKey="range"
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={10}
+                        tick={{ fontSize: 11, fill: '#475569' }}
+                      />
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        width={52}
+                        tickMargin={10}
+                        tick={{ fontSize: 11, fill: '#475569' }}
+                        allowDecimals={false}
+                        tickCount={5}
+                      />
+                      <RechartsTooltip
+                        contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
+                        formatter={(value: any, _name, props: any) => [
+                          `${value} ${value === 1 ? 'trade' : 'trades'}`,
+                          props?.payload?.range || 'Range',
+                        ]}
+                      />
+                      <Bar dataKey="count" name="Trades" fill="#10b981" radius={[6, 6, 6, 6]} isAnimationActive />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               ) : (
                 <div className="h-64 flex items-center justify-center text-slate-500">
@@ -2684,60 +2642,38 @@ export default function TraderProfilePage({
               </div>
               {categoryDistribution.length > 0 ? (
                 <div className="flex flex-col md:flex-row gap-8 items-center justify-center max-w-3xl mx-auto">
-                  {/* Pie Chart */}
                   <div className="relative w-64 h-64 flex-shrink-0">
-                    <svg viewBox="0 0 200 200" className="w-full h-full">
-                      {(() => {
-                        let currentAngle = -90; // Start at top
-                        return categoryDistribution.map((cat, i) => {
-                          const angle = (cat.percentage / 100) * 360;
-                          const startAngle = currentAngle;
-                          const endAngle = currentAngle + angle;
-                          currentAngle = endAngle;
-
-                          // Calculate path for pie slice
-                          const startRad = (startAngle * Math.PI) / 180;
-                          const endRad = (endAngle * Math.PI) / 180;
-                          const x1 = 100 + 80 * Math.cos(startRad);
-                          const y1 = 100 + 80 * Math.sin(startRad);
-                          const x2 = 100 + 80 * Math.cos(endRad);
-                          const y2 = 100 + 80 * Math.sin(endRad);
-                          const largeArc = angle > 180 ? 1 : 0;
-
-                          return (
-                            <g
-                              key={i}
-                              onMouseEnter={() => setHoveredCategory(cat.category)}
-                              onMouseLeave={() => setHoveredCategory(null)}
-                              className="cursor-pointer transition-opacity"
-                              style={{ opacity: hoveredCategory === null || hoveredCategory === cat.category ? 1 : 0.3 }}
-                            >
-                              <path
-                                d={`M 100 100 L ${x1} ${y1} A 80 80 0 ${largeArc} 1 ${x2} ${y2} Z`}
-                                fill={cat.color}
-                                stroke="white"
-                                strokeWidth="2"
-                              />
-                            </g>
-                          );
-                        });
-                      })()}
-                    </svg>
-                    
-                    {/* Tooltip */}
-                    {hoveredCategory && (
-                      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-lg p-4 border border-slate-200 pointer-events-none z-10">
-                        <p className="font-semibold text-slate-900">
-                          {hoveredCategory}
-                        </p>
-                        <p className="text-sm text-slate-600">
-                          {categoryDistribution.find(c => c.category === hoveredCategory)?.percentage.toFixed(1)}%
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {categoryDistribution.find(c => c.category === hoveredCategory)?.count} trades
-                        </p>
-                      </div>
-                    )}
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={categoryDistribution}
+                          dataKey="count"
+                          nameKey="category"
+                          innerRadius={60}
+                          outerRadius={100}
+                          stroke="white"
+                          strokeWidth={2}
+                          onMouseEnter={(entry) => setHoveredCategory(entry?.category || null)}
+                          onMouseLeave={() => setHoveredCategory(null)}
+                          isAnimationActive
+                        >
+                          {categoryDistribution.map((cat) => (
+                            <Cell
+                              key={cat.category}
+                              fill={cat.color}
+                              opacity={hoveredCategory && hoveredCategory !== cat.category ? 0.35 : 1}
+                            />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip
+                          contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
+                          formatter={(value: any, _name, props: any) => [
+                            `${value} ${value === 1 ? 'trade' : 'trades'}`,
+                            props?.payload?.category || 'Category',
+                          ]}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
                   </div>
 
                   {/* Legend */}
@@ -2748,6 +2684,7 @@ export default function TraderProfilePage({
                         className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
                         onMouseEnter={() => setHoveredCategory(cat.category)}
                         onMouseLeave={() => setHoveredCategory(null)}
+                        style={{ opacity: hoveredCategory && hoveredCategory !== cat.category ? 0.5 : 1 }}
                       >
                         <div className="flex items-center gap-3">
                           <div
@@ -2784,11 +2721,17 @@ export default function TraderProfilePage({
                       // Get current price from live market data or fall back to trade's currentPrice
                       const liveData = t.conditionId ? liveMarketData.get(t.conditionId) : undefined;
                       const currentPrice = liveData?.price || t.currentPrice || t.price;
+                      const invested = (t.size || 0) * (t.price || 0);
+                      const currentValue = (t.size || 0) * (currentPrice || 0);
+                      const pnl = currentValue - invested;
                       
                       return {
                         ...t,
                         currentPrice: currentPrice,
-                        roi: ((currentPrice - t.price) / t.price) * 100
+                        roi: ((currentPrice - t.price) / t.price) * 100,
+                        invested,
+                        currentValue,
+                        pnl,
                       };
                     })
                     .filter(t => t.price && t.price > 0) // Only trades with valid entry price
@@ -2806,38 +2749,97 @@ export default function TraderProfilePage({
                     );
                   }
 
-                  return tradesWithROI.map((trade, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-slate-900 truncate">{trade.market}</p>
-                        <p className="text-sm text-slate-500">
-                          {new Date(trade.timestamp).toLocaleDateString('en-US', { 
-                            month: 'short', 
-                            day: 'numeric', 
-                            year: 'numeric' 
-                          })}
-                        </p>
+                  return (
+                    <div className="space-y-2">
+                      <div className="hidden md:grid grid-cols-6 gap-4 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+                        <span>Market</span>
+                        <span>Outcome</span>
+                        <span>Amount</span>
+                        <span>Entry -> Current</span>
+                        <span>Current Value</span>
+                        <span>Time</span>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <Badge
-                          className={cn(
-                            "font-semibold",
-                            trade.outcome?.toLowerCase() === 'yes'
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : "bg-red-50 text-red-700 border-red-200"
-                          )}
-                        >
-                          {trade.outcome?.toUpperCase() || 'N/A'}
-                        </Badge>
-                        <p className={cn(
-                          "font-bold text-lg min-w-[4rem] text-right",
-                          trade.roi >= 0 ? "text-emerald-600" : "text-red-600"
-                        )}>
-                          {trade.roi >= 0 ? '+' : ''}{trade.roi.toFixed(1)}%
-                        </p>
+                      <div className="divide-y divide-slate-100">
+                        {tradesWithROI.map((trade, index) => (
+                          <div key={index} className="grid grid-cols-1 gap-4 px-3 py-4 md:grid-cols-6 md:items-center">
+                            <div className="space-y-1">
+                              <p className="font-semibold text-slate-900">{trade.market}</p>
+                              <p className="text-xs text-slate-500">
+                                {new Date(trade.timestamp).toLocaleDateString('en-US', { 
+                                  month: 'short', 
+                                  day: 'numeric', 
+                                  year: 'numeric' 
+                                })}
+                              </p>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-xs text-slate-500 md:hidden">Outcome</span>
+                              <Badge
+                                className={cn(
+                                  'w-fit font-semibold',
+                                  trade.outcome?.toLowerCase() === 'yes'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-red-50 text-red-700 border-red-200'
+                                )}
+                              >
+                                {trade.outcome || 'N/A'}
+                              </Badge>
+                            </div>
+                            <div className="space-y-1 text-sm text-slate-700">
+                              <span className="text-xs text-slate-500 md:hidden">Amount</span>
+                              <p className="font-semibold text-slate-900">
+                                {formatSignedCurrency(trade.invested, 2)}
+                              </p>
+                              <p className="text-xs text-slate-500">{trade.size.toFixed(1)} contracts</p>
+                            </div>
+                            <div className="space-y-1 text-sm text-slate-700">
+                              <span className="text-xs text-slate-500 md:hidden">Entry -> Current</span>
+                              <p className="font-semibold text-slate-900">
+                                ${trade.price.toFixed(3)} -> ${trade.currentPrice?.toFixed(3)}
+                              </p>
+                              <p
+                                className={cn(
+                                  'text-xs font-semibold',
+                                  trade.roi >= 0 ? 'text-emerald-600' : 'text-red-600'
+                                )}
+                              >
+                                {trade.roi >= 0 ? '+' : ''}{trade.roi.toFixed(1)}%
+                              </p>
+                            </div>
+                            <div className="space-y-1 text-sm text-slate-700">
+                              <span className="text-xs text-slate-500 md:hidden">Current Value</span>
+                              <p className="font-semibold text-slate-900">
+                                {formatSignedCurrency(trade.currentValue, 2)}
+                              </p>
+                              <p
+                                className={cn(
+                                  'text-xs font-semibold',
+                                  trade.pnl >= 0 ? 'text-emerald-600' : 'text-red-600'
+                                )}
+                              >
+                                {formatSignedCurrency(trade.pnl, 2)}
+                              </p>
+                            </div>
+                            <div className="space-y-1 text-sm text-slate-700">
+                              <span className="text-xs text-slate-500 md:hidden">Time</span>
+                              <p className="font-semibold text-slate-900">
+                                {new Date(trade.timestamp).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {new Date(trade.timestamp).toLocaleTimeString('en-US', {
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                })}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ));
+                  );
                 })()}
               </div>
             </Card>
