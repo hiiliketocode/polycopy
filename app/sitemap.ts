@@ -66,8 +66,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     const { data: traders, error } = await supabase
       .from('traders')
-      .select('wallet_address, updated_at, follower_count, trade_count')
-      .gte('trade_count', 10) // At least 10 trades
+      .select('wallet_address, updated_at, follower_count, total_trades')
+      .gte('total_trades', 10) // At least 10 trades
       .gte('follower_count', 1) // At least 1 follower
       .gte('updated_at', thirtyDaysAgo.toISOString()) // Active in last 30 days
       .order('follower_count', { ascending: false })
