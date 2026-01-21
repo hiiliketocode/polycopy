@@ -14,6 +14,30 @@ const CTF_EXCHANGE_ADDRESS = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E';
 // OrderFilled event signature
 // event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, uint256 makerAssetId, uint256 takerAssetId, uint256 makerAmountFilled, uint256 takerAmountFilled, uint256 fee)
 const ORDER_FILLED_TOPIC = '0xd0a08e8c493f9c94f29311604c9de1b4e8c8d4c06bd0c789af57f2d65bfec5f6';
+const MAX_BLOCK_LOOKUPS = 250;
+
+const fetchBlockTimestamp = async (rpcUrl: string, blockNumber: string) => {
+  const blockParams = {
+    jsonrpc: '2.0',
+    id: 3,
+    method: 'eth_getBlockByNumber',
+    params: [blockNumber, false],
+  };
+
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(blockParams),
+    cache: 'no-store',
+  });
+
+  const json = await response.json();
+  const timestampHex = json?.result?.timestamp;
+  if (!timestampHex) return null;
+  const timestamp = parseInt(timestampHex, 16);
+  if (!Number.isFinite(timestamp)) return null;
+  return timestamp * 1000;
+};
 
 export async function GET(
   request: Request,
@@ -125,11 +149,44 @@ export async function GET(
 
     console.log(`📊 Processing ${uniqueLogs.length} unique trades...`);
 
+    const uniqueBlocks = Array.from(
+      new Set(
+        uniqueLogs
+          .map((log: any) => log.blockNumber)
+          .filter((blockNumber: any) => typeof blockNumber === 'string' && blockNumber.trim())
+      )
+    ).map((blockNumber) => blockNumber.toLowerCase());
+
+    const sortedBlocks = uniqueBlocks.sort((a, b) => parseInt(a, 16) - parseInt(b, 16));
+    const blocksToFetch =
+      sortedBlocks.length > MAX_BLOCK_LOOKUPS
+        ? sortedBlocks.slice(sortedBlocks.length - MAX_BLOCK_LOOKUPS)
+        : sortedBlocks;
+
+    const blockTimestampMap = new Map<string, number>();
+    for (let i = 0; i < blocksToFetch.length; i += 6) {
+      const batch = blocksToFetch.slice(i, i + 6);
+      const timestamps = await Promise.all(
+        batch.map(async (blockNumber) => {
+          try {
+            return [blockNumber, await fetchBlockTimestamp(rpcUrl, blockNumber)] as const;
+          } catch {
+            return [blockNumber, null] as const;
+          }
+        })
+      );
+      timestamps.forEach(([blockNumber, timestamp]) => {
+        if (timestamp) blockTimestampMap.set(blockNumber, timestamp);
+      });
+    }
+
     // Parse events from Alchemy format
     const trades = uniqueLogs.map((log: any) => {
       try {
         // Get block timestamp
-        const timestamp = log.timeStamp ? parseInt(log.timeStamp, 16) * 1000 : Date.now();
+        const timestamp =
+          (typeof log.blockNumber === 'string' && blockTimestampMap.get(log.blockNumber.toLowerCase())) ||
+          Date.now();
 
         // Parse topics array
         // topics[0] = event signature

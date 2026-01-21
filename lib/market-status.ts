@@ -72,8 +72,15 @@ export const isSeasonLongMarketTitle = (title?: string | null) => {
   if (!title) return false
   const lower = title.toLowerCase()
   if (!/\bwin\b/.test(lower)) return false
-  if (/\b20\d{2}\s*-\s*\d{2}\b/.test(lower) || /\b20\d{2}-\d{2}\b/.test(lower)) {
-    return true
-  }
-  return /\b(season|league|premier league|champions league|championship|tournament|cup|title)\b/.test(lower)
+  const hasSeasonKeyword =
+    /\b(season|league|premier league|champions league|championship|tournament|cup|title)\b/.test(
+      lower
+    )
+  if (hasSeasonKeyword) return true
+  const hasYearRange =
+    /\b20\d{2}\s*-\s*\d{2}\b/.test(lower) || /\b20\d{2}-\d{2}\b(?!-\d{2})/.test(lower)
+  if (hasYearRange) return true
+  const hasSpecificDate = /\b20\d{2}-\d{2}-\d{2}\b/.test(lower)
+  if (hasSpecificDate) return false
+  return false
 }

@@ -139,6 +139,7 @@ interface Position {
 type DailyPnlPoint = {
   date: string
   pnl: number
+  trades: number
 }
 
 const buildPositionsMap = (orders: Order[]) => {
@@ -247,11 +248,26 @@ type Stats = {
 }
 
 const buildDailyPnlSeries = (positionsMap: Map<string, Position>) => {
-  const daily = new Map<string, number>()
+  const daily = new Map<string, { pnl: number; trades: number }>()
 
-  const addDaily = (dateKey: string | null, value: number) => {
+  const ensureEntry = (dateKey: string) => {
+    const existing = daily.get(dateKey)
+    if (existing) return existing
+    const created = { pnl: 0, trades: 0 }
+    daily.set(dateKey, created)
+    return created
+  }
+
+  const addDailyPnl = (dateKey: string | null, value: number) => {
     if (!dateKey || !Number.isFinite(value)) return
-    daily.set(dateKey, (daily.get(dateKey) ?? 0) + value)
+    const entry = ensureEntry(dateKey)
+    entry.pnl += value
+  }
+
+  const addDailyTrades = (dateKey: string | null, count = 1) => {
+    if (!dateKey || !Number.isFinite(count) || count <= 0) return
+    const entry = ensureEntry(dateKey)
+    entry.trades += count
   }
 
   for (const position of positionsMap.values()) {
@@ -260,6 +276,7 @@ const buildDailyPnlSeries = (positionsMap: Map<string, Position>) => {
     for (const sell of position.sells) {
       let remainingSellSize = sell.size
       const sellDateKey = toDateKey(sell.timestamp)
+      let matched = false
 
       while (remainingSellSize > 0 && remainingBuys.length > 0) {
         const buy = remainingBuys[0]
@@ -268,7 +285,8 @@ const buildDailyPnlSeries = (positionsMap: Map<string, Position>) => {
         const matchProceeds = (sell.proceeds / sell.size) * matchSize
         const matchPnl = matchProceeds - matchCost
 
-        addDaily(sellDateKey, matchPnl)
+        addDailyPnl(sellDateKey, matchPnl)
+        matched = true
 
         remainingSellSize -= matchSize
         buy.size -= matchSize
@@ -277,6 +295,10 @@ const buildDailyPnlSeries = (positionsMap: Map<string, Position>) => {
         if (buy.size <= POSITION_EPSILON) {
           remainingBuys.shift()
         }
+      }
+
+      if (matched) {
+        addDailyTrades(sellDateKey, 1)
       }
     }
 
@@ -287,12 +309,14 @@ const buildDailyPnlSeries = (positionsMap: Map<string, Position>) => {
       const resolutionValue = remainingSize * resolutionPrice
       const resolutionPnl = resolutionValue - remainingCost
       const resolutionTimestamp = getLatestTimestamp(position) ?? new Date().toISOString()
-      addDaily(toDateKey(resolutionTimestamp), resolutionPnl)
+      const resolutionDateKey = toDateKey(resolutionTimestamp)
+      addDailyPnl(resolutionDateKey, resolutionPnl)
+      addDailyTrades(resolutionDateKey, 1)
     }
   }
 
   return Array.from(daily.entries())
-    .map(([date, pnl]) => ({ date, pnl }))
+    .map(([date, entry]) => ({ date, pnl: entry.pnl, trades: entry.trades }))
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 }
 
@@ -378,10 +402,10 @@ const computeStatsFromPositions = (
     (p) => p.closedByResolution || p.netSize <= POSITION_EPSILON
   )
   const winningPositions = closedPositions.filter((p) => p.realizedPnl > 0).length
-  const losingPositions = closedPositions.filter((p) => p.realizedPnl < 0).length
+  const losingPositions = closedPositions.filter((p) => p.realizedPnl <= 0).length
   const winRate = closedPositions.length > 0 ? (winningPositions / closedPositions.length) * 100 : 0
 
-  const totalTrades = orders.filter((o) => normalizeSide(o.side) === 'buy').length
+  const totalTrades = openPositionsCount + winningPositions + losingPositions
 
   return {
     totalPnl,

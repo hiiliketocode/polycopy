@@ -30,7 +30,21 @@ export async function GET(request: Request) {
 
   const extractTeamsFromTitle = (value?: string | null) => {
     if (!value) return null;
-    const match = value.match(/(.+?)\s+(?:vs\.?|v\.?|@|versus|at)\s+(.+?)(?:\s|$)/i);
+    let workingTitle = value.trim();
+    if (workingTitle.includes(':')) {
+      const afterColon = workingTitle.split(':').slice(1).join(':').trim();
+      if (/\b(vs\.?|v\.?|@|versus|at)\b/i.test(afterColon)) {
+        workingTitle = afterColon;
+      }
+    }
+    const cleaned = workingTitle
+      .replace(/\s*\([-+]?\d+\.?\d*\)/g, '')
+      .replace(/\s*(?:O\/U|Over\/Under|Over|Under)\s*\d+\.?\d*/gi, '')
+      .replace(/\s*-\s*.*$/, '')
+      .replace(/\s*\|\s*.*$/, '')
+      .replace(/\s*:\s*.*$/, '')
+      .trim();
+    const match = cleaned.match(/(.+?)\s+(?:vs\.?|v\.?|@|versus|at)\s+(.+?)(?:\s|$)/i);
     if (!match) return null;
     return {
       homeTeam: match[1].trim(),

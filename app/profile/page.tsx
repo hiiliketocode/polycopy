@@ -132,8 +132,19 @@ function formatRelativeTime(dateString: string): string {
   if (diffInDays === 1) return 'Yesterday';
   if (diffInDays < 7) return `${diffInDays} days ago`;
   if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} weeks ago`;
-  
+
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatDuration(durationMs: number | null): string {
+  if (!durationMs || !Number.isFinite(durationMs) || durationMs <= 0) return '—';
+  const totalMinutes = Math.round(durationMs / 60000);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const totalHours = Math.round(totalMinutes / 60);
+  if (totalHours < 24) return `${totalHours}h`;
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return `${days}d ${hours}h`;
 }
 
 function formatTimestamp(dateString: string): string {
@@ -1186,6 +1197,121 @@ function ProfilePageContent() {
     },
     displayedPnl: userStats.totalPnl.toFixed(2)
   });
+
+  const tradeStats = useMemo(() => {
+    const windowDays = 30;
+    const windowMs = windowDays * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    const getInvested = (trade: CopiedTrade) => {
+      if (trade.amount_invested !== null && trade.amount_invested !== undefined) {
+        return trade.amount_invested;
+      }
+      if (trade.entry_size && trade.price_when_copied) {
+        return trade.entry_size * trade.price_when_copied;
+      }
+      return 0;
+    };
+
+    const getReturnPct = (trade: CopiedTrade) => {
+      if (Number.isFinite(trade.roi ?? NaN)) return trade.roi as number;
+      const entry = trade.price_when_copied;
+      if (!entry) return null;
+      const exit = trade.user_exit_price ?? trade.current_price ?? null;
+      if (exit === null || exit === undefined) return null;
+      return ((exit - entry) / entry) * 100;
+    };
+
+    const getOpenTimestamp = (trade: CopiedTrade) => {
+      const ts = Date.parse(trade.copied_at || '');
+      return Number.isFinite(ts) ? ts : null;
+    };
+
+    const getCloseTimestamp = (trade: CopiedTrade) => {
+      const candidate = trade.user_closed_at || trade.market_resolved_at || trade.trader_closed_at;
+      if (!candidate) return null;
+      const ts = Date.parse(candidate);
+      return Number.isFinite(ts) ? ts : null;
+    };
+
+    const tradesWithTime = copiedTrades
+      .map((trade) => {
+        const ts = getOpenTimestamp(trade);
+        return ts ? { trade, ts } : null;
+      })
+      .filter((entry): entry is { trade: CopiedTrade; ts: number } => entry !== null);
+
+    const lastTradeTs = tradesWithTime.length > 0
+      ? Math.max(...tradesWithTime.map((entry) => entry.ts))
+      : null;
+
+    const recentTrades = tradesWithTime.filter(({ ts }) => now - ts <= windowMs);
+    const tradesPerWeek = recentTrades.length > 0 ? recentTrades.length / (windowDays / 7) : 0;
+    const frequencyLabel =
+      tradesPerWeek === 0 ? 'None' : tradesPerWeek >= 5 ? 'High' : tradesPerWeek >= 2 ? 'Medium' : 'Low';
+
+    const activeDays = new Set(
+      recentTrades.map(({ ts }) => new Date(ts).toISOString().slice(0, 10))
+    ).size;
+
+    const amounts = copiedTrades
+      .map(getInvested)
+      .filter((value) => Number.isFinite(value) && value > 0);
+    const avgTradeSize =
+      amounts.length > 0 ? amounts.reduce((sum, value) => sum + value, 0) / amounts.length : null;
+
+    const closedTrades = copiedTrades.filter((trade) => trade.user_closed_at || trade.market_resolved);
+    const returns = closedTrades
+      .map(getReturnPct)
+      .filter((value): value is number => value !== null && Number.isFinite(value));
+    const avgReturn =
+      returns.length > 0 ? returns.reduce((sum, value) => sum + value, 0) / returns.length : null;
+
+    const holdDurations = closedTrades
+      .map((trade) => {
+        const openTs = getOpenTimestamp(trade);
+        const closeTs = getCloseTimestamp(trade);
+        if (openTs === null || closeTs === null) return null;
+        const diff = closeTs - openTs;
+        return diff > 0 ? diff : null;
+      })
+      .filter((value): value is number => value !== null);
+    const avgHoldMs =
+      holdDurations.length > 0 ? holdDurations.reduce((sum, value) => sum + value, 0) / holdDurations.length : null;
+
+    const recentClosed = closedTrades
+      .map((trade) => {
+        const ts = getCloseTimestamp(trade) ?? getOpenTimestamp(trade);
+        return ts ? { trade, ts } : null;
+      })
+      .filter((entry): entry is { trade: CopiedTrade; ts: number } => entry !== null)
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, 10);
+
+    const consistency =
+      recentClosed.length > 0
+        ? (recentClosed.filter(({ trade }) => {
+            const value = getReturnPct(trade);
+            return value !== null && value > 0;
+          }).length / recentClosed.length) * 100
+        : null;
+
+    return {
+      lastTradeTs,
+      tradesPerWeek,
+      frequencyLabel,
+      activeDays,
+      avgTradeSize,
+      avgReturn,
+      avgHoldMs,
+      consistency,
+      consistencySampleSize: recentClosed.length,
+    };
+  }, [copiedTrades]);
+
+  const lastTradeLabel = tradeStats.lastTradeTs
+    ? formatRelativeTime(new Date(tradeStats.lastTradeTs).toISOString())
+    : '—';
 
   // Filter trades
   const filteredTrades = copiedTrades.filter(trade => {
@@ -3273,131 +3399,136 @@ function ProfilePageContent() {
                 )}
               </Card>
 
-              {/* Performance Metrics */}
-              <Card className="p-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">Performance Metrics</h3>
-                <p className="text-sm text-slate-500 mb-6">Showing lifetime performance across all trades</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {/* Lifetime ROI */}
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Lifetime ROI</p>
-                    <p
-                      className={cn(
-                        'text-2xl font-bold',
-                        userStats.roi > 0 ? 'text-emerald-600' : userStats.roi < 0 ? 'text-red-600' : 'text-slate-900'
-                      )}
-                    >
-                      {userStats.totalVolume > 0
-                        ? `${userStats.roi > 0 ? '+' : ''}${userStats.roi.toFixed(1)}%`
-                        : 'N/A'}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">All time</p>
+              {/* Trading Stats */}
+              <Card className="overflow-hidden border border-slate-200 bg-white">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">Trading Stats</h3>
+                    <p className="text-sm text-slate-500">Based on your copied trades. Lifetime unless noted.</p>
+                  </div>
+                  <span className="text-xs rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-600">All time</span>
+                </div>
+                <div className="grid gap-4 p-6 lg:grid-cols-[1.15fr_1fr]">
+                  <div className="rounded-2xl border border-slate-200/60 bg-slate-50 p-5 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Performance</p>
+                      <span className="text-[11px] text-slate-400">All time</span>
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
+                      <div>
+                        <p className="text-xs text-slate-500">ROI</p>
+                        <p
+                          className={cn(
+                            'text-3xl font-semibold',
+                            userStats.roi > 0 ? 'text-emerald-600' : userStats.roi < 0 ? 'text-red-600' : 'text-slate-900'
+                          )}
+                        >
+                          {userStats.totalVolume > 0
+                            ? `${userStats.roi > 0 ? '+' : ''}${userStats.roi.toFixed(1)}%`
+                            : 'N/A'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-slate-500">Winnings</p>
+                        <p
+                          className={cn(
+                            'text-2xl font-semibold',
+                            userStats.totalPnl > 0 ? 'text-emerald-600' : userStats.totalPnl < 0 ? 'text-red-600' : 'text-slate-900'
+                          )}
+                        >
+                          {`${userStats.totalPnl > 0 ? '+' : ''}${formatCompactNumber(userStats.totalPnl)}`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-slate-200/70 bg-white/70 p-3">
+                        <p className="text-[11px] text-slate-500">Volume</p>
+                        <p className="text-base font-semibold text-slate-900">{formatCompactNumber(userStats.totalVolume)}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200/70 bg-white/70 p-3">
+                        <p className="text-[11px] text-slate-500">Win rate</p>
+                        <p className="text-base font-semibold text-slate-900">{userStats.winRate.toFixed(1)}%</p>
+                      </div>
+                      <div className="col-span-2 rounded-xl border border-slate-200/70 bg-white/70 p-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[11px] text-slate-500">Consistency</p>
+                          <span className="text-[10px] text-slate-400">
+                            {tradeStats.consistencySampleSize > 0
+                              ? `Last ${tradeStats.consistencySampleSize} closed`
+                              : 'No closed trades'}
+                          </span>
+                        </div>
+                        <p className="text-base font-semibold text-slate-900">
+                          {tradeStats.consistency !== null ? `${tradeStats.consistency.toFixed(0)}%` : '—'}
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Total P&L */}
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Total P&L</p>
-                    <p
-                      className={cn(
-                        'text-2xl font-bold',
-                        userStats.totalPnl > 0 ? 'text-emerald-600' : userStats.totalPnl < 0 ? 'text-red-600' : 'text-slate-900'
-                      )}
-                    >
-                      {`${userStats.totalPnl > 0 ? '+' : ''}$${Math.abs(userStats.totalPnl).toFixed(0)}`}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">All time</p>
-                  </div>
-
-                  {/* Best Position */}
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Best Position</p>
-                    <p className="text-2xl font-bold text-slate-900">
-                      ${(() => {
-                        if (copiedTrades.length === 0) return '0';
-                        const maxTrade = Math.max(...copiedTrades.map(t => t.amount_invested || 0));
-                        return maxTrade >= 1000000 
-                          ? `${(maxTrade / 1000000).toFixed(2)}M`
-                          : maxTrade >= 1000 
-                            ? `${(maxTrade / 1000).toFixed(1)}K` 
-                            : maxTrade.toFixed(0);
-                      })()}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">Largest trade</p>
-                  </div>
-
-                  {/* Total Trades */}
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Total Trades</p>
-                    <p className="text-2xl font-bold text-slate-900">{userStats.totalTrades}</p>
-                    <p className="text-xs text-slate-500 mt-1">All time</p>
-                  </div>
-
-                  {/* Net P&L / Trade */}
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Net P&L / Trade</p>
-                    <p
-                      className={cn(
-                        'text-2xl font-bold',
-                        userStats.totalPnl > 0 ? 'text-emerald-600' : userStats.totalPnl < 0 ? 'text-red-600' : 'text-slate-900'
-                      )}
-                    >
-                      {(() => {
-                        const tradesCount = userStats.totalTrades || copiedTrades.length;
-                        if (tradesCount === 0) return '$0';
-                        const avgPnL = userStats.totalPnl / tradesCount;
-                        return `${avgPnL > 0 ? '+' : ''}$${Math.abs(avgPnL).toFixed(0)}`;
-                      })()}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">Per trade</p>
-                  </div>
-
-                  {/* Avg ROI / Trade */}
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Avg ROI / Trade</p>
-                    <p className={`text-2xl font-bold ${(() => {
-                      const closedTrades = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
-                      if (closedTrades.length === 0) return 'text-slate-900';
-                      const avgROI = closedTrades.reduce((sum, t) => sum + (t.roi || 0), 0) / closedTrades.length;
-                      return avgROI > 0 ? 'text-emerald-600' : 'text-red-600';
-                    })()}`}>
-                      {(() => {
-                        const closedTrades = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
-                        if (closedTrades.length === 0) return 'N/A';
-                        const avgROI = closedTrades.reduce((sum, t) => sum + (t.roi || 0), 0) / closedTrades.length;
-                        return `${avgROI > 0 ? '+' : ''}${avgROI.toFixed(2)}%`;
-                      })()}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">Per trade</p>
-                  </div>
-
-                  {/* Open Positions */}
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Open Positions</p>
-                    <p className="text-2xl font-bold text-slate-900">
-                      {copiedTrades.filter(t => !t.market_resolved && !t.user_closed_at).length}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">Currently active</p>
-                  </div>
-
-                  {/* Avg P&L / Trade */}
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-sm text-slate-500 mb-1">Avg P&L / Trade</p>
-                    <p className={`text-2xl font-bold ${(() => {
-                      const totalPnL = copiedTrades
-                        .filter(t => t.roi !== null && t.roi !== 0)
-                        .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
-                      return totalPnL > 0 ? 'text-emerald-600' : 'text-red-600';
-                    })()}`}>
-                      {(() => {
-                        if (copiedTrades.length === 0) return '$0';
-                        const totalPnL = copiedTrades
-                          .filter(t => t.roi !== null && t.roi !== 0)
-                          .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
-                        const avgPnL = totalPnL / copiedTrades.length;
-                        return `${avgPnL > 0 ? '+' : ''}$${Math.abs(avgPnL).toFixed(0)}`;
-                      })()}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">Average</p>
+                  <div className="rounded-2xl border border-slate-200/80 p-5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trades</p>
+                        <p className="text-xs text-slate-400">Sizing and cadence</p>
+                      </div>
+                      <span className="text-[11px] text-slate-400">Activity uses last 30d</span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-[11px] text-slate-500">Average return</p>
+                        <p
+                          className={cn(
+                            'text-base font-semibold',
+                            tradeStats.avgReturn !== null && tradeStats.avgReturn > 0
+                              ? 'text-emerald-600'
+                              : tradeStats.avgReturn !== null && tradeStats.avgReturn < 0
+                                ? 'text-red-600'
+                                : 'text-slate-900'
+                          )}
+                        >
+                          {tradeStats.avgReturn !== null
+                            ? `${tradeStats.avgReturn > 0 ? '+' : ''}${tradeStats.avgReturn.toFixed(1)}%`
+                            : '—'}
+                        </p>
+                        <p className="text-[10px] text-slate-400">Closed trades</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-[11px] text-slate-500">Open positions</p>
+                        <p className="text-base font-semibold text-slate-900">{userStats.openTrades}</p>
+                        <p className="text-[10px] text-slate-400">Active now</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-[11px] text-slate-500">Trade frequency</p>
+                        <p className="text-base font-semibold text-slate-900">{tradeStats.frequencyLabel}</p>
+                        <p className="text-[10px] text-slate-400">
+                          {tradeStats.tradesPerWeek > 0 ? `${tradeStats.tradesPerWeek.toFixed(1)}/wk` : '0/wk'} (30d)
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-[11px] text-slate-500">Average trade size</p>
+                        <p className="text-base font-semibold text-slate-900">
+                          {tradeStats.avgTradeSize !== null ? formatCurrency(tradeStats.avgTradeSize) : '—'}
+                        </p>
+                        <p className="text-[10px] text-slate-400">Per trade</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-[11px] text-slate-500">Recency</p>
+                        <p className="text-base font-semibold text-slate-900">{lastTradeLabel}</p>
+                        <p className="text-[10px] text-slate-400">Last trade</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-[11px] text-slate-500">Activity</p>
+                        <p className="text-base font-semibold text-slate-900">{tradeStats.activeDays} days</p>
+                        <p className="text-[10px] text-slate-400">Active days (30d)</p>
+                      </div>
+                      <div className="col-span-2 rounded-xl bg-slate-50 p-3">
+                        <p className="text-[11px] text-slate-500">Avg hold time</p>
+                        <p className="text-base font-semibold text-slate-900">
+                          {formatDuration(tradeStats.avgHoldMs)}
+                        </p>
+                        <p className="text-[10px] text-slate-400">Closed trades</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </Card>
@@ -3559,28 +3690,36 @@ function ProfilePageContent() {
                     .sort((a, b) => (b.roi || 0) - (a.roi || 0))
                     .slice(0, 5)
                     .map((trade) => (
-                      <div key={trade.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-slate-900 truncate">{trade.market_title}</p>
-                          <p className="text-sm text-slate-500">{formatRelativeTime(trade.copied_at)}</p>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <Badge
-                            className={cn(
-                              "font-semibold",
-                              trade.outcome === 'YES'
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : "bg-red-50 text-red-700 border-red-200"
-                            )}
-                          >
-                            {trade.outcome}
-                          </Badge>
-                          <p className={cn(
-                            "font-bold text-lg",
-                            (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
-                          )}>
-                            {(trade.roi || 0) >= 0 ? '+' : ''}{(trade.roi || 0).toFixed(1)}%
-                          </p>
+                      <div key={trade.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 line-clamp-2">{trade.market_title}</p>
+                            <p className="text-xs text-slate-500">{formatRelativeTime(trade.copied_at)}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 sm:flex sm:items-center sm:gap-4">
+                            <div className="flex flex-col items-start text-left sm:items-end sm:text-right">
+                              <span className="text-[11px] font-medium text-slate-500">Outcome</span>
+                              <Badge
+                                className={cn(
+                                  "font-semibold",
+                                  trade.outcome === 'YES'
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : "bg-red-50 text-red-700 border-red-200"
+                                )}
+                              >
+                                {trade.outcome}
+                              </Badge>
+                            </div>
+                            <div className="flex flex-col items-start text-left sm:items-end sm:text-right">
+                              <span className="text-[11px] font-medium text-slate-500">ROI</span>
+                              <p className={cn(
+                                "text-base font-semibold",
+                                (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
+                              )}>
+                                {(trade.roi || 0) >= 0 ? '+' : ''}{(trade.roi || 0).toFixed(1)}%
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     ))}

@@ -548,16 +548,9 @@ export function TradeCard({
   })
   const prevCanUseAutoCloseRef = useRef(canUseAutoClose)
 
-  const formatWallet = (value: string) => {
-    const trimmed = value?.trim() || ""
-    if (trimmed.length <= 10) return trimmed
-    return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`
-  }
-
   const isUuid = (value?: string | null) =>
     Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))
 
-  const displayAddress = formatWallet(trader.address || "")
   const copiedTraderId = isUuid(trader.id) ? trader.id! : null
 
   const cleanedLiveScore = useMemo(() => {
@@ -820,6 +813,13 @@ export function TradeCard({
     statusBadgeVariant !== "resolved" &&
     statusBadgeVariant !== "ended"
   const hasEventTime = Boolean(eventStartTime || eventEndTime)
+  const isSportsContext = Boolean(
+    looksLikeScore ||
+      liveStatus === "live" ||
+      liveStatus === "final" ||
+      (category && category.toLowerCase().includes("sports")) ||
+      espnUrl
+  )
   const { eventTimeValue, eventTimeKind } = useMemo(() => {
     if (isSeasonLong && eventEndTime) {
       return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
@@ -830,9 +830,14 @@ export function TradeCard({
       return { eventTimeValue: null, eventTimeKind: "unknown" as const }
     }
     if (eventStartTime) return { eventTimeValue: eventStartTime, eventTimeKind: "start" as const }
-    if (eventEndTime) return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
+    if (eventEndTime) {
+      return {
+        eventTimeValue: eventEndTime,
+        eventTimeKind: isSportsContext ? "start" : "end",
+      }
+    }
     return { eventTimeValue: null, eventTimeKind: "unknown" as const }
-  }, [isSeasonLong, statusVariant, eventStartTime, eventEndTime])
+  }, [isSeasonLong, statusVariant, eventStartTime, eventEndTime, isSportsContext])
   const { eventTimeLabel, isEventTimeLoading } = useMemo(() => {
     if (!eventTimeValue) {
       if (typeof currentMarketUpdatedAt === "number") {
@@ -1161,10 +1166,14 @@ export function TradeCard({
     let netAmount = 0
     let hasContractData = false
     let hasAmountData = false
+    let hasSellTrades = false
     trades.forEach((trade) => {
       const size = Number.isFinite(trade.size ?? NaN) ? (trade.size ?? 0) : null
       const amount = Number.isFinite(trade.amountUsd ?? NaN) ? (trade.amountUsd ?? 0) : null
       const direction = trade.side === "SELL" ? -1 : 1
+      if (trade.side === "SELL") {
+        hasSellTrades = true
+      }
       if (size !== null) {
         netContracts += size * direction
         hasContractData = true
@@ -1203,23 +1212,29 @@ export function TradeCard({
     return (
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1">
-            {tabOptions.map((option) => (
-              <button
-                key={option.key}
-                type="button"
-                onClick={() => setPositionDrawerTab(option.key)}
-                className={cn(
-                  "rounded-full px-2.5 py-1 text-[11px] font-semibold transition",
-                  positionDrawerTab === option.key
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:text-slate-700"
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+          {tabOptions.length > 1 ? (
+            <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1">
+              {tabOptions.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setPositionDrawerTab(option.key)}
+                  className={cn(
+                    "rounded-full px-2.5 py-1 text-[11px] font-semibold transition",
+                    positionDrawerTab === option.key
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:text-slate-700"
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white">
+              {tabOptions[0]?.label}
+            </span>
+          )}
           <div className="flex items-center gap-2">
             {showHedgingDetails ? (
               <TooltipProvider>
@@ -1242,9 +1257,6 @@ export function TradeCard({
                 </Tooltip>
               </TooltipProvider>
             ) : null}
-            <span className="text-[11px] font-semibold text-slate-500">
-              {trades.length} trade{trades.length === 1 ? "" : "s"}
-            </span>
           </div>
         </div>
         <div className="mt-2 space-y-2">
@@ -1311,7 +1323,7 @@ export function TradeCard({
         </div>
         <div className="mt-2 flex items-end justify-between gap-3 border-t border-slate-200 pt-2">
           <div className="text-[11px] font-semibold text-slate-500">
-            Total Amount (Buys - Sells) USD
+            Total{hasSellTrades ? " (Buys - Sells)" : ""}
             <div className="text-sm font-semibold text-slate-700">{totalAmountLabel}</div>
             <div className="text-[11px] font-medium text-slate-400">
               Ave Price {avgPriceLabel}
@@ -2095,6 +2107,8 @@ export function TradeCard({
   const showQuickCopyExperience = Boolean(isPremium) && hasConnectedWallet
   const showLinkWalletHint = isPremiumWithoutWallet && manualTradingEnabled
   const isSellTrade = action === "Sell"
+  const shouldShowInsightsSection =
+    traderHedgingInfo.isHedging || isSellTrade || hasAnyPositionBadge
   const normalizedPosition = normalizeOutcome(position)
   const userHasMatchingPosition = Boolean(
     normalizedPosition &&
@@ -2497,44 +2511,8 @@ export function TradeCard({
           shouldShowPrimaryCta ? "pb-0" : "pb-5 md:pb-6"
         )}
       >
-        {(isSellTrade || traderHedgingInfo.isHedging) && (
-          <div className="mb-3 flex items-center justify-center gap-2">
-            {traderHedgingInfo.isHedging ? (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge
-                      variant="secondary"
-                      className={cn(
-                        badgeBaseClass,
-                        "h-6 px-2 text-[11px] font-semibold bg-yellow-50 text-yellow-700 border-yellow-200"
-                      )}
-                    >
-                      <ArrowLeftRight className="h-3 w-3" />
-                      Trader Hedging
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-[220px] text-xs">
-                    Trader has bought multiple outcomes in this market to reduce directional risk.
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : null}
-            {isSellTrade ? (
-              <Badge
-                variant="secondary"
-                className={cn(
-                  badgeBaseClass,
-                  "h-6 px-2 text-[11px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
-                )}
-              >
-                Trader Sold
-              </Badge>
-            ) : null}
-          </div>
-        )}
         {/* Header Row */}
-        <div className="flex items-start justify-between mb-3 gap-3">
+        <div className="flex items-start justify-between mb-2 gap-3">
           <Link
             href={`/trader/${trader.id || "1"}`}
             className="flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
@@ -2546,8 +2524,7 @@ export function TradeCard({
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0">
-              <p className="font-medium text-slate-900 text-sm">{trader.name}</p>
-              <p className="text-xs text-slate-500 font-mono truncate">{displayAddress}</p>
+              <p className="font-medium text-slate-900 text-sm leading-tight">{trader.name}</p>
             </div>
           </Link>
           <div className="flex flex-col items-end gap-1 shrink-0">
@@ -2556,123 +2533,101 @@ export function TradeCard({
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 mb-4 md:flex-row md:flex-wrap md:items-center">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start gap-2.5 md:items-center">
-              <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
-                <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
-                <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
-                  {market.slice(0, 2)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0">
-                <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug break-words">
-                  {market}
-                  {/* External link icon for Premium users - at end of market name */}
-                  {isPremium && polymarketUrl && (
-                    <a
-                      href={polymarketUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-2 inline-flex text-slate-400 hover:text-slate-600 transition-colors"
-                      title="View on Polymarket"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
-                  )}
-                </h3>
+        <div className="mb-2 rounded-lg bg-slate-50/70 px-4 py-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start gap-2.5 md:items-center">
+                <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
+                  <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
+                  <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
+                    {market.slice(0, 2)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0">
+                  <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug break-words">
+                    {market}
+                    {/* External link icon for Premium users - at end of market name */}
+                    {isPremium && polymarketUrl && (
+                      <a
+                        href={polymarketUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-2 inline-flex text-slate-400 hover:text-slate-600 transition-colors"
+                        title="View on Polymarket"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    )}
+                  </h3>
+                </div>
               </div>
             </div>
-            <div className="mt-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {hasAnyPositionBadge ? (
+            <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end">
+              {showEventTimeBadge && (
+                espnLink ? (
                   <Badge
                     asChild
                     variant="secondary"
                     className={cn(
                       badgeBaseClass,
-                      "h-6 px-2 text-[11px] font-semibold bg-white text-slate-600 border-slate-200 hover:bg-slate-50 cursor-pointer"
+                      hasEventTime
+                        ? "bg-white text-slate-700 border-slate-200"
+                        : "bg-white text-slate-400 border-slate-200",
                     )}
                   >
-                    <button
-                      type="button"
-                      onClick={handlePositionBadgeClick}
-                      aria-expanded={isPositionDrawerOpen}
-                    >
-                      <Star className="h-3 w-3 text-slate-500" />
-                      {isSellTrade ? "Exiting Positions" : "Existing Positions"}
-                    </button>
+                    <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                      {isEventTimeLoading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <CalendarClock className="h-3.5 w-3.5" />
+                      )}
+                      {eventTimeLabel ?? "Loading"}
+                    </a>
                   </Badge>
-                ) : !isSellTrade ? (
+                ) : (
                   <Badge
                     variant="secondary"
                     className={cn(
                       badgeBaseClass,
-                      "h-6 px-2 text-[11px] font-semibold bg-white text-slate-400 border-slate-200"
+                      hasEventTime
+                        ? "bg-white text-slate-700 border-slate-200"
+                        : "bg-white text-slate-400 border-slate-200",
                     )}
                   >
-                    <Star className="h-3 w-3 text-slate-400" />
-                    First Trade
-                  </Badge>
-                ) : null}
-              </div>
-            </div>
-          </div>
-          <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end md:ml-auto">
-            {showEventTimeBadge && (
-              espnLink ? (
-                <Badge
-                  asChild
-                  variant="secondary"
-                  className={cn(
-                    badgeBaseClass,
-                    hasEventTime
-                      ? "bg-white text-slate-700 border-slate-200"
-                      : "bg-white text-slate-400 border-slate-200",
-                  )}
-                >
-                  <a href={espnLink} target="_blank" rel="noopener noreferrer">
                     {isEventTimeLoading ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
                       <CalendarClock className="h-3.5 w-3.5" />
                     )}
                     {eventTimeLabel ?? "Loading"}
-                  </a>
-                </Badge>
-              ) : (
-                <Badge
-                  variant="secondary"
-                  className={cn(
-                    badgeBaseClass,
-                    hasEventTime
-                      ? "bg-white text-slate-700 border-slate-200"
-                      : "bg-white text-slate-400 border-slate-200",
-                  )}
-                >
-                  {isEventTimeLoading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <CalendarClock className="h-3.5 w-3.5" />
-                  )}
-                  {eventTimeLabel ?? "Loading"}
-                </Badge>
-              )
-            )}
-            {!showCombinedScoreBadge &&
-              (statusBadgeVariant === "live" ||
-                statusBadgeVariant === "ended" ||
-                statusBadgeVariant === "resolved") && (
-                <Badge variant="secondary" className={statusBadgeClass}>
-                  <StatusIcon className="h-3.5 w-3.5" />
-                  {eventStatusLabel}
-                </Badge>
+                  </Badge>
+                )
               )}
-            {showCombinedScoreBadge ? (
-              <div className="ml-auto md:ml-0">
-                {espnLink ? (
-                  <Badge asChild variant="secondary" className={combinedScoreBadgeClass}>
-                    <a href={espnLink} target="_blank" rel="noopener noreferrer">
+              {!showCombinedScoreBadge &&
+                (statusBadgeVariant === "live" ||
+                  statusBadgeVariant === "ended" ||
+                  statusBadgeVariant === "resolved") && (
+                  <Badge variant="secondary" className={statusBadgeClass}>
+                    <StatusIcon className="h-3.5 w-3.5" />
+                    {eventStatusLabel}
+                  </Badge>
+                )}
+              {showCombinedScoreBadge ? (
+                <div>
+                  {espnLink ? (
+                    <Badge asChild variant="secondary" className={combinedScoreBadgeClass}>
+                      <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                        <span className="flex items-center gap-1">
+                          <Trophy className="h-3.5 w-3.5" />
+                          <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                        </span>
+                        <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
+                          {combinedScoreLabel}
+                        </span>
+                      </a>
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" className={combinedScoreBadgeClass}>
                       <span className="flex items-center gap-1">
                         <Trophy className="h-3.5 w-3.5" />
                         <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
@@ -2680,56 +2635,165 @@ export function TradeCard({
                       <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
                         {combinedScoreLabel}
                       </span>
-                    </a>
-                  </Badge>
-                ) : (
-                  <Badge variant="secondary" className={combinedScoreBadgeClass}>
-                    <span className="flex items-center gap-1">
+                    </Badge>
+                  )}
+                </div>
+              ) : showScoreBadge ? (
+                <div>
+                  {espnLink ? (
+                    <Badge
+                      asChild
+                      variant="secondary"
+                      className={cn(
+                        badgeBaseClass,
+                        "bg-indigo-50 text-indigo-700 border-indigo-200",
+                      )}
+                    >
+                      <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                        <Trophy className="h-3.5 w-3.5" />
+                        <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                      </a>
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="secondary"
+                      className={cn(
+                        badgeBaseClass,
+                        "bg-indigo-50 text-indigo-700 border-indigo-200",
+                      )}
+                    >
                       <Trophy className="h-3.5 w-3.5" />
                       <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
-                    </span>
-                    <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
-                      {combinedScoreLabel}
-                    </span>
+                    </Badge>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {shouldShowInsightsSection && (
+          <div
+            className={cn(
+              "mb-3 rounded-lg bg-slate-50/70 px-3 py-2",
+              hasAnyPositionBadge && "cursor-pointer"
+            )}
+            onClick={hasAnyPositionBadge ? handlePositionBadgeClick : undefined}
+            role={hasAnyPositionBadge ? "button" : undefined}
+            tabIndex={hasAnyPositionBadge ? 0 : undefined}
+            onKeyDown={
+              hasAnyPositionBadge
+                ? (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault()
+                      handlePositionBadgeClick()
+                    }
+                  }
+                : undefined
+            }
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {traderHedgingInfo.isHedging ? (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            badgeBaseClass,
+                            "h-6 px-2 text-[11px] font-semibold bg-yellow-50 text-yellow-700 border-yellow-200"
+                          )}
+                        >
+                          <ArrowLeftRight className="h-3 w-3" />
+                          Trader Hedging
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[220px] text-xs">
+                        Trader has bought multiple outcomes in this market to reduce directional risk.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : null}
+                {isSellTrade ? (
+                  <Badge
+                    variant="secondary"
+                    className={cn(
+                      badgeBaseClass,
+                      "h-6 px-2 text-[11px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
+                    )}
+                  >
+                    Trader Sold
                   </Badge>
-                )}
-              </div>
-            ) : showScoreBadge ? (
-              <div className="ml-auto md:ml-0">
-                {espnLink ? (
+                ) : null}
+                {hasAnyPositionBadge ? (
                   <Badge
                     asChild
                     variant="secondary"
                     className={cn(
                       badgeBaseClass,
-                      "bg-indigo-50 text-indigo-700 border-indigo-200",
+                      "h-6 px-2 text-[11px] font-semibold text-slate-600 border-slate-200 hover:bg-slate-100 cursor-pointer",
+                      showUserPositionBadge && showTraderPositionBadge ? "bg-white" : "bg-transparent"
                     )}
                   >
-                    <a href={espnLink} target="_blank" rel="noopener noreferrer">
-                      <Trophy className="h-3.5 w-3.5" />
-                      <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
-                    </a>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handlePositionBadgeClick()
+                      }}
+                      aria-expanded={isPositionDrawerOpen}
+                    >
+                      <Star className="h-3 w-3 text-slate-500" />
+                      <span>{isSellTrade ? "Exiting Positions" : "Existing Positions"}</span>
+                      {(showUserPositionBadge || showTraderPositionBadge) && (
+                        <span className="ml-1 inline-flex items-center gap-1">
+                          {showUserPositionBadge ? (
+                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500">
+                              You
+                            </span>
+                          ) : null}
+                          {showTraderPositionBadge ? (
+                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500">
+                              Trader
+                            </span>
+                          ) : null}
+                        </span>
+                      )}
+                    </button>
                   </Badge>
-                ) : (
-                  <Badge
-                    variant="secondary"
-                    className={cn(
-                      badgeBaseClass,
-                      "bg-indigo-50 text-indigo-700 border-indigo-200",
-                    )}
-                  >
-                    <Trophy className="h-3.5 w-3.5" />
-                    <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
-                  </Badge>
-                )}
+                ) : null}
               </div>
-            ) : null}
-          </div>
-        </div>
-
-        {isPositionDrawerOpen && activePositionBadge && (
-          <div className="mb-3 -mt-2">
-            {renderPositionDrawer()}
+              {hasAnyPositionBadge ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    handlePositionBadgeClick()
+                  }}
+                  aria-label={isPositionDrawerOpen ? "Hide existing positions" : "Show existing positions"}
+                  aria-expanded={isPositionDrawerOpen}
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-3.5 w-3.5 transition-transform",
+                      isPositionDrawerOpen && "rotate-180"
+                    )}
+                  />
+                </button>
+              ) : null}
+            </div>
+            {isPositionDrawerOpen && activePositionBadge && (
+              <div
+                className="mt-2"
+                onClick={(event) => {
+                  event.stopPropagation()
+                }}
+              >
+                {renderPositionDrawer()}
+              </div>
+            )}
           </div>
         )}
 

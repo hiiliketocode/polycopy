@@ -21,7 +21,7 @@ import { getTraderAvatarInitials } from '@/lib/trader-name';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 import type { User } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
-import { pickBestStartTime } from '@/lib/event-time';
+import { extractDateFromTitle, pickBestStartTime } from '@/lib/event-time';
 import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
 import {
   ResponsiveContainer,
@@ -37,7 +37,6 @@ import {
   Cell,
   ReferenceLine,
   Area,
-  Line,
 } from 'recharts';
 
 interface TraderData {
@@ -68,6 +67,7 @@ interface Trade {
   status: 'Open' | 'Trader Closed' | 'Bonded';
   category?: string;
   marketAvatarUrl?: string | null;
+  source?: 'onchain' | 'api' | 'copy';
 }
 
 interface PositionSizeBucket {
@@ -101,6 +101,7 @@ interface RealizedPnlRow {
 interface DailyPnlPoint {
   date: string;
   pnl: number;
+  trades: number;
 }
 
 interface MyTradeStatsSummary {
@@ -320,7 +321,6 @@ export default function TraderProfilePage({
   const [realizedPnlError, setRealizedPnlError] = useState<string | null>(null);
   const [pnlWindow, setPnlWindow] = useState<PnlWindowKey>('30D');
   const [pnlView, setPnlView] = useState<'daily' | 'cumulative'>('daily');
-  const [trendLineEnabled, setTrendLineEnabled] = useState(true);
   const [rankingsByWindow, setRankingsByWindow] = useState<Record<string, {
     rank: number | null;
     total: number | null;
@@ -804,6 +804,7 @@ export default function TraderProfilePage({
             status,
             marketAvatarUrl:
               trade.market_avatar_url ?? trade.marketAvatarUrl ?? extractMarketAvatarUrl(trade) ?? null,
+            source: 'copy',
           };
         });
 
@@ -858,19 +859,20 @@ export default function TraderProfilePage({
                 timestamp: timestampMs,
                 market: trade.title || trade.question || trade.market || trade.marketTitle || 'Unknown Market',
                 side: trade.side || 'BUY',
-              outcome: trade.outcome || '',
-              size: parseFloat(trade.size || 0),
-              price: parseFloat(trade.price || 0),
-              currentPrice: trade.closedPrice || trade.resolvedPrice || trade.exitPrice ? parseFloat(trade.closedPrice || trade.resolvedPrice || trade.exitPrice) : undefined,
-              formattedDate,
-              marketSlug: trade.marketSlug || trade.slug || '',
-              eventSlug: trade.eventSlug || trade.event_slug || '',
-              conditionId: trade.conditionId || trade.condition_id || '',
-              tokenId: extractTokenId(trade),
-              status: status,
-              marketAvatarUrl: trade.marketAvatarUrl ?? extractMarketAvatarUrl(trade) ?? null,
-            };
-          });
+                outcome: trade.outcome || '',
+                size: parseFloat(trade.size || 0),
+                price: parseFloat(trade.price || 0),
+                currentPrice: trade.closedPrice || trade.resolvedPrice || trade.exitPrice ? parseFloat(trade.closedPrice || trade.resolvedPrice || trade.exitPrice) : undefined,
+                formattedDate,
+                marketSlug: trade.marketSlug || trade.slug || '',
+                eventSlug: trade.eventSlug || trade.event_slug || '',
+                conditionId: trade.conditionId || trade.condition_id || '',
+                tokenId: extractTokenId(trade),
+                status: status,
+                marketAvatarUrl: trade.marketAvatarUrl ?? extractMarketAvatarUrl(trade) ?? null,
+                source: 'onchain',
+              };
+            });
 
             formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
             if (!cancelled) {
@@ -927,6 +929,7 @@ export default function TraderProfilePage({
               tokenId: extractTokenId(trade),
               status: status,
               marketAvatarUrl: extractMarketAvatarUrl(trade) ?? null,
+              source: 'api',
             };
           });
 
@@ -1001,13 +1004,19 @@ export default function TraderProfilePage({
                 marketAvatarUrl,
               } = priceData.market;
 
+              const inferredStartDate = extractDateFromTitle(trade.market);
+              const effectiveGameStartTime = pickBestStartTime(
+                gameStartTime ?? undefined,
+                inferredStartDate
+              );
+
               const { scoreDisplay: fallbackScoreDisplay } = buildScoreDisplay({
                 trade,
                 outcomes,
                 liveScore: score,
                 homeTeam,
                 awayTeam,
-                gameStartTime,
+                gameStartTime: effectiveGameStartTime,
               });
               
               // Check if market is resolved
@@ -1029,7 +1038,10 @@ export default function TraderProfilePage({
                       resolved: isResolved,
                       score: fallbackScoreDisplay ?? existing?.score,
                       liveStatus: existing?.liveStatus,
-                      gameStartTime: pickBestStartTime(existing?.gameStartTime, gameStartTime),
+                      gameStartTime: pickBestStartTime(
+                        existing?.gameStartTime,
+                        effectiveGameStartTime
+                      ),
                       eventStatus: eventStatus || existing?.eventStatus,
                       endDateIso: endDateIso || existing?.endDateIso,
                       espnUrl: existing?.espnUrl,
@@ -1044,7 +1056,7 @@ export default function TraderProfilePage({
                 currentPrice,
                 closed,
                 isResolved,
-                gameStartTime,
+                gameStartTime: effectiveGameStartTime,
                 eventStatus,
                 score,
                 homeTeam,
@@ -1064,7 +1076,7 @@ export default function TraderProfilePage({
       const priceResults = await Promise.all(pricePromises);
 
       const dateHints = priceResults
-        .map((result) => result?.gameStartTime)
+        .flatMap((result) => [result?.gameStartTime, result?.endDateIso])
         .filter(
           (value): value is string | number =>
             value !== undefined && value !== null && value !== ''
@@ -1449,32 +1461,28 @@ export default function TraderProfilePage({
     return `${sign}$${abs.toFixed(0)}`;
   };
 
+  const formatRelativeTime = (timestampMs: number | null | undefined) => {
+    if (!timestampMs || !Number.isFinite(timestampMs)) return '—';
+    const now = Date.now();
+    const diffSeconds = Math.max(0, Math.round((now - timestampMs) / 1000));
+    if (diffSeconds < 60) return 'Just now';
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+    return new Date(timestampMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
   const formatAverageDaily = (amount: number) => {
     const abs = Math.abs(amount);
     const sign = amount > 0 ? '+' : amount < 0 ? '-' : '';
     if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
     if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(2)}K`;
     return formatSignedCurrency(amount, 2);
-  };
-
-  const buildTrendLine = (values: number[]) => {
-    if (values.length <= 1) return values;
-    const n = values.length;
-    let sumX = 0;
-    let sumY = 0;
-    let sumXY = 0;
-    let sumX2 = 0;
-    for (let i = 0; i < n; i += 1) {
-      sumX += i;
-      sumY += values[i];
-      sumXY += i * values[i];
-      sumX2 += i * i;
-    }
-    const denominator = n * sumX2 - sumX * sumX;
-    if (denominator === 0) return values;
-    const slope = (n * sumXY - sumX * sumY) / denominator;
-    const intercept = (sumY - slope * sumX) / n;
-    return values.map((_, i) => intercept + slope * i);
   };
 
   const toDateObj = (dateStr: string) => new Date(`${dateStr}T00:00:00Z`);
@@ -1542,13 +1550,7 @@ export default function TraderProfilePage({
         cumulativePnl: running,
       };
     });
-    const dailyTrend = buildTrendLine(base.map((row) => row.dailyPnl));
-    const cumulativeTrend = buildTrendLine(base.map((row) => row.cumulativePnl));
-    return base.map((row, index) => ({
-      ...row,
-      trendDaily: dailyTrend[index],
-      trendCumulative: cumulativeTrend[index],
-    }));
+    return base;
   }, [realizedWindowRows]);
 
   const realizedSummary = useMemo(() => {
@@ -1583,8 +1585,6 @@ export default function TraderProfilePage({
   }, [realizedChartSeries.length]);
 
   const dailyBarGap = realizedChartSeries.length <= 2 ? '10%' : '25%';
-  const canShowTrendLine = pnlWindow !== '1D' && realizedChartSeries.length > 1;
-  const showTrendLine = trendLineEnabled && canShowTrendLine;
 
   const getAvatarColor = (address: string) => {
     let hash = 0;
@@ -1725,6 +1725,127 @@ export default function TraderProfilePage({
     });
   }, [trades, liveMarketData]);
 
+  const tradeStats = useMemo(() => {
+    const windowDays = 30;
+    const windowMs = windowDays * 24 * 60 * 60 * 1000;
+    const dayMs = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    const activityTrades = trades.filter((trade) => trade.source !== 'copy');
+    const validTrades = activityTrades.filter((trade) => Number.isFinite(trade.timestamp));
+    const lastTradeTs = validTrades.length > 0
+      ? Math.max(...validTrades.map((trade) => trade.timestamp))
+      : null;
+
+    const recentTrades = validTrades.filter((trade) => now - trade.timestamp <= windowMs);
+
+    const activeDays = new Set(
+      recentTrades.map((trade) => new Date(trade.timestamp).toISOString().slice(0, 10))
+    ).size;
+
+    const tradesLast24h = validTrades.filter((trade) => now - trade.timestamp <= dayMs).length;
+    const isLimited = validTrades.length >= 100 && validTrades.every((trade) => trade.source === 'api');
+    const oldestTradeTs = validTrades.length > 0
+      ? Math.min(...validTrades.map((trade) => trade.timestamp))
+      : null;
+    const tradesLast24hCapped = Boolean(
+      isLimited && oldestTradeTs !== null && now - oldestTradeTs <= dayMs
+    );
+
+    const buyNotionals = validTrades
+      .filter((trade) => trade.side === 'BUY')
+      .map((trade) => (trade.price || 0) * (trade.size || 0))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    const avgTradeSize =
+      buyNotionals.length > 0
+        ? buyNotionals.reduce((sum, value) => sum + value, 0) / buyNotionals.length
+        : null;
+
+    const positions = new Map<string, {
+      size: number;
+      buyNotional: number;
+      sellNotional: number;
+      firstTimestamp: number;
+      lastTimestamp: number;
+      sampleTrade: Trade;
+    }>();
+
+    const keyFor = (trade: Trade) => `${trade.conditionId || trade.market}-${trade.outcome}`;
+
+    validTrades.forEach((trade) => {
+      const key = keyFor(trade);
+      const existing = positions.get(key) ?? {
+        size: 0,
+        buyNotional: 0,
+        sellNotional: 0,
+        firstTimestamp: trade.timestamp,
+        lastTimestamp: trade.timestamp,
+        sampleTrade: trade,
+      };
+
+      existing.firstTimestamp = Math.min(existing.firstTimestamp, trade.timestamp);
+      existing.lastTimestamp = Math.max(existing.lastTimestamp, trade.timestamp);
+      if (!existing.sampleTrade) existing.sampleTrade = trade;
+
+      if (trade.side === 'BUY') {
+        existing.size += trade.size;
+        existing.buyNotional += trade.size * trade.price;
+      } else {
+        existing.size -= trade.size;
+        existing.sellNotional += trade.size * trade.price;
+      }
+
+      positions.set(key, existing);
+    });
+
+    const priceForTrade = (trade: Trade) => {
+      const live = trade.conditionId ? liveMarketData.get(trade.conditionId) : undefined;
+      if (live && typeof live.price === 'number') return live.price;
+      return trade.currentPrice ?? trade.price ?? null;
+    };
+
+    const positionMetrics = Array.from(positions.values())
+      .map((position) => {
+        if (position.buyNotional <= 0) return null;
+        const currentPrice = priceForTrade(position.sampleTrade);
+        const openValue =
+          Math.abs(position.size) > 1e-9 && currentPrice !== null
+            ? position.size * currentPrice
+            : 0;
+        if (Math.abs(position.size) > 1e-9 && currentPrice === null) return null;
+        const pnl = position.sellNotional + openValue - position.buyNotional;
+        const roi = (pnl / position.buyNotional) * 100;
+        return { pnl, roi };
+      })
+      .filter(
+        (value): value is { pnl: number; roi: number } =>
+          value !== null && Number.isFinite(value.pnl) && Number.isFinite(value.roi)
+      );
+
+    const avgReturnUsd = positionMetrics.length > 0
+      ? positionMetrics.reduce((sum, value) => sum + value.pnl, 0) / positionMetrics.length
+      : null;
+    const avgRoi = positionMetrics.length > 0
+      ? positionMetrics.reduce((sum, value) => sum + value.roi, 0) / positionMetrics.length
+      : null;
+
+    const openPositions = Array.from(positions.values())
+      .filter((position) => Math.abs(position.size) >= 1e-9).length;
+
+    return {
+      lastTradeTs,
+      activeDays,
+      tradesLast24h,
+      tradesLast24hCapped,
+      avgTradeSize,
+      avgReturnUsd,
+      avgRoi,
+      openPositions,
+    };
+  }, [trades, liveMarketData]);
+
+  const lastTradeLabel = formatRelativeTime(tradeStats.lastTradeTs);
+
   // Filter trades
   const filteredTrades = trades.filter(trade => {
     if (trade.status === 'Open') return true;
@@ -1755,6 +1876,10 @@ export default function TraderProfilePage({
     const days = myPnlWindow === '1D' ? 1 : myPnlWindow === '7D' ? 7 : 30;
     return sorted.slice(Math.max(0, sorted.length - days));
   }, [myTradeStats, myPnlWindow]);
+  const myDailyPnlTradesCount = useMemo(
+    () => myDailyPnlSeries.reduce((sum, row) => sum + (row.trades ?? 0), 0),
+    [myDailyPnlSeries]
+  );
 
   // IMPORTANT: Loading/error guards must come AFTER hooks to avoid changing hook order between renders.
   if (loading) {
@@ -1983,12 +2108,12 @@ export default function TraderProfilePage({
                   )}
 
                   <div className="space-y-4">
-                    <div className="grid grid-cols-3 gap-3 sm:gap-4 md:gap-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
                       <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
                         <p className="text-sm font-semibold text-slate-600">Total P&amp;L</p>
                         <p
                           className={cn(
-                            'mt-2 text-3xl font-semibold',
+                            'mt-2 text-2xl font-semibold leading-tight sm:text-3xl',
                             realizedSummary.totalPnl > 0
                               ? 'text-emerald-700'
                               : realizedSummary.totalPnl < 0
@@ -2005,7 +2130,7 @@ export default function TraderProfilePage({
                         <p className="text-sm font-semibold text-slate-600">Average per day</p>
                         <p
                           className={cn(
-                            'mt-2 text-3xl font-semibold',
+                            'mt-2 text-2xl font-semibold leading-tight sm:text-3xl',
                             realizedSummary.avgDaily > 0
                               ? 'text-emerald-700'
                               : realizedSummary.avgDaily < 0
@@ -2019,7 +2144,7 @@ export default function TraderProfilePage({
 
                       <div className="rounded-2xl border border-slate-900/15 bg-slate-50/70 p-4 text-center shadow-md">
                         <p className="text-sm font-semibold text-slate-700">P&amp;L Rank</p>
-                        <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-4xl font-semibold text-slate-900">
+                        <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-3xl font-semibold leading-tight text-slate-900 sm:text-4xl">
                           <span>{rankInfo.rank ? `#${rankInfo.rank}` : '--'}</span>
                           {rankInfo.rank && rankInfo.delta !== null && rankInfo.delta !== undefined && rankInfo.delta !== 0 && (
                             <span
@@ -2044,20 +2169,20 @@ export default function TraderProfilePage({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-3 sm:gap-4 md:gap-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
                       <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm">
                         <p className="text-sm font-semibold text-slate-600">Days Active</p>
-                        <p className="mt-2 text-2xl font-semibold text-slate-900">{realizedSummary.daysActive}</p>
+                        <p className="mt-2 text-xl font-semibold leading-tight text-slate-900 sm:text-2xl">{realizedSummary.daysActive}</p>
                       </div>
 
                       <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm">
                         <p className="text-sm font-semibold text-slate-600">Days Up</p>
-                        <p className="mt-2 text-2xl font-semibold text-emerald-700">{realizedSummary.daysUp}</p>
+                        <p className="mt-2 text-xl font-semibold leading-tight text-emerald-700 sm:text-2xl">{realizedSummary.daysUp}</p>
                       </div>
 
                       <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm">
                         <p className="text-sm font-semibold text-slate-600">Days Down</p>
-                        <p className="mt-2 text-2xl font-semibold text-red-600">{realizedSummary.daysDown}</p>
+                        <p className="mt-2 text-xl font-semibold leading-tight text-red-600 sm:text-2xl">{realizedSummary.daysDown}</p>
                       </div>
                     </div>
                   </div>
@@ -2067,21 +2192,6 @@ export default function TraderProfilePage({
                       <div className="text-sm font-semibold text-slate-900">P&amp;L</div>
                       <div className="text-xs text-slate-500">{realizedRangeLabel}</div>
                       <div className="ml-auto flex flex-wrap items-center gap-2">
-                        {canShowTrendLine && (
-                          <button
-                            type="button"
-                            onClick={() => setTrendLineEnabled((prev) => !prev)}
-                            aria-pressed={trendLineEnabled}
-                            className={cn(
-                              'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-                              trendLineEnabled
-                                ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                            )}
-                          >
-                            Trend line
-                          </button>
-                        )}
                         <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/70 p-1 shadow-sm">
                           {(['daily', 'cumulative'] as const).map((mode) => (
                             <button
@@ -2180,16 +2290,6 @@ export default function TraderProfilePage({
                                   />
                                 ))}
                               </Bar>
-                              {showTrendLine && (
-                                <Line
-                                  type="monotone"
-                                  dataKey="trendDaily"
-                                  stroke="#0f172a"
-                                  strokeWidth={2}
-                                  dot={false}
-                                  isAnimationActive={false}
-                                />
-                              )}
                             </BarChart>
                           ) : (
                             <AreaChart data={realizedChartSeries}>
@@ -2254,17 +2354,6 @@ export default function TraderProfilePage({
                                 isAnimationActive
                                 animationDuration={1000}
                               />
-                              {showTrendLine && (
-                                <Line
-                                  type="monotone"
-                                  dataKey="trendCumulative"
-                                  stroke="#0f172a"
-                                  strokeWidth={2}
-                                  strokeDasharray="4 4"
-                                  dot={false}
-                                  isAnimationActive={false}
-                                />
-                              )}
                             </AreaChart>
                           )}
                         </ResponsiveContainer>
@@ -2288,53 +2377,54 @@ export default function TraderProfilePage({
                     <p className="mt-4 text-sm text-slate-500">Loading your trade stats...</p>
                   ) : hasMyTradeStats && myTradeStats ? (
                     <div className="mt-4 space-y-4">
-                      <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 sm:grid-cols-3">
-                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                      <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 sm:grid-cols-3 auto-rows-fr">
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
                           <p className="text-xs font-medium text-slate-500">Trades</p>
-                          <p className="text-xl font-semibold text-slate-900 tabular-nums">{myTradeStats.trader.totalTrades}</p>
-                          <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.tradesPct)} of total</p>
+                          <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.totalTrades}</p>
                         </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
                           <p className="text-xs font-medium text-slate-500">Volume</p>
-                          <p className="text-xl font-semibold text-slate-900 tabular-nums">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
+                          <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
                         </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1.5">
                           <p className="text-xs font-medium text-slate-500">Total P&amp;L</p>
-                          <p className={`text-xl font-semibold tabular-nums ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                          <p className={`text-xl font-semibold leading-tight tabular-nums ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
                             {formatSignedCurrency(myTradeStats.trader.totalPnl)}
                           </p>
-                          <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.pnlPct)} of total</p>
+                          <p className="text-[11px] text-slate-500 leading-snug">
+                            Realized {formatSignedCurrency(myTradeStats.trader.realizedPnl)} &middot; Unrealized (open) {formatSignedCurrency(myTradeStats.trader.unrealizedPnl)}
+                          </p>
                         </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
                           <p className="text-xs font-medium text-slate-500">Wins</p>
-                          <p className="text-xl font-semibold text-slate-900 tabular-nums">{myTradeStats.trader.winningTrades}</p>
-                          <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.winsPct)} of wins</p>
+                          <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.winningTrades}</p>
                         </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
                           <p className="text-xs font-medium text-slate-500">Losses</p>
-                          <p className="text-xl font-semibold text-slate-900 tabular-nums">{myTradeStats.trader.losingTrades}</p>
-                          <p className="text-xs text-slate-500">{formatShare(myTradeStats.shares.lossesPct)} of losses</p>
+                          <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.losingTrades}</p>
                         </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
-                          <p className="text-xs font-medium text-slate-500">Open positions</p>
-                          <p className="text-xl font-semibold text-slate-900 tabular-nums">{myTradeStats.trader.openTrades}</p>
-                          <p className="text-xs text-slate-500">Open right now</p>
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
+                          <p className="text-xs font-medium text-slate-500">Open Positions</p>
+                          <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.openTrades}</p>
                         </div>
                       </div>
 
-                      <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs font-semibold text-slate-600">Daily P&amp;L</p>
-                          <div className="flex items-center gap-1 text-[11px]">
+                      <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-semibold text-slate-600">Daily Realized P&amp;L</p>
+                            <p className="text-[11px] text-slate-500">{myDailyPnlTradesCount.toLocaleString()} realized trades</p>
+                          </div>
+                          <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white/80 p-1 text-[11px] shadow-sm">
                             {(['1D', '7D', '30D', 'ALL'] as const).map((option) => (
                               <button
                                 key={option}
                                 onClick={() => setMyPnlWindow(option)}
                                 className={cn(
-                                  'rounded-full border px-2 py-0.5 font-semibold transition',
+                                  'rounded-full px-2.5 py-1 font-semibold transition',
                                   myPnlWindow === option
-                                    ? 'border-slate-900 bg-slate-900 text-white'
-                                    : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                                    ? 'bg-slate-900 text-white'
+                                    : 'text-slate-500 hover:text-slate-900'
                                 )}
                               >
                                 {option === 'ALL' ? 'All' : option}
@@ -2342,12 +2432,37 @@ export default function TraderProfilePage({
                             ))}
                           </div>
                         </div>
-                        <div className="mt-2 h-24">
+                        <div className="mt-2 h-32">
                           {myDailyPnlSeries.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={myDailyPnlSeries}>
-                                <XAxis dataKey="date" hide />
-                                <YAxis hide domain={['auto', 'auto']} />
+                              <BarChart data={myDailyPnlSeries} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                <XAxis
+                                  dataKey="date"
+                                  tickLine={false}
+                                  axisLine={false}
+                                  interval="preserveStartEnd"
+                                  minTickGap={24}
+                                  tick={{ fontSize: 10, fill: '#64748b' }}
+                                  tickFormatter={(value) =>
+                                    new Date(`${value}T00:00:00Z`).toLocaleDateString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      timeZone: 'UTC',
+                                    })
+                                  }
+                                />
+                                <YAxis
+                                  tickLine={false}
+                                  axisLine={false}
+                                  width={54}
+                                  tick={{ fontSize: 10, fill: '#64748b' }}
+                                  tickFormatter={(value) => formatCompactCurrency(value)}
+                                  domain={[
+                                    (min: number) => Math.min(min, 0),
+                                    (max: number) => Math.max(max, 0),
+                                  ]}
+                                />
                                 <RechartsTooltip
                                   contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
                                   formatter={(value: any) => formatSignedCurrency(Number(value), 2)}
@@ -2356,11 +2471,12 @@ export default function TraderProfilePage({
                                       month: 'short',
                                       day: 'numeric',
                                       year: 'numeric',
+                                      timeZone: 'UTC',
                                     })
                                   }
                                 />
                                 <ReferenceLine y={0} stroke="#e2e8f0" />
-                                <Bar dataKey="pnl" radius={[6, 6, 6, 6]}>
+                                <Bar dataKey="pnl" name="Realized P&amp;L" radius={[6, 6, 6, 6]}>
                                   {myDailyPnlSeries.map((entry, index) => (
                                     <Cell
                                       key={`${entry.date}-${index}`}
@@ -2372,7 +2488,7 @@ export default function TraderProfilePage({
                             </ResponsiveContainer>
                           ) : (
                             <div className="flex h-full items-center justify-center text-xs text-slate-500">
-                              No daily P&amp;L yet.
+                              No realized P&amp;L yet.
                             </div>
                           )}
                         </div>
@@ -2388,185 +2504,94 @@ export default function TraderProfilePage({
             </div>
 
             <Card className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="mb-4">
-                <h3 className="text-base font-semibold text-slate-800 mb-2">Trading Stats</h3>
-                <p className="text-sm text-slate-500">
-                  Trading stats from <a href="https://polymarket.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Polymarket</a>'s official leaderboard (all-time). 
-                  Win rate uses the leaderboard when available, otherwise recent trades.
-                </p>
-              </div>
+              <h3 className="text-lg font-semibold text-slate-900 text-left">Key Stats</h3>
+              <div className="mt-2 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-xl bg-slate-50 p-5 text-center">
+                  <p className="text-sm font-semibold text-slate-700">Performance (All Time)</p>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+                      <p className="text-xs text-slate-500">ROI</p>
+                      <p className={cn(
+                        'text-lg font-semibold',
+                        effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-500' : 'text-slate-900'
+                      )}>
+                        {effectiveVolume > 0 ? formatPercentage(effectiveRoiValue) : '—'}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+                      <p className="text-xs text-slate-500">Winnings</p>
+                      <p className={cn(
+                        'text-lg font-semibold',
+                        effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-500' : 'text-slate-900'
+                      )}>
+                        {formatCompactCurrency(effectivePnl)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+                      <p className="text-xs text-slate-500">Volume</p>
+                      <p className="text-lg font-semibold text-slate-900">{formatCurrency(effectiveVolume)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+                      <p className="text-xs text-slate-500">Win Rate</p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {effectiveWinRate !== null && Number.isFinite(effectiveWinRate) ? `${effectiveWinRate.toFixed(1)}%` : '—'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
-              <div className="rounded-2xl p-4">
-                <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-                  <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                    <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
-                      ROI
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
-                              ?
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            <p>All-time return on investment from the Polymarket leaderboard.</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                <div className="rounded-xl bg-slate-50 p-5 text-center">
+                  <p className="text-sm font-semibold text-slate-700">Recent Trades</p>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+                      <p className="text-xs text-slate-500">Av Return</p>
+                      <p className={cn(
+                        'text-lg font-semibold',
+                        tradeStats.avgReturnUsd !== null && tradeStats.avgReturnUsd > 0
+                          ? 'text-emerald-600'
+                          : tradeStats.avgReturnUsd !== null && tradeStats.avgReturnUsd < 0
+                            ? 'text-red-600'
+                            : 'text-slate-900'
+                      )}>
+                        {tradeStats.avgReturnUsd !== null
+                          ? formatSignedCurrency(tradeStats.avgReturnUsd, 2)
+                          : '—'}
+                      </p>
                     </div>
-                    <div className={`text-2xl font-semibold break-words leading-tight ${effectiveRoiValue > 0 ? 'text-emerald-600' : effectiveRoiValue < 0 ? 'text-red-500' : 'text-slate-900'}`}>
-                      {effectiveVolume > 0 ? formatPercentage(effectiveRoiValue) : 'N/A'}
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+                      <p className="text-xs text-slate-500">Average ROI</p>
+                      <p className={cn(
+                        'text-lg font-semibold',
+                        tradeStats.avgRoi !== null && tradeStats.avgRoi > 0
+                          ? 'text-emerald-600'
+                          : tradeStats.avgRoi !== null && tradeStats.avgRoi < 0
+                            ? 'text-red-600'
+                            : 'text-slate-900'
+                      )}>
+                        {tradeStats.avgRoi !== null
+                          ? `${tradeStats.avgRoi > 0 ? '+' : ''}${tradeStats.avgRoi.toFixed(1)}%`
+                          : '—'}
+                      </p>
                     </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                    <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
-                      Win Rate
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
-                              ?
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            <p>From Polymarket leaderboard when available, otherwise estimated from recent trades.</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+                      <p className="text-xs text-slate-500">Open Positions</p>
+                      <p className="text-lg font-semibold text-slate-900">{tradeStats.openPositions}</p>
                     </div>
-                    <div className="text-2xl font-semibold text-slate-900 break-words leading-tight">
-                      {effectiveWinRate !== null && Number.isFinite(effectiveWinRate) ? `${effectiveWinRate.toFixed(1)}%` : 'N/A'}
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+                      <p className="text-xs text-slate-500">Average Trade Size</p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {tradeStats.avgTradeSize !== null ? formatCurrency(tradeStats.avgTradeSize) : '—'}
+                      </p>
                     </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                    <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
-                      Volume
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
-                              ?
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            <p>Total trading volume across all markets on Polymarket.</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+                      <p className="text-xs text-slate-500">Last Trade</p>
+                      <p className="text-lg font-semibold text-slate-900">{lastTradeLabel}</p>
                     </div>
-                    <div className="text-2xl font-semibold text-slate-900 break-words leading-tight">{formatCurrency(effectiveVolume)}</div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                    <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
-                      Best Position
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
-                              ?
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            <p>Largest position size from the recent trade sample.</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                    <div className="text-2xl font-semibold text-slate-900 break-words leading-tight">
-                      {(() => {
-                        if (trades.length === 0) return '$0';
-                        const maxNotional = Math.max(...trades.map(t => (t.size || 0) * (t.price || 0)));
-                        return formatCurrency(maxNotional);
-                      })()}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                    <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
-                      Total Trades
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
-                              ?
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            <p>Count of trades in the recent sample (up to 100).</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                    <div className="text-2xl font-semibold text-slate-900 break-words leading-tight">
-                      {(() => {
-                        const count = trades.length;
-                        return count === 100 ? '100+' : count;
-                      })()}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                    <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
-                      Net P&amp;L / Trade
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
-                              ?
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            <p>Lifetime realized P&amp;L divided by trades in the sample.</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                    <div className={`text-2xl font-semibold break-words leading-tight ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
-                      {(() => {
-                        const avgPnL = trades.length > 0 ? effectivePnl / trades.length : 0;
-                        return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
-                      })()}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                    <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
-                      Open Positions
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
-                              ?
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            <p>Open positions within the current trade sample.</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                    <div className="text-2xl font-semibold text-slate-900 break-words leading-tight">
-                      {trades.filter(t => t.status === 'Open').length}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm min-w-0 overflow-hidden">
-                    <div className="text-sm font-semibold text-slate-600 mb-1 flex items-center justify-center gap-1">
-                      Avg P&amp;L / Trade
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
-                              ?
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            <p>Average realized P&amp;L per trade in the recent sample.</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                    <div className={`text-2xl font-semibold break-words leading-tight ${effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-600' : 'text-slate-900'}`}>
-                      {(() => {
-                        const avgPnL = trades.length > 0 ? effectivePnl / trades.length : 0;
-                        return `${avgPnL > 0 ? '+' : ''}${formatCurrency(avgPnL)}`;
-                      })()}
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+                      <p className="text-xs text-slate-500">Trades Last 24 Hours</p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {tradeStats.tradesLast24hCapped ? `${tradeStats.tradesLast24h}+` : tradeStats.tradesLast24h}
+                      </p>
                     </div>
                   </div>
                 </div>

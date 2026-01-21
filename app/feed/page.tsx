@@ -17,13 +17,13 @@ import { EmptyState } from '@/components/polycopy/empty-state';
 import ClosePositionModal from '@/components/orders/ClosePositionModal';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { RefreshCw, Activity, Filter, X, Check, Search } from 'lucide-react';
+import { RefreshCw, Activity, Filter, Check, Search, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
 import type { PositionSummary } from '@/lib/orders/position';
 import type { OrderRow } from '@/lib/orders/types';
-import { pickBestStartTime } from '@/lib/event-time';
+import { extractDateFromTitle, pickBestStartTime } from '@/lib/event-time';
 import {
   normalizeEventStatus,
   statusLooksFinal,
@@ -384,6 +384,7 @@ export default function FeedPage() {
   const [defaultBuySlippage, setDefaultBuySlippage] = useState(3);
   const [defaultSellSlippage, setDefaultSellSlippage] = useState(3);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilters);
   const [draftFilters, setDraftFilters] = useState<FilterState>(defaultFilters);
   const [traderSearch, setTraderSearch] = useState('');
@@ -555,9 +556,8 @@ export default function FeedPage() {
     () => countActiveFilters(appliedFilters),
     [appliedFilters, countActiveFilters]
   );
-
-  const draftFiltersCount = useMemo(
-    () => countActiveFilters(draftFilters),
+  const hasDraftFilters = useMemo(
+    () => countActiveFilters(draftFilters) > 0,
     [draftFilters, countActiveFilters]
   );
 
@@ -568,6 +568,10 @@ export default function FeedPage() {
   const filterTabBase = "rounded-full px-2.5 py-1 text-[11px] font-medium transition-all whitespace-nowrap";
   const filterTabActive = "bg-slate-900 text-white shadow-sm";
   const filterTabInactive = "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50";
+  const togglePillBase =
+    "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition";
+  const togglePillActive = "border-emerald-200 bg-emerald-50 text-emerald-700";
+  const togglePillInactive = "border-slate-200 bg-white text-slate-600 hover:border-slate-300";
   const categoryPillBase = "rounded-full px-3 py-1.5 text-xs font-medium transition-all whitespace-nowrap";
   const categoryPillActive = "bg-gradient-to-r from-yellow-400 to-amber-500 text-slate-900 shadow-sm";
   const categoryPillInactive = "bg-slate-100 text-slate-700 hover:bg-slate-200";
@@ -594,17 +598,15 @@ export default function FeedPage() {
     setDraftFilters(appliedFilters);
     setTraderSearch('');
     setShowAllTraders(false);
+    setShowMoreFilters(false);
     setFiltersOpen(true);
   }, [appliedFilters]);
 
   const closeFilters = useCallback(() => {
     setDraftFilters(appliedFilters);
+    setShowMoreFilters(false);
     setFiltersOpen(false);
   }, [appliedFilters]);
-
-  const clearAllFilters = useCallback(() => {
-    updateAppliedFilters(() => buildDefaultFilters());
-  }, [buildDefaultFilters, updateAppliedFilters]);
 
   const clearDraftFilters = useCallback(() => {
     setDraftFilters(buildDefaultFilters());
@@ -706,105 +708,6 @@ export default function FeedPage() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [closeFilters, filtersOpen]);
-
-  const handleRemoveFilter = useCallback(
-    (filterKey: 'category' | 'status' | 'positions' | 'tradeSize' | 'tradingStrategy' | 'resolvingWindow' | 'price' | 'traders') => {
-      updateAppliedFilters((previous) => {
-        const next = { ...previous };
-        switch (filterKey) {
-          case 'category':
-            next.category = defaultFilters.category;
-            break;
-          case 'status':
-            next.status = defaultFilters.status;
-            break;
-          case 'positions':
-            next.positionsOnly = defaultFilters.positionsOnly;
-            break;
-          case 'tradeSize':
-            next.tradeSizeMin = defaultFilters.tradeSizeMin;
-            break;
-          case 'tradingStrategy':
-            next.tradingStrategies = [];
-            break;
-          case 'resolvingWindow':
-            next.resolvingWindow = defaultFilters.resolvingWindow;
-            break;
-          case 'price':
-            next.priceMinCents = defaultFilters.priceMinCents;
-            next.priceMaxCents = defaultFilters.priceMaxCents;
-            break;
-          case 'traders':
-            next.traderIds = [];
-            break;
-          default:
-            break;
-        }
-        return next;
-      });
-    },
-    [updateAppliedFilters]
-  );
-
-  const activeFilterChips = useMemo(() => {
-    const chips: {
-      key: 'category' | 'status' | 'positions' | 'tradeSize' | 'tradingStrategy' | 'resolvingWindow' | 'price' | 'traders';
-      label: string;
-    }[] = [];
-
-    if (appliedFilters.category !== 'all') {
-      const label = CATEGORY_OPTIONS.find((option) => option.value === appliedFilters.category)?.label ?? 'Category';
-      chips.push({ key: 'category', label: `Category: ${label}` });
-    }
-
-    if (appliedFilters.status !== 'all') {
-      chips.push({ key: 'status', label: 'Event Status: Live Games Only' });
-    }
-
-    if (appliedFilters.positionsOnly) {
-      chips.push({ key: 'positions', label: 'My Positions Only' });
-    }
-
-    if (appliedFilters.tradeSizeMin > 0) {
-      const label = TRADE_SIZE_OPTIONS.find((option) => option.value === appliedFilters.tradeSizeMin)?.label ?? formatTradeSize(appliedFilters.tradeSizeMin);
-      chips.push({ key: 'tradeSize', label: `Trade Size: ${label}` });
-    }
-
-    if (appliedFilters.tradingStrategies.length > 0) {
-      const labels = appliedFilters.tradingStrategies.map(
-        (strategy) =>
-          TRADING_STRATEGY_OPTIONS.find((option) => option.value === strategy)?.label ?? strategy
-      );
-      chips.push({ key: 'tradingStrategy', label: `Trading Strategy: ${labels.join(', ')}` });
-    }
-
-    if (appliedFilters.resolvingWindow !== 'any') {
-      const label = RESOLVING_OPTIONS.find((option) => option.value === appliedFilters.resolvingWindow)?.label ?? 'Market Resolves';
-      chips.push({ key: 'resolvingWindow', label: `Market Resolves: ${label}` });
-    }
-
-    if (appliedFilters.priceMinCents > PRICE_RANGE.min || appliedFilters.priceMaxCents < PRICE_RANGE.max) {
-      const min = appliedFilters.priceMinCents;
-      const max = appliedFilters.priceMaxCents;
-      let label = '';
-      if (min > PRICE_RANGE.min && max < PRICE_RANGE.max) {
-        label = `${formatPriceCents(min)}-${formatPriceCents(max)}`;
-      } else if (min > PRICE_RANGE.min) {
-        label = `${formatPriceCents(min)}+`;
-      } else {
-        label = `Up to ${formatPriceCents(max)}`;
-      }
-      chips.push({ key: 'price', label: `Current Price: ${label}` });
-    }
-
-    if (appliedFilters.traderIds.length > 0) {
-      const names = appliedFilters.traderIds.map((wallet) => traderLabelMap.get(wallet) || formatWallet(wallet));
-      const label = names.length === 1 ? `Trader: ${names[0]}` : `Traders: ${names[0]} + ${names.length - 1}`;
-      chips.push({ key: 'traders', label });
-    }
-
-    return chips;
-  }, [appliedFilters, traderLabelMap, formatPriceCents, formatTradeSize, formatWallet]);
 
   const handleTradeExecutionNotification = useCallback((notification: TradeExecutionNotification) => {
     setTradeNotifications((prev) => {
@@ -1717,7 +1620,11 @@ export default function FeedPage() {
                   
                   let scoreDisplay: string | undefined;
                   let espnStatus: 'scheduled' | 'live' | 'final' | null = null;
-                  const effectiveGameStartTime = gameStartTime || undefined;
+                  const inferredStartDate = extractDateFromTitle(trade.market.title);
+                  const effectiveGameStartTime = pickBestStartTime(
+                    gameStartTime ?? undefined,
+                    inferredStartDate
+                  );
                   
                   if (isSportsMarket) {
                     // SPORTS MARKETS: Use Polymarket data while ESPN loads.
@@ -1844,7 +1751,7 @@ export default function FeedPage() {
     });
 
     const dateHints = Array.from(newLiveData.values())
-      .map((value) => value.gameStartTime)
+      .flatMap((value) => [value.gameStartTime, value.endDateIso])
       .filter(
         (value): value is string =>
           typeof value === 'string' && value !== ''
@@ -2657,8 +2564,6 @@ export default function FeedPage() {
     });
   };
 
-  const draftStatusLabel = draftFilters.status === 'live' ? 'Live Games Only' : 'All';
-  const draftPositionsLabel = draftFilters.positionsOnly ? 'My Positions Only' : 'All';
   const draftCategoryLabel =
     CATEGORY_OPTIONS.find((option) => option.value === draftFilters.category)?.label ?? 'All';
   const draftTradeSizeLabel =
@@ -2693,25 +2598,9 @@ export default function FeedPage() {
 
   const filterPanel = (
     <div className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
-        <div className="space-y-0.5">
-          <p className="text-sm font-semibold text-slate-900">Filters</p>
-          <p className="text-[11px] text-slate-500">
-            {draftFiltersCount > 0 ? `${draftFiltersCount} active` : 'No filters applied'}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={clearDraftFilters}
-          className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
-        >
-          Reset
-        </button>
-      </div>
-
       <div className="flex-1 px-4 py-3">
-        <div className="grid gap-3 lg:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 lg:col-span-2">
+        <div className="space-y-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-semibold text-slate-900">Category</span>
               <span className="text-xs font-medium text-slate-500">{draftCategoryLabel}</span>
@@ -2737,345 +2626,302 @@ export default function FeedPage() {
             </div>
           </div>
 
-          <div className="grid gap-3 lg:col-span-2 lg:grid-cols-3">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-slate-900">Event Status</span>
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                    draftFilters.status === 'live'
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-slate-100 text-slate-500"
-                  )}
-                >
-                  {draftStatusLabel}
-                </span>
-              </div>
-              <div className="mt-1.5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDraftFilters((prev) => ({
-                      ...prev,
-                      status: prev.status === 'live' ? 'all' : 'live',
-                    }))
-                  }
-                  role="switch"
-                  aria-checked={draftFilters.status === 'live'}
-                  className={cn(
-                    "flex w-full items-center justify-between rounded-full border px-3 py-2 text-xs font-semibold transition",
-                    draftFilters.status === 'live'
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                  )}
-                >
-                  <span>Live Games Only</span>
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
-                      draftFilters.status === 'live' ? "bg-emerald-500" : "bg-slate-300"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "inline-block h-4 w-4 transform rounded-full bg-white shadow transition",
-                        draftFilters.status === 'live' ? "translate-x-4" : "translate-x-0.5"
-                      )}
-                    />
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-slate-900">My Positions</span>
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                    draftFilters.positionsOnly
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-slate-100 text-slate-500"
-                  )}
-                >
-                  {draftPositionsLabel}
-                </span>
-              </div>
-              <div className="mt-1.5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDraftFilters((prev) => ({
-                      ...prev,
-                      positionsOnly: !prev.positionsOnly,
-                    }))
-                  }
-                  role="switch"
-                  aria-checked={draftFilters.positionsOnly}
-                  className={cn(
-                    "flex w-full items-center justify-between rounded-full border px-3 py-2 text-xs font-semibold transition",
-                    draftFilters.positionsOnly
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                  )}
-                >
-                  <span>My Positions Only</span>
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
-                      draftFilters.positionsOnly ? "bg-emerald-500" : "bg-slate-300"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "inline-block h-4 w-4 transform rounded-full bg-white shadow transition",
-                        draftFilters.positionsOnly ? "translate-x-4" : "translate-x-0.5"
-                      )}
-                    />
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-slate-900">Market Resolves</span>
-                <span className="text-xs font-medium text-slate-500">{draftResolvingLabel}</span>
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-2">
-                {RESOLVING_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() =>
-                      setDraftFilters((prev) => ({
-                        ...prev,
-                        resolvingWindow: option.value,
-                      }))
-                    }
-                    aria-pressed={draftFilters.resolvingWindow === option.value}
-                    className={cn(
-                      filterTabBase,
-                      draftFilters.resolvingWindow === option.value
-                        ? filterTabActive
-                        : filterTabInactive
-                    )}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setDraftFilters((prev) => ({
+                  ...prev,
+                  status: prev.status === 'live' ? 'all' : 'live',
+                }))
+              }
+              aria-pressed={draftFilters.status === 'live'}
+              className={cn(
+                togglePillBase,
+                draftFilters.status === 'live' ? togglePillActive : togglePillInactive
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "h-2 w-2 rounded-full",
+                  draftFilters.status === 'live' ? "bg-emerald-500" : "bg-slate-300"
+                )}
+              />
+              Live Games Only
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setDraftFilters((prev) => ({
+                  ...prev,
+                  positionsOnly: !prev.positionsOnly,
+                }))
+              }
+              aria-pressed={draftFilters.positionsOnly}
+              className={cn(
+                togglePillBase,
+                draftFilters.positionsOnly ? togglePillActive : togglePillInactive
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "h-2 w-2 rounded-full",
+                  draftFilters.positionsOnly ? "bg-emerald-500" : "bg-slate-300"
+                )}
+              />
+              My Positions Only
+            </button>
           </div>
 
-          <div className="grid gap-3 lg:col-span-2 lg:grid-cols-3">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-slate-900">Trade Size</span>
-                <span className="text-xs font-medium text-slate-500">{draftTradeSizeLabel}</span>
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-2">
-                {TRADE_SIZE_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() =>
-                      setDraftFilters((prev) => ({
-                        ...prev,
-                        tradeSizeMin: option.value,
-                      }))
-                    }
-                    aria-pressed={draftFilters.tradeSizeMin === option.value}
-                    className={cn(
-                      filterTabBase,
-                      draftFilters.tradeSizeMin === option.value
-                        ? filterTabActive
-                        : filterTabInactive
-                    )}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900">Trade Size</span>
+              <span className="text-xs font-medium text-slate-500">{draftTradeSizeLabel}</span>
             </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-slate-900">Trading Strategy</span>
-                <span className="text-xs font-medium text-slate-500">
-                  {draftTradingStrategyLabel}
-                </span>
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-2">
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {TRADE_SIZE_OPTIONS.map((option) => (
                 <button
+                  key={option.value}
                   onClick={() =>
                     setDraftFilters((prev) => ({
                       ...prev,
-                      tradingStrategies: [],
+                      tradeSizeMin: option.value,
                     }))
                   }
-                  aria-pressed={draftFilters.tradingStrategies.length === 0}
+                  aria-pressed={draftFilters.tradeSizeMin === option.value}
                   className={cn(
                     filterTabBase,
-                    draftFilters.tradingStrategies.length === 0
+                    draftFilters.tradeSizeMin === option.value
                       ? filterTabActive
                       : filterTabInactive
                   )}
                 >
-                  All
+                  {option.label}
                 </button>
-                {TRADING_STRATEGY_OPTIONS.map((option) => (
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowMoreFilters((prev) => !prev)}
+            aria-expanded={showMoreFilters}
+            aria-controls="more-filters"
+            className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            <span>{showMoreFilters ? 'Less Filters' : 'More Filters'}</span>
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 transition-transform",
+                showMoreFilters && "rotate-180"
+              )}
+            />
+          </button>
+
+          {showMoreFilters && (
+            <div id="more-filters" className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-900">Market Resolves</span>
+                  <span className="text-xs font-medium text-slate-500">{draftResolvingLabel}</span>
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-2">
+                  {RESOLVING_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() =>
+                        setDraftFilters((prev) => ({
+                          ...prev,
+                          resolvingWindow: option.value,
+                        }))
+                      }
+                      aria-pressed={draftFilters.resolvingWindow === option.value}
+                      className={cn(
+                        filterTabBase,
+                        draftFilters.resolvingWindow === option.value
+                          ? filterTabActive
+                          : filterTabInactive
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-900">Trading Strategy</span>
+                  <span className="text-xs font-medium text-slate-500">
+                    {draftTradingStrategyLabel}
+                  </span>
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-2">
                   <button
-                    key={option.value}
                     onClick={() =>
                       setDraftFilters((prev) => ({
                         ...prev,
-                        tradingStrategies: prev.tradingStrategies.includes(option.value)
-                          ? prev.tradingStrategies.filter((value) => value !== option.value)
-                          : [...prev.tradingStrategies, option.value],
+                        tradingStrategies: [],
                       }))
                     }
-                    aria-pressed={draftFilters.tradingStrategies.includes(option.value)}
+                    aria-pressed={draftFilters.tradingStrategies.length === 0}
                     className={cn(
                       filterTabBase,
-                      draftFilters.tradingStrategies.includes(option.value)
+                      draftFilters.tradingStrategies.length === 0
                         ? filterTabActive
                         : filterTabInactive
                     )}
                   >
-                    {option.label}
+                    All
                   </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-slate-900">Current Price</span>
-                <span className="text-xs font-medium text-slate-500">{draftPriceLabel}</span>
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-2">
-                {PRICE_PRESET_OPTIONS.map((preset) => {
-                  const isActive =
-                    draftFilters.priceMinCents === preset.min &&
-                    draftFilters.priceMaxCents === preset.max;
-                  return (
+                  {TRADING_STRATEGY_OPTIONS.map((option) => (
                     <button
-                      key={preset.label}
-                      onClick={() => updateDraftPriceRange(preset.min, preset.max)}
-                      aria-pressed={isActive}
-                      className={cn(filterTabBase, isActive ? filterTabActive : filterTabInactive)}
+                      key={option.value}
+                      onClick={() =>
+                        setDraftFilters((prev) => ({
+                          ...prev,
+                          tradingStrategies: prev.tradingStrategies.includes(option.value)
+                            ? prev.tradingStrategies.filter((value) => value !== option.value)
+                            : [...prev.tradingStrategies, option.value],
+                        }))
+                      }
+                      aria-pressed={draftFilters.tradingStrategies.includes(option.value)}
+                      className={cn(
+                        filterTabBase,
+                        draftFilters.tradingStrategies.includes(option.value)
+                          ? filterTabActive
+                          : filterTabInactive
+                      )}
                     >
-                      {preset.label}
+                      {option.label}
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
-            </div>
-          </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 lg:col-span-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-semibold text-slate-900">Traders</span>
-                <span className="text-xs font-medium text-slate-500">{draftTradersLabel}</span>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-900">Current Price</span>
+                  <span className="text-xs font-medium text-slate-500">{draftPriceLabel}</span>
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-2">
+                  {PRICE_PRESET_OPTIONS.map((preset) => {
+                    const isActive =
+                      draftFilters.priceMinCents === preset.min &&
+                      draftFilters.priceMaxCents === preset.max;
+                    return (
+                      <button
+                        key={preset.label}
+                        onClick={() => updateDraftPriceRange(preset.min, preset.max)}
+                        aria-pressed={isActive}
+                        className={cn(filterTabBase, isActive ? filterTabActive : filterTabInactive)}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              {draftFilters.traderIds.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDraftFilters((prev) => ({ ...prev, traderIds: [] }))
-                  }
-                  className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="relative mt-2">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                type="search"
-                value={traderSearch}
-                onChange={(event) => {
-                  setTraderSearch(event.target.value);
-                  setShowAllTraders(false);
-                }}
-                placeholder="Search followed traders"
-                className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-              />
-            </div>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {visibleTraderOptions.map((trader) => {
-                const isSelected = draftTraderSet.has(trader.wallet);
-                const displayName = trader.name || formatWallet(trader.wallet);
-                return (
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 lg:col-span-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-slate-900">Traders</span>
+                    <span className="text-xs font-medium text-slate-500">{draftTradersLabel}</span>
+                  </div>
+                  {draftFilters.traderIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraftFilters((prev) => ({ ...prev, traderIds: [] }))
+                      }
+                      className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="relative mt-2">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="search"
+                    value={traderSearch}
+                    onChange={(event) => {
+                      setTraderSearch(event.target.value);
+                      setShowAllTraders(false);
+                    }}
+                    placeholder="Search followed traders"
+                    className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  />
+                </div>
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {visibleTraderOptions.map((trader) => {
+                    const isSelected = draftTraderSet.has(trader.wallet);
+                    const displayName = trader.name || formatWallet(trader.wallet);
+                    return (
+                      <button
+                        key={trader.wallet}
+                        type="button"
+                        onClick={() => toggleDraftTrader(trader.wallet)}
+                        aria-pressed={isSelected}
+                        className={cn(
+                          "flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-left transition",
+                          isSelected
+                            ? "border-slate-900/15 bg-slate-100 text-slate-900"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                        )}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">
+                            {displayName.charAt(0).toUpperCase()}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-slate-900">
+                              {displayName}
+                            </span>
+                            <span className="block truncate text-[11px] text-slate-500">
+                              {formatWallet(trader.wallet)}
+                            </span>
+                          </span>
+                        </span>
+                        {isSelected && <Check className="h-4 w-4 text-slate-900" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                {filteredTraderOptions.length === 0 && (
+                  <p className="mt-2 text-sm text-slate-500">No traders match your search.</p>
+                )}
+                {filteredTraderOptions.length > 8 && (
                   <button
-                    key={trader.wallet}
                     type="button"
-                    onClick={() => toggleDraftTrader(trader.wallet)}
-                    aria-pressed={isSelected}
-                    className={cn(
-                      "flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-left transition",
-                      isSelected
-                        ? "border-slate-900/15 bg-slate-100 text-slate-900"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                    )}
+                    onClick={() => setShowAllTraders((prev) => !prev)}
+                    className="mt-2 text-[11px] font-semibold text-slate-500 hover:text-slate-700"
                   >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">
-                        {displayName.charAt(0).toUpperCase()}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-semibold text-slate-900">
-                          {displayName}
-                        </span>
-                        <span className="block truncate text-[11px] text-slate-500">
-                          {formatWallet(trader.wallet)}
-                        </span>
-                      </span>
-                    </span>
-                    {isSelected && <Check className="h-4 w-4 text-slate-900" />}
+                    {showAllTraders
+                      ? 'Show less'
+                      : `Show more (${filteredTraderOptions.length - 8})`}
                   </button>
-                );
-              })}
+                )}
+              </div>
             </div>
-            {filteredTraderOptions.length === 0 && (
-              <p className="mt-2 text-sm text-slate-500">No traders match your search.</p>
-            )}
-            {filteredTraderOptions.length > 8 && (
+          )}
+          {hasDraftFilters && (
+            <div className="mt-2 flex justify-end">
               <button
                 type="button"
-                onClick={() => setShowAllTraders((prev) => !prev)}
-                className="mt-2 text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+                onClick={clearDraftFilters}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-700"
               >
-                {showAllTraders
-                  ? 'Show less'
-                  : `Show more (${filteredTraderOptions.length - 8})`}
+                Clear All
               </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="border-t border-slate-200 px-4 py-2.5">
-        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2">
-          <span>{`Showing ${filteredAllTrades.length} trades`}</span>
-          {draftFiltersCount > 0 && <span>{draftFiltersCount} active</span>}
-        </div>
-        <div className="flex flex-col items-center gap-2">
-          {draftFiltersCount > 0 && (
-            <button
-              type="button"
-              onClick={clearDraftFilters}
-              className="text-xs font-semibold text-slate-500 hover:text-slate-700"
-            >
-              Clear all
-            </button>
+            </div>
           )}
         </div>
       </div>
+
     </div>
   );
 
@@ -3113,7 +2959,7 @@ export default function FeedPage() {
       <div className="min-h-screen bg-slate-50 pt-3 md:pt-0 pb-36 md:pb-8 overflow-x-hidden">
         {/* Page Header */}
         <div className="sticky top-0 z-10 bg-slate-50">
-          <div className="max-w-[1200px] mx-auto px-4 md:px-6 pb-3 md:py-4">
+          <div className="max-w-[1200px] mx-auto px-4 md:px-6 pb-2 md:py-3">
             <div className="w-full md:w-[63%] md:mx-auto">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div className="md:hidden flex items-center justify-between gap-3">
@@ -3176,7 +3022,7 @@ export default function FeedPage() {
                 )}
               </div>
               <div className="flex flex-col gap-2 md:flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between gap-2">
                   <Button
                     onClick={filtersOpen ? closeFilters : openFilters}
                     variant="outline"
@@ -3189,59 +3035,37 @@ export default function FeedPage() {
                       Filter{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ''}
                     </span>
                   </Button>
-                  <Button
-                    onClick={handleManualRefresh}
-                    disabled={isRefreshing || loadingFeed}
-                    variant="outline"
-                    size="icon"
-                    className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent flex-shrink-0 transition-all"
-                    aria-label="Refresh feed"
-                  >
-                    <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-                  </Button>
-                </div>
-                {lastFeedFetchAt && (
-                  <div className="text-xs text-slate-500">
-                    {`Last updated ${getRelativeTime(lastFeedFetchAt)}`}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={handleManualRefresh}
+                      disabled={isRefreshing || loadingFeed}
+                      variant="outline"
+                      size="icon"
+                      className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-transparent flex-shrink-0 transition-all"
+                      aria-label="Refresh feed"
+                    >
+                      <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+                    </Button>
+                    {lastFeedFetchAt && (
+                      <span className="text-xs text-slate-500">
+                        {`Last updated ${getRelativeTime(lastFeedFetchAt)}`}
+                      </span>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             </div>
             </div>
           </div>
         </div>
 
-        <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-4 md:py-8">
-          <div className="space-y-6">
+        <div className="max-w-[1200px] mx-auto px-4 md:px-6 pt-2 pb-4 md:pt-4 md:pb-6">
+          <div className="space-y-5">
             <div className="min-w-0 space-y-4">
               <div className="md:w-[63%] md:mx-auto">
                 {filtersOpen && (
                   <div ref={filtersPanelRef} aria-label="Filters">
                     {filterPanel}
-                  </div>
-                )}
-                {activeFilterChips.length > 0 && (
-                  <div className="border-b border-slate-200 pb-3">
-                    <div className="flex flex-wrap gap-2">
-                      {activeFilterChips.map((chip) => (
-                        <button
-                          key={chip.key}
-                          type="button"
-                          onClick={() => handleRemoveFilter(chip.key)}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300"
-                        >
-                          <span className="truncate">{chip.label}</span>
-                          <X className="h-3 w-3" />
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={clearAllFilters}
-                        className="text-xs font-semibold text-slate-500 hover:text-slate-700"
-                      >
-                        Clear all
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>

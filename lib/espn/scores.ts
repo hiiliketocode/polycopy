@@ -94,6 +94,7 @@ const TEAM_NAME_STOP_WORDS = new Set([
   'cf',
   'ac',
   'afc',
+  'fk',
   'c.f',
   's.c',
   'club',
@@ -145,6 +146,79 @@ const normalizeEspnLink = (link?: string | null) => {
   return trimmed;
 };
 
+const SOCCER_CLUB_TOKEN = /\b(f\.?k\.?|f\.?c\.?|c\.?f\.?|s\.?c\.?|a\.?f\.?c\.?)\b/;
+
+const MONTH_LOOKUP: Record<string, string> = {
+  jan: '01',
+  january: '01',
+  feb: '02',
+  february: '02',
+  mar: '03',
+  march: '03',
+  apr: '04',
+  april: '04',
+  may: '05',
+  jun: '06',
+  june: '06',
+  jul: '07',
+  july: '07',
+  aug: '08',
+  august: '08',
+  sep: '09',
+  sept: '09',
+  september: '09',
+  oct: '10',
+  october: '10',
+  nov: '11',
+  november: '11',
+  dec: '12',
+  december: '12',
+};
+
+const stripDiacritics = (value: string) =>
+  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+const normalizeTeamValue = (value: string) =>
+  stripDiacritics(value).toLowerCase().trim();
+
+const extractDateKeysFromTitle = (title: string): string[] => {
+  if (!title) return [];
+  const keys = new Set<string>();
+  const isoMatches = title.match(/\b\d{4}-\d{2}-\d{2}\b/g);
+  if (isoMatches) {
+    isoMatches.forEach((match) => {
+      const key = toEspnDateKey(match);
+      if (key) keys.add(key);
+    });
+  }
+
+  const monthFirstPattern =
+    /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,)?\s+(\d{4})\b/gi;
+  for (const match of title.matchAll(monthFirstPattern)) {
+    const monthName = match[1]?.toLowerCase();
+    const day = match[2]?.padStart(2, '0');
+    const year = match[3];
+    const month = monthName ? MONTH_LOOKUP[monthName] : undefined;
+    if (month && day && year) {
+      keys.add(`${year}${month}${day}`);
+    }
+  }
+
+  const dayFirstPattern =
+    /\b(\d{1,2})(?:st|nd|rd|th)?\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})\b/gi;
+  for (const match of title.matchAll(dayFirstPattern)) {
+    const day = match[1]?.padStart(2, '0');
+    const monthName = match[2]?.toLowerCase();
+    const year = match[3];
+    const month = monthName ? MONTH_LOOKUP[monthName] : undefined;
+    if (month && day && year) {
+      keys.add(`${year}${month}${day}`);
+    }
+  }
+
+  return Array.from(keys);
+};
+
 // Detect sport type from market title
 function detectSportType(
   title: string,
@@ -152,7 +226,7 @@ function detectSportType(
   slug?: string | null,
   eventSlug?: string | null
 ): SportGroup | null {
-  const titleLower = title.toLowerCase();
+  const titleLower = normalizeTeamValue(title);
   const categoryLower = category ? category.toLowerCase() : '';
   const slugLower = [slug, eventSlug].filter(Boolean).join(' ').toLowerCase();
 
@@ -234,13 +308,17 @@ function detectSportType(
   }
 
   if (
-    titleLower.match(/\b(fc|cf|sc|afc)\b/) &&
-    (titleLower.includes(' vs ') || titleLower.includes(' vs.') || titleLower.includes(' v ') || titleLower.includes(' @ ') || titleLower.includes(' versus '))
+    SOCCER_CLUB_TOKEN.test(titleLower) &&
+    (titleLower.includes(' vs ') ||
+      titleLower.includes(' vs.') ||
+      titleLower.includes(' v ') ||
+      titleLower.includes(' @ ') ||
+      titleLower.includes(' versus '))
   ) {
     return 'soccer';
   }
 
-  if (titleLower.match(/\b(afc|cf|fc)\b/) && titleLower.match(/\bwin\b/) && titleLower.match(/\b\d{4}-\d{2}-\d{2}\b/)) {
+  if (SOCCER_CLUB_TOKEN.test(titleLower) && titleLower.match(/\bwin\b/) && titleLower.match(/\b\d{4}-\d{2}-\d{2}\b/)) {
     return 'soccer';
   }
 
@@ -248,7 +326,7 @@ function detectSportType(
     if (titleLower.match(/\b(premier league|premiership|epl|uefa|champions league|europa league|conference league|fa cup|carabao|community shield|liga mx|ligamx)\b/)) {
       return 'soccer';
     }
-    if (titleLower.match(/\b(afc|cf|fc)\b/) && titleLower.match(/\bwin\b/)) {
+    if (SOCCER_CLUB_TOKEN.test(titleLower) && titleLower.match(/\bwin\b/)) {
       return 'soccer';
     }
     if (titleLower.match(/\bwin\b/) && titleLower.match(/\b\d{4}-\d{2}-\d{2}\b/)) {
@@ -348,7 +426,7 @@ function detectSportType(
 }
 
 function isLikelySportsTitle(title: string, category?: string | null): boolean {
-  const titleLower = title.toLowerCase();
+  const titleLower = normalizeTeamValue(title);
   const categoryLower = category ? category.toLowerCase() : '';
 
   if (categoryLower === 'sports') return true;
@@ -360,6 +438,10 @@ function isLikelySportsTitle(title: string, category?: string | null): boolean {
     titleLower.includes(' @ ') ||
     titleLower.includes(' versus ')
   ) {
+    return true;
+  }
+
+  if (SOCCER_CLUB_TOKEN.test(titleLower) && /\bwin\b/.test(titleLower)) {
     return true;
   }
 
@@ -457,10 +539,17 @@ function extractSingleTeamMatch(title: string): { team: string; dateKey?: string
 function isSeasonLongMarketTitle(title: string): boolean {
   const lower = title.toLowerCase();
   if (!/\bwin\b/.test(lower)) return false;
-  if (/\b20\d{2}\s*-\s*\d{2}\b/.test(lower) || /\b20\d{2}-\d{2}\b/.test(lower)) {
-    return true;
-  }
-  return /\b(season|league|premier league|champions league|championship|tournament|cup|title)\b/.test(lower);
+  const hasSeasonKeyword =
+    /\b(season|league|premier league|champions league|championship|tournament|cup|title)\b/.test(
+      lower
+    );
+  if (hasSeasonKeyword) return true;
+  const hasYearRange =
+    /\b20\d{2}\s*-\s*\d{2}\b/.test(lower) || /\b20\d{2}-\d{2}\b(?!-\d{2})/.test(lower);
+  if (hasYearRange) return true;
+  const hasSpecificDate = /\b20\d{2}-\d{2}-\d{2}\b/.test(lower);
+  if (hasSpecificDate) return false;
+  return false;
 }
 
 function extractSingleTeamHint(title: string): { team: string } | null {
@@ -491,8 +580,7 @@ function getStartDateKey(value: string): string | null {
 }
 
 function normalizeTeamTokens(value: string): string[] {
-  return value
-    .toLowerCase()
+  return normalizeTeamValue(value)
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
     .filter(token => token.length > 1 && !TEAM_NAME_STOP_WORDS.has(token));
@@ -505,9 +593,9 @@ function buildTeamAbbrev(value: string): string {
 }
 
 function scoreTeamMatch(marketTeam: string, espnTeamName: string, espnAbbrev: string): number {
-  const marketLower = marketTeam.toLowerCase().trim();
-  const espnLower = espnTeamName.toLowerCase().trim();
-  const abbrevLower = espnAbbrev.toLowerCase().trim();
+  const marketLower = normalizeTeamValue(marketTeam);
+  const espnLower = normalizeTeamValue(espnTeamName);
+  const abbrevLower = normalizeTeamValue(espnAbbrev);
 
   if (!marketLower || !espnLower) return 0;
 
@@ -543,9 +631,9 @@ function scoreTeamMatch(marketTeam: string, espnTeamName: string, espnAbbrev: st
 
 // Check if two team names match (flexible matching)
 export function teamsMatch(marketTeam: string, espnTeamName: string, espnAbbrev: string): boolean {
-  const marketLower = marketTeam.toLowerCase().trim();
-  const espnLower = espnTeamName.toLowerCase().trim();
-  const abbrevLower = espnAbbrev.toLowerCase().trim();
+  const marketLower = normalizeTeamValue(marketTeam);
+  const espnLower = normalizeTeamValue(espnTeamName);
+  const abbrevLower = normalizeTeamValue(espnAbbrev);
   
   // Direct match
   if (marketLower === espnLower || (abbrevLower && marketLower === abbrevLower)) return true;
@@ -718,6 +806,11 @@ function findMatchingGame(marketTitle: string, games: ESPNGame[]): ESPNGame | nu
         .filter(match => match.baseScore >= 4 && match.game.status === 'live')
         .sort((a, b) => b.baseScore - a.baseScore)[0];
       if (liveFallback) return liveFallback.game;
+
+      const scheduledFallback = scoredMatches
+        .filter(match => match.baseScore >= 4)
+        .sort((a, b) => b.baseScore - a.baseScore)[0];
+      if (scheduledFallback) return scheduledFallback.game;
     }
 
     return null;
@@ -781,6 +874,10 @@ export async function getESPNScoresForTrades(
     options?.dateHints?.forEach((hint) => {
       const key = toEspnDateKey(hint ?? undefined);
       if (key) keys.add(key);
+    });
+    trades.forEach((trade) => {
+      const title = trade.market.title || '';
+      extractDateKeysFromTitle(title).forEach((key) => keys.add(key));
     });
     return Array.from(keys);
   })();

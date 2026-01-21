@@ -32,7 +32,7 @@ import { getTraderAvatarInitials } from '@/lib/trader-name';
 import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 import type { User } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
-import { pickBestStartTime } from '@/lib/event-time';
+import { extractDateFromTitle, pickBestStartTime } from '@/lib/event-time';
 import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
 import {
   ResponsiveContainer,
@@ -996,13 +996,19 @@ export default function TraderProfilePage({
                 endDateIso,
               } = priceData.market;
 
+              const inferredStartDate = extractDateFromTitle(trade.market);
+              const effectiveGameStartTime = pickBestStartTime(
+                gameStartTime ?? undefined,
+                inferredStartDate
+              );
+
               const { scoreDisplay: fallbackScoreDisplay } = buildScoreDisplay({
                 trade,
                 outcomes,
                 liveScore: score,
                 homeTeam,
                 awayTeam,
-                gameStartTime,
+                gameStartTime: effectiveGameStartTime,
               });
               
               // Check if market is resolved
@@ -1024,7 +1030,10 @@ export default function TraderProfilePage({
                   resolved: isResolved,
                   score: fallbackScoreDisplay ?? existing?.score,
                   liveStatus: existing?.liveStatus,
-                  gameStartTime: pickBestStartTime(existing?.gameStartTime, gameStartTime),
+                  gameStartTime: pickBestStartTime(
+                    existing?.gameStartTime,
+                    effectiveGameStartTime
+                  ),
                   eventStatus: eventStatus || existing?.eventStatus,
                   endDateIso: endDateIso || existing?.endDateIso,
                   espnUrl: existing?.espnUrl,
@@ -1038,7 +1047,7 @@ export default function TraderProfilePage({
                 currentPrice,
                 closed,
                 isResolved,
-                gameStartTime,
+                gameStartTime: effectiveGameStartTime,
                 eventStatus,
                 score,
                 homeTeam,
@@ -1057,7 +1066,7 @@ export default function TraderProfilePage({
       const priceResults = await Promise.all(pricePromises);
 
       const dateHints = priceResults
-        .map((result) => result?.gameStartTime)
+        .flatMap((result) => [result?.gameStartTime, result?.endDateIso])
         .filter(
           (value): value is string | number =>
             value !== undefined && value !== null && value !== ''
