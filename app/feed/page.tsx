@@ -1567,6 +1567,7 @@ export default function FeedPage() {
           const params = new URLSearchParams();
           if (trade.market.conditionId) params.set('conditionId', trade.market.conditionId);
           if (trade.market.slug) params.set('slug', trade.market.slug);
+          if (trade.market.eventSlug) params.set('eventSlug', trade.market.eventSlug);
           if (trade.market.title) params.set('title', trade.market.title);
 
           // Fetch current price from Polymarket API

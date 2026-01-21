@@ -6,6 +6,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const conditionId = searchParams.get('conditionId');
   const slug = searchParams.get('slug');
+  const eventSlug = searchParams.get('eventSlug');
   const title = searchParams.get('title');
 
   const normalizeEndDate = (value: any) => {
@@ -235,6 +236,46 @@ export async function GET(request: Request) {
               }
             } catch (error) {
               console.warn('[Price API] Gamma event fallback failed:', error);
+            }
+          }
+
+          if ((!marketAvatarUrl || !gameStartTime || !endDateIso || !eventStatus || !score) && (eventSlug || slug)) {
+            try {
+              const gammaEventResponse = await fetch(
+                `https://gamma-api.polymarket.com/events?slug=${encodeURIComponent(eventSlug || slug || '')}`,
+                { cache: 'no-store' }
+              );
+              if (gammaEventResponse.ok) {
+                const gammaEventData = await gammaEventResponse.json();
+                const gammaEvent = Array.isArray(gammaEventData)
+                  ? gammaEventData[0]
+                  : gammaEventData?.results?.[0];
+                if (gammaEvent) {
+                  if (!marketAvatarUrl) {
+                    marketAvatarUrl = pickFirstString(
+                      marketAvatarUrl,
+                      gammaEvent?.icon,
+                      gammaEvent?.image
+                    );
+                  }
+                  if (!gameStartTime) {
+                    gameStartTime = gammaEvent?.startTime || gammaEvent?.startDate || null;
+                  }
+                  if (!endDateIso) {
+                    endDateIso = normalizeEndDate(gammaEvent?.endDate || null);
+                  }
+                  if (!eventStatus) {
+                    if (gammaEvent?.live) eventStatus = 'live';
+                    else if (gammaEvent?.ended) eventStatus = 'final';
+                  }
+                  if (!score && gammaEvent?.score && (gammaEvent?.live || gammaEvent?.ended)) {
+                    const parsedScore = parseScoreLine(gammaEvent.score);
+                    score = parsedScore ? parsedScore : gammaEvent.score;
+                  }
+                }
+              }
+            } catch (error) {
+              console.warn('[Price API] Gamma event slug fallback failed:', error);
             }
           }
 
