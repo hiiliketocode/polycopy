@@ -885,3 +885,38 @@ export async function getESPNScoresForTrades(
   console.log(`✅ Fetched scores for ${scoreMap.size} markets`);
   return scoreMap;
 }
+
+// Generate a fallback ESPN URL based on market information
+export function getFallbackEspnUrl(params: {
+  title?: string | null;
+  category?: string | null;
+  slug?: string | null;
+  eventSlug?: string | null;
+  dateHint?: string | number | null | undefined;
+}): string | undefined {
+  const { title, category, slug, eventSlug, dateHint } = params;
+  
+  if (!title) return undefined;
+  
+  const sport = detectSportType(title, category, slug, eventSlug);
+  if (!sport) return undefined;
+  
+  const sportGroups = ESPN_SPORT_GROUPS[sport];
+  if (!sportGroups || sportGroups.length === 0) return undefined;
+  
+  // Use the first sport key in the group
+  const sportKey = sportGroups[0];
+  
+  // Build ESPN URL
+  let url = `https://www.espn.com/${sportKey}/scoreboard`;
+  
+  // Add date if provided
+  if (dateHint) {
+    const dateKey = toEspnDateKey(dateHint);
+    if (dateKey) {
+      url += `/_/date/${dateKey}`;
+    }
+  }
+  
+  return url;
+}
