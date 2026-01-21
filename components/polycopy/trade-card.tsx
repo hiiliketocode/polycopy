@@ -2659,21 +2659,6 @@ export function TradeCard({
                 </Badge>
               )
             )}
-            {espnLink && (
-              <Badge
-                asChild
-                variant="secondary"
-                className={cn(
-                  badgeBaseClass,
-                  "bg-slate-50 text-slate-600 border-slate-200"
-                )}
-              >
-                <a href={espnLink} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  ESPN
-                </a>
-              </Badge>
-            )}
             {!showCombinedScoreBadge &&
               (statusBadgeVariant === "live" ||
                 statusBadgeVariant === "ended" ||
