@@ -173,6 +173,26 @@ body {
   }
 }
 
+@keyframes discover-ticker {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.discover-ticker-track {
+  width: max-content;
+  animation: discover-ticker 70s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .discover-ticker-track {
+    animation: none;
+  }
+}
+
 /* Prevent iOS viewport resize from affecting fixed elements */
 @supports (-webkit-touch-callout: none) {
   .fixed {

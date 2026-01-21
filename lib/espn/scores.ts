@@ -107,6 +107,7 @@ const TEAM_NAME_STOP_WORDS = new Set([
   'ac',
   'afc',
   'fk',
+  'ru',
   'c.f',
   's.c',
   'club',
@@ -211,8 +212,13 @@ const MONTH_LOOKUP: Record<string, string> = {
 const stripDiacritics = (value: string) =>
   value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-const normalizeTeamValue = (value: string) =>
-  stripDiacritics(value).toLowerCase().trim();
+const normalizeTeamValue = (value: string) => {
+  const lowered = stripDiacritics(value).toLowerCase();
+  return lowered
+    .replace(/\butd\.?\b/g, 'united')
+    .replace(/\bst\.?\b/g, 'saint')
+    .trim();
+};
 
 const extractDateKeysFromTitle = (title: string): string[] => {
   if (!title) return [];

@@ -501,6 +501,9 @@ export function TradeCard({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [localCopied, setLocalCopied] = useState(isCopied)
+  const [resolvedMarketAvatar, setResolvedMarketAvatar] = useState<string | null>(
+    typeof marketAvatar === "string" && marketAvatar.trim() ? marketAvatar : null
+  )
   const [refreshStatus, setRefreshStatus] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle')
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -553,6 +556,7 @@ export function TradeCard({
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`
   })
   const prevCanUseAutoCloseRef = useRef(canUseAutoClose)
+  const avatarFetchRef = useRef(false)
 
   const isUuid = (value?: string | null) =>
     Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))
@@ -907,7 +911,7 @@ export function TradeCard({
       eventTimeKind === "start" ? "Starts" : eventTimeKind === "end" ? "Resolves" : "Time"
     const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(eventTimeValue)
     const isMidnightUtc = /T00:00:00(?:\.000)?(?:Z|[+-]00:00)$/.test(eventTimeValue)
-    const useDateOnly = isDateOnly || (!isSportsContext && isMidnightUtc)
+    const useDateOnly = isDateOnly || isMidnightUtc
     const parsed = new Date(eventTimeValue)
     if (Number.isNaN(parsed.getTime())) return { eventTimeLabel: null, isEventTimeLoading: true }
     const timeZone = useDateOnly ? "UTC" : undefined
@@ -917,8 +921,15 @@ export function TradeCard({
       month: "2-digit",
       day: "2-digit",
     })
-    const toYmd = (date: Date) => {
-      const parts = formatter.formatToParts(date)
+    const compareFormatter = useDateOnly
+      ? new Intl.DateTimeFormat("en-US", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        })
+      : formatter
+    const toYmd = (date: Date, activeFormatter: Intl.DateTimeFormat) => {
+      const parts = activeFormatter.formatToParts(date)
       const lookup = parts.reduce<Record<string, string>>((acc, part) => {
         if (part.type !== "literal") acc[part.type] = part.value
         return acc
@@ -928,10 +939,12 @@ export function TradeCard({
     const today = new Date()
     const tomorrow = new Date(today)
     tomorrow.setDate(today.getDate() + 1)
-    const targetKey = toYmd(parsed)
+    const targetKey = toYmd(parsed, formatter)
+    const todayKey = toYmd(today, compareFormatter)
+    const tomorrowKey = toYmd(tomorrow, compareFormatter)
     if (eventTimeKind === "start") {
-      if (targetKey === toYmd(today) || targetKey === toYmd(tomorrow)) {
-        const label = targetKey === toYmd(today) ? "Today" : "Tomorrow"
+      if (targetKey === todayKey || targetKey === tomorrowKey) {
+        const label = targetKey === todayKey ? "Today" : "Tomorrow"
         if (!useDateOnly) {
           const timeLabel = new Intl.DateTimeFormat("en-US", {
             hour: "numeric",
@@ -946,10 +959,10 @@ export function TradeCard({
       }
     }
     if (eventTimeKind === "end") {
-      if (targetKey === toYmd(today)) {
+      if (targetKey === todayKey) {
         return { eventTimeLabel: `${prefix} Today`, isEventTimeLoading: false }
       }
-      if (targetKey === toYmd(tomorrow)) {
+      if (targetKey === tomorrowKey) {
         return { eventTimeLabel: `${prefix} Tomorrow`, isEventTimeLoading: false }
       }
     }
@@ -970,6 +983,55 @@ export function TradeCard({
     if (userUpdatedSlippageRef.current) return
     setSlippagePreset(resolvedDefaultSlippage)
   }, [resolvedDefaultSlippage])
+
+  useEffect(() => {
+    if (typeof marketAvatar === "string" && marketAvatar.trim()) {
+      setResolvedMarketAvatar(marketAvatar)
+    }
+  }, [marketAvatar])
+
+  useEffect(() => {
+    if (resolvedMarketAvatar) return
+    if (avatarFetchRef.current) return
+    const title = typeof market === "string" ? market.trim() : ""
+    if (!conditionId && !marketSlug && !title) return
+
+    avatarFetchRef.current = true
+    let cancelled = false
+
+    const fetchMarketAvatar = async () => {
+      try {
+        const params = new URLSearchParams()
+        if (conditionId) {
+          params.set("conditionId", conditionId)
+        } else if (marketSlug) {
+          params.set("slug", marketSlug)
+        } else if (title) {
+          params.set("title", title)
+        }
+        const response = await fetch(`/api/polymarket/price?${params.toString()}`, {
+          cache: "no-store",
+        })
+        if (!response.ok) return
+        const data = await response.json()
+        const avatarUrl =
+          typeof data?.market?.marketAvatarUrl === "string" && data.market.marketAvatarUrl.trim()
+            ? data.market.marketAvatarUrl.trim()
+            : null
+        if (!cancelled && avatarUrl) {
+          setResolvedMarketAvatar(avatarUrl)
+        }
+      } catch {
+        // Ignore transient fetch errors for avatar hydration.
+      }
+    }
+
+    fetchMarketAvatar()
+
+    return () => {
+      cancelled = true
+    }
+  }, [conditionId, market, marketSlug, resolvedMarketAvatar])
 
   useEffect(() => {
     if (!canUseAutoClose) {
@@ -2045,7 +2107,7 @@ export function TradeCard({
         marketId: conditionId || (finalTokenId ? finalTokenId.slice(0, 66) : undefined),
         marketTitle: market,
         marketSlug,
-        marketAvatarUrl: marketAvatar,
+        marketAvatarUrl: resolvedMarketAvatar ?? marketAvatar,
         amountInvested: estimatedMaxCost ?? undefined,
         outcome: position,
         autoCloseOnTraderClose: canUseAutoClose ? autoClose : false,
@@ -2608,7 +2670,10 @@ export function TradeCard({
             <div className="min-w-0 flex-1">
               <div className="flex items-start gap-2.5 md:items-center">
                 <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
-                  <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
+                  <AvatarImage
+                    src={resolvedMarketAvatar || "/placeholder.svg"}
+                    alt={market}
+                  />
                   <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
                     {market.slice(0, 2)}
                   </AvatarFallback>

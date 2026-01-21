@@ -17,7 +17,7 @@ import { EmptyState } from '@/components/polycopy/empty-state';
 import ClosePositionModal from '@/components/orders/ClosePositionModal';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { RefreshCw, Activity, Filter, Check, Search, ChevronDown } from 'lucide-react';
+import { RefreshCw, Activity, Filter, Check, Search, ChevronDown, ArrowUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getESPNScoresForTrades, getScoreDisplaySides, getFallbackEspnUrl } from '@/lib/espn/scores';
 import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
@@ -91,6 +91,14 @@ type ResolvedPositionResult = {
   resultLabel: string;
   resultVariant: 'win' | 'loss';
   settlementPrice: number;
+};
+
+type FetchFeedOptions = {
+  userOverride?: User;
+  merge?: boolean;
+  preserveDisplayCount?: boolean;
+  preserveScroll?: boolean;
+  silent?: boolean;
 };
 
 type Category = "all" | "politics" | "sports" | "crypto" | "culture" | "finance" | "economics" | "tech" | "weather";
@@ -177,6 +185,7 @@ const defaultFilters: FilterState = {
 
 const LOW_BALANCE_TOOLTIP =
   'Quick trades use your Polymarket USDC balance. Add funds before retrying this order.';
+const FEED_AUTO_REFRESH_MS = 60_000;
 
 const CATEGORY_VALUES = new Set(CATEGORY_OPTIONS.map((option) => option.value));
 const STATUS_VALUES = new Set(STATUS_OPTIONS.map((option) => option.value));
@@ -255,6 +264,49 @@ const toNumber = (value: unknown) => {
   if (value === null || value === undefined) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+};
+const normalizeIdPart = (value?: string | number | null) => {
+  if (value === null || value === undefined) return '';
+  const normalized = normalizeKeyPart(String(value));
+  if (!normalized) return '';
+  return normalized.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+};
+const buildFeedTradeId = ({
+  wallet,
+  tradeId,
+  timestamp,
+  side,
+  outcome,
+  size,
+  price,
+  marketId,
+}: {
+  wallet?: string;
+  tradeId?: string | number | null;
+  timestamp?: number | null;
+  side?: string;
+  outcome?: string;
+  size?: number | null;
+  price?: number | null;
+  marketId?: string | null;
+}) => {
+  const walletPart = normalizeIdPart(wallet) || 'unknown';
+  const tradeIdPart = normalizeIdPart(tradeId);
+  if (tradeIdPart) {
+    return `${walletPart}-${tradeIdPart}`;
+  }
+  const sizePart = Number.isFinite(size ?? NaN) ? Number(size).toFixed(6) : size;
+  const pricePart = Number.isFinite(price ?? NaN) ? Number(price).toFixed(6) : price;
+  const fallbackParts = [
+    walletPart,
+    normalizeIdPart(marketId),
+    normalizeIdPart(timestamp),
+    normalizeIdPart(side),
+    normalizeIdPart(outcome),
+    normalizeIdPart(sizePart),
+    normalizeIdPart(pricePart),
+  ].filter(Boolean);
+  return fallbackParts.join('-') || `trade-${Date.now()}`;
 };
 const buildCopiedTradeKey = (marketKey?: string | null, traderWallet?: string | null) => {
   const market = normalizeKeyPart(marketKey);
@@ -416,6 +468,8 @@ export default function FeedPage() {
   const [traderSearch, setTraderSearch] = useState('');
   const [showAllTraders, setShowAllTraders] = useState(false);
   const filtersPanelRef = useRef<HTMLDivElement | null>(null);
+  const feedListRef = useRef<HTMLDivElement | null>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
   
   // Data state
   const [allTrades, setAllTrades] = useState<FeedTrade[]>([]);
@@ -425,6 +479,7 @@ export default function FeedPage() {
   const [error, setError] = useState<string | null>(null);
   const [lastFeedFetchAt, setLastFeedFetchAt] = useState<number | null>(null);
   const [latestTradeTimestamp, setLatestTradeTimestamp] = useState<number | null>(null);
+  const allTradesRef = useRef<FeedTrade[]>([]);
   
   // Stats
   const [todayVolume, setTodayVolume] = useState(0);
@@ -486,6 +541,9 @@ export default function FeedPage() {
     typeof cashBalance === 'number' &&
     cashBalance < 1;
   const sellToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoRefreshInFlightRef = useRef(false);
+  const loadingFeedRef = useRef(false);
+  const isRefreshingRef = useRef(false);
 
   const triggerSellToast = useCallback((message: string) => {
     setSellToastMessage(message);
@@ -495,6 +553,18 @@ export default function FeedPage() {
     }
     sellToastTimerRef.current = setTimeout(() => setShowSellToast(false), 4000);
   }, []);
+
+  useEffect(() => {
+    allTradesRef.current = allTrades;
+  }, [allTrades]);
+
+  useEffect(() => {
+    loadingFeedRef.current = loadingFeed;
+  }, [loadingFeed]);
+
+  useEffect(() => {
+    isRefreshingRef.current = isRefreshing;
+  }, [isRefreshing]);
 
   const traderFilters = useMemo(() => {
     const map = new Map<string, string>();
@@ -537,6 +607,40 @@ export default function FeedPage() {
     });
     return map;
   }, [allTrades]);
+
+  const captureScrollAnchor = useCallback(() => {
+    if (typeof window === 'undefined' || window.scrollY < 80) return null;
+    const container = feedListRef.current;
+    if (!container) return null;
+    const items = Array.from(container.querySelectorAll<HTMLElement>('[data-trade-id]'));
+    for (const item of items) {
+      const rect = item.getBoundingClientRect();
+      if (rect.bottom > 0) {
+        const tradeId = item.dataset.tradeId || '';
+        if (!tradeId) return null;
+        return { tradeId, top: rect.top };
+      }
+    }
+    return null;
+  }, []);
+
+  const restoreScrollAnchor = useCallback((anchor: { tradeId: string; top: number } | null) => {
+    if (!anchor || typeof window === 'undefined') return;
+    requestAnimationFrame(() => {
+      const container = feedListRef.current;
+      if (!container) return;
+      const escaped =
+        typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+          ? CSS.escape(anchor.tradeId)
+          : anchor.tradeId.replace(/"/g, '\\"');
+      const target = container.querySelector<HTMLElement>(`[data-trade-id="${escaped}"]`);
+      if (!target) return;
+      const nextTop = target.getBoundingClientRect().top;
+      const delta = nextTop - anchor.top;
+      if (Math.abs(delta) < 1) return;
+      window.scrollBy({ top: delta, behavior: 'auto' });
+    });
+  }, []);
 
   const traderLabelMap = useMemo(
     () => new Map(traderFilters.map((trader) => [trader.wallet, trader.name])),
@@ -1907,15 +2011,27 @@ export default function FeedPage() {
   }, []);
 
   // Fetch feed data
-  const fetchFeed = useCallback(async (userOverride?: User) => {
+  const fetchFeed = useCallback(async (options: FetchFeedOptions = {}) => {
+    const {
+      userOverride,
+      merge = false,
+      preserveDisplayCount = false,
+      preserveScroll = false,
+      silent = false,
+    } = options;
     const currentUser = userOverride || user;
-    
+
     if (!currentUser) {
       return;
     }
-    
-    setLoadingFeed(true);
-    setError(null);
+
+    const shouldSetLoading = !silent;
+    const scrollAnchor = preserveScroll ? captureScrollAnchor() : null;
+
+    if (shouldSetLoading) {
+      setLoadingFeed(true);
+      setError(null);
+    }
 
     try {
         // 1. Fetch followed traders
@@ -1928,7 +2044,7 @@ export default function FeedPage() {
         if (!follows || follows.length === 0) {
           setAllTrades([]);
           setFollowingCount(0);
-          setLoadingFeed(false);
+          setLastFeedFetchAt(Date.now());
           return;
         }
 
@@ -2027,8 +2143,10 @@ export default function FeedPage() {
         const allTradesRaw = allTradesArrays.flat();
         
         if (allTradesRaw.length === 0) {
-          setAllTrades([]);
-          setLoadingFeed(false);
+          if (!merge) {
+            setAllTrades([]);
+          }
+          setLastFeedFetchAt(Date.now());
           return;
         }
 
@@ -2087,8 +2205,26 @@ export default function FeedPage() {
             trade.title ||
             '';
           const conditionId = trade.conditionId || trade.condition_id || '';
+          const side = (trade.side || 'BUY').toUpperCase() as 'BUY' | 'SELL';
+          const outcome = trade.outcome || trade.option || 'YES';
+          const size = parseFloat(trade.size || trade.amount || 0);
+          const price = parseFloat(trade.price || 0);
+          const timestamp = (trade.timestamp || Date.now() / 1000) * 1000;
+          const rawTradeId =
+            trade.trade_id || trade.id || trade.tx_hash || trade.transactionHash || '';
+          const tradeId = rawTradeId ? String(rawTradeId) : undefined;
+          const feedTradeId = buildFeedTradeId({
+            wallet,
+            tradeId,
+            timestamp,
+            side,
+            outcome,
+            size,
+            price,
+            marketId,
+          });
           return {
-            id: `${trade.id || trade.timestamp}-${Math.random()}`,
+            id: feedTradeId,
             trader: {
               wallet: wallet,
               displayName: displayName,
@@ -2108,12 +2244,12 @@ export default function FeedPage() {
               avatarUrl: extractMarketAvatarUrl(trade) || undefined,
             },
             trade: {
-              side: (trade.side || 'BUY').toUpperCase() as 'BUY' | 'SELL',
-              outcome: trade.outcome || trade.option || 'YES',
-              size: parseFloat(trade.size || trade.amount || 0),
-              price: parseFloat(trade.price || 0),
-              timestamp: (trade.timestamp || Date.now() / 1000) * 1000,
-              tradeId: trade.trade_id || trade.id || trade.tx_hash || trade.transactionHash || '',
+              side,
+              outcome,
+              size,
+              price,
+              timestamp,
+              tradeId,
               tokenId: extractTokenId(trade),
             },
           };
@@ -2206,20 +2342,49 @@ export default function FeedPage() {
           ? Math.max(...formattedTrades.map(t => t.trade.timestamp))
           : null;
 
-        setAllTrades(formattedTrades);
-        setDisplayedTradesCount(35);
-        setLatestTradeTimestamp(latestTimestamp);
+        const existingTrades = allTradesRef.current;
+        const existingIds = new Set(existingTrades.map((trade) => trade.id));
+        const newTrades = merge
+          ? formattedTrades.filter((trade) => !existingIds.has(trade.id))
+          : formattedTrades;
+        const nextTrades = merge ? [...newTrades, ...existingTrades] : formattedTrades;
+
+        if (merge && preserveDisplayCount && newTrades.length > 0) {
+          setDisplayedTradesCount((prev) => prev + newTrades.length);
+        } else if (!merge) {
+          setDisplayedTradesCount(35);
+        }
+
+        setAllTrades(nextTrades);
+
+        if (merge) {
+          if (latestTimestamp !== null) {
+            setLatestTradeTimestamp((prev) => {
+              if (!prev) return latestTimestamp;
+              return Math.max(prev, latestTimestamp);
+            });
+          }
+        } else {
+          setLatestTradeTimestamp(latestTimestamp);
+        }
         setLastFeedFetchAt(Date.now());
         
         // Fetch live market data for displayed trades
-        fetchLiveMarketData(formattedTrades.slice(0, 35));
+        if (merge) {
+          if (newTrades.length > 0) {
+            fetchLiveMarketData(newTrades);
+          }
+        } else {
+          fetchLiveMarketData(nextTrades.slice(0, 35));
+        }
 
         // Calculate today's volume and trade count
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const todayTimestamp = today.getTime();
         
-        const todaysTrades = formattedTrades.filter(t => {
+        const tradesForStats = merge ? nextTrades : formattedTrades;
+        const todaysTrades = tradesForStats.filter(t => {
           const tradeDate = new Date(t.trade.timestamp);
           tradeDate.setHours(0, 0, 0, 0);
           return tradeDate.getTime() === todayTimestamp;
@@ -2229,14 +2394,22 @@ export default function FeedPage() {
         setTodayVolume(volumeToday);
         setTodaysTradeCount(todaysTrades.length);
 
+        if (merge && preserveScroll && newTrades.length > 0) {
+          restoreScrollAnchor(scrollAnchor);
+        }
+
     } catch (err: any) {
       console.error('Error fetching feed:', err);
-      setError(err.message || 'Failed to load feed');
-      setLastFeedFetchAt(Date.now());
+      if (!silent) {
+        setError(err.message || 'Failed to load feed');
+        setLastFeedFetchAt(Date.now());
+      }
     } finally {
-      setLoadingFeed(false);
+      if (shouldSetLoading) {
+        setLoadingFeed(false);
+      }
     }
-  }, [user]);
+  }, [captureScrollAnchor, restoreScrollAnchor, user, fetchLiveMarketData]);
 
   // Manual refresh handler
   const handleManualRefresh = async () => {
@@ -2248,7 +2421,7 @@ export default function FeedPage() {
     sessionStorage.removeItem(sessionKey);
     hasFetchedRef.current = false;
     
-    await fetchFeed();
+    await fetchFeed({ userOverride: user });
     
     hasFetchedRef.current = true;
     sessionStorage.setItem(sessionKey, 'true');
@@ -2288,7 +2461,7 @@ export default function FeedPage() {
         return;
       }
       
-      await fetchFeed(currentUser);
+      await fetchFeed({ userOverride: currentUser });
       hasFetchedRef.current = true;
       sessionStorage.setItem(sessionKey, 'true');
     };
@@ -2296,6 +2469,26 @@ export default function FeedPage() {
     attemptFetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const intervalId = window.setInterval(() => {
+      if (autoRefreshInFlightRef.current) return;
+      if (loadingFeedRef.current || isRefreshingRef.current) return;
+      autoRefreshInFlightRef.current = true;
+      fetchFeed({
+        userOverride: user,
+        merge: true,
+        preserveDisplayCount: true,
+        preserveScroll: true,
+        silent: true,
+      }).finally(() => {
+        autoRefreshInFlightRef.current = false;
+      });
+    }, FEED_AUTO_REFRESH_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [user, fetchFeed]);
 
   // Load more trades
   const handleLoadMore = () => {
@@ -2504,6 +2697,16 @@ export default function FeedPage() {
       }
     };
   }, [refreshDisplayedMarketData]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.scrollY > 320);
+    };
+
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // Real-time polling for expanded trade cards (Priority 2 enhancement)
   useEffect(() => {
@@ -3223,7 +3426,7 @@ export default function FeedPage() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4" ref={feedListRef}>
                   {resolvedResultCards.map((resolvedTrade) => {
                     const marketKey = normalizeKeyPart(
                       resolvedTrade.market.id ||
@@ -3321,7 +3524,11 @@ export default function FeedPage() {
                       liveMarket?.marketAvatarUrl || trade.market.avatarUrl || null;
 
                     return (
-                      <div className="w-full md:w-[63%] md:mx-auto" key={tradeKey}>
+                      <div
+                        className="w-full md:w-[63%] md:mx-auto"
+                        key={tradeKey}
+                        data-trade-id={trade.id}
+                      >
                         <TradeCard
                           tradeAnchorId={tradeAnchorId}
                           onExecutionNotification={handleTradeExecutionNotification}
@@ -3403,6 +3610,17 @@ export default function FeedPage() {
         </div>
 
       </div>
+
+      {showBackToTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-6 right-6 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg transition hover:bg-slate-800"
+          aria-label="Back to top"
+        >
+          <ArrowUp className="h-4 w-4" />
+        </button>
+      )}
 
       <TradeExecutionNotifications
         notifications={tradeNotifications}
