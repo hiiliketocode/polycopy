@@ -67,6 +67,32 @@ type PositionTradeSummary = {
   timestamp: number | null;
 };
 
+type ResolvedPositionResult = {
+  id: string;
+  trader: {
+    wallet: string;
+    displayName: string;
+  };
+  market: {
+    id?: string;
+    title: string;
+    slug?: string | null;
+    avatarUrl?: string | null;
+  };
+  trade: {
+    side: 'BUY' | 'SELL';
+    outcome: string;
+    size: number;
+    price: number;
+    total: number;
+  };
+  resolvedOutcome: string;
+  resolvedAt: number;
+  resultLabel: string;
+  resultVariant: 'win' | 'loss';
+  settlementPrice: number;
+};
+
 type Category = "all" | "politics" | "sports" | "crypto" | "culture" | "finance" | "economics" | "tech" | "weather";
 type FilterStatus = "all" | "live";
 type ResolvingWindow = "any" | "hour" | "today" | "tomorrow" | "week";
@@ -409,6 +435,7 @@ export default function FeedPage() {
   const [userPositionTradesByMarket, setUserPositionTradesByMarket] = useState<
     Map<string, PositionTradeSummary[]>
   >(new Map());
+  const [resolvedPositionResults, setResolvedPositionResults] = useState<ResolvedPositionResult[]>([]);
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(false);
   const [pinnedTradeIds, setPinnedTradeIds] = useState<Set<string>>(new Set());
   const [positions, setPositions] = useState<PositionSummary[]>([]);
@@ -1199,6 +1226,7 @@ export default function FeedPage() {
     if (!user) {
       setCopiedTradeIds(new Set());
       setUserPositionTradesByMarket(new Map());
+      setResolvedPositionResults([]);
       return;
     }
 
@@ -1209,12 +1237,16 @@ export default function FeedPage() {
         const payload = await apiResponse.json();
         const copiedIds = new Set<string>();
         const userMarketTrades = new Map<string, PositionTradeSummary[]>();
+        const resolvedResults: ResolvedPositionResult[] = [];
         payload?.trades?.forEach(
           (t: {
+            id?: string;
             market_id?: string;
             market_slug?: string;
             market_title?: string;
+            market_avatar_url?: string | null;
             trader_wallet?: string;
+            trader_username?: string | null;
             outcome?: string;
             price_when_copied?: number | string | null;
             amount_invested?: number | string | null;
@@ -1222,6 +1254,8 @@ export default function FeedPage() {
             copied_at?: string | null;
             user_closed_at?: string | null;
             market_resolved?: boolean | null;
+            market_resolved_at?: string | null;
+            resolved_outcome?: string | null;
             side?: string | null;
           }) => {
             const walletKey = normalizeKeyPart(t.trader_wallet);
@@ -1237,6 +1271,61 @@ export default function FeedPage() {
             }
 
             const isOpen = !t.user_closed_at && !t.market_resolved;
+            const isResolved = !t.user_closed_at && Boolean(t.market_resolved);
+            if (isResolved) {
+              const normalizedOutcome = normalizeOutcomeValue(t.outcome);
+              const normalizedResolvedOutcome = normalizeOutcomeValue(t.resolved_outcome);
+              if (normalizedOutcome && normalizedResolvedOutcome) {
+                const price = toNumber(t.price_when_copied);
+                const entrySize = toNumber(t.entry_size);
+                const amountUsd = toNumber(t.amount_invested);
+                const size =
+                  entrySize !== null
+                    ? entrySize
+                    : amountUsd !== null && price !== null && price > 0
+                      ? Number((amountUsd / price).toFixed(4))
+                      : null;
+                const total =
+                  amountUsd !== null
+                    ? amountUsd
+                    : size !== null && price !== null
+                      ? Number((size * price).toFixed(4))
+                      : null;
+                if (price !== null && size !== null && total !== null) {
+                  const resolvedAtCandidate = t.market_resolved_at || t.copied_at;
+                  const resolvedAt = resolvedAtCandidate
+                    ? new Date(resolvedAtCandidate).getTime()
+                    : Date.now();
+                  const isWin = normalizedOutcome === normalizedResolvedOutcome;
+                  resolvedResults.push({
+                    id: String(t.id || `${t.market_id || t.market_slug || t.market_title}-${t.outcome}-${resolvedAt}`),
+                    trader: {
+                      wallet: t.trader_wallet || '',
+                      displayName: t.trader_username || 'Trader',
+                    },
+                    market: {
+                      id: t.market_id,
+                      title: t.market_title || 'Market',
+                      slug: t.market_slug,
+                      avatarUrl: t.market_avatar_url ?? null,
+                    },
+                    trade: {
+                      side:
+                        String(t.side || 'BUY').toUpperCase() === 'SELL' ? 'SELL' : 'BUY',
+                      outcome: t.outcome || '',
+                      size,
+                      price,
+                      total,
+                    },
+                    resolvedOutcome: t.resolved_outcome || normalizedResolvedOutcome,
+                    resolvedAt,
+                    resultLabel: isWin ? 'U1' : 'U lost',
+                    resultVariant: isWin ? 'win' : 'loss',
+                    settlementPrice: isWin ? 1 : 0,
+                  });
+                }
+              }
+            }
             if (!isOpen) return;
 
             const marketKeys = [t.market_id, t.market_slug, t.market_title]
@@ -1281,8 +1370,10 @@ export default function FeedPage() {
         userMarketTrades.forEach((trades) => {
           trades.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
         });
+        resolvedResults.sort((a, b) => b.resolvedAt - a.resolvedAt);
         setCopiedTradeIds(copiedIds);
         setUserPositionTradesByMarket(userMarketTrades);
+        setResolvedPositionResults(resolvedResults);
         return;
       }
 
@@ -1294,6 +1385,7 @@ export default function FeedPage() {
 
       if (error) {
         console.error('Error fetching copied trades:', error);
+        setResolvedPositionResults([]);
       } else {
         const copiedIds = new Set<string>();
         trades?.forEach((t: { market_id?: string; copied_trader_wallet?: string; market_slug?: string; copied_market_title?: string }) => {
@@ -1309,10 +1401,12 @@ export default function FeedPage() {
         });
         setCopiedTradeIds(copiedIds);
         setUserPositionTradesByMarket(new Map());
+        setResolvedPositionResults([]);
       }
     } catch (err) {
       console.error('Error fetching copied trades:', err);
       setUserPositionTradesByMarket(new Map());
+      setResolvedPositionResults([]);
     } finally {
       setLoadingCopiedTrades(false);
     }
@@ -2331,6 +2425,11 @@ export default function FeedPage() {
     return [...pinnedTrades, ...unpinnedTrades.slice(0, remaining)];
   }, [displayedTradesCount, pinnedTrades, unpinnedTrades]);
 
+  const resolvedResultCards = useMemo(
+    () => resolvedPositionResults,
+    [resolvedPositionResults]
+  );
+
   const hasMoreTrades =
     unpinnedTrades.length > Math.max(displayedTradesCount - pinnedTrades.length, 0);
 
@@ -3125,6 +3224,55 @@ export default function FeedPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
+                  {resolvedResultCards.map((resolvedTrade) => {
+                    const marketKey = normalizeKeyPart(
+                      resolvedTrade.market.id ||
+                        resolvedTrade.market.slug ||
+                        resolvedTrade.market.title ||
+                        null
+                    );
+                    const liveMarket = marketKey ? liveMarketData.get(marketKey) : undefined;
+                    const marketAvatar =
+                      resolvedTrade.market.avatarUrl ||
+                      liveMarket?.marketAvatarUrl ||
+                      null;
+                    const polymarketUrl = resolvedTrade.market.slug
+                      ? `https://polymarket.com/market/${resolvedTrade.market.slug}`
+                      : undefined;
+
+                    return (
+                      <div className="w-full md:w-[63%] md:mx-auto" key={`result-${resolvedTrade.id}`}>
+                        <TradeCard
+                          tradeAnchorId={`result-card-${resolvedTrade.id}`}
+                          trader={{
+                            name: resolvedTrade.trader.displayName,
+                            address: resolvedTrade.trader.wallet,
+                            id: resolvedTrade.trader.wallet,
+                          }}
+                          market={resolvedTrade.market.title}
+                          marketAvatar={marketAvatar ?? undefined}
+                          position={resolvedTrade.trade.outcome}
+                          action={resolvedTrade.trade.side === 'BUY' ? 'Buy' : 'Sell'}
+                          price={resolvedTrade.trade.price}
+                          size={resolvedTrade.trade.size}
+                          total={resolvedTrade.trade.total}
+                          timestamp={getRelativeTime(resolvedTrade.resolvedAt)}
+                          isPremium={tierHasPremiumAccess(userTier)}
+                          isAdmin={userTier === 'admin'}
+                          marketSlug={resolvedTrade.market.slug || undefined}
+                          currentMarketPrice={resolvedTrade.settlementPrice}
+                          currentMarketUpdatedAt={resolvedTrade.resolvedAt}
+                          marketIsOpen={false}
+                          liveStatus="final"
+                          polymarketUrl={polymarketUrl}
+                          hideActions
+                          resultLabel={resolvedTrade.resultLabel}
+                          resultVariant={resolvedTrade.resultVariant}
+                          resolvedOutcomeLabel={resolvedTrade.resolvedOutcome}
+                        />
+                      </div>
+                    );
+                  })}
                   {displayedTrades.map((trade) => {
                     const marketKey = getMarketKeyForTrade(trade);
                     const marketKeyVariants = getMarketKeyVariantsForTrade(trade);

@@ -113,6 +113,9 @@ interface TradeCardProps {
   onSwitchToManualTrading?: () => void
   onOpenConnectWallet?: () => void
   hideActions?: boolean
+  resultLabel?: string
+  resultVariant?: "win" | "loss"
+  resolvedOutcomeLabel?: string
   isPinned?: boolean
   onTogglePin?: () => void
   traderPositionBadge?: PositionBadgeData
@@ -474,6 +477,9 @@ export function TradeCard({
   onSwitchToManualTrading,
   onOpenConnectWallet,
   hideActions = false,
+  resultLabel,
+  resultVariant = "win",
+  resolvedOutcomeLabel,
   isPinned = false,
   onTogglePin,
   traderPositionBadge,
@@ -2581,6 +2587,18 @@ export function TradeCard({
           </Link>
           <div className="flex flex-col items-end gap-1 shrink-0">
             <span className="text-[11px] text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
+            {resultLabel && (
+              <span
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-none",
+                  resultVariant === "win"
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : "bg-rose-50 text-rose-700 border-rose-200"
+                )}
+              >
+                {resultLabel}
+              </span>
+            )}
             {isPremium && onToggleExpand && !localCopied && null}
           </div>
         </div>
@@ -2664,6 +2682,17 @@ export function TradeCard({
                     {eventStatusLabel}
                   </Badge>
                 )}
+              {resolvedOutcomeLabel ? (
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    badgeBaseClass,
+                    "bg-slate-50 text-slate-700 border-slate-200"
+                  )}
+                >
+                  Outcome: {resolvedOutcomeLabel}
+                </Badge>
+              ) : null}
               {showCombinedScoreBadge ? (
                 <div>
                   {espnLink ? (
