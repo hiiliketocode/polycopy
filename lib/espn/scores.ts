@@ -237,6 +237,8 @@ function detectSportType(
   if (slugLower.includes('mlb')) return 'mlb';
   if (slugLower.includes('nhl')) return 'nhl';
   if (slugLower.includes('tennis')) return 'tennis';
+  if (slugLower.includes('ucl')) return 'soccer';
+  if (slugLower.includes('champions')) return 'soccer';
   if (slugLower.match(/\b(ncaaf|college-football|cfb)\b/)) return 'ncaaf';
   if (slugLower.match(/\b(ncaaw|womens?-college-basketball)\b/)) return 'ncaaw';
   if (slugLower.match(/\b(ncaab|mens?-college-basketball|college-basketball|march-madness)\b/)) return 'ncaab';
@@ -304,6 +306,13 @@ function detectSportType(
   if (nhlTeams.some(team => titleLower.includes(team))) return 'nhl';
 
   if (titleLower.match(/\b(premier league|la liga|serie a|bundesliga|ligue 1|eredivisie|primeira|uefa|champions league|europa league|conference league|world cup|fifa|copa|conmebol|concacaf|afc|caf|mls|liga mx|ligamx)\b/)) {
+    return 'soccer';
+  }
+
+  if (
+    SOCCER_CLUB_TOKEN.test(titleLower) &&
+    /\b(spread|moneyline|ml|pick'?em|total|o\/u|over\/under)\b/.test(titleLower)
+  ) {
     return 'soccer';
   }
 
@@ -442,6 +451,10 @@ function isLikelySportsTitle(title: string, category?: string | null): boolean {
   }
 
   if (SOCCER_CLUB_TOKEN.test(titleLower) && /\bwin\b/.test(titleLower)) {
+    return true;
+  }
+
+  if (titleLower.match(/\b(spread|moneyline|ml|pick'?em|total|o\/u|over\/under)\b/)) {
     return true;
   }
 

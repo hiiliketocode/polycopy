@@ -54,11 +54,20 @@ export async function GET(request: Request) {
 
   const parseScoreLine = (value?: string | null) => {
     if (!value || typeof value !== 'string') return null;
-    const match = value.match(/(\d+)\s*-\s*(\d+)/);
-    if (!match) return null;
+    const matches = Array.from(value.matchAll(/(\d+)\s*-\s*(\d+)/g));
+    if (matches.length === 0) return null;
+    let chosen = matches[matches.length - 1];
+    for (let i = matches.length - 1; i >= 0; i -= 1) {
+      const home = Number.parseInt(matches[i][1], 10);
+      const away = Number.parseInt(matches[i][2], 10);
+      if (home !== 0 || away !== 0) {
+        chosen = matches[i];
+        break;
+      }
+    }
     return {
-      home: Number.parseInt(match[1], 10),
-      away: Number.parseInt(match[2], 10),
+      home: Number.parseInt(chosen[1], 10),
+      away: Number.parseInt(chosen[2], 10),
     };
   };
 

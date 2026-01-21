@@ -824,8 +824,18 @@ export function TradeCard({
       /\b(nfl|nba|nhl|mlb|ncaa|ucl|uefa|champions league|premier league|la liga|serie a|bundesliga|ligue 1|mls)\b/.test(
         lower
       )
-    return hasMatchToken || hasTeamToken || hasLeagueToken
-  }, [market])
+    const slugHint = marketSlug?.toLowerCase() ?? ""
+    const hasSlugLeague =
+      slugHint.includes("ucl") ||
+      slugHint.includes("uefa") ||
+      slugHint.includes("champions") ||
+      slugHint.includes("premier") ||
+      slugHint.includes("bundesliga") ||
+      slugHint.includes("laliga") ||
+      slugHint.includes("seriea") ||
+      slugHint.includes("ligue1")
+    return hasMatchToken || hasTeamToken || hasLeagueToken || hasSlugLeague
+  }, [market, marketSlug])
 
   const isSportsContext = Boolean(
     looksLikeScore ||
