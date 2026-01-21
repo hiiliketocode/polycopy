@@ -100,6 +100,51 @@ const TEAM_NAME_STOP_WORDS = new Set([
   'the',
 ]);
 
+const ESPN_TIME_ZONE = 'America/New_York';
+const ESPN_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ESPN_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+const formatEspnDateKey = (date: Date) =>
+  ESPN_DATE_FORMATTER.format(date).replace(/-/g, '');
+
+const toEspnDateKey = (value?: string | number | null) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return formatEspnDateKey(parsed);
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^\d{8}$/.test(trimmed)) return trimmed;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed.replace(/-/g, '');
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return formatEspnDateKey(parsed);
+};
+
+const getDefaultEspnDateKeys = () => {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  return [formatEspnDateKey(now), formatEspnDateKey(tomorrow)];
+};
+
+const normalizeEspnLink = (link?: string | null) => {
+  if (!link) return undefined;
+  const trimmed = link.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith('//')) return `https:${trimmed}`;
+  if (trimmed.startsWith('/')) return `https://www.espn.com${trimmed}`;
+  if (/^http:\/\//i.test(trimmed)) return trimmed.replace(/^http:/i, 'https:');
+  if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
+  return trimmed;
+};
+
 // Detect sport type from market title
 function detectSportType(
   title: string,
@@ -600,12 +645,20 @@ export function getScoreDisplaySides(
 }
 
 // Fetch ESPN scores for a specific sport key
-async function fetchESPNScores(sportKey: string): Promise<ESPNGame[]> {
+async function fetchESPNScores(sportKey: string, dateKey?: string): Promise<ESPNGame[]> {
   try {
-    const response = await fetch(`/api/espn/scores?sport=${sportKey}`, {
+    const params = new URLSearchParams({ sport: sportKey });
+    if (dateKey) params.set('date', dateKey);
+    let response = await fetch(`/api/espn/scores?${params.toString()}`, {
       cache: 'no-store',
     });
     
+    if (!response.ok && dateKey) {
+      response = await fetch(`/api/espn/scores?sport=${sportKey}`, {
+        cache: 'no-store',
+      });
+    }
+
     if (!response.ok) {
       console.warn(`Failed to fetch ${sportKey.toUpperCase()} scores:`, response.status);
       return [];
@@ -619,11 +672,11 @@ async function fetchESPNScores(sportKey: string): Promise<ESPNGame[]> {
   }
 }
 
-async function fetchESPNGroupScores(sport: SportGroup): Promise<ESPNGame[]> {
+async function fetchESPNGroupScores(sport: SportGroup, dateKey?: string): Promise<ESPNGame[]> {
   const groupKeys = ESPN_SPORT_GROUPS[sport];
   if (!groupKeys || groupKeys.length === 0) return [];
 
-  const results = await Promise.all(groupKeys.map(key => fetchESPNScores(key)));
+  const results = await Promise.all(groupKeys.map(key => fetchESPNScores(key, dateKey)));
   return results.flat();
 }
 
@@ -701,7 +754,7 @@ function buildScoreResult(matchingGame: ESPNGame): ESPNScoreResult {
     awayTeamAbbrev: matchingGame.awayTeam.abbreviation,
     status: matchingGame.status,
     startTime: matchingGame.startTime,
-    gameUrl: matchingGame.link,
+    gameUrl: normalizeEspnLink(matchingGame.link),
     displayClock: matchingGame.displayClock,
     period: matchingGame.period,
   };
@@ -715,17 +768,48 @@ export async function getESPNScoreForTrade(trade: FeedTrade): Promise<ESPNScoreR
 }
 
 // Batch fetch scores for multiple trades (more efficient)
-export async function getESPNScoresForTrades(trades: FeedTrade[]): Promise<Map<string, ESPNScoreResult>> {
+export async function getESPNScoresForTrades(
+  trades: FeedTrade[],
+  options?: { dateHints?: Array<string | number | null | undefined> }
+): Promise<Map<string, ESPNScoreResult>> {
   const scoreMap = new Map<string, ESPNScoreResult>();
-  const gamesBySport = new Map<SportGroup, ESPNGame[]>();
+  const gamesBySportDate = new Map<string, ESPNGame[]>();
   const ALL_SPORTS = Object.keys(ESPN_SPORT_GROUPS) as SportGroup[];
 
-  const fetchGamesForSport = async (sport: SportGroup): Promise<ESPNGame[]> => {
-    const cached = gamesBySport.get(sport);
+  const dateKeys = (() => {
+    const keys = new Set(getDefaultEspnDateKeys());
+    options?.dateHints?.forEach((hint) => {
+      const key = toEspnDateKey(hint ?? undefined);
+      if (key) keys.add(key);
+    });
+    return Array.from(keys);
+  })();
+
+  const fetchGamesForSportDate = async (
+    sport: SportGroup,
+    dateKey?: string
+  ): Promise<ESPNGame[]> => {
+    const cacheKey = `${sport}:${dateKey ?? 'default'}`;
+    const cached = gamesBySportDate.get(cacheKey);
     if (cached) return cached;
-    const games = await fetchESPNGroupScores(sport);
-    gamesBySport.set(sport, games);
+    const games = await fetchESPNGroupScores(sport, dateKey);
+    gamesBySportDate.set(cacheKey, games);
     return games;
+  };
+
+  const fetchGamesForSport = async (sport: SportGroup): Promise<ESPNGame[]> => {
+    const targetKeys = dateKeys.length > 0 ? dateKeys : [undefined];
+    const results = await Promise.all(
+      targetKeys.map((key) => fetchGamesForSportDate(sport, key))
+    );
+    const seen = new Set<string>();
+    const deduped: ESPNGame[] = [];
+    results.flat().forEach((game) => {
+      if (seen.has(game.id)) return;
+      seen.add(game.id);
+      deduped.push(game);
+    });
+    return deduped;
   };
   
   // Group trades by sport

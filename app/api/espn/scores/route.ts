@@ -39,6 +39,10 @@ interface ESPNCompetition {
     displayClock?: string;
     period?: number;
   };
+  links?: Array<{
+    href?: string;
+    rel?: string[];
+  }>;
 }
 
 interface ESPNCompetitor {
@@ -125,6 +129,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const sport = searchParams.get('sport') || 'nfl'; // Default to NFL
   const teamNames = searchParams.get('teams'); // Optional: filter by team names
+  const dateParam = searchParams.get('date');
 
   try {
     const endpoint = SPORT_ENDPOINTS[sport.toLowerCase()];
@@ -135,7 +140,35 @@ export async function GET(request: NextRequest) {
 
     console.log(`📊 Fetching ${sport.toUpperCase()} scores from ESPN...`);
 
-    const response = await fetch(endpoint, {
+    const normalizeDateParam = (value?: string | null) => {
+      if (!value) return null;
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      if (/^\d{8}$/.test(trimmed)) return trimmed;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed.replace(/-/g, '');
+      const parsed = new Date(trimmed);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return parsed.toISOString().slice(0, 10).replace(/-/g, '');
+    };
+
+    const normalizeEspnLink = (link?: string | null) => {
+      if (!link) return undefined;
+      const trimmed = link.trim();
+      if (!trimmed) return undefined;
+      if (trimmed.startsWith('//')) return `https:${trimmed}`;
+      if (trimmed.startsWith('/')) return `https://www.espn.com${trimmed}`;
+      if (/^http:\/\//i.test(trimmed)) return trimmed.replace(/^http:/i, 'https:');
+      if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
+      return trimmed;
+    };
+
+    const endpointUrl = new URL(endpoint);
+    const dateKey = normalizeDateParam(dateParam);
+    if (dateKey) {
+      endpointUrl.searchParams.set('dates', dateKey);
+    }
+
+    const response = await fetch(endpointUrl.toString(), {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; Polycopy/1.0)',
       },
@@ -255,12 +288,29 @@ export async function GET(request: NextRequest) {
       const startTime = competition.date || competition.startDate || null;
 
       const name = event.name || shortName || `${awayName} @ ${homeName}`;
-      const eventLink = Array.isArray(event.links)
-        ? event.links.find((link) =>
-            Array.isArray(link?.rel) &&
-            (link.rel.includes('event') || link.rel.includes('summary'))
-          )?.href
-        : undefined;
+      const pickEventLink = (
+        links?: Array<{
+          href?: string;
+          rel?: string[];
+        }>
+      ) => {
+        if (!Array.isArray(links)) return undefined;
+        const prioritized = links.find((link) =>
+          Array.isArray(link?.rel) &&
+          link.rel.some((rel) =>
+            ['event', 'summary', 'game', 'preview'].includes(rel)
+          )
+        );
+        if (prioritized?.href) return prioritized.href;
+        const espnLink = links.find((link) => link?.href?.includes('espn.com'));
+        if (espnLink?.href) return espnLink.href;
+        const fallback = links.find((link) => typeof link?.href === 'string');
+        return fallback?.href;
+      };
+
+      const eventLink = normalizeEspnLink(
+        pickEventLink(event.links) || pickEventLink(competition.links)
+      );
 
       return {
         id: event.id,

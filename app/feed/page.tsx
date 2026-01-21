@@ -23,6 +23,7 @@ import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores'
 import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
 import type { PositionSummary } from '@/lib/orders/position';
 import type { OrderRow } from '@/lib/orders/types';
+import { pickBestStartTime } from '@/lib/event-time';
 import {
   normalizeEventStatus,
   statusLooksFinal,
@@ -69,12 +70,14 @@ type PositionTradeSummary = {
 type Category = "all" | "politics" | "sports" | "crypto" | "culture" | "finance" | "economics" | "tech" | "weather";
 type FilterStatus = "all" | "live";
 type ResolvingWindow = "any" | "hour" | "today" | "tomorrow" | "week";
+type TradingStrategy = "multiple" | "hedging" | "selling";
 
 type FilterState = {
   category: Category;
   status: FilterStatus;
   positionsOnly: boolean;
   tradeSizeMin: number;
+  tradingStrategies: TradingStrategy[];
   resolvingWindow: ResolvingWindow;
   priceMinCents: number;
   priceMaxCents: number;
@@ -111,6 +114,12 @@ const TRADE_SIZE_OPTIONS = [
   { value: 1000, label: '$1,000+' },
 ];
 
+const TRADING_STRATEGY_OPTIONS = [
+  { value: 'multiple' as TradingStrategy, label: 'Multiple Positions' },
+  { value: 'hedging' as TradingStrategy, label: 'Hedgeing' },
+  { value: 'selling' as TradingStrategy, label: 'Selling' },
+];
+
 const RESOLVING_OPTIONS = [
   { value: 'any' as ResolvingWindow, label: 'Any time' },
   { value: 'hour' as ResolvingWindow, label: 'Next hour' },
@@ -133,6 +142,7 @@ const defaultFilters: FilterState = {
   status: "all",
   positionsOnly: false,
   tradeSizeMin: 0,
+  tradingStrategies: [],
   resolvingWindow: "any",
   priceMinCents: PRICE_RANGE.min,
   priceMaxCents: PRICE_RANGE.max,
@@ -144,6 +154,7 @@ const LOW_BALANCE_TOOLTIP =
 
 const CATEGORY_VALUES = new Set(CATEGORY_OPTIONS.map((option) => option.value));
 const STATUS_VALUES = new Set(STATUS_OPTIONS.map((option) => option.value));
+const TRADING_STRATEGY_VALUES = new Set(TRADING_STRATEGY_OPTIONS.map((option) => option.value));
 const RESOLVING_VALUES = new Set(RESOLVING_OPTIONS.map((option) => option.value));
 
 const clampNumber = (value: number, min: number, max: number) =>
@@ -165,6 +176,18 @@ const normalizeFilters = (value: Partial<FilterState> | null): FilterState => {
     typeof value.tradeSizeMin === 'number' && value.tradeSizeMin >= 0
       ? value.tradeSizeMin
       : fallback.tradeSizeMin;
+  const rawStrategies = Array.isArray(value.tradingStrategies)
+    ? value.tradingStrategies
+    : [];
+  const tradingStrategies = Array.from(
+    new Set(
+      rawStrategies
+        .map((strategy) => String(strategy).toLowerCase())
+        .filter((strategy): strategy is TradingStrategy =>
+          TRADING_STRATEGY_VALUES.has(strategy as TradingStrategy)
+        )
+    )
+  );
   const resolvingWindow = RESOLVING_VALUES.has(value.resolvingWindow as ResolvingWindow)
     ? (value.resolvingWindow as ResolvingWindow)
     : fallback.resolvingWindow;
@@ -193,6 +216,7 @@ const normalizeFilters = (value: Partial<FilterState> | null): FilterState => {
     status,
     positionsOnly,
     tradeSizeMin,
+    tradingStrategies,
     resolvingWindow,
     priceMinCents: normalizedMin,
     priceMaxCents: normalizedMax,
@@ -521,6 +545,7 @@ export default function FeedPage() {
     if (filters.positionsOnly) count += 1;
     if (filters.tradeSizeMin > 0) count += 1;
     if (filters.traderIds.length > 0) count += 1;
+    if (filters.tradingStrategies.length > 0) count += 1;
     if (filters.resolvingWindow !== 'any') count += 1;
     if (filters.priceMinCents > PRICE_RANGE.min || filters.priceMaxCents < PRICE_RANGE.max) count += 1;
     return count;
@@ -683,7 +708,7 @@ export default function FeedPage() {
   }, [closeFilters, filtersOpen]);
 
   const handleRemoveFilter = useCallback(
-    (filterKey: 'category' | 'status' | 'positions' | 'tradeSize' | 'resolvingWindow' | 'price' | 'traders') => {
+    (filterKey: 'category' | 'status' | 'positions' | 'tradeSize' | 'tradingStrategy' | 'resolvingWindow' | 'price' | 'traders') => {
       updateAppliedFilters((previous) => {
         const next = { ...previous };
         switch (filterKey) {
@@ -698,6 +723,9 @@ export default function FeedPage() {
             break;
           case 'tradeSize':
             next.tradeSizeMin = defaultFilters.tradeSizeMin;
+            break;
+          case 'tradingStrategy':
+            next.tradingStrategies = [];
             break;
           case 'resolvingWindow':
             next.resolvingWindow = defaultFilters.resolvingWindow;
@@ -720,7 +748,7 @@ export default function FeedPage() {
 
   const activeFilterChips = useMemo(() => {
     const chips: {
-      key: 'category' | 'status' | 'positions' | 'tradeSize' | 'resolvingWindow' | 'price' | 'traders';
+      key: 'category' | 'status' | 'positions' | 'tradeSize' | 'tradingStrategy' | 'resolvingWindow' | 'price' | 'traders';
       label: string;
     }[] = [];
 
@@ -740,6 +768,14 @@ export default function FeedPage() {
     if (appliedFilters.tradeSizeMin > 0) {
       const label = TRADE_SIZE_OPTIONS.find((option) => option.value === appliedFilters.tradeSizeMin)?.label ?? formatTradeSize(appliedFilters.tradeSizeMin);
       chips.push({ key: 'tradeSize', label: `Trade Size: ${label}` });
+    }
+
+    if (appliedFilters.tradingStrategies.length > 0) {
+      const labels = appliedFilters.tradingStrategies.map(
+        (strategy) =>
+          TRADING_STRATEGY_OPTIONS.find((option) => option.value === strategy)?.label ?? strategy
+      );
+      chips.push({ key: 'tradingStrategy', label: `Trading Strategy: ${labels.join(', ')}` });
     }
 
     if (appliedFilters.resolvingWindow !== 'any') {
@@ -1618,14 +1654,7 @@ export default function FeedPage() {
     });
     
     console.log(`📊 Fetching live data for ${tradeByMarketKey.size} markets`);
-    
-    // Fetch ESPN scores in parallel so badges can render from price data first.
-    console.log(`🏈 Fetching sports scores for sports markets...`);
-    const espnScoresPromise = getESPNScoresForTrades(trades).catch((error) => {
-      console.warn('Failed to fetch ESPN scores:', error);
-      return new Map();
-    });
-    
+
     // Fetch prices for each market
     await Promise.all(
       Array.from(tradeByMarketKey.entries()).map(async ([marketKey, trade]) => {
@@ -1791,12 +1820,41 @@ export default function FeedPage() {
     setLiveMarketData((prev) => {
       const merged = new Map(prev);
       newLiveData.forEach((value, key) => {
-        merged.set(key, value);
+        const existing = merged.get(key);
+        const shouldPreserveLiveStatus =
+          (existing?.liveStatus === 'live' || existing?.liveStatus === 'final') &&
+          (value.liveStatus === 'scheduled' ||
+            value.liveStatus === 'unknown' ||
+            !value.liveStatus);
+        merged.set(key, {
+          ...value,
+          score: value.score ?? existing?.score,
+          liveStatus: shouldPreserveLiveStatus
+            ? existing?.liveStatus
+            : value.liveStatus ?? existing?.liveStatus,
+          gameStartTime: pickBestStartTime(existing?.gameStartTime, value.gameStartTime),
+          eventStatus: value.eventStatus ?? existing?.eventStatus,
+          resolved: value.resolved ?? existing?.resolved,
+          endDateIso: value.endDateIso ?? existing?.endDateIso,
+          espnUrl: value.espnUrl || existing?.espnUrl,
+          marketAvatarUrl: value.marketAvatarUrl || existing?.marketAvatarUrl,
+        });
       });
       return merged;
     });
 
-    const espnScores = await espnScoresPromise;
+    const dateHints = Array.from(newLiveData.values())
+      .map((value) => value.gameStartTime)
+      .filter(
+        (value): value is string =>
+          typeof value === 'string' && value !== ''
+      );
+
+    console.log(`🏈 Fetching sports scores for sports markets...`);
+    const espnScores = await getESPNScoresForTrades(trades, { dateHints }).catch((error) => {
+      console.warn('Failed to fetch ESPN scores:', error);
+      return new Map();
+    });
     console.log(`✅ Got sports scores for ${espnScores.size} markets`);
     if (espnScores.size === 0) return;
 
@@ -1810,7 +1868,10 @@ export default function FeedPage() {
         if (!espnScore) return;
 
         const { scoreDisplay, espnStatus } = buildEspnScoreDisplay(trade, espnScore);
-        const resolvedGameStartTime = liveData.gameStartTime || espnScore.startTime || undefined;
+        const resolvedGameStartTime = pickBestStartTime(
+          liveData.gameStartTime,
+          espnScore.startTime
+        );
         const scoreLooksLive = Boolean(
           scoreDisplay && /\d+\s*-\s*\d+/.test(scoreDisplay)
         );
@@ -2232,10 +2293,32 @@ export default function FeedPage() {
     setDisplayedTradesCount(newCount);
   };
 
-  // Filter trades to only show BUY trades AND by category
+  // Filter trades based on strategy and category
   const filteredAllTrades = useMemo(() => allTrades.filter(trade => {
-    // Only show BUY trades
-    if (trade.trade.side !== 'BUY') return false;
+    if (appliedFilters.tradingStrategies.length > 0) {
+      const marketKey = getMarketKeyForTrade(trade);
+      const wallet = normalizeKeyPart(trade.trader.wallet);
+      if (!marketKey || !wallet) return false;
+      const key = `${wallet}-${marketKey}`;
+      const trades = traderMarketTrades.get(key) ?? [];
+      const matchesSelling = appliedFilters.tradingStrategies.includes('selling')
+        ? trade.trade.side === 'SELL'
+        : false;
+      const matchesMultiple = appliedFilters.tradingStrategies.includes('multiple')
+        ? trades.length >= 2
+        : false;
+      const matchesHedging = appliedFilters.tradingStrategies.includes('hedging')
+        ? (() => {
+            const outcomes = new Set(
+              trades
+                .map((entry) => normalizeOutcomeValue(entry.outcome))
+                .filter((outcome): outcome is string => Boolean(outcome))
+            );
+            return outcomes.size >= 2;
+          })()
+        : false;
+      if (!matchesSelling && !matchesMultiple && !matchesHedging) return false;
+    }
 
     if (appliedFilters.category !== 'all') {
       const tradeCategory = trade.market.category?.toLowerCase();
@@ -2292,6 +2375,7 @@ export default function FeedPage() {
     isLiveMarket,
     matchesResolvingWindow,
     getCurrentOutcomePrice,
+    traderMarketTrades,
     userPositionTradesByMarket,
   ]);
 
@@ -2580,6 +2664,17 @@ export default function FeedPage() {
   const draftTradeSizeLabel =
     TRADE_SIZE_OPTIONS.find((option) => option.value === draftFilters.tradeSizeMin)?.label ??
     (draftFilters.tradeSizeMin > 0 ? formatTradeSize(draftFilters.tradeSizeMin) : 'Any');
+  const draftTradingStrategyLabel = (() => {
+    if (draftFilters.tradingStrategies.length === 0) return 'All';
+    if (draftFilters.tradingStrategies.length === 1) {
+      return (
+        TRADING_STRATEGY_OPTIONS.find(
+          (option) => option.value === draftFilters.tradingStrategies[0]
+        )?.label ?? 'All'
+      );
+    }
+    return `${draftFilters.tradingStrategies.length} selected`;
+  })();
   const draftResolvingLabel =
     RESOLVING_OPTIONS.find((option) => option.value === draftFilters.resolvingWindow)?.label ?? 'Any';
   const draftPriceLabel = (() => {
@@ -2775,56 +2870,108 @@ export default function FeedPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-semibold text-slate-900">Trade Size</span>
-              <span className="text-xs font-medium text-slate-500">{draftTradeSizeLabel}</span>
+          <div className="grid gap-3 lg:col-span-2 lg:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-slate-900">Trade Size</span>
+                <span className="text-xs font-medium text-slate-500">{draftTradeSizeLabel}</span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {TRADE_SIZE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() =>
+                      setDraftFilters((prev) => ({
+                        ...prev,
+                        tradeSizeMin: option.value,
+                      }))
+                    }
+                    aria-pressed={draftFilters.tradeSizeMin === option.value}
+                    className={cn(
+                      filterTabBase,
+                      draftFilters.tradeSizeMin === option.value
+                        ? filterTabActive
+                        : filterTabInactive
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="mt-1.5 flex flex-wrap gap-2">
-              {TRADE_SIZE_OPTIONS.map((option) => (
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-slate-900">Trading Strategy</span>
+                <span className="text-xs font-medium text-slate-500">
+                  {draftTradingStrategyLabel}
+                </span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-2">
                 <button
-                  key={option.value}
                   onClick={() =>
                     setDraftFilters((prev) => ({
                       ...prev,
-                      tradeSizeMin: option.value,
+                      tradingStrategies: [],
                     }))
                   }
-                  aria-pressed={draftFilters.tradeSizeMin === option.value}
+                  aria-pressed={draftFilters.tradingStrategies.length === 0}
                   className={cn(
                     filterTabBase,
-                    draftFilters.tradeSizeMin === option.value
+                    draftFilters.tradingStrategies.length === 0
                       ? filterTabActive
                       : filterTabInactive
                   )}
                 >
-                  {option.label}
+                  All
                 </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-semibold text-slate-900">Current Price</span>
-              <span className="text-xs font-medium text-slate-500">{draftPriceLabel}</span>
-            </div>
-            <div className="mt-1.5 flex flex-wrap gap-2">
-              {PRICE_PRESET_OPTIONS.map((preset) => {
-                const isActive =
-                  draftFilters.priceMinCents === preset.min &&
-                  draftFilters.priceMaxCents === preset.max;
-                return (
+                {TRADING_STRATEGY_OPTIONS.map((option) => (
                   <button
-                    key={preset.label}
-                    onClick={() => updateDraftPriceRange(preset.min, preset.max)}
-                    aria-pressed={isActive}
-                    className={cn(filterTabBase, isActive ? filterTabActive : filterTabInactive)}
+                    key={option.value}
+                    onClick={() =>
+                      setDraftFilters((prev) => ({
+                        ...prev,
+                        tradingStrategies: prev.tradingStrategies.includes(option.value)
+                          ? prev.tradingStrategies.filter((value) => value !== option.value)
+                          : [...prev.tradingStrategies, option.value],
+                      }))
+                    }
+                    aria-pressed={draftFilters.tradingStrategies.includes(option.value)}
+                    className={cn(
+                      filterTabBase,
+                      draftFilters.tradingStrategies.includes(option.value)
+                        ? filterTabActive
+                        : filterTabInactive
+                    )}
                   >
-                    {preset.label}
+                    {option.label}
                   </button>
-                );
-              })}
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-slate-900">Current Price</span>
+                <span className="text-xs font-medium text-slate-500">{draftPriceLabel}</span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {PRICE_PRESET_OPTIONS.map((preset) => {
+                  const isActive =
+                    draftFilters.priceMinCents === preset.min &&
+                    draftFilters.priceMaxCents === preset.max;
+                  return (
+                    <button
+                      key={preset.label}
+                      onClick={() => updateDraftPriceRange(preset.min, preset.max)}
+                      aria-pressed={isActive}
+                      className={cn(filterTabBase, isActive ? filterTabActive : filterTabInactive)}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -3103,13 +3250,15 @@ export default function FeedPage() {
               {loadingFeed ? (
                 <div className="space-y-4">
                   {[1, 2, 3].map((i) => (
-                    <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 animate-pulse">
-                      <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 bg-slate-200 rounded-full"></div>
-                        <div className="flex-1">
-                          <div className="h-4 bg-slate-200 rounded w-1/3 mb-2"></div>
-                          <div className="h-4 bg-slate-200 rounded w-3/4 mb-3"></div>
-                          <div className="h-3 bg-slate-200 rounded w-1/4"></div>
+                    <div key={i} className="w-full md:w-[63%] md:mx-auto">
+                      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 animate-pulse">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 bg-slate-200 rounded-full"></div>
+                          <div className="flex-1">
+                            <div className="h-4 bg-slate-200 rounded w-1/3 mb-2"></div>
+                            <div className="h-4 bg-slate-200 rounded w-3/4 mb-3"></div>
+                            <div className="h-3 bg-slate-200 rounded w-1/4"></div>
+                          </div>
                         </div>
                       </div>
                     </div>

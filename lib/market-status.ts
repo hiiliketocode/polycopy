@@ -67,3 +67,13 @@ export const statusLooksScheduled = (value: string) => {
   if (!value) return false
   return includesAny(value, SCHEDULED_STATUS_TOKENS)
 }
+
+export const isSeasonLongMarketTitle = (title?: string | null) => {
+  if (!title) return false
+  const lower = title.toLowerCase()
+  if (!/\bwin\b/.test(lower)) return false
+  if (/\b20\d{2}\s*-\s*\d{2}\b/.test(lower) || /\b20\d{2}-\d{2}\b/.test(lower)) {
+    return true
+  }
+  return /\b(season|league|premier league|champions league|championship|tournament|cup|title)\b/.test(lower)
+}

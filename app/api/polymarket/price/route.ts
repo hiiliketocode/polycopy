@@ -55,6 +55,7 @@ export async function GET(request: Request) {
       const normalized = String(tag).toLowerCase();
       return (
         normalized.includes('sports') ||
+        normalized.includes('esport') ||
         normalized.includes('soccer') ||
         normalized.includes('football') ||
         normalized.includes('basketball') ||

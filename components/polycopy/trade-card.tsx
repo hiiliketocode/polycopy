@@ -45,6 +45,7 @@ import {
   statusLooksFinal,
   statusLooksLive,
   statusLooksScheduled,
+  isSeasonLongMarketTitle,
 } from "@/lib/market-status"
 import { getTraderAvatarInitials } from "@/lib/trader-name"
 
@@ -519,7 +520,7 @@ export function TradeCard({
       : null
   )
   const [marketTickSize, setMarketTickSize] = useState<number | null>(null)
-  const [orderBookLoading, setOrderBookLoading] = useState(false)
+  const [, setOrderBookLoading] = useState(false)
   const [orderBookError, setOrderBookError] = useState<string | null>(null)
   const [bestBidPrice, setBestBidPrice] = useState<number | null>(null)
   const [bestAskPrice, setBestAskPrice] = useState<number | null>(null)
@@ -566,7 +567,12 @@ export function TradeCard({
   }, [liveScore])
 
   const looksLikeScore = Boolean(cleanedLiveScore && /\d+\s*-\s*\d+/.test(cleanedLiveScore))
+  const isSeasonLong = useMemo(() => isSeasonLongMarketTitle(market), [market])
   const resolvedLiveStatus = useMemo(() => {
+    if (isSeasonLong) {
+      const normalized = normalizeEventStatus(eventStatus)
+      return statusLooksFinal(normalized) ? "final" : "scheduled"
+    }
     const normalizedLiveStatus = typeof liveStatus === "string" ? liveStatus.toLowerCase() : ""
     if (normalizedLiveStatus === "live") return "live"
     if (normalizedLiveStatus === "final") return "final"
@@ -600,7 +606,7 @@ export function TradeCard({
       }
     }
     return "unknown"
-  }, [liveStatus, eventStatus, eventStartTime, looksLikeScore])
+  }, [isSeasonLong, liveStatus, eventStatus, eventStartTime, looksLikeScore])
 
   const orderBookPrice = action === "Buy" ? bestAskPrice : bestBidPrice
   const resolvedLivePrice =
@@ -815,6 +821,9 @@ export function TradeCard({
     statusBadgeVariant !== "ended"
   const hasEventTime = Boolean(eventStartTime || eventEndTime)
   const { eventTimeValue, eventTimeKind } = useMemo(() => {
+    if (isSeasonLong && eventEndTime) {
+      return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
+    }
     if (statusVariant === "ended" || statusVariant === "resolved") {
       if (eventEndTime) return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
       if (eventStartTime) return { eventTimeValue: eventStartTime, eventTimeKind: "start" as const }
@@ -823,9 +832,14 @@ export function TradeCard({
     if (eventStartTime) return { eventTimeValue: eventStartTime, eventTimeKind: "start" as const }
     if (eventEndTime) return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
     return { eventTimeValue: null, eventTimeKind: "unknown" as const }
-  }, [statusVariant, eventStartTime, eventEndTime])
+  }, [isSeasonLong, statusVariant, eventStartTime, eventEndTime])
   const { eventTimeLabel, isEventTimeLoading } = useMemo(() => {
-    if (!eventTimeValue) return { eventTimeLabel: null, isEventTimeLoading: true }
+    if (!eventTimeValue) {
+      if (typeof currentMarketUpdatedAt === "number") {
+        return { eventTimeLabel: "Time TBD", isEventTimeLoading: false }
+      }
+      return { eventTimeLabel: "Loading", isEventTimeLoading: true }
+    }
     const prefix =
       eventTimeKind === "start" ? "Starts" : eventTimeKind === "end" ? "Resolves" : "Time"
     const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(eventTimeValue)
@@ -887,7 +901,7 @@ export function TradeCard({
       timeZone: useDateOnly ? "UTC" : undefined,
     }).format(parsed)
     return { eventTimeLabel: `${prefix} ${formatted}`, isEventTimeLoading: false }
-  }, [eventTimeValue, eventTimeKind])
+  }, [eventTimeValue, eventTimeKind, currentMarketUpdatedAt])
 
   useEffect(() => {
     if (userUpdatedSlippageRef.current) return
@@ -2088,9 +2102,10 @@ export function TradeCard({
         (trade) => normalizeOutcome(trade.outcome) === normalizedPosition
       )
   )
-  const shouldShowCopyCta = !isSellTrade || userHasMatchingPosition
+  const showCopyBuyCta = isSellTrade && !userHasMatchingPosition
+  const shouldShowCopyCta = !isSellTrade || showCopyBuyCta
   const shouldShowPrimaryCta = isSellTrade || shouldShowCopyCta
-  const copyCtaLabel = isSellTrade ? "Sell As Well" : "Copy Trade"
+  const copyCtaLabel = showCopyBuyCta ? "Copy Trade (Buy)" : "Copy Trade"
   const copyAgainLabel = "Buy Again"
   const allowQuickCopyExperience = showQuickCopyExperience && !isSellTrade
   const canSellAsWell =
@@ -2476,48 +2491,48 @@ export function TradeCard({
         "bg-white border-slate-200"
       )}
     >
-      {(isSellTrade || traderHedgingInfo.isHedging) && (
-        <div className="absolute left-1/2 top-2 z-10 flex -translate-x-1/2 flex-col items-center gap-1">
-          {traderHedgingInfo.isHedging ? (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge
-                    variant="secondary"
-                    className={cn(
-                      badgeBaseClass,
-                      "h-6 px-2 text-[11px] font-semibold bg-yellow-50 text-yellow-700 border-yellow-200"
-                    )}
-                  >
-                    <ArrowLeftRight className="h-3 w-3" />
-                    Trader Hedging
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[220px] text-xs">
-                  Trader has bought multiple outcomes in this market to reduce directional risk.
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ) : null}
-          {isSellTrade ? (
-            <Badge
-              variant="secondary"
-              className={cn(
-                badgeBaseClass,
-                "h-6 px-2 text-[11px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
-              )}
-            >
-              Trader Sold
-            </Badge>
-          ) : null}
-        </div>
-      )}
       <div
         className={cn(
           "pt-5 px-5 md:pt-6 md:px-6",
           shouldShowPrimaryCta ? "pb-0" : "pb-5 md:pb-6"
         )}
       >
+        {(isSellTrade || traderHedgingInfo.isHedging) && (
+          <div className="mb-3 flex items-center justify-center gap-2">
+            {traderHedgingInfo.isHedging ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="secondary"
+                      className={cn(
+                        badgeBaseClass,
+                        "h-6 px-2 text-[11px] font-semibold bg-yellow-50 text-yellow-700 border-yellow-200"
+                      )}
+                    >
+                      <ArrowLeftRight className="h-3 w-3" />
+                      Trader Hedging
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[220px] text-xs">
+                    Trader has bought multiple outcomes in this market to reduce directional risk.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : null}
+            {isSellTrade ? (
+              <Badge
+                variant="secondary"
+                className={cn(
+                  badgeBaseClass,
+                  "h-6 px-2 text-[11px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
+                )}
+              >
+                Trader Sold
+              </Badge>
+            ) : null}
+          </div>
+        )}
         {/* Header Row */}
         <div className="flex items-start justify-between mb-3 gap-3">
           <Link
@@ -2612,8 +2627,8 @@ export function TradeCard({
                   className={cn(
                     badgeBaseClass,
                     hasEventTime
-                      ? "bg-amber-50 text-amber-700 border-amber-200"
-                      : "bg-amber-50 text-amber-400 border-amber-200",
+                      ? "bg-white text-slate-700 border-slate-200"
+                      : "bg-white text-slate-400 border-slate-200",
                   )}
                 >
                   <a href={espnLink} target="_blank" rel="noopener noreferrer">
@@ -2631,8 +2646,8 @@ export function TradeCard({
                   className={cn(
                     badgeBaseClass,
                     hasEventTime
-                      ? "bg-amber-50 text-amber-700 border-amber-200"
-                      : "bg-amber-50 text-amber-400 border-amber-200",
+                      ? "bg-white text-slate-700 border-slate-200"
+                      : "bg-white text-slate-400 border-slate-200",
                   )}
                 >
                   {isEventTimeLoading ? (
@@ -2643,6 +2658,21 @@ export function TradeCard({
                   {eventTimeLabel ?? "Loading"}
                 </Badge>
               )
+            )}
+            {espnLink && (
+              <Badge
+                asChild
+                variant="secondary"
+                className={cn(
+                  badgeBaseClass,
+                  "bg-slate-50 text-slate-600 border-slate-200"
+                )}
+              >
+                <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  ESPN
+                </a>
+              </Badge>
             )}
             {!showCombinedScoreBadge &&
               (statusBadgeVariant === "live" ||
@@ -2873,17 +2903,21 @@ export function TradeCard({
               <div className="w-full flex justify-center">
                 <div className="flex w-full max-w-[360px] items-center">
                   <Button
-                    onClick={handleSellClick}
-                    disabled={!canSellAsWell}
+                    onClick={showCopyBuyCta ? handleCopyTradeClick : handleSellClick}
+                    disabled={showCopyBuyCta ? isCopyDisabled : !canSellAsWell}
                     className={cn(
                       "w-full rounded-full font-semibold shadow-sm text-sm",
-                      canSellAsWell
-                        ? "bg-rose-500 hover:bg-rose-600 text-white"
-                        : "bg-slate-200 text-slate-500 cursor-not-allowed"
+                      showCopyBuyCta
+                        ? isMarketEnded
+                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                          : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
+                        : canSellAsWell
+                          ? "bg-rose-500 hover:bg-rose-600 text-white"
+                          : "bg-slate-200 text-slate-500 cursor-not-allowed"
                     )}
                     size="lg"
                   >
-                    Sell As Well
+                    {showCopyBuyCta ? (isMarketEnded ? "Market Resolved" : copyCtaLabel) : "Sell As Well"}
                   </Button>
                 </div>
               </div>
@@ -3358,9 +3392,6 @@ export function TradeCard({
                         {sizePercentLabel} of original trade
                       </div>
                     </div>
-                    {orderBookLoading && (
-                      <p className="text-xs text-amber-700">Loading market prices…</p>
-                    )}
                     {minUsdErrorMessage && (
                       <p className="text-xs text-rose-600">{minUsdErrorMessage}</p>
                     )}

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+export const dynamic = 'force-dynamic'
+
 type PnlRow = {
   date: string
   realized_pnl: number | string | null
@@ -83,18 +85,29 @@ export async function GET(
 
   const todayStr = new Date().toISOString().slice(0, 10)
   const yesterdayStr = shiftDate(todayStr, -1)
-  const hasToday = parsed.some((row) => row.date === todayStr)
-  const hasYesterday = parsed.some((row) => row.date === yesterdayStr)
-  const normalized = hasToday && !hasYesterday
-    ? parsed.map((row) => ({ ...row, date: shiftDate(row.date, -1) }))
+  const lastDateStr = parsed.length > 0 ? parsed[parsed.length - 1].date : null
+  let shiftDays = 0
+  if (lastDateStr) {
+    const lastMs = Date.parse(`${lastDateStr}T00:00:00Z`)
+    const yesterdayMs = Date.parse(`${yesterdayStr}T00:00:00Z`)
+    if (Number.isFinite(lastMs) && Number.isFinite(yesterdayMs) && lastMs > yesterdayMs) {
+      shiftDays = Math.round((yesterdayMs - lastMs) / (24 * 60 * 60 * 1000))
+    }
+  }
+
+  const normalizedRows = shiftDays !== 0
+    ? parsed.map((row) => ({
+        ...row,
+        date: shiftDate(row.date, shiftDays)
+      }))
     : parsed
 
-  let anchorIndex = normalized.length - 1
-  if (anchorIndex >= 0 && normalized[anchorIndex].date === todayStr && normalized.length > 1) {
+  let anchorIndex = normalizedRows.length - 1
+  if (anchorIndex >= 0 && normalizedRows[anchorIndex].date === todayStr && normalizedRows.length > 1) {
     anchorIndex -= 1
   }
   const anchorDate = anchorIndex >= 0
-    ? new Date(`${normalized[anchorIndex].date}T00:00:00Z`)
+    ? new Date(`${normalizedRows[anchorIndex].date}T00:00:00Z`)
     : new Date()
   const startOfAnchor = Date.UTC(
     anchorDate.getUTCFullYear(),
@@ -124,11 +137,11 @@ export async function GET(
   const summaries = periods.map(({ label, days }) => {
     const cutoff = cutoffDate(days)
     const windowRows = cutoff
-      ? normalized.filter((row) => {
+      ? normalizedRows.filter((row) => {
           const rowDate = new Date(`${row.date}T00:00:00Z`)
           return rowDate >= cutoff
         })
-      : normalized
+      : normalizedRows
 
     const pnl = windowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0)
     const returnPct = volume && volume !== 0 ? (pnl / volume) * 100 : null
@@ -195,7 +208,7 @@ export async function GET(
   )
 
   return NextResponse.json({
-    daily: normalized,
+    daily: normalizedRows,
     summaries,
     volume,
     rankings
