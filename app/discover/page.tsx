@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase, ensureProfile } from '@/lib/supabase';
@@ -11,7 +11,7 @@ import { Navigation } from '@/components/polycopy/navigation';
 import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { TraderDiscoveryCard } from '@/components/polycopy/trader-discovery-card';
 import { Button } from '@/components/ui/button';
-import { Search, Check } from 'lucide-react';
+import { Search, X, Check } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { getTraderAvatarInitials } from '@/lib/trader-name';
 
@@ -66,11 +66,6 @@ function DiscoverPageContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [sortPeriod, setSortPeriod] = useState<"30d" | "7d" | "all">("30d");
-  const [sortMetric, setSortMetric] = useState<"roi" | "pnl" | "volume">("roi");
-  const [visibleCount, setVisibleCount] = useState(5);
-  const [autoLoadEnabled, setAutoLoadEnabled] = useState(false);
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const [consistencyPeriod, setConsistencyPeriod] = useState<"30d" | "7d" | "all">("30d");
   
   // BATCH FOLLOW FETCHING
   const [followedWallets, setFollowedWallets] = useState<Set<string>>(new Set());
@@ -235,7 +230,9 @@ function DiscoverPageContent() {
           roi: trader.volume > 0 ? ((trader.pnl / trader.volume) * 100) : 0
         }));
         
-        setTraders(tradersWithROI);
+        const sortedByROI = tradersWithROI.sort((a: any, b: any) => (b.roi || 0) - (a.roi || 0));
+        
+        setTraders(sortedByROI);
       } catch (error) {
         console.error('Error fetching traders:', error);
         setTraders([]);
@@ -334,12 +331,6 @@ function DiscoverPageContent() {
     { value: "all", label: "All Time" },
   ];
 
-  const sortMetricOptions: Array<{ value: "roi" | "pnl" | "volume"; label: string }> = [
-    { value: "roi", label: "ROI" },
-    { value: "pnl", label: "P&L" },
-    { value: "volume", label: "Volume" },
-  ];
-
   // Search handler
   const handleSearch = async () => {
     const query = searchQuery.trim();
@@ -387,88 +378,13 @@ function DiscoverPageContent() {
   };
 
   // Filter traders by search
-  const rankedTraders = useMemo(() => {
-    const sorters: Record<"roi" | "pnl" | "volume", (a: Trader, b: Trader) => number> = {
-      roi: (a, b) => (b.roi || 0) - (a.roi || 0),
-      pnl: (a, b) => b.pnl - a.pnl,
-      volume: (a, b) => b.volume - a.volume,
-    };
-    return [...traders].sort(sorters[sortMetric]);
-  }, [traders, sortMetric]);
-
-  const filteredTraders = rankedTraders.filter((trader) => {
+  const filteredTraders = traders.filter((trader) => {
     const query = searchQuery.toLowerCase();
     return (
       trader.displayName.toLowerCase().includes(query) ||
       trader.wallet.toLowerCase().includes(query)
     );
   });
-
-  const visibleTraders = filteredTraders.slice(0, visibleCount);
-  const sortPeriodLabel = sortOptions.find((option) => option.value === sortPeriod)?.label || "30 Days";
-  const sortMetricLabel = sortMetricOptions.find((option) => option.value === sortMetric)?.label || "ROI";
-
-  const biggestTrades = useMemo(() => {
-    return [...traders]
-      .sort((a, b) => b.volume - a.volume)
-      .slice(0, 8);
-  }, [traders]);
-
-  const tickerLoop = useMemo(() => {
-    return [...biggestTrades, ...biggestTrades];
-  }, [biggestTrades]);
-
-  const mostActiveTraders = useMemo(() => {
-    return [...traders]
-      .sort((a, b) => (b.totalTrades || 0) - (a.totalTrades || 0))
-      .slice(0, 5);
-  }, [traders]);
-
-  const consistencyStats = {
-    "30d": { upDays: 21, downDays: 9, bestStreak: 7 },
-    "7d": { upDays: 5, downDays: 2, bestStreak: 3 },
-    "all": { upDays: 214, downDays: 96, bestStreak: 18 },
-  };
-
-  const biggestDailyWinners = useMemo(() => {
-    const byPnl = [...traders].sort((a, b) => b.pnl - a.pnl);
-    return {
-      day: byPnl[0],
-      week: byPnl[1],
-      month: byPnl[2],
-    };
-  }, [traders]);
-
-  useEffect(() => {
-    setVisibleCount(5);
-    setAutoLoadEnabled(false);
-  }, [selectedCategory, sortPeriod, sortMetric, searchQuery]);
-
-  useEffect(() => {
-    if (!autoLoadEnabled) {
-      return;
-    }
-
-    const target = loadMoreRef.current;
-    if (!target) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          setVisibleCount((prev) => Math.min(prev + 10, filteredTraders.length));
-        }
-      },
-      { rootMargin: '200px' }
-    );
-
-    observer.observe(target);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [autoLoadEnabled, filteredTraders.length]);
 
   return (
     <>
@@ -496,9 +412,19 @@ function DiscoverPageContent() {
       )}
       
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white md:pt-0 pb-20 md:pb-8">
-        {/* Search Bar */}
+        {/* Hero Section */}
         <div className="bg-gradient-to-b from-slate-50 to-white">
-          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-4 sm:pt-8 sm:pb-6">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-3 sm:pt-10 sm:pb-5">
+            <div className="text-center max-w-3xl mx-auto mb-6 sm:mb-8">
+              <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold text-slate-900 mb-2 sm:mb-4 tracking-tight">
+                Discover Top Traders to Copy
+              </h1>
+              <p className="text-sm sm:text-lg text-slate-600 mb-4 sm:mb-6">
+                Follow and copy the best Polymarket traders. Track their performance and replicate winning strategies.
+              </p>
+            </div>
+
+            {/* Search Bar */}
             <div className="max-w-2xl mx-auto relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
               <input
@@ -525,40 +451,6 @@ function DiscoverPageContent() {
             <p className="text-xs text-slate-500 mt-2 text-center">
               Enter the wallet address from a trader's Polymarket profile (e.g., 0x1234...5678)
             </p>
-          </div>
-        </div>
-
-        {/* Trade Ticker */}
-        <div className="bg-white border-y border-slate-100">
-          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-2">
-              Biggest Trades • Last 6 Hours
-            </div>
-            {tickerLoop.length > 0 ? (
-              <div className="relative overflow-hidden rounded-xl border border-slate-200/70 bg-slate-50">
-                <div className="discover-ticker-track flex items-center gap-6 py-2.5 px-4">
-                  {tickerLoop.map((trader, index) => (
-                    <Link
-                      key={`${trader.wallet}-${index}`}
-                      href={`/trader/${trader.wallet}`}
-                      className="flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
-                    >
-                      <span className="truncate max-w-[140px]">
-                        {formatDisplayName(trader.displayName, trader.wallet)}
-                      </span>
-                      <span className="text-slate-400">•</span>
-                      <span className="tabular-nums text-slate-900">
-                        {formatLargeNumber(trader.volume)}
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                Loading biggest trades...
-              </div>
-            )}
           </div>
         </div>
 
@@ -710,50 +602,30 @@ function DiscoverPageContent() {
           </div>
         </div>
 
-        {/* Top Traders Section */}
+        {/* Top 50 Traders Section */}
         <div className="bg-slate-50">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-8 sm:py-14">
             <div className="mb-6">
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
-                    Top Traders by {sortMetricLabel}
-                  </h2>
-                  <p className="text-sm text-slate-500 mt-1">{sortPeriodLabel} • Ranked by {sortMetricLabel}</p>
-                </div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
+                  Top 50 Traders by ROI
+                  <span className="text-base font-normal text-slate-500 ml-2">(Last 30 Days)</span>
+                </h2>
 
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="flex gap-2 overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
-                    {sortMetricOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        onClick={() => setSortMetric(option.value)}
-                        className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${
-                          sortMetric === option.value
-                            ? "bg-[#FDB022] text-slate-900 shadow-sm"
-                            : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex gap-2 overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
-                    {sortOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        onClick={() => setSortPeriod(option.value)}
-                        className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${
-                          sortPeriod === option.value
-                            ? "bg-slate-900 text-white shadow-sm"
-                            : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
+                <div className="flex gap-2 overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
+                  {sortOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => setSortPeriod(option.value)}
+                      className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${
+                        sortPeriod === option.value
+                          ? "bg-slate-900 text-white shadow-sm"
+                          : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -786,7 +658,7 @@ function DiscoverPageContent() {
             </div>
 
             {loadingTraders ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
                   <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 animate-pulse">
                     <div className="flex items-center gap-4">
@@ -800,190 +672,38 @@ function DiscoverPageContent() {
                 ))}
               </div>
             ) : filteredTraders.length > 0 ? (
-              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="hidden sm:grid grid-cols-[70px_1fr_200px] items-center px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400 bg-slate-50 border-b border-slate-200">
-                  <span>Rank</span>
-                  <span>Trader</span>
-                  <span className="text-right pr-2">Stats</span>
-                </div>
-                <div className="divide-y divide-slate-100">
-                  {visibleTraders.map((trader, index) => (
-                    <div key={trader.wallet} className="flex items-start sm:items-center gap-2 sm:gap-4 px-4 sm:px-5 py-2.5">
-                      <div className="flex-shrink-0 w-6 sm:w-[54px] text-center pt-2 sm:pt-0">
-                        <span className="text-base sm:text-lg font-bold text-slate-400">{index + 1}</span>
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <TraderDiscoveryCard 
-                          density="compact"
-                          trader={{
-                            id: trader.wallet,
-                            name: formatDisplayName(trader.displayName, trader.wallet),
-                            handle: `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}`,
-                            avatar: trader.profileImage || '',
-                            wallet: trader.wallet,
-                            roi: trader.roi || 0,
-                            profit: trader.pnl,
-                            volume: trader.volume,
-                            winRate: trader.winRate || 0,
-                            isFollowing: followedWallets.has(trader.wallet.toLowerCase()),
-                          }}
-                          onFollowToggle={handleFollowChange}
-                        />
-                      </div>
+              <div className="space-y-3">
+                {filteredTraders.map((trader, index) => (
+                  <div key={trader.wallet} className="flex items-start sm:items-center gap-2 sm:gap-4">
+                    <div className="flex-shrink-0 w-6 sm:w-8 text-center pt-4 sm:pt-0">
+                      <span className="text-base sm:text-lg font-bold text-slate-400">{index + 1}</span>
                     </div>
-                  ))}
-                </div>
 
-                {filteredTraders.length > visibleTraders.length && (
-                  <div className="px-4 sm:px-5 py-4 border-t border-slate-100">
-                    <button
-                      onClick={() => {
-                        setVisibleCount((prev) => Math.min(prev + 10, filteredTraders.length));
-                        setAutoLoadEnabled(true);
-                      }}
-                      className="w-full sm:w-auto px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-all"
-                    >
-                      View More
-                    </button>
-                    <div ref={loadMoreRef} className="h-px w-full" />
+                    <div className="flex-1 min-w-0">
+                      <TraderDiscoveryCard 
+                        trader={{
+                          id: trader.wallet,
+                          name: formatDisplayName(trader.displayName, trader.wallet),
+                          handle: `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}`,
+                          avatar: trader.profileImage || '',
+                          wallet: trader.wallet,
+                          roi: trader.roi || 0,
+                          profit: trader.pnl,
+                          volume: trader.volume,
+                          winRate: trader.winRate || 0,
+                          isFollowing: followedWallets.has(trader.wallet.toLowerCase()),
+                        }}
+                        onFollowToggle={handleFollowChange}
+                      />
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
             ) : (
               <div className="text-center py-12 text-slate-500">
                 <p className="text-lg">No traders found</p>
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Insights Section */}
-        <div className="bg-white">
-          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-8 sm:py-12">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 sm:p-6 shadow-sm">
-                <div className="flex items-start justify-between gap-4 mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900">Most Consistent</h3>
-                    <p className="text-sm text-slate-500">Days up vs down across {sortOptions.find((option) => option.value === consistencyPeriod)?.label || "30 Days"}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    {sortOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        onClick={() => setConsistencyPeriod(option.value)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                          consistencyPeriod === option.value
-                            ? "bg-slate-900 text-white"
-                            : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded-xl bg-white border border-slate-200 p-4">
-                    <p className="text-xs uppercase tracking-wide text-slate-500 font-medium">Days Up</p>
-                    <p className="text-2xl font-semibold text-emerald-600 mt-2 tabular-nums">{consistencyStats[consistencyPeriod].upDays}</p>
-                  </div>
-                  <div className="rounded-xl bg-white border border-slate-200 p-4">
-                    <p className="text-xs uppercase tracking-wide text-slate-500 font-medium">Days Down</p>
-                    <p className="text-2xl font-semibold text-rose-500 mt-2 tabular-nums">{consistencyStats[consistencyPeriod].downDays}</p>
-                  </div>
-                  <div className="rounded-xl bg-white border border-slate-200 p-4">
-                    <p className="text-xs uppercase tracking-wide text-slate-500 font-medium">Highest Streak</p>
-                    <p className="text-2xl font-semibold text-slate-900 mt-2 tabular-nums">{consistencyStats[consistencyPeriod].bestStreak}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 sm:p-6 shadow-sm">
-                <div className="mb-4">
-                  <h3 className="text-lg font-semibold text-slate-900">Biggest Daily Winners</h3>
-                  <p className="text-sm text-slate-500">Top P&L by period</p>
-                </div>
-                <div className="space-y-3">
-                  {[
-                    { label: "Last Day", trader: biggestDailyWinners.day },
-                    { label: "Last 7 Days", trader: biggestDailyWinners.week },
-                    { label: "Last 30 Days", trader: biggestDailyWinners.month },
-                  ].map((entry) => (
-                    <div key={entry.label} className="flex items-center justify-between rounded-xl bg-white border border-slate-200 px-4 py-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-8 w-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-semibold text-slate-600">
-                          {entry.trader
-                            ? getTraderAvatarInitials({ displayName: entry.trader.displayName, wallet: entry.trader.wallet })
-                            : "—"}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-900 truncate">{entry.label}</p>
-                          <p className="text-xs text-slate-500 truncate">
-                            {entry.trader ? formatDisplayName(entry.trader.displayName, entry.trader.wallet) : "No data"}
-                          </p>
-                        </div>
-                      </div>
-                      <div className={`text-sm font-semibold tabular-nums ${entry.trader && entry.trader.pnl > 0 ? "text-emerald-600" : "text-slate-600"}`}>
-                        {entry.trader ? formatLargeNumber(entry.trader.pnl) : "—"}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 sm:mt-10">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">Most Active</h3>
-                  <p className="text-sm text-slate-500">Number of trades in the last 24 hours</p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="hidden sm:grid grid-cols-[70px_1fr_140px] items-center px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400 bg-slate-50 border-b border-slate-200">
-                  <span>Rank</span>
-                  <span>Trader</span>
-                  <span className="text-right">Trades (24h)</span>
-                </div>
-                <div className="divide-y divide-slate-100">
-                  {mostActiveTraders.map((trader, index) => (
-                    <Link
-                      key={trader.wallet}
-                      href={`/trader/${trader.wallet}`}
-                      className="flex items-center gap-3 px-4 sm:px-5 py-3 hover:bg-slate-50 transition-colors"
-                    >
-                      <div className="w-6 sm:w-[54px] text-center text-base sm:text-lg font-bold text-slate-400">
-                        {index + 1}
-                      </div>
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <Avatar className="h-10 w-10 border-2 border-white shadow-sm flex-shrink-0">
-                          {trader.profileImage ? (
-                            <AvatarImage src={trader.profileImage} alt={trader.displayName} />
-                          ) : null}
-                          <AvatarFallback className="bg-white text-slate-700 font-semibold">
-                            {getTraderAvatarInitials({ displayName: trader.displayName, wallet: trader.wallet })}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-900 truncate">
-                            {formatDisplayName(trader.displayName, trader.wallet)}
-                          </p>
-                          <p className="text-xs text-slate-500 font-mono truncate">
-                            {trader.wallet.slice(0, 6)}...{trader.wallet.slice(-4)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-sm font-semibold text-slate-900 tabular-nums ml-auto">
-                        {new Intl.NumberFormat('en-US').format(trader.totalTrades || 0)}
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
