@@ -813,10 +813,25 @@ export function TradeCard({
     statusBadgeVariant !== "resolved" &&
     statusBadgeVariant !== "ended"
   const hasEventTime = Boolean(eventStartTime || eventEndTime)
+  const sportsTitleHint = useMemo(() => {
+    if (!market) return false
+    const lower = market.toLowerCase()
+    const hasWinVerb = /\b(win|beat|defeat|draw|tie)\b/.test(lower)
+    if (!hasWinVerb) return false
+    const hasMatchToken = /\b(vs\.?|v\.?|@)\b/.test(lower)
+    const hasTeamToken = /\b(fc|sc|cf|afc)\b/.test(lower)
+    const hasLeagueToken =
+      /\b(nfl|nba|nhl|mlb|ncaa|ucl|uefa|champions league|premier league|la liga|serie a|bundesliga|ligue 1|mls)\b/.test(
+        lower
+      )
+    return hasMatchToken || hasTeamToken || hasLeagueToken
+  }, [market])
+
   const isSportsContext = Boolean(
     looksLikeScore ||
       liveStatus === "live" ||
       liveStatus === "final" ||
+      sportsTitleHint ||
       (category && category.toLowerCase().includes("sports")) ||
       espnUrl
   )

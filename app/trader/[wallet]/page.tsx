@@ -1815,18 +1815,20 @@ export default function TraderProfilePage({
         if (Math.abs(position.size) > 1e-9 && currentPrice === null) return null;
         const pnl = position.sellNotional + openValue - position.buyNotional;
         const roi = (pnl / position.buyNotional) * 100;
-        return { pnl, roi };
+        return { pnl, roi, buyNotional: position.buyNotional };
       })
       .filter(
-        (value): value is { pnl: number; roi: number } =>
+        (value): value is { pnl: number; roi: number; buyNotional: number } =>
           value !== null && Number.isFinite(value.pnl) && Number.isFinite(value.roi)
       );
 
+    const totalPnl = positionMetrics.reduce((sum, value) => sum + value.pnl, 0);
+    const totalBuyNotional = positionMetrics.reduce((sum, value) => sum + value.buyNotional, 0);
     const avgReturnUsd = positionMetrics.length > 0
-      ? positionMetrics.reduce((sum, value) => sum + value.pnl, 0) / positionMetrics.length
+      ? totalPnl / positionMetrics.length
       : null;
     const avgRoi = positionMetrics.length > 0
-      ? positionMetrics.reduce((sum, value) => sum + value.roi, 0) / positionMetrics.length
+      ? (totalBuyNotional > 0 ? (totalPnl / totalBuyNotional) * 100 : null)
       : null;
 
     const openPositions = Array.from(positions.values())
