@@ -2210,12 +2210,12 @@ function ProfilePageContent() {
         const bIsSell = b.type === 'quick' && b.raw?.side?.toLowerCase() === 'sell';
         const aRoi =
           a.roi ??
-          (a.price_entry && aPrice
+          (a.price_entry != null && aPrice != null
             ? (((aIsSell ? a.price_entry - aPrice : aPrice - a.price_entry) / a.price_entry) * 100)
             : 0);
         const bRoi =
           b.roi ??
-          (b.price_entry && bPrice
+          (b.price_entry != null && bPrice != null
             ? (((bIsSell ? b.price_entry - bPrice : bPrice - b.price_entry) / b.price_entry) * 100)
             : 0);
         return bRoi - aRoi;
@@ -2817,7 +2817,7 @@ function ProfilePageContent() {
                             resolvedDisplayPrice !== null ? resolvedDisplayPrice : displayPrice;
                           const roiValue =
                             trade.roi ??
-                            (trade.price_entry && finalDisplayPrice
+                            (trade.price_entry != null && finalDisplayPrice != null
                               ? (((actionLabel === 'Sell' ? trade.price_entry - finalDisplayPrice : finalDisplayPrice - trade.price_entry) /
                                   trade.price_entry) *
                                   100)
