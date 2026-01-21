@@ -561,7 +561,56 @@ export function TradeCard({
 
   const looksLikeScore = Boolean(cleanedLiveScore && /\d+\s*-\s*\d+/.test(cleanedLiveScore))
   const isSeasonLong = useMemo(() => isSeasonLongMarketTitle(market), [market])
+  const sportsTitleHint = useMemo(() => {
+    if (!market) return false
+    const lower = market.toLowerCase()
+    const hasMatchToken = /\b(vs\.?|v\.?|@)\b/.test(lower)
+    const hasTeamToken = /\b(fc|sc|cf|afc)\b/.test(lower)
+    const hasLeagueToken =
+      /\b(nfl|nba|nhl|mlb|ncaa|ucl|uefa|champions league|premier league|la liga|serie a|bundesliga|ligue 1|mls)\b/.test(
+        lower
+      )
+    const hasBetToken =
+      /\b(spread|moneyline|ml|pick'?em|total|o\/u|over\/under)\b/.test(lower)
+    const slugHint = marketSlug?.toLowerCase() ?? ""
+    const urlSlugHint = (() => {
+      if (!polymarketUrl) return ""
+      const match = polymarketUrl.match(/\/(?:event|market)\/([^/?#]+)/i)
+      return match?.[1]?.toLowerCase() ?? ""
+    })()
+    const combinedSlugHint = `${slugHint} ${urlSlugHint}`
+    const hasSlugLeague =
+      combinedSlugHint.includes("ucl") ||
+      combinedSlugHint.includes("uefa") ||
+      combinedSlugHint.includes("champions") ||
+      combinedSlugHint.includes("premier") ||
+      combinedSlugHint.includes("bundesliga") ||
+      combinedSlugHint.includes("laliga") ||
+      combinedSlugHint.includes("seriea") ||
+      combinedSlugHint.includes("ligue1")
+    return (
+      hasMatchToken ||
+      hasTeamToken ||
+      hasLeagueToken ||
+      hasBetToken ||
+      hasSlugLeague
+    )
+  }, [market, marketSlug, polymarketUrl])
+
+  const isSportsContext = Boolean(
+    looksLikeScore ||
+      sportsTitleHint ||
+      (category && category.toLowerCase().includes("sports")) ||
+      espnUrl
+  )
+
   const resolvedLiveStatus = useMemo(() => {
+    if (!isSportsContext) {
+      const normalized = normalizeEventStatus(eventStatus)
+      if (statusLooksFinal(normalized)) return "final"
+      if (statusLooksScheduled(normalized)) return "scheduled"
+      return "open"
+    }
     if (isSeasonLong) {
       const normalized = normalizeEventStatus(eventStatus)
       return statusLooksFinal(normalized) ? "final" : "scheduled"
@@ -599,7 +648,14 @@ export function TradeCard({
       }
     }
     return "unknown"
-  }, [isSeasonLong, liveStatus, eventStatus, eventStartTime, looksLikeScore])
+  }, [
+    isSportsContext,
+    isSeasonLong,
+    liveStatus,
+    eventStatus,
+    eventStartTime,
+    looksLikeScore,
+  ])
 
   const orderBookPrice = action === "Buy" ? bestAskPrice : bestBidPrice
   const resolvedLivePrice =
@@ -813,38 +869,6 @@ export function TradeCard({
     statusBadgeVariant !== "resolved" &&
     statusBadgeVariant !== "ended"
   const hasEventTime = Boolean(eventStartTime || eventEndTime)
-  const sportsTitleHint = useMemo(() => {
-    if (!market) return false
-    const lower = market.toLowerCase()
-    const hasWinVerb = /\b(win|beat|defeat|draw|tie)\b/.test(lower)
-    if (!hasWinVerb) return false
-    const hasMatchToken = /\b(vs\.?|v\.?|@)\b/.test(lower)
-    const hasTeamToken = /\b(fc|sc|cf|afc)\b/.test(lower)
-    const hasLeagueToken =
-      /\b(nfl|nba|nhl|mlb|ncaa|ucl|uefa|champions league|premier league|la liga|serie a|bundesliga|ligue 1|mls)\b/.test(
-        lower
-      )
-    const slugHint = marketSlug?.toLowerCase() ?? ""
-    const hasSlugLeague =
-      slugHint.includes("ucl") ||
-      slugHint.includes("uefa") ||
-      slugHint.includes("champions") ||
-      slugHint.includes("premier") ||
-      slugHint.includes("bundesliga") ||
-      slugHint.includes("laliga") ||
-      slugHint.includes("seriea") ||
-      slugHint.includes("ligue1")
-    return hasMatchToken || hasTeamToken || hasLeagueToken || hasSlugLeague
-  }, [market, marketSlug])
-
-  const isSportsContext = Boolean(
-    looksLikeScore ||
-      liveStatus === "live" ||
-      liveStatus === "final" ||
-      sportsTitleHint ||
-      (category && category.toLowerCase().includes("sports")) ||
-      espnUrl
-  )
   const { eventTimeValue, eventTimeKind } = useMemo(() => {
     if (isSeasonLong && eventEndTime) {
       return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
@@ -853,6 +877,9 @@ export function TradeCard({
       if (eventEndTime) return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
       if (eventStartTime) return { eventTimeValue: eventStartTime, eventTimeKind: "start" as const }
       return { eventTimeValue: null, eventTimeKind: "unknown" as const }
+    }
+    if (!isSportsContext && eventEndTime) {
+      return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
     }
     if (eventStartTime) return { eventTimeValue: eventStartTime, eventTimeKind: "start" as const }
     if (eventEndTime) {
@@ -874,7 +901,7 @@ export function TradeCard({
       eventTimeKind === "start" ? "Starts" : eventTimeKind === "end" ? "Resolves" : "Time"
     const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(eventTimeValue)
     const isMidnightUtc = /T00:00:00(?:\.000)?(?:Z|[+-]00:00)$/.test(eventTimeValue)
-    const useDateOnly = isDateOnly || isMidnightUtc
+    const useDateOnly = isDateOnly || (!isSportsContext && isMidnightUtc)
     const parsed = new Date(eventTimeValue)
     if (Number.isNaN(parsed.getTime())) return { eventTimeLabel: null, isEventTimeLoading: true }
     const timeZone = useDateOnly ? "UTC" : undefined

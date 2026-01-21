@@ -208,6 +208,7 @@ export async function GET(request: Request) {
                   gameStartTime =
                     event?.startTime ||
                     event?.startDate ||
+                    event?.eventDate ||
                     gammaMarket?.gameStartTime ||
                     null;
                 }
@@ -259,7 +260,11 @@ export async function GET(request: Request) {
                     );
                   }
                   if (!gameStartTime) {
-                    gameStartTime = gammaEvent?.startTime || gammaEvent?.startDate || null;
+                    gameStartTime =
+                      gammaEvent?.startTime ||
+                      gammaEvent?.startDate ||
+                      gammaEvent?.eventDate ||
+                      null;
                   }
                   if (!endDateIso) {
                     endDateIso = normalizeEndDate(gammaEvent?.endDate || null);

@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { RefreshCw, Activity, Filter, Check, Search, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
+import { getESPNScoresForTrades, getScoreDisplaySides, getFallbackEspnUrl } from '@/lib/espn/scores';
 import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
 import type { PositionSummary } from '@/lib/orders/position';
 import type { OrderRow } from '@/lib/orders/types';
@@ -1699,6 +1699,14 @@ export default function FeedPage() {
                     hasLiveScore,
                   });
                   
+                  const fallbackEspnUrl = getFallbackEspnUrl({
+                    title: trade.market.title,
+                    category: trade.market.category,
+                    slug: trade.market.slug,
+                    eventSlug: trade.market.eventSlug,
+                    dateHint: effectiveGameStartTime || endDateIso || undefined,
+                  });
+
                   newLiveData.set(marketKey, { 
                     outcomes: outcomes || [],
                     outcomePrices: numericPrices,
@@ -1709,7 +1717,7 @@ export default function FeedPage() {
                     endDateIso: endDateIso || undefined,
                     liveStatus,
                     // ESPN URL is injected later once the ESPN fetch completes
-                    espnUrl: undefined,
+                    espnUrl: fallbackEspnUrl,
                     marketAvatarUrl: marketAvatarUrl || trade.market.avatarUrl,
                     updatedAt: Date.now(),
                   });

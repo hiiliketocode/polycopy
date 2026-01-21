@@ -52,6 +52,18 @@ type SportGroup =
   | 'mma'
   | 'boxing';
 
+const ESPN_SCOREBOARD_URLS: Partial<Record<SportGroup, string>> = {
+  nfl: 'https://www.espn.com/nfl/scoreboard',
+  nba: 'https://www.espn.com/nba/scoreboard',
+  mlb: 'https://www.espn.com/mlb/scoreboard',
+  nhl: 'https://www.espn.com/nhl/scoreboard',
+  wnba: 'https://www.espn.com/wnba/scoreboard',
+  ncaaf: 'https://www.espn.com/college-football/scoreboard',
+  ncaab: 'https://www.espn.com/mens-college-basketball/scoreboard',
+  ncaaw: 'https://www.espn.com/womens-college-basketball/scoreboard',
+  soccer: 'https://www.espn.com/soccer/scoreboard',
+};
+
 const ESPN_SPORT_GROUPS: Record<SportGroup, string[]> = {
   nfl: ['nfl'],
   nba: ['nba'],
@@ -127,6 +139,27 @@ const toEspnDateKey = (value?: string | number | null) => {
   if (Number.isNaN(parsed.getTime())) return null;
   return formatEspnDateKey(parsed);
 };
+
+export function getFallbackEspnUrl(params: {
+  title: string;
+  category?: string | null;
+  slug?: string | null;
+  eventSlug?: string | null;
+  dateHint?: string | number | null;
+}): string | undefined {
+  const sport = detectSportType(
+    params.title,
+    params.category ?? null,
+    params.slug ?? null,
+    params.eventSlug ?? null
+  );
+  if (!sport) return undefined;
+  const base = ESPN_SCOREBOARD_URLS[sport];
+  if (!base) return undefined;
+  const dateKey =
+    toEspnDateKey(params.dateHint ?? null) ?? extractDateKeysFromTitle(params.title)[0];
+  return dateKey ? `${base}?date=${dateKey}` : base;
+}
 
 const getDefaultEspnDateKeys = () => {
   const now = new Date();
