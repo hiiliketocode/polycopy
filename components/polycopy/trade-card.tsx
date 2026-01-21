@@ -2697,7 +2697,7 @@ export function TradeCard({
                 </div>
               </div>
             </div>
-            <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end">
+            <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end md:ml-auto">
               {showEventTimeBadge && (
                 espnLink ? (
                   <Badge
@@ -2759,7 +2759,7 @@ export function TradeCard({
                 </Badge>
               ) : null}
               {showCombinedScoreBadge ? (
-                <div>
+                <div className="ml-auto md:ml-0">
                   {espnLink ? (
                     <Badge asChild variant="secondary" className={combinedScoreBadgeClass}>
                       <a href={espnLink} target="_blank" rel="noopener noreferrer">
@@ -2785,7 +2785,7 @@ export function TradeCard({
                   )}
                 </div>
               ) : showScoreBadge ? (
-                <div>
+                <div className="ml-auto md:ml-0">
                   {espnLink ? (
                     <Badge
                       asChild
