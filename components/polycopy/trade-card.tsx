@@ -113,9 +113,6 @@ interface TradeCardProps {
   onSwitchToManualTrading?: () => void
   onOpenConnectWallet?: () => void
   hideActions?: boolean
-  resultLabel?: string
-  resultVariant?: "win" | "loss"
-  resolvedOutcomeLabel?: string
   isPinned?: boolean
   onTogglePin?: () => void
   traderPositionBadge?: PositionBadgeData
@@ -477,9 +474,6 @@ export function TradeCard({
   onSwitchToManualTrading,
   onOpenConnectWallet,
   hideActions = false,
-  resultLabel,
-  resultVariant = "win",
-  resolvedOutcomeLabel,
   isPinned = false,
   onTogglePin,
   traderPositionBadge,
@@ -501,9 +495,6 @@ export function TradeCard({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [localCopied, setLocalCopied] = useState(isCopied)
-  const [resolvedMarketAvatar, setResolvedMarketAvatar] = useState<string | null>(
-    typeof marketAvatar === "string" && marketAvatar.trim() ? marketAvatar : null
-  )
   const [refreshStatus, setRefreshStatus] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle')
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -556,7 +547,6 @@ export function TradeCard({
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`
   })
   const prevCanUseAutoCloseRef = useRef(canUseAutoClose)
-  const avatarFetchRef = useRef(false)
 
   const isUuid = (value?: string | null) =>
     Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))
@@ -571,56 +561,7 @@ export function TradeCard({
 
   const looksLikeScore = Boolean(cleanedLiveScore && /\d+\s*-\s*\d+/.test(cleanedLiveScore))
   const isSeasonLong = useMemo(() => isSeasonLongMarketTitle(market), [market])
-  const sportsTitleHint = useMemo(() => {
-    if (!market) return false
-    const lower = market.toLowerCase()
-    const hasMatchToken = /\b(vs\.?|v\.?|@)\b/.test(lower)
-    const hasTeamToken = /\b(fc|sc|cf|afc)\b/.test(lower)
-    const hasLeagueToken =
-      /\b(nfl|nba|nhl|mlb|ncaa|ucl|uefa|champions league|premier league|la liga|serie a|bundesliga|ligue 1|mls)\b/.test(
-        lower
-      )
-    const hasBetToken =
-      /\b(spread|moneyline|ml|pick'?em|total|o\/u|over\/under)\b/.test(lower)
-    const slugHint = marketSlug?.toLowerCase() ?? ""
-    const urlSlugHint = (() => {
-      if (!polymarketUrl) return ""
-      const match = polymarketUrl.match(/\/(?:event|market)\/([^/?#]+)/i)
-      return match?.[1]?.toLowerCase() ?? ""
-    })()
-    const combinedSlugHint = `${slugHint} ${urlSlugHint}`
-    const hasSlugLeague =
-      combinedSlugHint.includes("ucl") ||
-      combinedSlugHint.includes("uefa") ||
-      combinedSlugHint.includes("champions") ||
-      combinedSlugHint.includes("premier") ||
-      combinedSlugHint.includes("bundesliga") ||
-      combinedSlugHint.includes("laliga") ||
-      combinedSlugHint.includes("seriea") ||
-      combinedSlugHint.includes("ligue1")
-    return (
-      hasMatchToken ||
-      hasTeamToken ||
-      hasLeagueToken ||
-      hasBetToken ||
-      hasSlugLeague
-    )
-  }, [market, marketSlug, polymarketUrl])
-
-  const isSportsContext = Boolean(
-    looksLikeScore ||
-      sportsTitleHint ||
-      (category && category.toLowerCase().includes("sports")) ||
-      espnUrl
-  )
-
   const resolvedLiveStatus = useMemo(() => {
-    if (!isSportsContext) {
-      const normalized = normalizeEventStatus(eventStatus)
-      if (statusLooksFinal(normalized)) return "final"
-      if (statusLooksScheduled(normalized)) return "scheduled"
-      return "open"
-    }
     if (isSeasonLong) {
       const normalized = normalizeEventStatus(eventStatus)
       return statusLooksFinal(normalized) ? "final" : "scheduled"
@@ -658,14 +599,7 @@ export function TradeCard({
       }
     }
     return "unknown"
-  }, [
-    isSportsContext,
-    isSeasonLong,
-    liveStatus,
-    eventStatus,
-    eventStartTime,
-    looksLikeScore,
-  ])
+  }, [isSeasonLong, liveStatus, eventStatus, eventStartTime, looksLikeScore])
 
   const orderBookPrice = action === "Buy" ? bestAskPrice : bestBidPrice
   const resolvedLivePrice =
@@ -879,6 +813,38 @@ export function TradeCard({
     statusBadgeVariant !== "resolved" &&
     statusBadgeVariant !== "ended"
   const hasEventTime = Boolean(eventStartTime || eventEndTime)
+  const sportsTitleHint = useMemo(() => {
+    if (!market) return false
+    const lower = market.toLowerCase()
+    const hasWinVerb = /\b(win|beat|defeat|draw|tie)\b/.test(lower)
+    if (!hasWinVerb) return false
+    const hasMatchToken = /\b(vs\.?|v\.?|@)\b/.test(lower)
+    const hasTeamToken = /\b(fc|sc|cf|afc)\b/.test(lower)
+    const hasLeagueToken =
+      /\b(nfl|nba|nhl|mlb|ncaa|ucl|uefa|champions league|premier league|la liga|serie a|bundesliga|ligue 1|mls)\b/.test(
+        lower
+      )
+    const slugHint = marketSlug?.toLowerCase() ?? ""
+    const hasSlugLeague =
+      slugHint.includes("ucl") ||
+      slugHint.includes("uefa") ||
+      slugHint.includes("champions") ||
+      slugHint.includes("premier") ||
+      slugHint.includes("bundesliga") ||
+      slugHint.includes("laliga") ||
+      slugHint.includes("seriea") ||
+      slugHint.includes("ligue1")
+    return hasMatchToken || hasTeamToken || hasLeagueToken || hasSlugLeague
+  }, [market, marketSlug])
+
+  const isSportsContext = Boolean(
+    looksLikeScore ||
+      liveStatus === "live" ||
+      liveStatus === "final" ||
+      sportsTitleHint ||
+      (category && category.toLowerCase().includes("sports")) ||
+      espnUrl
+  )
   const { eventTimeValue, eventTimeKind } = useMemo(() => {
     if (isSeasonLong && eventEndTime) {
       return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
@@ -888,18 +854,10 @@ export function TradeCard({
       if (eventStartTime) return { eventTimeValue: eventStartTime, eventTimeKind: "start" as const }
       return { eventTimeValue: null, eventTimeKind: "unknown" as const }
     }
-    if (!isSportsContext && eventEndTime) {
-      return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
-    }
     if (eventStartTime) return { eventTimeValue: eventStartTime, eventTimeKind: "start" as const }
-    if (eventEndTime) {
-      return {
-        eventTimeValue: eventEndTime,
-        eventTimeKind: isSportsContext ? "start" : "end",
-      }
-    }
+    if (eventEndTime) return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
     return { eventTimeValue: null, eventTimeKind: "unknown" as const }
-  }, [isSeasonLong, statusVariant, eventStartTime, eventEndTime, isSportsContext])
+  }, [isSeasonLong, statusVariant, eventStartTime, eventEndTime])
   const { eventTimeLabel, isEventTimeLoading } = useMemo(() => {
     if (!eventTimeValue) {
       if (typeof currentMarketUpdatedAt === "number") {
@@ -921,15 +879,8 @@ export function TradeCard({
       month: "2-digit",
       day: "2-digit",
     })
-    const compareFormatter = useDateOnly
-      ? new Intl.DateTimeFormat("en-US", {
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-        })
-      : formatter
-    const toYmd = (date: Date, activeFormatter: Intl.DateTimeFormat) => {
-      const parts = activeFormatter.formatToParts(date)
+    const toYmd = (date: Date) => {
+      const parts = formatter.formatToParts(date)
       const lookup = parts.reduce<Record<string, string>>((acc, part) => {
         if (part.type !== "literal") acc[part.type] = part.value
         return acc
@@ -939,12 +890,10 @@ export function TradeCard({
     const today = new Date()
     const tomorrow = new Date(today)
     tomorrow.setDate(today.getDate() + 1)
-    const targetKey = toYmd(parsed, formatter)
-    const todayKey = toYmd(today, compareFormatter)
-    const tomorrowKey = toYmd(tomorrow, compareFormatter)
+    const targetKey = toYmd(parsed)
     if (eventTimeKind === "start") {
-      if (targetKey === todayKey || targetKey === tomorrowKey) {
-        const label = targetKey === todayKey ? "Today" : "Tomorrow"
+      if (targetKey === toYmd(today) || targetKey === toYmd(tomorrow)) {
+        const label = targetKey === toYmd(today) ? "Today" : "Tomorrow"
         if (!useDateOnly) {
           const timeLabel = new Intl.DateTimeFormat("en-US", {
             hour: "numeric",
@@ -959,10 +908,10 @@ export function TradeCard({
       }
     }
     if (eventTimeKind === "end") {
-      if (targetKey === todayKey) {
+      if (targetKey === toYmd(today)) {
         return { eventTimeLabel: `${prefix} Today`, isEventTimeLoading: false }
       }
-      if (targetKey === tomorrowKey) {
+      if (targetKey === toYmd(tomorrow)) {
         return { eventTimeLabel: `${prefix} Tomorrow`, isEventTimeLoading: false }
       }
     }
@@ -983,55 +932,6 @@ export function TradeCard({
     if (userUpdatedSlippageRef.current) return
     setSlippagePreset(resolvedDefaultSlippage)
   }, [resolvedDefaultSlippage])
-
-  useEffect(() => {
-    if (typeof marketAvatar === "string" && marketAvatar.trim()) {
-      setResolvedMarketAvatar(marketAvatar)
-    }
-  }, [marketAvatar])
-
-  useEffect(() => {
-    if (resolvedMarketAvatar) return
-    if (avatarFetchRef.current) return
-    const title = typeof market === "string" ? market.trim() : ""
-    if (!conditionId && !marketSlug && !title) return
-
-    avatarFetchRef.current = true
-    let cancelled = false
-
-    const fetchMarketAvatar = async () => {
-      try {
-        const params = new URLSearchParams()
-        if (conditionId) {
-          params.set("conditionId", conditionId)
-        } else if (marketSlug) {
-          params.set("slug", marketSlug)
-        } else if (title) {
-          params.set("title", title)
-        }
-        const response = await fetch(`/api/polymarket/price?${params.toString()}`, {
-          cache: "no-store",
-        })
-        if (!response.ok) return
-        const data = await response.json()
-        const avatarUrl =
-          typeof data?.market?.marketAvatarUrl === "string" && data.market.marketAvatarUrl.trim()
-            ? data.market.marketAvatarUrl.trim()
-            : null
-        if (!cancelled && avatarUrl) {
-          setResolvedMarketAvatar(avatarUrl)
-        }
-      } catch {
-        // Ignore transient fetch errors for avatar hydration.
-      }
-    }
-
-    fetchMarketAvatar()
-
-    return () => {
-      cancelled = true
-    }
-  }, [conditionId, market, marketSlug, resolvedMarketAvatar])
 
   useEffect(() => {
     if (!canUseAutoClose) {
@@ -2107,7 +2007,7 @@ export function TradeCard({
         marketId: conditionId || (finalTokenId ? finalTokenId.slice(0, 66) : undefined),
         marketTitle: market,
         marketSlug,
-        marketAvatarUrl: resolvedMarketAvatar ?? marketAvatar,
+        marketAvatarUrl: marketAvatar,
         amountInvested: estimatedMaxCost ?? undefined,
         outcome: position,
         autoCloseOnTraderClose: canUseAutoClose ? autoClose : false,
@@ -2649,18 +2549,6 @@ export function TradeCard({
           </Link>
           <div className="flex flex-col items-end gap-1 shrink-0">
             <span className="text-[11px] text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
-            {resultLabel && (
-              <span
-                className={cn(
-                  "rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-none",
-                  resultVariant === "win"
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                    : "bg-rose-50 text-rose-700 border-rose-200"
-                )}
-              >
-                {resultLabel}
-              </span>
-            )}
             {isPremium && onToggleExpand && !localCopied && null}
           </div>
         </div>
@@ -2670,10 +2558,7 @@ export function TradeCard({
             <div className="min-w-0 flex-1">
               <div className="flex items-start gap-2.5 md:items-center">
                 <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
-                  <AvatarImage
-                    src={resolvedMarketAvatar || "/placeholder.svg"}
-                    alt={market}
-                  />
+                  <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
                   <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
                     {market.slice(0, 2)}
                   </AvatarFallback>
@@ -2697,7 +2582,7 @@ export function TradeCard({
                 </div>
               </div>
             </div>
-            <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end md:ml-auto">
+            <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end">
               {showEventTimeBadge && (
                 espnLink ? (
                   <Badge
@@ -2747,17 +2632,6 @@ export function TradeCard({
                     {eventStatusLabel}
                   </Badge>
                 )}
-              {resolvedOutcomeLabel ? (
-                <Badge
-                  variant="secondary"
-                  className={cn(
-                    badgeBaseClass,
-                    "bg-slate-50 text-slate-700 border-slate-200"
-                  )}
-                >
-                  Outcome: {resolvedOutcomeLabel}
-                </Badge>
-              ) : null}
               {showCombinedScoreBadge ? (
                 <div className="ml-auto md:ml-0">
                   {espnLink ? (

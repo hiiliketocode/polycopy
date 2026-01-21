@@ -52,18 +52,6 @@ type SportGroup =
   | 'mma'
   | 'boxing';
 
-const ESPN_SCOREBOARD_URLS: Partial<Record<SportGroup, string>> = {
-  nfl: 'https://www.espn.com/nfl/scoreboard',
-  nba: 'https://www.espn.com/nba/scoreboard',
-  mlb: 'https://www.espn.com/mlb/scoreboard',
-  nhl: 'https://www.espn.com/nhl/scoreboard',
-  wnba: 'https://www.espn.com/wnba/scoreboard',
-  ncaaf: 'https://www.espn.com/college-football/scoreboard',
-  ncaab: 'https://www.espn.com/mens-college-basketball/scoreboard',
-  ncaaw: 'https://www.espn.com/womens-college-basketball/scoreboard',
-  soccer: 'https://www.espn.com/soccer/scoreboard',
-};
-
 const ESPN_SPORT_GROUPS: Record<SportGroup, string[]> = {
   nfl: ['nfl'],
   nba: ['nba'],
@@ -106,8 +94,6 @@ const TEAM_NAME_STOP_WORDS = new Set([
   'cf',
   'ac',
   'afc',
-  'fk',
-  'ru',
   'c.f',
   's.c',
   'club',
@@ -141,27 +127,6 @@ const toEspnDateKey = (value?: string | number | null) => {
   return formatEspnDateKey(parsed);
 };
 
-export function getFallbackEspnUrl(params: {
-  title: string;
-  category?: string | null;
-  slug?: string | null;
-  eventSlug?: string | null;
-  dateHint?: string | number | null;
-}): string | undefined {
-  const sport = detectSportType(
-    params.title,
-    params.category ?? null,
-    params.slug ?? null,
-    params.eventSlug ?? null
-  );
-  if (!sport) return undefined;
-  const base = ESPN_SCOREBOARD_URLS[sport];
-  if (!base) return undefined;
-  const dateKey =
-    toEspnDateKey(params.dateHint ?? null) ?? extractDateKeysFromTitle(params.title)[0];
-  return dateKey ? `${base}?date=${dateKey}` : base;
-}
-
 const getDefaultEspnDateKeys = () => {
   const now = new Date();
   const tomorrow = new Date(now);
@@ -180,84 +145,6 @@ const normalizeEspnLink = (link?: string | null) => {
   return trimmed;
 };
 
-const SOCCER_CLUB_TOKEN = /\b(f\.?k\.?|f\.?c\.?|c\.?f\.?|s\.?c\.?|a\.?f\.?c\.?)\b/;
-
-const MONTH_LOOKUP: Record<string, string> = {
-  jan: '01',
-  january: '01',
-  feb: '02',
-  february: '02',
-  mar: '03',
-  march: '03',
-  apr: '04',
-  april: '04',
-  may: '05',
-  jun: '06',
-  june: '06',
-  jul: '07',
-  july: '07',
-  aug: '08',
-  august: '08',
-  sep: '09',
-  sept: '09',
-  september: '09',
-  oct: '10',
-  october: '10',
-  nov: '11',
-  november: '11',
-  dec: '12',
-  december: '12',
-};
-
-const stripDiacritics = (value: string) =>
-  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-const normalizeTeamValue = (value: string) => {
-  const lowered = stripDiacritics(value).toLowerCase();
-  return lowered
-    .replace(/\butd\.?\b/g, 'united')
-    .replace(/\bst\.?\b/g, 'saint')
-    .trim();
-};
-
-const extractDateKeysFromTitle = (title: string): string[] => {
-  if (!title) return [];
-  const keys = new Set<string>();
-  const isoMatches = title.match(/\b\d{4}-\d{2}-\d{2}\b/g);
-  if (isoMatches) {
-    isoMatches.forEach((match) => {
-      const key = toEspnDateKey(match);
-      if (key) keys.add(key);
-    });
-  }
-
-  const monthFirstPattern =
-    /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,)?\s+(\d{4})\b/gi;
-  for (const match of title.matchAll(monthFirstPattern)) {
-    const monthName = match[1]?.toLowerCase();
-    const day = match[2]?.padStart(2, '0');
-    const year = match[3];
-    const month = monthName ? MONTH_LOOKUP[monthName] : undefined;
-    if (month && day && year) {
-      keys.add(`${year}${month}${day}`);
-    }
-  }
-
-  const dayFirstPattern =
-    /\b(\d{1,2})(?:st|nd|rd|th)?\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})\b/gi;
-  for (const match of title.matchAll(dayFirstPattern)) {
-    const day = match[1]?.padStart(2, '0');
-    const monthName = match[2]?.toLowerCase();
-    const year = match[3];
-    const month = monthName ? MONTH_LOOKUP[monthName] : undefined;
-    if (month && day && year) {
-      keys.add(`${year}${month}${day}`);
-    }
-  }
-
-  return Array.from(keys);
-};
-
 // Detect sport type from market title
 function detectSportType(
   title: string,
@@ -265,7 +152,7 @@ function detectSportType(
   slug?: string | null,
   eventSlug?: string | null
 ): SportGroup | null {
-  const titleLower = normalizeTeamValue(title);
+  const titleLower = title.toLowerCase();
   const categoryLower = category ? category.toLowerCase() : '';
   const slugLower = [slug, eventSlug].filter(Boolean).join(' ').toLowerCase();
 
@@ -276,8 +163,6 @@ function detectSportType(
   if (slugLower.includes('mlb')) return 'mlb';
   if (slugLower.includes('nhl')) return 'nhl';
   if (slugLower.includes('tennis')) return 'tennis';
-  if (slugLower.includes('ucl')) return 'soccer';
-  if (slugLower.includes('champions')) return 'soccer';
   if (slugLower.match(/\b(ncaaf|college-football|cfb)\b/)) return 'ncaaf';
   if (slugLower.match(/\b(ncaaw|womens?-college-basketball)\b/)) return 'ncaaw';
   if (slugLower.match(/\b(ncaab|mens?-college-basketball|college-basketball|march-madness)\b/)) return 'ncaab';
@@ -349,24 +234,13 @@ function detectSportType(
   }
 
   if (
-    SOCCER_CLUB_TOKEN.test(titleLower) &&
-    /\b(spread|moneyline|ml|pick'?em|total|o\/u|over\/under)\b/.test(titleLower)
+    titleLower.match(/\b(fc|cf|sc|afc)\b/) &&
+    (titleLower.includes(' vs ') || titleLower.includes(' vs.') || titleLower.includes(' v ') || titleLower.includes(' @ ') || titleLower.includes(' versus '))
   ) {
     return 'soccer';
   }
 
-  if (
-    SOCCER_CLUB_TOKEN.test(titleLower) &&
-    (titleLower.includes(' vs ') ||
-      titleLower.includes(' vs.') ||
-      titleLower.includes(' v ') ||
-      titleLower.includes(' @ ') ||
-      titleLower.includes(' versus '))
-  ) {
-    return 'soccer';
-  }
-
-  if (SOCCER_CLUB_TOKEN.test(titleLower) && titleLower.match(/\bwin\b/) && titleLower.match(/\b\d{4}-\d{2}-\d{2}\b/)) {
+  if (titleLower.match(/\b(afc|cf|fc)\b/) && titleLower.match(/\bwin\b/) && titleLower.match(/\b\d{4}-\d{2}-\d{2}\b/)) {
     return 'soccer';
   }
 
@@ -374,7 +248,7 @@ function detectSportType(
     if (titleLower.match(/\b(premier league|premiership|epl|uefa|champions league|europa league|conference league|fa cup|carabao|community shield|liga mx|ligamx)\b/)) {
       return 'soccer';
     }
-    if (SOCCER_CLUB_TOKEN.test(titleLower) && titleLower.match(/\bwin\b/)) {
+    if (titleLower.match(/\b(afc|cf|fc)\b/) && titleLower.match(/\bwin\b/)) {
       return 'soccer';
     }
     if (titleLower.match(/\bwin\b/) && titleLower.match(/\b\d{4}-\d{2}-\d{2}\b/)) {
@@ -474,7 +348,7 @@ function detectSportType(
 }
 
 function isLikelySportsTitle(title: string, category?: string | null): boolean {
-  const titleLower = normalizeTeamValue(title);
+  const titleLower = title.toLowerCase();
   const categoryLower = category ? category.toLowerCase() : '';
 
   if (categoryLower === 'sports') return true;
@@ -486,14 +360,6 @@ function isLikelySportsTitle(title: string, category?: string | null): boolean {
     titleLower.includes(' @ ') ||
     titleLower.includes(' versus ')
   ) {
-    return true;
-  }
-
-  if (SOCCER_CLUB_TOKEN.test(titleLower) && /\bwin\b/.test(titleLower)) {
-    return true;
-  }
-
-  if (titleLower.match(/\b(spread|moneyline|ml|pick'?em|total|o\/u|over\/under)\b/)) {
     return true;
   }
 
@@ -591,17 +457,10 @@ function extractSingleTeamMatch(title: string): { team: string; dateKey?: string
 function isSeasonLongMarketTitle(title: string): boolean {
   const lower = title.toLowerCase();
   if (!/\bwin\b/.test(lower)) return false;
-  const hasSeasonKeyword =
-    /\b(season|league|premier league|champions league|championship|tournament|cup|title)\b/.test(
-      lower
-    );
-  if (hasSeasonKeyword) return true;
-  const hasYearRange =
-    /\b20\d{2}\s*-\s*\d{2}\b/.test(lower) || /\b20\d{2}-\d{2}\b(?!-\d{2})/.test(lower);
-  if (hasYearRange) return true;
-  const hasSpecificDate = /\b20\d{2}-\d{2}-\d{2}\b/.test(lower);
-  if (hasSpecificDate) return false;
-  return false;
+  if (/\b20\d{2}\s*-\s*\d{2}\b/.test(lower) || /\b20\d{2}-\d{2}\b/.test(lower)) {
+    return true;
+  }
+  return /\b(season|league|premier league|champions league|championship|tournament|cup|title)\b/.test(lower);
 }
 
 function extractSingleTeamHint(title: string): { team: string } | null {
@@ -632,7 +491,8 @@ function getStartDateKey(value: string): string | null {
 }
 
 function normalizeTeamTokens(value: string): string[] {
-  return normalizeTeamValue(value)
+  return value
+    .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
     .filter(token => token.length > 1 && !TEAM_NAME_STOP_WORDS.has(token));
@@ -645,9 +505,9 @@ function buildTeamAbbrev(value: string): string {
 }
 
 function scoreTeamMatch(marketTeam: string, espnTeamName: string, espnAbbrev: string): number {
-  const marketLower = normalizeTeamValue(marketTeam);
-  const espnLower = normalizeTeamValue(espnTeamName);
-  const abbrevLower = normalizeTeamValue(espnAbbrev);
+  const marketLower = marketTeam.toLowerCase().trim();
+  const espnLower = espnTeamName.toLowerCase().trim();
+  const abbrevLower = espnAbbrev.toLowerCase().trim();
 
   if (!marketLower || !espnLower) return 0;
 
@@ -683,9 +543,9 @@ function scoreTeamMatch(marketTeam: string, espnTeamName: string, espnAbbrev: st
 
 // Check if two team names match (flexible matching)
 export function teamsMatch(marketTeam: string, espnTeamName: string, espnAbbrev: string): boolean {
-  const marketLower = normalizeTeamValue(marketTeam);
-  const espnLower = normalizeTeamValue(espnTeamName);
-  const abbrevLower = normalizeTeamValue(espnAbbrev);
+  const marketLower = marketTeam.toLowerCase().trim();
+  const espnLower = espnTeamName.toLowerCase().trim();
+  const abbrevLower = espnAbbrev.toLowerCase().trim();
   
   // Direct match
   if (marketLower === espnLower || (abbrevLower && marketLower === abbrevLower)) return true;
@@ -858,11 +718,6 @@ function findMatchingGame(marketTitle: string, games: ESPNGame[]): ESPNGame | nu
         .filter(match => match.baseScore >= 4 && match.game.status === 'live')
         .sort((a, b) => b.baseScore - a.baseScore)[0];
       if (liveFallback) return liveFallback.game;
-
-      const scheduledFallback = scoredMatches
-        .filter(match => match.baseScore >= 4)
-        .sort((a, b) => b.baseScore - a.baseScore)[0];
-      if (scheduledFallback) return scheduledFallback.game;
     }
 
     return null;
@@ -926,10 +781,6 @@ export async function getESPNScoresForTrades(
     options?.dateHints?.forEach((hint) => {
       const key = toEspnDateKey(hint ?? undefined);
       if (key) keys.add(key);
-    });
-    trades.forEach((trade) => {
-      const title = trade.market.title || '';
-      extractDateKeysFromTitle(title).forEach((key) => keys.add(key));
     });
     return Array.from(keys);
   })();

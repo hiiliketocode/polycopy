@@ -18,7 +18,7 @@ import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
 import { getTraderAvatarInitials } from '@/lib/trader-name';
-import { getESPNScoresForTrades, getScoreDisplaySides, getFallbackEspnUrl } from '@/lib/espn/scores';
+import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
 import type { User } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
 import { extractDateFromTitle, pickBestStartTime } from '@/lib/event-time';
@@ -1018,14 +1018,6 @@ export default function TraderProfilePage({
                 awayTeam,
                 gameStartTime: effectiveGameStartTime,
               });
-
-              const fallbackEspnUrl = getFallbackEspnUrl({
-                title: trade.market,
-                category: trade.category,
-                slug: trade.marketSlug,
-                eventSlug: trade.eventSlug,
-                dateHint: effectiveGameStartTime || endDateIso || undefined,
-              });
               
               // Check if market is resolved
               const isResolved = typeof resolved === 'boolean' ? resolved : closed === true;
@@ -1052,7 +1044,7 @@ export default function TraderProfilePage({
                       ),
                       eventStatus: eventStatus || existing?.eventStatus,
                       endDateIso: endDateIso || existing?.endDateIso,
-                      espnUrl: existing?.espnUrl ?? fallbackEspnUrl,
+                      espnUrl: existing?.espnUrl,
                       marketAvatarUrl: marketAvatarUrl || existing?.marketAvatarUrl,
                     });
                     return next;
