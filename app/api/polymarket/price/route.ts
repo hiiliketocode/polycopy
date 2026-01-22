@@ -296,17 +296,21 @@ export async function GET(request: Request) {
 
   try {
     const cachedMarket = await ensureCachedMarket();
+    // Type guard: ensure cachedMarket is a market object, not an error
+    const market = cachedMarket && typeof cachedMarket === 'object' && !('code' in cachedMarket) && !('message' in cachedMarket) 
+      ? cachedMarket as Record<string, any>
+      : null;
     const cachedStartTime = pickMarketStartTime(cachedMarket);
     const cachedEndTime = pickMarketEndTime(cachedMarket);
-    const cachedEventStatus = cachedMarket?.status || null;
-    const cachedMarketAvatar = cachedMarket?.image || null;
-    let cachedEspnUrl = cachedMarket?.espn_url || null;
-    const cachedMarketSlug = cachedMarket?.market_slug || null;
-    const cachedEventSlug = cachedMarket?.event_slug || null;
-    const cachedDescription = cachedMarket?.description || null;
-    const cachedTags = cachedMarket?.tags || null;
-    const cachedTitle = cachedMarket?.title || null;
-    const cachedConditionId = cachedMarket?.condition_id || null;
+    const cachedEventStatus = market?.status || null;
+    const cachedMarketAvatar = market?.image || null;
+    let cachedEspnUrl = market?.espn_url || null;
+    const cachedMarketSlug = market?.market_slug || null;
+    const cachedEventSlug = market?.event_slug || null;
+    const cachedDescription = market?.description || null;
+    const cachedTags = market?.tags || null;
+    const cachedTitle = market?.title || null;
+    const cachedConditionId = market?.condition_id || null;
 
     if (!cachedEspnUrl && cachedEventSlug && supabaseAdmin) {
       try {
