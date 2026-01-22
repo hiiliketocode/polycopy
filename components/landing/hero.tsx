@@ -319,7 +319,7 @@ export function Hero() {
 
                           {/* Copy Trade Button */}
                           <Button 
-                            onClick={triggerConfetti}
+                            onClick={() => triggerConfetti()}
                             className="w-full bg-polycopy-yellow text-neutral-black hover:bg-polycopy-yellow-hover font-semibold text-xs h-8"
                           >
                             Copy Trade
