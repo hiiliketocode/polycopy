@@ -3,6 +3,18 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Polycopy Brand Colors */
+:root {
+  /* Brand Colors */
+  --polycopy-yellow: #FDB022;
+  --polycopy-yellow-hover: #E5A020;
+  --neutral-black: #0F0F0F;
+  --neutral-white: #FFFFFF;
+  --profit-green: #10B981;
+  --loss-red: #EF4444;
+  --info-blue: #3B82F6;
+}
+
 @theme inline {
   /* Polycopy Brand Colors - Phase 1 Update */
   --color-primary: #FFC24B;
@@ -16,10 +28,18 @@
   /* Modern Font Stack - Inter */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   
+  /* Polycopy brand colors (preserved) */
+  --color-polycopy-yellow: var(--polycopy-yellow);
+  --color-polycopy-yellow-hover: var(--polycopy-yellow-hover);
+  --color-neutral-black: var(--neutral-black);
+  --color-neutral-white: var(--neutral-white);
+  --color-profit-green: var(--profit-green);
+  --color-loss-red: var(--loss-red);
+  --color-info-blue: var(--info-blue);
+  
   /* Additional Phase 1 Colors */
   --color-slate-500: #64748B; /* Secondary text */
   --color-yellow-hover: #F59E0B;
-  --color-profit-green: #10B981; /* Emerald 500 */
   --color-yellow-600: #D97706; /* Button border */
   
   --color-sidebar-ring: var(--sidebar-ring);
@@ -208,4 +228,14 @@ body {
   body {
     min-height: -webkit-fill-available;
   }
+}
+
+/* Float animation for landing page trader cards */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
 }

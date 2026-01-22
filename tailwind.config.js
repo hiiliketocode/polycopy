@@ -20,6 +20,14 @@ module.exports = {
         // Legacy aliases for backward compatibility
         'brand-yellow': '#FDB022',
         'brand-yellow-hover': '#F59E0B',
+        // Polycopy brand colors (for landing page)
+        'polycopy-yellow': '#FDB022',
+        'polycopy-yellow-hover': '#E5A020',
+        'neutral-black': '#0F0F0F',
+        'neutral-white': '#FFFFFF',
+        'profit-green': '#10B981',
+        'loss-red': '#EF4444',
+        'info-blue': '#3B82F6',
       },
       fontFamily: {
         sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
