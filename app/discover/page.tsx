@@ -8,7 +8,6 @@ import { supabase, ensureProfile } from '@/lib/supabase';
 import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
-import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { ChevronDown, Search } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { getTraderAvatarInitials } from '@/lib/trader-name';
@@ -1168,7 +1167,6 @@ function DiscoverPageContent() {
         walletAddress={walletAddress}
         profileImageUrl={profileImageUrl}
       />
-      <SignupBanner isLoggedIn={!!user} />
       
      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white md:pt-0 pb-20 md:pb-8">
         {/* Trade Ticker */}
@@ -1495,12 +1493,12 @@ function DiscoverPageContent() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
                 <div>
                 <h3 className="text-lg font-semibold text-slate-900">Trending Traders</h3>
-                <p className="text-xs text-slate-500">Most improved traders week-on-week</p>
+                <p className="text-xs text-slate-500">Most improved by realized PnL week-on-week</p>
                 </div>
               </div>
 
             <div className="overflow-x-auto">
-              <div className="grid grid-flow-col grid-rows-2 auto-cols-[250px] gap-4 pb-2">
+              <div className="flex gap-4 pb-2">
                 {trendingTraders.slice(0, 10).map((entry, index) => {
                     const trader = entry.trader;
                     const rows = realizedDailyMap[normalizeWallet(trader.wallet)] || [];
@@ -1546,16 +1544,9 @@ function DiscoverPageContent() {
                           <p className="text-[10px] text-slate-400 mt-1">P&L change</p>
                         </div>
 
-                        <div className="mt-4 flex items-center justify-between gap-2">
-                          <div className="flex-1 rounded-2xl bg-slate-50 p-3 text-sm text-slate-500 border border-slate-100">
-                            <p className="text-[11px] text-slate-500 mb-1">Prev 7 days</p>
-                            <p className="text-base font-semibold text-slate-900">
-                              {formatSignedLargeNumber(entry.weekly.prev7)}
-                            </p>
-                          </div>
-                          <div className="text-slate-300 text-xl font-semibold">→</div>
-                          <div className="flex-1 rounded-2xl bg-slate-50 p-3 text-sm text-slate-500 border border-slate-100">
-                            <p className="text-[11px] text-slate-500 mb-1">Last 7 days</p>
+                        <div className="mt-4 flex justify-center">
+                          <div className="w-full max-w-[220px] rounded-2xl border border-slate-200 px-4 py-3 text-center text-sm text-slate-500">
+                            <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400 mb-1">Last 7 days</p>
                             <p className="text-base font-semibold text-slate-900">
                               {formatSignedLargeNumber(entry.weekly.last7)}
                             </p>
@@ -1614,7 +1605,7 @@ function DiscoverPageContent() {
                               openFollowModal({ wallet: trader.wallet, displayName: trader.displayName });
                             }
                           }}
-                          className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-slate-50"
+                          className="flex cursor-pointer items-center gap-3 px-4 py-3 transition hover:bg-slate-50"
                         >
                           <div className="flex items-center gap-3">
                             <span className="text-sm font-semibold text-slate-400">{index + 1}</span>
@@ -1733,7 +1724,6 @@ function DiscoverPageContent() {
               <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="px-4 py-3 border-b border-slate-100">
                   <h3 className="text-base font-semibold text-slate-900">Most Copied Traders</h3>
-                  <p className="text-xs text-slate-500">Seven-day realized P&L + copiers</p>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {mostCopiedTraders.length === 0 ? (
@@ -1775,9 +1765,6 @@ function DiscoverPageContent() {
                               </Link>
                               <span className="sr-only">Copies: {copies}</span>
                             </div>
-                          </div>
-                          <div className="flex flex-col items-end w-24">
-                            <span className={`text-sm font-semibold tabular-nums ${last7Color}`}>{last7Label}</span>
                           </div>
                         </div>
                       );

@@ -6,7 +6,6 @@ import { Check, ChevronDown, ChevronUp, Loader2, Info, ExternalLink, Copy } from
 import { supabase } from '@/lib/supabase';
 import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import { Navigation } from '@/components/polycopy/navigation';
-import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -2031,7 +2030,6 @@ export default function TraderProfilePage({
           isPremium={isPremium}
           walletAddress={walletAddress}
         />
-        <SignupBanner isLoggedIn={!!user} />
         <div className="flex items-center justify-center pt-20">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
@@ -2050,7 +2048,6 @@ export default function TraderProfilePage({
           isPremium={isPremium}
           walletAddress={walletAddress}
         />
-        <SignupBanner isLoggedIn={!!user} />
         <div className="max-w-4xl mx-auto px-4 py-8">
           <div className="flex flex-col items-center justify-center py-20 px-4">
             <div className="text-6xl mb-6">😞</div>
@@ -2096,7 +2093,6 @@ export default function TraderProfilePage({
         isPremium={isPremium} 
         walletAddress={walletAddress} 
       />
-      <SignupBanner isLoggedIn={!!user} />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 space-y-4">
         <div className="flex flex-col gap-3">
