@@ -11,7 +11,9 @@ const safeNumber = (value: any) => {
 export type RealizedIndexSeriesEntry = {
   date: string;
   total_realized_pnl: number;
+  average_realized_pnl: number;
   cumulative_realized_pnl: number;
+  cumulative_average_pnl: number;
 };
 
 export type RealizedIndexWindow = {
@@ -57,7 +59,9 @@ export async function loadTopRealizedIndexPayload(): Promise<{
       .map((row: any) => ({
         date: row.date,
         total_realized_pnl: safeNumber(row.total_realized_pnl),
+        average_realized_pnl: safeNumber(row.average_realized_pnl),
         cumulative_realized_pnl: safeNumber(row.cumulative_realized_pnl),
+        cumulative_average_pnl: safeNumber(row.cumulative_average_pnl),
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
 

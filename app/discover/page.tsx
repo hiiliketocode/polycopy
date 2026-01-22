@@ -1170,24 +1170,7 @@ function DiscoverPageContent() {
       />
       <SignupBanner isLoggedIn={!!user} />
       
-      {/* Logo Header for Non-Logged-In Users */}
-      {!user && (
-        <div className="bg-white border-b border-slate-200">
-          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
-            <div className="flex items-center justify-center">
-              <Image
-                src="/logos/polycopy-logo-primary.png"
-                alt="Polycopy"
-                width={150}
-                height={48}
-                className="h-10 sm:h-12 w-auto"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-      
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white md:pt-0 pb-20 md:pb-8">
+     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white md:pt-0 pb-20 md:pb-8">
         {/* Search Bar */}
         <div className="bg-gradient-to-b from-slate-50 to-white">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-4 sm:pt-8 sm:pb-6">
@@ -1510,14 +1493,14 @@ function DiscoverPageContent() {
             <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900">Trending Traders</h3>
-                  <p className="text-xs text-slate-500">Latest realized P&L pulse</p>
+                <h3 className="text-lg font-semibold text-slate-900">Trending Traders</h3>
+                <p className="text-xs text-slate-500">Most improved traders week-on-week</p>
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <div className="flex gap-4 pb-2">
-                  {trendingTraders.map((entry, index) => {
+            <div className="overflow-x-auto lg:overflow-visible">
+              <div className="flex gap-4 pb-2 lg:grid lg:grid-cols-5 lg:max-w-full">
+                {trendingTraders.map((entry, index) => {
                     const trader = entry.trader;
                     const rows = realizedDailyMap[normalizeWallet(trader.wallet)] || [];
                     const isFollowing = followedWallets.has(trader.wallet.toLowerCase());
@@ -1533,7 +1516,7 @@ function DiscoverPageContent() {
                     return (
                     <div
                       key={trader.wallet}
-                      className="group min-w-[260px] flex-shrink-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-lg"
+                      className="group min-w-[220px] lg:min-w-0 flex-shrink-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-lg"
                       style={{ minHeight: '320px' }}
                     >
                         <div className="flex items-center justify-between gap-4">
@@ -1546,13 +1529,21 @@ function DiscoverPageContent() {
                                 {getTraderAvatarInitials({ displayName: trader.displayName, wallet: trader.wallet })}
                               </AvatarFallback>
                             </Avatar>
-                            <div className="min-w-0">
+                            <div className="min-w-0 max-w-[150px] sm:max-w-[180px]">
                               <p className="text-sm font-semibold text-slate-900 truncate">
                                 {formatDisplayName(trader.displayName, trader.wallet)}
                               </p>
+                              <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400 mt-1">
+                                P&L Change
+                              </p>
                             </div>
                           </div>
-                          <span className="text-xs font-semibold text-slate-400">#{index + 1}</span>
+                          <div className="flex flex-col items-end">
+                            <span className={`text-sm font-semibold ${changeColor}`}>
+                              {formatPercentChange(entry.pctChange)}
+                            </span>
+                            <span className="text-xs font-semibold text-slate-400">#{index + 1}</span>
+                          </div>
                         </div>
 
                         <div className="mt-2 flex gap-2">
@@ -1577,13 +1568,6 @@ function DiscoverPageContent() {
                           </div>
                         </div>
 
-                        <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                          <span className="text-[10px] uppercase tracking-[0.25em] text-slate-400">Δ P&L</span>
-                          <span className={`text-sm font-semibold ${changeColor}`}>
-                            {formatPercentChange(entry.pctChange)}
-                          </span>
-                        </div>
-
                         <button
                           onClick={() => handleFollowChange(trader.wallet, !isFollowing)}
                           className="mt-5 w-full rounded-full bg-[#FDB022] px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-900 shadow-sm transition hover:bg-[#e6a71a]"
@@ -1606,7 +1590,7 @@ function DiscoverPageContent() {
               <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="px-4 py-3 border-b border-slate-100">
                   <h3 className="text-base font-semibold text-slate-900">Most Consistent</h3>
-                  <p className="text-xs text-slate-500">Days up vs down</p>
+                  <p className="text-xs text-slate-500">Days up in last 30</p>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {mostConsistentEntries.length === 0 ? (
@@ -1662,6 +1646,7 @@ function DiscoverPageContent() {
                   ) : (
                     sortedYesterdayWinners.map((trader, index) => {
                       const name = trader.displayName || trader.wallet;
+                      const pnlColor = trader.pnl > 0 ? 'text-emerald-600' : trader.pnl < 0 ? 'text-rose-500' : 'text-slate-600';
                       return (
                         <div
                           key={trader.wallet}
@@ -1674,16 +1659,21 @@ function DiscoverPageContent() {
                               openFollowModal({ wallet: trader.wallet, displayName: trader.displayName });
                             }
                           }}
-                          className="flex cursor-pointer gap-3 px-4 py-3 transition hover:bg-slate-50"
+                          className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-slate-50"
                         >
-                          <span className="text-sm font-semibold text-slate-400">{index + 1}</span>
-                          <div className="flex-1 min-w-0">
-                            <Link href={`/trader/${trader.wallet}`}>
-                              <p className="text-sm font-semibold text-slate-900 truncate">
-                                {formatDisplayName(name, trader.wallet)}
-                              </p>
-                            </Link>
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-semibold text-slate-400">{index + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <Link href={`/trader/${trader.wallet}`}>
+                                <p className="text-sm font-semibold text-slate-900 truncate">
+                                  {formatDisplayName(name, trader.wallet)}
+                                </p>
+                              </Link>
+                            </div>
                           </div>
+                          <span className={`text-sm font-semibold tabular-nums ${pnlColor}`}>
+                            {formatLargeNumber(trader.pnl)}
+                          </span>
                         </div>
                       );
                     })
