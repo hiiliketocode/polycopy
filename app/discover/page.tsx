@@ -11,21 +11,7 @@ import { Navigation } from '@/components/polycopy/navigation';
 import { SignupBanner } from '@/components/polycopy/signup-banner';
 import { ChevronDown, Search } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import {
-  ResponsiveContainer,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip as RechartsTooltip,
-  BarChart,
-  Bar,
-  AreaChart,
-  Area,
-  ReferenceLine,
-  Cell,
-} from 'recharts';
 import { getTraderAvatarInitials } from '@/lib/trader-name';
-import type { RealizedIndexWindow } from '@/lib/realized-pnl-index';
 
 interface Trader {
   wallet: string;
@@ -152,35 +138,6 @@ function formatDateRangeLabel(start: string | null, end: string | null) {
   });
   return `${startLabel} - ${endLabel}`;
 }
-
-function formatSignedCurrency(amount: number, decimals = 2) {
-  const formatted = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(Math.abs(amount));
-  if (amount > 0) return `+${formatted}`;
-  if (amount < 0) return `-${formatted}`;
-  return formatted;
-}
-
-function formatCompactCurrency(amount: number) {
-  const abs = Math.abs(amount);
-  const sign = amount > 0 ? '+' : amount < 0 ? '-' : '';
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}$${abs.toFixed(0)}`;
-}
-
-const TOP30_TIME_WINDOW_OPTIONS = [
-  { key: '1D', label: 'Yesterday' },
-  { key: '7D', label: 'Last 7 Days' },
-  { key: '30D', label: '30 Days' },
-  { key: '90D', label: '3 Months' },
-  { key: '180D', label: '6 Months' },
-  { key: 'ALL', label: 'All Time' },
-] as const;
 
 function computeWindowDays(rows: { date: string; realized_pnl: number }[], window: "30d" | "7d" | "all") {
   if (rows.length === 0) return { daysUp: 0, daysDown: 0 };
@@ -1440,7 +1397,7 @@ function DiscoverPageContent() {
           date: entry?.date,
           value: parseNumber(entry?.cumulative_realized_pnl ?? entry?.total_realized_pnl),
         }))
-        .filter((entry) => typeof entry.date === 'string' && entry.date.length > 0)
+        .filter((entry: { date: string | undefined; value: number | null }) => typeof entry.date === 'string' && entry.date.length > 0)
         .sort((a, b) => a.date.localeCompare(b.date));
       setTop30Series(entries);
       const windows = Array.isArray(payload?.windows) ? payload.windows : [];
