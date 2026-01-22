@@ -1756,6 +1756,7 @@ export default function FeedPage() {
                       const homeTeamName = typeof homeTeam === 'string' ? homeTeam : fallbackTeams[0] || '';
                       const awayTeamName = typeof awayTeam === 'string' ? awayTeam : fallbackTeams[1] || '';
                       const derivedScore = {
+                        gameId: trade.market.conditionId ?? trade.market.id ?? trade.market.slug ?? '',
                         homeScore,
                         awayScore,
                         homeTeamName,
