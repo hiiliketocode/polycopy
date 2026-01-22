@@ -511,7 +511,7 @@ function DiscoverPageContent() {
   const [isSearching, setIsSearching] = useState(false);
   const [sortPeriod, setSortPeriod] = useState<"30d" | "7d" | "all">("30d");
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
-  const [sortMetric, setSortMetric] = useState<"roi" | "pnl" | "volume">("roi");
+  const [sortMetric, setSortMetric] = useState<"roi" | "pnl" | "volume">("pnl");
   const [visibleCount, setVisibleCount] = useState(10);
   const [autoLoadEnabled, setAutoLoadEnabled] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -1171,38 +1171,6 @@ function DiscoverPageContent() {
       <SignupBanner isLoggedIn={!!user} />
       
      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white md:pt-0 pb-20 md:pb-8">
-        {/* Search Bar */}
-        <div className="bg-gradient-to-b from-slate-50 to-white">
-          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-4 sm:pt-8 sm:pb-6">
-            <div className="max-w-2xl mx-auto relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Enter wallet address (0x...)..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleSearch();
-                  }
-                }}
-                className="w-full h-12 pl-12 pr-24 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent shadow-sm"
-              />
-              <button
-                onClick={handleSearch}
-                disabled={isSearching || !searchQuery.trim()}
-                className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-[#FDB022] text-slate-900 rounded-lg hover:bg-[#E69E1A] disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium"
-              >
-                {isSearching ? 'Searching...' : 'Search'}
-              </button>
-            </div>
-            <p className="text-xs text-slate-500 mt-2 text-center">
-              Enter the wallet address from a trader&apos;s Polymarket profile (e.g., 0x1234...5678)
-            </p>
-          </div>
-        </div>
-
         {/* Trade Ticker */}
         <div className="bg-white border-y border-slate-100">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
@@ -1272,6 +1240,39 @@ function DiscoverPageContent() {
             )}
           </div>
         </div>
+
+        {/* Search Bar */}
+        <div className="bg-gradient-to-b from-slate-50 to-white">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-4 sm:pt-8 sm:pb-6">
+            <div className="max-w-2xl mx-auto relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Enter wallet address (0x...)..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSearch();
+                  }
+                }}
+                className="w-full h-12 pl-12 pr-24 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent shadow-sm"
+              />
+              <button
+                onClick={handleSearch}
+                disabled={isSearching || !searchQuery.trim()}
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-[#FDB022] text-slate-900 rounded-lg hover:bg-[#E69E1A] disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium"
+              >
+                {isSearching ? 'Searching...' : 'Search'}
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mt-2 text-center">
+              Enter the wallet address from a trader&apos;s Polymarket profile (e.g., 0x1234...5678)
+            </p>
+          </div>
+        </div>
+
 
         {/* Top Traders Section */}
         <div className="bg-white">
@@ -1498,9 +1499,9 @@ function DiscoverPageContent() {
                 </div>
               </div>
 
-            <div className="overflow-x-auto lg:overflow-visible">
-              <div className="flex gap-4 pb-2 lg:grid lg:grid-cols-5 lg:max-w-full">
-                {trendingTraders.map((entry, index) => {
+            <div className="overflow-x-auto">
+              <div className="grid grid-flow-col grid-rows-2 auto-cols-[250px] gap-4 pb-2">
+                {trendingTraders.slice(0, 10).map((entry, index) => {
                     const trader = entry.trader;
                     const rows = realizedDailyMap[normalizeWallet(trader.wallet)] || [];
                     const isFollowing = followedWallets.has(trader.wallet.toLowerCase());
@@ -1516,10 +1517,10 @@ function DiscoverPageContent() {
                     return (
                     <div
                       key={trader.wallet}
-                      className="group min-w-[220px] lg:min-w-0 flex-shrink-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-lg"
+                      className="group min-w-[220px] flex-shrink-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-lg"
                       style={{ minHeight: '320px' }}
                     >
-                        <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3">
                             <Avatar className="h-10 w-10 border-2 border-white bg-white shadow-sm flex-shrink-0">
                               {trader.profileImage ? (
@@ -1529,33 +1530,33 @@ function DiscoverPageContent() {
                                 {getTraderAvatarInitials({ displayName: trader.displayName, wallet: trader.wallet })}
                               </AvatarFallback>
                             </Avatar>
-                            <div className="min-w-0 max-w-[150px] sm:max-w-[180px]">
+                            <div className="min-w-0 max-w-[140px]">
                               <p className="text-sm font-semibold text-slate-900 truncate">
                                 {formatDisplayName(trader.displayName, trader.wallet)}
                               </p>
-                              <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400 mt-1">
-                                P&L Change
-                              </p>
                             </div>
                           </div>
-                          <div className="flex flex-col items-end">
-                            <span className={`text-sm font-semibold ${changeColor}`}>
-                              {formatPercentChange(entry.pctChange)}
-                            </span>
-                            <span className="text-xs font-semibold text-slate-400">#{index + 1}</span>
-                          </div>
+                          <span className="text-xs text-slate-400 font-medium">#{index + 1}</span>
                         </div>
 
-                        <div className="mt-2 flex gap-2">
-                          <div className="flex-1 rounded-2xl bg-white p-3 text-[9px] uppercase tracking-[0.25em] text-slate-400 border border-slate-100">
-                            <p className="text-[9px] uppercase tracking-[0.2em] text-slate-400">Prev 7 days</p>
-                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                        <div className="mt-2 text-center">
+                          <span className={`text-sm font-semibold ${changeColor}`}>
+                            {formatPercentChange(entry.pctChange)}
+                          </span>
+                          <p className="text-[10px] text-slate-400 mt-1">P&L change</p>
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-between gap-2">
+                          <div className="flex-1 rounded-2xl bg-slate-50 p-3 text-sm text-slate-500 border border-slate-100">
+                            <p className="text-[11px] text-slate-500 mb-1">Prev 7 days</p>
+                            <p className="text-base font-semibold text-slate-900">
                               {formatSignedLargeNumber(entry.weekly.prev7)}
                             </p>
                           </div>
-                          <div className="flex-1 rounded-2xl bg-slate-50 p-3 text-[9px] uppercase tracking-[0.25em] text-slate-400 border border-slate-100">
-                            <p className="text-[9px] uppercase tracking-[0.2em] text-slate-400">Last 7 days</p>
-                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                          <div className="text-slate-300 text-xl font-semibold">→</div>
+                          <div className="flex-1 rounded-2xl bg-slate-50 p-3 text-sm text-slate-500 border border-slate-100">
+                            <p className="text-[11px] text-slate-500 mb-1">Last 7 days</p>
+                            <p className="text-base font-semibold text-slate-900">
                               {formatSignedLargeNumber(entry.weekly.last7)}
                             </p>
                           </div>
@@ -1570,7 +1571,7 @@ function DiscoverPageContent() {
 
                         <button
                           onClick={() => handleFollowChange(trader.wallet, !isFollowing)}
-                          className="mt-5 w-full rounded-full bg-[#FDB022] px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-900 shadow-sm transition hover:bg-[#e6a71a]"
+                          className="mt-5 w-full rounded-full bg-[#FDB022] px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-[#e6a71a]"
                         >
                           {isFollowing ? "Following" : "Follow"}
                         </button>
