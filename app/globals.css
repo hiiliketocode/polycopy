@@ -9,6 +9,15 @@
   --color-secondary: #F8FAFC; /* Slate 50 - App Background */
   --color-tertiary: #0F172A; /* Slate 900 - Primary Text */
 
+  /* Landing Page Brand Colors (v0) */
+  --color-polycopy-yellow: #FDB022;
+  --color-polycopy-yellow-hover: #E5A020;
+  --color-neutral-black: #0F0F0F;
+  --color-neutral-white: #FFFFFF;
+  --color-profit-green: #10B981;
+  --color-loss-red: #EF4444;
+  --color-info-blue: #3B82F6;
+
   /* System Colors */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -19,7 +28,6 @@
   /* Additional Phase 1 Colors */
   --color-slate-500: #64748B; /* Secondary text */
   --color-yellow-hover: #F59E0B;
-  --color-profit-green: #10B981; /* Emerald 500 */
   --color-yellow-600: #D97706; /* Button border */
   
   --color-sidebar-ring: var(--sidebar-ring);

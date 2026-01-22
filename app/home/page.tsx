@@ -1,21 +1,25 @@
-import { Hero } from '@/components/home/Hero';
-import { CurationCarousel } from '@/components/home/CurationCarousel';
-import { HowToCopyTrade } from '@/components/home/HowToCopyTrade';
-import { PricingComparison } from '@/components/home/PricingComparison';
-import { TrendingTraders } from '@/components/home/TrendingTraders';
-import { SecuritySection } from '@/components/home/SecuritySection';
-import { FinalCTA } from '@/components/home/FinalCTA';
+import { Header } from "@/components/landing/header"
+import { Hero } from "@/components/landing/hero"
+import { FeaturesCarousel } from "@/components/landing/features-carousel"
+import { TopTraders } from "@/components/landing/top-traders"
+import { StepsSection } from "@/components/landing/steps-section"
+import { Pricing } from "@/components/landing/pricing"
+import { Security } from "@/components/landing/security"
+import { CTA } from "@/components/landing/cta"
+import { Footer } from "@/components/landing/footer"
 
-export default function HomePage() {
+export default function Home() {
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen bg-background">
+      <Header />
       <Hero />
-      <CurationCarousel />
-      <HowToCopyTrade />
-      <PricingComparison />
-      <TrendingTraders />
-      <SecuritySection />
-      <FinalCTA />
+      <FeaturesCarousel />
+      <TopTraders />
+      <StepsSection />
+      <Pricing />
+      <Security />
+      <CTA />
+      <Footer />
     </main>
-  );
+  )
 }
