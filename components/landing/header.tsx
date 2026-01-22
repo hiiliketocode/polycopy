@@ -10,9 +10,9 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 lg:h-20 py-4">
+    <header className="sticky top-0 z-50 bg-white border-b border-slate-200">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="flex items-center justify-between h-16 py-4">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
             <Image 
@@ -20,7 +20,7 @@ export function Header() {
               alt="Polycopy" 
               width={120} 
               height={32}
-              className="h-7 lg:h-8 w-auto"
+              className="h-8 w-auto"
             />
           </Link>
 
@@ -40,7 +40,7 @@ export function Header() {
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-4">
             <Link href="/login">
-              <Button variant="ghost" className="text-slate-700 hover:text-slate-900">
+              <Button variant="ghost" className="text-slate-700 hover:text-slate-900 hover:bg-transparent">
                 Sign In
               </Button>
             </Link>
@@ -81,7 +81,7 @@ export function Header() {
               </Link>
               <div className="flex flex-col gap-2 pt-4 px-4">
                 <Link href="/login" className="w-full">
-                  <Button variant="ghost" className="w-full justify-center text-slate-700 hover:text-slate-900">
+                  <Button variant="ghost" className="w-full justify-center text-slate-700 hover:text-slate-900 hover:bg-transparent">
                     Sign In
                   </Button>
                 </Link>

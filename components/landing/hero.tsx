@@ -117,11 +117,32 @@ const floatingTraders = [
 export function Hero() {
   const [feedScrollY, setFeedScrollY] = useState(0)
   const [isScrollLocked, setIsScrollLocked] = useState(true)
+  const [tradeCount, setTradeCount] = useState<number>(2847) // Default fallback
   const heroRef = useRef<HTMLDivElement>(null)
   const feedContainerRef = useRef<HTMLDivElement>(null)
   const { triggerConfetti } = useConfetti()
   
   const maxFeedScroll = 800
+
+  // Fetch the dynamic trade count
+  useEffect(() => {
+    const fetchTradeCount = async () => {
+      try {
+        const response = await fetch('/api/stats/followed-traders-activity')
+        if (response.ok) {
+          const data = await response.json()
+          if (data.tradeCount !== undefined) {
+            setTradeCount(data.tradeCount)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch trade count:', error)
+        // Keep the default fallback value
+      }
+    }
+
+    fetchTradeCount()
+  }, [])
 
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
@@ -168,7 +189,7 @@ export function Hero() {
   }, [feedScrollY, isScrollLocked])
 
   return (
-    <section ref={heroRef} className="relative min-h-screen flex items-center overflow-hidden pt-20 pb-8 lg:pt-20 lg:pb-0">
+    <section ref={heroRef} className="relative min-h-screen flex items-center overflow-hidden pt-8 lg:pt-0 pb-8 lg:pb-0">
       {/* Subtle gradient background */}
       <div className="absolute inset-0 bg-gradient-to-b from-polycopy-yellow/5 via-transparent to-transparent" />
       <div className="absolute top-0 right-0 w-1/2 h-1/2 bg-gradient-to-bl from-polycopy-yellow/10 via-transparent to-transparent" />
@@ -181,7 +202,7 @@ export function Hero() {
             <div className="inline-flex items-center gap-2 px-3 py-1.5 lg:px-4 lg:py-2 rounded-full bg-polycopy-yellow/10 border border-polycopy-yellow/20 mb-4 lg:mb-6">
               <TrendingUp className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-polycopy-yellow" />
               <span className="text-xs lg:text-sm font-medium text-foreground">
-                <span className="text-polycopy-yellow font-bold">2,847</span> trades in Polycopy feeds in the last 24 hours
+                <span className="text-polycopy-yellow font-bold">{tradeCount.toLocaleString()}</span> trades by followed traders in the last 24 hours
               </span>
             </div>
 
