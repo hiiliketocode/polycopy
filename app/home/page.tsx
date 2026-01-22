@@ -6,7 +6,6 @@ import { StepsSection } from "@/components/landing/steps-section"
 import { Pricing } from "@/components/landing/pricing"
 import { Security } from "@/components/landing/security"
 import { CTA } from "@/components/landing/cta"
-import { Footer } from "@/components/landing/footer"
 
 export default function Home() {
   return (
@@ -19,7 +18,6 @@ export default function Home() {
       <Pricing />
       <Security />
       <CTA />
-      <Footer />
     </main>
   )
 }

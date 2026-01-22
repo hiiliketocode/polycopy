@@ -39,14 +39,14 @@ const plans = [
 
 export function Pricing() {
   return (
-    <section id="pricing" className="py-16 lg:py-32 bg-background">
+    <section id="pricing" className="py-16 lg:py-32 bg-slate-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-16">
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-foreground mb-4 text-balance">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-4 text-balance">
             Start free, upgrade when ready
           </h2>
-          <p className="text-lg text-muted-foreground">
+          <p className="text-lg text-slate-300">
             Get full access to the curated feed for free. Upgrade to Premium for quick trade execution.
           </p>
         </div>
@@ -58,13 +58,13 @@ export function Pricing() {
               key={plan.name}
               className={`relative rounded-xl lg:rounded-2xl border p-5 lg:p-8 min-h-[380px] lg:min-h-0 flex flex-col ${
                 plan.popular
-                  ? "bg-neutral-black text-white border-neutral-black"
-                  : "bg-card border-border"
+                  ? "bg-gradient-to-br from-[#FDB022] to-[#F59E0B] border-[#FDB022]"
+                  : "bg-white border-slate-200"
               }`}
             >
               {/* Popular Badge */}
               {plan.popular && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 px-2 lg:px-4 py-1 lg:py-1.5 rounded-full bg-polycopy-yellow text-neutral-black text-xs lg:text-sm font-semibold">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 px-2 lg:px-4 py-1 lg:py-1.5 rounded-full bg-white text-neutral-black text-xs lg:text-sm font-semibold">
                   <Sparkles className="w-3 h-3 lg:w-4 lg:h-4" />
                   <span className="hidden sm:inline">POPULAR</span>
                   <span className="sm:hidden">TOP</span>
@@ -72,22 +72,22 @@ export function Pricing() {
               )}
 
               {/* Plan Name */}
-              <h3 className={`text-lg lg:text-xl font-bold mb-2 mt-2 lg:mt-0 ${plan.popular ? "text-white" : "text-foreground"}`}>
+              <h3 className={`text-lg lg:text-xl font-bold mb-2 mt-2 lg:mt-0 ${plan.popular ? "text-neutral-black" : "text-foreground"}`}>
                 {plan.name}
               </h3>
 
               {/* Price */}
               <div className="flex items-baseline gap-0.5 lg:gap-1 mb-3 lg:mb-4">
-                <span className={`text-3xl lg:text-5xl font-bold ${plan.popular ? "text-white" : "text-foreground"}`}>
+                <span className={`text-3xl lg:text-5xl font-bold ${plan.popular ? "text-neutral-black" : "text-foreground"}`}>
                   {plan.price}
                 </span>
-                <span className={`text-sm lg:text-base ${plan.popular ? "text-white/60" : "text-muted-foreground"}`}>
+                <span className={`text-sm lg:text-base ${plan.popular ? "text-neutral-black/70" : "text-muted-foreground"}`}>
                   {plan.period}
                 </span>
               </div>
 
               {/* Description */}
-              <p className={`text-xs lg:text-sm mb-4 lg:mb-6 ${plan.popular ? "text-white/70" : "text-muted-foreground"}`}>
+              <p className={`text-xs lg:text-sm mb-4 lg:mb-6 ${plan.popular ? "text-neutral-black/80" : "text-muted-foreground"}`}>
                 {plan.description}
               </p>
 
@@ -96,11 +96,11 @@ export function Pricing() {
                 {plan.features.map((feature, index) => (
                   <li key={index} className="flex items-start lg:items-center gap-2 lg:gap-3">
                     <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 lg:mt-0 ${
-                      plan.popular ? "bg-polycopy-yellow/20" : "bg-profit-green/10"
+                      plan.popular ? "bg-neutral-black/20" : "bg-profit-green/10"
                     }`}>
-                      <Check className={`w-3 h-3 ${plan.popular ? "text-polycopy-yellow" : "text-profit-green"}`} />
+                      <Check className={`w-3 h-3 ${plan.popular ? "text-neutral-black" : "text-profit-green"}`} />
                     </div>
-                    <span className={`text-sm lg:text-base leading-tight ${plan.popular ? "text-white/90" : "text-foreground"}`}>
+                    <span className={`text-sm lg:text-base leading-tight ${plan.popular ? "text-neutral-black" : "text-foreground"}`}>
                       {feature}
                     </span>
                   </li>
@@ -112,7 +112,7 @@ export function Pricing() {
                 <Button
                   className={`w-full font-semibold h-11 lg:h-12 text-sm lg:text-base ${
                     plan.popular
-                      ? "bg-polycopy-yellow text-neutral-black hover:bg-polycopy-yellow-hover"
+                      ? "bg-white text-neutral-black hover:bg-slate-100"
                       : "bg-neutral-black text-white hover:bg-neutral-black/90"
                   }`}
                 >
@@ -125,7 +125,7 @@ export function Pricing() {
         </div>
 
         {/* Money Back Guarantee */}
-        <p className="text-center text-sm text-muted-foreground mt-8">
+        <p className="text-center text-sm text-slate-400 mt-8">
           No credit card required for free plan. Cancel premium anytime.
         </p>
       </div>

@@ -6,7 +6,7 @@ import { StepsSection } from "@/components/landing/steps-section"
 import { Pricing } from "@/components/landing/pricing"
 import { Security } from "@/components/landing/security"
 import { CTA } from "@/components/landing/cta"
-import { Footer } from "@/components/landing/footer"
+import { Footer } from "@/components/polycopy/footer"
 
 export default function Home() {
   return (

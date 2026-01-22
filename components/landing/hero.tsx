@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, TrendingUp, ExternalLink, ChevronDown } from "lucide-react"
 import { useConfetti } from "@/hooks/use-confetti"
@@ -225,7 +226,7 @@ export function Hero() {
               className="lg:absolute lg:top-1/2 lg:left-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 w-full max-w-[300px] mx-auto"
             >
               {/* iPhone Outer Shell */}
-              <div className="relative bg-[#1a1a1a] rounded-[3rem] p-3 shadow-2xl shadow-black/30">
+              <div className="relative bg-[#1a1a1a] rounded-[3rem] p-1 shadow-2xl shadow-black/30">
                 {/* Side Buttons (visual only) */}
                 <div className="absolute -left-1 top-28 w-1 h-8 bg-[#2a2a2a] rounded-l-sm" />
                 <div className="absolute -left-1 top-44 w-1 h-12 bg-[#2a2a2a] rounded-l-sm" />
@@ -251,8 +252,13 @@ export function Hero() {
                   {/* App Header */}
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
                     <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 rounded-md bg-polycopy-yellow" />
-                      <span className="font-bold text-foreground text-sm">Polycopy</span>
+                      <Image 
+                        src="/logos/polycopy-logo-primary.svg" 
+                        alt="Polycopy" 
+                        width={90} 
+                        height={24}
+                        className="h-6 w-auto"
+                      />
                     </div>
                     <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                       <span className="font-semibold text-foreground">Feed</span>
