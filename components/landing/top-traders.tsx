@@ -78,7 +78,7 @@ export function TopTraders() {
 
   if (loading) {
     return (
-      <section className="py-16 lg:py-32 bg-secondary/30">
+      <section className="py-16 lg:pt-32 lg:pb-20 bg-secondary/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center text-muted-foreground">Loading top traders...</div>
         </div>
@@ -88,7 +88,7 @@ export function TopTraders() {
 
   if (error || traders.length === 0) {
     return (
-      <section className="py-16 lg:py-32 bg-secondary/30">
+      <section className="py-16 lg:pt-32 lg:pb-20 bg-secondary/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <p className="text-muted-foreground mb-4">{error || 'No traders available'}</p>
@@ -109,7 +109,7 @@ export function TopTraders() {
   }
 
   return (
-    <section className="py-16 lg:py-32 bg-secondary/30">
+    <section className="py-16 lg:pt-32 lg:pb-20 bg-secondary/30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-16">

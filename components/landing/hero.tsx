@@ -168,7 +168,7 @@ export function Hero() {
   }, [feedScrollY, isScrollLocked])
 
   return (
-    <section ref={heroRef} className="relative min-h-screen flex items-center overflow-hidden pt-16 pb-8 lg:pt-20 lg:pb-0">
+    <section ref={heroRef} className="relative min-h-screen flex items-center overflow-hidden pt-20 pb-8 lg:pt-20 lg:pb-0">
       {/* Subtle gradient background */}
       <div className="absolute inset-0 bg-gradient-to-b from-polycopy-yellow/5 via-transparent to-transparent" />
       <div className="absolute top-0 right-0 w-1/2 h-1/2 bg-gradient-to-bl from-polycopy-yellow/10 via-transparent to-transparent" />
@@ -203,7 +203,7 @@ export function Hero() {
             </p>
 
             {/* CTA */}
-            <div className="mb-8 lg:mb-0">
+            <div className="mb-4 lg:mb-0">
               <Link href="/login?mode=signup">
                 <Button size="lg" className="bg-polycopy-yellow text-neutral-black hover:bg-polycopy-yellow-hover font-semibold text-sm lg:text-base px-6 lg:px-8 h-11 lg:h-12 shadow-lg shadow-polycopy-yellow/20">
                   Start Copying For Free
@@ -212,9 +212,10 @@ export function Hero() {
               </Link>
             </div>
 
-            {/* Scroll hint on mobile */}
-            <div className="lg:hidden text-center mt-4 text-xs text-muted-foreground animate-pulse">
-              Scroll to explore the feed
+            {/* Scroll hint - visible on mobile only */}
+            <div className="lg:hidden flex flex-col items-center gap-2 text-muted-foreground animate-bounce">
+              <span className="text-xs font-medium">Scroll to explore</span>
+              <ChevronDown className="w-5 h-5" />
             </div>
           </div>
 
@@ -344,8 +345,8 @@ export function Hero() {
           </div>
         </div>
 
-        {/* Scroll Down Arrow */}
-        <div className="flex justify-center mt-8 lg:mt-12">
+        {/* Scroll Down Arrow - desktop only */}
+        <div className="hidden lg:flex justify-center mt-8 lg:mt-12">
           <div className="flex flex-col items-center gap-2 text-muted-foreground animate-bounce">
             <span className="text-xs font-medium">Scroll to explore</span>
             <ChevronDown className="w-5 h-5" />

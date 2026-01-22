@@ -56,10 +56,10 @@ export function FeaturesCarousel() {
   const Icon = feature.icon
 
   return (
-    <section className="py-12 lg:py-24 bg-secondary/30">
+    <section className="py-12 lg:pt-24 lg:pb-12 bg-secondary/30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
-        <div className="text-center mb-6 lg:mb-12">
+        <div className="text-center mb-6 lg:mb-9">
           <h2 className="text-xl lg:text-4xl font-bold text-foreground mb-2 lg:mb-3">
             Everything you need to copy trade
           </h2>
@@ -160,7 +160,7 @@ export function FeaturesCarousel() {
           </div>
 
           {/* Progress dots */}
-          <div className="flex items-center justify-center gap-2 mt-4 lg:mt-12">
+          <div className="flex items-center justify-center gap-2 mt-4 lg:mt-4">
             {features.map((_, i) => (
               <button
                 key={i}
