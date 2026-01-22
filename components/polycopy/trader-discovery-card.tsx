@@ -55,33 +55,33 @@ export function TraderDiscoveryCard({ trader, density = "default", onFollowToggl
   return (
     <Link href={`/trader/${trader.id}`} className="block">
       <div
-        className={`group bg-slate-50 hover:bg-white rounded-lg border border-slate-200/60 hover:shadow-md transition-all duration-200 cursor-pointer ${
-          isCompact ? "p-3" : "p-4"
+        className={`group bg-white rounded-lg border border-transparent hover:shadow-md transition-all duration-200 cursor-pointer ${
+          isCompact ? "p-2" : "p-4"
         }`}
       >
-        <div className={`flex flex-col sm:flex-row sm:items-center ${isCompact ? "gap-3 sm:gap-4" : "gap-4 sm:gap-6"}`}>
-          <div className={`flex items-center gap-3 min-w-0 sm:flex-shrink-0 ${isCompact ? "sm:w-[220px]" : "sm:w-[240px]"}`}>
-            <Avatar className={`${isCompact ? "h-10 w-10" : "h-12 w-12"} border-2 border-white shadow-sm flex-shrink-0`}>
+        <div className={`flex flex-col sm:flex-row sm:items-center ${isCompact ? "gap-2 sm:gap-3" : "gap-4 sm:gap-6"}`}>
+          <div className={`flex items-center gap-2 min-w-0 sm:flex-shrink-0 ${isCompact ? "sm:w-[210px]" : "sm:w-[240px]"}`}>
+            <Avatar className={`${isCompact ? "h-9 w-9" : "h-12 w-12"} border-2 border-white shadow-sm flex-shrink-0`}>
               {trader.avatar ? <AvatarImage src={trader.avatar} alt={trader.name} /> : null}
               <AvatarFallback className="bg-white text-slate-700 font-semibold">
                 {getTraderAvatarInitials({ displayName: trader.name, wallet: trader.wallet })}
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">
-              <h3 className="font-semibold text-slate-900 text-base truncate">{trader.name}</h3>
-              <p className="text-sm text-slate-500 truncate font-mono">{trader.handle}</p>
+              <h3 className="font-semibold text-slate-900 text-sm truncate">{trader.name}</h3>
+              <p className="text-xs text-slate-500 truncate font-mono">{trader.handle}</p>
             </div>
           </div>
 
           <div
             className={`grid grid-cols-2 flex-1 sm:flex sm:justify-center ${
-              isCompact ? "gap-x-3 gap-y-2 sm:gap-5" : "gap-x-4 gap-y-3 sm:gap-8"
+              isCompact ? "gap-x-2 gap-y-1 sm:gap-4" : "gap-x-4 gap-y-3 sm:gap-8"
             }`}
           >
-            <div className={`flex flex-col ${isCompact ? "gap-0.5" : "gap-1"}`}>
-              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">ROI</span>
+            <div className={`flex flex-col ${isCompact ? "gap-0" : "gap-1"}`}>
+              <span className={`${isCompact ? "text-[10px]" : "text-xs"} font-medium text-slate-500 uppercase tracking-wide`}>ROI</span>
               <span
-                className={`text-sm sm:text-lg font-semibold tabular-nums ${
+                className={`text-sm font-semibold tabular-nums ${
                   trader.roi > 0 ? "text-emerald-600" : trader.roi < 0 ? "text-red-500" : "text-slate-900"
                 }`}
               >
@@ -89,10 +89,10 @@ export function TraderDiscoveryCard({ trader, density = "default", onFollowToggl
               </span>
             </div>
 
-            <div className={`flex flex-col ${isCompact ? "gap-0.5" : "gap-1"}`}>
-              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">P&L</span>
+            <div className={`flex flex-col ${isCompact ? "gap-0" : "gap-1"}`}>
+              <span className={`${isCompact ? "text-[10px]" : "text-xs"} font-medium text-slate-500 uppercase tracking-wide`}>P&L</span>
               <span
-                className={`text-sm sm:text-lg font-semibold tabular-nums ${
+                className={`text-sm font-semibold tabular-nums ${
                   trader.profit > 0 ? "text-emerald-600" : trader.profit < 0 ? "text-red-500" : "text-slate-900"
                 }`}
               >
@@ -100,9 +100,9 @@ export function TraderDiscoveryCard({ trader, density = "default", onFollowToggl
               </span>
             </div>
 
-            <div className={`flex flex-col ${isCompact ? "gap-0.5" : "gap-1"}`}>
-              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Volume</span>
-              <span className="text-sm sm:text-lg font-semibold text-slate-900 tabular-nums">
+            <div className={`flex flex-col ${isCompact ? "gap-0" : "gap-1"}`}>
+              <span className={`${isCompact ? "text-[10px]" : "text-xs"} font-medium text-slate-500 uppercase tracking-wide`}>Volume</span>
+              <span className="text-sm font-semibold text-slate-900 tabular-nums">
                 {formatCurrency(trader.volume)}
               </span>
             </div>
@@ -118,7 +118,9 @@ export function TraderDiscoveryCard({ trader, density = "default", onFollowToggl
                   e.stopPropagation()
                   handleFollowClick()
                 }}
-                className="border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-400 gap-2 px-4 h-9 bg-transparent w-full sm:w-auto"
+                className={`border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-400 gap-2 ${
+                  isCompact ? "px-3 h-8 text-xs" : "px-4 h-9"
+                } bg-transparent w-full sm:w-auto`}
               >
                 <Check className="h-4 w-4" />
                 Following
@@ -131,7 +133,9 @@ export function TraderDiscoveryCard({ trader, density = "default", onFollowToggl
                   e.stopPropagation()
                   handleFollowClick()
                 }}
-                className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm px-5 h-9 w-full sm:w-auto"
+                className={`bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm ${
+                  isCompact ? "px-4 h-8 text-xs" : "px-5 h-9"
+                } w-full sm:w-auto`}
               >
                 Follow
               </Button>

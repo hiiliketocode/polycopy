@@ -1,35 +1,25 @@
-'use client';
+import { Header } from "@/components/landing/header"
+import { Hero } from "@/components/landing/hero"
+import { FeaturesCarousel } from "@/components/landing/features-carousel"
+import { TopTraders } from "@/components/landing/top-traders"
+import { StepsSection } from "@/components/landing/steps-section"
+import { Pricing } from "@/components/landing/pricing"
+import { Security } from "@/components/landing/security"
+import { CTA } from "@/components/landing/cta"
+import { Footer } from "@/components/polycopy/footer"
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-
-export default function RootPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    const checkAuthAndRedirect = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      // If logged in, go to Feed
-      if (session?.user) {
-        router.push('/feed');
-      } else {
-        // If not logged in, go to Discover
-        router.push('/discover');
-      }
-    };
-
-    checkAuthAndRedirect();
-  }, [router]);
-
-  // Show loading state while checking auth
+export default function Home() {
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-brand-yellow mx-auto mb-4"></div>
-        <p className="text-slate-600 text-lg">Loading...</p>
-      </div>
-    </div>
-  );
+    <main className="min-h-screen bg-background">
+      <Header />
+      <Hero />
+      <FeaturesCarousel />
+      <TopTraders />
+      <StepsSection />
+      <Pricing />
+      <Security />
+      <CTA />
+      <Footer />
+    </main>
+  )
 }

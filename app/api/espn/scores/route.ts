@@ -16,6 +16,8 @@ interface ESPNGame {
       name: string; // "STATUS_SCHEDULED", "STATUS_IN_PROGRESS", "STATUS_FINAL"
       state: string; // "pre", "in", "post"
       completed: boolean;
+      shortDetail?: string;
+      detail?: string;
     };
     displayClock?: string;
     period?: number;
@@ -35,6 +37,8 @@ interface ESPNCompetition {
       name?: string;
       state?: string;
       completed?: boolean;
+      shortDetail?: string;
+      detail?: string;
     };
     displayClock?: string;
     period?: number;
@@ -86,6 +90,7 @@ interface NormalizedGame {
   startTime: string;
   displayClock?: string;
   period?: number;
+  statusDetail?: string;
 }
 
 // Sport type mapping
@@ -123,6 +128,28 @@ const SPORT_ENDPOINTS: Record<string, string> = {
   golf_lpga: 'https://site.api.espn.com/apis/site/v2/sports/golf/lpga/scoreboard',
   mma_ufc: 'https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard',
   boxing: 'https://site.api.espn.com/apis/site/v2/sports/boxing/boxing/scoreboard',
+};
+
+const SPORT_GAME_URLS: Record<string, string> = {
+  nfl: 'https://www.espn.com/nfl/game/_/gameId/',
+  nba: 'https://www.espn.com/nba/game/_/gameId/',
+  mlb: 'https://www.espn.com/mlb/game/_/gameId/',
+  nhl: 'https://www.espn.com/nhl/game/_/gameId/',
+  wnba: 'https://www.espn.com/wnba/game/_/gameId/',
+  ncaaf: 'https://www.espn.com/college-football/game/_/gameId/',
+  ncaab: 'https://www.espn.com/mens-college-basketball/game/_/gameId/',
+  ncaaw: 'https://www.espn.com/womens-college-basketball/game/_/gameId/',
+  tennis_atp: 'https://www.espn.com/tennis/match/_/gameId/',
+  tennis_wta: 'https://www.espn.com/tennis/match/_/gameId/',
+};
+
+const SOCCER_GAME_URL = 'https://www.espn.com/soccer/match/_/gameId/';
+
+const buildFallbackGameUrl = (sport: string, eventId?: string | null) => {
+  if (!eventId) return undefined;
+  if (sport.startsWith('soccer_')) return `${SOCCER_GAME_URL}${eventId}`;
+  const base = SPORT_GAME_URLS[sport];
+  return base ? `${base}${eventId}` : undefined;
 };
 
 export async function GET(request: NextRequest) {
@@ -311,12 +338,19 @@ export async function GET(request: NextRequest) {
       const eventLink = normalizeEspnLink(
         pickEventLink(event.links) || pickEventLink(competition.links)
       );
+      const resolvedLink = eventLink || buildFallbackGameUrl(sport, event.id);
+      const statusDetail =
+        competition.status?.type?.shortDetail ||
+        event.status?.type?.shortDetail ||
+        competition.status?.type?.detail ||
+        event.status?.type?.detail ||
+        undefined;
 
       return {
         id: event.id,
         name,
         shortName,
-        link: eventLink,
+        link: resolvedLink,
         homeTeam: {
           name: homeName,
           abbreviation: getCompetitorAbbrev(homeTeam),
@@ -331,6 +365,7 @@ export async function GET(request: NextRequest) {
         startTime,
         displayClock: competition.status?.displayClock || event.status?.displayClock,
         period: competition.status?.period || event.status?.period,
+        statusDetail,
       } as NormalizedGame;
     }).filter((game): game is NormalizedGame => Boolean(game));
 

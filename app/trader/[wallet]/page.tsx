@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Check, ChevronDown, ChevronUp, Loader2, Info, ExternalLink, Copy } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { triggerLoggedOut } from '@/lib/auth/logout-events';
@@ -18,7 +18,7 @@ import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
 import { getTraderAvatarInitials } from '@/lib/trader-name';
-import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
+import { getESPNScoresForTrades, getScoreDisplaySides, getFallbackEspnUrl } from '@/lib/espn/scores';
 import type { User } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
 import { extractDateFromTitle, pickBestStartTime } from '@/lib/event-time';
@@ -163,6 +163,7 @@ const pickOutcomeTeams = (outcomes?: string[] | null) => {
 };
 
 type ESPNScoreLike = {
+  gameId?: string;
   homeScore: number;
   awayScore: number;
   homeTeamName: string;
@@ -173,6 +174,7 @@ type ESPNScoreLike = {
   startTime: string;
   displayClock?: string;
   period?: number;
+  statusDetail?: string;
   gameUrl?: string;
 };
 
@@ -222,7 +224,12 @@ const buildScoreDisplay = ({
       trade.market,
       espnScore
     );
-    const clock = espnScore.displayClock ? ` (${espnScore.displayClock})` : '';
+    let clock = '';
+    if (espnScore.displayClock) {
+      clock = ` (${espnScore.displayClock})`;
+    } else if (espnScore.statusDetail && !/\d+\s*-\s*\d+/.test(espnScore.statusDetail)) {
+      clock = ` (${espnScore.statusDetail})`;
+    }
 
     if (espnScore.status === 'final') {
       scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
@@ -289,8 +296,39 @@ export default function TraderProfilePage({
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loadingTrades, setLoadingTrades] = useState(true);
   const [tradesToShow, setTradesToShow] = useState(15); // Start with 15 trades for faster loading
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   const [activeTab, setActiveTab] = useState<'positions' | 'performance'>('performance');
+
+  const syncTabToUrl = (tab: 'positions' | 'performance') => {
+    if (!pathname) return;
+    const currentQuery = searchParams.toString();
+    const nextParams = new URLSearchParams(currentQuery);
+    const tabValue = tab === 'performance' ? 'performance' : 'trades';
+    nextParams.set('tab', tabValue);
+    const nextQuery = nextParams.toString();
+    if (nextQuery === currentQuery) return;
+    const targetUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+    router.replace(targetUrl);
+  };
+
+  const handleTabSelection = (tab: 'positions' | 'performance') => {
+    setActiveTab(tab);
+    syncTabToUrl(tab);
+  };
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (!tabParam) return;
+    if (tabParam === 'trades' || tabParam === 'positions') {
+      setActiveTab('positions');
+    }
+    if (tabParam === 'performance') {
+      setActiveTab('performance');
+    }
+  }, [searchParams]);
   const [showResolvedTrades, setShowResolvedTrades] = useState(false);
+  const espnCacheUpdatedRef = useRef(new Set<string>());
   
   const [showWalletConnectModal, setShowWalletConnectModal] = useState(false);
   const [showConnectWalletModal, setShowConnectWalletModal] = useState(false);
@@ -345,7 +383,9 @@ export default function TraderProfilePage({
     endDateIso?: string;
     liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
     espnUrl?: string;
+    eventSlug?: string;
     marketAvatarUrl?: string;
+    tags?: unknown;
   }>>(new Map());
 
   useEffect(() => {
@@ -973,6 +1013,7 @@ export default function TraderProfilePage({
           category: trade.category,
           slug: trade.marketSlug,
           eventSlug: trade.eventSlug,
+          tags: undefined,
         },
         trade: {
           outcome: trade.outcome,
@@ -1002,6 +1043,11 @@ export default function TraderProfilePage({
                 awayTeam,
                 endDateIso,
                 marketAvatarUrl,
+                espnUrl: cachedEspnUrl,
+                eventSlug: resolvedEventSlug,
+                tags,
+                cryptoSymbol,
+                cryptoPriceUsd,
               } = priceData.market;
 
               const inferredStartDate = extractDateFromTitle(trade.market);
@@ -1017,6 +1063,24 @@ export default function TraderProfilePage({
                 homeTeam,
                 awayTeam,
                 gameStartTime: effectiveGameStartTime,
+              });
+              let resolvedScoreDisplay = fallbackScoreDisplay;
+              if (cryptoSymbol && typeof cryptoPriceUsd === 'number') {
+                const formatter = new Intl.NumberFormat('en-US', {
+                  style: 'currency',
+                  currency: 'USD',
+                  maximumFractionDigits: 2,
+                });
+                resolvedScoreDisplay = `${cryptoSymbol} ${formatter.format(cryptoPriceUsd)}`;
+              }
+
+              const fallbackEspnUrl = getFallbackEspnUrl({
+                title: trade.market,
+                category: trade.category,
+                slug: trade.marketSlug,
+                eventSlug: trade.eventSlug,
+                tags,
+                dateHint: effectiveGameStartTime || endDateIso || undefined,
               });
               
               // Check if market is resolved
@@ -1036,7 +1100,7 @@ export default function TraderProfilePage({
                       price: currentPrice,
                       closed: closed,
                       resolved: isResolved,
-                      score: fallbackScoreDisplay ?? existing?.score,
+                      score: resolvedScoreDisplay ?? existing?.score,
                       liveStatus: existing?.liveStatus,
                       gameStartTime: pickBestStartTime(
                         existing?.gameStartTime,
@@ -1044,8 +1108,10 @@ export default function TraderProfilePage({
                       ),
                       eventStatus: eventStatus || existing?.eventStatus,
                       endDateIso: endDateIso || existing?.endDateIso,
-                      espnUrl: existing?.espnUrl,
+                      espnUrl: existing?.espnUrl ?? cachedEspnUrl ?? fallbackEspnUrl,
+                      eventSlug: resolvedEventSlug || existing?.eventSlug,
                       marketAvatarUrl: marketAvatarUrl || existing?.marketAvatarUrl,
+                      tags: tags ?? existing?.tags,
                     });
                     return next;
                   });
@@ -1062,7 +1128,9 @@ export default function TraderProfilePage({
                 homeTeam,
                 awayTeam,
                 endDateIso,
+                eventSlug: resolvedEventSlug,
                 marketAvatarUrl,
+                tags,
               };
             }
           }
@@ -1075,6 +1143,15 @@ export default function TraderProfilePage({
       // Wait for all price fetches to complete
       const priceResults = await Promise.all(pricePromises);
 
+      const dateHintsByMarketKey: Record<string, string | number | null | undefined> = {};
+      priceResults.forEach((result) => {
+        if (!result?.trade.conditionId) return;
+        const fallbackDate = result.endDateIso || result.gameStartTime;
+        if (fallbackDate) {
+          dateHintsByMarketKey[result.trade.conditionId] = fallbackDate;
+        }
+      });
+
       const dateHints = priceResults
         .flatMap((result) => [result?.gameStartTime, result?.endDateIso])
         .filter(
@@ -1083,7 +1160,42 @@ export default function TraderProfilePage({
         );
 
       console.log('🏈 Fetching sports scores in background...');
-      const espnScoresPromise = getESPNScoresForTrades(tradesForESPN as any, { dateHints });
+      const eventSlugByConditionId = new Map<string, string>();
+      const tagsByConditionId = new Map<string, unknown>();
+      priceResults.forEach((result) => {
+        if (result?.trade.conditionId && result?.eventSlug) {
+          eventSlugByConditionId.set(result.trade.conditionId, result.eventSlug);
+        }
+        if (result?.trade.conditionId && result.tags !== undefined) {
+          tagsByConditionId.set(result.trade.conditionId, result.tags);
+        }
+      });
+
+      const tradesForESPNResolved = tradesForESPN.map((trade) => {
+        const conditionId = trade.market?.conditionId;
+        const resolvedEventSlug =
+          (conditionId ? eventSlugByConditionId.get(conditionId) : undefined) ||
+          trade.market?.eventSlug;
+        const resolvedTags =
+          (conditionId ? tagsByConditionId.get(conditionId) : undefined) ?? trade.market?.tags;
+        const shouldUpdate =
+          (resolvedEventSlug && resolvedEventSlug !== trade.market?.eventSlug) ||
+          (resolvedTags !== undefined && resolvedTags !== trade.market?.tags);
+        if (!shouldUpdate) return trade;
+        return {
+          ...trade,
+          market: {
+            ...trade.market,
+            eventSlug: resolvedEventSlug || trade.market?.eventSlug,
+            tags: resolvedTags ?? trade.market?.tags,
+          },
+        };
+      });
+
+      const espnScoresPromise = getESPNScoresForTrades(tradesForESPNResolved as any, {
+        dateHints,
+        dateHintsByMarketKey,
+      });
 
       // Now wait for ESPN scores and update trades with scores
       try {
@@ -1109,6 +1221,14 @@ export default function TraderProfilePage({
           } = result;
 
           const espnScore = espnScores.get(trade.conditionId!);
+          const fallbackEspnUrl = getFallbackEspnUrl({
+            title: trade.market,
+            category: trade.category,
+            slug: trade.marketSlug,
+            eventSlug: trade.eventSlug,
+            tags: result.tags,
+            dateHint: espnScore?.startTime || result.gameStartTime || result.endDateIso || undefined,
+          });
           const { scoreDisplay, liveStatus } = buildScoreDisplay({
             trade,
             outcomes,
@@ -1136,11 +1256,30 @@ export default function TraderProfilePage({
                 gameStartTime: resolvedStartTime,
                 eventStatus: existing?.eventStatus ?? eventStatus,
                 endDateIso: existing?.endDateIso ?? endDateIso,
-                espnUrl: espnScore?.gameUrl ?? existing?.espnUrl,
+                espnUrl: espnScore?.gameUrl ?? existing?.espnUrl ?? fallbackEspnUrl,
+                eventSlug: existing?.eventSlug ?? result.eventSlug,
                 marketAvatarUrl: existing?.marketAvatarUrl ?? marketAvatarUrl,
+                tags: existing?.tags ?? result.tags,
               });
               return next;
             });
+          }
+
+          if (
+            trade.conditionId &&
+            espnScore?.gameUrl &&
+            !espnCacheUpdatedRef.current.has(trade.conditionId)
+          ) {
+            espnCacheUpdatedRef.current.add(trade.conditionId);
+            fetch('/api/markets/espn', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                conditionId: trade.conditionId,
+                espnUrl: espnScore.gameUrl,
+                espnGameId: espnScore.gameId,
+              }),
+            }).catch(() => undefined);
           }
         });
       } catch (error) {
@@ -2032,7 +2171,7 @@ export default function TraderProfilePage({
 
         <div className="flex gap-2">
           <Button
-            onClick={() => setActiveTab('performance')}
+            onClick={() => handleTabSelection('performance')}
             variant="ghost"
             className={cn(
               "px-5 py-2.5 rounded-full font-semibold text-sm transition-all whitespace-nowrap border shadow-sm",
@@ -2044,7 +2183,7 @@ export default function TraderProfilePage({
             Performance
           </Button>
           <Button
-            onClick={() => setActiveTab('positions')}
+            onClick={() => handleTabSelection('positions')}
             variant="ghost"
             className={cn(
               "px-5 py-2.5 rounded-full font-semibold text-sm transition-all whitespace-nowrap border shadow-sm",
@@ -2223,16 +2362,6 @@ export default function TraderProfilePage({
                         <ResponsiveContainer width="100%" height="100%">
                           {pnlView === 'daily' ? (
                             <BarChart data={realizedChartSeries} barSize={dailyBarSize} barCategoryGap={dailyBarGap}>
-                              <defs>
-                                <linearGradient id="pnlUp" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.95} />
-                                  <stop offset="100%" stopColor="#34d399" stopOpacity={0.6} />
-                                </linearGradient>
-                                <linearGradient id="pnlDown" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#f87171" stopOpacity={0.95} />
-                                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.7} />
-                                </linearGradient>
-                              </defs>
                               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                               <XAxis
                                 dataKey="date"
@@ -2288,7 +2417,7 @@ export default function TraderProfilePage({
                                 {realizedChartSeries.map((entry, index) => (
                                   <Cell
                                     key={`cell-${index}`}
-                                    fill={entry.dailyPnl >= 0 ? 'url(#pnlUp)' : 'url(#pnlDown)'}
+                                    fill={entry.dailyPnl >= 0 ? '#10b981' : '#ef4444'}
                                   />
                                 ))}
                               </Bar>
@@ -2371,46 +2500,84 @@ export default function TraderProfilePage({
                 <Card className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-base font-semibold text-slate-900">My Trades</p>
+                      <p className="text-base font-semibold text-slate-900">My Copy Trades</p>
                       <p className="text-xs text-slate-500">Your copy stats for this trader</p>
                     </div>
                   </div>
                   {myTradeStatsLoading ? (
                     <p className="mt-4 text-sm text-slate-500">Loading your trade stats...</p>
                   ) : hasMyTradeStats && myTradeStats ? (
-                    <div className="mt-4 space-y-4">
-                      <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 sm:grid-cols-3 auto-rows-fr">
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
-                          <p className="text-xs font-medium text-slate-500">Trades</p>
-                          <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.totalTrades}</p>
+                    <div className="mt-4 space-y-4 text-sm text-slate-600">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1.5">
+                          <p className="text-xs font-medium text-slate-500">Total P&amp;L</p>
+                          <p
+                            className={`text-2xl font-semibold leading-tight tabular-nums ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}
+                          >
+                            {formatSignedCurrency(myTradeStats.trader.totalPnl)}
+                          </p>
+                          <p className="text-[11px] text-slate-500 leading-snug">
+                            Wins <span className="text-emerald-600">{myTradeStats.trader.winningTrades}</span> &middot; Losses <span className="text-red-500">{myTradeStats.trader.losingTrades}</span>
+                          </p>
                         </div>
                         <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
                           <p className="text-xs font-medium text-slate-500">Volume</p>
                           <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
                         </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1.5">
-                          <p className="text-xs font-medium text-slate-500">Total P&amp;L</p>
-                          <p className={`text-xl font-semibold leading-tight tabular-nums ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}>
-                            {formatSignedCurrency(myTradeStats.trader.totalPnl)}
-                          </p>
-                          <p className="text-[11px] text-slate-500 leading-snug">
-                            Realized {formatSignedCurrency(myTradeStats.trader.realizedPnl)} &middot; Unrealized (open) {formatSignedCurrency(myTradeStats.trader.unrealizedPnl)}
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm space-y-2">
+                          <p className="text-xs font-medium text-slate-500">Realized &amp; Unrealized P&amp;L</p>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500">Realized</span>
+                              <span
+                                className={cn(
+                                  'text-base font-semibold tabular-nums',
+                                  myTradeStats.trader.realizedPnl >= 0 ? 'text-emerald-600' : 'text-red-500'
+                                )}
+                              >
+                                {formatSignedCurrency(myTradeStats.trader.realizedPnl)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500">Unrealized (open)</span>
+                              <span
+                                className={cn(
+                                  'text-base font-semibold tabular-nums',
+                                  myTradeStats.trader.unrealizedPnl >= 0 ? 'text-emerald-600' : 'text-red-500'
+                                )}
+                              >
+                                {formatSignedCurrency(myTradeStats.trader.unrealizedPnl)}
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-[11px] text-slate-400">
+                            Green values add to your gains, red values signal unrealized loss exposure.
                           </p>
                         </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
-                          <p className="text-xs font-medium text-slate-500">Wins</p>
-                          <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.winningTrades}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
-                          <p className="text-xs font-medium text-slate-500">Losses</p>
-                          <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.losingTrades}</p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-4 shadow-sm">
+                          <p className="text-xs font-medium text-slate-500">Trades · Wins · Losses</p>
+                          <div className="mt-3 grid grid-cols-3 gap-2 text-center text-2xl font-semibold">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Trades</p>
+                              <p className="text-slate-900 tabular-nums">{myTradeStats.trader.totalTrades}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Wins</p>
+                              <p className="text-emerald-600 tabular-nums">{myTradeStats.trader.winningTrades}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Losses</p>
+                              <p className="text-red-500 tabular-nums">{myTradeStats.trader.losingTrades}</p>
+                            </div>
+                          </div>
                         </div>
                         <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
                           <p className="text-xs font-medium text-slate-500">Open Positions</p>
                           <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.openTrades}</p>
                         </div>
                       </div>
-
                       <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 shadow-sm">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
@@ -2622,13 +2789,16 @@ export default function TraderProfilePage({
             ) : (
               <div className="space-y-3">
                 {filteredTrades.slice(0, tradesToShow).map((trade, index) => {
-                  const polymarketUrl = getPolymarketUrl(trade);
                   const isAlreadyCopied = isTradeCopied(trade);
                   const tradeKey = buildExpandedTradeKey(trade, index);
                   const isExpanded = expandedTradeKeys.has(tradeKey);
                   
                   // Get live market data
                   const liveData = trade.conditionId ? liveMarketData.get(trade.conditionId) : undefined;
+                  const polymarketUrl = getPolymarketUrl({
+                    ...trade,
+                    eventSlug: liveData?.eventSlug || trade.eventSlug,
+                  });
                   const currentPrice = liveData?.price || trade.currentPrice || trade.price;
                   const liveScore = liveData?.score;
                   const isClosed = liveData?.closed || false;

@@ -11,8 +11,8 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Check, ArrowUpRight, ChevronDown, ChevronUp, Loader2, Info, ExternalLink, Copy } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { triggerLoggedOut } from '@/lib/auth/logout-events';
@@ -139,6 +139,7 @@ const pickOutcomeTeams = (outcomes?: string[] | null) => {
 };
 
 type ESPNScoreLike = {
+  gameId?: string;
   homeScore: number;
   awayScore: number;
   homeTeamName: string;
@@ -149,6 +150,7 @@ type ESPNScoreLike = {
   startTime: string;
   displayClock?: string;
   period?: number;
+  statusDetail?: string;
   gameUrl?: string;
 };
 
@@ -198,7 +200,12 @@ const buildScoreDisplay = ({
       trade.market,
       espnScore
     );
-    const clock = espnScore.displayClock ? ` (${espnScore.displayClock})` : '';
+    let clock = '';
+    if (espnScore.displayClock) {
+      clock = ` (${espnScore.displayClock})`;
+    } else if (espnScore.statusDetail && !/\d+\s*-\s*\d+/.test(espnScore.statusDetail)) {
+      clock = ` (${espnScore.statusDetail})`;
+    }
 
     if (espnScore.status === 'final') {
       scoreDisplay = `${team1Label} ${team1Score} - ${team2Score} ${team2Label}`;
@@ -265,8 +272,36 @@ export default function TraderProfilePage({
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loadingTrades, setLoadingTrades] = useState(true);
   const [tradesToShow, setTradesToShow] = useState(15); // Start with 15 trades for faster loading
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   const [activeTab, setActiveTab] = useState<'positions' | 'performance'>('positions');
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (!tabParam) return;
+    if (tabParam === 'trades' || tabParam === 'positions') {
+      setActiveTab('positions');
+    }
+    if (tabParam === 'performance') {
+      setActiveTab('performance');
+    }
+  }, [searchParams]);
+  const syncTabToUrl = (tab: 'positions' | 'performance') => {
+    if (!pathname) return;
+    const currentQuery = searchParams.toString();
+    const nextParams = new URLSearchParams(currentQuery);
+    const tabValue = tab === 'performance' ? 'performance' : 'trades';
+    nextParams.set('tab', tabValue);
+    const nextQuery = nextParams.toString();
+    if (nextQuery === currentQuery) return;
+    const targetUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+    router.replace(targetUrl);
+  };
+  const handleTabSelection = (tab: 'positions' | 'performance') => {
+    setActiveTab(tab);
+    syncTabToUrl(tab);
+  };
   const [showResolvedTrades, setShowResolvedTrades] = useState(false);
+  const espnCacheUpdatedRef = useRef(new Set<string>());
   
   const [showWalletConnectModal, setShowWalletConnectModal] = useState(false);
   const [showConnectWalletModal, setShowConnectWalletModal] = useState(false);
@@ -317,6 +352,8 @@ export default function TraderProfilePage({
     endDateIso?: string;
     liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
     espnUrl?: string;
+    eventSlug?: string;
+    tags?: unknown;
   }>>(new Map());
 
   useEffect(() => {
@@ -966,6 +1003,7 @@ export default function TraderProfilePage({
           category: trade.category,
           slug: trade.marketSlug,
           eventSlug: trade.eventSlug,
+          tags: undefined,
         },
         trade: {
           outcome: trade.outcome,
@@ -994,6 +1032,11 @@ export default function TraderProfilePage({
                 homeTeam,
                 awayTeam,
                 endDateIso,
+                espnUrl: cachedEspnUrl,
+                eventSlug: resolvedEventSlug,
+                tags,
+                cryptoSymbol,
+                cryptoPriceUsd,
               } = priceData.market;
 
               const inferredStartDate = extractDateFromTitle(trade.market);
@@ -1010,14 +1053,25 @@ export default function TraderProfilePage({
                 awayTeam,
                 gameStartTime: effectiveGameStartTime,
               });
+              let resolvedScoreDisplay = fallbackScoreDisplay;
+              if (cryptoSymbol && typeof cryptoPriceUsd === 'number') {
+                const formatter = new Intl.NumberFormat('en-US', {
+                  style: 'currency',
+                  currency: 'USD',
+                  maximumFractionDigits: 2,
+                });
+                resolvedScoreDisplay = `${cryptoSymbol} ${formatter.format(cryptoPriceUsd)}`;
+              }
 
               const fallbackEspnUrl = getFallbackEspnUrl({
                 title: trade.market,
                 category: trade.category,
                 slug: trade.marketSlug,
                 eventSlug: trade.eventSlug,
+                tags,
                 dateHint: effectiveGameStartTime || endDateIso || undefined,
               });
+              const resolvedEspnUrl = cachedEspnUrl || fallbackEspnUrl;
               
               // Check if market is resolved
               const isResolved = typeof resolved === 'boolean' ? resolved : closed === true;
@@ -1036,7 +1090,7 @@ export default function TraderProfilePage({
                   price: currentPrice,
                   closed: closed,
                   resolved: isResolved,
-                  score: fallbackScoreDisplay ?? existing?.score,
+                  score: resolvedScoreDisplay ?? existing?.score,
                   liveStatus: existing?.liveStatus,
                   gameStartTime: pickBestStartTime(
                     existing?.gameStartTime,
@@ -1044,7 +1098,9 @@ export default function TraderProfilePage({
                   ),
                   eventStatus: eventStatus || existing?.eventStatus,
                   endDateIso: endDateIso || existing?.endDateIso,
-                  espnUrl: existing?.espnUrl ?? fallbackEspnUrl,
+                  espnUrl: existing?.espnUrl ?? resolvedEspnUrl,
+                  eventSlug: resolvedEventSlug || existing?.eventSlug,
+                  tags: tags ?? existing?.tags,
                 });
                 return next;
               });
@@ -1061,6 +1117,8 @@ export default function TraderProfilePage({
                 homeTeam,
                 awayTeam,
                 endDateIso,
+                eventSlug: resolvedEventSlug,
+                tags,
               };
             }
           }
@@ -1073,6 +1131,15 @@ export default function TraderProfilePage({
       // Wait for all price fetches to complete
       const priceResults = await Promise.all(pricePromises);
 
+      const dateHintsByMarketKey: Record<string, string | number | null | undefined> = {};
+      priceResults.forEach((result) => {
+        if (!result?.trade.conditionId) return;
+        const fallbackDate = result.endDateIso || result.gameStartTime;
+        if (fallbackDate) {
+          dateHintsByMarketKey[result.trade.conditionId] = fallbackDate;
+        }
+      });
+
       const dateHints = priceResults
         .flatMap((result) => [result?.gameStartTime, result?.endDateIso])
         .filter(
@@ -1081,7 +1148,42 @@ export default function TraderProfilePage({
         );
 
       console.log('🏈 Fetching sports scores in background...');
-      const espnScoresPromise = getESPNScoresForTrades(tradesForESPN as any, { dateHints });
+      const eventSlugByConditionId = new Map<string, string>();
+      const tagsByConditionId = new Map<string, unknown>();
+      priceResults.forEach((result) => {
+        if (result?.trade.conditionId && result?.eventSlug) {
+          eventSlugByConditionId.set(result.trade.conditionId, result.eventSlug);
+        }
+        if (result?.trade.conditionId && result.tags !== undefined) {
+          tagsByConditionId.set(result.trade.conditionId, result.tags);
+        }
+      });
+
+      const tradesForESPNResolved = tradesForESPN.map((trade) => {
+        const conditionId = trade.market?.conditionId;
+        const resolvedEventSlug =
+          (conditionId ? eventSlugByConditionId.get(conditionId) : undefined) ||
+          trade.market?.eventSlug;
+        const resolvedTags =
+          (conditionId ? tagsByConditionId.get(conditionId) : undefined) ?? trade.market?.tags;
+        const shouldUpdate =
+          (resolvedEventSlug && resolvedEventSlug !== trade.market?.eventSlug) ||
+          (resolvedTags !== undefined && resolvedTags !== trade.market?.tags);
+        if (!shouldUpdate) return trade;
+        return {
+          ...trade,
+          market: {
+            ...trade.market,
+            eventSlug: resolvedEventSlug || trade.market?.eventSlug,
+            tags: resolvedTags ?? trade.market?.tags,
+          },
+        };
+      });
+
+      const espnScoresPromise = getESPNScoresForTrades(tradesForESPNResolved as any, {
+        dateHints,
+        dateHintsByMarketKey,
+      });
 
       // Now wait for ESPN scores and update trades with scores
       try {
@@ -1106,6 +1208,14 @@ export default function TraderProfilePage({
           } = result;
 
           const espnScore = espnScores.get(trade.conditionId!);
+          const fallbackEspnUrl = getFallbackEspnUrl({
+            title: trade.market,
+            category: trade.category,
+            slug: trade.marketSlug,
+            eventSlug: trade.eventSlug,
+            tags: result.tags,
+            dateHint: espnScore?.startTime || result.gameStartTime || result.endDateIso || undefined,
+          });
           const { scoreDisplay, liveStatus } = buildScoreDisplay({
             trade,
             outcomes,
@@ -1133,10 +1243,29 @@ export default function TraderProfilePage({
                 gameStartTime: resolvedStartTime,
                 eventStatus: existing?.eventStatus ?? eventStatus,
                 endDateIso: existing?.endDateIso ?? endDateIso,
-                espnUrl: espnScore?.gameUrl ?? existing?.espnUrl,
+                espnUrl: espnScore?.gameUrl ?? existing?.espnUrl ?? fallbackEspnUrl,
+                eventSlug: existing?.eventSlug ?? result.eventSlug,
+                tags: existing?.tags ?? result.tags,
               });
               return next;
             });
+          }
+
+          if (
+            trade.conditionId &&
+            espnScore?.gameUrl &&
+            !espnCacheUpdatedRef.current.has(trade.conditionId)
+          ) {
+            espnCacheUpdatedRef.current.add(trade.conditionId);
+            fetch('/api/markets/espn', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                conditionId: trade.conditionId,
+                espnUrl: espnScore.gameUrl,
+                espnGameId: espnScore.gameId,
+              }),
+            }).catch(() => undefined);
           }
         });
       } catch (error) {
@@ -1969,7 +2098,7 @@ export default function TraderProfilePage({
         {/* Tabs */}
         <div className="flex gap-2 mb-6">
           <Button
-            onClick={() => setActiveTab('positions')}
+            onClick={() => handleTabSelection('positions')}
             variant="ghost"
             className={cn(
               "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
@@ -1981,7 +2110,7 @@ export default function TraderProfilePage({
             Trades
           </Button>
           <Button
-            onClick={() => setActiveTab('performance')}
+            onClick={() => handleTabSelection('performance')}
             variant="ghost"
             className={cn(
               "flex-1 px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
@@ -2023,13 +2152,16 @@ export default function TraderProfilePage({
             ) : (
               <div className="space-y-3">
                 {filteredTrades.slice(0, tradesToShow).map((trade, index) => {
-                  const polymarketUrl = getPolymarketUrl(trade);
                   const isAlreadyCopied = isTradeCopied(trade);
                   const tradeKey = buildExpandedTradeKey(trade, index);
                   const isExpanded = expandedTradeKeys.has(tradeKey);
                   
                   // Get live market data
                   const liveData = trade.conditionId ? liveMarketData.get(trade.conditionId) : undefined;
+                  const polymarketUrl = getPolymarketUrl({
+                    ...trade,
+                    eventSlug: liveData?.eventSlug || trade.eventSlug,
+                  });
                   const currentPrice = liveData?.price || trade.currentPrice || trade.price;
                   const liveScore = liveData?.score;
                   const isClosed = liveData?.closed || false;

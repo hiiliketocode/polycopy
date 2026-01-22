@@ -1,7 +1,11 @@
 'use strict'
 
 /**
- * Backfill realized PnL (daily) and wallet metrics for active traders using the Dome API.
+ * Backfill realized PnL (daily) and wallet metrics using the Dome API.
+ *
+ * Wallet list: traders + follows (active) + distinct trader_wallet from trades_public
+ * + distinct copied_trader_wallet from orders. Ensures we don't miss realized PnL
+ * for discover/feed/trader-page or copy-trade wallets.
  *
  * - Fetches daily cumulative realized PnL (`pnl_to_date`) and derives per-day deltas (`realized_pnl`).
  * - Uses a baseline day before the current data to compute the first delta.
@@ -14,6 +18,7 @@
  *
  * Usage:
  *   node scripts/backfill-wallet-pnl.js
+ *   WALLET=0x... node scripts/backfill-wallet-pnl.js   # backfill only this wallet (debug)
  */
 
 const fs = require('fs')
@@ -303,7 +308,8 @@ async function backfillWallet(wallet, options = {}) {
   return { upserted, hadData: rows.length > 0, skipped: false }
 }
 
-async function loadActiveTraders() {
+/** Load all trader wallet_addresses (no is_active filter). */
+async function loadTraderWallets() {
   const wallets = []
   let offset = 0
 
@@ -311,7 +317,6 @@ async function loadActiveTraders() {
     const { data, error } = await supabase
       .from('traders')
       .select('wallet_address')
-      .eq('is_active', true)
       .order('wallet_address', { ascending: true })
       .range(offset, offset + TRADER_PAGE_SIZE - 1)
     if (error) throw error
@@ -325,15 +330,97 @@ async function loadActiveTraders() {
   return wallets.map((r) => r.wallet_address).filter(Boolean)
 }
 
+/** Load distinct trader_wallet from follows where active = true. */
+async function loadFollowedWallets() {
+  const { data, error } = await supabase
+    .from('follows')
+    .select('trader_wallet')
+    .eq('active', true)
+
+  if (error) throw error
+  const raw = (data || []).map((r) => r.trader_wallet).filter(Boolean)
+  return [...new Set(raw.map((w) => w.toLowerCase()))]
+}
+
+/** Distinct trader_wallet from trades_public (RPC). */
+async function loadWalletsFromTradesPublic() {
+  const { data, error } = await supabase.rpc('get_distinct_trader_wallets_from_trades_public')
+  if (error) {
+    console.warn('get_distinct_trader_wallets_from_trades_public failed:', error.message)
+    return []
+  }
+  const raw = (data || []).map((r) => (r && r.wallet) || r).filter(Boolean)
+  return [...new Set(raw.map((w) => String(w).toLowerCase()))]
+}
+
+/** Distinct copied_trader_wallet from orders (RPC). */
+async function loadWalletsFromOrdersCopiedTraders() {
+  const { data, error } = await supabase.rpc('get_distinct_copied_trader_wallets_from_orders')
+  if (error) {
+    console.warn('get_distinct_copied_trader_wallets_from_orders failed:', error.message)
+    return []
+  }
+  const raw = (data || []).map((r) => (r && r.wallet) || r).filter(Boolean)
+  return [...new Set(raw.map((w) => String(w).toLowerCase()))]
+}
+
+/**
+ * Wallets to backfill: traders + follows (active) + trades_public.trader_wallet
+ * + orders.copied_trader_wallet. Deduped and lowercased.
+ */
+async function loadWalletsForBackfill() {
+  const [traderWallets, followedWallets, tradesWallets, ordersWallets] = await Promise.all([
+    loadTraderWallets(),
+    loadFollowedWallets(),
+    loadWalletsFromTradesPublic(),
+    loadWalletsFromOrdersCopiedTraders()
+  ])
+
+  const seen = new Set()
+  const result = []
+
+  for (const w of traderWallets) {
+    const lower = w.toLowerCase()
+    if (!lower || seen.has(lower)) continue
+    seen.add(lower)
+    result.push(lower)
+  }
+
+  for (const w of followedWallets) {
+    if (!w || seen.has(w)) continue
+    seen.add(w)
+    result.push(w)
+  }
+
+  for (const w of tradesWallets) {
+    if (!w || seen.has(w)) continue
+    seen.add(w)
+    result.push(w)
+  }
+
+  for (const w of ordersWallets) {
+    if (!w || seen.has(w)) continue
+    seen.add(w)
+    result.push(w)
+  }
+
+  result.sort()
+  return result
+}
+
 async function runBackfillWalletPnl() {
-  const wallets = await loadActiveTraders()
+  const single = process.env.WALLET ? String(process.env.WALLET).trim().toLowerCase() : null
+  const wallets = single ? [single] : await loadWalletsForBackfill()
+  if (single) {
+    console.log(`Single-wallet mode: ${single}`)
+  }
   if (SKIP_EXISTING_WALLETS) {
     console.log('Skipping wallets that already have PnL history.')
   }
   if (SKIP_UP_TO_DATE_WALLETS) {
     console.log('Skipping wallets that are up to date (latest date is today or yesterday).')
   }
-  console.log(`Found ${wallets.length} active traders; starting backfill...`)
+  console.log(`Found ${wallets.length} wallets (traders + follows + trades_public + orders); starting backfill...`)
 
   let totalRows = 0
   let processed = 0

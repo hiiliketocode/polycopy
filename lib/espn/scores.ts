@@ -1,5 +1,6 @@
 // Helper to fetch and match ESPN scores with Polymarket markets
 import type { FeedTrade } from '@/app/feed/page';
+import { extractDateFromTitle } from '@/lib/event-time';
 import { abbreviateTeamName } from '@/lib/utils/team-abbreviations';
 
 interface ESPNGame {
@@ -21,9 +22,11 @@ interface ESPNGame {
   startTime: string;
   displayClock?: string;
   period?: number;
+  statusDetail?: string;
 }
 
 interface ESPNScoreResult {
+  gameId: string;
   homeScore: number;
   awayScore: number;
   homeTeamName: string;
@@ -35,6 +38,7 @@ interface ESPNScoreResult {
   gameUrl?: string;
   displayClock?: string;
   period?: number;
+  statusDetail?: string;
 }
 
 type SportGroup =
@@ -51,6 +55,105 @@ type SportGroup =
   | 'golf'
   | 'mma'
   | 'boxing';
+
+const ESPORTS_TOKENS = [
+  'esports',
+  'e-sports',
+  'counter-strike',
+  'counter strike',
+  'cs:go',
+  'csgo',
+  'cs2',
+  'dota',
+  'dota2',
+  'league of legends',
+  'lol',
+  'valorant',
+  'overwatch',
+  'rocket league',
+  'fortnite',
+  'pubg',
+  'call of duty',
+  'cod',
+  'iem',
+  'esl',
+  'blast',
+  'lcs',
+  'lck',
+  'lpl',
+  'academy',
+];
+
+const looksLikeEsportsTitle = (value: string) =>
+  ESPORTS_TOKENS.some((token) => value.includes(token));
+
+const splitTagString = (value: string) =>
+  value
+    .split(/[|,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+const normalizeTagValue = (tag: unknown): string[] => {
+  if (!tag) return [];
+  if (typeof tag === 'string') return splitTagString(tag);
+  if (typeof tag === 'number' || typeof tag === 'boolean') return [String(tag)];
+  if (typeof tag === 'object') {
+    const record = tag as Record<string, unknown>;
+    const candidate =
+      record.name ?? record.label ?? record.value ?? record.slug ?? record.title ?? null;
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return splitTagString(candidate);
+    }
+  }
+  return [];
+};
+
+const normalizeTags = (tags: unknown): string[] => {
+  if (!tags) return [];
+  if (Array.isArray(tags)) {
+    return tags
+      .flatMap((tag) => normalizeTagValue(tag))
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+  return normalizeTagValue(tags).map((tag) => tag.trim()).filter(Boolean);
+};
+
+const detectSportFromTags = (tags: unknown): SportGroup | null => {
+  const normalized = normalizeTags(tags);
+  if (normalized.length === 0) return null;
+  const tagText = normalized.join(' ').toLowerCase();
+
+  if (looksLikeEsportsTitle(tagText)) return null;
+
+  if (tagText.match(/\bwnba\b/)) return 'wnba';
+  if (tagText.match(/\bnfl\b/)) return 'nfl';
+  if (tagText.match(/\bnba\b/)) return 'nba';
+  if (tagText.match(/\bmlb\b/)) return 'mlb';
+  if (tagText.match(/\bnhl\b/)) return 'nhl';
+  if (tagText.match(/\bncaaf\b|\bcollege football\b|\bncaa football\b|\bcfb\b/)) return 'ncaaf';
+  if (tagText.match(/\bncaaw\b|\bwcbb\b|\bwomen'?s college basketball\b/)) return 'ncaaw';
+  if (tagText.match(/\bncaab\b|\bcbb\b|\bcollege basketball\b|\bncaa basketball\b/)) return 'ncaab';
+  if (
+    tagText.match(
+      /\b(soccer|uefa|fifa|mls|epl|premier league|laliga|la liga|serie a|bundesliga|ligue 1|eredivisie|primeira|champions league|europa|conference league|copa|libertadores|sudamericana|liga mx|ligamx)\b/
+    )
+  ) {
+    return 'soccer';
+  }
+  if (
+    tagText.match(
+      /\b(tennis|atp|wta|australian open|wimbledon|us open|roland garros|grand slam)\b/
+    )
+  ) {
+    return 'tennis';
+  }
+  if (tagText.match(/\b(golf|pga|lpga|masters|open championship)\b/)) return 'golf';
+  if (tagText.match(/\b(ufc|mma)\b/)) return 'mma';
+  if (tagText.match(/\bboxing\b/)) return 'boxing';
+
+  return null;
+};
 
 const ESPN_SPORT_GROUPS: Record<SportGroup, string[]> = {
   nfl: ['nfl'],
@@ -127,6 +230,21 @@ const toEspnDateKey = (value?: string | number | null) => {
   return formatEspnDateKey(parsed);
 };
 
+const toMatchDateKey = (value?: string | number | null) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().slice(0, 10);
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+};
+
 const getDefaultEspnDateKeys = () => {
   const now = new Date();
   const tomorrow = new Date(now);
@@ -150,11 +268,20 @@ function detectSportType(
   title: string,
   category?: string | null,
   slug?: string | null,
-  eventSlug?: string | null
+  eventSlug?: string | null,
+  tags?: unknown
 ): SportGroup | null {
   const titleLower = title.toLowerCase();
   const categoryLower = category ? category.toLowerCase() : '';
   const slugLower = [slug, eventSlug].filter(Boolean).join(' ').toLowerCase();
+  const tagText = normalizeTags(tags).join(' ').toLowerCase();
+
+  if (tagText && looksLikeEsportsTitle(tagText)) return null;
+
+  const tagSport = detectSportFromTags(tags);
+  if (tagSport) return tagSport;
+
+  if (looksLikeEsportsTitle(titleLower) || looksLikeEsportsTitle(slugLower)) return null;
 
   if (titleLower.includes('wnba')) return 'wnba';
   if (slugLower.includes('wnba')) return 'wnba';
@@ -162,11 +289,23 @@ function detectSportType(
   if (slugLower.includes('nba')) return 'nba';
   if (slugLower.includes('mlb')) return 'mlb';
   if (slugLower.includes('nhl')) return 'nhl';
-  if (slugLower.includes('tennis')) return 'tennis';
+  if (
+    slugLower.match(
+      /\b(tennis|atp|wta|australian-?open|roland-?garros|wimbledon|us-?open)\b/
+    )
+  ) {
+    return 'tennis';
+  }
   if (slugLower.match(/\b(ncaaf|college-football|cfb)\b/)) return 'ncaaf';
-  if (slugLower.match(/\b(ncaaw|womens?-college-basketball)\b/)) return 'ncaaw';
-  if (slugLower.match(/\b(ncaab|mens?-college-basketball|college-basketball|march-madness)\b/)) return 'ncaab';
-  if (slugLower.includes('soccer') || slugLower.includes('fifa') || slugLower.includes('uefa')) return 'soccer';
+  if (slugLower.match(/\b(ncaaw|womens?-college-basketball|wcbb)\b/)) return 'ncaaw';
+  if (slugLower.match(/\b(ncaab|cbb|mens?-college-basketball|college-basketball|march-madness|college-hoops)\b/)) return 'ncaab';
+  if (
+    slugLower.match(
+      /\b(soccer|fifa|uefa|mls|epl|premier-?league|laliga|serie-?a|bundesliga|ligue-?1|eredivisie|primeira|liga-?mx|champions-?league|europa-?league|europa-?cup|libertadores|sudamericana|copa|concacaf)\b/
+    )
+  ) {
+    return 'soccer';
+  }
   if (categoryLower.includes('tennis')) return 'tennis';
   if (
     titleLower.match(/\b(ncaaf|college football|cfb)\b/) ||
@@ -178,7 +317,7 @@ function detectSportType(
   }
   if (titleLower.match(/\b(ncaaw|women's college basketball|womens college basketball|wcbb)\b/)) return 'ncaaw';
   if (
-    titleLower.match(/\b(ncaab|college basketball|march madness)\b/) ||
+    titleLower.match(/\b(ncaab|cbb|college basketball|college hoops|march madness)\b/) ||
     (titleLower.includes('ncaa') && titleLower.includes('basketball')) ||
     (categoryLower.includes('college') && categoryLower.includes('basketball')) ||
     categoryLower.includes('ncaab')
@@ -229,7 +368,7 @@ function detectSportType(
   if (mlbTeams.some(team => titleLower.includes(team))) return 'mlb';
   if (nhlTeams.some(team => titleLower.includes(team))) return 'nhl';
 
-  if (titleLower.match(/\b(premier league|la liga|serie a|bundesliga|ligue 1|eredivisie|primeira|uefa|champions league|europa league|conference league|world cup|fifa|copa|conmebol|concacaf|afc|caf|mls|liga mx|ligamx)\b/)) {
+  if (titleLower.match(/\b(premier league|la liga|serie a|bundesliga|ligue 1|eredivisie|primeira|uefa|champions league|europa league|europa cup|conference league|world cup|fifa|copa|conmebol|concacaf|afc|caf|mls|liga mx|ligamx)\b/)) {
     return 'soccer';
   }
 
@@ -351,6 +490,8 @@ function isLikelySportsTitle(title: string, category?: string | null): boolean {
   const titleLower = title.toLowerCase();
   const categoryLower = category ? category.toLowerCase() : '';
 
+  if (looksLikeEsportsTitle(titleLower)) return false;
+
   if (categoryLower === 'sports') return true;
 
   if (
@@ -370,6 +511,8 @@ function isLikelySportsTitle(title: string, category?: string | null): boolean {
     'mlb',
     'nhl',
     'ncaa',
+    'cbb',
+    'college hoops',
     'soccer',
     'football',
     'basketball',
@@ -391,6 +534,15 @@ function isLikelySportsTitle(title: string, category?: string | null): boolean {
     'world cup',
     'champions league',
     'premier league',
+    'mls',
+    'laliga',
+    'serie a',
+    'bundesliga',
+    'ligue 1',
+    'eredivisie',
+    'primeira',
+    'libertadores',
+    'sudamericana',
   ].some(term => titleLower.includes(term));
 }
 
@@ -409,6 +561,7 @@ export function extractTeamNames(title: string): { team1: string; team2: string 
     .replace(/\s*\([−+]?\d+\.?\d*\)/g, '') // Remove (−9.5) or (+7)
     .replace(/\s*O\/U\s*\d+\.?\d*/gi, '') // Remove O/U 215.5
     .replace(/\s*(Over|Under)\s*\d+\.?\d*/gi, '') // Remove Over/Under 215.5
+    .replace(/\b(?:bo[1-7]|best of \d+)\b/gi, '') // Remove BO3/Best of 3
     .replace(/^\s*(Spread|Total|Moneyline|ML|Pick'?em|O\/U|Over\/Under)\s*\d*\.?\d*\s*:\s*/i, '') // Remove leading bet type
     .replace(/^\s*(Spread|Total|Moneyline|ML|Pick'?em)\s+/i, '') // Remove leading bet type without colon
     .replace(/\s*\|\s*.*$/, '') // Remove trailing pipes
@@ -434,6 +587,16 @@ export function extractTeamNames(title: string): { team1: string; team2: string 
     return {
       team1: spreadMatch[1].trim(),
       team2: spreadMatch[2].trim(),
+    };
+  }
+
+  const beatPattern =
+    /(?:will\s+)?(.+?)\s+(?:beat|defeat|defeats|win\s+over|win\s+against|to\s+beat)\s+(.+?)(?:\s|$|\?)/i;
+  const beatMatch = cleanTitle.match(beatPattern);
+  if (beatMatch) {
+    return {
+      team1: beatMatch[1].trim(),
+      team2: beatMatch[2].trim(),
     };
   }
   
@@ -680,13 +843,21 @@ async function fetchESPNGroupScores(sport: SportGroup, dateKey?: string): Promis
   return results.flat();
 }
 
-function findMatchingGame(marketTitle: string, games: ESPNGame[]): ESPNGame | null {
+function findMatchingGame(
+  marketTitle: string,
+  games: ESPNGame[],
+  options?: { dateHintKey?: string | null; sport?: SportGroup }
+): ESPNGame | null {
   const teams = extractTeamNames(marketTitle);
   if (!teams) {
     const singleTeamMatch = extractSingleTeamMatch(marketTitle);
     const fallbackSingleTeam = singleTeamMatch ?? extractSingleTeamHint(marketTitle);
     if (!fallbackSingleTeam) return null;
-    const targetDateKey = 'dateKey' in fallbackSingleTeam ? fallbackSingleTeam.dateKey || null : null;
+    const titleDateKey = extractDateFromTitle(marketTitle);
+    const targetDateKey =
+      'dateKey' in fallbackSingleTeam && fallbackSingleTeam.dateKey
+        ? fallbackSingleTeam.dateKey
+        : titleDateKey || options?.dateHintKey || null;
 
     const scoredMatches = games.map(game => {
       const homeScore = scoreTeamMatch(fallbackSingleTeam.team, game.homeTeam.name, game.homeTeam.abbreviation);
@@ -713,15 +884,13 @@ function findMatchingGame(marketTitle: string, games: ESPNGame[]): ESPNGame | nu
 
     if (bestMatch) return bestMatch.game;
 
-    if (targetDateKey) {
-      const liveFallback = scoredMatches
-        .filter(match => match.baseScore >= 4 && match.game.status === 'live')
-        .sort((a, b) => b.baseScore - a.baseScore)[0];
-      if (liveFallback) return liveFallback.game;
-    }
+    if (targetDateKey) return null;
 
     return null;
   }
+
+  const titleDateKey = extractDateFromTitle(marketTitle);
+  const targetDateKey = titleDateKey || options?.dateHintKey || null;
 
   const scoredMatches = games.map(game => {
     const team1Home = scoreTeamMatch(teams.team1, game.homeTeam.name, game.homeTeam.abbreviation);
@@ -733,19 +902,47 @@ function findMatchingGame(marketTitle: string, games: ESPNGame[]): ESPNGame | nu
     const swappedScore = team1Away + team2Home;
     const bestScore = Math.max(directScore, swappedScore);
     const minSideScore = bestScore === directScore ? Math.min(team1Home, team2Away) : Math.min(team1Away, team2Home);
+    const dateKey = getStartDateKey(game.startTime);
+    const dateMatch = targetDateKey && dateKey && targetDateKey === dateKey;
 
-    return { game, bestScore, minSideScore };
+    return { game, bestScore, minSideScore, dateMatch: Boolean(dateMatch) };
   });
 
   const bestMatch = scoredMatches
-    .filter(match => match.bestScore >= 6 && match.minSideScore >= 2)
+    .filter(match => {
+      if (options?.sport === 'tennis') {
+        if (targetDateKey) {
+          return match.bestScore >= 4 && match.minSideScore >= 1 && match.dateMatch;
+        }
+        return match.bestScore >= 4 && match.minSideScore >= 1;
+      }
+      if (targetDateKey) {
+        return match.bestScore >= 6 && match.minSideScore >= 2 && match.dateMatch;
+      }
+      return match.bestScore >= 6 && match.minSideScore >= 2;
+    })
     .sort((a, b) => b.bestScore - a.bestScore)[0];
 
-  return bestMatch ? bestMatch.game : null;
+  if (bestMatch) return bestMatch.game;
+
+  if (targetDateKey) {
+    const fallbackMatch = scoredMatches
+      .filter(match => {
+        if (options?.sport === 'tennis') {
+          return match.bestScore >= 4 && match.minSideScore >= 1;
+        }
+        return match.bestScore >= 6 && match.minSideScore >= 2;
+      })
+      .sort((a, b) => b.bestScore - a.bestScore)[0];
+    return fallbackMatch ? fallbackMatch.game : null;
+  }
+
+  return null;
 }
 
 function buildScoreResult(matchingGame: ESPNGame): ESPNScoreResult {
   return {
+    gameId: matchingGame.id,
     homeScore: matchingGame.homeTeam.score || 0,
     awayScore: matchingGame.awayTeam.score || 0,
     homeTeamName: matchingGame.homeTeam.name,
@@ -757,6 +954,7 @@ function buildScoreResult(matchingGame: ESPNGame): ESPNScoreResult {
     gameUrl: normalizeEspnLink(matchingGame.link),
     displayClock: matchingGame.displayClock,
     period: matchingGame.period,
+    statusDetail: matchingGame.statusDetail,
   };
 }
 
@@ -770,11 +968,23 @@ export async function getESPNScoreForTrade(trade: FeedTrade): Promise<ESPNScoreR
 // Batch fetch scores for multiple trades (more efficient)
 export async function getESPNScoresForTrades(
   trades: FeedTrade[],
-  options?: { dateHints?: Array<string | number | null | undefined> }
+  options?: {
+    dateHints?: Array<string | number | null | undefined>;
+    dateHintsByMarketKey?: Record<string, string | number | null | undefined>;
+  }
 ): Promise<Map<string, ESPNScoreResult>> {
   const scoreMap = new Map<string, ESPNScoreResult>();
   const gamesBySportDate = new Map<string, ESPNGame[]>();
   const ALL_SPORTS = Object.keys(ESPN_SPORT_GROUPS) as SportGroup[];
+  const matchDateKeysByMarketKey = (() => {
+    const keys = new Map<string, string>();
+    if (!options?.dateHintsByMarketKey) return keys;
+    Object.entries(options.dateHintsByMarketKey).forEach(([marketKey, hint]) => {
+      const matchKey = toMatchDateKey(hint ?? undefined);
+      if (matchKey) keys.set(marketKey, matchKey);
+    });
+    return keys;
+  })();
 
   const dateKeys = (() => {
     const keys = new Set(getDefaultEspnDateKeys());
@@ -835,7 +1045,8 @@ export async function getESPNScoresForTrades(
       trade.market.title,
       trade.market.category,
       trade.market.slug,
-      trade.market.eventSlug
+      trade.market.eventSlug,
+      trade.market.tags
     );
     if (sport && sportGroups[sport]) {
       sportGroups[sport].push(trade);
@@ -852,10 +1063,15 @@ export async function getESPNScoresForTrades(
       const espnGames = await fetchGamesForSport(sportKey);
 
       sportTrades.forEach(trade => {
-        const matchingGame = findMatchingGame(trade.market.title, espnGames);
+        const marketKey = trade.market.conditionId || trade.market.id || trade.market.title;
+        const dateHintKey = marketKey ? matchDateKeysByMarketKey.get(marketKey) ?? null : null;
+        const matchingGame = findMatchingGame(trade.market.title, espnGames, {
+          dateHintKey,
+          sport: sportKey,
+        });
         if (matchingGame) {
           console.log(`✅ Found ESPN game for "${trade.market.title}": ${matchingGame.name} (${matchingGame.status})`);
-          const key = trade.market.conditionId || trade.market.id || trade.market.title;
+          const key = marketKey;
           scoreMap.set(key, buildScoreResult(matchingGame));
         } else {
           console.log(`❌ No ESPN game found for "${trade.market.title}" in ${sportKey.toUpperCase()} feeds.`);
@@ -872,7 +1088,11 @@ export async function getESPNScoresForTrades(
 
       for (const sport of ALL_SPORTS) {
         const games = await fetchGamesForSport(sport);
-        const matchingGame = findMatchingGame(trade.market.title, games);
+        const dateHintKey = matchDateKeysByMarketKey.get(key) ?? null;
+        const matchingGame = findMatchingGame(trade.market.title, games, {
+          dateHintKey,
+          sport,
+        });
         if (matchingGame) {
           console.log(`✅ Found ESPN game for "${trade.market.title}": ${matchingGame.name} (${matchingGame.status})`);
           scoreMap.set(key, buildScoreResult(matchingGame));
@@ -892,13 +1112,14 @@ export function getFallbackEspnUrl(params: {
   category?: string | null;
   slug?: string | null;
   eventSlug?: string | null;
+  tags?: unknown;
   dateHint?: string | number | null | undefined;
 }): string | undefined {
-  const { title, category, slug, eventSlug, dateHint } = params;
+  const { title, category, slug, eventSlug, tags, dateHint } = params;
   
   if (!title) return undefined;
   
-  const sport = detectSportType(title, category, slug, eventSlug);
+  const sport = detectSportType(title, category, slug, eventSlug, tags);
   if (!sport) return undefined;
   
   const sportGroups = ESPN_SPORT_GROUPS[sport];

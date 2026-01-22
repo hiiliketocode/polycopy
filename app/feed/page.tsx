@@ -17,9 +17,9 @@ import { EmptyState } from '@/components/polycopy/empty-state';
 import ClosePositionModal from '@/components/orders/ClosePositionModal';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { RefreshCw, Activity, Filter, Check, Search, ChevronDown } from 'lucide-react';
+import { RefreshCw, Activity, Filter, Check, Search, ChevronDown, ArrowUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getESPNScoresForTrades, getScoreDisplaySides } from '@/lib/espn/scores';
+import { getESPNScoresForTrades, getScoreDisplaySides, getFallbackEspnUrl } from '@/lib/espn/scores';
 import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
 import type { PositionSummary } from '@/lib/orders/position';
 import type { OrderRow } from '@/lib/orders/types';
@@ -46,6 +46,7 @@ export interface FeedTrade {
     eventSlug?: string;
     category?: string;
     avatarUrl?: string;
+    tags?: unknown;
   };
   trade: {
     side: 'BUY' | 'SELL';
@@ -65,6 +66,14 @@ type PositionTradeSummary = {
   price: number | null;
   amountUsd: number | null;
   timestamp: number | null;
+};
+
+type FetchFeedOptions = {
+  userOverride?: User;
+  merge?: boolean;
+  preserveDisplayCount?: boolean;
+  preserveScroll?: boolean;
+  silent?: boolean;
 };
 
 type Category = "all" | "politics" | "sports" | "crypto" | "culture" | "finance" | "economics" | "tech" | "weather";
@@ -151,6 +160,7 @@ const defaultFilters: FilterState = {
 
 const LOW_BALANCE_TOOLTIP =
   'Quick trades use your Polymarket USDC balance. Add funds before retrying this order.';
+const FEED_AUTO_REFRESH_MS = 60_000;
 
 const CATEGORY_VALUES = new Set(CATEGORY_OPTIONS.map((option) => option.value));
 const STATUS_VALUES = new Set(STATUS_OPTIONS.map((option) => option.value));
@@ -229,6 +239,49 @@ const toNumber = (value: unknown) => {
   if (value === null || value === undefined) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+};
+const normalizeIdPart = (value?: string | number | null) => {
+  if (value === null || value === undefined) return '';
+  const normalized = normalizeKeyPart(String(value));
+  if (!normalized) return '';
+  return normalized.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+};
+const buildFeedTradeId = ({
+  wallet,
+  tradeId,
+  timestamp,
+  side,
+  outcome,
+  size,
+  price,
+  marketId,
+}: {
+  wallet?: string;
+  tradeId?: string | number | null;
+  timestamp?: number | null;
+  side?: string;
+  outcome?: string;
+  size?: number | null;
+  price?: number | null;
+  marketId?: string | null;
+}) => {
+  const walletPart = normalizeIdPart(wallet) || 'unknown';
+  const tradeIdPart = normalizeIdPart(tradeId);
+  if (tradeIdPart) {
+    return `${walletPart}-${tradeIdPart}`;
+  }
+  const sizePart = Number.isFinite(size ?? NaN) ? Number(size).toFixed(6) : size;
+  const pricePart = Number.isFinite(price ?? NaN) ? Number(price).toFixed(6) : price;
+  const fallbackParts = [
+    walletPart,
+    normalizeIdPart(marketId),
+    normalizeIdPart(timestamp),
+    normalizeIdPart(side),
+    normalizeIdPart(outcome),
+    normalizeIdPart(sizePart),
+    normalizeIdPart(pricePart),
+  ].filter(Boolean);
+  return fallbackParts.join('-') || `trade-${Date.now()}`;
 };
 const buildCopiedTradeKey = (marketKey?: string | null, traderWallet?: string | null) => {
   const market = normalizeKeyPart(marketKey);
@@ -333,9 +386,12 @@ const buildEspnScoreDisplay = (trade: FeedTrade, espnScore: EspnScore) => {
       }
     }
 
-    const clock = espnScore.displayClock
-      ? ` (${periodContext}${espnScore.displayClock})`
-      : '';
+    let clock = '';
+    if (espnScore.displayClock) {
+      clock = ` (${periodContext}${espnScore.displayClock})`;
+    } else if (espnScore.statusDetail && !/\d+\s*-\s*\d+/.test(espnScore.statusDetail)) {
+      clock = ` (${espnScore.statusDetail})`;
+    }
     return {
       scoreDisplay: `${team1Label} ${team1Score} - ${team2Score} ${team2Label}${clock}`,
       espnStatus: espnScore.status,
@@ -390,9 +446,12 @@ export default function FeedPage() {
   const [traderSearch, setTraderSearch] = useState('');
   const [showAllTraders, setShowAllTraders] = useState(false);
   const filtersPanelRef = useRef<HTMLDivElement | null>(null);
+  const feedListRef = useRef<HTMLDivElement | null>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
   
   // Data state
   const [allTrades, setAllTrades] = useState<FeedTrade[]>([]);
+  const allTradesRef = useRef<FeedTrade[]>([]);
   const [displayedTradesCount, setDisplayedTradesCount] = useState(35);
   const [followingCount, setFollowingCount] = useState(0);
   const [loadingFeed, setLoadingFeed] = useState(false);
@@ -438,7 +497,9 @@ export default function FeedPage() {
     endDateIso?: string;
     liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
     espnUrl?: string;
+    eventSlug?: string;
     marketAvatarUrl?: string;
+    tags?: unknown;
     updatedAt?: number;
   }>>(new Map());
 
@@ -459,6 +520,10 @@ export default function FeedPage() {
     typeof cashBalance === 'number' &&
     cashBalance < 1;
   const sellToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoRefreshInFlightRef = useRef(false);
+  const loadingFeedRef = useRef(false);
+  const isRefreshingRef = useRef(false);
+  const espnCacheUpdatedRef = useRef(new Set<string>());
 
   const triggerSellToast = useCallback((message: string) => {
     setSellToastMessage(message);
@@ -468,6 +533,18 @@ export default function FeedPage() {
     }
     sellToastTimerRef.current = setTimeout(() => setShowSellToast(false), 4000);
   }, []);
+
+  useEffect(() => {
+    allTradesRef.current = allTrades;
+  }, [allTrades]);
+
+  useEffect(() => {
+    loadingFeedRef.current = loadingFeed;
+  }, [loadingFeed]);
+
+  useEffect(() => {
+    isRefreshingRef.current = isRefreshing;
+  }, [isRefreshing]);
 
   const traderFilters = useMemo(() => {
     const map = new Map<string, string>();
@@ -510,6 +587,40 @@ export default function FeedPage() {
     });
     return map;
   }, [allTrades]);
+
+  const captureScrollAnchor = useCallback(() => {
+    if (typeof window === 'undefined' || window.scrollY < 80) return null;
+    const container = feedListRef.current;
+    if (!container) return null;
+    const items = Array.from(container.querySelectorAll<HTMLElement>('[data-trade-id]'));
+    for (const item of items) {
+      const rect = item.getBoundingClientRect();
+      if (rect.bottom > 0) {
+        const tradeId = item.dataset.tradeId || '';
+        if (!tradeId) return null;
+        return { tradeId, top: rect.top };
+      }
+    }
+    return null;
+  }, []);
+
+  const restoreScrollAnchor = useCallback((anchor: { tradeId: string; top: number } | null) => {
+    if (!anchor || typeof window === 'undefined') return;
+    requestAnimationFrame(() => {
+      const container = feedListRef.current;
+      if (!container) return;
+      const escaped =
+        typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+          ? CSS.escape(anchor.tradeId)
+          : anchor.tradeId.replace(/"/g, '\\"');
+      const target = container.querySelector<HTMLElement>(`[data-trade-id="${escaped}"]`);
+      if (!target) return;
+      const nextTop = target.getBoundingClientRect().top;
+      const delta = nextTop - anchor.top;
+      if (Math.abs(delta) < 1) return;
+      window.scrollBy({ top: delta, behavior: 'auto' });
+    });
+  }, []);
 
   const traderLabelMap = useMemo(
     () => new Map(traderFilters.map((trader) => [trader.wallet, trader.name])),
@@ -1544,7 +1655,9 @@ export default function FeedPage() {
       endDateIso?: string;
       liveStatus?: 'live' | 'scheduled' | 'final' | 'unknown';
       espnUrl?: string;
+      eventSlug?: string;
       marketAvatarUrl?: string;
+      tags?: unknown;
       updatedAt?: number;
     }>();
     
@@ -1576,7 +1689,7 @@ export default function FeedPage() {
             
             if (priceData.success && priceData.market) {
               if (trade) {
-                const { 
+                  const { 
                   outcomes, 
                   outcomePrices, 
                   gameStartTime, 
@@ -1588,6 +1701,11 @@ export default function FeedPage() {
                   resolved,
                   endDateIso,
                   marketAvatarUrl,
+                  espnUrl: cachedEspnUrl,
+                  eventSlug: resolvedEventSlug,
+                  tags,
+                  cryptoSymbol,
+                  cryptoPriceUsd,
                 } = priceData.market;
                 
                 console.log(`✅ Got data for ${trade.market.title.slice(0, 40)}... | Status: ${eventStatus} | Score:`, liveScore);
@@ -1659,6 +1777,14 @@ export default function FeedPage() {
                       scoreDisplay = liveScore.trim();
                       console.log(`🏀 Polymarket score string: ${scoreDisplay}`);
                     }
+                  } else if (cryptoSymbol && typeof cryptoPriceUsd === 'number') {
+                    const formatter = new Intl.NumberFormat('en-US', {
+                      style: 'currency',
+                      currency: 'USD',
+                      maximumFractionDigits: 2,
+                    });
+                    scoreDisplay = `${cryptoSymbol} ${formatter.format(cryptoPriceUsd)}`;
+                    console.log(`💱 Crypto market: ${scoreDisplay}`);
                   } else if (outcomes?.length === 2) {
                     // NON-SPORTS BINARY MARKETS: Show odds
                     const prob1 = (Number(outcomePrices[0]) * 100).toFixed(0);
@@ -1697,6 +1823,18 @@ export default function FeedPage() {
                     resolved: isMarketResolved,
                     hasLiveScore,
                   });
+
+                  const fallbackEspnUrl =
+                    !cachedEspnUrl && isSportsMarket
+                      ? getFallbackEspnUrl({
+                          title: trade.market.title,
+                          category: trade.market.category,
+                          slug: trade.market.slug,
+                          eventSlug: resolvedEventSlug || trade.market.eventSlug,
+                          tags,
+                          dateHint: effectiveGameStartTime || endDateIso || undefined,
+                        })
+                      : undefined;
                   
                   newLiveData.set(marketKey, { 
                     outcomes: outcomes || [],
@@ -1708,8 +1846,10 @@ export default function FeedPage() {
                     endDateIso: endDateIso || undefined,
                     liveStatus,
                     // ESPN URL is injected later once the ESPN fetch completes
-                    espnUrl: undefined,
+                    espnUrl: cachedEspnUrl || fallbackEspnUrl || undefined,
+                    eventSlug: resolvedEventSlug || trade.market.eventSlug || undefined,
                     marketAvatarUrl: marketAvatarUrl || trade.market.avatarUrl,
+                    tags: tags ?? trade.market.tags,
                     updatedAt: Date.now(),
                   });
                 }
@@ -1744,10 +1884,22 @@ export default function FeedPage() {
           resolved: value.resolved ?? existing?.resolved,
           endDateIso: value.endDateIso ?? existing?.endDateIso,
           espnUrl: value.espnUrl || existing?.espnUrl,
+          eventSlug: value.eventSlug || existing?.eventSlug,
           marketAvatarUrl: value.marketAvatarUrl || existing?.marketAvatarUrl,
+          tags: value.tags ?? existing?.tags,
         });
       });
       return merged;
+    });
+
+    const dateHintsByMarketKey: Record<string, string | number | null | undefined> = {};
+    tradeByMarketKey.forEach((trade, marketKey) => {
+      const liveData = newLiveData.get(marketKey);
+      const fallbackDate = liveData?.endDateIso || liveData?.gameStartTime;
+      const espnKey = trade.market.conditionId || trade.market.id || trade.market.title;
+      if (espnKey && fallbackDate) {
+        dateHintsByMarketKey[espnKey] = fallbackDate;
+      }
     });
 
     const dateHints = Array.from(newLiveData.values())
@@ -1758,7 +1910,29 @@ export default function FeedPage() {
       );
 
     console.log(`🏈 Fetching sports scores for sports markets...`);
-    const espnScores = await getESPNScoresForTrades(trades, { dateHints }).catch((error) => {
+    const espnTrades = trades.map((trade) => {
+      const marketKey = getMarketKeyForTrade(trade);
+      const liveData = marketKey ? newLiveData.get(marketKey) : undefined;
+      const resolvedEventSlug = liveData?.eventSlug || trade.market.eventSlug;
+      const resolvedTags = liveData?.tags ?? trade.market.tags;
+      const shouldUpdate =
+        (resolvedEventSlug && resolvedEventSlug !== trade.market.eventSlug) ||
+        (resolvedTags !== undefined && resolvedTags !== trade.market.tags);
+      if (!shouldUpdate) return trade;
+      return {
+        ...trade,
+        market: {
+          ...trade.market,
+          eventSlug: resolvedEventSlug || trade.market.eventSlug,
+          tags: resolvedTags ?? trade.market.tags,
+        },
+      };
+    });
+
+    const espnScores = await getESPNScoresForTrades(espnTrades, {
+      dateHints,
+      dateHintsByMarketKey,
+    }).catch((error) => {
       console.warn('Failed to fetch ESPN scores:', error);
       return new Map();
     });
@@ -1775,6 +1949,14 @@ export default function FeedPage() {
         if (!espnScore) return;
 
         const { scoreDisplay, espnStatus } = buildEspnScoreDisplay(trade, espnScore);
+        const fallbackEspnUrl = getFallbackEspnUrl({
+          title: trade.market.title,
+          category: trade.market.category,
+          slug: trade.market.slug,
+          eventSlug: trade.market.eventSlug,
+          tags: trade.market.tags ?? liveData.tags,
+          dateHint: espnScore.startTime || liveData.gameStartTime || liveData.endDateIso || undefined,
+        });
         const resolvedGameStartTime = pickBestStartTime(
           liveData.gameStartTime,
           espnScore.startTime
@@ -1795,24 +1977,54 @@ export default function FeedPage() {
           score: scoreDisplay ?? liveData.score,
           liveStatus,
           gameStartTime: resolvedGameStartTime,
-          espnUrl: espnScore.gameUrl || liveData.espnUrl,
+          espnUrl: espnScore.gameUrl || liveData.espnUrl || fallbackEspnUrl,
           updatedAt: Date.now(),
         });
+
+        const cacheKey = trade.market.conditionId || null;
+        if (
+          cacheKey &&
+          espnScore.gameUrl &&
+          !espnCacheUpdatedRef.current.has(cacheKey)
+        ) {
+          espnCacheUpdatedRef.current.add(cacheKey);
+          fetch('/api/markets/espn', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              conditionId: cacheKey,
+              espnUrl: espnScore.gameUrl,
+              espnGameId: espnScore.gameId,
+            }),
+          }).catch(() => undefined);
+        }
       });
       return merged;
     });
   }, []);
 
   // Fetch feed data
-  const fetchFeed = useCallback(async (userOverride?: User) => {
+  const fetchFeed = useCallback(async (options: FetchFeedOptions = {}) => {
+    const {
+      userOverride,
+      merge = false,
+      preserveDisplayCount = false,
+      preserveScroll = false,
+      silent = false,
+    } = options;
     const currentUser = userOverride || user;
-    
+
     if (!currentUser) {
       return;
     }
-    
-    setLoadingFeed(true);
-    setError(null);
+
+    const shouldSetLoading = !silent;
+    const scrollAnchor = preserveScroll ? captureScrollAnchor() : null;
+
+    if (shouldSetLoading) {
+      setLoadingFeed(true);
+      setError(null);
+    }
 
     try {
         // 1. Fetch followed traders
@@ -1825,7 +2037,7 @@ export default function FeedPage() {
         if (!follows || follows.length === 0) {
           setAllTrades([]);
           setFollowingCount(0);
-          setLoadingFeed(false);
+          setLastFeedFetchAt(Date.now());
           return;
         }
 
@@ -1924,8 +2136,10 @@ export default function FeedPage() {
         const allTradesRaw = allTradesArrays.flat();
         
         if (allTradesRaw.length === 0) {
-          setAllTrades([]);
-          setLoadingFeed(false);
+          if (!merge) {
+            setAllTrades([]);
+          }
+          setLastFeedFetchAt(Date.now());
           return;
         }
 
@@ -1984,8 +2198,26 @@ export default function FeedPage() {
             trade.title ||
             '';
           const conditionId = trade.conditionId || trade.condition_id || '';
+          const side = (trade.side || 'BUY').toUpperCase() as 'BUY' | 'SELL';
+          const outcome = trade.outcome || trade.option || 'YES';
+          const size = parseFloat(trade.size || trade.amount || 0);
+          const price = parseFloat(trade.price || 0);
+          const timestamp = (trade.timestamp || Date.now() / 1000) * 1000;
+          const rawTradeId =
+            trade.trade_id || trade.id || trade.tx_hash || trade.transactionHash || '';
+          const tradeId = rawTradeId ? String(rawTradeId) : undefined;
+          const feedTradeId = buildFeedTradeId({
+            wallet,
+            tradeId,
+            timestamp,
+            side,
+            outcome,
+            size,
+            price,
+            marketId,
+          });
           return {
-            id: `${trade.id || trade.timestamp}-${Math.random()}`,
+            id: feedTradeId,
             trader: {
               wallet: wallet,
               displayName: displayName,
@@ -2005,16 +2237,23 @@ export default function FeedPage() {
               avatarUrl: extractMarketAvatarUrl(trade) || undefined,
             },
             trade: {
-              side: (trade.side || 'BUY').toUpperCase() as 'BUY' | 'SELL',
-              outcome: trade.outcome || trade.option || 'YES',
-              size: parseFloat(trade.size || trade.amount || 0),
-              price: parseFloat(trade.price || 0),
-              timestamp: (trade.timestamp || Date.now() / 1000) * 1000,
-              tradeId: trade.trade_id || trade.id || trade.tx_hash || trade.transactionHash || '',
+              side,
+              outcome,
+              size,
+              price,
+              timestamp,
+              tradeId,
               tokenId: extractTokenId(trade),
             },
           };
         });
+        const uniqueFormattedTrades: FeedTrade[] = [];
+        const seenTradeIds = new Set<string>();
+        for (const trade of formattedTrades) {
+          if (seenTradeIds.has(trade.id)) continue;
+          seenTradeIds.add(trade.id);
+          uniqueFormattedTrades.push(trade);
+        }
 
         // 5. Categorize trades
         const isSportsTitle = (title: string) => {
@@ -2066,7 +2305,7 @@ export default function FeedPage() {
           ].some((term) => text.includes(term));
         };
 
-        formattedTrades.forEach(trade => {
+        uniqueFormattedTrades.forEach(trade => {
           if (trade.market.category) return;
           const title = trade.market.title.toLowerCase();
           
@@ -2099,24 +2338,53 @@ export default function FeedPage() {
           }
         });
 
-        const latestTimestamp = formattedTrades.length > 0
-          ? Math.max(...formattedTrades.map(t => t.trade.timestamp))
+        const latestTimestamp = uniqueFormattedTrades.length > 0
+          ? Math.max(...uniqueFormattedTrades.map(t => t.trade.timestamp))
           : null;
 
-        setAllTrades(formattedTrades);
-        setDisplayedTradesCount(35);
-        setLatestTradeTimestamp(latestTimestamp);
+        const existingTrades = allTradesRef.current;
+        const existingIds = new Set(existingTrades.map((trade) => trade.id));
+        const newTrades = merge
+          ? uniqueFormattedTrades.filter((trade) => !existingIds.has(trade.id))
+          : uniqueFormattedTrades;
+        const nextTrades = merge ? [...newTrades, ...existingTrades] : uniqueFormattedTrades;
+
+        if (merge && preserveDisplayCount && newTrades.length > 0) {
+          setDisplayedTradesCount((prev) => prev + newTrades.length);
+        } else if (!merge) {
+          setDisplayedTradesCount(35);
+        }
+
+        setAllTrades(nextTrades);
+
+        if (merge) {
+          if (latestTimestamp !== null) {
+            setLatestTradeTimestamp((prev) => {
+              if (!prev) return latestTimestamp;
+              return Math.max(prev, latestTimestamp);
+            });
+          }
+        } else {
+          setLatestTradeTimestamp(latestTimestamp);
+        }
         setLastFeedFetchAt(Date.now());
         
         // Fetch live market data for displayed trades
-        fetchLiveMarketData(formattedTrades.slice(0, 35));
+        if (merge) {
+          if (newTrades.length > 0) {
+            fetchLiveMarketData(newTrades);
+          }
+        } else {
+          fetchLiveMarketData(nextTrades.slice(0, 35));
+        }
 
         // Calculate today's volume and trade count
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const todayTimestamp = today.getTime();
         
-        const todaysTrades = formattedTrades.filter(t => {
+        const tradesForStats = merge ? nextTrades : uniqueFormattedTrades;
+        const todaysTrades = tradesForStats.filter(t => {
           const tradeDate = new Date(t.trade.timestamp);
           tradeDate.setHours(0, 0, 0, 0);
           return tradeDate.getTime() === todayTimestamp;
@@ -2126,14 +2394,22 @@ export default function FeedPage() {
         setTodayVolume(volumeToday);
         setTodaysTradeCount(todaysTrades.length);
 
+        if (merge && preserveScroll && newTrades.length > 0) {
+          restoreScrollAnchor(scrollAnchor);
+        }
+
     } catch (err: any) {
       console.error('Error fetching feed:', err);
-      setError(err.message || 'Failed to load feed');
-      setLastFeedFetchAt(Date.now());
+      if (!silent) {
+        setError(err.message || 'Failed to load feed');
+        setLastFeedFetchAt(Date.now());
+      }
     } finally {
-      setLoadingFeed(false);
+      if (shouldSetLoading) {
+        setLoadingFeed(false);
+      }
     }
-  }, [user]);
+  }, [captureScrollAnchor, restoreScrollAnchor, user, fetchLiveMarketData]);
 
   // Manual refresh handler
   const handleManualRefresh = async () => {
@@ -2145,7 +2421,7 @@ export default function FeedPage() {
     sessionStorage.removeItem(sessionKey);
     hasFetchedRef.current = false;
     
-    await fetchFeed();
+    await fetchFeed({ userOverride: user });
     
     hasFetchedRef.current = true;
     sessionStorage.setItem(sessionKey, 'true');
@@ -2185,7 +2461,7 @@ export default function FeedPage() {
         return;
       }
       
-      await fetchFeed(currentUser);
+      await fetchFeed({ userOverride: currentUser });
       hasFetchedRef.current = true;
       sessionStorage.setItem(sessionKey, 'true');
     };
@@ -2193,6 +2469,26 @@ export default function FeedPage() {
     attemptFetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const intervalId = window.setInterval(() => {
+      if (autoRefreshInFlightRef.current) return;
+      if (loadingFeedRef.current || isRefreshingRef.current) return;
+      autoRefreshInFlightRef.current = true;
+      fetchFeed({
+        userOverride: user,
+        merge: true,
+        preserveDisplayCount: true,
+        preserveScroll: true,
+        silent: true,
+      }).finally(() => {
+        autoRefreshInFlightRef.current = false;
+      });
+    }, FEED_AUTO_REFRESH_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [user, fetchFeed]);
 
   // Load more trades
   const handleLoadMore = () => {
@@ -2396,6 +2692,16 @@ export default function FeedPage() {
       }
     };
   }, [refreshDisplayedMarketData]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.scrollY > 320);
+    };
+
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // Real-time polling for expanded trade cards (Priority 2 enhancement)
   useEffect(() => {
@@ -3115,7 +3421,7 @@ export default function FeedPage() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4" ref={feedListRef}>
                   {displayedTrades.map((trade) => {
                     const marketKey = getMarketKeyForTrade(trade);
                     const marketKeyVariants = getMarketKeyVariantsForTrade(trade);
@@ -3164,7 +3470,11 @@ export default function FeedPage() {
                       liveMarket?.marketAvatarUrl || trade.market.avatarUrl || null;
 
                     return (
-                      <div className="w-full md:w-[63%] md:mx-auto" key={tradeKey}>
+                      <div
+                        className="w-full md:w-[63%] md:mx-auto"
+                        key={tradeKey}
+                        data-trade-id={trade.id}
+                      >
                         <TradeCard
                           tradeAnchorId={tradeAnchorId}
                           onExecutionNotification={handleTradeExecutionNotification}
@@ -3204,8 +3514,8 @@ export default function FeedPage() {
                           liveStatus={liveMarket?.liveStatus}
                           category={trade.market.category}
                           polymarketUrl={
-                            trade.market.eventSlug 
-                              ? `https://polymarket.com/event/${trade.market.eventSlug}`
+                            (liveMarket?.eventSlug || trade.market.eventSlug)
+                              ? `https://polymarket.com/event/${liveMarket?.eventSlug || trade.market.eventSlug}`
                               : trade.market.slug 
                               ? `https://polymarket.com/market/${trade.market.slug}`
                               : undefined
@@ -3246,6 +3556,17 @@ export default function FeedPage() {
         </div>
 
       </div>
+
+      {showBackToTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-6 right-6 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg transition hover:bg-slate-800"
+          aria-label="Back to top"
+        >
+          <ArrowUp className="h-4 w-4" />
+        </button>
+      )}
 
       <TradeExecutionNotifications
         notifications={tradeNotifications}

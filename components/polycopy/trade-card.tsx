@@ -560,6 +560,15 @@ export function TradeCard({
   }, [liveScore])
 
   const looksLikeScore = Boolean(cleanedLiveScore && /\d+\s*-\s*\d+/.test(cleanedLiveScore))
+  const isCryptoMarket = useMemo(() => {
+    if (category && category.toLowerCase().includes("crypto")) return true
+    const haystack = `${market} ${marketSlug ?? ""}`.toLowerCase()
+    return Boolean(
+      haystack.match(
+        /\b(crypto|bitcoin|btc|ethereum|eth|solana|sol|dogecoin|doge|xrp|ripple|cardano|ada|polygon|matic|bnb|litecoin|ltc|avalanche|avax|arbitrum|arb|optimism|op|polkadot|dot|chainlink|link|uniswap|uni|cosmos|atom|near|sui|aptos|algo|algorand|tron|trx)\b/
+      )
+    )
+  }, [category, market, marketSlug])
   const isSeasonLong = useMemo(() => isSeasonLongMarketTitle(market), [market])
   const resolvedLiveStatus = useMemo(() => {
     if (isSeasonLong) {
@@ -797,6 +806,8 @@ export function TradeCard({
   const showScoreBadge =
     Boolean(cleanedLiveScore && looksLikeScore) &&
     (resolvedLiveStatus === "live" || resolvedLiveStatus === "final")
+  const showInfoBadge = Boolean(cleanedLiveScore && !looksLikeScore)
+  const hideLiveStatusBadge = isCryptoMarket && statusBadgeVariant === "live"
 
   const showCombinedScoreBadge =
     showScoreBadge && (statusBadgeVariant === "live" || statusBadgeVariant === "ended")
@@ -811,7 +822,8 @@ export function TradeCard({
   const showEventTimeBadge =
     statusBadgeVariant !== "live" &&
     statusBadgeVariant !== "resolved" &&
-    statusBadgeVariant !== "ended"
+    statusBadgeVariant !== "ended" &&
+    !showInfoBadge
   const hasEventTime = Boolean(eventStartTime || eventEndTime)
   const sportsTitleHint = useMemo(() => {
     if (!market) return false
@@ -869,7 +881,7 @@ export function TradeCard({
       eventTimeKind === "start" ? "Starts" : eventTimeKind === "end" ? "Resolves" : "Time"
     const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(eventTimeValue)
     const isMidnightUtc = /T00:00:00(?:\.000)?(?:Z|[+-]00:00)$/.test(eventTimeValue)
-    const useDateOnly = isDateOnly || isMidnightUtc
+    const useDateOnly = isDateOnly || (eventTimeKind !== "start" && isMidnightUtc)
     const parsed = new Date(eventTimeValue)
     if (Number.isNaN(parsed.getTime())) return { eventTimeLabel: null, isEventTimeLoading: true }
     const timeZone = useDateOnly ? "UTC" : undefined
@@ -2626,11 +2638,21 @@ export function TradeCard({
               {!showCombinedScoreBadge &&
                 (statusBadgeVariant === "live" ||
                   statusBadgeVariant === "ended" ||
-                  statusBadgeVariant === "resolved") && (
-                  <Badge variant="secondary" className={statusBadgeClass}>
-                    <StatusIcon className="h-3.5 w-3.5" />
-                    {eventStatusLabel}
-                  </Badge>
+                  statusBadgeVariant === "resolved") &&
+                  !hideLiveStatusBadge && (
+                  espnLink ? (
+                    <Badge asChild variant="secondary" className={statusBadgeClass}>
+                      <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                        <StatusIcon className="h-3.5 w-3.5" />
+                        {eventStatusLabel}
+                      </a>
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" className={statusBadgeClass}>
+                      <StatusIcon className="h-3.5 w-3.5" />
+                      {eventStatusLabel}
+                    </Badge>
+                  )
                 )}
               {showCombinedScoreBadge ? (
                 <div className="ml-auto md:ml-0">
@@ -2688,6 +2710,18 @@ export function TradeCard({
                   )}
                 </div>
               ) : null}
+              {!showCombinedScoreBadge && showInfoBadge && (
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    badgeBaseClass,
+                    "bg-white text-slate-700 border-slate-200"
+                  )}
+                >
+                  <CircleDot className="h-3.5 w-3.5" />
+                  <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                </Badge>
+              )}
             </div>
           </div>
         </div>

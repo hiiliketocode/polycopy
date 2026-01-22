@@ -3300,6 +3300,65 @@ function ProfilePageContent() {
                 <p className="text-sm text-slate-500 mt-1">Your complete trading performance across all copied trades</p>
               </div>
 
+              {/* Top Traders Copied */}
+              {topTradersStats.length > 0 && (
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold text-slate-900 mb-2">Top Traders Copied</h3>
+                  <p className="text-sm text-slate-500 mb-6">Performance of trades copied from your top 10 most-copied traders</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="text-left py-3 px-2 font-semibold text-slate-700">Trader</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Copies</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Invested</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">P&L</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">ROI</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Win Rate</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {topTradersStats.map((trader) => (
+                          <tr key={trader.trader_wallet} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="py-3 px-2">
+                              <Link
+                                href={`/trader/${trader.trader_wallet}`}
+                                className="font-medium text-slate-900 hover:text-yellow-600 transition-colors"
+                              >
+                                {trader.trader_name}
+                              </Link>
+                            </td>
+                            <td className="text-right py-3 px-2 text-slate-700">{trader.copy_count}</td>
+                            <td className="text-right py-3 px-2 text-slate-700">
+                              {formatCurrency(trader.total_invested)}
+                            </td>
+                            <td
+                              className={cn(
+                                "text-right py-3 px-2 font-semibold",
+                                trader.pnl >= 0 ? "text-emerald-600" : "text-red-600"
+                              )}
+                            >
+                              {trader.pnl >= 0 ? '+' : ''}{formatCurrency(trader.pnl)}
+                            </td>
+                            <td
+                              className={cn(
+                                "text-right py-3 px-2 font-semibold",
+                                trader.roi >= 0 ? "text-emerald-600" : "text-red-600"
+                              )}
+                            >
+                              {trader.roi >= 0 ? '+' : ''}{trader.roi.toFixed(1)}%
+                            </td>
+                            <td className="text-right py-3 px-2 text-slate-700">
+                              {trader.win_rate.toFixed(0)}%
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              )}
+
               {/* Position Size Distribution */}
               <Card className="p-6">
                 <div className="flex items-center justify-between mb-6">
@@ -3626,61 +3685,6 @@ function ProfilePageContent() {
                   </div>
                 )}
               </Card>
-
-              {/* Top Traders Copied */}
-              {topTradersStats.length > 0 && (
-                <Card className="p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">Top Traders Copied</h3>
-                  <p className="text-sm text-slate-500 mb-6">Performance of trades copied from your top 10 most-copied traders</p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200">
-                          <th className="text-left py-3 px-2 font-semibold text-slate-700">Trader</th>
-                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Copies</th>
-                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Invested</th>
-                          <th className="text-right py-3 px-2 font-semibold text-slate-700">P&L</th>
-                          <th className="text-right py-3 px-2 font-semibold text-slate-700">ROI</th>
-                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Win Rate</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {topTradersStats.map((trader) => (
-                          <tr key={trader.trader_wallet} className="border-b border-slate-100 hover:bg-slate-50">
-                            <td className="py-3 px-2">
-                              <Link 
-                                href={`/trader/${trader.trader_wallet}`}
-                                className="font-medium text-slate-900 hover:text-yellow-600 transition-colors"
-                              >
-                                {trader.trader_name}
-                              </Link>
-                            </td>
-                            <td className="text-right py-3 px-2 text-slate-700">{trader.copy_count}</td>
-                            <td className="text-right py-3 px-2 text-slate-700">
-                              {formatCurrency(trader.total_invested)}
-                            </td>
-                            <td className={cn(
-                              "text-right py-3 px-2 font-semibold",
-                              trader.pnl >= 0 ? "text-emerald-600" : "text-red-600"
-                            )}>
-                              {trader.pnl >= 0 ? '+' : ''}{formatCurrency(trader.pnl)}
-                            </td>
-                            <td className={cn(
-                              "text-right py-3 px-2 font-semibold",
-                              trader.roi >= 0 ? "text-emerald-600" : "text-red-600"
-                            )}>
-                              {trader.roi >= 0 ? '+' : ''}{trader.roi.toFixed(1)}%
-                            </td>
-                            <td className="text-right py-3 px-2 text-slate-700">
-                              {trader.win_rate.toFixed(0)}%
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </Card>
-              )}
 
               <Card className="p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Performing Trades</h3>

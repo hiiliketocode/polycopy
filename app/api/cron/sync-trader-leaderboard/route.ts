@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+export const dynamic = 'force-dynamic'
+export const maxDuration = 300 // 5 minutes max duration for Vercel
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
@@ -35,7 +38,7 @@ type PolymarketLeaderboardEntry = {
 
 const DEFAULT_LIMIT = 200
 const MAX_LIMIT = 1000
-const DEFAULT_PAGES = 1
+const DEFAULT_PAGES = 5 // Top 1000 traders (5 pages × 200)
 const MAX_PAGES = 5
 
 function toNumber(value: unknown): number | null {
@@ -109,7 +112,8 @@ function buildTraderRow(
 
   const row: Record<string, string | number | boolean> = {
     wallet_address: wallet,
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
+    is_active: true // Leaderboard traders are active
   }
 
   if (entry.userName) row.display_name = entry.userName
@@ -149,6 +153,16 @@ function buildTraderRow(
   return row
 }
 
+/**
+ * GET /api/cron/sync-trader-leaderboard
+ * Daily cron that syncs top 1000 Polymarket leaderboard traders into the traders table.
+ * 
+ * - Fetches top 1000 traders (5 pages × 200) from Polymarket leaderboard
+ * - Upserts into traders table with is_active=true
+ * - New wallets are automatically picked up by the daily backfill-wallet-pnl cron
+ * 
+ * Schedule: Daily at 1 AM UTC (configured in vercel.json)
+ */
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -169,32 +183,19 @@ export async function GET(request: NextRequest) {
 
   let totalUpserted = 0
   let totalFetched = 0
+  const allWallets = new Set<string>()
+  const allEntries: PolymarketLeaderboardEntry[] = []
 
+  // Fetch all leaderboard pages
   for (let page = 0; page < pages; page += 1) {
     const offset = page * limit
     const entries = await fetchLeaderboardPage({ timePeriod, orderBy, category, limit, offset })
     totalFetched += entries.length
+    allEntries.push(...entries)
 
-    const wallets = entries
-      .map((entry) => entry.proxyWallet?.toLowerCase())
-      .filter((wallet): wallet is string => Boolean(wallet))
-    const followerCounts = await fetchFollowerCounts(wallets)
-
-    const payload = entries
-      .map((entry) => {
-        const wallet = entry.proxyWallet?.toLowerCase() || null
-        const followerCount = wallet ? followerCounts.get(wallet) ?? 0 : null
-        return buildTraderRow(entry, followerCount)
-      })
-      .filter((row): row is Record<string, string | number | boolean> => Boolean(row))
-
-    if (payload.length > 0) {
-      const { error, count } = await supabase
-        .from('traders')
-        .upsert(payload, { onConflict: 'wallet_address', count: 'exact' })
-
-      if (error) throw error
-      totalUpserted += count ?? payload.length
+    for (const entry of entries) {
+      const wallet = entry.proxyWallet?.toLowerCase()
+      if (wallet) allWallets.add(wallet)
     }
 
     if (entries.length < limit) {
@@ -202,9 +203,58 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Check which wallets are already in traders
+  const existingWallets = new Set<string>()
+  if (allWallets.size > 0) {
+    const { data: existing } = await supabase
+      .from('traders')
+      .select('wallet_address')
+      .in('wallet_address', Array.from(allWallets))
+
+    for (const row of existing || []) {
+      if (row.wallet_address) existingWallets.add(row.wallet_address.toLowerCase())
+    }
+  }
+
+  const newWallets = new Set<string>()
+  for (const wallet of allWallets) {
+    if (!existingWallets.has(wallet)) {
+      newWallets.add(wallet)
+    }
+  }
+
+  // Build payload and upsert
+  const wallets = Array.from(allWallets)
+  const followerCounts = await fetchFollowerCounts(wallets)
+
+  const payload = allEntries
+    .map((entry) => {
+      const wallet = entry.proxyWallet?.toLowerCase() || null
+      const followerCount = wallet ? followerCounts.get(wallet) ?? 0 : null
+      return buildTraderRow(entry, followerCount)
+    })
+    .filter((row): row is Record<string, string | number | boolean> => Boolean(row))
+
+  if (payload.length > 0) {
+    const { error, count } = await supabase
+      .from('traders')
+      .upsert(payload, { onConflict: 'wallet_address', count: 'exact' })
+
+    if (error) throw error
+    totalUpserted += count ?? payload.length
+  }
+
+  // New wallets will be picked up by the daily backfill-wallet-pnl cron
+  // (runs at 2 AM UTC, processes all traders + follows + trades_public + orders)
+  if (newWallets.size > 0) {
+    console.log(`📊 Added ${newWallets.size} new wallets to traders table. They will be backfilled by the daily cron.`)
+  }
+
   return NextResponse.json({
     fetched: totalFetched,
     upserted: totalUpserted,
+    newWallets: newWallets.size,
+    newWalletList: Array.from(newWallets).slice(0, 10), // Sample for debugging
     timePeriod,
     orderBy,
     category,

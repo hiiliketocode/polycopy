@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/backfill-wallet-pnl",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/sync-trader-leaderboard",
+      "schedule": "0 1 * * *"
     }
   ]
 }
