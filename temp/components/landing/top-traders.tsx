@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, TrendingUp, Trophy } from "lucide-react"
 
@@ -183,11 +182,9 @@ export function TopTraders() {
               </div>
 
               {/* CTA */}
-              <Link href="/discover">
-                <Button className="w-full bg-polycopy-yellow text-neutral-black hover:bg-polycopy-yellow-hover font-semibold text-xs lg:text-sm h-8 lg:h-10">
-                  View Profile
-                </Button>
-              </Link>
+              <Button className="w-full bg-polycopy-yellow text-neutral-black hover:bg-polycopy-yellow-hover font-semibold text-xs lg:text-sm h-8 lg:h-10">
+                View Profile
+              </Button>
 
               {/* Hover Glow */}
               <div className="absolute inset-0 rounded-xl lg:rounded-2xl bg-gradient-to-br from-polycopy-yellow/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
@@ -197,16 +194,17 @@ export function TopTraders() {
 
         {/* Explore All CTA */}
         <div className="text-center">
-          <Link href="/discover">
-            <Button
-              variant="outline"
-              size="lg"
-              className="font-semibold border-polycopy-yellow text-polycopy-yellow hover:bg-polycopy-yellow hover:text-neutral-black bg-transparent"
-            >
+          <Button
+            variant="outline"
+            size="lg"
+            asChild
+            className="font-semibold border-polycopy-yellow text-polycopy-yellow hover:bg-polycopy-yellow hover:text-neutral-black bg-transparent"
+          >
+            <a href="https://polycopy.app/discover">
               Explore All Traders
               <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-          </Link>
+            </a>
+          </Button>
         </div>
       </div>
     </section>

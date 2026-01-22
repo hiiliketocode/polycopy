@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, TrendingUp, ExternalLink, ChevronDown } from "lucide-react"
 import { useConfetti } from "@/hooks/use-confetti"
@@ -203,12 +202,10 @@ export function Hero() {
 
             {/* CTA */}
             <div className="mb-8 lg:mb-0">
-              <Link href="/login?mode=signup">
-                <Button size="lg" className="bg-polycopy-yellow text-neutral-black hover:bg-polycopy-yellow-hover font-semibold text-sm lg:text-base px-6 lg:px-8 h-11 lg:h-12 shadow-lg shadow-polycopy-yellow/20">
-                  Start Copying For Free
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </Link>
+              <Button size="lg" className="bg-polycopy-yellow text-neutral-black hover:bg-polycopy-yellow-hover font-semibold text-sm lg:text-base px-6 lg:px-8 h-11 lg:h-12 shadow-lg shadow-polycopy-yellow/20">
+                Start Copying For Free
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
             </div>
 
             {/* Scroll hint on mobile */}
