@@ -41,6 +41,9 @@ interface ESPNScoreResult {
   statusDetail?: string;
 }
 
+/** Input type for getScoreDisplaySides; gameId is optional (unused by that helper). */
+export type ESPNScoreInput = Omit<ESPNScoreResult, 'gameId'> & { gameId?: string };
+
 type SportGroup =
   | 'nfl'
   | 'nba'
@@ -769,7 +772,7 @@ export function teamsMatch(marketTeam: string, espnTeamName: string, espnAbbrev:
 
 export function getScoreDisplaySides(
   marketTitle: string,
-  espnScore: ESPNScoreResult
+  espnScore: ESPNScoreInput
 ): { team1Label: string; team1Score: number; team2Label: string; team2Score: number } {
   const teams = extractTeamNames(marketTitle);
 
