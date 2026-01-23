@@ -8,7 +8,7 @@ import { supabase, ensureProfile } from '@/lib/supabase';
 import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
-import { ChevronDown, Search } from 'lucide-react';
+import { Check, ChevronDown, Search } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { getTraderAvatarInitials } from '@/lib/trader-name';
 
@@ -873,7 +873,7 @@ function DiscoverPageContent() {
     }
     return entries
       .sort((a, b) => b.diff - a.diff)
-      .slice(0, 6);
+      .slice(0, 10);
   }, [rankedTraders, realizedDailyMap]);
 
   const selectedTickerTrades = useMemo(
@@ -1168,7 +1168,20 @@ function DiscoverPageContent() {
         profileImageUrl={profileImageUrl}
       />
       
-     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white md:pt-0 pb-20 md:pb-8">
+      {/* Mobile top nav banner (logo + page title) */}
+      <div className="md:hidden sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
+        <div className="flex items-center gap-4 px-4 py-3">
+          <Image
+            src="/logos/polycopy-logo-primary.svg"
+            alt="Polycopy"
+            width={120}
+            height={32}
+            className="h-7 w-auto"
+          />
+          <p className="text-sm font-semibold text-slate-900">Discover</p>
+        </div>
+      </div>
+      <div className="min-h-screen bg-white md:pt-0 pt-[70px] pb-20 md:pb-8">
         {/* Trade Ticker */}
         <div className="bg-white border-y border-slate-100">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
@@ -1176,7 +1189,7 @@ function DiscoverPageContent() {
               Recent Trades
             </div>
             {!loadingBiggestTrades && tickerLoop.length > 0 ? (
-              <div className="relative overflow-hidden rounded-xl border border-slate-200/70 bg-slate-50">
+              <div className="relative overflow-hidden rounded-xl border border-slate-200/70 bg-white">
                 <div className="discover-ticker-track flex items-center gap-4 py-2.5 px-4">
                   {tickerLoop.map((trade, index) => {
                     const displayName = trade.displayName
@@ -1199,7 +1212,7 @@ function DiscoverPageContent() {
                         ? 'bg-emerald-100 text-emerald-700'
                         : direction === 'down'
                         ? 'bg-rose-100 text-rose-700'
-                        : 'bg-slate-200 text-slate-600';
+                        : 'bg-[#FFF7E1] text-slate-600';
 
                     return (
                     <Link
@@ -1232,7 +1245,7 @@ function DiscoverPageContent() {
                 </div>
               </div>
             ) : (
-              <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+              <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-sm text-slate-500">
                 {loadingBiggestTrades ? 'Loading biggest trades...' : 'No recent trades in the last hour.'}
               </div>
             )}
@@ -1240,7 +1253,7 @@ function DiscoverPageContent() {
         </div>
 
         {/* Search Bar */}
-        <div className="bg-gradient-to-b from-slate-50 to-white">
+        <div className="bg-white">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-4 sm:pt-8 sm:pb-6">
             <div className="max-w-2xl mx-auto relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
@@ -1271,6 +1284,99 @@ function DiscoverPageContent() {
           </div>
         </div>
 
+
+        {/* Trending Traders Section */}
+        {trendingTraders.length > 0 && (
+          <div className="bg-white">
+            <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                <div>
+                <h3 className="text-lg font-semibold text-slate-900">Trending Traders</h3>
+                <p className="text-xs text-slate-500">Most improved by realized PnL week-on-week</p>
+                </div>
+              </div>
+
+            <div className="overflow-x-auto">
+              <div className="flex gap-4 pb-2">
+                {trendingTraders.slice(0, 10).map((entry, index) => {
+                    const trader = entry.trader;
+                    const rows = realizedDailyMap[normalizeWallet(trader.wallet)] || [];
+                    const isFollowing = followedWallets.has(trader.wallet.toLowerCase());
+                    const changeColor =
+                      entry.pctChange !== null
+                        ? entry.pctChange > 0
+                          ? "text-emerald-600"
+                          : entry.pctChange < 0
+                          ? "text-rose-500"
+                          : "text-slate-900"
+                        : "text-slate-400";
+
+                    return (
+                    <div
+                      key={trader.wallet}
+                      className="group min-w-[220px] flex-shrink-0 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-lg"
+                      style={{ minHeight: '240px' }}
+                    >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-10 w-10 border-2 border-white bg-white shadow-sm flex-shrink-0">
+                              {trader.profileImage ? (
+                                <AvatarImage src={trader.profileImage} alt={trader.displayName} />
+                              ) : null}
+                              <AvatarFallback className="bg-white text-slate-700 font-semibold text-sm">
+                                {getTraderAvatarInitials({ displayName: trader.displayName, wallet: trader.wallet })}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 max-w-[140px]">
+                              <p className="text-sm font-semibold text-slate-900 truncate">
+                                {formatDisplayName(trader.displayName, trader.wallet)}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs text-slate-400 font-medium">#{index + 1}</span>
+                        </div>
+
+                        <div className="mt-2 text-center">
+                          <span className={`text-sm font-semibold ${changeColor}`}>
+                            {formatPercentChange(entry.pctChange)}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 flex justify-center">
+                          <div className="w-full max-w-[220px] rounded-2xl border border-slate-200 px-4 py-3 text-center text-sm text-slate-500">
+                            <p className="text-[11px] tracking-[0.3em] text-slate-400 mb-1">Last Seven Days</p>
+                            <p className="text-base font-semibold text-slate-900">
+                              {formatSignedLargeNumber(entry.weekly.last7)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="relative mt-3 flex h-12 items-center justify-center">
+                          <div className="absolute inset-x-0 top-1/2 border-t border-slate-200/70" />
+                          <div className="relative z-10">
+                            <PnlSparkline rows={rows} limit={14} width={180} />
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleFollowChange(trader.wallet, !isFollowing)}
+                          className="mt-4 w-full rounded-full bg-[#FDB022] px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-[#e6a71a]"
+                          aria-label={isFollowing ? 'Following' : 'Follow'}
+                        >
+                          {isFollowing ? (
+                            <Check className="h-4 w-4 mx-auto" aria-hidden />
+                          ) : (
+                            'Follow'
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Top Traders Section */}
         <div className="bg-white">
@@ -1311,8 +1417,8 @@ function DiscoverPageContent() {
                           }}
                           className={`w-full px-4 py-2 text-left font-semibold transition ${
                             isActive
-                              ? "bg-slate-100 text-emerald-600"
-                              : "text-slate-600 hover:bg-slate-50"
+                              ? "bg-[#FFF6DA] text-emerald-600"
+                              : "text-slate-600 hover:bg-[#FFF6DA]"
                           }`}
                         >
                           {option.label}
@@ -1339,9 +1445,9 @@ function DiscoverPageContent() {
                           window.history.pushState({}, '', newUrl.toString());
                         }}
                         className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-full font-medium text-xs sm:text-sm transition-all whitespace-nowrap ${
-                          isActive
-                            ? "bg-[#FDB022] text-slate-900 shadow-sm"
-                            : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                            isActive
+                              ? "bg-[#FDB022] text-slate-900 shadow-sm"
+                              : "bg-white text-slate-600 hover:bg-[#FFF6DA] border border-slate-200"
                         }`}
                       >
                         {category}
@@ -1358,10 +1464,10 @@ function DiscoverPageContent() {
                 {[1, 2, 3, 4, 5, 6].map((i) => (
                   <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 animate-pulse">
                     <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 bg-slate-200 rounded-full"></div>
+                      <div className="w-16 h-16 bg-[#FFF6DA] rounded-full"></div>
                       <div className="flex-1 space-y-2">
-                        <div className="h-5 bg-slate-200 rounded w-32"></div>
-                        <div className="h-4 bg-slate-200 rounded w-24"></div>
+                        <div className="h-5 bg-[#FFF6DA] rounded w-32"></div>
+                        <div className="h-4 bg-[#FFF6DA] rounded w-24"></div>
                       </div>
                     </div>
                   </div>
@@ -1441,8 +1547,13 @@ function DiscoverPageContent() {
                           <button
                             onClick={() => handleFollowChange(trader.wallet, !isFollowing)}
                             className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm px-4 h-8 text-xs rounded-full"
+                            aria-label={isFollowing ? 'Following' : 'Follow'}
                           >
-                            {isFollowing ? "Following" : "Follow"}
+                            {isFollowing ? (
+                              <Check className="h-3.5 w-3.5 mx-auto" aria-hidden />
+                            ) : (
+                              'Follow'
+                            )}
                           </button>
                         </div>
                       </div>
@@ -1459,7 +1570,7 @@ function DiscoverPageContent() {
                             setVisibleCount((prev) => Math.min(prev + 10, filteredTraders.length));
                             setAutoLoadEnabled(true);
                           }}
-                          className="h-9 w-28 rounded-md border border-slate-200 bg-white text-xs font-semibold uppercase tracking-wide text-slate-600 transition hover:bg-slate-50"
+                          className="h-9 w-28 rounded-md border border-slate-200 bg-white text-xs font-semibold uppercase tracking-wide text-slate-600 transition hover:bg-[#FFF6DA]"
                         >
                           View More
                         </button>
@@ -1472,7 +1583,7 @@ function DiscoverPageContent() {
                   <div className="px-4 sm:px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
                     <button
                       onClick={() => setVisibleCount(10)}
-                      className="w-full sm:w-auto px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-all"
+                      className="w-full sm:w-auto px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-[#FFF6DA] transition-all"
                     >
                       Close
                     </button>
@@ -1486,94 +1597,6 @@ function DiscoverPageContent() {
             )}
           </div>
         </div>
-
-        {trendingTraders.length > 0 && (
-          <div className="bg-white">
-            <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
-                <div>
-                <h3 className="text-lg font-semibold text-slate-900">Trending Traders</h3>
-                <p className="text-xs text-slate-500">Most improved by realized PnL week-on-week</p>
-                </div>
-              </div>
-
-            <div className="overflow-x-auto">
-              <div className="flex gap-4 pb-2">
-                {trendingTraders.slice(0, 10).map((entry, index) => {
-                    const trader = entry.trader;
-                    const rows = realizedDailyMap[normalizeWallet(trader.wallet)] || [];
-                    const isFollowing = followedWallets.has(trader.wallet.toLowerCase());
-                    const changeColor =
-                      entry.pctChange !== null
-                        ? entry.pctChange > 0
-                          ? "text-emerald-600"
-                          : entry.pctChange < 0
-                          ? "text-rose-500"
-                          : "text-slate-900"
-                        : "text-slate-400";
-
-                    return (
-                    <div
-                      key={trader.wallet}
-                      className="group min-w-[220px] flex-shrink-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-lg"
-                      style={{ minHeight: '320px' }}
-                    >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-10 w-10 border-2 border-white bg-white shadow-sm flex-shrink-0">
-                              {trader.profileImage ? (
-                                <AvatarImage src={trader.profileImage} alt={trader.displayName} />
-                              ) : null}
-                              <AvatarFallback className="bg-white text-slate-700 font-semibold text-sm">
-                                {getTraderAvatarInitials({ displayName: trader.displayName, wallet: trader.wallet })}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="min-w-0 max-w-[140px]">
-                              <p className="text-sm font-semibold text-slate-900 truncate">
-                                {formatDisplayName(trader.displayName, trader.wallet)}
-                              </p>
-                            </div>
-                          </div>
-                          <span className="text-xs text-slate-400 font-medium">#{index + 1}</span>
-                        </div>
-
-                        <div className="mt-2 text-center">
-                          <span className={`text-sm font-semibold ${changeColor}`}>
-                            {formatPercentChange(entry.pctChange)}
-                          </span>
-                          <p className="text-[10px] text-slate-400 mt-1">P&L change</p>
-                        </div>
-
-                        <div className="mt-4 flex justify-center">
-                          <div className="w-full max-w-[220px] rounded-2xl border border-slate-200 px-4 py-3 text-center text-sm text-slate-500">
-                            <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400 mb-1">Last 7 days</p>
-                            <p className="text-base font-semibold text-slate-900">
-                              {formatSignedLargeNumber(entry.weekly.last7)}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="relative mt-4 flex h-16 items-center justify-center">
-                          <div className="absolute inset-x-0 top-1/2 border-t border-slate-200/70" />
-                          <div className="relative z-10">
-                            <PnlSparkline rows={rows} limit={14} width={180} />
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => handleFollowChange(trader.wallet, !isFollowing)}
-                          className="mt-5 w-full rounded-full bg-[#FDB022] px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-[#e6a71a]"
-                        >
-                          {isFollowing ? "Following" : "Follow"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Insights Section */}
         <div className="bg-white">
@@ -1605,7 +1628,7 @@ function DiscoverPageContent() {
                               openFollowModal({ wallet: trader.wallet, displayName: trader.displayName });
                             }
                           }}
-                          className="flex cursor-pointer items-center gap-3 px-4 py-3 transition hover:bg-slate-50"
+                          className="flex cursor-pointer items-center gap-3 px-4 py-3 transition hover:bg-[#FFF6DA]"
                         >
                           <div className="flex items-center gap-3">
                             <span className="text-sm font-semibold text-slate-400">{index + 1}</span>
@@ -1651,7 +1674,7 @@ function DiscoverPageContent() {
                               openFollowModal({ wallet: trader.wallet, displayName: trader.displayName });
                             }
                           }}
-                          className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-slate-50"
+                          className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-[#FFF6DA]"
                         >
                           <div className="flex items-center gap-3">
                             <span className="text-sm font-semibold text-slate-400">{index + 1}</span>
@@ -1699,7 +1722,7 @@ function DiscoverPageContent() {
                               openFollowModal({ wallet: trader.wallet, displayName: trader.displayName });
                             }
                           }}
-                          className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-slate-50"
+                          className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-[#FFF6DA]"
                         >
                           <div className="flex items-center gap-3">
                             <span className="text-sm font-semibold text-slate-400">{index + 1}</span>
@@ -1753,7 +1776,7 @@ function DiscoverPageContent() {
                               openFollowModal({ wallet: trader.wallet, displayName: trader.displayName });
                             }
                           }}
-                          className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-slate-50"
+                          className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-[#FFF6DA]"
                         >
                           <div className="flex items-center gap-3">
                             <span className="text-sm font-semibold text-slate-400">{index + 1}</span>
@@ -1798,7 +1821,7 @@ function DiscoverPageContent() {
               <div className="mt-6 flex justify-end gap-3">
                 <button
                   onClick={closeFollowModal}
-                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[#FFF6DA]"
                 >
                   Cancel
                 </button>
@@ -1820,7 +1843,7 @@ function DiscoverPageContent() {
 export default function DiscoverPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
           <p className="text-slate-600 text-lg">Loading...</p>

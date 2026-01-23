@@ -66,7 +66,7 @@ export function Hero() {
 
       {/* Desktop Layout */}
       <div className="hidden lg:block">
-        <div className="max-w-7xl mx-auto px-6 py-20 lg:py-32">
+        <div className="max-w-7xl mx-auto px-6 py-12 lg:py-20">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             {/* Left: Text content */}
             <div>
@@ -114,7 +114,7 @@ export function Hero() {
 
       {/* Mobile Layout */}
       <div className="lg:hidden">
-        <div className="px-6 py-12 pt-20">
+        <div className="px-6 py-12 pt-12">
           <div className="mb-4">
             <Image 
               src="/logos/polycopy-logo-primary.svg" 

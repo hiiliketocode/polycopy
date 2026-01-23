@@ -385,6 +385,8 @@ export default function TraderProfilePage({
     eventSlug?: string;
     marketAvatarUrl?: string;
     tags?: unknown;
+    homeTeam?: string | null;
+    awayTeam?: string | null;
   }>>(new Map());
 
   useEffect(() => {
@@ -1111,6 +1113,8 @@ export default function TraderProfilePage({
                       eventSlug: resolvedEventSlug || existing?.eventSlug,
                       marketAvatarUrl: marketAvatarUrl || existing?.marketAvatarUrl,
                       tags: tags ?? existing?.tags,
+                      homeTeam: typeof homeTeam === 'string' ? homeTeam : null,
+                      awayTeam: typeof awayTeam === 'string' ? awayTeam : null,
                     });
                     return next;
                   });
@@ -1148,6 +1152,19 @@ export default function TraderProfilePage({
         const fallbackDate = result.endDateIso || result.gameStartTime;
         if (fallbackDate) {
           dateHintsByMarketKey[result.trade.conditionId] = fallbackDate;
+        }
+      });
+
+      const teamHintsByMarketKey: Record<string, { homeTeam?: string; awayTeam?: string }> = {};
+      priceResults.forEach((result) => {
+        if (!result?.trade.conditionId) return;
+        const home = result.homeTeam?.trim();
+        const away = result.awayTeam?.trim();
+        if (home || away) {
+          teamHintsByMarketKey[result.trade.conditionId] = {
+            homeTeam: home || undefined,
+            awayTeam: away || undefined,
+          };
         }
       });
 
@@ -1194,6 +1211,7 @@ export default function TraderProfilePage({
       const espnScoresPromise = getESPNScoresForTrades(tradesForESPNResolved as any, {
         dateHints,
         dateHintsByMarketKey,
+        teamHintsByMarketKey,
       });
 
       // Now wait for ESPN scores and update trades with scores
@@ -1248,7 +1266,7 @@ export default function TraderProfilePage({
               );
               next.set(trade.conditionId!, {
                 price: currentPrice,
-                closed: closed,
+                closed,
                 resolved: isResolved,
                 score: scoreDisplay ?? existing?.score,
                 liveStatus: liveStatus ?? existing?.liveStatus,
@@ -1259,6 +1277,8 @@ export default function TraderProfilePage({
                 eventSlug: existing?.eventSlug ?? result.eventSlug,
                 marketAvatarUrl: existing?.marketAvatarUrl ?? marketAvatarUrl,
                 tags: existing?.tags ?? result.tags,
+                homeTeam: existing?.homeTeam ?? result.homeTeam ?? null,
+                awayTeam: existing?.awayTeam ?? result.awayTeam ?? null,
               });
               return next;
             });

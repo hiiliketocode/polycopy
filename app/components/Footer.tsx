@@ -54,7 +54,7 @@ export default function Footer() {
         {/* Disclaimer */}
         <div className="pt-6 border-t border-slate-800">
           <p className="text-xs text-slate-500 text-center max-w-3xl mx-auto leading-relaxed">
-            Trading involves risk. Past performance does not guarantee future results. Polycopy is a copy trading 
+            Trading involves risk. Past performance does not guarantee future results. Polycopy is a copy trading signals 
             platform and does not provide financial advice. Premium users who connect their wallet authorize Polycopy 
             to execute trades on your behalf when you explicitly instruct us to do so. You maintain full ownership of 
             your wallet and funds at all times. You can disconnect your wallet anytime.

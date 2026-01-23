@@ -107,7 +107,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         </noscript>
         {/* End Google Tag Manager (noscript) */}
         
-        <div className="flex-1">
+        <div className="flex-1 bottom-nav-offset">
           {children}
         </div>
         <Footer />

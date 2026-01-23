@@ -59,6 +59,11 @@ type SportGroup =
   | 'mma'
   | 'boxing';
 
+type TeamHint = {
+  homeTeam?: string | null;
+  awayTeam?: string | null;
+};
+
 const ESPORTS_TOKENS = [
   'esports',
   'e-sports',
@@ -640,6 +645,14 @@ function extractSingleTeamHint(title: string): { team: string } | null {
   return { team: cleaned };
 }
 
+function buildTeamsFromHint(hint?: TeamHint) {
+  if (!hint) return null;
+  const home = hint.homeTeam?.trim();
+  const away = hint.awayTeam?.trim();
+  if (!home || !away) return null;
+  return { team1: home, team2: away };
+}
+
 function normalizeDateKey(value: string): string | null {
   if (!value) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -849,9 +862,10 @@ async function fetchESPNGroupScores(sport: SportGroup, dateKey?: string): Promis
 function findMatchingGame(
   marketTitle: string,
   games: ESPNGame[],
-  options?: { dateHintKey?: string | null; sport?: SportGroup }
+  options?: { dateHintKey?: string | null; sport?: SportGroup; teamHint?: TeamHint }
 ): ESPNGame | null {
-  const teams = extractTeamNames(marketTitle);
+  const teamsFromTitle = extractTeamNames(marketTitle);
+  const teams = teamsFromTitle || buildTeamsFromHint(options?.teamHint);
   if (!teams) {
     const singleTeamMatch = extractSingleTeamMatch(marketTitle);
     const fallbackSingleTeam = singleTeamMatch ?? extractSingleTeamHint(marketTitle);
@@ -974,6 +988,7 @@ export async function getESPNScoresForTrades(
   options?: {
     dateHints?: Array<string | number | null | undefined>;
     dateHintsByMarketKey?: Record<string, string | number | null | undefined>;
+    teamHintsByMarketKey?: Record<string, TeamHint>;
   }
 ): Promise<Map<string, ESPNScoreResult>> {
   const scoreMap = new Map<string, ESPNScoreResult>();
@@ -987,6 +1002,22 @@ export async function getESPNScoresForTrades(
       if (matchKey) keys.set(marketKey, matchKey);
     });
     return keys;
+  })();
+
+  const teamHintsByMarketKeyMap = (() => {
+    const hints = new Map<string, TeamHint>();
+    if (!options?.teamHintsByMarketKey) return hints;
+    Object.entries(options.teamHintsByMarketKey).forEach(([marketKey, hint]) => {
+      if (!hint) return;
+      const homeTeam = typeof hint.homeTeam === 'string' ? hint.homeTeam.trim() : hint.homeTeam;
+      const awayTeam = typeof hint.awayTeam === 'string' ? hint.awayTeam.trim() : hint.awayTeam;
+      if (!homeTeam && !awayTeam) return;
+      hints.set(marketKey, {
+        homeTeam: homeTeam || undefined,
+        awayTeam: awayTeam || undefined,
+      });
+    });
+    return hints;
   })();
 
   const dateKeys = (() => {
@@ -1071,6 +1102,7 @@ export async function getESPNScoresForTrades(
         const matchingGame = findMatchingGame(trade.market.title, espnGames, {
           dateHintKey,
           sport: sportKey,
+          teamHint: marketKey ? teamHintsByMarketKeyMap.get(marketKey) : undefined,
         });
         if (matchingGame) {
           console.log(`✅ Found ESPN game for "${trade.market.title}": ${matchingGame.name} (${matchingGame.status})`);
@@ -1095,6 +1127,7 @@ export async function getESPNScoresForTrades(
         const matchingGame = findMatchingGame(trade.market.title, games, {
           dateHintKey,
           sport,
+          teamHint: teamHintsByMarketKeyMap.get(key),
         });
         if (matchingGame) {
           console.log(`✅ Found ESPN game for "${trade.market.title}": ${matchingGame.name} (${matchingGame.status})`);

@@ -29,7 +29,7 @@ export function Footer() {
           <div className="text-sm">© {new Date().getFullYear()} Polycopy. All rights reserved.</div>
         </div>
         <div className="text-xs text-slate-400 text-center max-w-4xl mx-auto">
-          Trading involves risk. Past performance does not guarantee future results. Polycopy is a copy trading platform
+          Trading involves risk. Past performance does not guarantee future results. Polycopy is a copy trading signals platform
           and does not provide financial advice. By importing your wallet, you authorize Polycopy to execute trades on
           your behalf based on the traders you follow. You can disconnect your wallet anytime.
         </div>

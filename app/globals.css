@@ -191,6 +191,17 @@ body {
   .safe-area-bottom {
     padding-bottom: max(0px, env(safe-area-inset-bottom));
   }
+
+  /* ensure content doesn't get hidden under the bottom nav on mobile */
+  .bottom-nav-offset {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  @media (min-width: 768px) {
+    .bottom-nav-offset {
+      padding-bottom: 0;
+    }
+  }
 }
 
 @keyframes discover-ticker {
@@ -204,7 +215,7 @@ body {
 
 .discover-ticker-track {
   width: max-content;
-  animation: discover-ticker 70s linear infinite;
+  animation: discover-ticker 91s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

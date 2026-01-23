@@ -499,6 +499,8 @@ export default function FeedPage() {
     eventSlug?: string;
     marketAvatarUrl?: string;
     tags?: unknown;
+    homeTeam?: string | null;
+    awayTeam?: string | null;
     updatedAt?: number;
   }>>(new Map());
 
@@ -1850,6 +1852,8 @@ export default function FeedPage() {
                     eventSlug: resolvedEventSlug || trade.market.eventSlug || undefined,
                     marketAvatarUrl: marketAvatarUrl || trade.market.avatarUrl,
                     tags: tags ?? trade.market.tags,
+                    homeTeam: typeof homeTeam === 'string' ? homeTeam : null,
+                    awayTeam: typeof awayTeam === 'string' ? awayTeam : null,
                     updatedAt: Date.now(),
                   });
                 }
@@ -1887,6 +1891,8 @@ export default function FeedPage() {
           eventSlug: value.eventSlug || existing?.eventSlug,
           marketAvatarUrl: value.marketAvatarUrl || existing?.marketAvatarUrl,
           tags: value.tags ?? existing?.tags,
+          homeTeam: value.homeTeam ?? existing?.homeTeam,
+          awayTeam: value.awayTeam ?? existing?.awayTeam,
         });
       });
       return merged;
@@ -1899,6 +1905,20 @@ export default function FeedPage() {
       const espnKey = trade.market.conditionId || trade.market.id || trade.market.title;
       if (espnKey && fallbackDate) {
         dateHintsByMarketKey[espnKey] = fallbackDate;
+      }
+    });
+
+    const teamHintsByMarketKey: Record<string, { homeTeam?: string; awayTeam?: string }> = {};
+    tradeByMarketKey.forEach((trade, marketKey) => {
+      const liveData = newLiveData.get(marketKey);
+      const espnKey = trade.market.conditionId || trade.market.id || trade.market.title;
+      const homeTeamName = liveData?.homeTeam?.trim();
+      const awayTeamName = liveData?.awayTeam?.trim();
+      if (espnKey && (homeTeamName || awayTeamName)) {
+        teamHintsByMarketKey[espnKey] = {
+          homeTeam: homeTeamName || undefined,
+          awayTeam: awayTeamName || undefined,
+        };
       }
     });
 
@@ -1932,6 +1952,7 @@ export default function FeedPage() {
     const espnScores = await getESPNScoresForTrades(espnTrades, {
       dateHints,
       dateHintsByMarketKey,
+      teamHintsByMarketKey,
     }).catch((error) => {
       console.warn('Failed to fetch ESPN scores:', error);
       return new Map();
@@ -1978,6 +1999,8 @@ export default function FeedPage() {
           liveStatus,
           gameStartTime: resolvedGameStartTime,
           espnUrl: espnScore.gameUrl || liveData.espnUrl || fallbackEspnUrl,
+          homeTeam: liveData.homeTeam,
+          awayTeam: liveData.awayTeam,
           updatedAt: Date.now(),
         });
 
@@ -3565,7 +3588,6 @@ export default function FeedPage() {
           <ArrowUp className="h-4 w-4" />
         </button>
       )}
-
       <TradeExecutionNotifications
         notifications={tradeNotifications}
         onNavigate={handleNavigateToTrade}

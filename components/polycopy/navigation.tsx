@@ -49,7 +49,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
   const [portfolioValue, setPortfolioValue] = useState<number | null>(null)
   const [cashBalance, setCashBalance] = useState<number | null>(null)
-  const [loadingBalance, setLoadingBalance] = useState(false)
+  const [initialBalanceLoad, setInitialBalanceLoad] = useState(true)
   const [showUI, setShowUI] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [premiumStatus, setPremiumStatus] = useState<boolean | null>(isPremium ? true : null)
@@ -68,7 +68,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
   const showLowBalanceCallout =
     hasPremiumAccess &&
     hasWalletConnected &&
-    !loadingBalance &&
+    !initialBalanceLoad &&
     typeof cashBalance === "number" &&
     cashBalance < 1
 
@@ -269,8 +269,11 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
   useEffect(() => {
     if (!hasPremiumAccess || !walletAddress || !activeUser) return
 
-    const fetchBalance = async () => {
-      setLoadingBalance(true)
+    const fetchBalance = async (initialLoad = false) => {
+      if (initialLoad) {
+        setInitialBalanceLoad(true)
+      }
+
       try {
         if (!walletAddress?.trim()) return
         // Use the public Polymarket API endpoint
@@ -290,13 +293,15 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
       } catch {
         console.warn('Wallet balance unavailable (network error).')
       } finally {
-        setLoadingBalance(false)
+        if (initialLoad) {
+          setInitialBalanceLoad(false)
+        }
       }
     }
 
-    fetchBalance()
-    // Refresh balance every 30 seconds
-    const interval = setInterval(fetchBalance, 30000)
+    fetchBalance(true)
+    // Refresh balance every minute
+    const interval = setInterval(() => fetchBalance(false), 60000)
     return () => clearInterval(interval)
   }, [hasPremiumAccess, walletAddress, activeUser])
 
@@ -388,7 +393,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                       Portfolio
                     </div>
                     <div className="text-xs font-medium text-emerald-600">
-                      {loadingBalance ? "..." : portfolioValue !== null ? formatUsd(portfolioValue) : "$0.00"}
+                      {initialBalanceLoad ? "..." : portfolioValue !== null ? formatUsd(portfolioValue) : "$0.00"}
                     </div>
                   </div>
                   <div className="text-center">
@@ -413,7 +418,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                       )}
                     </div>
                     <div className="text-xs font-medium text-slate-600">
-                      {loadingBalance ? "..." : cashBalance !== null ? formatUsd(cashBalance) : "$0.00"}
+                      {initialBalanceLoad ? "..." : cashBalance !== null ? formatUsd(cashBalance) : "$0.00"}
                     </div>
                   </div>
                 </div>
