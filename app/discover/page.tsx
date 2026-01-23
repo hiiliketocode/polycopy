@@ -1314,8 +1314,17 @@ function DiscoverPageContent() {
                     return (
                     <div
                       key={trader.wallet}
-                      className="group min-w-[220px] flex-shrink-0 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-lg"
+                      className="group min-w-[220px] flex-shrink-0 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-lg cursor-pointer"
                       style={{ minHeight: '240px' }}
+                      onClick={() => router.push(`/trader/${trader.wallet}?tab=trades`)}
+                      role="link"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          router.push(`/trader/${trader.wallet}?tab=trades`)
+                        }
+                      }}
                     >
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3">
@@ -1344,7 +1353,7 @@ function DiscoverPageContent() {
 
                         <div className="mt-3 flex justify-center">
                           <div className="w-full max-w-[220px] rounded-2xl border border-slate-200 px-4 py-3 text-center text-sm text-slate-500">
-                            <p className="text-[11px] tracking-[0.3em] text-slate-400 mb-1">Last Seven Days</p>
+                            <p className="text-[11px] tracking-[0.3em] text-slate-400 mb-1">Last 7 Days</p>
                             <p className="text-base font-semibold text-slate-900">
                               {formatSignedLargeNumber(entry.weekly.last7)}
                             </p>
@@ -1359,7 +1368,10 @@ function DiscoverPageContent() {
                         </div>
 
                         <button
-                          onClick={() => handleFollowChange(trader.wallet, !isFollowing)}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            handleFollowChange(trader.wallet, !isFollowing)
+                          }}
                           className="mt-4 w-full rounded-full bg-[#FDB022] px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-[#e6a71a]"
                           aria-label={isFollowing ? 'Following' : 'Follow'}
                         >

@@ -2532,66 +2532,42 @@ export default function TraderProfilePage({
                           >
                             {formatSignedCurrency(myTradeStats.trader.totalPnl)}
                           </p>
-                          <p className="text-[11px] text-slate-500 leading-snug">
-                            Wins <span className="text-emerald-600">{myTradeStats.trader.winningTrades}</span> &middot; Losses <span className="text-red-500">{myTradeStats.trader.losingTrades}</span>
-                          </p>
                         </div>
                         <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
                           <p className="text-xs font-medium text-slate-500">Volume</p>
                           <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
                         </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm space-y-2">
-                          <p className="text-xs font-medium text-slate-500">Realized &amp; Unrealized P&amp;L</p>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-500">Realized</span>
-                              <span
-                                className={cn(
-                                  'text-base font-semibold tabular-nums',
-                                  myTradeStats.trader.realizedPnl >= 0 ? 'text-emerald-600' : 'text-red-500'
-                                )}
-                              >
-                                {formatSignedCurrency(myTradeStats.trader.realizedPnl)}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-500">Unrealized (open)</span>
-                              <span
-                                className={cn(
-                                  'text-base font-semibold tabular-nums',
-                                  myTradeStats.trader.unrealizedPnl >= 0 ? 'text-emerald-600' : 'text-red-500'
-                                )}
-                              >
-                                {formatSignedCurrency(myTradeStats.trader.unrealizedPnl)}
-                              </span>
-                            </div>
+                        <div className="flex flex-col gap-2">
+                          <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
+                            <p className="text-xs font-medium text-slate-500">Realized</p>
+                            <p className="text-2xl font-semibold text-slate-900 tabular-nums">
+                              {formatSignedCurrency(myTradeStats.trader.realizedPnl)}
+                            </p>
                           </div>
-                          <p className="text-[11px] text-slate-400">
-                            Green values add to your gains, red values signal unrealized loss exposure.
-                          </p>
+                          <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
+                            <p className="text-xs font-medium text-slate-500">Unrealized P&amp;L</p>
+                            <p className="text-2xl font-semibold text-slate-900 tabular-nums">
+                              {formatSignedCurrency(myTradeStats.trader.unrealizedPnl)}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-4 shadow-sm">
-                          <p className="text-xs font-medium text-slate-500">Trades · Wins · Losses</p>
-                          <div className="mt-3 grid grid-cols-3 gap-2 text-center text-2xl font-semibold">
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Trades</p>
-                              <p className="text-slate-900 tabular-nums">{myTradeStats.trader.totalTrades}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Wins</p>
-                              <p className="text-emerald-600 tabular-nums">{myTradeStats.trader.winningTrades}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Losses</p>
-                              <p className="text-red-500 tabular-nums">{myTradeStats.trader.losingTrades}</p>
-                            </div>
-                          </div>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-4 text-center shadow-sm flex flex-col items-center justify-center gap-1">
+                          <p className="text-xs font-medium text-slate-500">Total Trades</p>
+                          <p className="text-2xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.totalTrades}</p>
                         </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-4 text-center shadow-sm flex flex-col items-center justify-center gap-1">
+                          <p className="text-xs font-medium text-slate-500">Wins</p>
+                          <p className="text-2xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.winningTrades}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-4 text-center shadow-sm flex flex-col items-center justify-center gap-1">
+                          <p className="text-xs font-medium text-slate-500">Losses</p>
+                          <p className="text-2xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.losingTrades}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-4 text-center shadow-sm flex flex-col items-center justify-center gap-1">
                           <p className="text-xs font-medium text-slate-500">Open Positions</p>
-                          <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.openTrades}</p>
+                          <p className="text-2xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.openTrades}</p>
                         </div>
                       </div>
                       <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 shadow-sm">
