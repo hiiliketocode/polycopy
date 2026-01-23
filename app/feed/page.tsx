@@ -1659,6 +1659,8 @@ export default function FeedPage() {
       eventSlug?: string;
       marketAvatarUrl?: string;
       tags?: unknown;
+      homeTeam?: string | null;
+      awayTeam?: string | null;
       updatedAt?: number;
     }>();
     
