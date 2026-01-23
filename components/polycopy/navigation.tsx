@@ -269,11 +269,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
   useEffect(() => {
     if (!hasPremiumAccess || !walletAddress || !activeUser) return
 
-    const fetchBalance = async (initialLoad = false) => {
-      if (initialLoad) {
-        setInitialBalanceLoad(true)
-      }
-
+    const fetchBalance = async () => {
       try {
         if (!walletAddress?.trim()) return
         // Use the public Polymarket API endpoint
@@ -293,17 +289,18 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
       } catch {
         console.warn('Wallet balance unavailable (network error).')
       } finally {
-        if (initialLoad) {
+        // Only set initialBalanceLoad to false after the first load
+        if (initialBalanceLoad) {
           setInitialBalanceLoad(false)
         }
       }
     }
 
-    fetchBalance(true)
+    fetchBalance()
     // Refresh balance every minute
-    const interval = setInterval(() => fetchBalance(false), 60000)
+    const interval = setInterval(() => fetchBalance(), 60000)
     return () => clearInterval(interval)
-  }, [hasPremiumAccess, walletAddress, activeUser])
+  }, [hasPremiumAccess, walletAddress, activeUser, initialBalanceLoad])
 
   return (
     <>
