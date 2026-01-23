@@ -1,3 +1,6 @@
+import { redirect } from "next/navigation"
+
+import { createClient } from "@/lib/supabase/server"
 import { Header } from "@/components/landing/header"
 import { Hero } from "@/components/landing/hero"
 import { FeaturesCarousel } from "@/components/landing/features-carousel"
@@ -7,7 +10,16 @@ import { Pricing } from "@/components/landing/pricing"
 import { Security } from "@/components/landing/security"
 import { CTA } from "@/components/landing/cta"
 
-export default function Home() {
+export default async function Home() {
+  const supabase = await createClient()
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  if (session?.user) {
+    redirect("/feed")
+  }
+
   return (
     <main className="min-h-screen bg-background">
       <Header />

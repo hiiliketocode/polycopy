@@ -857,9 +857,10 @@ function ProfilePageContent() {
           const priceResponse = await fetch(`/api/polymarket/price?conditionId=${marketId}`);
           if (priceResponse.ok) {
             const priceData = await priceResponse.json();
-            
+
             if (priceData.success && priceData.market) {
-              const { outcomes, outcomePrices, closed } = priceData.market;
+              const { outcomes, outcomePrices, closed, resolved } = priceData.market;
+              const marketResolved = resolved === true || Boolean(closed);
               const outcomeSet = outcomeTargets.get(marketId) || new Set<string>();
               for (const outcome of outcomeSet) {
                 const outcomeIndex = outcomes?.findIndex((o: string) => o.toUpperCase() === outcome.toUpperCase());
@@ -867,7 +868,7 @@ function ProfilePageContent() {
                   const price = Number(outcomePrices[outcomeIndex]);
                   newLiveData.set(buildLiveMarketKey(marketId, outcome), {
                     price,
-                    closed: Boolean(closed),
+                    closed: marketResolved,
                   });
                 }
               }
