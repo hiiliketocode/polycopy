@@ -2523,9 +2523,14 @@ export default function TraderProfilePage({
                   {myTradeStatsLoading ? (
                     <p className="mt-4 text-sm text-slate-500">Loading your trade stats...</p>
                   ) : hasMyTradeStats && myTradeStats ? (
-                    <div className="mt-4 space-y-4 text-sm text-slate-600">
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1.5">
+                    <div className="mt-4 space-y-3 text-sm text-slate-600">
+                      {/* Top Row: Open Positions | Total P&L */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
+                          <p className="text-xs font-medium text-slate-500">Open Positions</p>
+                          <p className="text-2xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.openTrades}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
                           <p className="text-xs font-medium text-slate-500">Total P&amp;L</p>
                           <p
                             className={`text-2xl font-semibold leading-tight tabular-nums ${myTradeStats.trader.totalPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.totalPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}
@@ -2533,41 +2538,46 @@ export default function TraderProfilePage({
                             {formatSignedCurrency(myTradeStats.trader.totalPnl)}
                           </p>
                         </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
-                          <p className="text-xs font-medium text-slate-500">Volume</p>
-                          <p className="text-xl font-semibold leading-tight text-slate-900 tabular-nums">{formatCurrency(myTradeStats.trader.totalVolume)}</p>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
-                            <p className="text-xs font-medium text-slate-500">Realized</p>
-                            <p className="text-2xl font-semibold text-slate-900 tabular-nums">
+                      </div>
+
+                      {/* Second Row: P&L - Realized | Unrealized (Open) */}
+                      <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm">
+                        <p className="text-xs font-semibold text-slate-600 mb-2">P&amp;L</p>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="text-center">
+                            <p className="text-xs font-medium text-slate-500 mb-1">Realized</p>
+                            <p
+                              className={`text-2xl font-semibold leading-tight tabular-nums ${myTradeStats.trader.realizedPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.realizedPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}
+                            >
                               {formatSignedCurrency(myTradeStats.trader.realizedPnl)}
                             </p>
                           </div>
-                          <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm flex flex-col items-center justify-center gap-1">
-                            <p className="text-xs font-medium text-slate-500">Unrealized P&amp;L</p>
-                            <p className="text-2xl font-semibold text-slate-900 tabular-nums">
+                          <div className="text-center">
+                            <p className="text-xs font-medium text-slate-500 mb-1">Unrealized (Open)</p>
+                            <p
+                              className={`text-2xl font-semibold leading-tight tabular-nums ${myTradeStats.trader.unrealizedPnl > 0 ? 'text-emerald-600' : myTradeStats.trader.unrealizedPnl < 0 ? 'text-red-500' : 'text-slate-900'}`}
+                            >
                               {formatSignedCurrency(myTradeStats.trader.unrealizedPnl)}
                             </p>
                           </div>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-4 text-center shadow-sm flex flex-col items-center justify-center gap-1">
-                          <p className="text-xs font-medium text-slate-500">Total Trades</p>
-                          <p className="text-2xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.totalTrades}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-4 text-center shadow-sm flex flex-col items-center justify-center gap-1">
-                          <p className="text-xs font-medium text-slate-500">Wins</p>
-                          <p className="text-2xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.winningTrades}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-4 text-center shadow-sm flex flex-col items-center justify-center gap-1">
-                          <p className="text-xs font-medium text-slate-500">Losses</p>
-                          <p className="text-2xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.losingTrades}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-4 text-center shadow-sm flex flex-col items-center justify-center gap-1">
-                          <p className="text-xs font-medium text-slate-500">Open Positions</p>
-                          <p className="text-2xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.openTrades}</p>
+
+                      {/* Third Row: Trades | Wins | Losses */}
+                      <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm">
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="text-center">
+                            <p className="text-xs font-medium text-slate-500 mb-1">Trades</p>
+                            <p className="text-2xl font-semibold leading-tight text-slate-900 tabular-nums">{myTradeStats.trader.totalTrades}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs font-medium text-slate-500 mb-1">Wins</p>
+                            <p className="text-2xl font-semibold leading-tight text-emerald-600 tabular-nums">{myTradeStats.trader.winningTrades}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs font-medium text-slate-500 mb-1">Losses</p>
+                            <p className="text-2xl font-semibold leading-tight text-red-500 tabular-nums">{myTradeStats.trader.losingTrades}</p>
+                          </div>
                         </div>
                       </div>
                       <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-3 shadow-sm">
