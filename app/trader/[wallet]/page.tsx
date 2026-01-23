@@ -2542,7 +2542,7 @@ export default function TraderProfilePage({
 
                       {/* Second Row: P&L - Realized | Unrealized (Open) */}
                       <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm">
-                        <p className="text-xs font-semibold text-slate-600 mb-2">P&amp;L</p>
+                        <p className="text-xs font-semibold text-slate-600 mb-2 text-center">P&amp;L</p>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="text-center">
                             <p className="text-xs font-medium text-slate-500 mb-1">Realized</p>
