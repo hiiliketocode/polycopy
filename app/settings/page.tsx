@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
 import {
@@ -381,6 +382,20 @@ export default function SettingsPage() {
         walletAddress={walletAddress}
         profileImageUrl={profileImageUrl}
       />
+
+      {/* Mobile top nav banner (logo + page title) */}
+      <div className="md:hidden sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
+        <div className="flex items-center gap-4 px-4 py-3">
+          <Image
+            src="/logos/polycopy-logo-primary.svg"
+            alt="Polycopy"
+            width={120}
+            height={32}
+            className="h-7 w-auto"
+          />
+          <p className="text-sm font-semibold text-slate-900">Account</p>
+        </div>
+      </div>
 
       <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pt-4 md:pt-0 pb-20 md:pb-8">
         <div className="max-w-6xl mx-auto px-4 md:px-6 py-8 space-y-8">

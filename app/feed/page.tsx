@@ -3287,17 +3287,17 @@ export default function FeedPage() {
 
       <div className="min-h-screen bg-slate-50 pt-3 md:pt-0 pb-36 md:pb-8 overflow-x-hidden">
         {/* Page Header */}
-        <div className="sticky top-0 z-10 bg-slate-50">
+        <div className="sticky top-0 z-10 bg-slate-50 md:border-0 border-b border-slate-200">
           <div className="max-w-[1200px] mx-auto px-4 md:px-6 pb-2 md:py-3">
             <div className="w-full md:w-[63%] md:mx-auto">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div className="md:hidden flex items-center justify-between gap-3">
+              <div className="md:hidden flex items-center justify-between gap-3 py-3">
                 <Image
                   src="/logos/polycopy-logo-primary.svg"
                   alt="Polycopy"
                   width={120}
                   height={32}
-                  className="h-9 w-auto"
+                  className="h-7 w-auto"
                 />
                 {hasPremiumAccess && walletAddress && (
                   <a
