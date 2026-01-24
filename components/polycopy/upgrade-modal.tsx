@@ -50,7 +50,7 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[480px] p-0 gap-0 border-0 bg-gradient-to-b from-white to-slate-50 max-h-[90vh] overflow-y-auto">
-        <div className="p-5 pb-20 sm:pb-4">
+        <div className="p-5 pb-6">
           {/* Header - Compact */}
           <div className="text-center mb-3">
             <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-500 mb-2 shadow-lg">
@@ -137,24 +137,6 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
               })}
             </div>
           </div>
-        </div>
-
-        {/* Sticky bottom button for mobile - only visible when scrolling */}
-        <div className="sm:hidden fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-white via-white to-transparent pointer-events-none">
-          <Button
-            onClick={handleUpgrade}
-            disabled={loading}
-            className="w-full h-12 pointer-events-auto bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 hover:from-yellow-500 hover:via-amber-600 hover:to-yellow-600 text-slate-900 font-bold text-base shadow-xl hover:shadow-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed rounded-xl"
-          >
-            {loading ? (
-              "Loading..."
-            ) : (
-              <>
-                <Crown className="h-5 w-5 mr-2" />
-                Upgrade Now
-              </>
-            )}
-          </Button>
         </div>
       </DialogContent>
     </Dialog>
