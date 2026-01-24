@@ -3287,70 +3287,75 @@ export default function FeedPage() {
 
       <div className="min-h-screen bg-slate-50 pt-3 md:pt-0 pb-36 md:pb-8 overflow-x-hidden">
         {/* Page Header */}
-        <div className="sticky top-0 z-10 bg-slate-50 md:border-0 border-b border-slate-200">
+        {/* Mobile header - logo only */}
+        <div className="md:hidden sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
+          <div className="max-w-[1200px] mx-auto px-4 py-3">
+            <Image
+              src="/logos/polycopy-logo-primary.svg"
+              alt="Polycopy"
+              width={120}
+              height={32}
+              className="h-7 w-auto"
+            />
+          </div>
+        </div>
+
+        {/* Desktop + Mobile filter/refresh section */}
+        <div className="sticky top-[57px] md:top-0 z-10 bg-slate-50 md:border-0">
           <div className="max-w-[1200px] mx-auto px-4 md:px-6 pb-2 md:py-3">
             <div className="w-full md:w-[63%] md:mx-auto">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div className="md:hidden flex items-center justify-between gap-3 py-3">
-                <Image
-                  src="/logos/polycopy-logo-primary.svg"
-                  alt="Polycopy"
-                  width={120}
-                  height={32}
-                  className="h-7 w-auto"
-                />
-                {hasPremiumAccess && walletAddress && (
-                  <a
-                    href="https://polymarket.com/portfolio"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm"
-                  >
-                    <span className="text-[11px] font-semibold leading-tight text-slate-600">
-                      <span className="block">Polymarket</span>
-                      <span className="block">Account</span>
-                    </span>
-                    <div className="flex items-center gap-4">
-                      <div className="text-center">
-                        <div className="text-[11px] font-semibold text-slate-900">Portfolio</div>
-                        <div className="text-xs font-medium text-emerald-600">
-                          {loadingBalance
-                            ? '...'
-                            : portfolioValue !== null
-                            ? `$${portfolioValue.toFixed(2)}`
-                            : '$0.00'}
-                        </div>
-                      </div>
-                      <div className="text-center">
-                        <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-900">
-                          <span>Cash</span>
-                          {showLowBalanceCallout && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span
-                                    className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-[10px] font-bold text-rose-600"
-                                    aria-label="Low cash balance"
-                                  >
-                                    !
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent className="max-w-[220px]">
-                                  <p>{LOW_BALANCE_TOOLTIP}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
-                        </div>
-                        <div className="text-xs font-medium text-slate-600">
-                          {loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toFixed(2)}` : '$0.00'}
-                        </div>
+              {hasPremiumAccess && walletAddress && (
+                <a
+                  href="https://polymarket.com/portfolio"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="md:hidden flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm mt-2"
+                >
+                  <span className="text-[11px] font-semibold leading-tight text-slate-600">
+                    <span className="block">Polymarket</span>
+                    <span className="block">Account</span>
+                  </span>
+                  <div className="flex items-center gap-4">
+                    <div className="text-center">
+                      <div className="text-[11px] font-semibold text-slate-900">Portfolio</div>
+                      <div className="text-xs font-medium text-emerald-600">
+                        {loadingBalance
+                          ? '...'
+                          : portfolioValue !== null
+                          ? `$${portfolioValue.toFixed(2)}`
+                          : '$0.00'}
                       </div>
                     </div>
-                  </a>
-                )}
-              </div>
-              <div className="flex flex-col gap-2 md:flex-1">
+                    <div className="text-center">
+                      <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-slate-900">
+                        <span>Cash</span>
+                        {showLowBalanceCallout && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span
+                                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-[10px] font-bold text-rose-600"
+                                  aria-label="Low cash balance"
+                                >
+                                  !
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-[220px]">
+                                <p>{LOW_BALANCE_TOOLTIP}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                      <div className="text-xs font-medium text-slate-600">
+                        {loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toFixed(2)}` : '$0.00'}
+                      </div>
+                    </div>
+                  </div>
+                </a>
+              )}
+              <div className="flex flex-col gap-2 md:flex-1 mt-2 md:mt-0">
                 <div className="flex items-center justify-between gap-2">
                   <Button
                     onClick={filtersOpen ? closeFilters : openFilters}
