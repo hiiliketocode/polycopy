@@ -17,6 +17,16 @@ function LoginForm() {
   // Check if we're in signup mode
   useEffect(() => {
     setIsSignupMode(searchParams.get('mode') === 'signup');
+    
+    // Check for auth errors in URL
+    const urlError = searchParams.get('error');
+    if (urlError === 'link_expired') {
+      setError('Your magic link has expired. This usually happens when the email takes too long to arrive. Please request a new one.');
+    } else if (urlError === 'auth_failed') {
+      setError('Authentication failed. Please try again.');
+    } else if (urlError === 'auth_error') {
+      setError('An authentication error occurred. Please try again.');
+    }
   }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {

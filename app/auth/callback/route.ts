@@ -42,7 +42,18 @@ export async function GET(request: NextRequest) {
       
       if (sessionError) {
         console.error('Session error:', sessionError)
-        return NextResponse.redirect(`${requestUrl.origin}?error=auth_failed`)
+        
+        // Check if it's a token expiration error
+        const isExpired = sessionError.message?.includes('expired') || 
+                         sessionError.message?.includes('invalid') ||
+                         sessionError.status === 400
+        
+        if (isExpired) {
+          console.error('Magic link has expired - took too long to click')
+          return NextResponse.redirect(`${requestUrl.origin}/login?error=link_expired`)
+        }
+        
+        return NextResponse.redirect(`${requestUrl.origin}/login?error=auth_failed`)
       }
       
       // Get the user
@@ -50,7 +61,7 @@ export async function GET(request: NextRequest) {
       
       if (userError || !user) {
         console.error('User error:', userError)
-        return NextResponse.redirect(`${requestUrl.origin}?error=no_user`)
+        return NextResponse.redirect(`${requestUrl.origin}/login?error=auth_failed`)
       }
       
       console.log('Creating profile for user:', user.id, user.email)
@@ -145,7 +156,7 @@ export async function GET(request: NextRequest) {
       
     } catch (error) {
       console.error('Callback error:', error)
-      return NextResponse.redirect(`${requestUrl.origin}?error=auth_error`)
+      return NextResponse.redirect(`${requestUrl.origin}/login?error=auth_error`)
     }
   }
   
