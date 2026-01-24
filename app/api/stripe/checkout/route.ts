@@ -146,6 +146,7 @@ export async function POST(request: NextRequest) {
       ],
       success_url: `${request.headers.get('origin')}/profile?upgrade=success`,
       cancel_url: `${request.headers.get('origin')}/profile?upgrade=canceled`,
+      allow_promotion_codes: true,
       metadata: {
         supabase_user_id: user.id,
       },
