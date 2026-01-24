@@ -2510,9 +2510,9 @@ function ProfilePageContent() {
         profileImageUrl={profileImageUrl}
       />
       
-      {/* Mobile top nav banner (logo + page title) */}
+      {/* Mobile top nav banner (logo only, no page title) */}
       <div className="md:hidden sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
-        <div className="flex items-center gap-4 px-4 py-3">
+        <div className="px-4 py-3">
           <Image
             src="/logos/polycopy-logo-primary.svg"
             alt="Polycopy"
@@ -2520,11 +2520,10 @@ function ProfilePageContent() {
             height={32}
             className="h-7 w-auto"
           />
-          <p className="text-sm font-semibold text-slate-900">Portfolio</p>
         </div>
       </div>
       
-      <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pt-4 md:pt-0 pb-20 md:pb-8">
+      <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pt-2 md:pt-0 pb-20 md:pb-8">
         <div className="max-w-[1200px] mx-auto px-4 md:px-6 space-y-6 py-8">
           {/* Mobile-only Upgrade to Premium button */}
           {!isPremium && (

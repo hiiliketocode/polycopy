@@ -1168,9 +1168,9 @@ function DiscoverPageContent() {
         profileImageUrl={profileImageUrl}
       />
       
-      {/* Mobile top nav banner (logo + page title) */}
+      {/* Mobile top nav banner (logo only, no page title) */}
       <div className="md:hidden sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
-        <div className="flex items-center gap-4 px-4 py-3">
+        <div className="px-4 py-3">
           <Image
             src="/logos/polycopy-logo-primary.svg"
             alt="Polycopy"
@@ -1178,10 +1178,9 @@ function DiscoverPageContent() {
             height={32}
             className="h-7 w-auto"
           />
-          <p className="text-sm font-semibold text-slate-900">Discover</p>
         </div>
       </div>
-      <div className="min-h-screen bg-white md:pt-0 pt-[70px] pb-20 md:pb-8">
+      <div className="min-h-screen bg-white md:pt-0 pb-20 md:pb-8">
         {/* Trade Ticker */}
         <div className="bg-white border-y border-slate-100">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
