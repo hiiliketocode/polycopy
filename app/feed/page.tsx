@@ -3288,8 +3288,8 @@ export default function FeedPage() {
       <div className="min-h-screen bg-slate-50 pt-3 md:pt-0 pb-36 md:pb-8 overflow-x-hidden">
         {/* Page Header */}
         {/* Mobile header - logo only */}
-        <div className="md:hidden sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
-          <div className="max-w-[1200px] mx-auto px-4 py-3">
+        <div className="md:hidden sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-slate-200">
+          <div className="px-4 py-3">
             <Image
               src="/logos/polycopy-logo-primary.svg"
               alt="Polycopy"
