@@ -3285,10 +3285,10 @@ export default function FeedPage() {
         profileImageUrl={profileImageUrl}
       />
 
-      <div className="min-h-screen bg-slate-50 pt-3 md:pt-0 pb-36 md:pb-8 overflow-x-hidden">
+      <div className="min-h-screen bg-slate-50 md:pt-0 pb-36 md:pb-8 overflow-x-hidden">
         {/* Page Header */}
         {/* Mobile header - logo only */}
-        <div className="md:hidden sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-slate-200">
+        <div className="md:hidden sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200">
           <div className="px-4 py-3">
             <Image
               src="/logos/polycopy-logo-primary.svg"
@@ -3301,7 +3301,7 @@ export default function FeedPage() {
         </div>
 
         {/* Desktop + Mobile filter/refresh section */}
-        <div className="sticky top-[57px] md:top-0 z-10 bg-slate-50 md:border-0">
+        <div className="sticky top-[57px] md:top-0 z-10 bg-white/95 backdrop-blur-sm md:bg-slate-50 md:border-0">
           <div className="max-w-[1200px] mx-auto px-4 md:px-6 pb-2 md:py-3">
             <div className="w-full md:w-[63%] md:mx-auto">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
