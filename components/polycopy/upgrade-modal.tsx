@@ -50,7 +50,7 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[480px] p-0 gap-0 border-0 bg-gradient-to-b from-white to-slate-50 max-h-[90vh] overflow-y-auto">
-        <div className="p-5 pb-6">
+        <div className="p-5 pb-24 sm:pb-6">
           {/* Header - Compact */}
           <div className="text-center mb-3">
             <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-500 mb-2 shadow-lg">
