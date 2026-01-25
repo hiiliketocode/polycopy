@@ -198,12 +198,6 @@ export const resolveMarketCategoryType = (identity: MarketIdentity): MarketCateg
   return "SPORTS_SCOREABLE"
 }
 
-const isValidIso = (value?: string | null) => {
-  if (!value) return false
-  const parsed = new Date(value)
-  return !Number.isNaN(parsed.getTime())
-}
-
 const normalizeIso = (value?: string | null) => {
   if (!value) return null
   const parsed = new Date(value)
@@ -383,4 +377,3 @@ export const deriveBadgeState = (input: DeriveBadgeStateInput): DeriveBadgeState
     categoryType,
   }
 }
-

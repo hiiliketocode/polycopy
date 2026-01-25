@@ -2,10 +2,34 @@ import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 
+const PRICE_STALE_MS = 60_000
+const APP_BASE_URL =
+  process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000'
+
 const toNumber = (value: number | string | null | undefined) => {
   if (value === null || value === undefined) return null
   const n = Number(value)
   return Number.isFinite(n) ? n : null
+}
+
+const normalizeOutcome = (value: string | null | undefined) =>
+  typeof value === 'string' && value.trim().length > 0 ? value.trim().toUpperCase() : null
+
+const pickOutcomePrice = (
+  outcomePrices: Record<string, any> | null | undefined,
+  outcome: string | null | undefined
+) => {
+  if (!outcomePrices) return null
+  const normalizedOutcome = normalizeOutcome(outcome)
+  if (!normalizedOutcome) return null
+
+  for (const [key, price] of Object.entries(outcomePrices)) {
+    const normalizedKey = normalizeOutcome(key)
+    if (normalizedKey === normalizedOutcome && Number.isFinite(Number(price))) {
+      return Number(price)
+    }
+  }
+  return null
 }
 
 const createService = () =>
@@ -88,9 +112,154 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    // Load cached markets for these trades
+    const uniqueMarketIds = Array.from(
+      new Set((data || []).map((row: any) => row.market_id).filter(Boolean))
+    )
+
+    const marketsMap = new Map<string, any>()
+    if (uniqueMarketIds.length > 0) {
+      const { data: marketsData, error: marketsError } = await supabase
+        .from('markets')
+        .select(
+          [
+            'condition_id',
+            'title',
+            'image',
+            'market_slug',
+            'status',
+            'winning_side',
+            'resolved_outcome',
+            'outcome_prices',
+            'last_price_updated_at',
+            'closed',
+          ].join(',')
+        )
+        .in('condition_id', uniqueMarketIds)
+
+      if (marketsError) {
+        console.warn('[portfolio] market lookup failed', marketsError)
+      } else {
+        (marketsData || []).forEach((market: any) => {
+          if (market?.condition_id) {
+            marketsMap.set(market.condition_id, market)
+          }
+        })
+      }
+    }
+
+    // Refresh stale or missing prices for open markets (one fetch per market)
+    const now = Date.now()
+    const refreshTargets = uniqueMarketIds.filter((marketId) => {
+      const market = marketsMap.get(marketId)
+      if (!market) return true
+      const isResolved =
+        market.closed ||
+        market.status === 'resolved' ||
+        Boolean(market.resolved_outcome || market.winning_side)
+      if (isResolved) return false
+      const updatedAt = market.last_price_updated_at
+        ? new Date(market.last_price_updated_at).getTime()
+        : 0
+      return !updatedAt || now - updatedAt > PRICE_STALE_MS
+    })
+
+    if (refreshTargets.length > 0) {
+      await Promise.all(
+        refreshTargets.map(async (marketId) => {
+          try {
+            const resp = await fetch(
+              `${APP_BASE_URL}/api/polymarket/price?conditionId=${encodeURIComponent(marketId)}`,
+              { cache: 'no-store' }
+            )
+            if (!resp.ok) return
+            const payload = await resp.json()
+            const marketPayload = payload?.market ?? payload ?? null
+            if (!marketPayload) return
+
+            const outcomes = Array.isArray(marketPayload.outcomes)
+              ? marketPayload.outcomes
+              : []
+            const outcomePrices = Array.isArray(marketPayload.outcomePrices)
+              ? marketPayload.outcomePrices
+              : []
+
+            const priceMap: Record<string, number> = {}
+            outcomes.forEach((outcome: string, idx: number) => {
+              const price = Number(outcomePrices[idx])
+              if (Number.isFinite(price)) {
+                priceMap[outcome] = price
+              }
+            })
+
+            const resolvedOutcome =
+              marketPayload.resolvedOutcome ??
+              marketPayload.resolved_outcome ??
+              marketPayload.winner ??
+              marketPayload.winning_outcome ??
+              marketPayload.winningSide ??
+              marketPayload.winning_side ??
+              null
+
+            const closed =
+              Boolean(marketPayload.closed || marketPayload.resolved) ||
+              Boolean(resolvedOutcome)
+
+            const updatedMarket = {
+              condition_id: marketId,
+              outcome_prices: Object.keys(priceMap).length > 0 ? priceMap : null,
+              last_price_updated_at: new Date().toISOString(),
+              resolved_outcome: resolvedOutcome ?? null,
+              closed,
+              status: closed ? 'resolved' : marketPayload.status ?? null,
+              title: marketPayload.question ?? marketPayload.title ?? null,
+              image: marketPayload.icon ?? marketPayload.image ?? null,
+              market_slug: marketPayload.slug ?? marketPayload.market_slug ?? null,
+              updated_at: new Date().toISOString(),
+            }
+
+            await supabase
+              .from('markets')
+              .upsert(updatedMarket, { onConflict: 'condition_id' })
+
+            const existing = marketsMap.get(marketId) || {}
+            marketsMap.set(marketId, { ...existing, ...updatedMarket })
+          } catch (err) {
+            console.warn(`[portfolio] failed to refresh market price for ${marketId}`, err)
+          }
+        })
+      )
+    }
+
     const trades = (data || []).map((row: any) => {
       const entryPrice = toNumber(row.entry_price)
-      const exitPrice = toNumber(row.exit_price) ?? toNumber(row.current_price)
+      const market = row.market_id ? marketsMap.get(row.market_id) : null
+      const resolvedOutcome =
+        row.resolved_outcome ?? market?.resolved_outcome ?? market?.winning_side ?? null
+      const marketResolved =
+        row.market_resolved ||
+        Boolean(market?.closed || market?.status === 'resolved') ||
+        Boolean(resolvedOutcome)
+
+      const settlementPrice =
+        marketResolved && resolvedOutcome && row.outcome
+          ? normalizeOutcome(resolvedOutcome) === normalizeOutcome(row.outcome)
+            ? 1
+            : 0
+          : null
+
+      const cachedPrice = pickOutcomePrice(market?.outcome_prices, row.outcome)
+      const latestPrice =
+        settlementPrice !== null
+          ? settlementPrice
+          : toNumber(row.current_price) ?? cachedPrice
+
+      const exitPrice =
+        toNumber(row.exit_price) ??
+        toNumber(row.user_exit_price) ??
+        latestPrice ??
+        toNumber(row.current_price)
+
       const pnlUsd =
         toNumber(row.pnl_usd) ??
         (entryPrice !== null && exitPrice !== null && toNumber(row.entry_size) !== null
@@ -103,6 +272,13 @@ export async function GET(request: Request) {
           ? ((exitPrice - entryPrice) / entryPrice) * 100
           : null)
 
+      const marketTitle =
+        row.copied_market_title ||
+        market?.title ||
+        row.market_title ||
+        row.market_slug ||
+        null
+
       return {
         id: row.copied_trade_id || row.order_id,
         order_id: row.order_id,
@@ -111,9 +287,9 @@ export async function GET(request: Request) {
         trader_username: row.copied_trader_username,
         trader_profile_image_url: row.trader_profile_image_url,
         market_id: row.market_id,
-        market_title: row.copied_market_title,
-        market_slug: row.market_slug,
-        market_avatar_url: row.market_avatar_url,
+        market_title: marketTitle,
+        market_slug: row.market_slug ?? market?.market_slug ?? null,
+        market_avatar_url: row.market_avatar_url ?? market?.image ?? null,
         outcome: row.outcome,
         price_when_copied: entryPrice,
         entry_size: toNumber(row.entry_size),
@@ -122,13 +298,13 @@ export async function GET(request: Request) {
         created_at: row.created_at,
         trader_still_has_position: row.trader_still_has_position,
         trader_closed_at: null,
-        current_price: exitPrice,
-        market_resolved: row.market_resolved,
+        current_price: latestPrice,
+        market_resolved: marketResolved || row.market_resolved,
         market_resolved_at: row.market_resolved_at,
         roi,
         user_closed_at: row.user_closed_at,
         user_exit_price: toNumber(row.user_exit_price),
-        resolved_outcome: row.resolved_outcome ?? null,
+        resolved_outcome: resolvedOutcome ?? null,
         trade_method: row.trade_method,
         side: row.side ?? null,
         pnl_usd: pnlUsd,

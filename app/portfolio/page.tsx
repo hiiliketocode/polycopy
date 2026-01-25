@@ -103,6 +103,7 @@ interface CategoryDistribution {
 type ProfileTab = 'trades' | 'performance';
 
 const MIN_OPEN_POSITION_SIZE = 1e-4;
+const ENABLE_LIVE_PRICE_REFRESH = false;
 
 interface PortfolioStats {
   totalPnl: number;
@@ -597,8 +598,10 @@ function ProfilePageContent() {
 
         setCopiedTradesBase(tradesWithCorrectRoi);
 
-        // Fetch live market data for the trades
-        fetchLiveMarketData(tradesWithCorrectRoi);
+        // Fetch live market data for the trades (disabled: server now returns cached prices)
+        if (ENABLE_LIVE_PRICE_REFRESH) {
+          fetchLiveMarketData(tradesWithCorrectRoi);
+        }
       } catch (err) {
         console.error('Error fetching portfolio trades:', err);
         setCopiedTradesBase([]);
@@ -1371,8 +1374,10 @@ function ProfilePageContent() {
       
       setCopiedTradesBase(tradesWithFreshStatus);
       
-      // Also refresh live market data
-      await fetchLiveMarketData(tradesWithFreshStatus);
+      // Also refresh live market data (disabled: rely on cached prices from API)
+      if (ENABLE_LIVE_PRICE_REFRESH) {
+        await fetchLiveMarketData(tradesWithFreshStatus);
+      }
       await refreshPositions();
       
       setToastMessage('Positions refreshed!');
@@ -2282,7 +2287,7 @@ function ProfilePageContent() {
   }, [copiedTrades, quickTrades, openPositionByKey]);
 
   useEffect(() => {
-    if (tradeFilter === 'history') return;
+    if (tradeFilter === 'history' || !ENABLE_LIVE_PRICE_REFRESH) return;
     fetchLiveMarketData(copiedTradesBase, allUnifiedTrades).catch(() => {
       /* best effort */
     });
