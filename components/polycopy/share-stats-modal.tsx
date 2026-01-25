@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Copy, Share2, Download, Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toPng } from 'html-to-image'
-import { PortfolioCard, type CardTheme } from '@/temp-share/components/portfolio-card'
+import { PortfolioCard, type CardTheme } from '@/components/polycopy/portfolio-card'
 
 interface ShareStatsModalProps {
   open: boolean
