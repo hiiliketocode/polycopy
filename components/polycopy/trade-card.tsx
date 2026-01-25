@@ -2198,17 +2198,17 @@ export function TradeCard({
   const fillPrice =
     typeof statusData?.price === 'number' ? statusData.price : null
   const pendingStatusLabel = "Order pending at Polymarket"
-  let statusLabel: string
+  let orderStatusLabel: string
   if (statusPhase === "filled") {
-    statusLabel = "Filled"
+    orderStatusLabel = "Filled"
   } else if (statusPhase === "partial") {
-    statusLabel = "Partially filled"
+    orderStatusLabel = "Partially filled"
   } else if (statusPhase === "timed_out") {
-    statusLabel = "Failed to match on Polymarket"
+    orderStatusLabel = "Failed to match on Polymarket"
   } else if (orderType === "FAK" && (statusPhase === "canceled" || statusPhase === "expired" || statusPhase === "rejected") && (!filledContracts || filledContracts <= 0)) {
-    statusLabel = "Not filled (FAK)"
+    orderStatusLabel = "Not filled (FAK)"
   } else {
-    statusLabel = pendingStatusLabel
+    orderStatusLabel = pendingStatusLabel
   }
   const filledAmountValue =
     filledContracts !== null && fillPrice !== null ? filledContracts * fillPrice : null
@@ -3035,7 +3035,7 @@ export function TradeCard({
                     <p className="text-xs font-semibold tracking-wide text-slate-400">Status</p>
                     <p className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                       {!isFinalStatus && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
-                      {statusLabel}
+                      {orderStatusLabel}
                     </p>
                     {!isFinalStatus && (
                       <div className="mt-1">
