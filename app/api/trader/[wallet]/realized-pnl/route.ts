@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
  * This runs asynchronously and doesn't block the API response.
  */
 async function triggerWalletBackfillIfNeeded(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   wallet: string
 ): Promise<void> {
   try {
