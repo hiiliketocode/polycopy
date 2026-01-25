@@ -333,7 +333,7 @@ async function ensureTraderId(
   if (insertError) throw insertError
 
   // Trigger PnL backfill for the new trader asynchronously
-  import('../../../../lib/backfill/trigger-wallet-pnl-backfill')
+  import('@/lib/backfill/trigger-wallet-pnl-backfill')
     .then((mod) => mod.triggerWalletPnlBackfill(normalized))
     .catch((err) => {
       console.error(`[ensureTraderId] Failed to trigger PnL backfill for new trader ${normalized}:`, err)
