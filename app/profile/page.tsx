@@ -372,6 +372,12 @@ function ProfilePageContent() {
       // Clean up URL
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
+    } else if (params.get('upgrade') === 'true') {
+      // Open upgrade modal when upgrade=true in URL
+      setShowUpgradeModal(true);
+      // Clean up URL
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
     }
   }, []);
   
