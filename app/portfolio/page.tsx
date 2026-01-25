@@ -1030,7 +1030,7 @@ function ProfilePageContent() {
 
     setCategoryDistribution(categoryData);
 
-    // Calculate Top Traders Stats
+    // Calculate Top Traders Stats (realized-only)
     const traderMap = new Map<string, {
       trader_id: string;
       trader_name: string;
@@ -1054,55 +1054,87 @@ function ProfilePageContent() {
       traderMap.get(key)!.trades.push(trade);
     });
 
-    const topTraders = Array.from(traderMap.values()).map(trader => {
-      const totalInvested = trader.trades.reduce((sum, t) => sum + (t.amount_invested || 0), 0);
-      const entryPrice = (t: CopiedTrade) => t.price_when_copied;
-      
-      const pnl = trader.trades.reduce((sum, t) => {
-        const entry = entryPrice(t);
-        if (!entry) return sum;
-        
-        // Calculate P&L for each trade
-        if (t.user_closed_at && t.user_exit_price) {
-          const tradeResult = ((t.user_exit_price - entry) / entry) * (t.amount_invested || 0);
-          return sum + tradeResult;
-        } else if (t.market_resolved && t.current_price !== null) {
-          const tradeResult = ((t.current_price - entry) / entry) * (t.amount_invested || 0);
-          return sum + tradeResult;
-        } else if (t.current_price !== null && !t.market_resolved) {
-          const unrealizedPnl = ((t.current_price - entry) / entry) * (t.amount_invested || 0);
-          return sum + unrealizedPnl;
-        }
-        return sum;
-      }, 0);
-      
-      const roi = totalInvested > 0 ? (pnl / totalInvested) * 100 : 0;
-      
-      const closedTrades = trader.trades.filter(t => t.user_closed_at || t.market_resolved);
-      const wins = closedTrades.filter(t => {
-        const entry = entryPrice(t);
-        if (!entry) return false;
-        
-        if (t.user_closed_at && t.user_exit_price) {
-          return t.user_exit_price > entry;
-        } else if (t.market_resolved && t.current_price !== null) {
-          return t.current_price > entry;
-        }
-        return false;
-      }).length;
-      const winRate = closedTrades.length > 0 ? (wins / closedTrades.length) * 100 : 0;
+    const getInvested = (trade: CopiedTrade) => {
+      if (trade.amount_invested !== null && trade.amount_invested !== undefined) return trade.amount_invested;
+      if (trade.entry_size && trade.price_when_copied) return trade.entry_size * trade.price_when_copied;
+      return 0;
+    };
 
-      return {
-        trader_id: trader.trader_id,
-        trader_name: trader.trader_name,
-        trader_wallet: trader.trader_wallet,
-        copy_count: trader.trades.length,
-        total_invested: totalInvested,
-        pnl,
-        roi,
-        win_rate: winRate
-      };
-    }).sort((a, b) => b.total_invested - a.total_invested).slice(0, 10);
+    const getRealizedExitPrice = (trade: CopiedTrade) => {
+      const exit = trade.user_exit_price;
+      if (trade.user_closed_at && exit !== null && exit !== undefined) {
+        return exit;
+      }
+
+      if (trade.market_resolved) {
+        if (exit !== null && exit !== undefined) return exit;
+        if (trade.current_price !== null && trade.current_price !== undefined) return trade.current_price;
+      }
+
+      return null;
+    };
+
+    const getEntryPrice = (trade: CopiedTrade) =>
+      trade.price_when_copied !== null && trade.price_when_copied !== undefined
+        ? trade.price_when_copied
+        : null;
+
+    const isRealizedTrade = (trade: CopiedTrade) => {
+      const entry = getEntryPrice(trade);
+      const exit = getRealizedExitPrice(trade);
+      return entry !== null && exit !== null;
+    };
+
+    const topTraders = Array.from(traderMap.values())
+      .map((trader) => {
+        const realizedTrades = trader.trades.filter(isRealizedTrade);
+        if (realizedTrades.length === 0) return null;
+
+        const totalInvested = realizedTrades.reduce((sum, t) => sum + getInvested(t), 0);
+
+        const pnl = realizedTrades.reduce((sum, t) => {
+          const entry = getEntryPrice(t);
+          const exit = getRealizedExitPrice(t);
+          if (entry === null || exit === null || entry === 0) return sum;
+
+          const positionSize = getInvested(t) / entry; // contracts
+          const tradeResult = (exit - entry) * positionSize;
+          return sum + tradeResult;
+        }, 0);
+
+        const roi = totalInvested > 0 ? (pnl / totalInvested) * 100 : 0;
+
+        const wins = realizedTrades.filter((t) => {
+          const entry = getEntryPrice(t);
+          const exit = getRealizedExitPrice(t);
+          if (entry === null || exit === null) return false;
+          return exit > entry;
+        }).length;
+
+        const winRate = realizedTrades.length > 0 ? (wins / realizedTrades.length) * 100 : 0;
+
+        return {
+          trader_id: trader.trader_id,
+          trader_name: trader.trader_name,
+          trader_wallet: trader.trader_wallet,
+          copy_count: realizedTrades.length,
+          total_invested: totalInvested,
+          pnl,
+          roi,
+          win_rate: winRate
+        };
+      })
+      .filter((trader): trader is {
+        trader_id: string;
+        trader_name: string;
+        trader_wallet: string;
+        copy_count: number;
+        total_invested: number;
+        pnl: number;
+        roi: number;
+        win_rate: number;
+      } => Boolean(trader))
+      .sort((a, b) => b.total_invested - a.total_invested);
 
     console.log('📊 Top Traders Stats Calculated:', {
       tradersCount: topTraders.length,
@@ -3372,7 +3404,7 @@ function ProfilePageContent() {
               {topTradersStats.length > 0 && (
                 <Card className="p-6">
                   <h3 className="text-lg font-semibold text-slate-900 mb-2">Top Traders Copied</h3>
-                  <p className="text-sm text-slate-500 mb-6">Performance of trades copied from your top 10 most-copied traders</p>
+                  <p className="text-sm text-slate-500 mb-6">Performance of all realized trades you copied (all traders)</p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>

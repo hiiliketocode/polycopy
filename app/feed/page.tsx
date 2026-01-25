@@ -3764,10 +3764,7 @@ export default function FeedPage() {
                     const traderTrades = traderMarketKey
                       ? traderMarketTrades.get(traderMarketKey) ?? []
                       : [];
-                    const traderHasExistingPosition =
-                      traderTrades.length > 0 &&
-                      (trade.trade.side === "SELL" ||
-                        traderTrades.some((t) => (t.timestamp ?? 0) < trade.trade.timestamp));
+                    const traderHasExistingPosition = traderTrades.length > 0;
                     const traderPositionBadge = traderHasExistingPosition
                       ? {
                           label: 'Trader Position',
@@ -3824,6 +3821,7 @@ export default function FeedPage() {
                           size={trade.trade.size}
                           total={trade.trade.price * trade.trade.size}
                           timestamp={getRelativeTime(trade.trade.timestamp)}
+                          tradeTimestampMs={trade.trade.timestamp}
                           onCopyTrade={() => handleCopyTrade(trade)}
                           onMarkAsCopied={(entryPrice, amountInvested) =>
                             handleMarkAsCopied(trade, entryPrice, amountInvested)

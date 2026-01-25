@@ -107,6 +107,7 @@ interface TradeCardProps {
   size: number
   total: number
   timestamp: string
+  tradeTimestampMs?: number
   onCopyTrade?: () => void
   onMarkAsCopied?: (entryPrice: number, amountInvested?: number) => void
   onAdvancedCopy?: () => void
@@ -504,6 +505,7 @@ export function TradeCard({
   gameTimeInfo,
   defaultBuySlippage,
   defaultSellSlippage,
+  tradeTimestampMs,
   tradeAnchorId,
   onExecutionNotification,
   walletAddress = null,
@@ -678,7 +680,7 @@ export function TradeCard({
     "h-7 px-2.5 text-[11px] font-semibold border shadow-[0_1px_0_rgba(15,23,42,0.06)]"
   const statusBadgeClass = cn(
     badgeBaseClass,
-    badgeType === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200 min-h-[auto] h-auto",
+    badgeType === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200 h-auto min-h-[64px] justify-start",
     badgeType === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
     badgeType === "resolved" && "bg-rose-50 text-rose-700 border-rose-200",
     badgeType === "scheduled" && "bg-amber-50 text-amber-700 border-amber-200",
@@ -725,6 +727,25 @@ export function TradeCard({
         : badgeType === "resolved"
           ? "Resolved"
           : "Scheduled"
+
+  const liveBadgeContent = (
+    <div className="flex min-h-[48px] w-full items-center gap-3 px-2 py-1.5">
+      <span
+        className={cn(
+          "font-semibold text-xs leading-tight whitespace-nowrap transition-opacity",
+          scoreText ? "opacity-100" : "opacity-0",
+        )}
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {scoreText ?? "00 - 00"}
+      </span>
+      <div className="flex min-w-[54px] flex-col justify-center text-[10px] leading-tight">
+        <span>{statusLabel}</span>
+        {gameTimeInfo ? <span className="opacity-90">{gameTimeInfo}</span> : null}
+      </div>
+    </div>
+  )
 
   // Determine time prefix:
   // 1. If sports market → "Starts" (deriveBadgeState uses game_start_time for sports markets)
@@ -1196,9 +1217,61 @@ export function TradeCard({
     return formatted
   }
 
+  const tradeCardPosition: PositionTradeSummary | null = useMemo(() => {
+    const normalizedSide = action === "Sell" ? "SELL" : "BUY"
+    const amountUsd = Number.isFinite(size * price) ? Number((size * price).toFixed(4)) : null
+    return {
+      side: normalizedSide,
+      outcome: position,
+      size: Number.isFinite(size) ? size : null,
+      price: Number.isFinite(price) ? price : null,
+      amountUsd,
+      timestamp: Number.isFinite(tradeTimestampMs ?? NaN) ? tradeTimestampMs : null,
+    }
+  }, [action, position, price, size, tradeTimestampMs])
+
+  const isSameTradePosition = (
+    a: PositionTradeSummary | null | undefined,
+    b: PositionTradeSummary | null | undefined
+  ) => {
+    if (!a || !b) return false
+    if (a.side !== b.side) return false
+    const normalize = (value: string) => value?.trim().toLowerCase()
+    const outcomeMatch = normalize(a.outcome) === normalize(b.outcome)
+    if (!outcomeMatch) return false
+    const sizeMatch =
+      Number.isFinite(a.size ?? NaN) && Number.isFinite(b.size ?? NaN)
+        ? Math.abs((a.size ?? 0) - (b.size ?? 0)) < 0.0001
+        : true
+    const priceMatch =
+      Number.isFinite(a.price ?? NaN) && Number.isFinite(b.price ?? NaN)
+        ? Math.abs((a.price ?? 0) - (b.price ?? 0)) < 0.0001
+        : true
+    const timestampMatch =
+      Number.isFinite(a.timestamp ?? NaN) && Number.isFinite(b.timestamp ?? NaN)
+        ? Math.abs((a.timestamp ?? 0) - (b.timestamp ?? 0)) <= 2000
+        : true
+    return sizeMatch && priceMatch && timestampMatch
+  }
+
+  const ensureTradeIncluded = (
+    trades: PositionTradeSummary[],
+    target: PositionTradeSummary | null
+  ) => {
+    if (!target) return trades
+    const exists = trades.some((trade) => isSameTradePosition(trade, target))
+    if (exists) return trades
+    return [target, ...trades]
+  }
+
   const renderPositionDrawer = () => {
     if (!isPositionDrawerOpen || !activePositionBadge) return null
-    const trades = activePositionBadge.trades ?? []
+    const baseTrades = activePositionBadge.trades ?? []
+    const shouldHighlightTrade = activePositionBadge.variant === "trader"
+    const trades =
+      shouldHighlightTrade && tradeCardPosition
+        ? ensureTradeIncluded(baseTrades, tradeCardPosition)
+        : baseTrades
     if (trades.length === 0) return null
     const visibleTrades = trades
     const isUserTab = positionDrawerTab === "user"
@@ -1334,13 +1407,20 @@ export function TradeCard({
                 ? `${contractsLabel} contracts`
                 : "--"
               : investedLabel
+            const isHighlightedTrade =
+              shouldHighlightTrade && tradeCardPosition
+                ? isSameTradePosition(trade, tradeCardPosition)
+                : false
             return (
               <div
                 key={`${trade.side}-${trade.outcome}-${trade.timestamp ?? index}`}
                 className="flex items-start justify-between gap-3 text-xs"
               >
                 <div className="min-w-0">
-                  <p className="flex items-center gap-1 truncate text-slate-700">
+                  <p className="flex items-center gap-1.5 truncate text-slate-700">
+                    {isHighlightedTrade ? (
+                      <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-400" />
+                    ) : null}
                     <span className={cn("font-semibold", sideClass)}>{sideLabel}</span>
                     <Badge
                       variant="secondary"
@@ -2640,15 +2720,7 @@ export function TradeCard({
                   <Badge asChild variant="secondary" className={statusBadgeClass}>
                     <a href={espnLink} target="_blank" rel="noopener noreferrer">
                       {badgeType === "live" ? (
-                        <div className="flex flex-col items-center gap-1 px-2 py-1.5">
-                          {scoreText ? (
-                            <span className="font-semibold text-xs leading-tight">{scoreText}</span>
-                          ) : null}
-                          <span className="text-[10px] leading-tight">{statusLabel}</span>
-                          {gameTimeInfo ? (
-                            <span className="text-[10px] leading-tight opacity-90">{gameTimeInfo}</span>
-                          ) : null}
-                        </div>
+                        liveBadgeContent
                       ) : hasCryptoPrice ? (
                         // For crypto prices, show just the price without status label
                         <span className="font-semibold text-xs">{scoreText}</span>
@@ -2666,15 +2738,7 @@ export function TradeCard({
                 ) : (
                   <Badge variant="secondary" className={statusBadgeClass}>
                     {badgeType === "live" ? (
-                      <div className="flex flex-col items-center gap-1 px-2 py-1.5">
-                        {scoreText ? (
-                          <span className="font-semibold text-xs leading-tight">{scoreText}</span>
-                        ) : null}
-                        <span className="text-[10px] leading-tight">{statusLabel}</span>
-                        {gameTimeInfo ? (
-                          <span className="text-[10px] leading-tight opacity-90">{gameTimeInfo}</span>
-                        ) : null}
-                      </div>
+                      liveBadgeContent
                     ) : hasCryptoPrice ? (
                       // For crypto prices, show just the price without status label
                       <span className="font-semibold text-xs">{scoreText}</span>

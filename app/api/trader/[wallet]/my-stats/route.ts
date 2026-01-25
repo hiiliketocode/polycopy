@@ -21,12 +21,15 @@ const resolveFilledSize = (row: any) => {
 
 const normalize = (value?: string | null) => value?.trim().toLowerCase() || ''
 const PRICE_FETCH_TIMEOUT_MS = 8000
-const MAX_MARKETS_TO_REFRESH = 100
+const PRICE_STALE_AFTER_MS = 5 * 60 * 1000 // 5 minutes
+const PRICE_FETCH_BATCH_SIZE = 40
 const POSITION_EPSILON = 0.00001
 
 type MarketPrice = {
   outcomes?: string[]
   outcomePrices?: number[]
+  lastUpdatedAt?: string | null
+  closed?: boolean
 }
 
 const findOutcomePrice = (market: MarketPrice | undefined, outcome: string | null) => {
@@ -40,39 +43,98 @@ const findOutcomePrice = (market: MarketPrice | undefined, outcome: string | nul
   return null
 }
 
-const fetchMarketPrices = async (marketIds: string[]) => {
+const fetchMarketPrices = async (
+  supabase: ReturnType<typeof createService>,
+  marketIds: string[]
+) => {
   const priceMap = new Map<string, MarketPrice>()
   if (marketIds.length === 0) return priceMap
+
+  // Load cached prices
+  const { data: cachedRows, error: cacheError } = await supabase
+    .from('markets')
+    .select('condition_id, outcome_prices, last_price_updated_at, closed')
+    .in('condition_id', marketIds)
+
+  if (!cacheError && cachedRows) {
+    cachedRows.forEach((row) => {
+      if (row.outcome_prices) {
+        priceMap.set(row.condition_id, {
+          outcomes:
+            row.outcome_prices?.outcomes ??
+            row.outcome_prices?.labels ??
+            row.outcome_prices?.choices ??
+            null,
+          outcomePrices:
+            row.outcome_prices?.outcomePrices ??
+            row.outcome_prices?.prices ??
+            row.outcome_prices?.probabilities ??
+            null,
+          lastUpdatedAt: row.last_price_updated_at,
+          closed: row.closed,
+        })
+      }
+    })
+  }
+
+  const now = Date.now()
+  const needsRefresh = marketIds.filter((id) => {
+    const cached = priceMap.get(id)
+    if (!cached || !cached.outcomePrices || !cached.lastUpdatedAt) return true
+    if (cached.closed) return true
+    const last = new Date(cached.lastUpdatedAt).getTime()
+    return Number.isNaN(last) || now - last > PRICE_STALE_AFTER_MS
+  })
+
+  if (needsRefresh.length === 0) return priceMap
 
   const baseUrl =
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     'http://localhost:3000'
 
-  await Promise.all(
-    marketIds.map(async (marketId) => {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), PRICE_FETCH_TIMEOUT_MS)
-      try {
-        const res = await fetch(
-          `${baseUrl}/api/polymarket/price?conditionId=${marketId}`,
-          { signal: controller.signal }
-        )
-        if (!res.ok) return
-        const json = await res.json()
-        if (json?.success && json.market) {
-          priceMap.set(marketId, {
-            outcomes: json.market.outcomes,
-            outcomePrices: json.market.outcomePrices,
-          })
+  for (let i = 0; i < needsRefresh.length; i += PRICE_FETCH_BATCH_SIZE) {
+    const chunk = needsRefresh.slice(i, i + PRICE_FETCH_BATCH_SIZE)
+    await Promise.all(
+      chunk.map(async (marketId) => {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), PRICE_FETCH_TIMEOUT_MS)
+        try {
+          const res = await fetch(
+            `${baseUrl}/api/polymarket/price?conditionId=${marketId}`,
+            { signal: controller.signal }
+          )
+          if (!res.ok) return
+          const json = await res.json()
+          if (json?.success && json.market) {
+            const nowIso = new Date().toISOString()
+            priceMap.set(marketId, {
+              outcomes: json.market.outcomes,
+              outcomePrices: json.market.outcomePrices,
+              lastUpdatedAt: nowIso,
+            })
+            await supabase
+              .from('markets')
+              .upsert(
+                {
+                  condition_id: marketId,
+                  outcome_prices: {
+                    outcomes: json.market.outcomes,
+                    outcomePrices: json.market.outcomePrices,
+                  },
+                  last_price_updated_at: nowIso,
+                },
+                { onConflict: 'condition_id' }
+              )
+          }
+        } catch {
+          // Best-effort price refresh; ignore failures.
+        } finally {
+          clearTimeout(timeout)
         }
-      } catch {
-        // Best-effort price refresh; ignore failures.
-      } finally {
-        clearTimeout(timeout)
-      }
-    })
-  )
+      })
+    )
+  }
 
   return priceMap
 }
@@ -147,7 +209,10 @@ const buildPositionsMap = (orders: Order[]) => {
 
   for (const order of orders) {
     const side = normalizeSide(order.side)
-    const price = toNullableNumber(order.price_when_copied) ?? toNullableNumber(order.price)
+    const price =
+      side === 'buy'
+        ? toNullableNumber(order.price_when_copied) ?? toNullableNumber(order.price)
+        : toNullableNumber(order.price) ?? toNullableNumber(order.price_when_copied)
     const filledSize = resolveFilledSize(order)
 
     if (!price || !filledSize || filledSize <= 0) continue
@@ -392,7 +457,8 @@ const computeStatsFromPositions = (
       }
     }
 
-    totalVolume += position.totalCost + position.totalProceeds
+    // Volume should reflect capital deployed (buys only)
+    totalVolume += position.totalCost
   }
 
   const totalPnl = totalRealizedPnl + totalUnrealizedPnl
@@ -490,7 +556,7 @@ export async function GET(
       ])
     ).filter(Boolean)
 
-    const priceMap = await fetchMarketPrices(marketIds.slice(0, MAX_MARKETS_TO_REFRESH))
+    const priceMap = await fetchMarketPrices(supabase, marketIds)
 
     const overallStats = computeStatsFromPositions(allPositions, orders, priceMap)
     const traderStats = computeStatsFromPositions(traderPositions, traderOrders, priceMap)

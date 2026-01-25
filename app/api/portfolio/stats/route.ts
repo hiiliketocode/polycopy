@@ -27,6 +27,7 @@ const resolveFilledSize = (row: any) => {
 
 const normalize = (value?: string | null) => value?.trim().toLowerCase() || ''
 const PRICE_FETCH_TIMEOUT_MS = 8000 // Increased timeout
+// Keep cache fresh but avoid blocking API responses: treat 5 min as stale
 const PRICE_STALE_AFTER_MS = 5 * 60 * 1000 // 5 minutes
 const PRICE_FETCH_BATCH_SIZE = 40 // throttle external calls while allowing heavy users
 
@@ -48,59 +49,81 @@ const findOutcomePrice = (market: MarketPrice | undefined, outcome: string | nul
   return null
 }
 
-const fetchMarketPrices = async (
+const loadCachedMarketPrices = async (
   supabase: ReturnType<typeof createService>,
   marketIds: string[]
 ) => {
   const priceMap = new Map<string, MarketPrice>()
-  if (marketIds.length === 0) return priceMap
+  const staleMarketIds = new Set<string>()
 
-  // 1) Load cached prices
+  if (marketIds.length === 0) return { priceMap, staleMarketIds: [] as string[] }
+
   const { data: cachedRows, error: cacheError } = await supabase
     .from('markets')
     .select('condition_id, outcome_prices, last_price_updated_at, closed')
     .in('condition_id', marketIds)
 
+  const now = Date.now()
+
   if (!cacheError && cachedRows) {
     cachedRows.forEach((row) => {
-      if (row.outcome_prices) {
-        priceMap.set(row.condition_id, {
-          outcomes:
-            row.outcome_prices?.outcomes ??
-            row.outcome_prices?.labels ??
-            row.outcome_prices?.choices ??
-            null,
-          outcomePrices:
-            row.outcome_prices?.outcomePrices ??
-            row.outcome_prices?.prices ??
-            row.outcome_prices?.probabilities ??
-            null,
-          lastUpdatedAt: row.last_price_updated_at,
-          closed: row.closed,
-        })
+      if (row.condition_id) {
+        const outcomes =
+          row.outcome_prices?.outcomes ??
+          row.outcome_prices?.labels ??
+          row.outcome_prices?.choices ??
+          null
+        const outcomePrices =
+          row.outcome_prices?.outcomePrices ??
+          row.outcome_prices?.prices ??
+          row.outcome_prices?.probabilities ??
+          null
+
+        if (outcomes && outcomePrices) {
+          priceMap.set(row.condition_id, {
+            outcomes,
+            outcomePrices,
+            lastUpdatedAt: row.last_price_updated_at,
+            closed: row.closed,
+          })
+        }
+
+        const last = row.last_price_updated_at
+          ? new Date(row.last_price_updated_at).getTime()
+          : 0
+        const isStale =
+          !outcomePrices ||
+          (!row.closed && (Number.isNaN(last) || now - last > PRICE_STALE_AFTER_MS))
+        if (isStale) {
+          staleMarketIds.add(row.condition_id)
+        }
       }
     })
   }
 
-  // 2) Refresh only stale/absent prices
-  const now = Date.now()
-  const needsRefresh = marketIds.filter((id) => {
-    const cached = priceMap.get(id)
-    if (!cached || !cached.outcomePrices || !cached.lastUpdatedAt) return true
-    if (cached.closed) return true
-    const last = new Date(cached.lastUpdatedAt).getTime()
-    return Number.isNaN(last) || now - last > PRICE_STALE_AFTER_MS
+  // Any markets missing from the cache are automatically stale
+  marketIds.forEach((id) => {
+    if (!priceMap.has(id)) {
+      staleMarketIds.add(id)
+    }
   })
 
-  if (needsRefresh.length === 0) return priceMap
+  return { priceMap, staleMarketIds: Array.from(staleMarketIds) }
+}
+
+const refreshMarketPrices = async (
+  supabase: ReturnType<typeof createService>,
+  marketIds: string[]
+) => {
+  if (marketIds.length === 0) return
 
   const baseUrl =
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     'http://localhost:3000'
 
-  for (let i = 0; i < needsRefresh.length; i += PRICE_FETCH_BATCH_SIZE) {
-    const chunk = needsRefresh.slice(i, i + PRICE_FETCH_BATCH_SIZE)
+  for (let i = 0; i < marketIds.length; i += PRICE_FETCH_BATCH_SIZE) {
+    const chunk = marketIds.slice(i, i + PRICE_FETCH_BATCH_SIZE)
 
     await Promise.all(
       chunk.map(async (marketId) => {
@@ -115,11 +138,6 @@ const fetchMarketPrices = async (
           const json = await res.json()
           if (json?.success && json.market) {
             const nowIso = new Date().toISOString()
-            priceMap.set(marketId, {
-              outcomes: json.market.outcomes,
-              outcomePrices: json.market.outcomePrices,
-              lastUpdatedAt: nowIso,
-            })
             await supabase
               .from('markets')
               .upsert(
@@ -130,20 +148,19 @@ const fetchMarketPrices = async (
                     outcomePrices: json.market.outcomePrices,
                   },
                   last_price_updated_at: nowIso,
+                  closed: json.market.closed ?? null,
                 },
                 { onConflict: 'condition_id' }
               )
           }
         } catch (error) {
-          // Best-effort price refresh; ignore failures.
+          console.warn('[portfolio/stats] background price refresh failed', error)
         } finally {
           clearTimeout(timeout)
         }
       })
     )
   }
-
-  return priceMap
 }
 
 const inferResolutionPrice = (position: Position) => {
@@ -347,7 +364,14 @@ export async function GET(request: Request) {
       )
     )
 
-    const priceMap = await fetchMarketPrices(supabase, allMarketIds)
+    const { priceMap, staleMarketIds } = await loadCachedMarketPrices(supabase, allMarketIds)
+
+    // Refresh stale prices in the background; don't block the response
+    if (staleMarketIds.length > 0) {
+      refreshMarketPrices(supabase, staleMarketIds).catch((err) =>
+        console.warn('[portfolio/stats] async price refresh failed', err)
+      )
+    }
 
     // Calculate P&L for each position using FIFO cost basis
     let totalRealizedPnl = 0
