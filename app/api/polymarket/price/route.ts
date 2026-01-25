@@ -837,7 +837,7 @@ export async function GET(request: Request) {
                         resolved,
                         outcomePrices: prices,
                         outcomes: outcomes,
-                        tags: reloaded.tags ?? resolvedTags,
+                        tags: reloadedMarket.tags ?? resolvedTags,
                         endDateIso: resolvedEndDateIso,
                         completedTime: reloadedCompletedTime,
                         gameStartTime: reloadedStartTime,
