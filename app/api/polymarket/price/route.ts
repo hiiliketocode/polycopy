@@ -819,11 +819,12 @@ export async function GET(request: Request) {
                   // Reload from DB to get fresh data including game_start_time
                   const reloaded = await loadCachedMarket();
                   if (reloaded) {
-                    const reloadedStartTime = pickMarketStartTime(reloaded);
-                    const reloadedCompletedTime = reloaded?.completed_time 
-                      ? (typeof reloaded.completed_time === 'string' 
-                          ? reloaded.completed_time 
-                          : new Date(reloaded.completed_time).toISOString())
+                    const reloadedMarket = reloaded as Record<string, any>;
+                    const reloadedStartTime = pickMarketStartTime(reloadedMarket);
+                    const reloadedCompletedTime = reloadedMarket.completed_time 
+                      ? (typeof reloadedMarket.completed_time === 'string' 
+                          ? reloadedMarket.completed_time 
+                          : new Date(reloadedMarket.completed_time).toISOString())
                       : null;
                     return NextResponse.json({
                       success: true,

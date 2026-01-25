@@ -28,7 +28,7 @@ async function triggerWalletBackfillIfNeeded(
 
     if (shouldBackfill) {
       // Use the shared utility function
-      const { triggerWalletPnlBackfill } = await import('../../../../lib/backfill/trigger-wallet-pnl-backfill')
+      const { triggerWalletPnlBackfill } = await import('@/lib/backfill/trigger-wallet-pnl-backfill')
       triggerWalletPnlBackfill(wallet).catch((err) => {
         console.error(`[realized-pnl] Failed to trigger backfill for ${wallet}:`, err)
       })
