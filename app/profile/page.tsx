@@ -28,6 +28,7 @@ import { EditCopiedTrade } from '@/components/polycopy/edit-copied-trade';
 import { OrdersScreen } from '@/components/orders/OrdersScreen';
 import ClosePositionModal from '@/components/orders/ClosePositionModal';
 import OrderRowDetails from '@/components/orders/OrderRowDetails';
+import { ShareStatsModal } from '@/components/polycopy/share-stats-modal';
 import type { OrderRow } from '@/lib/orders/types';
 import type { PositionSummary } from '@/lib/orders/position';
 import { Input } from '@/components/ui/input';
@@ -50,6 +51,7 @@ import {
   Check,
   Info,
   ArrowUpRight,
+  Share2,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -363,6 +365,7 @@ function ProfilePageContent() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [showSubscriptionSuccessModal, setShowSubscriptionSuccessModal] = useState(false);
+  const [isShareStatsModalOpen, setIsShareStatsModalOpen] = useState(false);
 
   // Check for upgrade success in URL params
   useEffect(() => {
@@ -2672,6 +2675,20 @@ function ProfilePageContent() {
                 <p className="text-xs text-red-600 mt-2">Stats unavailable: {portfolioStatsError}</p>
               )}
             </div>
+
+            {/* Share Stats Button */}
+            {copiedTrades.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-200">
+                <Button
+                  onClick={() => setIsShareStatsModalOpen(true)}
+                  variant="outline"
+                  className="w-full sm:w-auto bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-slate-900 font-semibold border-0"
+                >
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share My Stats
+                </Button>
+              </div>
+            )}
           </Card>
 
           {/* Tab Navigation */}
@@ -3773,6 +3790,20 @@ function ProfilePageContent() {
         onConnectWallet={() => {
           setShowSubscriptionSuccessModal(false);
           setIsConnectModalOpen(true);
+        }}
+      />
+      <ShareStatsModal
+        open={isShareStatsModalOpen}
+        onOpenChange={setIsShareStatsModalOpen}
+        username={polymarketUsername || 'trader'}
+        stats={{
+          pnl: userStats.totalPnl,
+          roi: userStats.roi,
+          winRate: userStats.winRate,
+          volume: userStats.totalVolume,
+          trades: copiedTrades.length,
+          followers: followingCount,
+          memberSince: profile?.created_at ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'Jan 2026',
         }}
       />
       <EditCopiedTrade
