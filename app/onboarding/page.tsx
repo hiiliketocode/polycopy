@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
 import { triggerLoggedOut } from '@/lib/auth/logout-events';
+import { getOrRefreshSession } from '@/lib/auth/session';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -17,7 +18,7 @@ export default function OnboardingPage() {
   useEffect(() => {
     // Check if user is logged in
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { session } = await getOrRefreshSession();
       if (!session?.user) {
         triggerLoggedOut('session_missing');
         router.push('/login');

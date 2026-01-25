@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     for (const user of users) {
       try {
         const userName = user.user_name || user.email?.split('@')[0] || 'there'
-        const profileUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'}/profile`
+        const portfolioUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'}/portfolio`
         
         console.log(`[Welcome Email API] Sending to ${user.email}...`)
         
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
           subject: 'Welcome to Polycopy - Start Copying Winning Traders! 🎉',
           react: WelcomeEmail({
             userName,
-            profileUrl,
+            profileUrl: portfolioUrl,
           }),
         })
         

@@ -26,7 +26,7 @@ export default function PremiumSubscriptionConfirmationEmail({
   subscriptionDate = new Date().toLocaleDateString(),
   billingPeriod = 'monthly',
   amount = '$19.99',
-  profileUrl = 'https://polycopy.app/profile',
+  profileUrl = 'https://polycopy.app/portfolio',
 }: PremiumSubscriptionConfirmationEmailProps) {
   return (
     <Html>
@@ -84,7 +84,7 @@ export default function PremiumSubscriptionConfirmationEmail({
 
           <Section style={buttonContainer}>
             <Button style={button} href={profileUrl}>
-              Go to My Profile
+              Go to My Portfolio
             </Button>
           </Section>
 
@@ -93,7 +93,7 @@ export default function PremiumSubscriptionConfirmationEmail({
           <Text style={footerText}>
             You can manage your subscription or update your payment method anytime from your{' '}
             <Link href={profileUrl} style={link}>
-              profile settings
+              portfolio settings
             </Link>.
           </Text>
 

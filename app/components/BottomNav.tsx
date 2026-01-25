@@ -161,13 +161,13 @@ export default function BottomNav() {
 
           {/* Portfolio */}
           <Link 
-            href="/profile" 
+            href="/portfolio" 
             className="flex-1 flex flex-col items-center justify-center gap-1"
             style={navItemStyle}
           >
             <div style={iconContainerStyle} className="flex items-center justify-center">
               <svg 
-                className={`h-6 w-6 ${isActive('/profile') ? 'text-[#0F0F0F]' : 'text-slate-400'}`}
+                className={`h-6 w-6 ${isActive('/portfolio') ? 'text-[#0F0F0F]' : 'text-slate-400'}`}
                 fill="none" 
                 stroke="currentColor" 
                 viewBox="0 0 24 24"
@@ -176,7 +176,7 @@ export default function BottomNav() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16v-5M12 16v-8M17 16v-3" />
               </svg>
             </div>
-            <span className={`text-xs ${isActive('/profile') ? 'text-[#0F0F0F] font-semibold' : 'text-slate-500'}`}>
+            <span className={`text-xs ${isActive('/portfolio') ? 'text-[#0F0F0F] font-semibold' : 'text-slate-500'}`}>
               Portfolio
             </span>
           </Link>

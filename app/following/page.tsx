@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
+import { getOrRefreshSession } from '@/lib/auth/session';
 import { Navigation } from '@/components/polycopy/navigation';
 import { TraderDiscoveryCard } from '@/components/polycopy/trader-discovery-card';
 import { Card } from '@/components/ui/card';
@@ -61,7 +62,7 @@ function FollowingPageContent() {
     const checkAuth = async () => {
       setLoading(true);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { session } = await getOrRefreshSession();
         
         if (!session?.user) {
           triggerLoggedOut('session_missing');
@@ -244,7 +245,7 @@ function FollowingPageContent() {
           {/* Header */}
           <div className="flex items-center gap-4">
             <Link 
-              href="/profile"
+              href="/portfolio"
               className="flex items-center justify-center w-10 h-10 rounded-full bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
             >
               <ArrowLeft className="h-5 w-5 text-slate-600" />

@@ -13,7 +13,7 @@ export function PremiumUpsellBanner({ message, placement = "inline" }: PremiumUp
   const router = useRouter()
 
   const handleUpgrade = () => {
-    router.push("/profile?upgrade=true")
+    router.push("/portfolio?upgrade=true")
   }
 
   if (placement === "profile-top") {

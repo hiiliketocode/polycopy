@@ -392,7 +392,7 @@ export async function GET(request: NextRequest) {
       console.log(`✅ Auto-close: Using exact position size (${closeSize} contracts)`)
 
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'
-      const quickTradesUrl = `${appUrl}/profile?tab=manual-trades`
+      const quickTradesUrl = `${appUrl}/portfolio?tab=manual-trades`
       const slippagePercent =
         typeof order.auto_close_slippage_percent === 'number' && order.auto_close_slippage_percent >= 0
           ? order.auto_close_slippage_percent
@@ -883,9 +883,9 @@ export async function GET(request: NextRequest) {
                 traderExitPrice: statusData.currentPrice || 0,
                 userROI: statusData.roi || 0,
                 traderROI,
-                tradeUrl: `${appUrl}/profile`,
+                tradeUrl: `${appUrl}/portfolio`,
                 polymarketUrl: `https://polymarket.com/event/${trade.market_id}`,
-                unsubscribeUrl: `${appUrl}/profile`
+                unsubscribeUrl: `${appUrl}/portfolio`
               })
             })
             
@@ -967,8 +967,8 @@ export async function GET(request: NextRequest) {
                 userROI: statusData.roi || 0,
                 betAmount: trade.invested_usd ?? 0,
                 didUserWin,
-                tradeUrl: `${appUrl}/profile`,
-                unsubscribeUrl: `${appUrl}/profile`
+                tradeUrl: `${appUrl}/portfolio`,
+                unsubscribeUrl: `${appUrl}/portfolio`
               })
             })
             

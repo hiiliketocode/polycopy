@@ -233,11 +233,14 @@ export function ShareStatsModal({
       if (!blob) {
         throw new Error('No image available')
       }
+
+      const portfolioUrl = 'https://polycopy.app/portfolio'
+      const shareText = `Check out my Polycopy stats! 📊\n\n${stats.pnl >= 0 ? '+' : ''}$${stats.pnl.toFixed(2)} P&L | ${stats.roi >= 0 ? '+' : ''}${stats.roi.toFixed(1)}% ROI\n\nCopy the best traders on Polymarket 👇\nPortfolio: ${portfolioUrl}`
       
       // Try to use Web Share API if available (works on mobile and some browsers)
       if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], 'polycopy-stats.png', { type: 'image/png' })] })) {
         const file = new File([blob], `polycopy-stats-${username}.png`, { type: 'image/png' })
-        const text = `Check out my Polycopy stats! 📊\n\n${stats.pnl >= 0 ? '+' : ''}$${stats.pnl.toFixed(2)} P&L | ${stats.roi >= 0 ? '+' : ''}${stats.roi.toFixed(1)}% ROI\n\nCopy the best traders on Polymarket 👇\nhttps://polycopy.com`
+        const text = shareText
         
         await navigator.share({
           text,
@@ -255,8 +258,8 @@ export function ShareStatsModal({
         window.URL.revokeObjectURL(url)
         
         // Open Twitter with text only
-        const text = `Check out my Polycopy stats! 📊\n\n${stats.pnl >= 0 ? '+' : ''}$${stats.pnl.toFixed(2)} P&L | ${stats.roi >= 0 ? '+' : ''}${stats.roi.toFixed(1)}% ROI\n\nCopy the best traders on Polymarket 👇`
-        const tweetUrl = 'https://polycopy.com'
+        const text = shareText
+        const tweetUrl = portfolioUrl
         const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(tweetUrl)}`
         
         // Show alert with instructions

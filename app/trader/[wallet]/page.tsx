@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Check, ChevronDown, ChevronUp, Loader2, Info, ExternalLink, Copy } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { getOrRefreshSession } from '@/lib/auth/session';
 import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import { Navigation } from '@/components/polycopy/navigation';
 import { Card } from '@/components/ui/card';
@@ -471,7 +472,7 @@ export default function TraderProfilePage({
   // Fetch current user
   useEffect(() => {
     const fetchUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { session } = await getOrRefreshSession();
       setUser(session?.user ?? null);
       
       if (session?.user) {
@@ -3612,7 +3613,7 @@ export default function TraderProfilePage({
                   <button
                     onClick={() => {
                       setShowWalletConnectModal(false);
-                      router.push('/profile');
+                      router.push('/portfolio');
                     }}
                     className="flex-1 px-4 py-2.5 bg-[#FDB022] hover:bg-[#E69E1A] text-slate-900 font-semibold rounded-lg transition-colors"
                   >

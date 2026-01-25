@@ -24,7 +24,7 @@ export default function SubscriptionCancellationConfirmationEmail({
   userName = 'there',
   cancellationDate = new Date().toLocaleDateString(),
   accessUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString(),
-  profileUrl = 'https://polycopy.app/profile',
+  profileUrl = 'https://polycopy.app/portfolio',
 }: SubscriptionCancellationConfirmationEmailProps) {
   return (
     <Html>
@@ -84,12 +84,12 @@ export default function SubscriptionCancellationConfirmationEmail({
           </Text>
 
           <Text style={text}>
-            <strong>Changed your mind?</strong> You can reactivate your subscription anytime from your profile settings before {accessUntil}.
+            <strong>Changed your mind?</strong> You can reactivate your subscription anytime from your portfolio settings before {accessUntil}.
           </Text>
 
           <Section style={buttonContainer}>
             <Button style={button} href={profileUrl}>
-              Go to My Profile
+              Go to My Portfolio
             </Button>
           </Section>
 

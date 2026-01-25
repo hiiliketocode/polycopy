@@ -118,7 +118,7 @@ export default function TradingSetupPage() {
               <li>Copy the wallet address (it starts with 0x).</li>
               <li>
                 Paste it into Polycopy at{' '}
-                <Link href="/profile/connect-wallet" className="text-[#FDB022] hover:text-[#E69E1A] font-semibold">
+                <Link href="/portfolio/connect-wallet" className="text-[#FDB022] hover:text-[#E69E1A] font-semibold">
                   Portfolio → Connect Wallet
                 </Link>
                 .

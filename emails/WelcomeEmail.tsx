@@ -12,7 +12,7 @@ interface WelcomeEmailProps {
 
 export default function WelcomeEmail({ 
   userName = 'John', 
-  profileUrl = 'https://polycopy.app/profile' 
+  profileUrl = 'https://polycopy.app/portfolio' 
 }: WelcomeEmailProps) {
   return (
     <Html>

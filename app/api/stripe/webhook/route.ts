@@ -83,7 +83,7 @@ export async function POST(request: Request) {
                   }),
                   billingPeriod: interval === 'year' ? 'annual' : 'monthly',
                   amount: `$${(subscription?.items.data[0]?.price?.unit_amount || 0) / 100}`,
-                  profileUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'}/profile`,
+                  profileUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'}/portfolio`,
                 }),
               })
               console.log('✅ Premium confirmation email sent to:', profile.email)
@@ -159,7 +159,7 @@ export async function POST(request: Request) {
                     month: 'long',
                     day: 'numeric',
                   }),
-                  profileUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'}/profile`,
+                  profileUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'}/portfolio`,
                 }),
               })
               console.log('✅ Cancellation confirmation email sent to:', user.email)

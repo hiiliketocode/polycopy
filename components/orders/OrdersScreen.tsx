@@ -9,6 +9,7 @@ import ClosePositionModal from '@/components/orders/ClosePositionModal'
 import { supabase } from '@/lib/supabase'
 import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from '@/lib/feature-tier'
 import { triggerLoggedOut } from '@/lib/auth/logout-events'
+import { getOrRefreshSession } from '@/lib/auth/session'
 import type { User } from '@supabase/supabase-js'
 import type { OrderRow, OrderStatus } from '@/lib/orders/types'
 import type { PositionSummary } from '@/lib/orders/position'
@@ -91,7 +92,7 @@ export function OrdersScreen({
     const checkAuth = async () => {
       setLoadingAuth(true)
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        const { session } = await getOrRefreshSession()
         if (!session?.user) {
           triggerLoggedOut('session_missing')
           router.push('/login')

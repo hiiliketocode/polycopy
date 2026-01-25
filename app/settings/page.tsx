@@ -14,6 +14,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { supabase, ensureProfile } from '@/lib/supabase';
+import { getOrRefreshSession } from '@/lib/auth/session';
 import { resolveFeatureTier, tierHasPremiumAccess } from '@/lib/feature-tier';
 import { Navigation } from '@/components/polycopy/navigation';
 import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
@@ -73,7 +74,7 @@ export default function SettingsPage() {
     const checkAuth = async () => {
       setLoading(true);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { session } = await getOrRefreshSession();
         if (!session?.user) {
           triggerLoggedOut('session_missing');
           router.push('/login');
@@ -629,8 +630,8 @@ export default function SettingsPage() {
                         Remove wallet
                       </Button>
                     ) : (
-                      <Button asChild variant="outline">
-                        <Link href="/profile/connect-wallet">Connect wallet</Link>
+                    <Button asChild variant="outline">
+                        <Link href="/portfolio/connect-wallet">Connect wallet</Link>
                       </Button>
                     )}
                   </div>
@@ -807,7 +808,7 @@ export default function SettingsPage() {
               Done
             </Button>
             <Button asChild className="flex-1">
-              <Link href="/profile/connect-wallet">Reconnect wallet</Link>
+              <Link href="/portfolio/connect-wallet">Reconnect wallet</Link>
             </Button>
           </div>
         </DialogContent>

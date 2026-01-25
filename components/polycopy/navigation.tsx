@@ -335,9 +335,9 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
               Discover
             </Link>
             <Link
-              href="/profile"
+              href="/portfolio"
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                isActive("/profile")
+                isActive("/portfolio")
                   ? "text-slate-900 bg-slate-100"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
               }`}
@@ -537,13 +537,13 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
             </Link>
 
             <Link
-              href="/profile"
+              href="/portfolio"
               className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors min-w-[64px] ${
-                isActive("/profile") ? "bg-slate-100 text-[#FDB022]" : "text-slate-600 hover:bg-slate-50"
+                isActive("/portfolio") ? "bg-slate-100 text-[#FDB022]" : "text-slate-600 hover:bg-slate-50"
               }`}
             >
-              <User className={`w-5 h-5 ${isActive("/profile") ? "stroke-[2.5]" : "stroke-2"}`} />
-              <span className={`text-[10px] ${isActive("/profile") ? "font-semibold" : "font-medium"}`}>Portfolio</span>
+              <User className={`w-5 h-5 ${isActive("/portfolio") ? "stroke-[2.5]" : "stroke-2"}`} />
+              <span className={`text-[10px] ${isActive("/portfolio") ? "font-semibold" : "font-medium"}`}>Portfolio</span>
             </Link>
             {isAdmin && (
               <Link

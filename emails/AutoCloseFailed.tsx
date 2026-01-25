@@ -67,8 +67,8 @@ export default function AutoCloseFailedEmail({
             </Section>
 
             <Section style={buttonContainer}>
-              <Link href="https://polycopy.app/profile" style={primaryButton}>
-                Go to Profile to close manually
+              <Link href="https://polycopy.app/portfolio" style={primaryButton}>
+                Go to Portfolio to close manually
               </Link>
             </Section>
 
@@ -267,4 +267,3 @@ const unsubscribeLink = {
   color: '#6b7280',
   textDecoration: 'underline',
 }
-
