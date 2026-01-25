@@ -3795,7 +3795,7 @@ function ProfilePageContent() {
       <ShareStatsModal
         open={isShareStatsModalOpen}
         onOpenChange={setIsShareStatsModalOpen}
-        username={polymarketUsername || 'My Copy Trades'}
+        username={polymarketUsername || 'My copy trades'}
         stats={{
           pnl: userStats.totalPnl,
           roi: userStats.roi,
