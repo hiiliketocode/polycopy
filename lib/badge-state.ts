@@ -3,6 +3,7 @@ import {
   isSeasonLongMarketTitle,
   normalizeEventStatus,
   statusLooksFinal,
+  statusLooksLive,
   statusLooksScheduled,
 } from "./market-status"
 
@@ -17,7 +18,7 @@ export type ScoreSources = {
   websocket?: ScoreValue | null
 }
 
-export type ResolvedGameTime = { time: string | null; source: BadgeSource }
+export type ResolvedGameTime = { time: string | null; source: BadgeSource; priority?: number }
 
 export type BadgeState = {
   type: BadgeStateType
@@ -33,12 +34,14 @@ type MarketIdentity = {
   tags?: unknown
   outcomes?: string[] | null
   categoryType?: MarketCategoryType
+  gameStartTime?: string | null
 }
 
 export type DeriveBadgeStateInput = MarketIdentity & {
   gammaStartTime?: string | null
   marketStartTime?: string | null
   endDateIso?: string | null
+  completedTime?: string | null
   gammaStatus?: string | null
   gammaResolved?: boolean
   websocketLive?: boolean
@@ -96,6 +99,15 @@ const sportsTokens = [
   "pga",
   "tennis",
   "wimbledon",
+  "ncaa",
+  "ncaab",
+  "ncaaf",
+  "ncaaw",
+  "college",
+  "basketball",
+  "football",
+  "baseball",
+  "hockey",
 ]
 
 const futuresTokens = [
@@ -171,20 +183,25 @@ export const resolveMarketCategoryType = (identity: MarketIdentity): MarketCateg
   const category = normalizeValue(identity.category)
   const tags = normalizeTags(identity.tags)
   const outcomes = identity.outcomes ?? []
+  const startHint = identity.gameStartTime
+  const hasGameStartTime = typeof startHint === "string" && startHint.trim().length > 0
 
-  const looksSports =
-    category.includes("sport") ||
-    sportsTokens.some((token) => title.includes(token)) ||
-    sportsTokens.some((token) => tags.includes(token))
+  // Check if tags contain sports tokens (ONLY tags, no title/category fallbacks)
+  const hasSportsInTags = tags.length > 0
+    ? sportsTokens.some((token) => tags.includes(token))
+    : false
 
-  if (!looksSports) {
+  // For live games: if it has game_start_time, treat it as sports
+  // (game_start_time is the primary indicator of a sports game)
+  // Tags are used to confirm, but game_start_time is the key signal
+  const isLiveGame = hasGameStartTime
+
+  if (!isLiveGame) {
     return "NON_SPORTS"
   }
 
-  const hasScoreableSignals =
-    scoreableTokens.some((token) => title.includes(token)) ||
-    /\b(fc|sc|cf|afc|club)\b/.test(title) ||
-    /\b\d+-\d+\b/.test(title)
+  // Don't use title for scoreable signals - only check if it's a future
+  const hasScoreableSignals = hasGameStartTime
 
   const isFuture =
     isSeasonLongMarketTitle(identity.title) ||
@@ -214,37 +231,88 @@ const parseExplicitIsoFromTitle = (title: string) => {
   return parsed.toISOString()
 }
 
+type GameTimeCandidate = {
+  time: string
+  source: BadgeSource
+  priority: number
+}
+
+const buildGameTimeCandidate = (
+  value: string | null | undefined,
+  source: BadgeSource,
+  priority: number
+): GameTimeCandidate | null => {
+  const normalized = normalizeIso(value)
+  if (!normalized) return null
+  return { time: normalized, source, priority }
+}
+
+const buildEndOfDayCandidate = (endDateIso: string | null | undefined, title: string): GameTimeCandidate | null => {
+  const normalizedEnd = normalizeIso(endDateIso)
+  if (!normalizedEnd) return null
+  const titleDate = extractDateFromTitle(title)
+  if (!titleDate) return null
+  if (normalizedEnd.slice(0, 10) !== titleDate) return null
+  return { time: normalizedEnd, source: "gamma", priority: 2 }
+}
+
+// Build end time candidate without title date restriction (for use as fallback)
+const buildEndTimeCandidate = (endDateIso: string | null | undefined): GameTimeCandidate | null => {
+  const normalizedEnd = normalizeIso(endDateIso)
+  if (!normalizedEnd) return null
+  return { time: normalizedEnd, source: "gamma", priority: 1 }
+}
+
 export const resolveGameTime = ({
   cachedGameTime,
   gammaStartTime,
   marketStartTime,
   endDateIso,
-  title,
+  useEndTimeAsFallback = false,
 }: {
   cachedGameTime?: ResolvedGameTime | null
   gammaStartTime?: string | null
   marketStartTime?: string | null
   endDateIso?: string | null
-  title: string
+  useEndTimeAsFallback?: boolean
 }): ResolvedGameTime => {
-  if (cachedGameTime) return cachedGameTime
+  const candidates: GameTimeCandidate[] = []
+  // ONLY use game_start_time (marketStartTime) from markets table, no fallbacks
+  const marketCandidate = buildGameTimeCandidate(marketStartTime, "gamma", 4)
+  if (marketCandidate) candidates.push(marketCandidate)
 
-  const gamma = normalizeIso(gammaStartTime)
-  if (gamma) return { time: gamma, source: "gamma" }
-
-  const market = normalizeIso(marketStartTime)
-  if (market) return { time: market, source: "gamma" }
-
-  const endIso = normalizeIso(endDateIso)
-  const titleDate = extractDateFromTitle(title)
-  if (endIso && titleDate && endIso.slice(0, 10) === titleDate) {
-    return { time: endIso, source: "gamma" }
+  let bestCandidate: GameTimeCandidate | null = null
+  if (cachedGameTime && cachedGameTime.time) {
+    bestCandidate = {
+      time: cachedGameTime.time,
+      source: cachedGameTime.source,
+      priority: cachedGameTime.priority ?? 0,
+    }
   }
 
-  const explicit = parseExplicitIsoFromTitle(title)
-  if (explicit) return { time: explicit, source: "none" }
+  for (const candidate of candidates) {
+    if (!bestCandidate || candidate.priority > bestCandidate.priority) {
+      bestCandidate = candidate
+    }
+  }
 
-  return { time: null, source: "none" }
+  // If no start time found and we should use end time as fallback, use it
+  if (!bestCandidate && useEndTimeAsFallback) {
+    const endTimeCandidate = buildEndTimeCandidate(endDateIso)
+    if (endTimeCandidate) {
+      bestCandidate = endTimeCandidate
+    }
+  }
+
+  if (bestCandidate) {
+    return { ...bestCandidate }
+  }
+
+  return {
+    time: cachedGameTime?.time ?? null,
+    source: cachedGameTime?.source ?? "none",
+    priority: cachedGameTime?.priority ?? 0,
+  }
 }
 
 const pickHigherSource = (next?: BadgeSource, prev?: BadgeSource): BadgeSource => {
@@ -283,6 +351,7 @@ export const deriveBadgeState = (input: DeriveBadgeStateInput): DeriveBadgeState
     gammaStartTime,
     marketStartTime,
     endDateIso,
+    completedTime,
     gammaStatus,
     gammaResolved,
     websocketLive,
@@ -290,50 +359,119 @@ export const deriveBadgeState = (input: DeriveBadgeStateInput): DeriveBadgeState
     scoreSources,
     previousState,
     cachedGameTime,
+    now,
   } = input
 
-  const categoryType =
-    providedCategory ??
-    resolveMarketCategoryType({ marketKey, title, category, tags, outcomes, categoryType: providedCategory })
+  // ============================================================================
+  // CANONICAL FLOW - Three simple questions:
+  // 1. Is it a game? → Check if game_start_time exists
+  // 2. When does it start? → Use game_start_time
+  // 3. Is it live or ended? → Compare current time to game_start_time and completed_time
+  // ============================================================================
 
-  const resolvedGameTime = resolveGameTime({
-    cachedGameTime,
-    gammaStartTime,
-    marketStartTime,
-    endDateIso,
-    title,
-  })
+  // STEP 1: Is it a game?
+  // If marketStartTime (game_start_time) exists, it's a sports game
+  const hasGameStartTime = Boolean(marketStartTime)
+  const categoryType = hasGameStartTime
+    ? resolveMarketCategoryType({
+        marketKey,
+        title,
+        category,
+        tags,
+        outcomes,
+        categoryType: providedCategory,
+        gameStartTime: marketStartTime,
+      })
+    : providedCategory ??
+      resolveMarketCategoryType({
+        marketKey,
+        title,
+        category,
+        tags,
+        outcomes,
+        categoryType: providedCategory,
+        gameStartTime: gammaStartTime,
+      })
 
-  const normalizedStatus = normalizeEventStatus(gammaStatus)
-  const gammaScheduled = statusLooksScheduled(normalizedStatus)
-  const gammaEnded = Boolean(gammaResolved) || statusLooksFinal(normalizedStatus)
+  const isSportsMarket = categoryType === "SPORTS_SCOREABLE" || categoryType === "SPORTS_NON_SCOREABLE"
 
-  let candidateType: BadgeStateType = "scheduled"
-  let candidateSource: BadgeSource = resolvedGameTime.source
-
-  if (categoryType === "NON_SPORTS") {
-    candidateType = gammaEnded ? "resolved" : "scheduled"
-    candidateSource = gammaEnded ? "gamma" : resolvedGameTime.source
-  } else if (categoryType === "SPORTS_NON_SCOREABLE") {
-    candidateType = "scheduled"
-    candidateSource = resolvedGameTime.source
+  // STEP 2: When does it start?
+  // Use game_start_time for sports, end_time for non-sports
+  const prev = previousState || null
+  let finalTime: string | null = null
+  
+  if (isSportsMarket && hasGameStartTime && marketStartTime) {
+    const normalized = normalizeIso(marketStartTime)
+    finalTime = normalized ?? prev?.time ?? null
+  } else if (endDateIso) {
+    const endTimeCandidate = buildEndTimeCandidate(endDateIso)
+    finalTime = endTimeCandidate?.time ?? prev?.time ?? null
   } else {
-    if (gammaEnded || (websocketEnded && !gammaScheduled)) {
-      candidateType = "ended"
-      candidateSource = gammaEnded ? "gamma" : "websocket"
-    } else if (websocketLive && !gammaScheduled) {
-      candidateType = "live"
-      candidateSource = "websocket"
-    } else {
-      candidateType = "scheduled"
-      candidateSource = resolvedGameTime.source || "gamma"
-    }
+    finalTime = prev?.time ?? cachedGameTime?.time ?? null
   }
 
-  const prev = previousState || null
+  // STEP 3: Is it live or ended?
+  // Simple rules:
+  // - If completed_time exists → ended
+  // - If current time >= game_start_time AND no completed_time → live
+  // - Otherwise → scheduled
+  const currentTime = now ? new Date(now) : new Date()
+  let candidateType: BadgeStateType = "scheduled"
+  let candidateSource: BadgeSource = "gamma"
+
+  if (categoryType === "NON_SPORTS") {
+    // Non-sports: resolved or scheduled
+    candidateType = gammaResolved || statusLooksFinal(normalizeEventStatus(gammaStatus)) ? "resolved" : "scheduled"
+  } else if (isSportsMarket && hasGameStartTime && marketStartTime) {
+    // Sports game: check live/ended status
+    const normalizedStartTime = normalizeIso(marketStartTime)
+    if (normalizedStartTime) {
+      const startDate = new Date(normalizedStartTime)
+      if (!Number.isNaN(startDate.getTime())) {
+        // Check if game has ended (completed_time exists)
+        if (completedTime) {
+          candidateType = "ended"
+          candidateSource = "gamma"
+        }
+        // Check if game is live (current time >= start time AND not ended)
+        else if (currentTime >= startDate) {
+          candidateType = "live"
+          candidateSource = "gamma"
+        }
+        // Otherwise, game hasn't started yet
+        else {
+          candidateType = "scheduled"
+          candidateSource = "gamma"
+        }
+      }
+    }
+    
+    // Override with status-based indicators if available (but time-based takes priority)
+    const normalizedStatus = normalizeEventStatus(gammaStatus)
+    if (candidateType === "scheduled" && statusLooksLive(normalizedStatus)) {
+      candidateType = "live"
+      candidateSource = "gamma"
+    } else if (candidateType === "scheduled" && statusLooksFinal(normalizedStatus)) {
+      candidateType = "ended"
+      candidateSource = "gamma"
+    }
+    
+    // Websocket indicators
+    if (websocketLive && candidateType === "scheduled") {
+      candidateType = "live"
+      candidateSource = "websocket"
+    } else if (websocketEnded && candidateType !== "ended") {
+      candidateType = "ended"
+      candidateSource = "websocket"
+    }
+  } else {
+    // Sports market without game_start_time: treat as scheduled
+    candidateType = "scheduled"
+  }
+
   const nextState: BadgeState = {
     type: candidateType,
-    time: resolvedGameTime.time ?? prev?.time ?? null,
+    time: finalTime,
     score: null,
     source: candidateSource || "none",
   }
@@ -366,6 +504,13 @@ export const deriveBadgeState = (input: DeriveBadgeStateInput): DeriveBadgeState
   } else if (prev?.score && nextState.type === prev.type) {
     nextState.score = prev.score
     nextState.source = pickHigherSource(prev.source, nextState.source)
+  }
+
+  // Create resolvedGameTime for return value
+  const resolvedGameTime: ResolvedGameTime = {
+    time: finalTime,
+    source: candidateSource,
+    priority: 0,
   }
 
   return {

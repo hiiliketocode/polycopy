@@ -11,7 +11,6 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { TradeCard } from '@/components/polycopy/trade-card';
 import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/components/polycopy/trade-execution-notifications';
@@ -332,20 +331,15 @@ export default function TraderProfilePage({
   
   const [showWalletConnectModal, setShowWalletConnectModal] = useState(false);
   const [showConnectWalletModal, setShowConnectWalletModal] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedTradeIds, setCopiedTradeIds] = useState<Set<string>>(new Set());
   const { manualModeEnabled, enableManualMode } = useManualTradingMode(
     isPremium,
     Boolean(walletAddress)
   );
   
-  // Premium user expandable cards
+  // Trade card state
   const [expandedTradeKeys, setExpandedTradeKeys] = useState<Set<string>>(new Set());
   const [tradeNotifications, setTradeNotifications] = useState<TradeExecutionNotification[]>([]);
-  const [usdAmount, setUsdAmount] = useState<string>('');
-  const [autoClose, setAutoClose] = useState(false);
-  const [manualCopyTradeIndex, setManualCopyTradeIndex] = useState<number | null>(null);
-  const [manualUsdAmount, setManualUsdAmount] = useState<string>('');
   const [defaultBuySlippage, setDefaultBuySlippage] = useState(3);
   const [defaultSellSlippage, setDefaultSellSlippage] = useState(3);
   
@@ -389,14 +383,6 @@ export default function TraderProfilePage({
     homeTeam?: string | null;
     awayTeam?: string | null;
   }>>(new Map());
-
-  useEffect(() => {
-    if (!isAdmin) {
-      setAutoClose(false);
-      return;
-    }
-    setAutoClose((prev) => (prev ? prev : true));
-  }, [isAdmin]);
 
   const handleTradeExecutionNotification = useCallback((notification: TradeExecutionNotification) => {
     setTradeNotifications((prev) => {
@@ -1522,55 +1508,6 @@ export default function TraderProfilePage({
   const isTradeCopied = (trade: Trade): boolean => {
     const tradeKey = buildCopiedTradeKey(getMarketKeyForTrade(trade), wallet);
     return tradeKey ? copiedTradeIds.has(tradeKey) : false;
-  };
-
-  // Handle quick copy for premium users
-  const handleQuickCopy = async (trade: Trade) => {
-    // Check if wallet is connected
-    if (!walletAddress) {
-      setShowWalletConnectModal(true);
-      return;
-    }
-    
-    setIsSubmitting(true);
-    
-    // Simulate trade execution
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    
-    // Mark as copied
-    const tradeKey = buildCopiedTradeKey(getMarketKeyForTrade(trade), wallet);
-    if (tradeKey) {
-      setCopiedTradeIds(prev => {
-        const next = new Set(prev);
-        next.add(tradeKey);
-        return next;
-      });
-    }
-    
-    setIsSubmitting(false);
-    setExpandedTradeKeys(new Set());
-    setUsdAmount('');
-  };
-
-  const handleManualCopyToggle = (index: number, url: string | null) => {
-    const nextIndex = manualCopyTradeIndex === index ? null : index;
-    setManualCopyTradeIndex(nextIndex);
-    if (nextIndex === index && url && typeof window !== 'undefined') {
-      window.open(url, '_blank');
-    }
-    setManualUsdAmount('');
-  };
-
-  const handleManualCopyCta = (url: string | null) => {
-    if (!url || typeof window === 'undefined') return;
-    window.open(url, '_blank');
-  };
-
-  // Calculate contracts for premium quick copy
-  const calculateContracts = (usdInput: string, price: number) => {
-    const amount = Number.parseFloat(usdInput);
-    if (isNaN(amount) || amount <= 0 || price <= 0) return 0;
-    return Math.floor(amount / price);
   };
 
   // Get Polymarket URL
@@ -2804,47 +2741,8 @@ export default function TraderProfilePage({
                   });
                   const currentPrice = liveData?.price || trade.currentPrice || trade.price;
                   const liveScore = liveData?.score;
-                  const isClosed = liveData?.closed || false;
                   const isResolved = liveData?.resolved || false;
                   const marketIsOpen = isResolved ? false : (liveData?.closed === undefined ? undefined : !liveData.closed);
-                  const manualAmountValue = Number.parseFloat(manualUsdAmount);
-                  const manualAmountValid = !Number.isNaN(manualAmountValue) && manualAmountValue > 0;
-                  const manualDisplayPrice = currentPrice ?? trade.price ?? 0;
-                  const manualPriceChange =
-                    trade.price && trade.price > 0
-                      ? ((manualDisplayPrice - trade.price) / trade.price) * 100
-                      : null;
-                  const manualPriceChangeColor =
-                    manualPriceChange === null
-                      ? 'text-slate-400'
-                      : manualPriceChange >= 0
-                        ? 'text-emerald-600'
-                        : 'text-red-600';
-                  const manualPriceChangeLabel =
-                    manualPriceChange === null
-                      ? '--'
-                      : `${manualPriceChange >= 0 ? '+' : ''}${manualPriceChange.toFixed(2)}% from entry`;
-                  const manualContractsEstimate =
-                    manualAmountValid && manualDisplayPrice > 0
-                      ? calculateContracts(manualUsdAmount, manualDisplayPrice)
-                      : 0;
-                  
-                  // Calculate ROI
-                  let roi: number | null = null;
-                  const entryPrice = trade.price;
-                  
-                  if ((entryPrice && entryPrice !== 0) && (currentPrice !== undefined && currentPrice !== null)) {
-                    roi = ((currentPrice - entryPrice) / entryPrice) * 100;
-                  }
-                  
-                  // Determine trade status based on live data
-                  let tradeStatus: 'Open' | 'Trader Closed' | 'Bonded' = 'Open';
-                  if (isResolved) {
-                    tradeStatus = 'Bonded';
-                  } else if (isClosed) {
-                    tradeStatus = 'Trader Closed';
-                  }
-                  
                   // Format timestamp
                   const tradeDate = new Date(trade.timestamp);
                   const now = new Date();
@@ -2876,346 +2774,64 @@ export default function TraderProfilePage({
 
                   return (
                     <div className="w-full md:w-[63%] md:mx-auto" key={`${trade.timestamp}-${index}`}>
-                      {isPremium ? (
-                        <TradeCard
-                          tradeAnchorId={`trade-card-${wallet}-${trade.timestamp}-${index}`}
-                          onExecutionNotification={handleTradeExecutionNotification}
-                          trader={{
-                            name: traderData.displayName,
-                            avatar: undefined,
-                            address: wallet,
-                            id: wallet,
-                            roi: effectiveRoiValue,
-                          }}
-                          market={trade.market}
-                          marketAvatar={marketAvatar || undefined}
-                          position={trade.outcome}
-                          action={trade.side === 'BUY' ? 'Buy' : 'Sell'}
-                          price={trade.price}
-                          size={trade.size}
-                          total={trade.price * trade.size}
-                          timestamp={formattedTimestamp}
-                          onCopyTrade={() => {
-                            if (polymarketUrl) {
-                              window.open(polymarketUrl, '_blank');
-                            }
-                          }}
-                          onMarkAsCopied={(entryPrice, amountInvested) =>
-                            handleMarkAsCopied(trade, entryPrice, amountInvested)
+                      <TradeCard
+                        tradeAnchorId={`trade-card-${wallet}-${trade.timestamp}-${index}`}
+                        onExecutionNotification={handleTradeExecutionNotification}
+                        trader={{
+                          name: traderData.displayName,
+                          avatar: undefined,
+                          address: wallet,
+                          id: wallet,
+                          roi: effectiveRoiValue,
+                        }}
+                        market={trade.market}
+                        marketAvatar={marketAvatar || undefined}
+                        position={trade.outcome}
+                        action={trade.side === 'BUY' ? 'Buy' : 'Sell'}
+                        price={trade.price}
+                        size={trade.size}
+                        total={trade.price * trade.size}
+                        timestamp={formattedTimestamp}
+                        onCopyTrade={() => {
+                          if (polymarketUrl) {
+                            window.open(polymarketUrl, '_blank');
                           }
-                          onAdvancedCopy={() => {
-                            if (polymarketUrl) {
-                              window.open(polymarketUrl, '_blank');
-                            }
-                          }}
-                          isPremium={isPremium}
-                          isAdmin={isAdmin}
-                          isExpanded={isExpanded}
-                          onToggleExpand={() => toggleTradeExpanded(tradeKey)}
-                          isCopied={isAlreadyCopied}
-                          conditionId={trade.conditionId}
-                          tokenId={trade.tokenId}
-                          marketSlug={trade.marketSlug}
-                          currentMarketPrice={currentPrice}
-                          marketIsOpen={marketIsOpen}
-                          liveScore={liveScore}
-                          eventStartTime={liveData?.gameStartTime}
-                          eventEndTime={liveData?.endDateIso}
-                          eventStatus={liveData?.eventStatus}
-                          liveStatus={liveData?.liveStatus}
-                          category={trade.category}
-                          polymarketUrl={polymarketUrl}
-                          espnUrl={liveData?.espnUrl}
-                          defaultBuySlippage={defaultBuySlippage}
-                          defaultSellSlippage={defaultSellSlippage}
-                          walletAddress={walletAddress}
-                          manualTradingEnabled={manualModeEnabled}
-                          onSwitchToManualTrading={enableManualMode}
-                          onOpenConnectWallet={() => setShowConnectWalletModal(true)}
-                        />
-                      ) : (
-                        <Card className="p-6">
-                          <div className="flex items-start justify-between gap-4 mb-4">
-                            <div className="flex-1 min-w-0">
-                              <h3 className="font-medium text-slate-900 mb-2 leading-snug">{trade.market}</h3>
-                              <div className="flex items-center gap-2 text-sm text-slate-500">
-                                <span>{trade.formattedDate}</span>
-                                <span>•</span>
-                                <Badge
-                                  variant="secondary"
-                                  className={cn(
-                                    'font-semibold text-xs',
-                                    trade.outcome.toLowerCase() === 'yes'
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                      : 'bg-red-50 text-red-700 border-red-200'
-                                  )}
-                                >
-                                  {trade.outcome}
-                                </Badge>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {tradeStatus !== 'Open' && (
-                                <Badge
-                                  variant="secondary"
-                                  className="text-[10px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
-                                >
-                                  {tradeStatus === 'Bonded' ? 'Resolved' : tradeStatus}
-                                </Badge>
-                              )}
-                              {!isAlreadyCopied && (
-                                <button
-                                  onClick={() => toggleTradeExpanded(tradeKey)}
-                                  className="text-slate-400 hover:text-slate-600 transition-colors"
-                                >
-                                  {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                      {/* Stats Box */}
-                      <div className="bg-slate-50 rounded-lg p-4 mb-4">
-                        <div className="grid grid-cols-4 gap-4 text-center">
-                          <div>
-                            <div className="text-xs text-slate-500 mb-1">Entry</div>
-                            <div className="text-sm font-semibold text-slate-900">${trade.price.toFixed(2)}</div>
-                          </div>
-                          <div className="border-l border-slate-200">
-                            <div className="text-xs text-slate-500 mb-1">Size</div>
-                            <div className="text-sm font-semibold text-slate-900">${trade.size.toFixed(0)}</div>
-                          </div>
-                          <div className="border-l border-slate-200">
-                            <div className="text-xs text-slate-500 mb-1">Total</div>
-                            <div className="text-sm font-semibold text-slate-900">
-                              ${(trade.price * trade.size).toFixed(0)}
-                            </div>
-                          </div>
-                          <div className="border-l border-slate-200">
-                            <div className="text-xs text-slate-500 mb-1">ROI</div>
-                            <div className={cn(
-                              'text-sm font-semibold',
-                              roi === null ? 'text-slate-400' :
-                              roi > 0 ? 'text-emerald-600' :
-                              roi < 0 ? 'text-red-600' : 'text-slate-500'
-                            )}>
-                              {roi === null ? '--' : `${roi > 0 ? '+' : ''}${roi.toFixed(1)}%`}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Action Buttons - Different for Premium vs Free */}
-                      {isPremium ? (
-                        <>
-                          <Button
-                            onClick={() => {
-                              if (isAlreadyCopied) return;
-                              if (trade.status === 'Trader Closed' || trade.status === 'Bonded') return;
-                              toggleTradeExpanded(tradeKey);
-                            }}
-                            disabled={isAlreadyCopied || trade.status === 'Trader Closed' || trade.status === 'Bonded'}
-                            className={cn(
-                              'w-full font-semibold shadow-sm text-sm',
-                              isAlreadyCopied
-                                ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
-                                : 'bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900'
-                            )}
-                            size="lg"
-                          >
-                            {isAlreadyCopied ? (
-                              <>
-                                <Check className="w-4 h-4 mr-2" />
-                                Trade Copied
-                              </>
-                            ) : trade.status === 'Trader Closed' || trade.status === 'Bonded' ? (
-                              'Market Closed'
-                            ) : (
-                              'Copy Trade'
-                            )}
-                          </Button>
-
-                          {/* Premium: Expanded Quick Copy Interface */}
-                          {isExpanded && !isAlreadyCopied && (
-                            <div className="mt-4 p-4 bg-slate-50 rounded-lg space-y-4">
-                              <h4 className="text-sm font-semibold text-slate-900">Quick Copy</h4>
-
-                              {/* Current Price */}
-                              <div className="bg-white border border-slate-200 rounded-lg p-2.5">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs font-medium text-slate-600">Current Price</span>
-                                  <div className="text-right">
-                                    <p className="text-base font-semibold text-slate-900">${(currentPrice || trade.price).toFixed(2)}</p>
-                                    <p className={`text-xs font-medium ${(currentPrice || 0) >= trade.price ? 'text-emerald-600' : 'text-red-600'}`}>
-                                      {(currentPrice || 0) >= trade.price ? '+' : ''}
-                                      {(((currentPrice || trade.price) - trade.price) / trade.price * 100).toFixed(2)}% from entry
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Amount Input */}
-                              <div className="space-y-2">
-                                <label htmlFor={`amount-${index}`} className="text-xs font-medium text-slate-700">
-                                  Amount (USD)
-                                </label>
-                                <div className="relative">
-                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
-                                  <input
-                                    id={`amount-${index}`}
-                                    type="number"
-                                    value={usdAmount}
-                                    onChange={(e) => setUsdAmount(e.target.value)}
-                                    placeholder="0.00"
-                                    disabled={isSubmitting}
-                                    className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                  />
-                                </div>
-                                {usdAmount && Number.parseFloat(usdAmount) > 0 && (
-                                  <p className="text-xs text-slate-500">≈ {calculateContracts(usdAmount, currentPrice || trade.price).toLocaleString()} contracts</p>
-                                )}
-                              </div>
-
-                              {/* Execute Button */}
-                              <Button
-                                onClick={() => handleQuickCopy(trade)}
-                                disabled={!usdAmount || Number.parseFloat(usdAmount) <= 0 || isSubmitting}
-                                className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
-                                size="lg"
-                              >
-                                {isSubmitting ? (
-                                  <>
-                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    Executing Trade...
-                                  </>
-                                ) : (
-                                  'Execute Trade'
-                                )}
-                              </Button>
-                              {/* Auto-close Checkbox */}
-                              {isAdmin && (
-                                <div className="flex items-start space-x-2.5 p-2.5 bg-white rounded-lg border border-slate-200">
-                                  <Checkbox
-                                    id={`auto-close-${index}`}
-                                    checked={autoClose}
-                                    onCheckedChange={(checked) => setAutoClose(!!checked)}
-                                    disabled={isSubmitting}
-                                    className="mt-0.5"
-                                  />
-                                  <div className="flex-1">
-                                    <label
-                                      htmlFor={`auto-close-${index}`}
-                                      className="text-xs font-medium text-slate-900 cursor-pointer leading-tight"
-                                    >
-                                      Auto-close when trader closes
-                                    </label>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                      Automatically close your position when {traderData?.displayName || 'trader'} closes theirs
-                                    </p>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="space-y-3">
-                          {trade.status === 'Trader Closed' || trade.status === 'Bonded' ? (
-                            <Button
-                              disabled
-                              className="w-full bg-slate-300 text-slate-600 font-semibold cursor-not-allowed"
-                            >
-                              Market Closed
-                            </Button>
-                          ) : (
-                            <>
-                              <Button
-                                type="button"
-                                onClick={() => handleManualCopyToggle(index, polymarketUrl)}
-                                className="w-full flex items-center justify-center gap-2 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold shadow-sm text-sm"
-                              >
-                                Manual Copy
-                                <ExternalLink className="w-4 h-4" />
-                              </Button>
-                              {manualCopyTradeIndex === index && (
-                                <div className="space-y-4 mt-1 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                                  <h4 className="text-sm font-semibold text-slate-900">
-                                    Manual Copy
-                                  </h4>
-                                  <div className="bg-white border border-slate-200 rounded-lg p-2.5">
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-xs font-medium text-slate-600">Current Price</span>
-                                      <div className="text-right">
-                                        <p className="text-base font-semibold text-slate-900">
-                                          ${manualDisplayPrice.toFixed(2)}
-                                        </p>
-                                        <p className={`text-xs font-medium ${manualPriceChangeColor}`}>
-                                          {manualPriceChangeLabel}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <div className="space-y-2">
-                                    <label htmlFor={`manual-amount-${index}`} className="text-xs font-medium text-slate-700">
-                                      Amount (USD)
-                                    </label>
-                                    <div className="relative">
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
-                                      <input
-                                        id={`manual-amount-${index}`}
-                                        type="number"
-                                        inputMode="decimal"
-                                        step="0.01"
-                                        value={manualUsdAmount}
-                                        onChange={(e) => setManualUsdAmount(e.target.value)}
-                                        placeholder="0.00"
-                                        className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                      />
-                                    </div>
-                                    {manualAmountValid && (
-                                      <p className="text-xs text-slate-500">
-                                        ≈ {manualContractsEstimate.toLocaleString()} contracts
-                                      </p>
-                                    )}
-                                  </div>
-
-                                  <Button
-                                    onClick={() => handleManualCopyCta(polymarketUrl)}
-                                    disabled={!manualAmountValid}
-                                    className="w-full bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-400 hover:from-orange-500 hover:via-amber-500 hover:to-yellow-500 text-slate-900 font-semibold disabled:opacity-50"
-                                    size="lg"
-                                  >
-                                    Manual Copy
-                                  </Button>
-                                  <Button
-                                    onClick={() => handleMarkAsCopied(trade, trade.price)}
-                                    disabled={isAlreadyCopied}
-                                    variant="outline"
-                                    className={cn(
-                                      'w-full font-medium text-sm',
-                                      isAlreadyCopied
-                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                        : 'border-slate-300 text-slate-700 hover:bg-slate-50'
-                                    )}
-                                  >
-                                    {isAlreadyCopied ? (
-                                      <>
-                                        <Check className="h-4 w-4 mr-2" />
-                                        Copied
-                                      </>
-                                    ) : (
-                                      'Mark as Copied'
-                                    )}
-                                  </Button>
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      )}
-                        </Card>
-                      )}
+                        }}
+                        onMarkAsCopied={(entryPrice, amountInvested) =>
+                          handleMarkAsCopied(trade, entryPrice, amountInvested)
+                        }
+                        onAdvancedCopy={() => {
+                          if (polymarketUrl) {
+                            window.open(polymarketUrl, '_blank');
+                          }
+                        }}
+                        isPremium={isPremium}
+                        isAdmin={isAdmin}
+                        isExpanded={isExpanded}
+                        onToggleExpand={() => toggleTradeExpanded(tradeKey)}
+                        isCopied={isAlreadyCopied}
+                        conditionId={trade.conditionId}
+                        tokenId={trade.tokenId}
+                        marketSlug={trade.marketSlug}
+                        currentMarketPrice={currentPrice}
+                        marketIsOpen={marketIsOpen}
+                        liveScore={liveScore}
+                        eventStartTime={liveData?.gameStartTime}
+                        eventEndTime={liveData?.endDateIso}
+                        eventStatus={liveData?.eventStatus}
+                        liveStatus={liveData?.liveStatus}
+                        category={trade.category}
+                        polymarketUrl={polymarketUrl}
+                        espnUrl={liveData?.espnUrl}
+                        defaultBuySlippage={defaultBuySlippage}
+                        defaultSellSlippage={defaultSellSlippage}
+                        walletAddress={walletAddress}
+                        manualTradingEnabled={manualModeEnabled}
+                        onSwitchToManualTrading={enableManualMode}
+                        onOpenConnectWallet={() => setShowConnectWalletModal(true)}
+                        homeTeam={liveData?.homeTeam ?? null}
+                        awayTeam={liveData?.awayTeam ?? null}
+                      />
                     </div>
                   );
                 })}

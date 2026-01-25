@@ -95,6 +95,15 @@ async function ensureTrader(wallet: string): Promise<TraderRecord> {
     .single()
 
   if (insertError) throw insertError
+
+  // Trigger PnL backfill for the new trader asynchronously
+  // This ensures new traders get their realized PnL data backfilled immediately
+  import('../../lib/backfill/trigger-wallet-pnl-backfill')
+    .then((mod) => mod.triggerWalletPnlBackfill(normalized))
+    .catch((err) => {
+      console.error(`[syncTrader] Failed to trigger PnL backfill for new trader ${normalized}:`, err)
+    })
+
   return inserted as TraderRecord
 }
 

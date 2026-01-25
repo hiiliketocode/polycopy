@@ -299,10 +299,11 @@ function ProfilePageContent() {
     [copiedTradesBase, autoCopyExtras]
   );
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(true);
+  const [portfolioTradesTotal, setPortfolioTradesTotal] = useState<number | null>(null);
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null);
   const [expandedQuickDetailsId, setExpandedQuickDetailsId] = useState<string | null>(null);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
-  const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved' | 'history'>('all');
+  const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved' | 'history'>('open');
   const [tradeSort, setTradeSort] = useState<'date' | 'invested' | 'currentValue' | 'roi'>('date');
   const [mobileMetric, setMobileMetric] = useState<'price' | 'size' | 'roi' | 'time'>('price');
   const [portfolioStats, setPortfolioStats] = useState<PortfolioStats | null>(null);
@@ -393,7 +394,7 @@ function ProfilePageContent() {
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   
   // Pagination state for copied trades
-  const [tradesToShow, setTradesToShow] = useState(15);
+  const [tradesToShow, setTradesToShow] = useState(50);
   
   // Live market data (prices and scores)
   const [liveMarketData, setLiveMarketData] = useState<Map<string, { 
@@ -553,11 +554,13 @@ function ProfilePageContent() {
     
     const fetchCopiedTrades = async () => {
       setLoadingCopiedTrades(true);
+      setPortfolioTradesTotal(null);
       try {
         const allTrades: CopiedTrade[] = [];
         let page = 1;
         let hasMore = true;
         const MAX_PAGES = 10; // cap to avoid runaway fetch
+        let totalTradesFromApi: number | null = null;
 
         while (hasMore && page <= MAX_PAGES) {
           const response = await fetch(
@@ -571,12 +574,17 @@ function ProfilePageContent() {
           }
 
           const payload = await response.json();
+          if (typeof payload?.total === 'number') {
+            totalTradesFromApi = payload.total;
+          }
           const trades = (payload?.trades || []) as CopiedTrade[];
           allTrades.push(...trades);
 
           hasMore = Boolean(payload?.hasMore);
           page += 1;
         }
+
+        setPortfolioTradesTotal(totalTradesFromApi);
 
         // Normalize ROI for user-closed trades if missing
         const tradesWithCorrectRoi = allTrades.map(trade => {
@@ -3321,13 +3329,29 @@ function ProfilePageContent() {
                   {/* View More Button */}
                   {sortedUnifiedTrades.length > tradesToShow && (
                     <div className="flex justify-center pt-4 pb-4">
-                      <Button
-                        onClick={() => setTradesToShow(prev => prev + 15)}
-                        variant="outline"
-                        className="border-slate-300 text-slate-700 hover:bg-slate-50"
-                      >
-                        View More Trades ({sortedUnifiedTrades.length - tradesToShow} remaining)
-                      </Button>
+                      {(() => {
+                        const showingTradesCount = Math.min(sortedUnifiedTrades.length, tradesToShow);
+                        const totalFromApi = portfolioTradesTotal;
+                        const remainingCount =
+                          totalFromApi !== null
+                            ? Math.max(totalFromApi - showingTradesCount, 0)
+                            : Math.max(sortedUnifiedTrades.length - tradesToShow, 0);
+
+                        return (
+                          <Button
+                            onClick={() => setTradesToShow((prev) => prev + 50)}
+                            variant="outline"
+                            className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                          >
+                            {totalFromApi !== null
+                              ? `View More Trades (showing ${showingTradesCount} of ${totalFromApi})`
+                              : 'View More Trades (load 50)'}
+                            <span className="ml-2 text-xs text-slate-500">
+                              {remainingCount} remaining
+                            </span>
+                          </Button>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>

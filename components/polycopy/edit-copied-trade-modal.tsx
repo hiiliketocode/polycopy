@@ -80,7 +80,12 @@ export function EditCopiedTradeModal({ open, onOpenChange, trade, onSave }: Edit
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">$</span>
                 <Input
                   id="entry-price"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
+                  pattern="[0-9]*[.,]?[0-9]*"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
                   step="0.01"
                   min="0"
                   max="1"
@@ -101,7 +106,12 @@ export function EditCopiedTradeModal({ open, onOpenChange, trade, onSave }: Edit
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">$</span>
                 <Input
                   id="amount-invested"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
+                  pattern="[0-9]*[.,]?[0-9]*"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
                   step="0.01"
                   min="0"
                   placeholder="10"

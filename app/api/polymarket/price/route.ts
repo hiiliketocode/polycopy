@@ -103,6 +103,8 @@ export async function GET(request: Request) {
 
   const loadCachedMarket = async () => {
     if (!supabaseAdmin || !conditionId) return null;
+    
+    // Always look up by condition_id (primary key) - we always have condition_id
     const { data, error } = await supabaseAdmin
       .from('markets')
       .select(
@@ -128,6 +130,7 @@ export async function GET(request: Request) {
       )
       .eq('condition_id', conditionId)
       .maybeSingle();
+    
     if (error) {
       console.warn('[Price API] Failed to read market cache:', error.message || error);
       return null;
@@ -302,6 +305,15 @@ export async function GET(request: Request) {
       : null;
     const cachedStartTime = pickMarketStartTime(cachedMarket);
     const cachedEndTime = pickMarketEndTime(cachedMarket);
+    
+    // Debug: Log if game_start_time exists but cachedStartTime is null
+    if (market?.game_start_time && !cachedStartTime) {
+      console.warn('[Price API] game_start_time exists in DB but pickMarketStartTime returned null:', {
+        conditionId,
+        game_start_time: market.game_start_time,
+        gameStartTime: market.gameStartTime,
+      });
+    }
     const cachedEventStatus = market?.status || null;
     const cachedMarketAvatar = market?.image || null;
     let cachedEspnUrl = market?.espn_url || null;
@@ -431,11 +443,11 @@ export async function GET(request: Request) {
                   ? market.isResolved
                   : undefined;
           
-          let endDateIso =
-            normalizeEndDate(market.end_date_iso || market.end_date || market.endDate || null);
-          if (!endDateIso && cachedEndTime) {
-            endDateIso = normalizeEndDate(cachedEndTime);
-          }
+          // Prioritize close_time (betting window closes) over end_time (final confirmation)
+          // Use cachedEndTime which now prioritizes close_time from markets table
+          let endDateIso = cachedEndTime 
+            ? normalizeEndDate(cachedEndTime)
+            : normalizeEndDate(market.close_date_iso || market.close_date || market.closeDate || market.end_date_iso || market.end_date || market.endDate || null);
           let marketAvatarUrl = pickFirstString(market.icon, market.image, cachedMarketAvatar);
 
           if (!endDateIso || !marketAvatarUrl) {
@@ -483,11 +495,9 @@ export async function GET(request: Request) {
           let homeTeam = market.home_team || null;
           let awayTeam = market.away_team || null;
           let eventStatus = market.event_status || market.status || cachedEventStatus || null;
-          let gameStartTime =
-            market.game_start_time || market.start_date_iso || market.event_start_date || null;
-          if (!gameStartTime && cachedStartTime) {
-            gameStartTime = cachedStartTime;
-          }
+          // ONLY use game_start_time from markets table (cachedStartTime), no fallbacks
+          // cachedStartTime comes from pickMarketStartTime which uses game_start_time from DB
+          let gameStartTime = cachedStartTime || null;
 
           const resolvedMarketSlug = market.market_slug || cachedMarketSlug || slug || null;
           const resolvedEventSlug = cachedEventSlug || eventSlug || null;
@@ -525,14 +535,8 @@ export async function GET(request: Request) {
                   event?.image
                 );
 
-                if (!gameStartTime) {
-                  gameStartTime =
-                    event?.startTime ||
-                    event?.startDate ||
-                    event?.eventDate ||
-                    gammaMarket?.gameStartTime ||
-                    null;
-                }
+                // Don't override gameStartTime from database with Gamma API data
+                // Only use game_start_time from markets table
 
                 if (!endDateIso) {
                   endDateIso = normalizeEndDate(event?.endDate || null);
@@ -580,13 +584,8 @@ export async function GET(request: Request) {
                       gammaEvent?.image
                     );
                   }
-                  if (!gameStartTime) {
-                    gameStartTime =
-                      gammaEvent?.startTime ||
-                      gammaEvent?.startDate ||
-                      gammaEvent?.eventDate ||
-                      null;
-                  }
+                  // Don't override gameStartTime from database with Gamma API data
+                  // Only use game_start_time from markets table
                   if (!endDateIso) {
                     endDateIso = normalizeEndDate(gammaEvent?.endDate || null);
                   }
@@ -673,11 +672,14 @@ export async function GET(request: Request) {
                   ? market.isResolved
                   : undefined;
 
-          const endDateIso = normalizeEndDate(
-            market.end_date_iso || market.end_date || market.endDate || market.close_time || null
-          );
-          const resolvedEndDateIso =
-            endDateIso || (cachedEndTime ? normalizeEndDate(cachedEndTime) : null);
+          // Prioritize close_time (betting window closes) over end_time
+          const endDateIso = cachedEndTime
+            ? normalizeEndDate(cachedEndTime)
+            : normalizeEndDate(
+                market.close_date_iso || market.close_date || market.closeDate || 
+                market.close_time || market.end_date_iso || market.end_date || market.endDate || null
+              );
+          const resolvedEndDateIso = endDateIso;
           const event =
             Array.isArray(market?.events) && market.events.length > 0 ? market.events[0] : null;
           const marketAvatarUrl = pickFirstString(
@@ -689,13 +691,9 @@ export async function GET(request: Request) {
             event?.image,
             cachedMarketAvatar
           );
-          const gameStartTime = pickFirstString(
-            event?.startTime,
-            event?.startDate,
-            event?.eventDate,
-            market?.gameStartTime,
-            cachedStartTime
-          );
+          // ONLY use game_start_time from markets table, no fallbacks
+          // Supabase converts snake_case to camelCase, so check both
+          const gameStartTime = market?.game_start_time || market?.gameStartTime || null;
           const resolvedEventSlug =
             cachedEventSlug || event?.slug || market?.event_slug || market?.eventSlug || null;
           const resolvedTags = market.tags ?? event?.tags ?? cachedTags ?? null;
@@ -771,11 +769,14 @@ export async function GET(request: Request) {
                   ? match.isResolved
                   : undefined;
 
-          const endDateIso = normalizeEndDate(
-            match.end_date_iso || match.end_date || match.endDate || match.close_time || null
-          );
-          const resolvedEndDateIso =
-            endDateIso || (cachedEndTime ? normalizeEndDate(cachedEndTime) : null);
+          // Prioritize close_time (betting window closes) over end_time
+          const endDateIso = cachedEndTime
+            ? normalizeEndDate(cachedEndTime)
+            : normalizeEndDate(
+                match.close_date_iso || match.close_date || match.closeDate || 
+                match.close_time || match.end_date_iso || match.end_date || match.endDate || null
+              );
+          const resolvedEndDateIso = endDateIso;
           const event =
             Array.isArray(match?.events) && match.events.length > 0 ? match.events[0] : null;
           const marketAvatarUrl = pickFirstString(
@@ -787,16 +788,72 @@ export async function GET(request: Request) {
             event?.image,
             cachedMarketAvatar
           );
-          const gameStartTime = pickFirstString(
-            event?.startTime,
-            event?.startDate,
-            event?.eventDate,
-            match?.gameStartTime,
-            cachedStartTime
-          );
+          // ONLY use game_start_time from markets table (cachedStartTime from ensureCachedMarket)
+          // Don't use match data from Gamma API - use DB data
+          const gameStartTime = cachedStartTime || null;
           const resolvedEventSlug =
             cachedEventSlug || event?.slug || match?.event_slug || match?.eventSlug || null;
-          const resolvedTags = match.tags ?? event?.tags ?? cachedTags ?? null;
+          // Use tags from markets table (cachedTags), fallback to match if needed
+          const resolvedTags = cachedTags ?? match.tags ?? event?.tags ?? null;
+          
+          // Get completed_time from markets table (cached market)
+          const completedTime = market?.completed_time 
+            ? (typeof market.completed_time === 'string' 
+                ? market.completed_time 
+                : new Date(market.completed_time).toISOString())
+            : null;
+          
+          // If we found a market via Gamma API but it's not in our DB, sync it from Dome API
+          if (match.conditionId && match.conditionId.startsWith('0x') && supabaseAdmin && !market) {
+            try {
+              const domeMarkets = await fetchDomeMarketsByConditionIds([match.conditionId], {
+                apiKey: DOME_API_KEY,
+              });
+              if (domeMarkets.length > 0) {
+                const domeMarket = domeMarkets[0];
+                const row = mapDomeMarketToRow(domeMarket);
+                if (row.condition_id) {
+                  await supabaseAdmin
+                    .from('markets')
+                    .upsert(row, { onConflict: 'condition_id' });
+                  // Reload from DB to get fresh data including game_start_time
+                  const reloaded = await loadCachedMarket();
+                  if (reloaded) {
+                    const reloadedStartTime = pickMarketStartTime(reloaded);
+                    const reloadedCompletedTime = reloaded?.completed_time 
+                      ? (typeof reloaded.completed_time === 'string' 
+                          ? reloaded.completed_time 
+                          : new Date(reloaded.completed_time).toISOString())
+                      : null;
+                    return NextResponse.json({
+                      success: true,
+                      market: {
+                        question: match.question,
+                        conditionId: match.conditionId,
+                        slug: match.slug,
+                        eventSlug: resolvedEventSlug,
+                        closed: match.closed,
+                        resolved,
+                        outcomePrices: prices,
+                        outcomes: outcomes,
+                        tags: reloaded.tags ?? resolvedTags,
+                        endDateIso: resolvedEndDateIso,
+                        completedTime: reloadedCompletedTime,
+                        gameStartTime: reloadedStartTime,
+                        marketAvatarUrl,
+                        eventStatus: cachedEventStatus,
+                        espnUrl: resolvedGameUrl,
+                        cryptoSymbol,
+                        cryptoPriceUsd,
+                      }
+                    });
+                  }
+                }
+              }
+            } catch (error) {
+              console.warn('[Price API] Failed to sync market from Dome:', error);
+            }
+          }
 
           return NextResponse.json({
             success: true,
@@ -811,6 +868,7 @@ export async function GET(request: Request) {
               outcomes: outcomes,
               tags: resolvedTags,
               endDateIso: resolvedEndDateIso,
+              completedTime,
               gameStartTime,
               marketAvatarUrl,
               eventStatus: cachedEventStatus,

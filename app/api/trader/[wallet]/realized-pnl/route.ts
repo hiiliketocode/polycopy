@@ -3,6 +3,41 @@ import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Trigger a backfill for a single wallet if it should be tracked.
+ * This runs asynchronously and doesn't block the API response.
+ */
+async function triggerWalletBackfillIfNeeded(
+  supabase: ReturnType<typeof createClient>,
+  wallet: string
+): Promise<void> {
+  try {
+    // Check if wallet exists in any backfill source
+    const [traderResult, followResult, tradesResult, ordersResult] = await Promise.all([
+      supabase.from('traders').select('wallet_address').eq('wallet_address', wallet).maybeSingle(),
+      supabase.from('follows').select('trader_wallet').eq('trader_wallet', wallet).limit(1).maybeSingle(),
+      supabase.rpc('get_distinct_trader_wallets_from_trades_public').then(({ data }) =>
+        data?.some((w: { wallet: string }) => w.wallet?.toLowerCase() === wallet) ? {} : null
+      ).catch(() => null),
+      supabase.rpc('get_distinct_copied_trader_wallets_from_orders').then(({ data }) =>
+        data?.some((w: { wallet: string }) => w.wallet?.toLowerCase() === wallet) ? {} : null
+      ).catch(() => null)
+    ])
+
+    const shouldBackfill = traderResult?.data || followResult?.data || tradesResult || ordersResult
+
+    if (shouldBackfill) {
+      // Use the shared utility function
+      const { triggerWalletPnlBackfill } = await import('../../../../lib/backfill/trigger-wallet-pnl-backfill')
+      triggerWalletPnlBackfill(wallet).catch((err) => {
+        console.error(`[realized-pnl] Failed to trigger backfill for ${wallet}:`, err)
+      })
+    }
+  } catch (err) {
+    console.error(`[realized-pnl] Error checking backfill eligibility for ${wallet}:`, err)
+  }
+}
+
 type PnlRow = {
   date: string
   realized_pnl: number | string | null
@@ -59,6 +94,15 @@ export async function GET(
   if (error) {
     console.error('Failed to load realized PnL rows:', error)
     return NextResponse.json({ error: 'Failed to load realized PnL' }, { status: 500 })
+  }
+
+  // If no PnL data exists, trigger an async backfill for this wallet
+  // This ensures wallets viewed on trader pages get backfilled even if not in cron sources
+  if (!rows || rows.length === 0) {
+    // Trigger backfill asynchronously without blocking the response
+    triggerWalletBackfillIfNeeded(supabase, normalizedWallet).catch((err) => {
+      console.error(`[realized-pnl] Error triggering backfill for ${normalizedWallet}:`, err)
+    })
   }
 
   const parsed: { date: string; realized_pnl: number; pnl_to_date: number | null }[] = []

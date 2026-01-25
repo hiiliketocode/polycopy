@@ -48,6 +48,7 @@ import {
   deriveBadgeState,
   resolveMarketCategoryType,
 } from "@/lib/badge-state"
+import { abbreviateTeamName } from "@/lib/utils/team-abbreviations"
 
 const normalizeLegacyScore = (value: unknown) => {
   if (!value) return null
@@ -132,6 +133,9 @@ interface TradeCardProps {
   category?: string
   polymarketUrl?: string
   espnUrl?: string
+  homeTeam?: string | null
+  awayTeam?: string | null
+  gameTimeInfo?: string | null // e.g., "Q4 5:30" or "Halftime"
   defaultBuySlippage?: number
   defaultSellSlippage?: number
   tradeAnchorId?: string
@@ -495,6 +499,9 @@ export function TradeCard({
   category,
   polymarketUrl,
   espnUrl,
+  homeTeam,
+  awayTeam,
+  gameTimeInfo,
   defaultBuySlippage,
   defaultSellSlippage,
   tradeAnchorId,
@@ -597,6 +604,7 @@ export function TradeCard({
             category,
             tags: undefined,
             outcomes: undefined,
+            gameStartTime: eventStartTime,
           }),
       }
     }
@@ -609,6 +617,7 @@ export function TradeCard({
         category,
         tags: undefined,
         outcomes: undefined,
+        gameStartTime: eventStartTime,
       })
 
     const scoreSources: ScoreSources = {}
@@ -669,17 +678,44 @@ export function TradeCard({
     "h-7 px-2.5 text-[11px] font-semibold border shadow-[0_1px_0_rgba(15,23,42,0.06)]"
   const statusBadgeClass = cn(
     badgeBaseClass,
-    badgeType === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200",
+    badgeType === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200 min-h-[auto] h-auto",
     badgeType === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
     badgeType === "resolved" && "bg-rose-50 text-rose-700 border-rose-200",
     badgeType === "scheduled" && "bg-amber-50 text-amber-700 border-amber-200",
     badgeType === "none" && "bg-slate-50 text-slate-500 border-slate-200",
   )
 
-  const scoreText =
-    badgeScore && (badgeScore.home !== null || badgeScore.away !== null)
-      ? `${badgeScore.home ?? "-"} - ${badgeScore.away ?? "-"}`
-      : null
+  // Build score text with team abbreviations for live badge
+  // For crypto markets, use liveScore directly if it contains crypto price info
+  const scoreText = useMemo(() => {
+    // If liveScore is provided and looks like a crypto price (contains currency symbol or crypto symbol), use it directly
+    if (liveScore && typeof liveScore === 'string') {
+      const trimmed = liveScore.trim();
+      // Check if it's a crypto price format (e.g., "BTC $45,234.56" or contains $)
+      if (trimmed.includes('$') || /^[A-Z]{2,5}\s+\$/.test(trimmed)) {
+        return trimmed;
+      }
+      // If it's not a sports score format (doesn't contain numbers separated by dash or colon), use it
+      if (!/^\d+\s*[-:]\s*\d+/.test(trimmed) && trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+    
+    // For sports scores, use badgeScore
+    if (!badgeScore || (badgeScore.home === null && badgeScore.away === null)) {
+      return null;
+    }
+    
+    // For live badge, show team abbreviations if available
+    if (badgeType === "live" && (homeTeam || awayTeam)) {
+      const homeAbbrev = homeTeam ? abbreviateTeamName(homeTeam) : "HOME";
+      const awayAbbrev = awayTeam ? abbreviateTeamName(awayTeam) : "AWAY";
+      return `${awayAbbrev} ${badgeScore.away ?? "-"} - ${badgeScore.home ?? "-"} ${homeAbbrev}`;
+    }
+    
+    // Default format for other badge types
+    return `${badgeScore.home ?? "-"} - ${badgeScore.away ?? "-"}`;
+  }, [badgeScore, badgeType, homeTeam, awayTeam, liveScore])
 
   const statusLabel =
     badgeType === "live"
@@ -690,38 +726,69 @@ export function TradeCard({
           ? "Resolved"
           : "Scheduled"
 
-  const timePrefix =
-    resolvedMarketCategory === "NON_SPORTS" ||
-    resolvedMarketCategory === "SPORTS_NON_SCOREABLE" ||
-    badgeType === "resolved"
-      ? "Resolves"
-      : "Starts"
+  // Determine time prefix:
+  // 1. If sports market → "Starts" (deriveBadgeState uses game_start_time for sports markets)
+  // 2. Otherwise → "Resolves"
+  const isSportsMarket = resolvedMarketCategory === "SPORTS_SCOREABLE" || resolvedMarketCategory === "SPORTS_NON_SCOREABLE"
+  // If it's a sports market, deriveBadgeState will have used game_start_time for finalTime
+  // So if isSportsMarket is true and we have a time, it's the start time
+  const timePrefix = isSportsMarket ? "Starts" : "Resolves"
 
   const eventTimeLabel = useMemo(() => {
-    if (!resolvedBadgeState.time) return `${timePrefix} Time TBD`
+    // If no time is available, don't show the badge at all (no "Time TBD")
+    if (!resolvedBadgeState.time) return null
     const parsed = new Date(resolvedBadgeState.time)
-    if (Number.isNaN(parsed.getTime())) return `${timePrefix} Time TBD`
-    const formatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" })
-    const timeFormatter = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" })
-    const toKey = (date: Date) => date.toISOString().slice(0, 10)
-    const today = new Date()
+    if (Number.isNaN(parsed.getTime())) return null
+    
+    // Use local timezone for all formatting
+    const formatter = new Intl.DateTimeFormat("en-US", { 
+      month: "short", 
+      day: "numeric",
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    })
+    
+    // Compare dates in local timezone
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const tomorrow = new Date(today)
-    tomorrow.setDate(today.getDate() + 1)
-    const targetKey = toKey(parsed)
-    if (targetKey === toKey(today)) {
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const targetDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
+    
+    // For "Resolves" badge, show only date (no time)
+    if (timePrefix === "Resolves") {
+      if (targetDate.getTime() === today.getTime()) {
+        return `${timePrefix} Today`
+      }
+      if (targetDate.getTime() === tomorrow.getTime()) {
+        return `${timePrefix} Tomorrow`
+      }
+      return `${timePrefix} ${formatter.format(parsed)}`
+    }
+    
+    // For "Starts" badge, show date and time
+    const timeFormatter = new Intl.DateTimeFormat("en-US", { 
+      hour: "numeric", 
+      minute: "2-digit",
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    })
+    
+    if (targetDate.getTime() === today.getTime()) {
       return `${timePrefix} Today, ${timeFormatter.format(parsed)}`
     }
-    if (targetKey === toKey(tomorrow)) {
+    if (targetDate.getTime() === tomorrow.getTime()) {
       return `${timePrefix} Tomorrow, ${timeFormatter.format(parsed)}`
     }
-    const includeTime = parsed.getUTCHours() !== 0 || parsed.getUTCMinutes() !== 0
+    const includeTime = parsed.getHours() !== 0 || parsed.getMinutes() !== 0
     const base = formatter.format(parsed)
     return includeTime ? `${timePrefix} ${base}, ${timeFormatter.format(parsed)}` : `${timePrefix} ${base}`
   }, [resolvedBadgeState.time, timePrefix])
 
-  const showTimeBadge = badgeType !== "none"
+  // Don't show time badge if game is live (only show status badge)
+  const showTimeBadge = badgeType !== "none" && eventTimeLabel !== null && badgeType !== "live"
+  // Show status badge for live/ended/resolved, or if we have crypto price info
+  const hasCryptoPrice = scoreText && typeof scoreText === 'string' && (scoreText.includes('$') || /^[A-Z]{2,5}\s+\$/.test(scoreText.trim()))
   const showStatusBadge =
-    badgeType === "live" || badgeType === "ended" || badgeType === "resolved"
+    badgeType === "live" || badgeType === "ended" || badgeType === "resolved" || hasCryptoPrice
 
   const statusIconMap = {
     live: SignalHigh,
@@ -2572,20 +2639,54 @@ export function TradeCard({
                 espnLink ? (
                   <Badge asChild variant="secondary" className={statusBadgeClass}>
                     <a href={espnLink} target="_blank" rel="noopener noreferrer">
-                      <StatusIcon className="h-3.5 w-3.5" />
-                      <span className="flex items-center gap-1">
-                        <span>{statusLabel}</span>
-                        {scoreText ? <span className="font-semibold">{scoreText}</span> : null}
-                      </span>
+                      {badgeType === "live" ? (
+                        <div className="flex flex-col items-center gap-1 px-2 py-1.5">
+                          {scoreText ? (
+                            <span className="font-semibold text-xs leading-tight">{scoreText}</span>
+                          ) : null}
+                          <span className="text-[10px] leading-tight">{statusLabel}</span>
+                          {gameTimeInfo ? (
+                            <span className="text-[10px] leading-tight opacity-90">{gameTimeInfo}</span>
+                          ) : null}
+                        </div>
+                      ) : hasCryptoPrice ? (
+                        // For crypto prices, show just the price without status label
+                        <span className="font-semibold text-xs">{scoreText}</span>
+                      ) : (
+                        <>
+                          <StatusIcon className="h-3.5 w-3.5" />
+                          <span className="flex items-center gap-1">
+                            <span>{statusLabel}</span>
+                            {scoreText ? <span className="font-semibold">{scoreText}</span> : null}
+                          </span>
+                        </>
+                      )}
                     </a>
                   </Badge>
                 ) : (
                   <Badge variant="secondary" className={statusBadgeClass}>
-                    <StatusIcon className="h-3.5 w-3.5" />
-                    <span className="flex items-center gap-1">
-                      <span>{statusLabel}</span>
-                      {scoreText ? <span className="font-semibold">{scoreText}</span> : null}
-                    </span>
+                    {badgeType === "live" ? (
+                      <div className="flex flex-col items-center gap-1 px-2 py-1.5">
+                        {scoreText ? (
+                          <span className="font-semibold text-xs leading-tight">{scoreText}</span>
+                        ) : null}
+                        <span className="text-[10px] leading-tight">{statusLabel}</span>
+                        {gameTimeInfo ? (
+                          <span className="text-[10px] leading-tight opacity-90">{gameTimeInfo}</span>
+                        ) : null}
+                      </div>
+                    ) : hasCryptoPrice ? (
+                      // For crypto prices, show just the price without status label
+                      <span className="font-semibold text-xs">{scoreText}</span>
+                    ) : (
+                      <>
+                        <StatusIcon className="h-3.5 w-3.5" />
+                        <span className="flex items-center gap-1">
+                          <span>{statusLabel}</span>
+                          {scoreText ? <span className="font-semibold">{scoreText}</span> : null}
+                        </span>
+                      </>
+                    )}
                   </Badge>
                 )
               ) : null}
@@ -2806,9 +2907,12 @@ export function TradeCard({
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
                 <input
                   id="manual-copy-price"
-                  type="number"
+                  type="text"
                   inputMode="decimal"
-                  step="0.0001"
+                  pattern="[0-9]*[.,]?[0-9]*"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
                   value={manualPriceInput}
                   onChange={(e) => setManualPriceInput(e.target.value)}
                   placeholder={manualDisplayPrice.toFixed(4)}
@@ -2825,9 +2929,12 @@ export function TradeCard({
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
                 <input
                   id="manual-copy-amount"
-                  type="number"
+                  type="text"
                   inputMode="decimal"
-                  step="0.01"
+                  pattern="[0-9]*[.,]?[0-9]*"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
                   value={manualUsdAmount}
                   onChange={(e) => setManualUsdAmount(e.target.value)}
                   placeholder="0.00"
@@ -3234,10 +3341,13 @@ export function TradeCard({
                     )}
                     <input
                       id="amount"
-                      type="number"
+                      type="text"
                       inputMode={amountMode === "usd" ? "decimal" : "numeric"}
                       pattern={amountMode === "usd" ? "[0-9]*[.,]?[0-9]*" : "[0-9]*"}
                       step={amountMode === "contracts" ? contractStep : 0.01}
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="none"
                       value={amountInput}
                             onChange={(e) => {
                               handleAmountChange(e.target.value)
@@ -3505,9 +3615,14 @@ export function TradeCard({
                   </Button>
                           ))}
                             <Input
-                              type="number"
+                              type="text"
                               placeholder="Custom"
                               value={customSlippage}
+                              inputMode="decimal"
+                              pattern="[0-9]*[.,]?[0-9]*"
+                              autoComplete="off"
+                              autoCorrect="off"
+                              autoCapitalize="none"
                               onChange={(e) => {
                                 setCustomSlippage(e.target.value)
                                 handleSlippagePresetChange("custom")

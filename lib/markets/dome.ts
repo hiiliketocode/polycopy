@@ -56,11 +56,38 @@ export const mapDomeMarketToRow = (market: DomeMarket) => {
   };
 };
 
-export const pickMarketStartTime = (row: Record<string, any> | null | undefined) =>
-  row?.game_start_time || row?.start_time || null;
+export const pickMarketStartTime = (row: Record<string, any> | null | undefined) => {
+  // ONLY use game_start_time from markets table, no fallback to start_time
+  // Supabase converts snake_case to camelCase, so check both
+  if (!row) return null;
+  const raw = row.game_start_time || row.gameStartTime || null;
+  if (!raw) return null;
+  // If it's already an ISO string, return as-is
+  if (typeof raw === 'string' && raw.includes('T')) {
+    // Ensure it's a valid ISO string (add Z if missing timezone)
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+  }
+  // If it's a PostgreSQL timestamp format (e.g., "2026-01-25 20:00:00+00"), convert to ISO
+  if (typeof raw === 'string') {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+  }
+  return null;
+};
 
-export const pickMarketEndTime = (row: Record<string, any> | null | undefined) =>
-  row?.end_time || row?.close_time || row?.completed_time || null;
+export const pickMarketEndTime = (row: Record<string, any> | null | undefined) => {
+  // IMPORTANT: Use close_time (betting window closes) NOT end_time (final confirmation)
+  // - close_time: When betting/trading stops (what users care about for "Resolves" badge)
+  // - end_time: When final confirmation/resolution happens (usually later)
+  // Supabase converts snake_case to camelCase, so check both
+  if (!row) return null;
+  return row.close_time || row.closeTime || row.end_time || row.endTime || null;
+};
 
 export const fetchDomeMarketsByConditionIds = async (
   conditionIds: string[],

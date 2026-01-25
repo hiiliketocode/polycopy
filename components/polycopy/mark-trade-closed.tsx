@@ -57,7 +57,12 @@ export function MarkTradeClosed({ isOpen, onClose, trade, onConfirm }: MarkTrade
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">¢</span>
               <Input
                 id="exit-price"
-                type="number"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9]*[.,]?[0-9]*"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
                 step="0.01"
                 placeholder="e.g. 65"
                 value={exitPrice}

@@ -197,15 +197,39 @@ function FollowingPageContent() {
   const handleFollowChange = async (wallet: string, nowFollowing: boolean) => {
     if (!user) return;
 
+    const walletLower = wallet.toLowerCase();
+
     try {
-      if (!nowFollowing) {
-        // Unfollowed - remove from local state
-        setFollowedWallets(prev => {
+      if (nowFollowing) {
+        // Follow (rare on this page, but keep state + DB in sync)
+        const { error: insertError } = await supabase
+          .from('follows')
+          .insert({ user_id: user.id, trader_wallet: walletLower });
+
+        if (insertError) throw insertError;
+
+        setFollowedWallets((prev) => {
           const next = new Set(prev);
-          next.delete(wallet.toLowerCase());
+          next.add(walletLower);
           return next;
         });
-        setTraders(prev => prev.filter(t => t.wallet.toLowerCase() !== wallet.toLowerCase()));
+      } else {
+        // Unfollow and persist change
+        const { error: deleteError } = await supabase
+          .from('follows')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('trader_wallet', walletLower);
+
+        if (deleteError) throw deleteError;
+
+        setFollowedWallets((prev) => {
+          const next = new Set(prev);
+          next.delete(walletLower);
+          return next;
+        });
+        setTraders((prev) => prev.filter((t) => t.wallet.toLowerCase() !== walletLower));
+        setExpectedTraderCount((prev) => Math.max(prev - 1, 0));
       }
     } catch (err) {
       console.error('Error updating follow state:', err);

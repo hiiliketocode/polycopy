@@ -244,10 +244,17 @@ export async function GET(request: NextRequest) {
     totalUpserted += count ?? payload.length
   }
 
-  // New wallets will be picked up by the daily backfill-wallet-pnl cron
-  // (runs at 2 AM UTC, processes all traders + follows + trades_public + orders)
+  // Trigger PnL backfill for new wallets immediately
   if (newWallets.size > 0) {
-    console.log(`📊 Added ${newWallets.size} new wallets to traders table. They will be backfilled by the daily cron.`)
+    console.log(`📊 Added ${newWallets.size} new wallets to traders table. Triggering PnL backfill...`)
+    
+    // Import and trigger backfill for each new wallet asynchronously
+    const { triggerWalletPnlBackfill } = await import('../../../../lib/backfill/trigger-wallet-pnl-backfill')
+    for (const wallet of newWallets) {
+      triggerWalletPnlBackfill(wallet).catch((err) => {
+        console.error(`[sync-trader-leaderboard] Failed to trigger backfill for ${wallet}:`, err)
+      })
+    }
   }
 
   return NextResponse.json({

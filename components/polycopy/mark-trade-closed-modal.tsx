@@ -66,7 +66,12 @@ export function MarkTradeClosedModal({ open, onOpenChange, trade, onConfirm }: M
             <div className="relative">
               <Input
                 id="exit-price"
-                type="number"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9]*[.,]?[0-9]*"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
                 step="1"
                 min="0"
                 max="100"

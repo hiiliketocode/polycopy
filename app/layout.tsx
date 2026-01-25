@@ -96,6 +96,33 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         className={`${inter.variable} font-sans antialiased bg-slate-50 relative flex flex-col`}
         style={{ minHeight: '100vh', overflowX: 'hidden' }}
       >
+        {/* Suppress MetaMask extension errors - we don't use MetaMask */}
+        <Script id="suppress-metamask-errors" strategy="beforeInteractive">
+          {`
+            if (typeof window !== 'undefined') {
+              // Suppress MetaMask extension errors
+              const originalError = window.console.error;
+              window.console.error = function(...args) {
+                const errorMessage = args.join(' ');
+                // Filter out MetaMask connection errors
+                if (errorMessage.includes('Failed to connect to MetaMask') || 
+                    errorMessage.includes('MetaMask') && errorMessage.includes('connect')) {
+                  return; // Suppress these errors
+                }
+                originalError.apply(console, args);
+              };
+              
+              // Also catch unhandled promise rejections from MetaMask
+              window.addEventListener('unhandledrejection', (event) => {
+                const errorMessage = event.reason?.message || event.reason?.toString() || '';
+                if (errorMessage.includes('MetaMask') || errorMessage.includes('ethereum')) {
+                  event.preventDefault(); // Suppress the error
+                  return;
+                }
+              });
+            }
+          `}
+        </Script>
         {/* Google Tag Manager (noscript) */}
         <noscript>
           <iframe 
