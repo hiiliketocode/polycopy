@@ -16,12 +16,14 @@ async function triggerWalletBackfillIfNeeded(
     const [traderResult, followResult, tradesResult, ordersResult] = await Promise.all([
       supabase.from('traders').select('wallet_address').eq('wallet_address', wallet).maybeSingle(),
       supabase.from('follows').select('trader_wallet').eq('trader_wallet', wallet).limit(1).maybeSingle(),
-      supabase.rpc('get_distinct_trader_wallets_from_trades_public').then(({ data }) =>
-        data?.some((w: { wallet: string }) => w.wallet?.toLowerCase() === wallet) ? {} : null
-      ).catch(() => null),
-      supabase.rpc('get_distinct_copied_trader_wallets_from_orders').then(({ data }) =>
-        data?.some((w: { wallet: string }) => w.wallet?.toLowerCase() === wallet) ? {} : null
-      ).catch(() => null)
+      supabase.rpc('get_distinct_trader_wallets_from_trades_public').then(({ data }) => {
+        const wallets = Array.isArray(data) ? data : []
+        return wallets.some((w: { wallet: string }) => w.wallet?.toLowerCase() === wallet) ? {} : null
+      }).catch(() => null),
+      supabase.rpc('get_distinct_copied_trader_wallets_from_orders').then(({ data }) => {
+        const wallets = Array.isArray(data) ? data : []
+        return wallets.some((w: { wallet: string }) => w.wallet?.toLowerCase() === wallet) ? {} : null
+      }).catch(() => null)
     ])
 
     const shouldBackfill = traderResult?.data || followResult?.data || tradesResult || ordersResult
