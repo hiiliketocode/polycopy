@@ -512,19 +512,32 @@ function ProfilePageContent() {
         if (!isMounted) return;
 
         // Validate session is actually valid
-        if (!session?.user || !session.access_token) {
-          triggerLoggedOut('session_missing');
-          // Clear loading immediately before redirect
-          setLoading(false);
-          router.push('/login');
+        if (!session?.user) {
+          // Don't redirect if we're already on login page or in auth callback
+          const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+          if (currentPath !== '/login' && !currentPath.startsWith('/auth/')) {
+            triggerLoggedOut('session_missing');
+            // Clear loading immediately before redirect
+            setLoading(false);
+            router.push('/login');
+          } else {
+            setLoading(false);
+          }
           return;
         }
 
-        // Check if session is expired
-        if (session.expires_at && session.expires_at * 1000 < Date.now()) {
-          triggerLoggedOut('session_missing');
-          setLoading(false);
-          router.push('/login');
+        // Only check expiration if we have an expires_at value
+        // Some sessions might not have this set
+        if (session.expires_at && session.expires_at * 1000 < Date.now() - 60000) {
+          // Session expired (with 1 minute buffer)
+          const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+          if (currentPath !== '/login' && !currentPath.startsWith('/auth/')) {
+            triggerLoggedOut('session_missing');
+            setLoading(false);
+            router.push('/login');
+          } else {
+            setLoading(false);
+          }
           return;
         }
 
@@ -533,10 +546,15 @@ function ProfilePageContent() {
       } catch (err) {
         if (!isMounted) return;
         console.error('Auth error:', err);
-        triggerLoggedOut('auth_error');
-        // Clear loading immediately before redirect
-        setLoading(false);
-        router.push('/login');
+        const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+        if (currentPath !== '/login' && !currentPath.startsWith('/auth/')) {
+          triggerLoggedOut('auth_error');
+          // Clear loading immediately before redirect
+          setLoading(false);
+          router.push('/login');
+        } else {
+          setLoading(false);
+        }
       } finally {
         if (isMounted) {
           clearTimeout(timeoutId);
@@ -550,8 +568,11 @@ function ProfilePageContent() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!isMounted) return;
       if (!session?.user) {
-        triggerLoggedOut('signed_out');
-        router.push('/login');
+        const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+        if (currentPath !== '/login' && !currentPath.startsWith('/auth/')) {
+          triggerLoggedOut('signed_out');
+          router.push('/login');
+        }
       } else {
         setUser(session.user);
       }

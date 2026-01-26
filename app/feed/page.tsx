@@ -1375,19 +1375,32 @@ export default function FeedPage() {
         if (!isMounted) return;
         
         // Validate session is actually valid
-        if (!session?.user || !session.access_token) {
-          triggerLoggedOut('session_missing');
-          // Clear loading immediately before redirect
-          setLoading(false);
-          router.push('/login');
+        if (!session?.user) {
+          // Don't redirect if we're already on login page or in auth callback
+          const currentPath = window.location.pathname;
+          if (currentPath !== '/login' && !currentPath.startsWith('/auth/')) {
+            triggerLoggedOut('session_missing');
+            // Clear loading immediately before redirect
+            setLoading(false);
+            router.push('/login');
+          } else {
+            setLoading(false);
+          }
           return;
         }
 
-        // Check if session is expired
-        if (session.expires_at && session.expires_at * 1000 < Date.now()) {
-          triggerLoggedOut('session_missing');
-          setLoading(false);
-          router.push('/login');
+        // Only check expiration if we have an expires_at value
+        // Some sessions might not have this set
+        if (session.expires_at && session.expires_at * 1000 < Date.now() - 60000) {
+          // Session expired (with 1 minute buffer)
+          const currentPath = window.location.pathname;
+          if (currentPath !== '/login' && !currentPath.startsWith('/auth/')) {
+            triggerLoggedOut('session_missing');
+            setLoading(false);
+            router.push('/login');
+          } else {
+            setLoading(false);
+          }
           return;
         }
         
@@ -1395,10 +1408,15 @@ export default function FeedPage() {
       } catch (err) {
         if (!isMounted) return;
         console.error('Auth error:', err);
-        triggerLoggedOut('auth_error');
-        // Clear loading immediately before redirect
-        setLoading(false);
-        router.push('/login');
+        const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+        if (currentPath !== '/login' && !currentPath.startsWith('/auth/')) {
+          triggerLoggedOut('auth_error');
+          // Clear loading immediately before redirect
+          setLoading(false);
+          router.push('/login');
+        } else {
+          setLoading(false);
+        }
       } finally {
         if (isMounted) {
           clearTimeout(timeoutId);
@@ -1412,8 +1430,11 @@ export default function FeedPage() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!isMounted) return;
       if (!session?.user) {
-        triggerLoggedOut('signed_out');
-        router.push('/login');
+        const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+        if (currentPath !== '/login' && !currentPath.startsWith('/auth/')) {
+          triggerLoggedOut('signed_out');
+          router.push('/login');
+        }
       }
       // Don't update user state on every auth change to prevent unnecessary re-renders
       // The user state is already set above and will persist
@@ -2752,41 +2773,38 @@ export default function FeedPage() {
   const liveIdleIntervalRef = useRef<number | null>(null);
   const scrollStopTimeoutRef = useRef<number | null>(null);
 
-  // Fetch feed data ONLY ONCE on initial mount
+  // Fetch feed data when user is available
   useEffect(() => {
-    if (hasAttemptedFetchRef.current) {
+    if (hasAttemptedFetchRef.current || !user || loading) {
       return;
     }
     hasAttemptedFetchRef.current = true;
 
     const attemptFetch = async () => {
-      let currentUser = user;
-      
-      if (!currentUser) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        const { data: { user: freshUser } } = await supabase.auth.getUser();
-        currentUser = freshUser;
-      }
-
-      if (!currentUser) {
+      if (!user) {
         return;
       }
 
-      const sessionKey = `feed-fetched-${currentUser.id}`;
+      const sessionKey = `feed-fetched-${user.id}`;
       const alreadyFetched = sessionStorage.getItem(sessionKey);
       
       if (alreadyFetched === 'true' && hasFetchedRef.current) {
+        markInitialFeedCheckComplete();
         return;
       }
       
-      await fetchFeed({ userOverride: currentUser });
-      hasFetchedRef.current = true;
-      sessionStorage.setItem(sessionKey, 'true');
+      try {
+        await fetchFeed({ userOverride: user });
+        hasFetchedRef.current = true;
+        sessionStorage.setItem(sessionKey, 'true');
+      } catch (err) {
+        console.error('Feed fetch error:', err);
+        markInitialFeedCheckComplete();
+      }
     };
 
     attemptFetch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user, loading, fetchFeed, markInitialFeedCheckComplete]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -3601,8 +3619,20 @@ export default function FeedPage() {
     </div>
   );
 
-  // Loading state
-  if (loading) {
+  // Loading state - but allow content to show if auth is taking too long
+  // This prevents infinite hanging when there are auth issues
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (loading) {
+        console.warn('Loading timeout - allowing content to render');
+        setLoadingTimeout(true);
+      }
+    }, 8000); // 8 second timeout
+    return () => clearTimeout(timeout);
+  }, [loading]);
+
+  if (loading && !loadingTimeout) {
     return (
       <>
         <Navigation 
