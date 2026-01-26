@@ -2772,26 +2772,7 @@ function ProfilePageContent() {
   const activeMobileMetricLabel =
     mobileMetricOptions.find((option) => option.value === mobileMetric)?.label ?? 'Price';
 
-  // Loading state
-  if (loading) {
-    return (
-      <>
-        <Navigation 
-          user={user ? { id: user.id, email: user.email || '' } : null} 
-          isPremium={isPremium}
-          walletAddress={profile?.trading_wallet_address}
-          profileImageUrl={profileImageUrl}
-        />
-        <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
-            <p className="text-slate-600 text-lg">Loading...</p>
-          </div>
-        </div>
-      </>
-    );
-  }
-
+  // All hooks must be called before any early returns
   const truncateAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
@@ -2811,6 +2792,26 @@ function ProfilePageContent() {
     ];
   }, [pathname, searchParams]);
   const tabTooltips: Partial<Record<ProfileTab, string>> = {};
+
+  // Loading state - must be after all hooks
+  if (loading) {
+    return (
+      <>
+        <Navigation 
+          user={user ? { id: user.id, email: user.email || '' } : null} 
+          isPremium={isPremium}
+          walletAddress={profile?.trading_wallet_address}
+          profileImageUrl={profileImageUrl}
+        />
+        <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FDB022] mx-auto mb-4"></div>
+            <p className="text-slate-600 text-lg">Loading...</p>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
