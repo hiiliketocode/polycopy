@@ -160,9 +160,10 @@ async function getPolycopyPerformance(walletOrEmail: string) {
 
     if (credential?.user_id) {
       userId = credential.user_id
-      console.log(`✅ Found user ID from clob_credentials: ${userId.substring(0, 8)}...`)
+      const resolvedUserId = credential.user_id
+      console.log(`✅ Found user ID from clob_credentials: ${resolvedUserId.substring(0, 8)}...`)
       
-      const url = `${SUPABASE_URL}/auth/v1/admin/users/${userId}`
+      const url = `${SUPABASE_URL}/auth/v1/admin/users/${resolvedUserId}`
       const res = await fetch(url, {
         headers: {
           apikey: SUPABASE_SERVICE_ROLE_KEY!,
