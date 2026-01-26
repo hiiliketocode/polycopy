@@ -194,7 +194,8 @@ async function getPolycopyPerformance(walletOrEmail: string) {
     const user = await resolveAuthUserByEmail(email)
     userId = user.id
     userEmail = user.email
-    console.log(`✅ Found user ID: ${userId.substring(0, 8)}...`)
+    const resolvedUserId = user.id
+    console.log(`✅ Found user ID: ${resolvedUserId.substring(0, 8)}...`)
     const { data: cred } = await supabase
       .from('clob_credentials')
       .select('polymarket_account_address')
@@ -212,7 +213,8 @@ async function getPolycopyPerformance(walletOrEmail: string) {
         .maybeSingle()
       if (t?.id) {
         traderId = t.id
-        console.log(`   Trader ID: ${traderId.substring(0, 8)}...`)
+        const resolvedTraderId = t.id
+        console.log(`   Trader ID: ${resolvedTraderId.substring(0, 8)}...`)
       }
     }
   } else {
