@@ -1376,6 +1376,8 @@ export default function FeedPage() {
         
         if (!session?.user) {
           triggerLoggedOut('session_missing');
+          // Clear loading immediately before redirect
+          setLoading(false);
           router.push('/login');
           return;
         }
@@ -1385,6 +1387,8 @@ export default function FeedPage() {
         if (!isMounted) return;
         console.error('Auth error:', err);
         triggerLoggedOut('auth_error');
+        // Clear loading immediately before redirect
+        setLoading(false);
         router.push('/login');
       } finally {
         if (isMounted) {

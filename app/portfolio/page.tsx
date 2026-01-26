@@ -513,6 +513,8 @@ function ProfilePageContent() {
 
         if (!session?.user) {
           triggerLoggedOut('session_missing');
+          // Clear loading immediately before redirect
+          setLoading(false);
           router.push('/login');
           return;
         }
@@ -523,6 +525,8 @@ function ProfilePageContent() {
         if (!isMounted) return;
         console.error('Auth error:', err);
         triggerLoggedOut('auth_error');
+        // Clear loading immediately before redirect
+        setLoading(false);
         router.push('/login');
       } finally {
         if (isMounted) {
@@ -1290,26 +1294,20 @@ function ProfilePageContent() {
     const winningTrades = closedTrades.filter(t => pnlValue(t) > 0).length;
     const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
 
-    // Debug: Check how many open trades have prices
-    const openTradesWithPrices = openTrades.filter(t => t.current_price !== null).length;
-    const openTradesWithoutPrices = openTrades.length - openTradesWithPrices;
-    
-    console.log('📊 Fallback Calculation Detail:', {
-      openTrades: openTrades.length,
-      openWithPrices: openTradesWithPrices,
-      openWithoutPrices: openTradesWithoutPrices,
-      closedTrades: closedTrades.length,
-      realizedPnl: realizedPnl.toFixed(2),
-      unrealizedPnl: unrealizedPnl.toFixed(2),
-      totalPnl: totalPnl.toFixed(2),
-      sampleOpenTrades: openTrades.slice(0, 5).map(t => ({
-        market: t.market_title?.substring(0, 30),
-        entryPrice: t.price_when_copied,
-        currentPrice: t.current_price,
-        size: t.entry_size,
-        pnl: pnlValue(t).toFixed(2)
-      }))
-    });
+    // Debug: Check how many open trades have prices (only log in development)
+    if (process.env.NODE_ENV === 'development') {
+      const openTradesWithPrices = openTrades.filter(t => t.current_price !== null).length;
+      const openTradesWithoutPrices = openTrades.length - openTradesWithPrices;
+      console.log('📊 Fallback Calculation Detail:', {
+        openTrades: openTrades.length,
+        openWithPrices: openTradesWithPrices,
+        openWithoutPrices: openTradesWithoutPrices,
+        closedTrades: closedTrades.length,
+        realizedPnl: realizedPnl.toFixed(2),
+        unrealizedPnl: unrealizedPnl.toFixed(2),
+        totalPnl: totalPnl.toFixed(2),
+      });
+    }
 
     return {
       totalPnl,
@@ -1324,7 +1322,8 @@ function ProfilePageContent() {
     };
   };
 
-  const fallbackStats = calculateStats();
+  // Memoize stats calculation to prevent running on every render
+  const fallbackStats = useMemo(() => calculateStats(), [copiedTrades]);
   const userStats = portfolioStats ?? fallbackStats;
 
   // PnL window options
