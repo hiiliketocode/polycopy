@@ -16,7 +16,9 @@
  *   SUPABASE_SERVICE_ROLE_KEY
  * 
  * Usage:
- *   node scripts/backfill-wallet-trades.js [--wallet <0x...>] [--days 30] [--start-time <unix>] [--end-time <unix>] [--fetch-all] [--select-days 30] [--select-start-time <unix>] [--select-end-time <unix>] [--max-wallets 10] [--top-wallets 500] [--limit 1000] [--concurrency 5] [--reset-progress] [--keep-progress]
+ *   node scripts/backfill-wallet-trades.js [--wallet <0x...>] [--days 30] [--start-time <unix>] [--end-time <unix>] [--fetch-all] [--select-days 30] [--select-start-time <unix>] [--select-end-time <unix>] [--max-wallets 10] [--top-wallets 500] [--top30d-pnl 20] [--limit 1000] [--concurrency 5] [--reset-progress] [--keep-progress]
+ *
+ *   --top30d-pnl N: Backfill trades for top N wallets by 30-day realized PnL rank (from wallet_realized_pnl_rankings). Use with --fetch-all for full history.
  */
 
 const fs = require('fs')
@@ -130,6 +132,12 @@ function parseArgs() {
         parsed.selectEndTime = toNumber(nextValue)
         if (!rawValue) i++
         break
+      case '--top30d-pnl': {
+        const v = toNumber(nextValue)
+        parsed.top30dPnl = Number.isFinite(v) ? v : 20
+        if (!rawValue && Number.isFinite(v)) i++
+        break
+      }
       default:
         break
     }
@@ -188,6 +196,7 @@ const SELECT_END_TIME = Number.isFinite(args.selectEndTime)
       ? ENV_SELECT_END_TIME
       : (SELECT_START_TIME ? NOW_TS : null))
 const SINGLE_WALLET = args.wallet ? args.wallet.toLowerCase() : null
+const TOP30D_PNL = Number.isFinite(args.top30dPnl) && args.top30dPnl > 0 ? Math.min(100, Math.floor(args.top30dPnl)) : null
 const MAX_WALLETS = Number.isFinite(args.maxWallets) ? args.maxWallets : null
 const TOP_WALLETS = Number.isFinite(args.topWallets)
   ? Math.max(1, Math.floor(args.topWallets))
@@ -380,6 +389,23 @@ async function loadTopWallets(window) {
   console.log(`📌 Active traders with PnL in window: ${ordered.length}`)
 
   return ordered.slice(0, TOP_WALLETS)
+}
+
+/**
+ * Load top N wallets by 30-day realized PnL rank from wallet_realized_pnl_rankings.
+ */
+async function loadTopBy30dPnl(limit) {
+  const n = Math.max(1, Math.min(100, Math.floor(limit)))
+  const { data, error } = await supabase
+    .from('wallet_realized_pnl_rankings')
+    .select('wallet_address, pnl_sum, rank')
+    .eq('window_key', '30D')
+    .order('rank', { ascending: true })
+    .limit(n)
+
+  if (error) throw error
+  const wallets = (data || []).map((r) => String(r.wallet_address || '').toLowerCase()).filter(Boolean)
+  return wallets
 }
 
 /**
@@ -628,7 +654,11 @@ async function processWallet(wallet, index, total, progress, window) {
  * Main function
  */
 async function main() {
-  console.log(`🚀 Starting trade backfill for top ${TOP_WALLETS} wallets...\n`)
+  if (TOP30D_PNL) {
+    console.log(`🚀 Starting trade backfill for top ${TOP30D_PNL} traders by 30D realized PnL rank...\n`)
+  } else {
+    console.log(`🚀 Starting trade backfill for top ${TOP_WALLETS} wallets...\n`)
+  }
 
   const defaultSelectionWindow = { startTime: SELECT_START_TIME, endTime: SELECT_END_TIME, lookbackDays: SELECT_LOOKBACK_DAYS }
   const defaultFetchWindow = { startTime: START_TIME, endTime: END_TIME, lookbackDays: LOOKBACK_DAYS, mode: FETCH_ALL ? 'all' : 'window' }
@@ -674,7 +704,15 @@ async function main() {
 
   try {
     // Load wallets
-    const allWallets = SINGLE_WALLET ? [SINGLE_WALLET] : await loadTopWallets(selectionWindow)
+    let allWallets
+    if (SINGLE_WALLET) {
+      allWallets = [SINGLE_WALLET]
+    } else if (TOP30D_PNL) {
+      allWallets = await loadTopBy30dPnl(TOP30D_PNL)
+      console.log(`📌 Top ${TOP30D_PNL} wallets by 30D realized PnL rank\n`)
+    } else {
+      allWallets = await loadTopWallets(selectionWindow)
+    }
     console.log(`📊 Loaded ${allWallets.length} wallets\n`)
 
     if (allWallets.length === 0) {

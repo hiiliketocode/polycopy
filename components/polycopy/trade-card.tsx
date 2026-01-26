@@ -681,7 +681,7 @@ export function TradeCard({
   const statusBadgeClass = cn(
     badgeBaseClass,
     badgeType === "live" &&
-      "bg-emerald-50 text-emerald-700 border-emerald-200 h-auto min-h-[22px] py-0.5 pr-2 pl-2 justify-start",
+      "bg-emerald-50 text-emerald-700 border-emerald-200 h-auto min-h-[22px] min-w-[140px] py-0.5 pr-2 pl-2 justify-start",
     badgeType === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
     badgeType === "resolved" && "bg-rose-50 text-rose-700 border-rose-200",
     badgeType === "scheduled" && "bg-amber-50 text-amber-700 border-amber-200",
@@ -689,8 +689,8 @@ export function TradeCard({
   )
 
   // Stabilize gameTimeInfo - only update when period changes, not on every clock tick
-  // Also persist it even if it temporarily disappears to prevent flashing
-  const stableGameTimeRef = useRef<string | null>(null)
+  // Use state so React re-renders when it changes, but only when period changes
+  const [stableGameTimeInfo, setStableGameTimeInfo] = useState<string | null>(null)
   const lastPeriodFromTimeRef = useRef<string | null>(null)
   
   useEffect(() => {
@@ -699,18 +699,16 @@ export function TradeCard({
       const periodMatch = gameTimeInfo.match(/^(Q[1-4]|P[1-3]|OT|I\d+)/);
       const currentPeriod = periodMatch ? periodMatch[1] : null;
       
-      // Only update if period changed or if this is the first time we have gameTimeInfo
-      if (currentPeriod !== lastPeriodFromTimeRef.current || !stableGameTimeRef.current) {
-        stableGameTimeRef.current = gameTimeInfo;
+      // Only update state if period changed or if this is the first time we have gameTimeInfo
+      // This prevents re-renders on every clock tick
+      if (currentPeriod !== lastPeriodFromTimeRef.current || !stableGameTimeInfo) {
+        setStableGameTimeInfo(gameTimeInfo);
         lastPeriodFromTimeRef.current = currentPeriod;
       }
     }
-    // Don't clear stableGameTimeRef if gameTimeInfo becomes null - keep the last known value
+    // Don't clear stableGameTimeInfo if gameTimeInfo becomes null - keep the last known value
     // This prevents flashing when gameTimeInfo temporarily disappears
-  }, [gameTimeInfo])
-  
-  // Always use stable version, even if current gameTimeInfo is null
-  const stableGameTimeInfo = stableGameTimeRef.current
+  }, [gameTimeInfo, stableGameTimeInfo])
 
   // Build score text with team abbreviations for live badge
   // For crypto markets, use liveScore directly if it contains crypto price info
@@ -748,13 +746,26 @@ export function TradeCard({
       baseScore = `${badgeScore.home ?? "-"} - ${badgeScore.away ?? "-"}`;
     }
     
-    // Add time in brackets if available for live badges - use stable version
-    if (badgeType === "live" && stableGameTimeInfo) {
-      return `${baseScore} (${stableGameTimeInfo})`;
+    return baseScore;
+  }, [badgeScore, badgeType, homeTeam, awayTeam, liveScore])
+  
+  // Add time to score text using stable version - this prevents flashing
+  // Always include time if we have a stable version, even if current prop is null
+  const scoreTextWithTime = useMemo(() => {
+    if (!scoreText) return scoreText;
+    
+    // If scoreText already has time in brackets, use it as-is
+    if (scoreText.includes('(') && scoreText.includes(')')) {
+      return scoreText;
     }
     
-    return baseScore;
-  }, [badgeScore, badgeType, homeTeam, awayTeam, liveScore, stableGameTimeInfo])
+    // For live badges, always add stable time if available
+    if (badgeType === "live" && stableGameTimeInfo) {
+      return `${scoreText} (${stableGameTimeInfo})`;
+    }
+    
+    return scoreText;
+  }, [scoreText, badgeType, stableGameTimeInfo])
 
   const statusLabel =
     badgeType === "live"
@@ -772,33 +783,33 @@ export function TradeCard({
   const lastPeriodRef = useRef<string | null>(null)
   
   useEffect(() => {
-    if (scoreText) {
+    if (scoreTextWithTime) {
       // Extract score numbers without time (e.g., "VGK 0 - 1 OTT")
-      const scoreWithoutTime = scoreText.replace(/\s*\([^)]*\)\s*$/, '').trim();
+      const scoreWithoutTime = scoreTextWithTime.replace(/\s*\([^)]*\)\s*$/, '').trim();
       const scoreMatch = scoreWithoutTime.match(/^([A-Z]{2,5}\s+\d+\s*-\s*\d+\s+[A-Z]{2,5}|\d+\s*-\s*\d+)/);
       const scoreNumbers = scoreMatch ? scoreMatch[0].trim() : scoreWithoutTime;
       
       // Extract period from time part if present (e.g., "Q1", "Q2", "P1", "OT")
-      const timeMatch = scoreText.match(/\(([^)]+)\)/);
+      const timeMatch = scoreTextWithTime.match(/\(([^)]+)\)/);
       const timePart = timeMatch ? timeMatch[1] : null;
       const periodMatch = timePart?.match(/^(Q[1-4]|P[1-3]|OT|I\d+)/);
       const currentPeriod = periodMatch ? periodMatch[1] : null;
       
       // Only update if score numbers changed or period changed
       if (scoreNumbers !== lastScoreNumbersRef.current || currentPeriod !== lastPeriodRef.current) {
-        stableScoreRef.current = scoreText;
+        stableScoreRef.current = scoreTextWithTime;
         lastScoreNumbersRef.current = scoreNumbers;
         lastPeriodRef.current = currentPeriod;
       }
     } else if (stableScoreRef.current) {
-      // Keep the last stable score even if current scoreText is null
-      // This prevents flashing when scoreText temporarily disappears
+      // Keep the last stable score even if current scoreTextWithTime is null
+      // This prevents flashing when scoreTextWithTime temporarily disappears
     }
-  }, [scoreText])
+  }, [scoreTextWithTime])
   
   // Always use stable score if available to prevent flashing
-  // Only fall back to current scoreText if we don't have a stable value yet
-  const displayScoreText = stableScoreRef.current || scoreText
+  // Only fall back to current scoreTextWithTime if we don't have a stable value yet
+  const displayScoreText = stableScoreRef.current || scoreTextWithTime
 
   const liveBadgeContent = (
     <div className="flex w-full flex-col items-center justify-center gap-0">

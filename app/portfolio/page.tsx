@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, Suspense, useCallback } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { supabase, ensureProfile } from '@/lib/supabase';
@@ -333,6 +333,7 @@ const buildPositionKey = (marketId?: string | null, outcome?: string | null) => 
 function ProfilePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
@@ -428,6 +429,25 @@ function ProfilePageContent() {
       : preferredDefaultTab;
   const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
   const hasAppliedPreferredTab = useRef(false);
+  const buildTabUrl = useCallback((tab: ProfileTab) => {
+    const params = new URLSearchParams(searchParams?.toString());
+    params.set('tab', tab);
+    const queryString = params.toString();
+    return queryString ? `${pathname}?${queryString}` : pathname;
+  }, [pathname, searchParams]);
+
+  const currentUrl = useMemo(() => {
+    const queryString = searchParams?.toString();
+    return queryString ? `${pathname}?${queryString}` : pathname;
+  }, [pathname, searchParams]);
+
+  const handleTabChange = useCallback((tab: ProfileTab) => {
+    setActiveTab(tab);
+    const nextUrl = buildTabUrl(tab);
+    if (nextUrl !== currentUrl) {
+      router.replace(nextUrl, { scroll: false });
+    }
+  }, [buildTabUrl, currentUrl, router]);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [showSubscriptionSuccessModal, setShowSubscriptionSuccessModal] = useState(false);
@@ -571,11 +591,18 @@ function ProfilePageContent() {
   }, [user]);
 
   useEffect(() => {
-    if (tabParam || hasAppliedPreferredTab.current || loadingStats) return;
+    if (tabParam === 'performance' || tabParam === 'trades') {
+      setActiveTab(tabParam as ProfileTab);
+      return;
+    }
 
-    setActiveTab(preferredDefaultTab);
-    hasAppliedPreferredTab.current = true;
-  }, [preferredDefaultTab, tabParam, loadingStats]);
+    if (!tabParam && !hasAppliedPreferredTab.current && !loadingStats) {
+      const fallbackTab = preferredDefaultTab;
+      hasAppliedPreferredTab.current = true;
+      setActiveTab(fallbackTab);
+      handleTabChange(fallbackTab);
+    }
+  }, [tabParam, loadingStats, preferredDefaultTab, handleTabChange]);
 
   useEffect(() => {
     if (tabParam === 'settings') {
@@ -2700,10 +2727,10 @@ function ProfilePageContent() {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
-  const tabButtons: Array<{ key: ProfileTab; label: string }> = [
-    { key: 'trades' as ProfileTab, label: 'Trades' },
-    { key: 'performance' as ProfileTab, label: 'Performance' },
-  ];
+  const tabButtons = useMemo(() => ([
+    { key: 'trades' as ProfileTab, label: 'Trades', href: buildTabUrl('trades') },
+    { key: 'performance' as ProfileTab, label: 'Performance', href: buildTabUrl('performance') },
+  ]), [buildTabUrl]);
   const tabTooltips: Partial<Record<ProfileTab, string>> = {};
 
   return (
@@ -2934,11 +2961,11 @@ function ProfilePageContent() {
           {/* Tab Navigation */}
           <div className="flex flex-wrap items-center gap-2 mb-6">
             <div className="flex flex-1 flex-wrap gap-2">
-              {tabButtons.map(({ key, label }) => {
+              {tabButtons.map(({ key, label, href }) => {
                 const tooltipText = tabTooltips[key];
                 const button = (
                   <Button
-                    onClick={() => setActiveTab(key)}
+                    asChild
                     variant="ghost"
                     className={cn(
                       "w-full px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
@@ -2947,7 +2974,20 @@ function ProfilePageContent() {
                         : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
                     )}
                   >
-                    {label}
+                    <Link
+                      href={href}
+                      scroll={false}
+                      onClick={(event) => {
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button === 1) {
+                          return;
+                        }
+                        event.preventDefault();
+                        handleTabChange(key);
+                      }}
+                      aria-current={activeTab === key ? 'page' : undefined}
+                    >
+                      {label}
+                    </Link>
                   </Button>
                 );
 

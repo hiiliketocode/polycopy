@@ -1,0 +1,194 @@
+{
+  "completedWallets": [
+    "0x006cc834cc092684f1b56626e23bedb3835c16ea",
+    "0xb889590a2fab0c810584a660518c4c020325a430",
+    "0x98f7207b2461aaa89f89945ddc1f0bee628fb3e4",
+    "0x1af1dfc2c523af1d7551597c985277cd11b30f7b",
+    "0x1bc0d88ca86b9049cf05d642e634836d5ddf4429",
+    "0xd6b4bf910d4479184c4e17e01ec83ecbd376a278"
+  ],
+  "failedWallets": [
+    {
+      "wallet": "0x16b29c50f2439faf627209b2ac0c7bbddaa8a881",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390002297
+    },
+    {
+      "wallet": "0x6a72f61820b26b1fe4d956e17b6dc2a1ea3033ee",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390009622
+    },
+    {
+      "wallet": "0x0d3b10b8eac8b089c6e4a695e65d8e044167c46b",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390015452
+    },
+    {
+      "wallet": "0xdb27bf2ac5d428a9c63dbc914611036855a6c56e",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390015644
+    },
+    {
+      "wallet": "0xdc876e6873772d38716fda7f2452a78d426d7ab6",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390018756
+    },
+    {
+      "wallet": "0x37e4728b3c4607fb2b3b205386bb1d1fb1a8c991",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390120519
+    },
+    {
+      "wallet": "0xcd9bc2939f0dac121f6ccde59cca5e0b6a91414d",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390125640
+    },
+    {
+      "wallet": "0xd0b4c4c020abdc88ad9a884f999f3d8cff8ffed6",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390130197
+    },
+    {
+      "wallet": "0x2005d16a84ceefa912d4e380cd32e7ff827875ea",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390151718
+    },
+    {
+      "wallet": "0x1455445e9a775cfa3fe9fc4b02bb4d2f682ae5cd",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390249121
+    },
+    {
+      "wallet": "0xd6a3f0ec6c4a8ad680d580610c82ca57ff139489",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390255032
+    },
+    {
+      "wallet": "0x8f037a2e4fd49d11267f4ab874ab7ba745ac64d6",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390257627
+    },
+    {
+      "wallet": "0xe90bec87d9ef430f27f9dcfe72c34b76967d5da2",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390258946
+    },
+    {
+      "wallet": "0x37e053beabee77acc15e641dfe8e395b2b2d024e",
+      "error": "Request failed (400): {\"error\":\"Offset deprecated\",\"message\":\"Offsets greater than 10,000 are no longer supported. Please use pagination_key for efficient pagination.\",\"docs\":\"https://docs.domeapi.io/pagination\"}",
+      "timestamp": 1769390280418
+    }
+  ],
+  "startTime": 1769389892289,
+  "selectionWindow": {
+    "startTime": 1766797892,
+    "endTime": 1769389892,
+    "lookbackDays": 30
+  },
+  "fetchWindow": {
+    "startTime": null,
+    "endTime": null,
+    "lookbackDays": 30,
+    "mode": "all"
+  },
+  "walletStates": {
+    "0x0d3b10b8eac8b089c6e4a695e65d8e044167c46b": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 176,
+      "updatedAt": 1769390005751
+    },
+    "0x6a72f61820b26b1fe4d956e17b6dc2a1ea3033ee": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 0,
+      "updatedAt": 1769389999900
+    },
+    "0xdb27bf2ac5d428a9c63dbc914611036855a6c56e": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 201,
+      "updatedAt": 1769390005824
+    },
+    "0x16b29c50f2439faf627209b2ac0c7bbddaa8a881": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 0,
+      "updatedAt": 1769389992510
+    },
+    "0xdc876e6873772d38716fda7f2452a78d426d7ab6": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 4050,
+      "updatedAt": 1769390009001
+    },
+    "0x37e4728b3c4607fb2b3b205386bb1d1fb1a8c991": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 248,
+      "updatedAt": 1769390110620
+    },
+    "0xd0b4c4c020abdc88ad9a884f999f3d8cff8ffed6": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 531,
+      "updatedAt": 1769390120381
+    },
+    "0xcd9bc2939f0dac121f6ccde59cca5e0b6a91414d": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 517,
+      "updatedAt": 1769390115906
+    },
+    "0x2005d16a84ceefa912d4e380cd32e7ff827875ea": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 6950,
+      "updatedAt": 1769390141920
+    },
+    "0x1455445e9a775cfa3fe9fc4b02bb4d2f682ae5cd": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 7372,
+      "updatedAt": 1769390239337
+    },
+    "0xd6a3f0ec6c4a8ad680d580610c82ca57ff139489": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 5523,
+      "updatedAt": 1769390244748
+    },
+    "0xe90bec87d9ef430f27f9dcfe72c34b76967d5da2": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 1071,
+      "updatedAt": 1769390249067
+    },
+    "0x8f037a2e4fd49d11267f4ab874ab7ba745ac64d6": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 1519,
+      "updatedAt": 1769390247861
+    },
+    "0x37e053beabee77acc15e641dfe8e395b2b2d024e": {
+      "offset": 11000,
+      "pageCount": 11,
+      "fetched": 11000,
+      "inserted": 441,
+      "updatedAt": 1769390270592
+    }
+  }
+}

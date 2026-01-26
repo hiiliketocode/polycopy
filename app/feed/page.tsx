@@ -17,7 +17,7 @@ import { EmptyState } from '@/components/polycopy/empty-state';
 import ClosePositionModal from '@/components/orders/ClosePositionModal';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { RefreshCw, Activity, Filter, Check, Search, ChevronDown } from 'lucide-react';
+import { RefreshCw, Activity, Filter, Check, Search, ChevronDown, ArrowUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getESPNScoresForTrades, getScoreDisplaySides, getFallbackEspnUrl } from '@/lib/espn/scores';
 import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
@@ -186,6 +186,9 @@ const PRICE_PRESET_OPTIONS = [
   { label: '50-75¢', min: 50, max: 75 },
   { label: '90¢+', min: 90, max: PRICE_RANGE.max },
 ];
+
+// How often to refresh copied-trade snapshots when the "Your positions" filter is active
+const COPIED_TRADES_REFRESH_MS = 20_000;
 
 const defaultFilters: FilterState = {
   category: "all",
@@ -591,6 +594,7 @@ export default function FeedPage() {
   const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
   const [cashBalance, setCashBalance] = useState<number | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const hasPremiumAccess = tierHasPremiumAccess(userTier);
   const canExecuteTrades = hasPremiumAccess && Boolean(walletAddress);
   const showLowBalanceCallout =
@@ -614,6 +618,17 @@ export default function FeedPage() {
       clearTimeout(sellToastTimerRef.current);
     }
     sellToastTimerRef.current = setTimeout(() => setShowSellToast(false), 4000);
+  }, []);
+
+  // Toggle back-to-top visibility after user scrolls down a bit
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.scrollY > 400);
+    };
+
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   useEffect(() => {
@@ -1610,6 +1625,37 @@ export default function FeedPage() {
   useEffect(() => {
     fetchCopiedTrades();
   }, [fetchCopiedTrades]);
+
+  // Keep the "Your positions" filter in sync with fresh copied trades
+  useEffect(() => {
+    if (!user || !appliedFilters.positionsOnly) return;
+
+    let cancelled = false;
+
+    const refresh = async () => {
+      if (cancelled) return;
+      try {
+        await fetchCopiedTrades();
+      } catch (err) {
+        console.warn('Failed to refresh copied trades for positions-only filter:', err);
+      }
+    };
+
+    // Refresh immediately when the filter is active, then poll
+    refresh();
+    const intervalId = window.setInterval(refresh, COPIED_TRADES_REFRESH_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [appliedFilters.positionsOnly, fetchCopiedTrades, user]);
+
+  // When we get a live trade execution update, refresh positions so filters/badges stay current
+  useEffect(() => {
+    if (tradeNotifications.length === 0) return;
+    fetchCopiedTrades();
+  }, [fetchCopiedTrades, tradeNotifications]);
 
   useEffect(() => {
     if (!hasPremiumAccess || !walletAddress || !user) {
@@ -3861,6 +3907,25 @@ export default function FeedPage() {
         </div>
 
       </div>
+
+      {showBackToTop && (
+        <div
+          className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,_0px)+80px)] md:bottom-6 z-40 pointer-events-none"
+        >
+          <div className="max-w-[1200px] mx-auto px-4 md:px-6">
+            <div className="md:w-[63%] md:mx-auto flex justify-end">
+              <button
+                type="button"
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                aria-label="Back to top"
+              >
+                <ArrowUp className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <TradeExecutionNotifications
         notifications={tradeNotifications}
