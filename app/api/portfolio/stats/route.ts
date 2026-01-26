@@ -290,9 +290,12 @@ interface PortfolioStatsResult {
 // Extract calculation logic into reusable function
 async function calculatePortfolioStats(
   supabase: ReturnType<typeof createService>,
-  requestedUserId: string
+  requestedUserId: string,
+  options?: { refreshPrices?: boolean }
 ): Promise<PortfolioStatsResult> {
+  const shouldRefreshPrices = options?.refreshPrices ?? false
   const ordersTable = await resolveOrdersTableName(supabase)
+  console.log(`[Portfolio Stats] Using orders table: ${ordersTable} for user: ${requestedUserId.substring(0, 8)}`)
 
   // Query ALL orders (both BUY and SELL) for position-based P&L calculation
   // Don't filter by copied_trade_id - we need ALL orders including sells
@@ -324,6 +327,18 @@ async function calculatePortfolioStats(
   }
 
   let orders = (allOrders || []) as Order[]
+  console.log(`[Portfolio Stats] Fetched ${orders.length} orders from ${ordersTable}`)
+  
+  // Log order breakdown
+  const buyOrders = orders.filter(o => normalizeSide(o.side) === 'buy')
+  const sellOrders = orders.filter(o => normalizeSide(o.side) === 'sell')
+  console.log(`[Portfolio Stats] Order breakdown: ${buyOrders.length} BUY, ${sellOrders.length} SELL`)
+  
+  // Log most recent order timestamp
+  if (orders.length > 0) {
+    const mostRecent = orders[orders.length - 1]?.created_at
+    console.log(`[Portfolio Stats] Most recent order: ${mostRecent}`)
+  }
   
   // SELL orders often lack copy_user_id. Fetch by trader_id and include only SELLs
   // that close copy positions (same market_id + outcome as copy BUYs).
@@ -508,13 +523,25 @@ async function calculatePortfolioStats(
     )
   )
 
+  console.log(`[Portfolio Stats] Fetching prices for ${allMarketIds.length} markets`)
   const { priceMap, staleMarketIds } = await loadCachedMarketPrices(supabase, allMarketIds)
+  console.log(`[Portfolio Stats] Loaded ${priceMap.size} cached prices, ${staleMarketIds.length} stale markets`)
 
-  // Refresh stale prices in the background; don't block the response
+  // Refresh stale prices - synchronously if shouldRefreshPrices is true, otherwise in background
   if (staleMarketIds.length > 0) {
-    refreshMarketPrices(supabase, staleMarketIds).catch((err) =>
-      console.warn('[portfolio/stats] async price refresh failed', err)
-    )
+    if (shouldRefreshPrices) {
+      console.log(`[Portfolio Stats] Refreshing ${staleMarketIds.length} stale market prices synchronously...`)
+      await refreshMarketPrices(supabase, staleMarketIds)
+      // Reload prices after refresh
+      const { priceMap: refreshedPriceMap } = await loadCachedMarketPrices(supabase, allMarketIds)
+      refreshedPriceMap.forEach((value, key) => priceMap.set(key, value))
+      console.log(`[Portfolio Stats] Price refresh complete, now have ${priceMap.size} prices`)
+    } else {
+      console.log(`[Portfolio Stats] Refreshing ${staleMarketIds.length} stale market prices in background...`)
+      refreshMarketPrices(supabase, staleMarketIds).catch((err) =>
+        console.warn('[portfolio/stats] async price refresh failed', err)
+      )
+    }
   }
 
   // Calculate P&L for each position using FIFO cost basis
@@ -729,8 +756,12 @@ export async function GET(request: Request) {
 
     // If forceRefresh is true, always recalculate synchronously to return fresh data
     if (forceRefresh) {
-      console.log(`🔄 Force refresh requested - calculating fresh portfolio stats`)
-      const stats = await calculatePortfolioStats(supabase, requestedUserId)
+      console.log(`🔄 Force refresh requested - calculating fresh portfolio stats for user ${requestedUserId.substring(0, 8)}`)
+      const startTime = Date.now()
+      // Pass refreshPrices=true to ensure we get fresh market prices
+      const stats = await calculatePortfolioStats(supabase, requestedUserId, { refreshPrices: true })
+      const duration = Date.now() - startTime
+      console.log(`✅ Portfolio stats calculation completed in ${duration}ms`)
       return NextResponse.json({
         ...stats,
         freshness: new Date().toISOString(),
@@ -770,7 +801,7 @@ export async function GET(request: Request) {
     // Cache miss, stale, or wrong version - calculate fresh stats synchronously
     console.log(`🔄 Calculating fresh portfolio stats (cache ${cachedSummary ? (cacheAge >= PORTFOLIO_CACHE_STALE_AFTER_MS ? 'stale' : 'wrong version') : 'missing'})`)
     
-    const stats = await calculatePortfolioStats(supabase, requestedUserId)
+    const stats = await calculatePortfolioStats(supabase, requestedUserId, { refreshPrices: true })
     
     return NextResponse.json({
       ...stats,
