@@ -29,6 +29,7 @@ interface ESPNGame {
 }
 
 interface ESPNCompetition {
+  id?: string;
   competitors?: ESPNCompetitor[];
   date?: string;
   startDate?: string;
