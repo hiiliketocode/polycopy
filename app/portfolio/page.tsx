@@ -369,7 +369,7 @@ function ProfilePageContent() {
   const [realizedPnlRows, setRealizedPnlRows] = useState<RealizedPnlRow[]>([]);
   const [loadingRealizedPnl, setLoadingRealizedPnl] = useState(false);
   const [realizedPnlError, setRealizedPnlError] = useState<string | null>(null);
-  const [pnlWindow, setPnlWindow] = useState<'1D' | '7D' | '30D' | '90D' | '1Y' | 'ALL'>('90D');
+  const [pnlWindow, setPnlWindow] = useState<'1D' | '7D' | '30D' | '90D' | '1Y' | 'ALL'>('30D');
   const [pnlView, setPnlView] = useState<'daily' | 'cumulative'>('daily');
   
   // Quick trades (orders) state  
@@ -1298,43 +1298,59 @@ function ProfilePageContent() {
     [pnlWindow]
   );
 
+  // Sorted copy for consistent first/last dates
+  const sortedPnlRows = useMemo(
+    () => [...realizedPnlRows].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+    [realizedPnlRows]
+  );
+
+  // True when the selected window encompasses all of the user's data (e.g. 1Y selected but only a few weeks of data)
+  const windowCoversAllData = useMemo(() => {
+    if (sortedPnlRows.length === 0) return false;
+    const option = pnlWindowOptions.find((entry) => entry.key === pnlWindow) ?? pnlWindowOptions[3];
+    if (option.key === 'ALL' || option.days === null) return true;
+    const firstDataDate = toDateObj(sortedPnlRows[0].date);
+    const lastDataDate = toDateObj(sortedPnlRows[sortedPnlRows.length - 1].date);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const anchorDate =
+      sortedPnlRows[sortedPnlRows.length - 1].date === todayStr && sortedPnlRows.length > 1
+        ? toDateObj(sortedPnlRows[sortedPnlRows.length - 2].date)
+        : lastDataDate;
+    const start = new Date(Date.UTC(anchorDate.getUTCFullYear(), anchorDate.getUTCMonth(), anchorDate.getUTCDate()));
+    start.setUTCDate(start.getUTCDate() - (option.days - 1));
+    return start <= firstDataDate;
+  }, [pnlWindow, sortedPnlRows]);
+
   // Filter realized PnL rows by window
   const realizedWindowRows = useMemo(() => {
-    if (realizedPnlRows.length === 0) return [];
+    if (sortedPnlRows.length === 0) return [];
     const option = pnlWindowOptions.find((entry) => entry.key === pnlWindow) ?? pnlWindowOptions[3];
-    const lastIndex = realizedPnlRows.length - 1;
-    let anchorDate = toDateObj(realizedPnlRows[lastIndex].date);
+
+    if (option.key === 'ALL' || option.days === null) {
+      return sortedPnlRows;
+    }
+
+    const firstDataDate = toDateObj(sortedPnlRows[0].date);
+    let anchorDate = toDateObj(sortedPnlRows[sortedPnlRows.length - 1].date);
     const todayStr = new Date().toISOString().slice(0, 10);
-    if (realizedPnlRows[lastIndex].date === todayStr && lastIndex > 0) {
-      anchorDate = toDateObj(realizedPnlRows[lastIndex - 1].date);
+    if (sortedPnlRows[sortedPnlRows.length - 1].date === todayStr && sortedPnlRows.length > 1) {
+      anchorDate = toDateObj(sortedPnlRows[sortedPnlRows.length - 2].date);
     }
 
-    let startDate: Date | null = null;
-    let endDate: Date | null = null;
+    const start = new Date(Date.UTC(anchorDate.getUTCFullYear(), anchorDate.getUTCMonth(), anchorDate.getUTCDate()));
+    start.setUTCDate(start.getUTCDate() - (option.days - 1));
+    const windowLongerThanSpan = start <= firstDataDate;
 
-    if (option.key === 'ALL') {
-      startDate = null;
-      endDate = null;
-    } else if (option.days !== null) {
-      const start = new Date(Date.UTC(
-        anchorDate.getUTCFullYear(),
-        anchorDate.getUTCMonth(),
-        anchorDate.getUTCDate()
-      ));
-      start.setUTCDate(start.getUTCDate() - (option.days - 1));
-      startDate = start;
-      endDate = anchorDate;
-    }
+    let startDate: Date | null = windowLongerThanSpan ? null : start;
+    let endDate: Date | null = windowLongerThanSpan ? null : anchorDate;
 
-    return realizedPnlRows
-      .filter((row) => {
-        const day = toDateObj(row.date);
-        if (startDate && day < startDate) return false;
-        if (endDate && day > endDate) return false;
-        return true;
-      })
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [realizedPnlRows, pnlWindow]);
+    return sortedPnlRows.filter((row) => {
+      const day = toDateObj(row.date);
+      if (startDate && day < startDate) return false;
+      if (endDate && day > endDate) return false;
+      return true;
+    });
+  }, [sortedPnlRows, pnlWindow]);
 
   // Build chart series
   const realizedChartSeries = useMemo(() => {
@@ -1359,11 +1375,11 @@ function ProfilePageContent() {
     return { totalPnl, avgDaily, daysUp, daysDown, daysActive };
   }, [realizedWindowRows]);
 
-  // Use portfolio stats (top card) as single source of truth for All Time realized P&L
-  // so the chart section Total P&L matches the top card when "All Time" is selected.
-  const chartSectionTotalPnl = pnlWindow === 'ALL' ? userStats.realizedPnl : realizedSummary.totalPnl;
+  // Use portfolio stats (top card) as single source of truth whenever the window covers all data.
+  // E.g. "1 Year" selected but user has only a few weeks → same total as "All Time".
+  const chartSectionTotalPnl = windowCoversAllData ? userStats.realizedPnl : realizedSummary.totalPnl;
   const chartSectionAvgDaily =
-    pnlWindow === 'ALL' && realizedSummary.daysActive > 0
+    windowCoversAllData && realizedSummary.daysActive > 0
       ? userStats.realizedPnl / realizedSummary.daysActive
       : realizedSummary.avgDaily;
 
