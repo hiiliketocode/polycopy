@@ -672,11 +672,17 @@ function ProfilePageContent() {
     }
   }, [tabParam, loading, loadingStats]);
 
+  // Redirect to settings if settings tab is requested
   useEffect(() => {
-    if (tabParam === 'settings') {
-      router.replace('/settings');
+    try {
+      const settingsParam = searchParams?.get('tab');
+      if (settingsParam === 'settings') {
+        router.replace('/settings');
+      }
+    } catch (err) {
+      // Ignore errors reading searchParams
     }
-  }, [tabParam, router]);
+  }, [searchParams, router]);
 
   // Fetch Polymarket username when wallet is connected
   useEffect(() => {
