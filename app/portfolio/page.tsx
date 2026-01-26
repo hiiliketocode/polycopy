@@ -600,10 +600,14 @@ function ProfilePageContent() {
       const fallbackTab = preferredDefaultTab;
       hasAppliedPreferredTab.current = true;
       setActiveTab(fallbackTab);
-      const nextUrl = buildTabUrl(fallbackTab);
+      // Construct URL directly to avoid dependency cycle
+      const params = new URLSearchParams(searchParams?.toString() || '');
+      params.set('tab', fallbackTab);
+      const queryString = params.toString();
+      const nextUrl = queryString ? `${pathname}?${queryString}` : pathname;
       router.replace(nextUrl, { scroll: false });
     }
-  }, [tabParam, loadingStats, preferredDefaultTab, buildTabUrl, router]);
+  }, [tabParam, loadingStats, preferredDefaultTab, pathname, searchParams, router]);
 
   useEffect(() => {
     if (tabParam === 'settings') {
