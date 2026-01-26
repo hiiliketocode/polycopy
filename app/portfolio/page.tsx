@@ -497,6 +497,12 @@ function ProfilePageContent() {
     const checkAuth = async () => {
       setLoading(true);
 
+      // Timeout safeguard - ensure loading is cleared after 10 seconds
+      const timeoutId = setTimeout(() => {
+        console.warn('Auth check timeout - clearing loading state');
+        setLoading(false);
+      }, 10000);
+
       try {
         const { session } = await getOrRefreshSession();
 
@@ -513,6 +519,7 @@ function ProfilePageContent() {
         triggerLoggedOut('auth_error');
         router.push('/login');
       } finally {
+        clearTimeout(timeoutId);
         setLoading(false);
       }
     };

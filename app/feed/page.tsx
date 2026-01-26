@@ -1358,16 +1358,32 @@ export default function FeedPage() {
   // Auth check
   useEffect(() => {
     const checkAuth = async () => {
-      const { session } = await getOrRefreshSession();
+      setLoading(true);
       
-      if (!session?.user) {
-        triggerLoggedOut('session_missing');
+      // Timeout safeguard - ensure loading is cleared after 10 seconds
+      const timeoutId = setTimeout(() => {
+        console.warn('Auth check timeout - clearing loading state');
+        setLoading(false);
+      }, 10000);
+      
+      try {
+        const { session } = await getOrRefreshSession();
+        
+        if (!session?.user) {
+          triggerLoggedOut('session_missing');
+          router.push('/login');
+          return;
+        }
+        
+        setUser(session.user);
+      } catch (err) {
+        console.error('Auth error:', err);
+        triggerLoggedOut('auth_error');
         router.push('/login');
-        return;
+      } finally {
+        clearTimeout(timeoutId);
+        setLoading(false);
       }
-      
-      setUser(session.user);
-      setLoading(false);
     };
     
     checkAuth();
