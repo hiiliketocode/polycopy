@@ -981,8 +981,9 @@ function ProfilePageContent() {
       setPortfolioStatsLoading(true);
       setPortfolioStatsError(null);
       try {
-        // Always request fresh data on page load (API will return cached immediately if available, then refresh in background)
-        const response = await fetch(`/api/portfolio/stats?userId=${user.id}&forceRefresh=true`, { cache: 'no-store' });
+        // Always request fresh data on page load
+        // Use clearCache=true to force delete cache and recalculate from scratch
+        const response = await fetch(`/api/portfolio/stats?userId=${user.id}&forceRefresh=true&clearCache=true`, { cache: 'no-store' });
         if (!response.ok) {
           const message = await response.text();
           throw new Error(message || 'Failed to fetch portfolio stats');

@@ -734,8 +734,18 @@ export async function GET(request: Request) {
     }
 
     const forceRefresh = searchParams.get('forceRefresh') === 'true'
+    const clearCache = searchParams.get('clearCache') === 'true'
 
     const supabase = createService()
+    
+    // If clearCache is true, delete the cache entry first to force fresh calculation
+    if (clearCache) {
+      console.log(`🗑️ Clearing portfolio summary cache for user ${requestedUserId.substring(0, 8)}`)
+      await supabase
+        .from('user_portfolio_summary')
+        .delete()
+        .eq('user_id', requestedUserId)
+    }
     
     // Check for cached portfolio summary
     const { data: cachedSummary, error: cacheError } = await supabase
