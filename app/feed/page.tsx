@@ -1374,9 +1374,18 @@ export default function FeedPage() {
         
         if (!isMounted) return;
         
-        if (!session?.user) {
+        // Validate session is actually valid
+        if (!session?.user || !session.access_token) {
           triggerLoggedOut('session_missing');
           // Clear loading immediately before redirect
+          setLoading(false);
+          router.push('/login');
+          return;
+        }
+
+        // Check if session is expired
+        if (session.expires_at && session.expires_at * 1000 < Date.now()) {
+          triggerLoggedOut('session_missing');
           setLoading(false);
           router.push('/login');
           return;
