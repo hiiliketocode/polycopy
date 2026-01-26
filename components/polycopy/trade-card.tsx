@@ -680,7 +680,8 @@ export function TradeCard({
     "h-7 px-2.5 text-[11px] font-semibold border shadow-[0_1px_0_rgba(15,23,42,0.06)]"
   const statusBadgeClass = cn(
     badgeBaseClass,
-    badgeType === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200 h-auto min-h-[64px] justify-start",
+    badgeType === "live" &&
+      "bg-emerald-50 text-emerald-700 border-emerald-200 h-auto min-h-[22px] py-0.5 pr-2 pl-2 justify-start",
     badgeType === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
     badgeType === "resolved" && "bg-rose-50 text-rose-700 border-rose-200",
     badgeType === "scheduled" && "bg-amber-50 text-amber-700 border-amber-200",
@@ -697,6 +698,10 @@ export function TradeCard({
       if (trimmed.includes('$') || /^[A-Z]{2,5}\s+\$/.test(trimmed)) {
         return trimmed;
       }
+      // If it already contains brackets (time info), use it as-is
+      if (trimmed.includes('(') && trimmed.includes(')')) {
+        return trimmed;
+      }
       // If it's not a sports score format (doesn't contain numbers separated by dash or colon), use it
       if (!/^\d+\s*[-:]\s*\d+/.test(trimmed) && trimmed.length > 0) {
         return trimmed;
@@ -708,16 +713,24 @@ export function TradeCard({
       return null;
     }
     
+    let baseScore: string;
     // For live badge, show team abbreviations if available
     if (badgeType === "live" && (homeTeam || awayTeam)) {
       const homeAbbrev = homeTeam ? abbreviateTeamName(homeTeam) : "HOME";
       const awayAbbrev = awayTeam ? abbreviateTeamName(awayTeam) : "AWAY";
-      return `${awayAbbrev} ${badgeScore.away ?? "-"} - ${badgeScore.home ?? "-"} ${homeAbbrev}`;
+      baseScore = `${awayAbbrev} ${badgeScore.away ?? "-"} - ${badgeScore.home ?? "-"} ${homeAbbrev}`;
+    } else {
+      // Default format for other badge types
+      baseScore = `${badgeScore.home ?? "-"} - ${badgeScore.away ?? "-"}`;
     }
     
-    // Default format for other badge types
-    return `${badgeScore.home ?? "-"} - ${badgeScore.away ?? "-"}`;
-  }, [badgeScore, badgeType, homeTeam, awayTeam, liveScore])
+    // Add time in brackets if available for live badges
+    if (badgeType === "live" && gameTimeInfo) {
+      return `${baseScore} (${gameTimeInfo})`;
+    }
+    
+    return baseScore;
+  }, [badgeScore, badgeType, homeTeam, awayTeam, liveScore, gameTimeInfo])
 
   const statusLabel =
     badgeType === "live"
@@ -728,22 +741,51 @@ export function TradeCard({
           ? "Resolved"
           : "Scheduled"
 
+  // Persist last non-empty score to prevent flicker between polling intervals
+  // Only update when score numbers or period changes, not on every clock tick
+  const stableScoreRef = useRef<string | null>(null)
+  const lastScoreNumbersRef = useRef<string | null>(null)
+  const lastPeriodRef = useRef<string | null>(null)
+  
+  useEffect(() => {
+    if (scoreText) {
+      // Extract score numbers (e.g., "VGK 0 - 1 OTT")
+      const scoreMatch = scoreText.match(/^([^-]+-\s*\d+|\d+\s*-[^-]+)/);
+      const scoreNumbers = scoreMatch ? scoreMatch[0] : null;
+      
+      // Extract period from time part if present (e.g., "Q1", "Q2", "P1", "OT")
+      const timeMatch = scoreText.match(/\(([^)]+)\)/);
+      const timePart = timeMatch ? timeMatch[1] : null;
+      const periodMatch = timePart?.match(/^(Q[1-4]|P[1-3]|OT|I\d+)/);
+      const currentPeriod = periodMatch ? periodMatch[1] : null;
+      
+      // Only update if score numbers changed or period changed
+      if (scoreNumbers !== lastScoreNumbersRef.current || currentPeriod !== lastPeriodRef.current) {
+        stableScoreRef.current = scoreText;
+        lastScoreNumbersRef.current = scoreNumbers;
+        lastPeriodRef.current = currentPeriod;
+      }
+    } else if (!stableScoreRef.current) {
+      // Initialize with null if we don't have a stable value yet
+      stableScoreRef.current = null;
+    }
+  }, [scoreText])
+  
+  // Always use stable score if available to prevent flashing
+  const displayScoreText = stableScoreRef.current || scoreText
+
   const liveBadgeContent = (
-    <div className="flex min-h-[48px] w-full items-center gap-3 px-2 py-1.5">
+    <div className="flex w-full flex-col items-center justify-center gap-0">
       <span
-        className={cn(
-          "font-semibold text-xs leading-tight whitespace-nowrap transition-opacity",
-          scoreText ? "opacity-100" : "opacity-0",
-        )}
+        className="font-semibold text-xs leading-tight whitespace-nowrap text-center"
         aria-live="polite"
         aria-atomic="true"
       >
-        {scoreText ?? "00 - 00"}
+        {displayScoreText ?? "—"}
       </span>
-      <div className="flex min-w-[54px] flex-col justify-center text-[10px] leading-tight">
-        <span>{statusLabel}</span>
-        {gameTimeInfo ? <span className="opacity-90">{gameTimeInfo}</span> : null}
-      </div>
+      <span className="font-semibold text-[9px] leading-none text-emerald-800 text-center">
+        {statusLabel}
+      </span>
     </div>
   )
 

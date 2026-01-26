@@ -17,7 +17,7 @@ import { EmptyState } from '@/components/polycopy/empty-state';
 import ClosePositionModal from '@/components/orders/ClosePositionModal';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { RefreshCw, Activity, Filter, Check, Search, ChevronDown, ArrowUp } from 'lucide-react';
+import { RefreshCw, Activity, Filter, Check, Search, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getESPNScoresForTrades, getScoreDisplaySides, getFallbackEspnUrl } from '@/lib/espn/scores';
 import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
@@ -201,7 +201,6 @@ const defaultFilters: FilterState = {
 
 const LOW_BALANCE_TOOLTIP =
   'Quick trades use your Polymarket USDC balance. Add funds before retrying this order.';
-const FEED_AUTO_REFRESH_MS = 60_000;
 const VISIBLE_REFRESH_INTERVAL_MS = 1000;
 const SCROLL_STOP_DEBOUNCE_MS = 200;
 
@@ -534,7 +533,6 @@ export default function FeedPage() {
   const [showAllTraders, setShowAllTraders] = useState(false);
   const filtersPanelRef = useRef<HTMLDivElement | null>(null);
   const feedListRef = useRef<HTMLDivElement | null>(null);
-  const [showBackToTop, setShowBackToTop] = useState(false);
   
   // Data state
   const [allTrades, setAllTrades] = useState<FeedTrade[]>([]);
@@ -602,7 +600,6 @@ export default function FeedPage() {
     typeof cashBalance === 'number' &&
     cashBalance < 1;
   const sellToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoRefreshInFlightRef = useRef(false);
   const loadingFeedRef = useRef(false);
   const isRefreshingRef = useRef(false);
   const espnCacheUpdatedRef = useRef(new Set<string>());
@@ -2704,26 +2701,6 @@ export default function FeedPage() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    const intervalId = window.setInterval(() => {
-      if (autoRefreshInFlightRef.current) return;
-      if (loadingFeedRef.current || isRefreshingRef.current) return;
-      autoRefreshInFlightRef.current = true;
-      fetchFeed({
-        userOverride: user,
-        merge: true,
-        preserveDisplayCount: true,
-        preserveScroll: true,
-        silent: true,
-      }).finally(() => {
-        autoRefreshInFlightRef.current = false;
-      });
-    }, FEED_AUTO_REFRESH_MS);
-
-    return () => window.clearInterval(intervalId);
-  }, [user, fetchFeed]);
-
-  useEffect(() => {
     if (typeof document === 'undefined') return;
     const handleVisibilityChange = () => {
       setIsDocumentVisible(document.visibilityState === 'visible');
@@ -3007,16 +2984,6 @@ export default function FeedPage() {
       }
     };
   }, [startLiveIdleRefresh, stopLiveIdleRefresh]);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      setShowBackToTop(window.scrollY > 320);
-    };
-
-    handleScroll();
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
 
   // Real-time polling for expanded trade cards (Priority 2 enhancement)
   useEffect(() => {
@@ -3790,7 +3757,10 @@ export default function FeedPage() {
                           }
                         : undefined;
                     
-                    const tradeKey = String(trade.id);
+                    // Create a unique key by combining multiple fields to prevent duplicate keys
+                    // This ensures uniqueness even if buildFeedTradeId creates duplicate IDs
+                    const uniqueKey = `${trade.id}-${trade.trader.wallet}-${trade.trade.timestamp}-${trade.trade.side}-${trade.trade.outcome}`;
+                    const tradeKey = uniqueKey;
                     const tradeAnchorId = `trade-card-${trade.id}`;
                     const pinKey = buildPinnedTradeKey(trade);
                     const isPinned = pinKey ? pinnedTradeIds.has(pinKey) : false;
@@ -3892,24 +3862,6 @@ export default function FeedPage() {
 
       </div>
 
-      {showBackToTop && (
-        <div
-          className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,_0px)+80px)] md:bottom-6 z-40 pointer-events-none"
-        >
-          <div className="max-w-[1200px] mx-auto px-4 md:px-6">
-            <div className="md:w-[63%] md:mx-auto flex justify-end">
-              <button
-                type="button"
-                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg transition hover:bg-slate-800"
-                aria-label="Back to top"
-              >
-                <ArrowUp className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       <TradeExecutionNotifications
         notifications={tradeNotifications}
         onNavigate={handleNavigateToTrade}

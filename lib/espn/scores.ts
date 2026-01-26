@@ -674,7 +674,7 @@ function normalizeTeamTokens(value: string): string[] {
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
-    .filter(token => token.length > 1 && !TEAM_NAME_STOP_WORDS.has(token));
+    .filter(token => token.length > 0 && !TEAM_NAME_STOP_WORDS.has(token));
 }
 
 function buildTeamAbbrev(value: string): string {
@@ -706,6 +706,22 @@ function scoreTeamMatch(marketTeam: string, espnTeamName: string, espnAbbrev: st
   const marketTokens = normalizeTeamTokens(marketTeam);
   const espnTokens = normalizeTeamTokens(espnTeamName);
   if (marketTokens.length > 0 && espnTokens.length > 0) {
+    // For tennis players, check if last names match (common pattern: "Lorenzo Musetti" vs "L. Musetti")
+    const marketLastToken = marketTokens[marketTokens.length - 1];
+    const espnLastToken = espnTokens[espnTokens.length - 1];
+    if (marketLastToken && espnLastToken && marketLastToken === espnLastToken && marketTokens.length > 1 && espnTokens.length > 0) {
+      // Last name matches, give it a score boost
+      const firstNameMatch = marketTokens[0] && espnTokens[0] && 
+        (marketTokens[0].startsWith(espnTokens[0]) || espnTokens[0].startsWith(marketTokens[0]) || 
+         marketTokens[0][0] === espnTokens[0][0]);
+      if (firstNameMatch || espnTokens[0]?.length === 1) {
+        // First name initial matches or ESPN has just an initial
+        return 5;
+      }
+      // Last name matches but first name doesn't - still a good match
+      return 3;
+    }
+
     const forwardMatch = marketTokens.every(token =>
       espnTokens.some(espnToken => espnToken === token || espnToken.startsWith(token) || token.startsWith(espnToken))
     );
@@ -1142,6 +1158,44 @@ export async function getESPNScoresForTrades(
   return scoreMap;
 }
 
+// Map sport keys to their ESPN URL paths (for scoreboard URLs)
+const SPORT_KEY_TO_URL_PATH: Record<string, string> = {
+  nfl: 'nfl',
+  nba: 'nba',
+  mlb: 'mlb',
+  nhl: 'nhl',
+  wnba: 'wnba',
+  ncaaf: 'college-football',
+  ncaab: 'mens-college-basketball',
+  ncaaw: 'womens-college-basketball',
+  tennis_atp: 'tennis',
+  tennis_wta: 'tennis',
+  golf_pga: 'golf',
+  golf_lpga: 'golf',
+  mma_ufc: 'mma',
+  boxing: 'boxing',
+  // Soccer leagues all use 'soccer'
+  soccer_mls: 'soccer',
+  soccer_epl: 'soccer',
+  soccer_eng_champ: 'soccer',
+  soccer_laliga: 'soccer',
+  soccer_seriea: 'soccer',
+  soccer_bundesliga: 'soccer',
+  soccer_ligue1: 'soccer',
+  soccer_eredivisie: 'soccer',
+  soccer_primeira: 'soccer',
+  soccer_scottish_prem: 'soccer',
+  soccer_uefa_champions: 'soccer',
+  soccer_uefa_europa: 'soccer',
+  soccer_uefa_conference: 'soccer',
+  soccer_liga_mx: 'soccer',
+  soccer_fifa_world_cup: 'soccer',
+  soccer_fifa_womens_world_cup: 'soccer',
+  soccer_uefa_euro: 'soccer',
+  soccer_copa_libertadores: 'soccer',
+  soccer_copa_sudamericana: 'soccer',
+};
+
 // Generate a fallback ESPN URL based on market information
 export function getFallbackEspnUrl(params: {
   title?: string | null;
@@ -1164,8 +1218,11 @@ export function getFallbackEspnUrl(params: {
   // Use the first sport key in the group
   const sportKey = sportGroups[0];
   
+  // Map sport key to URL path (e.g., tennis_atp -> tennis)
+  const urlPath = SPORT_KEY_TO_URL_PATH[sportKey] || sportKey;
+  
   // Build ESPN URL
-  let url = `https://www.espn.com/${sportKey}/scoreboard`;
+  let url = `https://www.espn.com/${urlPath}/scoreboard`;
   
   // Add date if provided
   if (dateHint) {

@@ -688,7 +688,7 @@ function DiscoverPageContent() {
           .from('follows')
           .delete()
           .eq('user_id', user.id)
-          .eq('trader_wallet', walletLower);
+          .ilike('trader_wallet', walletLower);
 
         if (deleteError) {
           console.error('Error unfollowing trader:', deleteError);

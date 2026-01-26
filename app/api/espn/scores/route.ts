@@ -195,20 +195,39 @@ export async function GET(request: NextRequest) {
       endpointUrl.searchParams.set('dates', dateKey);
     }
 
-    const response = await fetch(endpointUrl.toString(), {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Polycopy/1.0)',
-      },
-      cache: 'no-store',
-    });
+    let upstreamStatus: number | undefined;
+    let data: ESPNResponse | null = null;
 
-    if (!response.ok) {
-      throw new Error(`ESPN API returned ${response.status}`);
+    try {
+      const response = await fetch(endpointUrl.toString(), {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; Polycopy/1.0)',
+        },
+        cache: 'no-store',
+      });
+      upstreamStatus = response.status;
+
+      if (!response.ok) {
+        throw new Error(`ESPN API returned ${response.status}`);
+      }
+
+      data = (await response.json()) as ESPNResponse;
+    } catch (err) {
+      console.warn(`[ESPN] scoreboard fetch failed for ${sport} (${dateKey || 'today'}):`, err);
+      return NextResponse.json(
+        {
+          games: [],
+          events: [],
+          source: 'espn',
+          status: 'unavailable',
+          upstreamStatus: upstreamStatus ?? 'fetch_error',
+          date: dateKey || undefined,
+        },
+        { status: 200, headers: { 'Cache-Control': 'no-store' } }
+      );
     }
-
-    const data: ESPNResponse = await response.json();
     
-    console.log(`✅ Fetched ${data.events?.length || 0} ${sport.toUpperCase()} games`);
+    console.log(`✅ Fetched ${data?.events?.length || 0} ${sport.toUpperCase()} games`);
 
     const getCompetitorName = (competitor: ESPNCompetitor) =>
       competitor?.team?.name ||
@@ -338,7 +357,14 @@ export async function GET(request: NextRequest) {
       const eventLink = normalizeEspnLink(
         pickEventLink(event.links) || pickEventLink(competition.links)
       );
-      const resolvedLink = eventLink || buildFallbackGameUrl(sport, event.id);
+      
+      // For tennis, use competition ID (match ID) instead of event ID (tournament ID)
+      // For other sports, event.id is usually the game/match ID
+      const gameId = (sport.startsWith('tennis_') && competition?.id) 
+        ? competition.id 
+        : event.id;
+      
+      const resolvedLink = eventLink || buildFallbackGameUrl(sport, gameId);
       const statusDetail =
         competition.status?.type?.shortDetail ||
         event.status?.type?.shortDetail ||
@@ -347,7 +373,7 @@ export async function GET(request: NextRequest) {
         undefined;
 
       return {
-        id: event.id,
+        id: gameId,
         name,
         shortName,
         link: resolvedLink,

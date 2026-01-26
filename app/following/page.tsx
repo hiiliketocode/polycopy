@@ -219,7 +219,7 @@ function FollowingPageContent() {
           .from('follows')
           .delete()
           .eq('user_id', user.id)
-          .eq('trader_wallet', walletLower);
+          .ilike('trader_wallet', walletLower);
 
         if (deleteError) throw deleteError;
 
@@ -322,7 +322,7 @@ function FollowingPageContent() {
                         profit: trader.pnl,
                         volume: trader.volume,
                         winRate: trader.winRate || 0,
-                        isFollowing: true,
+                        isFollowing: followedWallets.has(trader.wallet.toLowerCase()),
                       }}
                       onFollowToggle={handleFollowChange}
                     />

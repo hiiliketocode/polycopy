@@ -53,9 +53,23 @@ import {
   Info,
   ArrowUpRight,
   Share2,
+  Loader2,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import {
+  ResponsiveContainer,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip as RechartsTooltip,
+  AreaChart,
+  BarChart,
+  Bar,
+  ReferenceLine,
+  Area,
+  Cell,
+} from 'recharts';
 
 // Types for copied trades
 interface CopiedTrade {
@@ -113,8 +127,18 @@ interface PortfolioStats {
   roi: number;
   winRate: number;
   totalTrades: number;
+  totalBuyTrades?: number;
+  totalSellTrades?: number;
   openTrades: number;
   closedTrades: number;
+  winningPositions?: number;
+  losingPositions?: number;
+}
+
+interface RealizedPnlRow {
+  date: string;
+  realized_pnl: number;
+  pnl_to_date: number | null;
 }
 
 // Helper: Format relative time
@@ -204,6 +228,37 @@ function isSettlementPrice(value: number | null | undefined) {
 function buildLiveMarketKey(marketId: string, outcome: string) {
   return `${marketId}:${outcome.toUpperCase()}`;
 }
+
+// Formatting functions for charts and stats
+const formatSignedCurrency = (amount: number, decimals = 0) => {
+  const formatted = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(Math.abs(amount));
+  if (amount > 0) return `+${formatted}`;
+  if (amount < 0) return `-${formatted}`;
+  return formatted;
+};
+
+const formatCompactCurrency = (amount: number) => {
+  const abs = Math.abs(amount);
+  const sign = amount > 0 ? '+' : amount < 0 ? '-' : '';
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
+  return `${sign}$${abs.toFixed(0)}`;
+};
+
+const formatAverageDaily = (amount: number) => {
+  const abs = Math.abs(amount);
+  const sign = amount > 0 ? '+' : amount < 0 ? '-' : '';
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(2)}K`;
+  return formatSignedCurrency(amount, 2);
+};
+
+const toDateObj = (dateStr: string) => new Date(`${dateStr}T00:00:00Z`);
 
 function formatCompactNumber(value: number) {
   const absValue = Math.abs(value);
@@ -310,6 +365,13 @@ function ProfilePageContent() {
   const [portfolioStatsLoading, setPortfolioStatsLoading] = useState(false);
   const [portfolioStatsError, setPortfolioStatsError] = useState<string | null>(null);
   
+  // Realized PnL chart state
+  const [realizedPnlRows, setRealizedPnlRows] = useState<RealizedPnlRow[]>([]);
+  const [loadingRealizedPnl, setLoadingRealizedPnl] = useState(false);
+  const [realizedPnlError, setRealizedPnlError] = useState<string | null>(null);
+  const [pnlWindow, setPnlWindow] = useState<'1D' | '7D' | '30D' | '90D' | '1Y' | 'ALL'>('90D');
+  const [pnlView, setPnlView] = useState<'daily' | 'cumulative'>('daily');
+  
   // Quick trades (orders) state  
   const [quickTrades, setQuickTrades] = useState<OrderRow[]>([]);
   const [loadingQuickTrades, setLoadingQuickTrades] = useState(true);
@@ -336,6 +398,7 @@ function ProfilePageContent() {
   const [categoryDistribution, setCategoryDistribution] = useState<CategoryDistribution[]>([]);
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [hoveredBucket, setHoveredBucket] = useState<{ range: string; count: number; percentage: number; x: number; y: number } | null>(null);
+  const [showAllTraders, setShowAllTraders] = useState(false);
   const [topTradersStats, setTopTradersStats] = useState<Array<{
     trader_id: string;
     trader_name: string;
@@ -825,9 +888,13 @@ function ProfilePageContent() {
           totalVolume: data.totalVolume ?? 0,
           roi: data.roi ?? 0,
           winRate: data.winRate ?? 0,
-          totalTrades: data.totalTrades ?? 0,
+          totalTrades: data.totalTrades ?? data.totalBuyTrades ?? 0,
+          totalBuyTrades: data.totalBuyTrades ?? data.totalTrades ?? 0,
+          totalSellTrades: data.totalSellTrades ?? 0,
           openTrades: data.openTrades ?? 0,
           closedTrades: data.closedTrades ?? 0,
+          winningPositions: data.winningPositions ?? 0,
+          losingPositions: data.losingPositions ?? 0,
         });
       } catch (err: any) {
         console.error('Error fetching portfolio stats:', err);
@@ -838,6 +905,104 @@ function ProfilePageContent() {
     };
 
     fetchPortfolioStats();
+  }, [user]);
+
+  // Fetch realized PnL daily series
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadRealizedPnl = async () => {
+      if (!cancelled) {
+        setLoadingRealizedPnl(true);
+        setRealizedPnlError(null);
+      }
+      try {
+        const response = await fetch(`/api/portfolio/realized-pnl?userId=${user.id}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch realized PnL`);
+        }
+        const data = await response.json();
+        const daily = Array.isArray(data?.daily)
+          ? data.daily
+              .map((row: any) => ({
+                date: row?.date,
+                realized_pnl: Number(row?.realized_pnl ?? 0),
+                pnl_to_date:
+                  row?.pnl_to_date === null || row?.pnl_to_date === undefined
+                    ? null
+                    : Number(row.pnl_to_date),
+              }))
+              .filter((row: RealizedPnlRow) => row.date && Number.isFinite(row.realized_pnl))
+              .sort((a: RealizedPnlRow, b: RealizedPnlRow) => new Date(a.date).getTime() - new Date(b.date).getTime())
+          : [];
+        if (!cancelled) {
+          setRealizedPnlRows(daily);
+        }
+      } catch (err: any) {
+        if (controller.signal.aborted) return;
+        console.error('Error fetching realized PnL:', err);
+        if (!cancelled) {
+          setRealizedPnlRows([]);
+          setRealizedPnlError(err?.message || 'Failed to load realized PnL');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingRealizedPnl(false);
+        }
+      }
+    };
+
+    loadRealizedPnl();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [user]);
+
+  // Fetch top traders stats (realized-only, FIFO position-based)
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadTopTraders = async () => {
+      try {
+        const response = await fetch(`/api/portfolio/top-traders`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch top traders stats`);
+        }
+        const data = await response.json();
+        if (!cancelled) {
+          setTopTradersStats(Array.isArray(data.traders) ? data.traders : []);
+        }
+      } catch (err: any) {
+        if (controller.signal.aborted) return;
+        console.error('Error fetching top traders stats:', err);
+        if (!cancelled) {
+          setTopTradersStats([]);
+        }
+      }
+    };
+
+    loadTopTraders();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [user]);
 
   // Fetch live market data (prices and scores)
@@ -1030,125 +1195,7 @@ function ProfilePageContent() {
 
     setCategoryDistribution(categoryData);
 
-    // Calculate Top Traders Stats (realized-only)
-    const traderMap = new Map<string, {
-      trader_id: string;
-      trader_name: string;
-      trader_wallet: string;
-      trades: CopiedTrade[];
-    }>();
-
-    copiedTrades.forEach(trade => {
-      const key = trade.trader_wallet || '';
-      if (!key) return;
-      
-      if (!traderMap.has(key)) {
-        traderMap.set(key, {
-          trader_id: trade.trader_wallet || '', // Use wallet as ID
-          trader_name: trade.trader_username || 'Unknown',
-          trader_wallet: trade.trader_wallet || '',
-          trades: []
-        });
-      }
-      
-      traderMap.get(key)!.trades.push(trade);
-    });
-
-    const getInvested = (trade: CopiedTrade) => {
-      if (trade.amount_invested !== null && trade.amount_invested !== undefined) return trade.amount_invested;
-      if (trade.entry_size && trade.price_when_copied) return trade.entry_size * trade.price_when_copied;
-      return 0;
-    };
-
-    const getRealizedExitPrice = (trade: CopiedTrade) => {
-      const exit = trade.user_exit_price;
-      if (trade.user_closed_at && exit !== null && exit !== undefined) {
-        return exit;
-      }
-
-      if (trade.market_resolved) {
-        if (exit !== null && exit !== undefined) return exit;
-        if (trade.current_price !== null && trade.current_price !== undefined) return trade.current_price;
-      }
-
-      return null;
-    };
-
-    const getEntryPrice = (trade: CopiedTrade) =>
-      trade.price_when_copied !== null && trade.price_when_copied !== undefined
-        ? trade.price_when_copied
-        : null;
-
-    const isRealizedTrade = (trade: CopiedTrade) => {
-      const entry = getEntryPrice(trade);
-      const exit = getRealizedExitPrice(trade);
-      return entry !== null && exit !== null;
-    };
-
-    const topTraders = Array.from(traderMap.values())
-      .map((trader) => {
-        const realizedTrades = trader.trades.filter(isRealizedTrade);
-        if (realizedTrades.length === 0) return null;
-
-        const totalInvested = realizedTrades.reduce((sum, t) => sum + getInvested(t), 0);
-
-        const pnl = realizedTrades.reduce((sum, t) => {
-          const entry = getEntryPrice(t);
-          const exit = getRealizedExitPrice(t);
-          if (entry === null || exit === null || entry === 0) return sum;
-
-          const positionSize = getInvested(t) / entry; // contracts
-          const tradeResult = (exit - entry) * positionSize;
-          return sum + tradeResult;
-        }, 0);
-
-        const roi = totalInvested > 0 ? (pnl / totalInvested) * 100 : 0;
-
-        const wins = realizedTrades.filter((t) => {
-          const entry = getEntryPrice(t);
-          const exit = getRealizedExitPrice(t);
-          if (entry === null || exit === null) return false;
-          return exit > entry;
-        }).length;
-
-        const winRate = realizedTrades.length > 0 ? (wins / realizedTrades.length) * 100 : 0;
-
-        return {
-          trader_id: trader.trader_id,
-          trader_name: trader.trader_name,
-          trader_wallet: trader.trader_wallet,
-          copy_count: realizedTrades.length,
-          total_invested: totalInvested,
-          pnl,
-          roi,
-          win_rate: winRate
-        };
-      })
-      .filter((trader): trader is {
-        trader_id: string;
-        trader_name: string;
-        trader_wallet: string;
-        copy_count: number;
-        total_invested: number;
-        pnl: number;
-        roi: number;
-        win_rate: number;
-      } => Boolean(trader))
-      .sort((a, b) => b.total_invested - a.total_invested);
-
-    console.log('📊 Top Traders Stats Calculated:', {
-      tradersCount: topTraders.length,
-      topTrader: topTraders[0] ? {
-        name: topTraders[0].trader_name,
-        copies: topTraders[0].copy_count,
-        invested: topTraders[0].total_invested.toFixed(2),
-        pnl: topTraders[0].pnl.toFixed(2),
-        roi: topTraders[0].roi.toFixed(1) + '%',
-        winRate: topTraders[0].win_rate.toFixed(1) + '%'
-      } : 'none'
-    });
-
-    setTopTradersStats(topTraders);
+    // Top Traders Stats will be fetched from API (using FIFO position-based calculation)
   }, [copiedTrades]);
 
 
@@ -1235,23 +1282,110 @@ function ProfilePageContent() {
 
   const fallbackStats = calculateStats();
   const userStats = portfolioStats ?? fallbackStats;
-  
-  // Debug logging to see which stats are being used
-  console.log('📊 Stats Source:', {
-    usingAPI: portfolioStats !== null,
-    usingFallback: portfolioStats === null,
-    apiStats: portfolioStats ? {
-      totalPnl: portfolioStats.totalPnl.toFixed(2),
-      realizedPnl: portfolioStats.realizedPnl.toFixed(2),
-      unrealizedPnl: portfolioStats.unrealizedPnl.toFixed(2),
-      volume: portfolioStats.totalVolume.toFixed(2)
-    } : 'null',
-    fallbackStats: {
-      totalPnl: fallbackStats.totalPnl.toFixed(2),
-      volume: fallbackStats.totalVolume.toFixed(2)
-    },
-    displayedPnl: userStats.totalPnl.toFixed(2)
-  });
+
+  // PnL window options
+  const pnlWindowOptions = [
+    { key: '1D' as const, label: '1 Day', days: 1 },
+    { key: '7D' as const, label: '7 Days', days: 7 },
+    { key: '30D' as const, label: '30 Days', days: 30 },
+    { key: '90D' as const, label: '90 Days', days: 90 },
+    { key: '1Y' as const, label: '1 Year', days: 365 },
+    { key: 'ALL' as const, label: 'All Time', days: null },
+  ];
+
+  const pnlWindowLabel = useMemo(
+    () => pnlWindowOptions.find((option) => option.key === pnlWindow)?.label ?? '90 Days',
+    [pnlWindow]
+  );
+
+  // Filter realized PnL rows by window
+  const realizedWindowRows = useMemo(() => {
+    if (realizedPnlRows.length === 0) return [];
+    const option = pnlWindowOptions.find((entry) => entry.key === pnlWindow) ?? pnlWindowOptions[3];
+    const lastIndex = realizedPnlRows.length - 1;
+    let anchorDate = toDateObj(realizedPnlRows[lastIndex].date);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (realizedPnlRows[lastIndex].date === todayStr && lastIndex > 0) {
+      anchorDate = toDateObj(realizedPnlRows[lastIndex - 1].date);
+    }
+
+    let startDate: Date | null = null;
+    let endDate: Date | null = null;
+
+    if (option.key === 'ALL') {
+      startDate = null;
+      endDate = null;
+    } else if (option.days !== null) {
+      const start = new Date(Date.UTC(
+        anchorDate.getUTCFullYear(),
+        anchorDate.getUTCMonth(),
+        anchorDate.getUTCDate()
+      ));
+      start.setUTCDate(start.getUTCDate() - (option.days - 1));
+      startDate = start;
+      endDate = anchorDate;
+    }
+
+    return realizedPnlRows
+      .filter((row) => {
+        const day = toDateObj(row.date);
+        if (startDate && day < startDate) return false;
+        if (endDate && day > endDate) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [realizedPnlRows, pnlWindow]);
+
+  // Build chart series
+  const realizedChartSeries = useMemo(() => {
+    let running = 0;
+    return realizedWindowRows.map((row) => {
+      running += row.realized_pnl;
+      return {
+        date: row.date,
+        dailyPnl: row.realized_pnl,
+        cumulativePnl: running,
+      };
+    });
+  }, [realizedWindowRows]);
+
+  // Calculate summary stats from chart data
+  const realizedSummary = useMemo(() => {
+    const totalPnl = realizedWindowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0);
+    const avgDaily = realizedWindowRows.length > 0 ? totalPnl / realizedWindowRows.length : 0;
+    const daysUp = realizedWindowRows.filter((row) => row.realized_pnl > 0).length;
+    const daysDown = realizedWindowRows.filter((row) => row.realized_pnl < 0).length;
+    const daysActive = realizedWindowRows.filter((row) => row.realized_pnl !== 0).length;
+    return { totalPnl, avgDaily, daysUp, daysDown, daysActive };
+  }, [realizedWindowRows]);
+
+  // Use portfolio stats (top card) as single source of truth for All Time realized P&L
+  // so the chart section Total P&L matches the top card when "All Time" is selected.
+  const chartSectionTotalPnl = pnlWindow === 'ALL' ? userStats.realizedPnl : realizedSummary.totalPnl;
+  const chartSectionAvgDaily =
+    pnlWindow === 'ALL' && realizedSummary.daysActive > 0
+      ? userStats.realizedPnl / realizedSummary.daysActive
+      : realizedSummary.avgDaily;
+
+  const realizedRangeLabel = useMemo(() => {
+    if (realizedWindowRows.length === 0) return pnlWindowLabel;
+    const start = new Date(`${realizedWindowRows[0].date}T00:00:00Z`);
+    const end = new Date(`${realizedWindowRows[realizedWindowRows.length - 1].date}T00:00:00Z`);
+    const format = (date: Date) =>
+      date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    return `${format(start)} - ${format(end)}`;
+  }, [realizedWindowRows, pnlWindowLabel]);
+
+  const dailyBarSize = useMemo(() => {
+    const length = realizedChartSeries.length;
+    if (length <= 1) return 56;
+    if (length <= 3) return 36;
+    if (length <= 7) return 24;
+    if (length <= 14) return 18;
+    return 10;
+  }, [realizedChartSeries.length]);
+
+  const dailyBarGap = realizedChartSeries.length <= 2 ? '10%' : '25%';
 
   const tradeStats = useMemo(() => {
     const windowDays = 30;
@@ -2593,148 +2727,192 @@ function ProfilePageContent() {
             </div>
           )}
 
-          {/* User Profile Card */}
-          <Card className="bg-white border-slate-200 p-4 sm:p-8">
-            <div className="flex flex-col lg:flex-row lg:items-start gap-6">
-              {/* Left side - Profile info */}
-              <div className="flex flex-col items-center lg:flex-row lg:items-start gap-4 flex-1">
-                <Avatar className="h-20 w-20 bg-gradient-to-br from-yellow-400 to-orange-500">
-                  <AvatarFallback className="text-2xl font-bold text-white bg-transparent">
+          {/* User Profile Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+            <Avatar className="h-16 w-16 border-2 border-white shadow-md flex-shrink-0 bg-gradient-to-br from-yellow-400 to-orange-500">
+              <AvatarFallback className="text-white text-xl font-semibold bg-transparent">
+                {user?.email?.charAt(0).toUpperCase() || 'U'}
+              </AvatarFallback>
+            </Avatar>
+
+            <div className="flex-1 min-w-0">
+              <h1 className="text-3xl font-semibold text-slate-900 mb-1">
+                {profile?.trading_wallet_address && polymarketUsername
+                  ? polymarketUsername.startsWith('0x') && polymarketUsername.length > 20
+                    ? truncateAddress(polymarketUsername)
+                    : polymarketUsername
+                  : 'You'}
+              </h1>
+              {profile?.trading_wallet_address && (
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="text-sm font-mono text-slate-500">
+                    {truncateAddress(profile.trading_wallet_address)}
+                  </p>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(profile.trading_wallet_address)}
+                    className="text-slate-400 hover:text-slate-600 transition-colors"
+                    title="Copy wallet address"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                  <a
+                    href={`https://polymarket.com/profile/${profile.trading_wallet_address}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
+                    aria-label="Open on Polymarket"
+                  >
+                    <ArrowUpRight className="h-4 w-4" />
+                  </a>
+                </div>
+              )}
+              <Link 
+                href="/following"
+                className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 transition-colors"
+              >
+                <Avatar className="h-6 w-6 ring-2 ring-slate-100">
+                  <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-xs font-semibold">
                     {user?.email?.charAt(0).toUpperCase() || 'U'}
                   </AvatarFallback>
                 </Avatar>
-
-                <div className="flex-1 text-center lg:text-left">
-                  <h2 className="text-2xl font-bold text-slate-900 mb-1">
-                    {profile?.trading_wallet_address && polymarketUsername
-                      ? polymarketUsername.startsWith('0x') && polymarketUsername.length > 20
-                        ? truncateAddress(polymarketUsername)
-                        : polymarketUsername
-                      : 'You'}
-                  </h2>
-                  {profile?.trading_wallet_address && (
-                    <>
-                      <p className="text-sm font-mono text-slate-500 mt-2">
-                        {truncateAddress(profile.trading_wallet_address)}
-                      </p>
-                      <div className="flex items-center gap-3 mt-3 justify-center lg:justify-start">
-                        <a
-                          href={`https://polymarket.com/profile/${profile.trading_wallet_address}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-yellow-600 transition-colors"
-                        >
-                          View on Polymarket
-                          <ArrowUpRight className="h-3 w-3" />
-                        </a>
-                        <Button
-                          onClick={() => navigator.clipboard.writeText(profile.trading_wallet_address)}
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-slate-500 hover:text-slate-900"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                      {/* Following count for premium users */}
-                      <Link 
-                        href="/following"
-                        className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 justify-center lg:justify-start mt-3 transition-colors"
-                      >
-                        <Avatar className="h-7 w-7 ring-2 ring-slate-100">
-                          <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-xs font-semibold">
-                            {user?.email?.charAt(0).toUpperCase() || 'U'}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span>Following {followingCount} traders</span>
-                      </Link>
-                    </>
-                  )}
-
-                  {!profile?.trading_wallet_address && (
-                    <Link 
-                      href="/following"
-                      className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 justify-center lg:justify-start mt-2 transition-colors"
-                    >
-                      <Avatar className="h-9 w-9 ring-2 ring-slate-100">
-                        <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 text-xs font-semibold">
-                          {user?.email?.charAt(0).toUpperCase() || 'U'}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span>Following {followingCount} traders</span>
-                    </Link>
-                  )}
-
-                  {!profile?.trading_wallet_address && hasPremiumAccess && (
-                    <Button
-                      onClick={() => setIsConnectModalOpen(true)}
-                      className="mt-3 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold"
-                      size="sm"
-                    >
-                      <Wallet className="mr-2 h-4 w-4" />
-                      Connect Polymarket Account
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {/* Stats Grid */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="text-center p-4 bg-slate-50 rounded-lg">
-                  <div className="text-xs font-medium text-slate-500 mb-1">
-                    Total P&L
-                  </div>
-                  <div className={cn("text-2xl font-bold", userStats.totalPnl >= 0 ? "text-emerald-600" : "text-red-600")}>
-                    {userStats.totalPnl >= 0 ? "+" : ""}
-                    {formatCompactNumber(userStats.totalPnl)}
-                  </div>
-                </div>
-                <div className="text-center p-4 bg-slate-50 rounded-lg">
-                  <div className="text-xs font-medium text-slate-500 mb-1">
-                    ROI
-                  </div>
-                  <div className={cn("text-2xl font-bold", userStats.roi >= 0 ? "text-emerald-600" : "text-red-600")}>
-                    {userStats.roi >= 0 ? '+' : ''}{userStats.roi.toFixed(1)}%
-                  </div>
-                </div>
-                <div className="text-center p-4 bg-slate-50 rounded-lg">
-                  <div className="text-xs font-medium text-slate-500 mb-1">
-                    Volume
-                  </div>
-                  <div className="text-2xl font-bold text-slate-900">
-                    {formatCompactNumber(userStats.totalVolume)}
-                  </div>
-                </div>
-                <div className="text-center p-4 bg-slate-50 rounded-lg">
-                  <div className="text-xs font-medium text-slate-500 mb-1">
-                    Win Rate
-                  </div>
-                  <div className="text-2xl font-bold text-slate-900">
-                    {userStats.winRate.toFixed(1)}%
-                  </div>
-                </div>
-              </div>
-              {portfolioStatsLoading && (
-                <p className="text-xs text-slate-500 mt-2">Refreshing P&L with live prices…</p>
-              )}
-              {portfolioStatsError && (
-                <p className="text-xs text-red-600 mt-2">Stats unavailable: {portfolioStatsError}</p>
-              )}
+                <span>Following {followingCount} traders</span>
+              </Link>
             </div>
 
-            {/* Share Stats Button */}
-            {copiedTrades.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-slate-200">
+            <div className="flex items-center gap-3">
+              {copiedTrades.length > 0 && (
                 <Button
                   onClick={() => setIsShareStatsModalOpen(true)}
-                  variant="outline"
-                  className="w-full sm:w-auto bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-slate-900 font-semibold border-0"
+                  className="bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-slate-900 font-semibold shadow-sm"
                 >
                   <Share2 className="h-4 w-4 mr-2" />
                   Share My Stats
                 </Button>
+              )}
+              {!profile?.trading_wallet_address && hasPremiumAccess && (
+                <Button
+                  onClick={() => setIsConnectModalOpen(true)}
+                  className="bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900 font-semibold"
+                  size="sm"
+                >
+                  <Wallet className="mr-2 h-4 w-4" />
+                  Connect Wallet
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Portfolio Stats Card */}
+          <Card className="bg-white border-slate-200/80 shadow-sm">
+            <div className="p-6 space-y-6">
+              {/* Primary Metrics - Top Row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <p className="text-xs font-medium text-slate-500 tracking-wide mb-2">Total P&L</p>
+                  <p className={cn(
+                    'text-3xl font-bold tabular-nums',
+                    userStats.totalPnl > 0 ? 'text-emerald-600' : userStats.totalPnl < 0 ? 'text-red-600' : 'text-slate-900'
+                  )}>
+                    {formatSignedCurrency(userStats.totalPnl)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs font-medium text-slate-500 tracking-wide mb-2">ROI</p>
+                  <p className={cn(
+                    'text-3xl font-bold tabular-nums',
+                    userStats.roi > 0 ? 'text-emerald-600' : userStats.roi < 0 ? 'text-red-600' : 'text-slate-900'
+                  )}>
+                    {userStats.roi >= 0 ? '+' : ''}{userStats.roi.toFixed(1)}%
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs font-medium text-slate-500 tracking-wide mb-2">Volume</p>
+                  <p className="text-3xl font-bold tabular-nums text-slate-900">
+                    {formatCompactCurrency(userStats.totalVolume)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs font-medium text-slate-500 tracking-wide mb-2">Win Rate</p>
+                  <p className="text-3xl font-bold tabular-nums text-slate-900">
+                    {userStats.winRate.toFixed(1)}%
+                  </p>
+                </div>
               </div>
-            )}
+
+              {/* Divider */}
+              <div className="border-t border-slate-200"></div>
+
+              {/* Secondary Metrics - Bottom Row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <p className="text-xs font-medium text-slate-500 tracking-wide mb-2">Realized P&L</p>
+                  <p className={cn(
+                    'text-2xl font-semibold tabular-nums',
+                    userStats.realizedPnl > 0 ? 'text-emerald-600' : userStats.realizedPnl < 0 ? 'text-red-600' : 'text-slate-900'
+                  )}>
+                    {formatSignedCurrency(userStats.realizedPnl)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs font-medium text-slate-500 tracking-wide mb-2">Unrealized P&L</p>
+                  <p className={cn(
+                    'text-2xl font-semibold tabular-nums',
+                    userStats.unrealizedPnl > 0 ? 'text-emerald-600' : userStats.unrealizedPnl < 0 ? 'text-red-600' : 'text-slate-900'
+                  )}>
+                    {formatSignedCurrency(userStats.unrealizedPnl)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs font-medium text-slate-500 tracking-wide mb-2">Total Trades</p>
+                  <p className="text-2xl font-semibold tabular-nums text-slate-900">
+                    {userStats.totalTrades.toLocaleString()}
+                  </p>
+                  {userStats.totalSellTrades !== undefined && userStats.totalSellTrades > 0 && (
+                    <p className="text-xs text-slate-400 mt-1">
+                      {userStats.totalBuyTrades || userStats.totalTrades} buys · {userStats.totalSellTrades} sells
+                    </p>
+                  )}
+                </div>
+                <div className="text-center">
+                  <p className="text-xs font-medium text-slate-500 tracking-wide mb-2">Open Positions</p>
+                  <p className="text-2xl font-semibold tabular-nums text-slate-900">
+                    {userStats.openTrades.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Additional Position Stats */}
+              {(userStats.winningPositions !== undefined || userStats.losingPositions !== undefined) && 
+               (userStats.winningPositions! > 0 || userStats.losingPositions! > 0) && (
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-200">
+                  <div className="text-center">
+                    <p className="text-xs font-medium text-slate-500 tracking-wide mb-2">Winning Positions</p>
+                    <p className="text-xl font-semibold tabular-nums text-emerald-600">
+                      {userStats.winningPositions?.toLocaleString() || 0}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs font-medium text-slate-500 tracking-wide mb-2">Losing Positions</p>
+                    <p className="text-xl font-semibold tabular-nums text-red-600">
+                      {userStats.losingPositions?.toLocaleString() || 0}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Loading/Error States */}
+              {portfolioStatsLoading && (
+                <div className="flex items-center justify-center gap-2 text-sm text-slate-500 pt-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Refreshing P&L with live prices…</span>
+                </div>
+              )}
+              {portfolioStatsError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                  Stats unavailable: {portfolioStatsError}
+                </div>
+              )}
+            </div>
           </Card>
 
           {/* Tab Navigation */}
@@ -3176,25 +3354,25 @@ function ProfilePageContent() {
                                 <td className="px-3 py-2 align-top text-right w-[120px] md:w-[80px] md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
                                   <div className="mt-1 flex flex-col items-end gap-1">
                                     {(canCopyAgain || canSell) && (
-                                      <div className="flex items-center gap-2">
-                                        {canCopyAgain && (
-                                          <Button
-                                            onClick={() => handleCopyAgain(trade)}
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 px-3 text-[11px] font-semibold text-amber-700 border border-amber-300 bg-white hover:bg-amber-50 hover:text-amber-700"
-                                          >
-                                            Copy Again
-                                          </Button>
-                                        )}
+                                      <div className="flex w-full flex-col items-stretch gap-2 md:w-auto md:flex-row-reverse md:items-center md:justify-end md:gap-2">
                                         {canSell && (
                                           <Button
                                             onClick={() => handleSellTrade(trade)}
                                             size="sm"
                                             variant="outline"
-                                            className="h-6 px-3 text-[11px] font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 hover:text-red-600"
+                                            className="h-7 w-full px-3 text-[11px] font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 hover:text-red-600 md:w-auto"
                                           >
                                             Sell
+                                          </Button>
+                                        )}
+                                        {canCopyAgain && (
+                                          <Button
+                                            onClick={() => handleCopyAgain(trade)}
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-7 w-full px-3 text-[11px] font-semibold text-amber-700 border border-amber-300 bg-white hover:bg-amber-50 hover:text-amber-700 md:w-auto"
+                                          >
+                                            Copy Again
                                           </Button>
                                         )}
                                       </div>
@@ -3395,15 +3573,285 @@ function ProfilePageContent() {
           {activeTab === 'performance' && (
             <div className="space-y-6">
               {/* Header Section */}
-              <div className="mb-6">
-                <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Performance Analysis</h2>
-                <p className="text-sm text-slate-500 mt-1">Your complete trading performance across all copied trades</p>
-              </div>
+              {/* Realized P&L Chart Section */}
+              <Card className="border-slate-200/80 bg-white/90 p-5">
+                <div className="space-y-6">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-2xl font-semibold text-slate-900">Realized P&amp;L</h3>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
+                              ?
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            <p>Shows profit or loss only from positions that are closed or resolved. Based on your PolyCopy trades.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {pnlWindowOptions.map((option) => {
+                        const isActive = option.key === pnlWindow;
+                        return (
+                          <button
+                            key={option.key}
+                            onClick={() => setPnlWindow(option.key)}
+                            className={cn(
+                              'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                              isActive
+                                ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                            )}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {realizedPnlError && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      {realizedPnlError}
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                        <p className="text-sm font-semibold text-slate-600">Total P&amp;L</p>
+                        <p
+                          className={cn(
+                            'mt-2 text-2xl font-semibold leading-tight sm:text-3xl',
+                            chartSectionTotalPnl > 0
+                              ? 'text-emerald-700'
+                              : chartSectionTotalPnl < 0
+                                ? 'text-red-600'
+                                : 'text-slate-900'
+                          )}
+                        >
+                          {formatSignedCurrency(chartSectionTotalPnl)}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">{pnlWindowLabel}</p>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                        <p className="text-sm font-semibold text-slate-600">Average per day</p>
+                        <p
+                          className={cn(
+                            'mt-2 text-2xl font-semibold leading-tight sm:text-3xl',
+                            chartSectionAvgDaily > 0
+                              ? 'text-emerald-700'
+                              : chartSectionAvgDaily < 0
+                                ? 'text-red-600'
+                                : 'text-slate-900'
+                          )}
+                        >
+                          {formatAverageDaily(chartSectionAvgDaily)}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm">
+                        <p className="text-sm font-semibold text-slate-600">Days Active</p>
+                        <p className="mt-2 text-xl font-semibold leading-tight text-slate-900 sm:text-2xl">{realizedSummary.daysActive}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+                      <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm">
+                        <p className="text-sm font-semibold text-slate-600">Days Up</p>
+                        <p className="mt-2 text-xl font-semibold leading-tight text-emerald-700 sm:text-2xl">{realizedSummary.daysUp}</p>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm">
+                        <p className="text-sm font-semibold text-slate-600">Days Down</p>
+                        <p className="mt-2 text-xl font-semibold leading-tight text-red-600 sm:text-2xl">{realizedSummary.daysDown}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm sm:p-6">
+                    <div className="mb-4 flex flex-wrap items-center gap-3">
+                      <div className="text-sm font-semibold text-slate-900">P&amp;L</div>
+                      <div className="text-xs text-slate-500">{realizedRangeLabel}</div>
+                      <div className="ml-auto flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/70 p-1 shadow-sm">
+                          {(['daily', 'cumulative'] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              onClick={() => setPnlView(mode)}
+                              className={cn(
+                                'rounded-full px-3 py-1.5 text-xs font-semibold transition',
+                                pnlView === mode
+                                  ? 'bg-slate-900 text-white'
+                                  : 'text-slate-600 hover:text-slate-900'
+                              )}
+                            >
+                              {mode === 'daily' ? 'Daily Change' : 'Accumulated'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {loadingRealizedPnl && realizedChartSeries.length === 0 ? (
+                      <div className="flex items-center gap-2 text-sm text-slate-500">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading realized P&amp;L...
+                      </div>
+                    ) : realizedChartSeries.length > 0 ? (
+                      <div className="h-72 w-full animate-in fade-in duration-700 sm:h-80">
+                        <ResponsiveContainer width="100%" height="100%">
+                          {pnlView === 'daily' ? (
+                            <BarChart data={realizedChartSeries} barSize={dailyBarSize} barCategoryGap={dailyBarGap}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                              <XAxis
+                                dataKey="date"
+                                tickLine={false}
+                                axisLine={false}
+                                interval="preserveStartEnd"
+                                tickFormatter={(value) =>
+                                  new Date(`${value}T00:00:00Z`).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    timeZone: 'UTC',
+                                  })
+                                }
+                                tickMargin={10}
+                                minTickGap={32}
+                                tick={{ fontSize: 11, fill: '#475569' }}
+                              />
+                              <YAxis
+                                tickLine={false}
+                                axisLine={false}
+                                width={64}
+                                tickMargin={10}
+                                tick={{ fontSize: 11, fill: '#475569' }}
+                                tickCount={6}
+                                domain={[
+                                  (min: number) => Math.min(min, 0),
+                                  (max: number) => Math.max(max, 0),
+                                ]}
+                                tickFormatter={(value) => formatCompactCurrency(value)}
+                              />
+                              <RechartsTooltip
+                                contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
+                                formatter={(value: any) => formatSignedCurrency(Number(value), 2)}
+                                labelFormatter={(label) =>
+                                  new Date(`${label}T00:00:00Z`).toLocaleDateString('en-US', {
+                                    weekday: 'short',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                    timeZone: 'UTC',
+                                  })
+                                }
+                              />
+                              <ReferenceLine y={0} stroke="#cbd5e1" />
+                              <Bar
+                                dataKey="dailyPnl"
+                                name="Daily PnL"
+                                minPointSize={2}
+                                radius={[6, 6, 6, 6]}
+                                isAnimationActive
+                                animationDuration={900}
+                              >
+                                {realizedChartSeries.map((entry, index) => (
+                                  <Cell
+                                    key={`cell-${index}`}
+                                    fill={entry.dailyPnl >= 0 ? '#10b981' : '#ef4444'}
+                                  />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          ) : (
+                            <AreaChart data={realizedChartSeries}>
+                              <defs>
+                                <linearGradient id="pnlCumulative" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#0f172a" stopOpacity={0.35} />
+                                  <stop offset="100%" stopColor="#0f172a" stopOpacity={0.05} />
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                              <XAxis
+                                dataKey="date"
+                                tickLine={false}
+                                axisLine={false}
+                                interval="preserveStartEnd"
+                                tickFormatter={(value) =>
+                                  new Date(`${value}T00:00:00Z`).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    timeZone: 'UTC',
+                                  })
+                                }
+                                tickMargin={10}
+                                minTickGap={32}
+                                tick={{ fontSize: 11, fill: '#475569' }}
+                              />
+                              <YAxis
+                                tickLine={false}
+                                axisLine={false}
+                                width={64}
+                                tickMargin={10}
+                                tick={{ fontSize: 11, fill: '#475569' }}
+                                tickFormatter={(value) => formatCompactCurrency(value)}
+                              />
+                              <RechartsTooltip
+                                contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
+                                formatter={(value: any) => formatSignedCurrency(Number(value), 2)}
+                                labelFormatter={(label) =>
+                                  new Date(`${label}T00:00:00Z`).toLocaleDateString('en-US', {
+                                    weekday: 'short',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                    timeZone: 'UTC',
+                                  })
+                                }
+                              />
+                              <ReferenceLine y={0} stroke="#cbd5e1" />
+                              <Area
+                                type="monotone"
+                                dataKey="cumulativePnl"
+                                stroke="#0f172a"
+                                strokeWidth={2}
+                                fill="url(#pnlCumulative)"
+                                isAnimationActive
+                                animationDuration={900}
+                              />
+                            </AreaChart>
+                          )}
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <div className="flex h-72 items-center justify-center text-sm text-slate-500 sm:h-80">
+                        <p>No realized P&amp;L data available yet</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Card>
 
               {/* Top Traders Copied */}
               {topTradersStats.length > 0 && (
                 <Card className="p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">Top Traders Copied</h3>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-lg font-semibold text-slate-900">Top Traders Copied</h3>
+                    {topTradersStats.length > 10 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowAllTraders(!showAllTraders)}
+                        className="text-sm"
+                      >
+                        {showAllTraders ? 'Show Top 10' : `Show All (${topTradersStats.length})`}
+                      </Button>
+                    )}
+                  </div>
                   <p className="text-sm text-slate-500 mb-6">Performance of all realized trades you copied (all traders)</p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -3418,7 +3866,7 @@ function ProfilePageContent() {
                         </tr>
                       </thead>
                       <tbody>
-                        {topTradersStats.map((trader) => (
+                        {(showAllTraders ? topTradersStats : topTradersStats.slice(0, 10)).map((trader) => (
                           <tr key={trader.trader_wallet} className="border-b border-slate-100 hover:bg-slate-50">
                             <td className="py-3 px-2">
                               <Link
@@ -3556,140 +4004,6 @@ function ProfilePageContent() {
                     <p>Not enough trade data to display position sizing</p>
                   </div>
                 )}
-              </Card>
-
-              {/* Trading Stats */}
-              <Card className="overflow-hidden border border-slate-200 bg-white">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900">Trading Stats</h3>
-                    <p className="text-sm text-slate-500">Based on your copied trades. Lifetime unless noted.</p>
-                  </div>
-                  <span className="text-xs rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-600">All time</span>
-                </div>
-                <div className="grid gap-4 p-6 lg:grid-cols-[1.15fr_1fr]">
-                  <div className="rounded-2xl border border-slate-200/60 bg-slate-50 p-5 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Performance</p>
-                      <span className="text-[11px] text-slate-400">All time</span>
-                    </div>
-                    <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
-                      <div>
-                        <p className="text-xs text-slate-500">ROI</p>
-                        <p
-                          className={cn(
-                            'text-3xl font-semibold',
-                            userStats.roi > 0 ? 'text-emerald-600' : userStats.roi < 0 ? 'text-red-600' : 'text-slate-900'
-                          )}
-                        >
-                          {userStats.totalVolume > 0
-                            ? `${userStats.roi > 0 ? '+' : ''}${userStats.roi.toFixed(1)}%`
-                            : 'N/A'}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-slate-500">Winnings</p>
-                        <p
-                          className={cn(
-                            'text-2xl font-semibold',
-                            userStats.totalPnl > 0 ? 'text-emerald-600' : userStats.totalPnl < 0 ? 'text-red-600' : 'text-slate-900'
-                          )}
-                        >
-                          {`${userStats.totalPnl > 0 ? '+' : ''}${formatCompactNumber(userStats.totalPnl)}`}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-3">
-                      <div className="rounded-xl border border-slate-200/70 bg-white/70 p-3">
-                        <p className="text-[11px] text-slate-500">Volume</p>
-                        <p className="text-base font-semibold text-slate-900">{formatCompactNumber(userStats.totalVolume)}</p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200/70 bg-white/70 p-3">
-                        <p className="text-[11px] text-slate-500">Win rate</p>
-                        <p className="text-base font-semibold text-slate-900">{userStats.winRate.toFixed(1)}%</p>
-                      </div>
-                      <div className="col-span-2 rounded-xl border border-slate-200/70 bg-white/70 p-3">
-                        <div className="flex items-center justify-between">
-                          <p className="text-[11px] text-slate-500">Consistency</p>
-                          <span className="text-[10px] text-slate-400">
-                            {tradeStats.consistencySampleSize > 0
-                              ? `Last ${tradeStats.consistencySampleSize} closed`
-                              : 'No closed trades'}
-                          </span>
-                        </div>
-                        <p className="text-base font-semibold text-slate-900">
-                          {tradeStats.consistency !== null ? `${tradeStats.consistency.toFixed(0)}%` : '—'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200/80 p-5">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trades</p>
-                        <p className="text-xs text-slate-400">Sizing and cadence</p>
-                      </div>
-                      <span className="text-[11px] text-slate-400">Activity uses last 30d</span>
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-3">
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Average return</p>
-                        <p
-                          className={cn(
-                            'text-base font-semibold',
-                            tradeStats.avgReturn !== null && tradeStats.avgReturn > 0
-                              ? 'text-emerald-600'
-                              : tradeStats.avgReturn !== null && tradeStats.avgReturn < 0
-                                ? 'text-red-600'
-                                : 'text-slate-900'
-                          )}
-                        >
-                          {tradeStats.avgReturn !== null
-                            ? `${tradeStats.avgReturn > 0 ? '+' : ''}${tradeStats.avgReturn.toFixed(1)}%`
-                            : '—'}
-                        </p>
-                        <p className="text-[10px] text-slate-400">Closed trades</p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Open positions</p>
-                        <p className="text-base font-semibold text-slate-900">{userStats.openTrades}</p>
-                        <p className="text-[10px] text-slate-400">Active now</p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Trade frequency</p>
-                        <p className="text-base font-semibold text-slate-900">{tradeStats.frequencyLabel}</p>
-                        <p className="text-[10px] text-slate-400">
-                          {tradeStats.tradesPerWeek > 0 ? `${tradeStats.tradesPerWeek.toFixed(1)}/wk` : '0/wk'} (30d)
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Average trade size</p>
-                        <p className="text-base font-semibold text-slate-900">
-                          {tradeStats.avgTradeSize !== null ? formatCurrency(tradeStats.avgTradeSize) : '—'}
-                        </p>
-                        <p className="text-[10px] text-slate-400">Per trade</p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Recency</p>
-                        <p className="text-base font-semibold text-slate-900">{lastTradeLabel}</p>
-                        <p className="text-[10px] text-slate-400">Last trade</p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Activity</p>
-                        <p className="text-base font-semibold text-slate-900">{tradeStats.activeDays} days</p>
-                        <p className="text-[10px] text-slate-400">Active days (30d)</p>
-                      </div>
-                      <div className="col-span-2 rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Avg hold time</p>
-                        <p className="text-base font-semibold text-slate-900">
-                          {formatDuration(tradeStats.avgHoldMs)}
-                        </p>
-                        <p className="text-[10px] text-slate-400">Closed trades</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
               </Card>
 
               {/* Category Distribution Pie Chart */}
