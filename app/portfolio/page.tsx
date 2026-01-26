@@ -600,9 +600,10 @@ function ProfilePageContent() {
       const fallbackTab = preferredDefaultTab;
       hasAppliedPreferredTab.current = true;
       setActiveTab(fallbackTab);
-      handleTabChange(fallbackTab);
+      const nextUrl = buildTabUrl(fallbackTab);
+      router.replace(nextUrl, { scroll: false });
     }
-  }, [tabParam, loadingStats, preferredDefaultTab, handleTabChange]);
+  }, [tabParam, loadingStats, preferredDefaultTab, buildTabUrl, router]);
 
   useEffect(() => {
     if (tabParam === 'settings') {
