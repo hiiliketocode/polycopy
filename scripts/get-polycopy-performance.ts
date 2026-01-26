@@ -186,7 +186,8 @@ async function getPolycopyPerformance(walletOrEmail: string) {
       .maybeSingle()
     if (trader?.id) {
       traderId = trader.id
-      console.log(`   Trader ID: ${traderId.substring(0, 8)}...`)
+      const resolvedTraderId = trader.id
+      console.log(`   Trader ID: ${resolvedTraderId.substring(0, 8)}...`)
     }
   } else if (email) {
     console.log(`\n🔍 Looking up user: ${email}`)
