@@ -590,28 +590,16 @@ function ProfilePageContent() {
     fetchStats();
   }, [user]);
 
+  // Sync tab from URL parameter
   useEffect(() => {
     if (tabParam === 'performance' || tabParam === 'trades') {
       setActiveTab(tabParam as ProfileTab);
-      return;
-    }
-
-    if (!tabParam && !hasAppliedPreferredTab.current && !loadingStats) {
-      const fallbackTab = preferredDefaultTab;
+    } else if (!tabParam && !hasAppliedPreferredTab.current && !loadingStats) {
+      // Set default tab on initial load if no tab param
       hasAppliedPreferredTab.current = true;
-      setActiveTab(fallbackTab);
-      // Construct URL directly to avoid dependency cycle
-      // Using current values without including in deps to prevent re-triggering
-      const currentSearchParams = searchParams?.toString() || '';
-      const currentPathname = pathname || '/portfolio';
-      const params = new URLSearchParams(currentSearchParams);
-      params.set('tab', fallbackTab);
-      const queryString = params.toString();
-      const nextUrl = queryString ? `${currentPathname}?${queryString}` : currentPathname;
-      router.replace(nextUrl, { scroll: false });
+      setActiveTab(preferredDefaultTab);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabParam, loadingStats]);
+  }, [tabParam, loadingStats, preferredDefaultTab]);
 
   useEffect(() => {
     if (tabParam === 'settings') {
