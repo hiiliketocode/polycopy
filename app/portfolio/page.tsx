@@ -494,17 +494,22 @@ function ProfilePageContent() {
 
   // Check auth status on mount
   useEffect(() => {
+    let isMounted = true;
     const checkAuth = async () => {
       setLoading(true);
 
       // Timeout safeguard - ensure loading is cleared after 10 seconds
       const timeoutId = setTimeout(() => {
-        console.warn('Auth check timeout - clearing loading state');
-        setLoading(false);
+        if (isMounted) {
+          console.warn('Auth check timeout - clearing loading state');
+          setLoading(false);
+        }
       }, 10000);
 
       try {
         const { session } = await getOrRefreshSession();
+
+        if (!isMounted) return;
 
         if (!session?.user) {
           triggerLoggedOut('session_missing');
@@ -515,18 +520,22 @@ function ProfilePageContent() {
         setUser(session.user);
         await ensureProfile(session.user.id, session.user.email!);
       } catch (err) {
+        if (!isMounted) return;
         console.error('Auth error:', err);
         triggerLoggedOut('auth_error');
         router.push('/login');
       } finally {
-        clearTimeout(timeoutId);
-        setLoading(false);
+        if (isMounted) {
+          clearTimeout(timeoutId);
+          setLoading(false);
+        }
       }
     };
 
     checkAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!isMounted) return;
       if (!session?.user) {
         triggerLoggedOut('signed_out');
         router.push('/login');
@@ -535,8 +544,12 @@ function ProfilePageContent() {
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, [router]);
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch user stats and wallet
   useEffect(() => {
