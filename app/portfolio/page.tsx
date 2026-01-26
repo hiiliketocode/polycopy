@@ -601,13 +601,17 @@ function ProfilePageContent() {
       hasAppliedPreferredTab.current = true;
       setActiveTab(fallbackTab);
       // Construct URL directly to avoid dependency cycle
-      const params = new URLSearchParams(searchParams?.toString() || '');
+      // Using current values without including in deps to prevent re-triggering
+      const currentSearchParams = searchParams?.toString() || '';
+      const currentPathname = pathname || '/portfolio';
+      const params = new URLSearchParams(currentSearchParams);
       params.set('tab', fallbackTab);
       const queryString = params.toString();
-      const nextUrl = queryString ? `${pathname}?${queryString}` : pathname;
+      const nextUrl = queryString ? `${currentPathname}?${queryString}` : currentPathname;
       router.replace(nextUrl, { scroll: false });
     }
-  }, [tabParam, loadingStats, preferredDefaultTab, pathname, searchParams, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabParam, loadingStats]);
 
   useEffect(() => {
     if (tabParam === 'settings') {
