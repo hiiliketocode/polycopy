@@ -724,15 +724,26 @@ export async function GET(request: Request) {
     const isCacheValid = 
       cachedSummary &&
       cacheAge < PORTFOLIO_CACHE_STALE_AFTER_MS &&
-      cachedSummary.calculation_version === CALCULATION_VERSION
+      cachedSummary.calculation_version === CALCULATION_VERSION &&
+      !forceRefresh // Don't use cache if forcing refresh
 
-    // If we have cached data (even if stale), return it immediately for fast response
-    // Always trigger background recalculation to keep data fresh
-    if (cachedSummary && cachedSummary.calculation_version === CALCULATION_VERSION) {
-      const cacheStatus = isCacheValid ? 'valid' : 'stale'
-      console.log(`📊 Returning cached portfolio summary (${cacheStatus}, age: ${Math.round(cacheAge / 1000)}s), refreshing in background`)
+    // If forceRefresh is true, always recalculate synchronously to return fresh data
+    if (forceRefresh) {
+      console.log(`🔄 Force refresh requested - calculating fresh portfolio stats`)
+      const stats = await calculatePortfolioStats(supabase, requestedUserId)
+      return NextResponse.json({
+        ...stats,
+        freshness: new Date().toISOString(),
+        cached: false,
+      })
+    }
+
+    // If we have valid cached data, return it immediately for fast response
+    // Also trigger background recalculation to keep cache fresh for next time
+    if (isCacheValid) {
+      console.log(`📊 Returning cached portfolio summary (age: ${Math.round(cacheAge / 1000)}s), refreshing in background`)
       
-      // Always trigger background recalculation (don't await - return cached data immediately)
+      // Trigger background recalculation (don't await - return cached data immediately)
       calculatePortfolioStats(supabase, requestedUserId).catch((err) => {
         console.warn('[portfolio/stats] background recalculation failed', err)
       })
@@ -756,8 +767,8 @@ export async function GET(request: Request) {
       })
     }
 
-    // Cache miss or wrong version - calculate fresh stats synchronously
-    console.log(`🔄 Calculating fresh portfolio stats (cache ${cachedSummary ? 'wrong version' : 'missing'})`)
+    // Cache miss, stale, or wrong version - calculate fresh stats synchronously
+    console.log(`🔄 Calculating fresh portfolio stats (cache ${cachedSummary ? (cacheAge >= PORTFOLIO_CACHE_STALE_AFTER_MS ? 'stale' : 'wrong version') : 'missing'})`)
     
     const stats = await calculatePortfolioStats(supabase, requestedUserId)
     
