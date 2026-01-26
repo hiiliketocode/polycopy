@@ -1365,7 +1365,7 @@ export default function FeedPage() {
       const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
       const isFromAuthCallback = urlParams?.has('_auth_callback');
       
-      if (isFromAuthCallback) {
+      if (isFromAuthCallback && urlParams) {
         // Remove the query param from URL
         urlParams.delete('_auth_callback');
         const newUrl = window.location.pathname + (urlParams.toString() ? `?${urlParams.toString()}` : '');
