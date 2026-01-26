@@ -421,38 +421,33 @@ function ProfilePageContent() {
   const [toastMessage, setToastMessage] = useState('');
   
   // UI state - Check for tab query parameter
-  // Stabilize pathname and searchParams string to prevent hook order changes
-  const stablePathname = useMemo(() => pathname || '/portfolio', [pathname]);
-  const searchParamsString = useMemo(() => searchParams?.toString() || '', [searchParams]);
-  const tabParam = useMemo(() => {
-    if (!searchParams) return null;
-    return searchParams.get('tab');
-  }, [searchParams]);
+  // Use values directly without memoization to avoid hook order issues
+  const tabParam = searchParams?.get('tab') || null;
   const preferredDefaultTab: ProfileTab = 'trades';
-  const initialTab =
-    tabParam === 'performance' || tabParam === 'trades'
-      ? (tabParam as ProfileTab)
-      : preferredDefaultTab;
-  const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<ProfileTab>(() => {
+    const param = searchParams?.get('tab');
+    return param === 'performance' || param === 'trades' ? (param as ProfileTab) : preferredDefaultTab;
+  });
   const hasAppliedPreferredTab = useRef(false);
+  
   const buildTabUrl = useCallback((tab: ProfileTab) => {
-    const params = new URLSearchParams(searchParamsString);
+    const currentPath = pathname || '/portfolio';
+    const params = new URLSearchParams(searchParams?.toString() || '');
     params.set('tab', tab);
     const queryString = params.toString();
-    return queryString ? `${stablePathname}?${queryString}` : stablePathname;
-  }, [stablePathname, searchParamsString]);
-
-  const currentUrl = useMemo(() => {
-    return searchParamsString ? `${stablePathname}?${searchParamsString}` : stablePathname;
-  }, [stablePathname, searchParamsString]);
+    return queryString ? `${currentPath}?${queryString}` : currentPath;
+  }, [pathname, searchParams]);
 
   const handleTabChange = useCallback((tab: ProfileTab) => {
     setActiveTab(tab);
     const nextUrl = buildTabUrl(tab);
+    const currentPath = pathname || '/portfolio';
+    const currentQuery = searchParams?.toString() || '';
+    const currentUrl = currentQuery ? `${currentPath}?${currentQuery}` : currentPath;
     if (nextUrl !== currentUrl) {
       router.replace(nextUrl, { scroll: false });
     }
-  }, [buildTabUrl, currentUrl, router]);
+  }, [buildTabUrl, pathname, searchParams, router]);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [showSubscriptionSuccessModal, setShowSubscriptionSuccessModal] = useState(false);
@@ -2729,10 +2724,20 @@ function ProfilePageContent() {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
-  const tabButtons = useMemo(() => ([
-    { key: 'trades' as ProfileTab, label: 'Trades', href: buildTabUrl('trades') },
-    { key: 'performance' as ProfileTab, label: 'Performance', href: buildTabUrl('performance') },
-  ]), [buildTabUrl]);
+  const tabButtons = useMemo(() => {
+    const currentPath = pathname || '/portfolio';
+    const params = new URLSearchParams(searchParams?.toString() || '');
+    const buildUrl = (tab: ProfileTab) => {
+      const tabParams = new URLSearchParams(params);
+      tabParams.set('tab', tab);
+      const queryString = tabParams.toString();
+      return queryString ? `${currentPath}?${queryString}` : currentPath;
+    };
+    return [
+      { key: 'trades' as ProfileTab, label: 'Trades', href: buildUrl('trades') },
+      { key: 'performance' as ProfileTab, label: 'Performance', href: buildUrl('performance') },
+    ];
+  }, [pathname, searchParams]);
   const tabTooltips: Partial<Record<ProfileTab, string>> = {};
 
   return (
