@@ -421,7 +421,13 @@ function ProfilePageContent() {
   const [toastMessage, setToastMessage] = useState('');
   
   // UI state - Check for tab query parameter
-  const tabParam = searchParams?.get('tab');
+  // Stabilize pathname and searchParams string to prevent hook order changes
+  const stablePathname = useMemo(() => pathname || '/portfolio', [pathname]);
+  const searchParamsString = useMemo(() => searchParams?.toString() || '', [searchParams]);
+  const tabParam = useMemo(() => {
+    if (!searchParams) return null;
+    return searchParams.get('tab');
+  }, [searchParams]);
   const preferredDefaultTab: ProfileTab = 'trades';
   const initialTab =
     tabParam === 'performance' || tabParam === 'trades'
@@ -430,16 +436,15 @@ function ProfilePageContent() {
   const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
   const hasAppliedPreferredTab = useRef(false);
   const buildTabUrl = useCallback((tab: ProfileTab) => {
-    const params = new URLSearchParams(searchParams?.toString());
+    const params = new URLSearchParams(searchParamsString);
     params.set('tab', tab);
     const queryString = params.toString();
-    return queryString ? `${pathname}?${queryString}` : pathname;
-  }, [pathname, searchParams]);
+    return queryString ? `${stablePathname}?${queryString}` : stablePathname;
+  }, [stablePathname, searchParamsString]);
 
   const currentUrl = useMemo(() => {
-    const queryString = searchParams?.toString();
-    return queryString ? `${pathname}?${queryString}` : pathname;
-  }, [pathname, searchParams]);
+    return searchParamsString ? `${stablePathname}?${searchParamsString}` : stablePathname;
+  }, [stablePathname, searchParamsString]);
 
   const handleTabChange = useCallback((tab: ProfileTab) => {
     setActiveTab(tab);
@@ -599,7 +604,7 @@ function ProfilePageContent() {
       hasAppliedPreferredTab.current = true;
       setActiveTab(preferredDefaultTab);
     }
-  }, [tabParam, loadingStats, preferredDefaultTab]);
+  }, [tabParam, loadingStats]);
 
   useEffect(() => {
     if (tabParam === 'settings') {
