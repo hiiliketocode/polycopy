@@ -1361,6 +1361,19 @@ export default function FeedPage() {
     const checkAuth = async () => {
       setLoading(true);
       
+      // Check if we're coming from auth callback - give cookies time to be set
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const isFromAuthCallback = urlParams?.has('_auth_callback');
+      
+      if (isFromAuthCallback) {
+        // Remove the query param from URL
+        urlParams.delete('_auth_callback');
+        const newUrl = window.location.pathname + (urlParams.toString() ? `?${urlParams.toString()}` : '');
+        window.history.replaceState({}, '', newUrl);
+        // Wait a bit for cookies to be available
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
       // Timeout safeguard - ensure loading is cleared after 10 seconds
       const timeoutId = setTimeout(() => {
         if (isMounted) {

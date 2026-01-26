@@ -520,6 +520,19 @@ function ProfilePageContent() {
         }
       }, 10000);
 
+      // Check if we're coming from auth callback - give cookies time to be set
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const isFromAuthCallback = urlParams?.has('_auth_callback');
+      
+      if (isFromAuthCallback) {
+        // Remove the query param from URL
+        urlParams.delete('_auth_callback');
+        const newUrl = window.location.pathname + (urlParams.toString() ? `?${urlParams.toString()}` : '');
+        window.history.replaceState({}, '', newUrl);
+        // Wait a bit for cookies to be available
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
       try {
         const { session } = await getOrRefreshSession();
 

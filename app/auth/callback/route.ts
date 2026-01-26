@@ -145,12 +145,25 @@ export async function GET(request: NextRequest) {
       }
       
       // Update the response with the correct redirect URL
-      const finalResponse = NextResponse.redirect(redirectUrl)
+      // Add a query param to indicate we're coming from auth callback
+      const redirectUrlWithFlag = `${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}_auth_callback=1`
+      const finalResponse = NextResponse.redirect(redirectUrlWithFlag)
       
       // Copy all cookies from the original response to the final response
+      // This ensures auth cookies are properly set before redirect
       response.cookies.getAll().forEach(cookie => {
         finalResponse.cookies.set(cookie)
       })
+      
+      // Ensure we have a session cookie set
+      const { data: { session: finalSession } } = await supabase.auth.getSession()
+      if (finalSession) {
+        // The session should already be in cookies from exchangeCodeForSession,
+        // but we verify it's there
+        console.log('Session verified after callback, redirecting to:', redirectUrlWithFlag)
+      } else {
+        console.error('WARNING: No session found after callback, but proceeding with redirect')
+      }
       
       return finalResponse
       
