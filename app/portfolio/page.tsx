@@ -422,13 +422,21 @@ function ProfilePageContent() {
   
   // UI state - Check for tab query parameter
   // Use values directly without memoization to avoid hook order issues
-  const tabParam = searchParams?.get('tab') || null;
   const preferredDefaultTab: ProfileTab = 'trades';
-  const [activeTab, setActiveTab] = useState<ProfileTab>(() => {
-    const param = searchParams?.get('tab');
-    return param === 'performance' || param === 'trades' ? (param as ProfileTab) : preferredDefaultTab;
-  });
+  const [activeTab, setActiveTab] = useState<ProfileTab>(preferredDefaultTab);
   const hasAppliedPreferredTab = useRef(false);
+  
+  // Get tab param safely - handle cases where searchParams might not be available
+  const tabParam = useMemo(() => {
+    try {
+      if (!searchParams) return null;
+      const tab = searchParams.get('tab');
+      return tab === 'performance' || tab === 'trades' ? tab : null;
+    } catch (err) {
+      console.error('Error reading tab param:', err);
+      return null;
+    }
+  }, [searchParams]);
   
   const buildTabUrl = useCallback((tab: ProfileTab) => {
     const currentPath = pathname || '/portfolio';
@@ -455,18 +463,24 @@ function ProfilePageContent() {
 
   // Check for upgrade success in URL params
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('upgrade') === 'success') {
-      setShowSubscriptionSuccessModal(true);
-      // Clean up URL
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, '', newUrl);
-    } else if (params.get('upgrade') === 'true') {
-      // Open upgrade modal when upgrade=true in URL
-      setShowUpgradeModal(true);
-      // Clean up URL
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, '', newUrl);
+    if (typeof window === 'undefined') return;
+    
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('upgrade') === 'success') {
+        setShowSubscriptionSuccessModal(true);
+        // Clean up URL
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      } else if (params.get('upgrade') === 'true') {
+        // Open upgrade modal when upgrade=true in URL
+        setShowUpgradeModal(true);
+        // Clean up URL
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }
+    } catch (err) {
+      console.error('Error checking upgrade params:', err);
     }
   }, []);
   
@@ -646,14 +660,17 @@ function ProfilePageContent() {
 
   // Sync tab from URL parameter
   useEffect(() => {
-    if (tabParam === 'performance' || tabParam === 'trades') {
-      setActiveTab(tabParam as ProfileTab);
-    } else if (!tabParam && !hasAppliedPreferredTab.current && !loadingStats) {
-      // Set default tab on initial load if no tab param
-      hasAppliedPreferredTab.current = true;
-      setActiveTab(preferredDefaultTab);
+    if (!loading && !loadingStats) {
+      if (tabParam === 'performance' || tabParam === 'trades') {
+        setActiveTab(tabParam as ProfileTab);
+        hasAppliedPreferredTab.current = true;
+      } else if (!tabParam && !hasAppliedPreferredTab.current) {
+        // Set default tab on initial load if no tab param
+        hasAppliedPreferredTab.current = true;
+        setActiveTab(preferredDefaultTab);
+      }
     }
-  }, [tabParam, loadingStats]);
+  }, [tabParam, loading, loadingStats]);
 
   useEffect(() => {
     if (tabParam === 'settings') {
@@ -4359,7 +4376,14 @@ function ProfilePageContent() {
 
 export default function ProfilePage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>}>
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FDB022] mx-auto mb-4"></div>
+          <p className="text-slate-600">Loading portfolio...</p>
+        </div>
+      </div>
+    }>
       <ProfilePageContent />
     </Suspense>
   );
