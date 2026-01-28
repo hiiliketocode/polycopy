@@ -2530,8 +2530,8 @@ export function TradeCard({
             : (apiMarketData?.tags 
                 ? (Array.isArray(apiMarketData.tags) ? JSON.stringify(apiMarketData.tags) : apiMarketData.tags)
                 : null),
-          market_bet_structure: marketData?.bet_structure || marketCategory?.bet_structure || null,
-          market_market_subtype: marketData?.market_subtype || marketCategory?.market_subtype || null,
+          market_bet_structure: marketData?.bet_structure || null,
+          market_market_subtype: marketData?.market_subtype || null,
           market_duration_days: marketDurationDays,
           market_title: market || marketData?.title || apiMarketData?.question || null,
           market_event_slug: marketEventSlug,
