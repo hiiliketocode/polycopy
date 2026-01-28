@@ -1,0 +1,16 @@
+[dotenv@17.2.3] injecting env (34) from .env.local -- tip: ⚙️  suppress all logs with { quiet: true }
+🚀 Starting Gemini market classification
+📊 Gemini batch size: 50 markets per API call
+📦 DB batch size: 100 markets per fetch
+⏱️  Sleep between API calls: 2000ms
+⏭️  Skipping markets with existing classifications
+💾 Output file: /Users/rawdonmessenger/PolyCopy/gemini-classifications.json
+
+
+📦 Fetched 100 markets from database (offset: 0)
+  🔄 Processing Gemini batch 1/2 (50 markets)...
+     [2026-01-27T01:22:08.054Z] Starting API call...
+     [2026-01-27T01:22:38.323Z] API call completed
+  ✅ Classified and updated 50 markets
+  🔄 Processing Gemini batch 2/2 (50 markets)...
+     [2026-01-27T01:22:40.514Z] Starting API call...

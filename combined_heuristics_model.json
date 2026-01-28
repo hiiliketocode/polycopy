@@ -1,0 +1,406 @@
+{
+  "market_type_and_subtype": {
+    "market_type_rules": {
+      "Sports": [
+        "the",
+        "will",
+        "game",
+        "market",
+        "this",
+        "resolve"
+      ],
+      "Finance/Tech": [
+        "the",
+        "will",
+        "market"
+      ],
+      "Crypto": [
+        "the",
+        "market",
+        "this",
+        "price"
+      ],
+      "Politics": [
+        "the",
+        "will",
+        "this",
+        "market"
+      ],
+      "Culture": [
+        "the",
+        "will",
+        "this",
+        "market"
+      ],
+      "Weather": [
+        "the",
+        "this",
+        "market",
+        "for",
+        "will"
+      ],
+      "Esports": [
+        "the",
+        "this",
+        "market",
+        "will",
+        "resolve",
+        "match"
+      ],
+      "Economics": [
+        "the",
+        "will",
+        "market",
+        "this"
+      ],
+      "Finance": [
+        "the",
+        "will",
+        "market",
+        "for"
+      ],
+      "Tech": [
+        "the",
+        "will",
+        "this",
+        "market"
+      ],
+      "Science": [
+        "the",
+        "market",
+        "will",
+        "this"
+      ],
+      "All": [
+        "will",
+        "this",
+        "market",
+        "resolve",
+        "binance",
+        "all",
+        "the",
+        "2024"
+      ]
+    },
+    "subtype_keywords": {
+      "Sports": {
+        "2024": "Tournaments",
+        "2025": "Poker game",
+        "2026": "IIHF",
+        "the": "NCAA",
+        "game": "NCAA",
+        "will": "NCAA",
+        "market": "NHL",
+        "this": "NHL",
+        "pdc": "Darts",
+        "darts": "Darts",
+        "team": "esports",
+        "resolve": "UEL",
+        "chennai": "IPL",
+        "super": "IPL",
+        "kings": "IPL",
+        "chess": "Tournaments",
+        "championship": "Tournaments",
+        "open": "PGA",
+        "official": "PGA",
+        "basketball": "Euroleague Basketball",
+        "poker": "Poker game",
+        "shedeur": "NFL Draft",
+        "sanders": "NFL Draft",
+        "drafted": "NFL Draft",
+        "round": "NFL Draft",
+        "nfl": "NFL Draft",
+        "draft": "NFL Draft",
+        "third": "NFL Draft",
+        "according": "NFL Draft",
+        "that": "NFL Draft",
+        "sports": "NFL Draft",
+        "alekseenko": "Geopolitics",
+        "leko": "Geopolitics",
+        "advances": "Geopolitics",
+        "giro": "Biking",
+        "italia": "Biking",
+        "world": "World Championship Athletics",
+        "athletics": "World Championship Athletics",
+        "usa": "Swimming",
+        "map": "Moneyline",
+        "wsop": "WSOP",
+        "main": "WSOP",
+        "event": "WSOP",
+        "diplo": "Culture",
+        "national": "Poker",
+        "heads": "Poker",
+        "iihf": "IIHF",
+        "junior": "IIHF",
+        "kbo": "Baseball",
+        "ssg": "Baseball",
+        "landers": "Baseball",
+        "samsung": "Baseball",
+        "lions": "Baseball",
+        "virginia": "CBB",
+        "tech": "CBB",
+        "miami": "CBB",
+        "cbb": "CBB",
+        "win": "CBB",
+        "euro": "Euro 2024",
+        "marathon": "Running",
+        "new": "Running",
+        "york": "Running",
+        "city": "Running",
+        "espys": "Awards",
+        "for": "Awards",
+        "athlete": "Awards",
+        "sailgp": "Sailing",
+        "bnk": "League of Legends",
+        "fearx": "League of Legends",
+        "fifa": "FIFA Club World Cup",
+        "club": "FIFA Club World Cup",
+        "cup": "FIFA Club World Cup"
+      },
+      "Finance/Tech": {
+        "the": "Apple",
+        "eps": "Earnings",
+        "will": "AI"
+      },
+      "Crypto": {
+        "2025": "Layer 2",
+        "the": "Solana",
+        "xrp": "XRP",
+        "market": "Airdrops",
+        "will": "Airdrops",
+        "this": "Airdrops",
+        "ftx": "All",
+        "resolve": "All",
+        "begin": "All",
+        "based": "NFTs",
+        "uponly": "Social_Media",
+        "podcast": "Social_Media",
+        "official": "Social_Media",
+        "human": "Aster",
+        "aztec": "Aztec",
+        "sale": "Aztec",
+        "app": "Defi App",
+        "defi": "Defi App",
+        "bitway": "Token Sales",
+        "raise": "Token Sales",
+        "ansem": "Specific Asset (e.g., Bitcoin, AAPL)",
+        "friend": "Specific Asset (e.g., Bitcoin, AAPL)",
+        "tech": "Specific Asset (e.g., Bitcoin, AAPL)",
+        "for": "Specific Asset",
+        "bar": "Specific Asset",
+        "arc": "Arc",
+        "token": "Arc",
+        "uniswap": "Uniswap",
+        "fee": "Uniswap",
+        "switch": "Uniswap",
+        "onchain": "Uniswap"
+      },
+      "Politics": {
+        "2025": "Global_Elections",
+        "the": "Election",
+        "will": "Election",
+        "market": "Biden",
+        "michigan": "Primaries",
+        "republican": "Primaries",
+        "primary": "Primaries",
+        "this": "State_Presidential_Election",
+        "albuquerque": "Global_Elections",
+        "election": "Global_Elections"
+      },
+      "Culture": {
+        "2025": "MLB Playoffs",
+        "the": "Social_Media",
+        "auction": "art",
+        "will": "Box_Office",
+        "trump": "MLB Playoffs",
+        "mlb": "MLB Playoffs",
+        "series": "MLB Playoffs",
+        "this": "MLB Playoffs",
+        "market": "MLB Playoffs",
+        "resolve": "MLB Playoffs",
+        "super": "Super_Bowl_TV",
+        "bowl": "Super_Bowl_TV",
+        "nba": "Basketball",
+        "netflix": "Entertainment_Rankings",
+        "poker": "Poker game",
+        "national": "Poker game",
+        "heads": "Poker game",
+        "championship": "Poker game",
+        "event": "Tech_Companies",
+        "paul": "Boxing",
+        "fight": "Boxing",
+        "creative": "Fashion",
+        "balenciaga": "Fashion",
+        "billionaires": "Business",
+        "bloomberg": "Business",
+        "pope": "Geopolitics",
+        "leo": "Geopolitics",
+        "country": "Geopolitics",
+        "xiv": "Geopolitics",
+        "youtube": "YouTube",
+        "vle": "Events",
+        "goat": "Events",
+        "measles": "Science",
+        "cdc": "Science",
+        "counter": "Science",
+        "swift": "Celebrities",
+        "taylor": "Celebrities",
+        "and": "Celebrities",
+        "kelce": "Celebrities",
+        "travis": "Celebrities",
+        "global": "Top_Netflix",
+        "conclave": "World_Affairs"
+      },
+      "Weather": {
+        "the": "Temperature",
+        "this": "Temperature",
+        "for": "Temperature",
+        "market": "Temperature",
+        "landfall": "Storms",
+        "will": "Wildfire",
+        "and": "Wildfire"
+      },
+      "Esports": {
+        "the": "CSGO",
+        "this": "CSGO",
+        "market": "CSGO",
+        "will": "CSGO",
+        "match": "Valorant",
+        "call": "Call of Duty",
+        "duty": "Call of Duty",
+        "league": "lol",
+        "freecs": "lol",
+        "bnk": "lol",
+        "fearx": "lol",
+        "game": "lol",
+        "counter": "counter strike 2",
+        "strike": "counter strike 2",
+        "aurora": "counter strike 2",
+        "gaming": "counter strike 2",
+        "hotu": "counter strike 2"
+      },
+      "Economics": {
+        "2025": "Trade_War",
+        "the": "Jobs",
+        "official": "Exchange_Rates",
+        "rate": "Exchange_Rates",
+        "market": "Exchange_Rates",
+        "will": "Trade",
+        "this": "Currency",
+        "resolve": "Currency",
+        "treasury": "Trade_War",
+        "financial": "Trade_War",
+        "unemployment": "Macro Unemployment"
+      },
+      "Finance": {
+        "the": "Individual_Stocks",
+        "market": "Market_Indices",
+        "this": "Currency",
+        "will": "Currency",
+        "treasury": "Interest_Rates",
+        "yield": "Interest_Rates",
+        "eps": "AMPL",
+        "gaap": "AMPL",
+        "bank": "Macro Single",
+        "fdic": "Macro Single",
+        "ethereum": "Ethereum",
+        "trading": "Ethereum",
+        "july": "Ethereum",
+        "etf": "Ethereum",
+        "begins": "Ethereum",
+        "resolve": "Ethereum"
+      },
+      "Tech": {
+        "the": "Tech_Companies",
+        "will": "Tech_Companies",
+        "this": "Social_Media",
+        "app": "Social_Media",
+        "ceo": "Tech",
+        "announced": "Tech",
+        "july": "Tech",
+        "market": "Tech",
+        "resolve": "Tech",
+        "yes": "Tech",
+        "successor": "Tech",
+        "resolution": "Tech",
+        "store": "Big_Tech",
+        "top": "Big_Tech",
+        "play": "Big_Tech",
+        "free": "Big_Tech"
+      },
+      "Science": {
+        "2024": "Climate",
+        "the": "Research",
+        "this": "Space",
+        "market": "Space",
+        "cellular": "Space",
+        "outage": "Space",
+        "solar": "Space",
+        "flare": "Space",
+        "will": "Space",
+        "resolve": "Space",
+        "for": "Climate",
+        "fire": "Specific Domain (e.g., Geopolitics, Awards)",
+        "acres": "Specific Domain (e.g., Geopolitics, Awards)",
+        "total": "Specific Domain (e.g., Geopolitics, Awards)"
+      },
+      "All": {
+        "will": "Bitcoin",
+        "binance": "Bitcoin",
+        "this": "Bitcoin",
+        "market": "Bitcoin",
+        "the": "Bitcoin",
+        "taylor": "Specific Domain",
+        "swift": "Specific Domain",
+        "travis": "Specific Domain",
+        "kelce": "Specific Domain",
+        "resolve": "Specific Domain"
+      }
+    }
+  },
+  "bet_structure": {
+    "classification_rules": {
+      "Over/Under": {
+        "contains": [
+          "the"
+        ]
+      },
+      "Spread": {
+        "contains": [
+          "the"
+        ]
+      },
+      "Up_Down": {
+        "contains": [
+          "up or down",
+          "up/down",
+          "upordown"
+        ]
+      },
+      "Moneyline": {
+        "contains": [
+          "the"
+        ],
+        "must_not_contain": [
+          "spread",
+          "o/u",
+          "over/under"
+        ]
+      },
+      "Price_Target": {
+        "contains": [
+          "the"
+        ]
+      },
+      "Awards": {
+        "contains": [
+          "the",
+          "nfl"
+        ]
+      },
+      "Other": {
+        "fallback": true
+      }
+    }
+  }
+}

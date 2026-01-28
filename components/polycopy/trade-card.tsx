@@ -22,6 +22,7 @@ import {
   CircleDot,
   Clock,
   Star,
+  Sparkles,
 } from "lucide-react"
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -49,6 +50,9 @@ import {
   resolveMarketCategoryType,
 } from "@/lib/badge-state"
 import { abbreviateTeamName } from "@/lib/utils/team-abbreviations"
+import { isTop5Trader } from "@/lib/polyscore/check-top5"
+import { getPolyScore, type PolyScoreResponse } from "@/lib/polyscore/get-polyscore"
+import { PolyScoreResults } from "@/components/polyscore/PolyScoreResults"
 
 const normalizeLegacyScore = (value: unknown) => {
   if (!value) return null
@@ -519,6 +523,14 @@ export function TradeCard({
   userPositionBadge,
   onSellPosition,
 }: TradeCardProps) {
+  // DEBUG: Log every render
+  console.log('🎯 TradeCard RENDERED:', {
+    traderName: trader.name,
+    traderAddress: trader.address,
+    isAdmin,
+    market
+  })
+  
   const resolvedDefaultSlippage =
     action === "Buy"
       ? typeof defaultBuySlippage === "number"
@@ -531,6 +543,12 @@ export function TradeCard({
   const [amountInput, setAmountInput] = useState<string>("")
   const canUseAutoClose = Boolean(isAdmin)
   const [autoClose, setAutoClose] = useState(() => canUseAutoClose)
+  
+  // PolyScore state
+  const isTop5 = isAdmin && trader.address ? isTop5Trader(trader.address) : false
+  const [isLoadingPolyScore, setIsLoadingPolyScore] = useState(false)
+  const [polyScoreData, setPolyScoreData] = useState<PolyScoreResponse | null>(null)
+  const [polyScoreError, setPolyScoreError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [localCopied, setLocalCopied] = useState(isCopied)
@@ -2366,6 +2384,221 @@ export function TradeCard({
     }
   }
 
+  // Handler for Get PolyScore button
+  const handleGetPolyScore = async () => {
+    if (!conditionId || !trader.address || !hasCurrentPrice) {
+      setPolyScoreError('Missing required trade data')
+      return
+    }
+
+    setIsLoadingPolyScore(true)
+    setPolyScoreError(null)
+    setPolyScoreData(null)
+
+    try {
+      // Get user session token for authenticated request
+      const { supabase } = await import('@/lib/supabase')
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      // Fetch market metadata from Supabase first
+      let marketData: any = null
+      if (conditionId) {
+        const { data: marketRow } = await supabase
+          .from('markets')
+          .select('*')
+          .eq('condition_id', conditionId)
+          .single()
+        marketData = marketRow
+      }
+
+      // If market data is missing or incomplete, fetch from Polymarket Price API
+      let apiMarketData: any = null
+      if (conditionId && (!marketData || !marketData.tags || !marketData.volume_total)) {
+        try {
+          const priceResponse = await fetch(`/api/polymarket/price?conditionId=${conditionId}`)
+          if (priceResponse.ok) {
+            const priceData = await priceResponse.json()
+            if (priceData.success && priceData.market) {
+              apiMarketData = priceData.market
+              // Merge API data with database data (prefer database, fallback to API)
+              marketData = {
+                ...marketData,
+                title: marketData?.title || apiMarketData.question || market,
+                tags: marketData?.tags || apiMarketData.tags || null,
+                event_slug: marketData?.event_slug || apiMarketData.eventSlug || null,
+                game_start_time: marketData?.game_start_time || apiMarketData.gameStartTime || null,
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('[PolyScore] Failed to fetch market data from Price API:', error)
+        }
+      }
+
+      // Fetch from CLOB API for additional market details (volumes, etc.)
+      if (conditionId && (!marketData?.volume_total)) {
+        try {
+          const clobResponse = await fetch(`/api/polymarket/market?conditionId=${conditionId}`)
+          if (clobResponse.ok) {
+            const clobData = await clobResponse.json()
+            if (clobData.ok) {
+              // CLOB API returns basic market info but not volumes
+              // Volumes would need to come from Gamma API or be calculated
+              marketData = {
+                ...marketData,
+                title: marketData?.title || clobData.question || market,
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('[PolyScore] Failed to fetch market data from CLOB API:', error)
+        }
+      }
+
+      // Fetch from Gamma API for classification and additional metadata
+      if (conditionId) {
+        try {
+          const gammaResponse = await fetch(`/api/gamma/markets?conditionId=${conditionId}`)
+          if (gammaResponse.ok) {
+            const gammaData = await gammaResponse.json()
+            if (gammaData && !Array.isArray(gammaData) && gammaData.category) {
+              // Gamma returns category which can help with classification
+              marketData = {
+                ...marketData,
+                // Category can be used to infer bet_structure and market_subtype
+                // This would need your classification logic
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('[PolyScore] Failed to fetch Gamma market data:', error)
+        }
+      }
+
+      // Fetch recent trader actions (last 5 trades in this market)
+      let recentTraderActions: any[] = []
+      if (conditionId && trader.address) {
+        const { data: recentTrades } = await supabase
+          .from('trades')
+          .select('side, price, shares_normalized, timestamp')
+          .eq('wallet_address', trader.address.toLowerCase())
+          .eq('condition_id', conditionId)
+          .order('timestamp', { ascending: false })
+          .limit(5)
+        
+        if (recentTrades) {
+          recentTraderActions = recentTrades.map(trade => ({
+            side: trade.side,
+            price: parseFloat(trade.price),
+            shares_normalized: parseFloat(trade.shares_normalized || 0),
+            timestamp: new Date(trade.timestamp).toISOString(),
+          }))
+        }
+      }
+
+      // Extract event slug from polymarketUrl or marketSlug
+      const eventSlugMatch = polymarketUrl?.match(/\/event\/([^\/]+)/)
+      const marketEventSlug = eventSlugMatch?.[1] || marketSlug || null
+
+      // Calculate market duration in days
+      const startTimeUnix = marketData?.start_time_unix || (eventStartTime ? Math.floor(new Date(eventStartTime).getTime() / 1000) : null)
+      const endTimeUnix = marketData?.end_time_unix || (eventEndTime ? Math.floor(new Date(eventEndTime).getTime() / 1000) : null)
+      const marketDurationDays = startTimeUnix && endTimeUnix 
+        ? Math.round((endTimeUnix - startTimeUnix) / (24 * 60 * 60))
+        : null
+
+      // Build structured request payload
+      const requestData = {
+        // --- The Triggering Trade (The one being copied) ---
+        original_trade: {
+          wallet_address: trader.address,
+          condition_id: conditionId,
+          side: action.toUpperCase() as "BUY" | "SELL",
+          price: price,
+          shares_normalized: size,
+          timestamp: tradeTimestampMs ? new Date(tradeTimestampMs).toISOString() : new Date().toISOString(),
+        },
+        
+        // --- The Live Market State ---
+        market_context: {
+          current_price: currentPrice,
+          current_timestamp: new Date().toISOString(),
+          market_volume_total: marketData?.volume_total || null,
+          market_tags: marketData?.tags 
+            ? (Array.isArray(marketData.tags) ? JSON.stringify(marketData.tags) : marketData.tags)
+            : (apiMarketData?.tags 
+                ? (Array.isArray(apiMarketData.tags) ? JSON.stringify(apiMarketData.tags) : apiMarketData.tags)
+                : null),
+          market_bet_structure: marketData?.bet_structure || marketCategory?.bet_structure || null,
+          market_market_subtype: marketData?.market_subtype || marketCategory?.market_subtype || null,
+          market_duration_days: marketDurationDays,
+          market_title: market || marketData?.title || apiMarketData?.question || null,
+          market_event_slug: marketEventSlug,
+          market_start_time_unix: startTimeUnix,
+          market_end_time_unix: endTimeUnix,
+          market_volume_1_week: marketData?.volume_1_week || null,
+          market_volume_1_month: marketData?.volume_1_month || null,
+          market_negative_risk_id: marketData?.negative_risk_id || null,
+          game_start_time: eventStartTime || marketData?.game_start_time || apiMarketData?.gameStartTime || null,
+          token_label: position || null,
+          token_id: tokenId || null,
+        },
+
+        // --- The User's Context ---
+        user_slippage: resolvedDefaultSlippage / 100, // Convert percentage to decimal
+      }
+
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('🎯 [PolyScore] TRADE CARD - Initiating Request')
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('Trader Name:', trader.name)
+      console.log('Trader Address:', trader.address)
+      console.log('Condition ID:', conditionId)
+      console.log('Current Price:', currentPrice)
+      console.log('User Slippage (%):', resolvedDefaultSlippage)
+      console.log('User Slippage (decimal):', requestData.user_slippage)
+      console.log('Has Session:', !!session)
+      console.log('Session User ID:', session?.user?.id)
+      console.log('Market Data Found:', !!marketData)
+      console.log('API Market Data Found:', !!apiMarketData)
+      console.log('Recent Trader Actions:', recentTraderActions.length)
+      console.log('Market Data Details:', {
+        hasTitle: !!marketData?.title,
+        hasTags: !!marketData?.tags,
+        hasVolumes: !!(marketData?.volume_total || marketData?.volume_1_week),
+        hasBetStructure: !!marketData?.bet_structure,
+        hasSubtype: !!marketData?.market_subtype,
+      })
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('📦 FULL REQUEST PAYLOAD (NEW STRUCTURE):')
+      console.log(JSON.stringify(requestData, null, 2))
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('📋 Original Trade:', JSON.stringify(requestData.original_trade, null, 2))
+      console.log('📋 Market Context:', JSON.stringify(requestData.market_context, null, 2))
+      console.log('📋 User Slippage:', requestData.user_slippage)
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      // Also log as object so it's expandable in console
+      console.log('📦 Request Data Object:', requestData)
+      console.log('Market Data:', marketData)
+
+      const result = await getPolyScore(requestData, accessToken)
+      
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('✅ [PolyScore] TRADE CARD - Request Complete')
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('Final Result:', JSON.stringify(result, null, 2))
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      
+      setPolyScoreData(result)
+    } catch (error: any) {
+      console.error('[PolyScore] Error:', error)
+      setPolyScoreError(error.message || 'Failed to get PolyScore')
+    } finally {
+      setIsLoadingPolyScore(false)
+    }
+  }
+
   const closeManualDrawer = () => {
     setManualDrawerOpen(false)
     setManualUsdAmount("")
@@ -3115,6 +3348,51 @@ export function TradeCard({
                 'Mark trade as copied'
               )}
             </Button>
+          </div>
+        )}
+
+        {/* Get PolyScore Button - Admin Only, Top 5 Traders Only */}
+        {isAdmin && isTop5 && conditionId && hasCurrentPrice && (
+          <div className="px-5 md:px-6 py-2 border-t border-slate-200">
+            <div className="flex justify-center">
+              <Button
+                onClick={handleGetPolyScore}
+                disabled={isLoadingPolyScore}
+                variant="outline"
+                className="rounded-full border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-medium shadow-sm text-xs h-7 px-3"
+                size="sm"
+              >
+                {isLoadingPolyScore ? (
+                  <>
+                    <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3 h-3 mr-1.5" />
+                    Get PolyScore
+                  </>
+                )}
+              </Button>
+            </div>
+            {polyScoreError && (
+              <div className="mt-2 flex justify-center">
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                  {polyScoreError}
+                </div>
+              </div>
+            )}
+            {polyScoreData && (
+              <div className="mt-2">
+                <PolyScoreResults
+                  data={polyScoreData}
+                  onClose={() => {
+                    setPolyScoreData(null)
+                    setPolyScoreError(null)
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -3886,6 +4164,17 @@ export function TradeCard({
             </div>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* PolyScore Results Modal */}
+      {polyScoreData && (
+        <PolyScoreResults
+          data={polyScoreData}
+          onClose={() => {
+            setPolyScoreData(null)
+            setPolyScoreError(null)
+          }}
+        />
       )}
 
       {onTogglePin && (

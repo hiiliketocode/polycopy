@@ -138,6 +138,8 @@ export async function POST(request: NextRequest) {
       customer: customerId,
       mode: 'subscription',
       payment_method_types: ['card'],
+      // Always collect payment method, even with 100% off coupons (free month promos)
+      payment_method_collection: 'always',
       line_items: [
         {
           price: process.env.STRIPE_PRICE_ID,
@@ -147,6 +149,13 @@ export async function POST(request: NextRequest) {
       success_url: `${request.headers.get('origin')}/portfolio?upgrade=success`,
       cancel_url: `${request.headers.get('origin')}/portfolio?upgrade=canceled`,
       allow_promotion_codes: true,
+      subscription_data: {
+        trial_settings: {
+          end_behavior: {
+            missing_payment_method: 'cancel',
+          },
+        },
+      },
       metadata: {
         supabase_user_id: user.id,
       },

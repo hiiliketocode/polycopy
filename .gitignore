@@ -42,3 +42,6 @@ next-env.d.ts
 
 # temp design files (not part of build)
 temp-newdesign/
+
+# large data files
+top5_ml_full.csv

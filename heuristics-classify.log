@@ -1,0 +1,879 @@
+[dotenv@17.2.3] injecting env (34) from .env.local -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+🚀 Starting market heuristics backfill
+📄 Using heuristics model: /Users/rawdonmessenger/PolyCopy/combined_heuristics_model.json
+⚙️  Batch size: 100, Sleep: 50ms
+⏭️  Skipping markets with existing classifications
+
+📦 Processing batch: 100 markets (offset: 0)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 8000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 8100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 8200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 8300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 8400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 8500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 8600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 8700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 8800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 8900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 9000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 9100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 9200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 9300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 9400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 9500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 9600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 9700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 9800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 9900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 10000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 10100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 10200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 10300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 10400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 10500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 10600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 10700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 10800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 10900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 11000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 11100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 11200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 11300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 11400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 11500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 11600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 11700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 11800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 11900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 12000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 12100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 12200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 12300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 12400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 12500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 12600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 12700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 12800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 12900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 13000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 13100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 13200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 13300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 13400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 13500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 13600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 13700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 13800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 13900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 14000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 14100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 14200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 14300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 14400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 14500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 14600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 14700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 14800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 14900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 15000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 15100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 15200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 15300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 15400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 15500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 15600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 15700)
+✅ Updated 100 markets in this batch
+✅ No more markets to process
+
+============================================================
+✨ Market heuristics backfill complete
+============================================================
+📊 Processed: 15800 markets
+✅ Updated: 15800 markets
+⏭️  Skipped: 0 markets (already classified)
+❌ Errors: 0 markets
+============================================================
+[dotenv@17.2.3] injecting env (34) from .env.local -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+🚀 Starting market heuristics backfill
+📄 Using heuristics model: /Users/rawdonmessenger/PolyCopy/combined_heuristics_model.json
+⚙️  Batch size: 100, Sleep: 50ms
+⏭️  Skipping markets with existing classifications
+
+📦 Processing batch: 100 markets (offset: 0)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 4900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 5900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 6900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 7800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 33 markets (offset: 7900)
+✅ Updated 33 markets in this batch
+✅ Reached end of markets
+
+============================================================
+✨ Market heuristics backfill complete
+============================================================
+📊 Processed: 7933 markets
+✅ Updated: 7933 markets
+⏭️  Skipped: 0 markets (already classified)
+❌ Errors: 0 markets
+============================================================
+[dotenv@17.2.3] injecting env (34) from .env.local -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+🚀 Starting market heuristics backfill
+📄 Using heuristics model: /Users/rawdonmessenger/PolyCopy/combined_heuristics_model.json
+⚙️  Batch size: 100, Sleep: 50ms
+⏭️  Skipping markets with existing classifications
+
+📦 Processing batch: 100 markets (offset: 0)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 1900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 2900)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3000)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3100)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3200)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3300)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3400)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3500)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3600)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3700)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3800)
+✅ Updated 100 markets in this batch
+
+📦 Processing batch: 100 markets (offset: 3900)
+✅ Updated 100 markets in this batch
+✅ No more markets to process
+
+============================================================
+✨ Market heuristics backfill complete
+============================================================
+📊 Processed: 4000 markets
+✅ Updated: 4000 markets
+⏭️  Skipped: 0 markets (already classified)
+❌ Errors: 0 markets
+============================================================

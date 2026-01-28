@@ -12,6 +12,7 @@
     "@dschz/polymarket-clob-client": "^0.4.4",
     "@ethersproject/providers": "^5.8.0",
     "@ethersproject/wallet": "^5.8.0",
+    "@google/generative-ai": "^0.24.1",
     "@hookform/resolvers": "^3.10.0",
     "@polymarket/clob-client": "^5.2.0",
     "@polymarket/relayer-client": "^3.0.0",
