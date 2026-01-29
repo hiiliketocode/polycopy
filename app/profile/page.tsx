@@ -2609,8 +2609,11 @@ function ProfilePageContent() {
       const tokenId = await resolveTokenIdForTrade(trade);
       const size = getTradeContracts(trade);
       if (tokenId && size && size > 0) {
+        // Get the original trade side
         const sideRaw =
-          trade.type === 'quick' ? trade.raw?.side : null;
+          trade.type === 'quick' 
+            ? trade.raw?.side 
+            : (trade.copiedTrade?.side || trade.raw?.side); // For manual trades, get from copiedTrade
         const normalizedSide = sideRaw ? String(sideRaw).trim().toUpperCase() : 'BUY';
         const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
         position = {
