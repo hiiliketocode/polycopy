@@ -7,4 +7,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backfill.py .
 
-CMD ["python", "backfill.py"]
+# Use -u flag for unbuffered output so logs appear immediately in Cloud Run
+CMD ["python", "-u", "backfill.py"]
