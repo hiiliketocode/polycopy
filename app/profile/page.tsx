@@ -84,6 +84,7 @@ interface CopiedTrade {
   trade_method?: 'quick' | 'manual' | 'auto' | null;
   order_id?: string | null;
   copied_trade_id?: string | null;
+  side?: string; // 'buy' or 'sell' - the original trade direction
 }
 
 interface PositionSizeBucket {
