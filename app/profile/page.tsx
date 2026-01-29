@@ -3206,15 +3206,21 @@ function ProfilePageContent() {
                             <React.Fragment key={trade.id}>
                               <tr className="border-b border-slate-100 align-top">
                                 <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 w-[120px] bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
-                                  {trade.trader_wallet && trade.trader_username ? (
-                                    <a
-                                      href={`/trader/${trade.trader_wallet}`}
-                                      className="text-sm font-medium text-slate-700 hover:text-slate-900 truncate block max-w-[120px]"
-                                      title={trade.trader_username}
-                                      onClick={(event) => event.stopPropagation()}
-                                    >
-                                      {trade.trader_username}
-                                    </a>
+                                  {trade.trader_username ? (
+                                    trade.trader_wallet ? (
+                                      <a
+                                        href={`/trader/${trade.trader_wallet}`}
+                                        className="text-sm font-medium text-slate-700 hover:text-slate-900 truncate block max-w-[120px]"
+                                        title={trade.trader_username}
+                                        onClick={(event) => event.stopPropagation()}
+                                      >
+                                        {trade.trader_username}
+                                      </a>
+                                    ) : (
+                                      <span className="text-sm font-medium text-slate-700 truncate block max-w-[120px]" title={trade.trader_username}>
+                                        {trade.trader_username}
+                                      </span>
+                                    )
                                   ) : (
                                     <span className="text-sm text-slate-400">Unknown</span>
                                   )}
