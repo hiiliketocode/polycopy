@@ -893,6 +893,34 @@ function ProfilePageContent() {
     console.log(`💾 Stored live data for ${newLiveData.size} markets`);
     setLiveMarketData(newLiveData);
 
+    // Update database with resolved market status and current prices
+    if (newLiveData.size > 0 && user) {
+      const priceUpdates: Array<{ marketId: string; outcome: string; price: number; resolved?: boolean }> = [];
+      
+      for (const [key, data] of newLiveData.entries()) {
+        const parts = key.split(':');
+        if (parts.length === 2) {
+          const [marketId, outcome] = parts;
+          priceUpdates.push({
+            marketId,
+            outcome,
+            price: data.price,
+            resolved: data.closed || false,
+          });
+        }
+      }
+
+      if (priceUpdates.length > 0) {
+        fetch('/api/portfolio/refresh-prices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ updates: priceUpdates }),
+        }).catch((err) => {
+          console.warn('Failed to update prices in database:', err);
+        });
+      }
+    }
+
     // Apply live prices to open trades so PnL is mark-to-market
     if (newLiveData.size > 0) {
       setCopiedTradesBase((prev) => {
