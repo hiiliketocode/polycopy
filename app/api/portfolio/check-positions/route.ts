@@ -254,14 +254,9 @@ export async function POST(request: Request) {
     console.log(`[check-positions] Built position map with ${positionMap.size} positions`);
     console.log(`[check-positions] Sample positions:`, Array.from(positionMap.entries()).slice(0, 3));
 
-    // REMOVED: Auto-close logic for missing positions
-    // This was causing false positives when the Polymarket API failed to return positions
-    // Users should explicitly close positions using "Mark as Closed" or by selling on Polymarket
-    // The duplicate SELL order detection above will still automatically hide those
-    
-    console.log(`[check-positions] ℹ️ Auto-close for missing positions is disabled. Only duplicate SELL orders are hidden.`);
-    
     const tradesToClose: Array<{ id: string; reason: string; source: string }> = [];
+    
+    console.log(`[check-positions] ℹ️ Position verification disabled - only showing duplicate SELL cleanup results above`);
 
     return NextResponse.json({
       message: `Checked ${allTrades.length} trades, hidden ${sellOrdersToHide.length} duplicate SELLs (auto-close disabled)`,

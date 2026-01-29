@@ -1505,13 +1505,17 @@ function ProfilePageContent() {
 
   // Filter trades
   const filteredTrades = copiedTrades.filter(trade => {
-    // ALWAYS exclude SELL orders (they're closing positions, not new positions)
-    if (trade.side && trade.side.toLowerCase() === 'sell') return false;
+    // Exclude SELL orders from most views (they're closing positions, not new positions)
+    // BUT allow them in 'history' view so users can see all activity
+    if (trade.side && trade.side.toLowerCase() === 'sell' && tradeFilter !== 'history') {
+      return false;
+    }
     
     if (tradeFilter === 'all') return true;
     if (tradeFilter === 'open') return !trade.user_closed_at && !trade.market_resolved;
     if (tradeFilter === 'closed') return Boolean(trade.user_closed_at);
     if (tradeFilter === 'resolved') return Boolean(trade.market_resolved);
+    if (tradeFilter === 'history') return true; // Show all trades including sells
     return true;
   });
 
@@ -2507,6 +2511,8 @@ function ProfilePageContent() {
           return isSoldTrade(trade);
         case 'resolved':
           return (trade.status === 'resolved' || isLiveResolved(trade)) && !isSoldTrade(trade);
+        case 'history':
+          return true; // Show all trades including sells in activity view
         default:
           return true;
       }

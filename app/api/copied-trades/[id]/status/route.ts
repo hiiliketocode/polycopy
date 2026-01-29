@@ -371,11 +371,12 @@ export async function GET(
                   const maxPrice = Math.max(...priceNumbers)
                   const minPrice = Math.min(...priceNumbers)
                   
-                  // Market is resolved ONLY if:
+                  // Market is resolved if:
                   // - Market is closed AND
-                  // - One outcome is at 99.5%+ ($0.995+) AND another is at 0.5% or less ($0.005-)
-                  // This prevents false positives from heavy favorites that are still live
-                  if (maxPrice >= 0.995 && minPrice <= 0.005) {
+                  // - One outcome is at 98%+ ($0.98+) AND another is at 2% or less ($0.02-)
+                  // Relaxed thresholds (from 99.5%/0.5%) to catch more resolved markets
+                  // This is still conservative enough to avoid false positives on live favorites
+                  if (maxPrice >= 0.98 && minPrice <= 0.02) {
                     isActuallyResolved = true
                     const winningIndex = priceNumbers.indexOf(maxPrice)
                     if (winningIndex >= 0 && winningIndex < outcomes.length) {
