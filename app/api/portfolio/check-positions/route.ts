@@ -41,10 +41,11 @@ interface TradeToCheck {
 
 /**
  * POST /api/portfolio/check-positions
- * Check user's actual Polymarket positions and auto-close trades for:
- * - Positions that no longer exist
- * - Dust positions (< $0.10 value)
- * - Duplicate SELL orders
+ * Check user's positions and clean up the UI:
+ * - Hide duplicate SELL orders (when you sell a BUY position, it creates a matching SELL entry)
+ * 
+ * Note: Previously auto-closed missing/dust positions, but this caused false positives
+ * when the Polymarket API failed. Users should now manually close positions or sell on Polymarket.
  */
 export async function POST(request: Request) {
   try {
@@ -250,54 +251,20 @@ export async function POST(request: Request) {
       }
     }
 
-    // Check each remaining trade for dust/sold positions
+    console.log(`[check-positions] Built position map with ${positionMap.size} positions`);
+    console.log(`[check-positions] Sample positions:`, Array.from(positionMap.entries()).slice(0, 3));
+
+    // REMOVED: Auto-close logic for missing positions
+    // This was causing false positives when the Polymarket API failed to return positions
+    // Users should explicitly close positions using "Mark as Closed" or by selling on Polymarket
+    // The duplicate SELL order detection above will still automatically hide those
+    
+    console.log(`[check-positions] ℹ️ Auto-close for missing positions is disabled. Only duplicate SELL orders are hidden.`);
+    
     const tradesToClose: Array<{ id: string; reason: string; source: string }> = [];
 
-    for (const trade of tradesToCheck) {
-      const marketId = trade.market_id;
-      const outcome = trade.outcome?.toUpperCase();
-      
-      if (!marketId || !outcome) continue;
-
-      const key = `${marketId}:${outcome}`;
-      const currentSize = positionMap.get(key) || 0;
-      const currentPrice = trade.current_price || trade.price_when_copied || 0;
-      const positionValue = currentSize * currentPrice;
-
-      let shouldClose = false;
-      let reason = '';
-
-      if (currentSize === 0) {
-        shouldClose = true;
-        reason = 'position_sold';
-      } else if (positionValue < DUST_THRESHOLD) {
-        shouldClose = true;
-        reason = 'dust_position';
-      }
-
-      if (shouldClose) {
-        // Only update database for trades from database source
-        if (trade.source === 'database') {
-          await supabase
-            .from('orders')
-            .update({
-              user_closed_at: now,
-              user_exit_price: currentPrice,
-            })
-            .eq('order_id', trade.order_id)
-            .eq('copy_user_id', user.id);
-
-          console.log(`✅ Auto-closed database trade ${trade.order_id}: ${reason}, size: ${currentSize}, value: $${positionValue.toFixed(4)}`);
-        } else {
-          console.log(`ℹ️ Would auto-close CLOB trade ${trade.order_id}: ${reason}, size: ${currentSize}, value: $${positionValue.toFixed(4)} (CLOB trades auto-sync)`);
-        }
-        
-        tradesToClose.push({ id: trade.order_id, reason, source: trade.source });
-      }
-    }
-
     return NextResponse.json({
-      message: `Checked ${allTrades.length} trades, hidden ${sellOrdersToHide.length} duplicate SELLs, auto-closed ${tradesToClose.length}`,
+      message: `Checked ${allTrades.length} trades, hidden ${sellOrdersToHide.length} duplicate SELLs (auto-close disabled)`,
       checked: allTrades.length,
       hidden: sellOrdersToHide.length,
       closed: tradesToClose.length,
