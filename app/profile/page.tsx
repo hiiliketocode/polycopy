@@ -2435,6 +2435,14 @@ function ProfilePageContent() {
     const manualTrades = actualManualTrades.map(convertCopiedTradeToUnified);
     const quickTradesConverted = quickTrades
       .filter(isDisplayableQuickTrade)
+      .filter(order => {
+        // Exclude SELL orders from quick trades in all views except 'history'
+        // SELL orders are position closures, not new positions
+        if (tradeFilter !== 'history' && order.side?.toLowerCase() === 'sell') {
+          return false;
+        }
+        return true;
+      })
       .map((order) => {
         const createdAt = Date.parse(order.createdAt || '');
         const createdAtMs = Number.isFinite(createdAt) ? createdAt : 0;
@@ -2464,7 +2472,7 @@ function ProfilePageContent() {
     combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     
     return combined;
-  }, [copiedTrades, quickTrades, openPositionByKey]);
+  }, [copiedTrades, quickTrades, openPositionByKey, tradeFilter]);
 
   useEffect(() => {
     if (tradeFilter === 'history') return;
