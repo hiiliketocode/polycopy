@@ -1505,6 +1505,9 @@ function ProfilePageContent() {
 
   // Filter trades
   const filteredTrades = copiedTrades.filter(trade => {
+    // ALWAYS exclude SELL orders (they're closing positions, not new positions)
+    if (trade.side && trade.side.toLowerCase() === 'sell') return false;
+    
     if (tradeFilter === 'all') return true;
     if (tradeFilter === 'open') return !trade.user_closed_at && !trade.market_resolved;
     if (tradeFilter === 'closed') return Boolean(trade.user_closed_at);
