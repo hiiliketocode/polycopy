@@ -1493,6 +1493,7 @@ export default function TraderProfilePage({
           priceWhenCopied: entryPrice,
           amountInvested: amountInvested || null,
           marketAvatarUrl,
+          tokenId: trade.tokenId || null,
         }),
       });
 

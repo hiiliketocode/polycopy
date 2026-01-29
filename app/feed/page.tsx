@@ -2830,6 +2830,7 @@ export default function FeedPage() {
           amountInvested: amountInvested || null,
           traderProfileImage,
           marketAvatarUrl,
+          tokenId: trade.trade.tokenId || null,
         }),
       });
 

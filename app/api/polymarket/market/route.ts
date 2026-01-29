@@ -98,6 +98,9 @@ export async function GET(request: Request) {
       minimumOrderSize: minimumOrderSize ?? minOrderSize,
       minOrderSize,
       tickSize,
+      acceptingOrders: typeof market?.accepting_orders === 'boolean' ? market.accepting_orders : null,
+      closed: typeof market?.closed === 'boolean' ? market.closed : null,
+      resolved: typeof market?.resolved === 'boolean' ? market.resolved : null,
     })
   } catch (error: any) {
     return NextResponse.json(

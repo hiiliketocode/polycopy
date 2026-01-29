@@ -380,6 +380,7 @@ export async function POST(request: NextRequest) {
           source: 'manual_copy',
           marketId: tradeData.marketId,
           outcome: tradeData.outcome,
+          token_id: tradeData.tokenId || null,
         },
         copied_trader_id: traderId,
         copied_trader_wallet: tradeData.traderWallet,
