@@ -58,6 +58,10 @@ export async function POST(request: Request) {
     const user = userData.user;
     const { walletAddress } = await request.json();
 
+    console.log(`[check-positions] ===== START CHECK-POSITIONS =====`);
+    console.log(`[check-positions] User ID: ${user.id}`);
+    console.log(`[check-positions] Wallet Address: ${walletAddress}`);
+
     if (!walletAddress) {
       return NextResponse.json({ error: 'Wallet address required' }, { status: 400 });
     }
@@ -66,6 +70,7 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
 
     // Fetch manual trades from database
+    console.log(`[check-positions] Querying orders table for user: ${user.id}`);
     const { data: manualTrades, error: tradesError } = await supabase
       .from('orders')
       .select('order_id, copied_trade_id, market_id, outcome, price_when_copied, entry_size, current_price, side, trader_id, copy_user_id, trade_method')
@@ -73,19 +78,31 @@ export async function POST(request: Request) {
       .is('user_closed_at', null)
       .is('market_resolved', false);
 
-    console.log(`[check-positions] Found ${manualTrades?.length || 0} manual trades in database`);
+    if (tradesError) {
+      console.error(`[check-positions] Database query error:`, tradesError);
+    }
+    
+    console.log(`[check-positions] Database returned ${manualTrades?.length || 0} manual trades`);
+    if (manualTrades && manualTrades.length > 0) {
+      console.log(`[check-positions] Sample trade:`, JSON.stringify(manualTrades[0], null, 2));
+    }
 
     // Fetch quick trades (auto-copied) directly from CLOB
     const clobTrades: TradeToCheck[] = [];
+    console.log(`[check-positions] Attempting to fetch CLOB orders for user: ${user.id}`);
     try {
       const { client } = await getAuthedClobClientForUser(user.id);
       const openOrders = await client.getOpenOrders({}, true);
       
-      console.log(`[check-positions] Found ${openOrders?.length || 0} open orders from CLOB`);
+      console.log(`[check-positions] CLOB returned ${openOrders?.length || 0} open orders`);
       
       if (Array.isArray(openOrders)) {
+        console.log(`[check-positions] Processing ${openOrders.length} CLOB orders`);
         for (const order of openOrders) {
-          if (!order.id || !order.asset_id) continue;
+          if (!order.id || !order.asset_id) {
+            console.log(`[check-positions] Skipping order - missing id or asset_id`);
+            continue;
+          }
           
           // Extract market_id from tokenId
           const tokenId = order.asset_id || order.token_id || '';
@@ -104,9 +121,10 @@ export async function POST(request: Request) {
             });
           }
         }
+        console.log(`[check-positions] Added ${clobTrades.length} CLOB trades to check`);
       }
-    } catch (err) {
-      console.error('[check-positions] Failed to fetch CLOB orders:', err);
+    } catch (err: any) {
+      console.error('[check-positions] Failed to fetch CLOB orders:', err?.message || err);
     }
 
     // Combine all trades to check
@@ -133,10 +151,10 @@ export async function POST(request: Request) {
     // Add CLOB trades
     allTrades.push(...clobTrades);
 
-    console.log(`[check-positions] Total trades to check: ${allTrades.length}`);
+    console.log(`[check-positions] Total trades to check: ${allTrades.length} (${manualTrades?.length || 0} manual + ${clobTrades.length} CLOB)`);
 
     if (allTrades.length === 0) {
-      console.log('[check-positions] No open trades to check');
+      console.log('[check-positions] ===== END CHECK-POSITIONS (No trades) =====');
       return NextResponse.json({ 
         message: 'No open trades to check',
         checked: 0,
