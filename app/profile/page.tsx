@@ -947,7 +947,7 @@ function ProfilePageContent() {
           // Auto-close manually copied trades when market resolves
           if (live.closed && trade.trade_method === 'manual' && !trade.user_closed_at) {
             const settlementPrice = live.price;
-            const entryPrice = trade.price_entry || 0;
+            const entryPrice = trade.price_when_copied || 0;
             const roi = entryPrice > 0 ? ((settlementPrice - entryPrice) / entryPrice) * 100 : 0;
             
             manualTradesToAutoClose.push({
