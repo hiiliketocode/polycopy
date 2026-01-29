@@ -67,6 +67,8 @@ export async function POST(request: Request) {
       });
     }
 
+    const now = new Date().toISOString();
+
     // First, hide SELL orders that are just closing positions
     // (these show up as duplicates when you use the Sell button)
     const sellOrders = openTrades.filter(t => t.side === 'SELL' && t.trader_id);
@@ -147,7 +149,6 @@ export async function POST(request: Request) {
 
     // Check each remaining trade for dust/sold positions
     const tradesToClose: Array<{ id: string; reason: string }> = [];
-    const now = new Date().toISOString();
 
     for (const trade of manualTrades) {
       const marketId = trade.market_id;
