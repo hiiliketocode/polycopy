@@ -59,9 +59,13 @@ export async function POST(request: Request) {
       .is('user_closed_at', null)
       .is('market_resolved', false);
 
+    console.log(`[check-positions] Found ${openTrades?.length || 0} open trades for user ${user.id}`);
+
     if (tradesError || !openTrades || openTrades.length === 0) {
+      console.log('[check-positions] No open trades to check');
       return NextResponse.json({ 
         message: 'No open trades to check',
+        checked: 0,
         closed: 0,
         hidden: 0,
       });
@@ -74,6 +78,8 @@ export async function POST(request: Request) {
     const sellOrders = openTrades.filter(t => t.side === 'SELL' && t.trader_id);
     const sellOrdersToHide: string[] = [];
 
+    console.log(`[check-positions] Found ${sellOrders.length} SELL orders to check for duplicates`);
+
     for (const sellOrder of sellOrders) {
       // Find matching BUY order for the same market/outcome/trader
       const matchingBuyOrder = openTrades.find(t => 
@@ -83,6 +89,8 @@ export async function POST(request: Request) {
         t.side === 'BUY' &&
         t.order_id !== sellOrder.order_id
       );
+
+      console.log(`[check-positions] SELL order ${sellOrder.order_id}: market=${sellOrder.market_id}, outcome=${sellOrder.outcome}, has match=${!!matchingBuyOrder}`);
 
       if (matchingBuyOrder) {
         // This SELL order is closing a BUY position - hide it by marking as closed

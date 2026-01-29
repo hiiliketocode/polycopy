@@ -599,27 +599,41 @@ function ProfilePageContent() {
         // Fetch live market data for the trades
         fetchLiveMarketData(tradesWithCorrectRoi);
         
-        // Auto-close dust positions if user has a wallet connected
-        if (profile?.trading_wallet_address) {
-          fetch('/api/portfolio/check-positions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ walletAddress: profile.trading_wallet_address }),
+        // Auto-close dust positions and hide duplicate SELL orders
+        console.log('🔍 Checking for duplicate positions and dust...');
+        const walletToCheck = profile?.trading_wallet_address || user.id; // Use user ID as fallback
+        
+        fetch('/api/portfolio/check-positions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ walletAddress: walletToCheck }),
+        })
+          .then(res => {
+            if (!res.ok) {
+              console.error('❌ check-positions failed:', res.status, res.statusText);
+              return res.json().then(data => {
+                console.error('Error details:', data);
+                throw new Error(data.error || 'Failed to check positions');
+              });
+            }
+            return res.json();
           })
-            .then(res => res.json())
-            .then(data => {
-              if (data.closed > 0 || data.hidden > 0) {
-                console.log(`🧹 Auto-closed ${data.closed} dust/sold position(s), hidden ${data.hidden} duplicate SELL order(s)`);
-                // Refresh trades after auto-closing
-                hasLoadedTradesRef.current = false;
-                setTimeout(() => {
-                  hasLoadedTradesRef.current = false;
-                  window.location.reload();
-                }, 1000);
-              }
-            })
-            .catch(err => console.warn('Failed to check positions:', err));
-        }
+          .then(data => {
+            console.log('✅ Check-positions result:', data);
+            if (data.closed > 0 || data.hidden > 0) {
+              console.log(`🧹 Auto-closed ${data.closed} dust/sold position(s), hidden ${data.hidden} duplicate SELL order(s)`);
+              // Refresh trades after auto-closing
+              hasLoadedTradesRef.current = false;
+              setTimeout(() => {
+                window.location.reload();
+              }, 1500);
+            } else {
+              console.log('ℹ️ No duplicates or dust positions found');
+            }
+          })
+          .catch(err => {
+            console.error('❌ Failed to check positions:', err);
+          });
       } catch (err) {
         console.error('Error fetching portfolio trades:', err);
         setCopiedTradesBase([]);
