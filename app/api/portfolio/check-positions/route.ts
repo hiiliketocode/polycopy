@@ -69,11 +69,11 @@ export async function POST(request: Request) {
     const supabase = createServiceClient();
     const now = new Date().toISOString();
 
-    // Fetch manual trades from database
-    console.log(`[check-positions] Querying orders table for user: ${user.id}`);
+    // Fetch manual trades from database (using the same view as the UI)
+    console.log(`[check-positions] Querying orders_copy_enriched view for user: ${user.id}`);
     const { data: manualTrades, error: tradesError } = await supabase
-      .from('orders')
-      .select('order_id, copied_trade_id, market_id, outcome, price_when_copied, current_price, side, trader_id, copy_user_id, trade_method')
+      .from('orders_copy_enriched')
+      .select('order_id, copied_trade_id, market_id, outcome, entry_price, current_price, side, copy_user_id, trade_method')
       .eq('copy_user_id', user.id)
       .is('user_closed_at', null)
       .is('market_resolved', false);
@@ -139,7 +139,7 @@ export async function POST(request: Request) {
             market_id: trade.market_id,
             outcome: trade.outcome,
             side: trade.side || 'BUY',
-            price_when_copied: trade.price_when_copied,
+            price_when_copied: trade.entry_price, // View uses entry_price
             current_price: trade.current_price,
             entry_size: 0, // Not needed for position checking
             source: 'database',
