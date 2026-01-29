@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     console.log(`[check-positions] Querying orders table for user: ${user.id}`);
     const { data: manualTrades, error: tradesError } = await supabase
       .from('orders')
-      .select('order_id, copied_trade_id, market_id, outcome, price_when_copied, entry_size, current_price, side, trader_id, copy_user_id, trade_method')
+      .select('order_id, copied_trade_id, market_id, outcome, price_when_copied, current_price, side, trader_id, copy_user_id, trade_method')
       .eq('copy_user_id', user.id)
       .is('user_closed_at', null)
       .is('market_resolved', false);
@@ -141,7 +141,7 @@ export async function POST(request: Request) {
             side: trade.side || 'BUY',
             price_when_copied: trade.price_when_copied,
             current_price: trade.current_price,
-            entry_size: trade.entry_size,
+            entry_size: 0, // Not needed for position checking
             source: 'database',
           });
         }
