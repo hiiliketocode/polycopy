@@ -83,8 +83,8 @@ export async function POST(request: Request) {
     
     console.log(`[check-positions] Database returned ${manualTrades?.length || 0} total trades (before filtering)`);
     if (manualTrades && manualTrades.length > 0) {
-      const openTrades = manualTrades.filter(t => !t.user_closed_at && !t.market_resolved);
-      console.log(`[check-positions] ${openTrades.length} open trades after filtering`);
+      const openTrades = manualTrades.filter(t => !t.user_closed_at);
+      console.log(`[check-positions] ${openTrades.length} open trades after filtering (user hasn't closed)`);
       console.log(`[check-positions] Sample trade:`, JSON.stringify(manualTrades[0], null, 2));
     }
 
@@ -132,10 +132,11 @@ export async function POST(request: Request) {
     const allTrades: TradeToCheck[] = [];
 
     // Add manual trades (filter to open trades only, matching UI logic)
+    // A trade is "open" if the user hasn't closed it (regardless of market resolution)
     if (manualTrades) {
       for (const trade of manualTrades) {
-        // Only include trades that are actually open (not closed by user and market not resolved)
-        if (trade.market_id && trade.outcome && !trade.user_closed_at && !trade.market_resolved) {
+        // Only include trades that user hasn't closed
+        if (trade.market_id && trade.outcome && !trade.user_closed_at) {
           allTrades.push({
             order_id: trade.order_id,
             market_id: trade.market_id,
