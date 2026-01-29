@@ -931,10 +931,23 @@ function ProfilePageContent() {
           roi: number;
         }> = [];
         
+        console.log(`🔍 Checking ${prev.length} trades for auto-close...`);
+        
         const next = prev.map((trade) => {
           if (!trade.market_id || trade.user_closed_at) return trade;
           const live = newLiveData.get(buildLiveMarketKey(trade.market_id, trade.outcome));
           if (!live) return trade;
+          
+          // Debug logging for manual trades
+          if (trade.trade_method === 'manual' && !trade.user_closed_at) {
+            console.log(`📋 Manual trade found:`, {
+              market: trade.market_title?.slice(0, 30),
+              outcome: trade.outcome,
+              closed: live.closed,
+              currentPrice: live.price,
+              entryPrice: trade.price_when_copied,
+            });
+          }
           
           // Update both price and resolution status
           const priceChanged = trade.current_price !== live.price;
@@ -949,6 +962,14 @@ function ProfilePageContent() {
             const settlementPrice = live.price;
             const entryPrice = trade.price_when_copied || 0;
             const roi = entryPrice > 0 ? ((settlementPrice - entryPrice) / entryPrice) * 100 : 0;
+            
+            console.log(`🎯 Auto-closing manual trade:`, {
+              market: trade.market_title,
+              outcome: trade.outcome,
+              entryPrice,
+              settlementPrice,
+              roi: roi.toFixed(2) + '%',
+            });
             
             manualTradesToAutoClose.push({
               trade,
