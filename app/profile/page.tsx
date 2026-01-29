@@ -608,8 +608,8 @@ function ProfilePageContent() {
           })
             .then(res => res.json())
             .then(data => {
-              if (data.closed > 0) {
-                console.log(`🧹 Auto-closed ${data.closed} dust/sold position(s)`);
+              if (data.closed > 0 || data.hidden > 0) {
+                console.log(`🧹 Auto-closed ${data.closed} dust/sold position(s), hidden ${data.hidden} duplicate SELL order(s)`);
                 // Refresh trades after auto-closing
                 hasLoadedTradesRef.current = false;
                 setTimeout(() => {

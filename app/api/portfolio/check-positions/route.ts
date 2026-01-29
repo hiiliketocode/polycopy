@@ -54,18 +54,58 @@ export async function POST(request: Request) {
     // Fetch user's open manual trades
     const { data: openTrades, error: tradesError } = await supabase
       .from('orders')
-      .select('order_id, copied_trade_id, market_id, outcome, price_when_copied, entry_size, current_price')
+      .select('order_id, copied_trade_id, market_id, outcome, price_when_copied, entry_size, current_price, side, trader_id')
       .eq('copy_user_id', user.id)
-      .eq('trade_method', 'manual')
       .is('user_closed_at', null)
       .is('market_resolved', false);
 
     if (tradesError || !openTrades || openTrades.length === 0) {
       return NextResponse.json({ 
-        message: 'No open manual trades to check',
-        closed: 0 
+        message: 'No open trades to check',
+        closed: 0,
+        hidden: 0,
       });
     }
+
+    // First, hide SELL orders that are just closing positions
+    // (these show up as duplicates when you use the Sell button)
+    const sellOrders = openTrades.filter(t => t.side === 'SELL' && t.trader_id);
+    const sellOrdersToHide: string[] = [];
+
+    for (const sellOrder of sellOrders) {
+      // Find matching BUY order for the same market/outcome/trader
+      const matchingBuyOrder = openTrades.find(t => 
+        t.market_id === sellOrder.market_id &&
+        t.outcome === sellOrder.outcome &&
+        t.trader_id === sellOrder.trader_id &&
+        t.side === 'BUY' &&
+        t.order_id !== sellOrder.order_id
+      );
+
+      if (matchingBuyOrder) {
+        // This SELL order is closing a BUY position - hide it by marking as closed
+        const identifier = sellOrder.copied_trade_id || sellOrder.order_id;
+        const identifierColumn = sellOrder.copied_trade_id ? 'copied_trade_id' : 'order_id';
+
+        await supabase
+          .from('orders')
+          .update({
+            user_closed_at: now,
+            user_exit_price: sellOrder.price_when_copied,
+          })
+          .eq(identifierColumn, identifier)
+          .eq('copy_user_id', user.id);
+
+        sellOrdersToHide.push(identifier);
+        console.log(`🧹 Hid duplicate SELL order ${identifier} (closes BUY ${matchingBuyOrder.order_id})`);
+      }
+    }
+
+    // Now check actual positions for remaining trades (excluding hidden SELLs)
+    const manualTrades = openTrades.filter(t => 
+      t.side !== 'SELL' && // Only check BUY orders
+      !sellOrdersToHide.includes(t.copied_trade_id || t.order_id)
+    );
 
     // Fetch ALL user positions from Polymarket
     let allPositions: PolymarketPosition[] = [];
@@ -105,11 +145,11 @@ export async function POST(request: Request) {
       }
     }
 
-    // Check each open trade and auto-close if needed
+    // Check each remaining trade for dust/sold positions
     const tradesToClose: Array<{ id: string; reason: string }> = [];
     const now = new Date().toISOString();
 
-    for (const trade of openTrades) {
+    for (const trade of manualTrades) {
       const marketId = trade.market_id;
       const outcome = trade.outcome?.toUpperCase();
       
@@ -151,8 +191,9 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      message: `Checked ${openTrades.length} trades, auto-closed ${tradesToClose.length}`,
+      message: `Checked ${openTrades.length} trades, hidden ${sellOrdersToHide.length} duplicate SELLs, auto-closed ${tradesToClose.length}`,
       checked: openTrades.length,
+      hidden: sellOrdersToHide.length,
       closed: tradesToClose.length,
       details: tradesToClose,
     });
