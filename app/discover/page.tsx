@@ -969,7 +969,6 @@ function DiscoverPageContent() {
     const loadCounts = async () => {
       // Fetch in batches of 5 for better parallelization
       const batchSize = 5;
-      const allEntries: [string, { count: number; hasMore: boolean }][] = [];
       
       for (let i = 0; i < topTraders.length; i += batchSize) {
         if (cancelled) break;
@@ -982,7 +981,7 @@ function DiscoverPageContent() {
               const response = await fetch(`/api/polymarket/trades-count?wallet=${trader.wallet}&hours=24&limit=300`, {
                 cache: 'no-store',
               });
-              if (!response.ok) return [normalizedWallet, { count: 0, hasMore: false }] as const;
+              if (!response.ok) return [normalizedWallet, { count: 0, hasMore: false }] as [string, { count: number; hasMore: boolean }];
               const payload = await response.json();
               return [
                 normalizedWallet,
@@ -990,14 +989,12 @@ function DiscoverPageContent() {
                   count: Number(payload?.count) || 0,
                   hasMore: Boolean(payload?.hasMore),
                 },
-              ] as const;
+              ] as [string, { count: number; hasMore: boolean }];
             } catch {
-              return [normalizedWallet, { count: 0, hasMore: false }] as const;
+              return [normalizedWallet, { count: 0, hasMore: false }] as [string, { count: number; hasMore: boolean }];
             }
           })
         );
-        
-        allEntries.push(...batchEntries);
         
         // Update state after each batch for progressive loading
         if (!cancelled) {
@@ -1089,7 +1086,7 @@ function DiscoverPageContent() {
             const normalizedWallet = wallet.toLowerCase();
             try {
               const response = await fetch(`/api/trader/${wallet}/realized-pnl`, { cache: 'no-store' });
-              if (!response.ok) return [normalizedWallet, []] as const;
+              if (!response.ok) return [normalizedWallet, []] as [string, { date: string; realized_pnl: number }[]];
               const payload = await response.json();
               const rows = Array.isArray(payload?.daily)
                 ? payload.daily.map((row: { date: string; realized_pnl: number }) => ({
@@ -1097,9 +1094,9 @@ function DiscoverPageContent() {
                     realized_pnl: Number(row.realized_pnl ?? 0),
                   }))
                 : [];
-              return [normalizedWallet, rows] as const;
+              return [normalizedWallet, rows] as [string, { date: string; realized_pnl: number }[]];
             } catch {
-              return [normalizedWallet, []] as const;
+              return [normalizedWallet, []] as [string, { date: string; realized_pnl: number }[]];
             }
           })
         );
@@ -1122,7 +1119,7 @@ function DiscoverPageContent() {
             const normalizedWallet = wallet.toLowerCase();
             try {
               const response = await fetch(`/api/trader/${wallet}/realized-pnl`, { cache: 'no-store' });
-              if (!response.ok) return [normalizedWallet, []] as const;
+              if (!response.ok) return [normalizedWallet, []] as [string, { date: string; realized_pnl: number }[]];
               const payload = await response.json();
               const rows = Array.isArray(payload?.daily)
                 ? payload.daily.map((row: { date: string; realized_pnl: number }) => ({
@@ -1130,9 +1127,9 @@ function DiscoverPageContent() {
                     realized_pnl: Number(row.realized_pnl ?? 0),
                   }))
                 : [];
-              return [normalizedWallet, rows] as const;
+              return [normalizedWallet, rows] as [string, { date: string; realized_pnl: number }[]];
             } catch {
-              return [normalizedWallet, []] as const;
+              return [normalizedWallet, []] as [string, { date: string; realized_pnl: number }[]];
             }
           })
         );
