@@ -70,20 +70,21 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
 
     // Fetch manual trades from database (using the same view as the UI)
+    // Note: Get ALL trades, then filter on client side like the UI does
     console.log(`[check-positions] Querying orders_copy_enriched view for user: ${user.id}`);
     const { data: manualTrades, error: tradesError } = await supabase
       .from('orders_copy_enriched')
-      .select('order_id, copied_trade_id, market_id, outcome, entry_price, current_price, side, copy_user_id, trade_method')
-      .eq('copy_user_id', user.id)
-      .is('user_closed_at', null)
-      .is('market_resolved', false);
+      .select('order_id, copied_trade_id, market_id, outcome, entry_price, current_price, side, copy_user_id, trade_method, user_closed_at, market_resolved')
+      .eq('copy_user_id', user.id);
 
     if (tradesError) {
       console.error(`[check-positions] Database query error:`, tradesError);
     }
     
-    console.log(`[check-positions] Database returned ${manualTrades?.length || 0} manual trades`);
+    console.log(`[check-positions] Database returned ${manualTrades?.length || 0} total trades (before filtering)`);
     if (manualTrades && manualTrades.length > 0) {
+      const openTrades = manualTrades.filter(t => !t.user_closed_at && !t.market_resolved);
+      console.log(`[check-positions] ${openTrades.length} open trades after filtering`);
       console.log(`[check-positions] Sample trade:`, JSON.stringify(manualTrades[0], null, 2));
     }
 
@@ -130,10 +131,11 @@ export async function POST(request: Request) {
     // Combine all trades to check
     const allTrades: TradeToCheck[] = [];
 
-    // Add manual trades
+    // Add manual trades (filter to open trades only, matching UI logic)
     if (manualTrades) {
       for (const trade of manualTrades) {
-        if (trade.market_id && trade.outcome) {
+        // Only include trades that are actually open (not closed by user and market not resolved)
+        if (trade.market_id && trade.outcome && !trade.user_closed_at && !trade.market_resolved) {
           allTrades.push({
             order_id: trade.order_id,
             market_id: trade.market_id,
