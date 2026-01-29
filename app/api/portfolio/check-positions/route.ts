@@ -114,9 +114,9 @@ export async function POST(request: Request) {
               market_id: marketId,
               outcome: order.outcome,
               side: order.side || 'BUY',
-              price_when_copied: order.price || 0,
-              current_price: order.price || 0,
-              entry_size: order.size_matched || order.original_size || 0,
+              price_when_copied: parseFloat(String(order.price || 0)),
+              current_price: parseFloat(String(order.price || 0)),
+              entry_size: parseFloat(String(order.size_matched || order.original_size || 0)),
               source: 'clob',
             });
           }
