@@ -598,6 +598,28 @@ function ProfilePageContent() {
 
         // Fetch live market data for the trades
         fetchLiveMarketData(tradesWithCorrectRoi);
+        
+        // Auto-close dust positions if user has a wallet connected
+        if (profile?.trading_wallet_address) {
+          fetch('/api/portfolio/check-positions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ walletAddress: profile.trading_wallet_address }),
+          })
+            .then(res => res.json())
+            .then(data => {
+              if (data.closed > 0) {
+                console.log(`🧹 Auto-closed ${data.closed} dust/sold position(s)`);
+                // Refresh trades after auto-closing
+                hasLoadedTradesRef.current = false;
+                setTimeout(() => {
+                  hasLoadedTradesRef.current = false;
+                  window.location.reload();
+                }, 1000);
+              }
+            })
+            .catch(err => console.warn('Failed to check positions:', err));
+        }
       } catch (err) {
         console.error('Error fetching portfolio trades:', err);
         setCopiedTradesBase([]);
@@ -1453,25 +1475,8 @@ function ProfilePageContent() {
   // Filter trades
   const filteredTrades = copiedTrades.filter(trade => {
     if (tradeFilter === 'all') return true;
-    
-    // Check if this is a dust position (below minimum tradeable amount)
-    // Polymarket's minimum is typically $0.10-$1.00 worth of contracts
-    const isDustPosition = (() => {
-      if (!trade.entry_size || !trade.current_price) return false;
-      const positionValue = trade.entry_size * trade.current_price;
-      // Treat positions worth less than $0.10 as dust (effectively closed)
-      return positionValue < 0.10;
-    })();
-    
-    if (tradeFilter === 'open') {
-      // Position is considered open if:
-      // - Not manually closed by user
-      // - Market not resolved
-      // - Not a dust position (too small to trade)
-      return !trade.user_closed_at && !trade.market_resolved && !isDustPosition;
-    }
-    
-    if (tradeFilter === 'closed') return Boolean(trade.user_closed_at) || isDustPosition;
+    if (tradeFilter === 'open') return !trade.user_closed_at && !trade.market_resolved;
+    if (tradeFilter === 'closed') return Boolean(trade.user_closed_at);
     if (tradeFilter === 'resolved') return Boolean(trade.market_resolved);
     return true;
   });
