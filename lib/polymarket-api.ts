@@ -29,6 +29,7 @@ export interface LeaderboardTrader {
 }
 
 // Category mapping (same as discover page)
+// Note: real_estate is commented out because Polymarket's API doesn't properly filter it yet
 export const CATEGORY_MAP: Record<string, string> = {
   'All': 'overall',
   'Politics': 'politics',
@@ -38,7 +39,8 @@ export const CATEGORY_MAP: Record<string, string> = {
   'Business': 'finance',
   'Economics': 'economics',
   'Tech': 'tech',
-  'Weather': 'weather'
+  'Weather': 'weather',
+  // 'Real Estate': 'real_estate' // Disabled - API returns same results as overall
 };
 
 export const CATEGORIES = ['All', 'Politics', 'Sports', 'Crypto', 'Pop Culture', 'Business', 'Economics', 'Tech', 'Weather'];

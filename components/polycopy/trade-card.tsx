@@ -19,10 +19,11 @@ import {
   SignalHigh,
   CheckCircle2,
   Flag,
+  Trophy,
   CircleDot,
   Clock,
   Star,
-  Sparkles,
+  Info,
 } from "lucide-react"
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -40,45 +41,14 @@ import {
   roundUpToStep,
 } from "@/lib/polymarket/sizing"
 import { cn } from "@/lib/utils"
-import { getTraderAvatarInitials } from "@/lib/trader-name"
 import {
-  BadgeState,
-  MarketCategoryType,
-  ResolvedGameTime,
-  ScoreSources,
-  deriveBadgeState,
-  resolveMarketCategoryType,
-} from "@/lib/badge-state"
-import { abbreviateTeamName } from "@/lib/utils/team-abbreviations"
-import { isTop5Trader } from "@/lib/polyscore/check-top5"
-import { getPolyScore, type PolyScoreResponse } from "@/lib/polyscore/get-polyscore"
-import { PolyScoreResults } from "@/components/polyscore/PolyScoreResults"
-
-const normalizeLegacyScore = (value: unknown) => {
-  if (!value) return null
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>
-    const homeRaw = record.home ?? record.homeScore ?? record.home_score
-    const awayRaw = record.away ?? record.awayScore ?? record.away_score
-    const home = Number.isFinite(Number(homeRaw)) ? Number(homeRaw) : null
-    const away = Number.isFinite(Number(awayRaw)) ? Number(awayRaw) : null
-    if (home !== null || away !== null) return { home, away }
-  }
-  if (typeof value === "string") {
-    const match = value.match(/(\d+)\s*-\s*(\d+)/)
-    if (match) {
-      const home = Number(match[1])
-      const away = Number(match[2])
-      if (Number.isFinite(home) || Number.isFinite(away)) {
-        return {
-          home: Number.isFinite(home) ? home : null,
-          away: Number.isFinite(away) ? away : null,
-        }
-      }
-    }
-  }
-  return null
-}
+  normalizeEventStatus,
+  statusLooksFinal,
+  statusLooksLive,
+  statusLooksScheduled,
+  isSeasonLongMarketTitle,
+} from "@/lib/market-status"
+import { getTraderAvatarInitials } from "@/lib/trader-name"
 
 type PositionTradeSummary = {
   side: "BUY" | "SELL"
@@ -111,7 +81,6 @@ interface TradeCardProps {
   size: number
   total: number
   timestamp: string
-  tradeTimestampMs?: number
   onCopyTrade?: () => void
   onMarkAsCopied?: (entryPrice: number, amountInvested?: number) => void
   onAdvancedCopy?: () => void
@@ -128,8 +97,6 @@ interface TradeCardProps {
   currentMarketPrice?: number
   currentMarketUpdatedAt?: number
   marketIsOpen?: boolean | null
-  badgeState?: BadgeState
-  marketCategory?: MarketCategoryType
   liveScore?: string
   eventStartTime?: string
   eventEndTime?: string
@@ -138,9 +105,6 @@ interface TradeCardProps {
   category?: string
   polymarketUrl?: string
   espnUrl?: string
-  homeTeam?: string | null
-  awayTeam?: string | null
-  gameTimeInfo?: string | null // e.g., "Q4 5:30" or "Halftime"
   defaultBuySlippage?: number
   defaultSellSlippage?: number
   tradeAnchorId?: string
@@ -169,8 +133,6 @@ type StatusPhase =
   | 'rejected'
   | 'timed_out'
   | 'unknown'
-
-type ManualFlowStep = 'open-polymarket' | 'enter-details'
 
 type TradeExecutionNotificationPayload = {
   id: string
@@ -494,8 +456,6 @@ export function TradeCard({
   currentMarketPrice,
   currentMarketUpdatedAt,
   marketIsOpen,
-  badgeState,
-  marketCategory,
   liveScore,
   eventStartTime,
   eventEndTime,
@@ -504,12 +464,8 @@ export function TradeCard({
   category,
   polymarketUrl,
   espnUrl,
-  homeTeam,
-  awayTeam,
-  gameTimeInfo,
   defaultBuySlippage,
   defaultSellSlippage,
-  tradeTimestampMs,
   tradeAnchorId,
   onExecutionNotification,
   walletAddress = null,
@@ -523,14 +479,6 @@ export function TradeCard({
   userPositionBadge,
   onSellPosition,
 }: TradeCardProps) {
-  // DEBUG: Log every render
-  console.log('🎯 TradeCard RENDERED:', {
-    traderName: trader.name,
-    traderAddress: trader.address,
-    isAdmin,
-    market
-  })
-  
   const resolvedDefaultSlippage =
     action === "Buy"
       ? typeof defaultBuySlippage === "number"
@@ -543,12 +491,6 @@ export function TradeCard({
   const [amountInput, setAmountInput] = useState<string>("")
   const canUseAutoClose = Boolean(isAdmin)
   const [autoClose, setAutoClose] = useState(() => canUseAutoClose)
-  
-  // PolyScore state
-  const isTop5 = isAdmin && trader.address ? isTop5Trader(trader.address) : false
-  const [isLoadingPolyScore, setIsLoadingPolyScore] = useState(false)
-  const [polyScoreData, setPolyScoreData] = useState<PolyScoreResponse | null>(null)
-  const [polyScoreError, setPolyScoreError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [localCopied, setLocalCopied] = useState(isCopied)
@@ -562,10 +504,6 @@ export function TradeCard({
   const [orderId, setOrderId] = useState<string | null>(null)
   const [statusPhase, setStatusPhase] = useState<StatusPhase>('submitted')
   const statusPhaseRef = useRef<StatusPhase>('submitted')
-  const derivedBadgeStateRef = useRef<BadgeState | null>(badgeState ?? null)
-  const derivedGameTimeRef = useRef<ResolvedGameTime | null>(
-    badgeState ? { time: badgeState.time, source: badgeState.source } : null
-  )
   const [statusData, setStatusData] = useState<any | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [confirmationError, setConfirmationError] = useState<TradeErrorInfo | null>(null)
@@ -592,7 +530,6 @@ export function TradeCard({
   const [manualDrawerOpen, setManualDrawerOpen] = useState(false)
   const [manualUsdAmount, setManualUsdAmount] = useState("")
   const [manualPriceInput, setManualPriceInput] = useState("")
-  const [manualFlowStep, setManualFlowStep] = useState<ManualFlowStep>('open-polymarket')
   const [showWalletPrompt, setShowWalletPrompt] = useState(false)
   const [isInView, setIsInView] = useState(true)
   const [notificationPending, setNotificationPending] = useState(false)
@@ -608,322 +545,75 @@ export function TradeCard({
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`
   })
   const prevCanUseAutoCloseRef = useRef(canUseAutoClose)
-  const resolvedBadge = useMemo(() => {
-    if (badgeState) {
-      derivedBadgeStateRef.current = badgeState
-      if (badgeState.time || !derivedGameTimeRef.current) {
-        derivedGameTimeRef.current = { time: badgeState.time, source: badgeState.source }
-      }
-      return {
-        state: badgeState,
-        categoryType:
-          marketCategory ??
-          resolveMarketCategoryType({
-            marketKey: conditionId ?? marketSlug ?? market,
-            title: market,
-            category,
-            tags: undefined,
-            outcomes: undefined,
-            gameStartTime: eventStartTime,
-          }),
-      }
-    }
 
-    const fallbackCategory =
-      marketCategory ??
-      resolveMarketCategoryType({
-        marketKey: conditionId ?? marketSlug ?? market,
-        title: market,
-        category,
-        tags: undefined,
-        outcomes: undefined,
-        gameStartTime: eventStartTime,
-      })
-
-    const scoreSources: ScoreSources = {}
-    const gammaScore = normalizeLegacyScore(liveScore)
-    if (gammaScore) scoreSources.gamma = gammaScore
-
-    const computed = deriveBadgeState({
-      marketKey: conditionId ?? marketSlug ?? market,
-      title: market,
-      category,
-      tags: undefined,
-      outcomes: undefined,
-      categoryType: fallbackCategory,
-      gammaStartTime: eventStartTime,
-      marketStartTime: eventStartTime,
-      endDateIso: eventEndTime,
-      gammaStatus: eventStatus,
-      gammaResolved: liveStatus === "final" || marketIsOpen === false,
-      websocketLive: false,
-      websocketEnded: liveStatus === "final",
-      scoreSources,
-      previousState: derivedBadgeStateRef.current,
-      cachedGameTime: derivedGameTimeRef.current,
-    })
-
-    derivedBadgeStateRef.current = computed.state
-    derivedGameTimeRef.current = computed.resolvedGameTime
-
-    return { state: computed.state, categoryType: computed.categoryType }
-  }, [
-    badgeState,
-    category,
-    conditionId,
-    eventEndTime,
-    eventStartTime,
-    eventStatus,
-    liveScore,
-    liveStatus,
-    market,
-    marketCategory,
-    marketIsOpen,
-    marketSlug,
-  ])
-
-  const resolvedBadgeState = resolvedBadge.state
-  const resolvedMarketCategory = resolvedBadge.categoryType
   const isUuid = (value?: string | null) =>
     Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))
 
   const copiedTraderId = isUuid(trader.id) ? trader.id! : null
 
-  const badgeType = resolvedBadgeState?.type ?? "none"
-  const badgeScore =
-    (badgeType === "live" || badgeType === "ended") && resolvedBadgeState?.score
-      ? resolvedBadgeState.score
-      : null
-  const badgeBaseClass =
-    "h-7 px-2.5 text-[11px] font-semibold border shadow-[0_1px_0_rgba(15,23,42,0.06)]"
-  const statusBadgeClass = cn(
-    badgeBaseClass,
-    badgeType === "live" &&
-      "bg-emerald-50 text-emerald-700 border-emerald-200 h-auto min-h-[22px] min-w-[140px] py-0.5 pr-2 pl-2 justify-start",
-    badgeType === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
-    badgeType === "resolved" && "bg-rose-50 text-rose-700 border-rose-200",
-    badgeType === "scheduled" && "bg-amber-50 text-amber-700 border-amber-200",
-    badgeType === "none" && "bg-slate-50 text-slate-500 border-slate-200",
-  )
+  const cleanedLiveScore = useMemo(() => {
+    if (!liveScore) return null
+    const cleaned = liveScore.replace(/^[^A-Za-z0-9]+/, "").trim()
+    return cleaned.length ? cleaned : null
+  }, [liveScore])
 
-  // Stabilize gameTimeInfo - only update when period changes, not on every clock tick
-  // Use state so React re-renders when it changes, but only when period changes
-  const [stableGameTimeInfo, setStableGameTimeInfo] = useState<string | null>(null)
-  const lastPeriodFromTimeRef = useRef<string | null>(null)
-  
-  useEffect(() => {
-    if (gameTimeInfo) {
-      // Extract period (e.g., "Q1", "Q2", "P1", "OT") to detect meaningful changes
-      const periodMatch = gameTimeInfo.match(/^(Q[1-4]|P[1-3]|OT|I\d+)/);
-      const currentPeriod = periodMatch ? periodMatch[1] : null;
-      
-      // Only update state if period changed or if this is the first time we have gameTimeInfo
-      // This prevents re-renders on every clock tick
-      if (currentPeriod !== lastPeriodFromTimeRef.current || !stableGameTimeInfo) {
-        setStableGameTimeInfo(gameTimeInfo);
-        lastPeriodFromTimeRef.current = currentPeriod;
+  const looksLikeScore = Boolean(cleanedLiveScore && /\d+\s*-\s*\d+/.test(cleanedLiveScore))
+  const isCryptoMarket = useMemo(() => {
+    if (category && category.toLowerCase().includes("crypto")) return true
+    const haystack = `${market} ${marketSlug ?? ""}`.toLowerCase()
+    return Boolean(
+      haystack.match(
+        /\b(crypto|bitcoin|btc|ethereum|eth|solana|sol|dogecoin|doge|xrp|ripple|cardano|ada|polygon|matic|bnb|litecoin|ltc|avalanche|avax|arbitrum|arb|optimism|op|polkadot|dot|chainlink|link|uniswap|uni|cosmos|atom|near|sui|aptos|algo|algorand|tron|trx)\b/
+      )
+    )
+  }, [category, market, marketSlug])
+  const isSeasonLong = useMemo(() => isSeasonLongMarketTitle(market), [market])
+  const resolvedLiveStatus = useMemo(() => {
+    if (isSeasonLong) {
+      const normalized = normalizeEventStatus(eventStatus)
+      return statusLooksFinal(normalized) ? "final" : "scheduled"
+    }
+    const normalizedLiveStatus = typeof liveStatus === "string" ? liveStatus.toLowerCase() : ""
+    if (normalizedLiveStatus === "live") return "live"
+    if (normalizedLiveStatus === "final") return "final"
+    if (normalizedLiveStatus === "scheduled") {
+      if (looksLikeScore) return "live"
+      if (eventStartTime) {
+        const start = new Date(eventStartTime)
+        if (!Number.isNaN(start.getTime())) {
+          return Date.now() >= start.getTime() ? "live" : "scheduled"
+        }
+      }
+      return "scheduled"
+    }
+    const normalized = normalizeEventStatus(eventStatus)
+    if (statusLooksFinal(normalized)) return "final"
+    if (statusLooksLive(normalized)) return "live"
+    if (looksLikeScore) return "live"
+    if (statusLooksScheduled(normalized)) {
+      if (eventStartTime) {
+        const start = new Date(eventStartTime)
+        if (!Number.isNaN(start.getTime())) {
+          return Date.now() >= start.getTime() ? "live" : "scheduled"
+        }
+      }
+      return "scheduled"
+    }
+    if (eventStartTime) {
+      const start = new Date(eventStartTime)
+      if (!Number.isNaN(start.getTime())) {
+        return Date.now() >= start.getTime() ? "live" : "scheduled"
       }
     }
-    // Don't clear stableGameTimeInfo if gameTimeInfo becomes null - keep the last known value
-    // This prevents flashing when gameTimeInfo temporarily disappears
-  }, [gameTimeInfo, stableGameTimeInfo])
-
-  // Build score text with team abbreviations for live badge
-  // For crypto markets, use liveScore directly if it contains crypto price info
-  const scoreText = useMemo(() => {
-    // If liveScore is provided and looks like a crypto price (contains currency symbol or crypto symbol), use it directly
-    if (liveScore && typeof liveScore === 'string') {
-      const trimmed = liveScore.trim();
-      // Check if it's a crypto price format (e.g., "BTC $45,234.56" or contains $)
-      if (trimmed.includes('$') || /^[A-Z]{2,5}\s+\$/.test(trimmed)) {
-        return trimmed;
-      }
-      // If it already contains brackets (time info), use it as-is
-      if (trimmed.includes('(') && trimmed.includes(')')) {
-        return trimmed;
-      }
-      // If it's not a sports score format (doesn't contain numbers separated by dash or colon), use it
-      if (!/^\d+\s*[-:]\s*\d+/.test(trimmed) && trimmed.length > 0) {
-        return trimmed;
-      }
-    }
-    
-    // For sports scores, use badgeScore
-    if (!badgeScore || (badgeScore.home === null && badgeScore.away === null)) {
-      return null;
-    }
-    
-    let baseScore: string;
-    // For live badge, show team abbreviations if available
-    if (badgeType === "live" && (homeTeam || awayTeam)) {
-      const homeAbbrev = homeTeam ? abbreviateTeamName(homeTeam) : "HOME";
-      const awayAbbrev = awayTeam ? abbreviateTeamName(awayTeam) : "AWAY";
-      baseScore = `${awayAbbrev} ${badgeScore.away ?? "-"} - ${badgeScore.home ?? "-"} ${homeAbbrev}`;
-    } else {
-      // Default format for other badge types
-      baseScore = `${badgeScore.home ?? "-"} - ${badgeScore.away ?? "-"}`;
-    }
-    
-    return baseScore;
-  }, [badgeScore, badgeType, homeTeam, awayTeam, liveScore])
-  
-  // Add time to score text using stable version - this prevents flashing
-  // Always include time if we have a stable version, even if current prop is null
-  const scoreTextWithTime = useMemo(() => {
-    if (!scoreText) return scoreText;
-    
-    // If scoreText already has time in brackets, use it as-is
-    if (scoreText.includes('(') && scoreText.includes(')')) {
-      return scoreText;
-    }
-    
-    // For live badges, always add stable time if available
-    if (badgeType === "live" && stableGameTimeInfo) {
-      return `${scoreText} (${stableGameTimeInfo})`;
-    }
-    
-    return scoreText;
-  }, [scoreText, badgeType, stableGameTimeInfo])
-
-  const statusLabel =
-    badgeType === "live"
-      ? "Live"
-      : badgeType === "ended"
-        ? "Ended"
-        : badgeType === "resolved"
-          ? "Resolved"
-          : "Scheduled"
-
-  // Persist last non-empty score to prevent flicker between polling intervals
-  // Only update when score numbers or period changes, not on every clock tick
-  const stableScoreRef = useRef<string | null>(null)
-  const lastScoreNumbersRef = useRef<string | null>(null)
-  const lastPeriodRef = useRef<string | null>(null)
-  
-  useEffect(() => {
-    if (scoreTextWithTime) {
-      // Extract score numbers without time (e.g., "VGK 0 - 1 OTT")
-      const scoreWithoutTime = scoreTextWithTime.replace(/\s*\([^)]*\)\s*$/, '').trim();
-      const scoreMatch = scoreWithoutTime.match(/^([A-Z]{2,5}\s+\d+\s*-\s*\d+\s+[A-Z]{2,5}|\d+\s*-\s*\d+)/);
-      const scoreNumbers = scoreMatch ? scoreMatch[0].trim() : scoreWithoutTime;
-      
-      // Extract period from time part if present (e.g., "Q1", "Q2", "P1", "OT")
-      const timeMatch = scoreTextWithTime.match(/\(([^)]+)\)/);
-      const timePart = timeMatch ? timeMatch[1] : null;
-      const periodMatch = timePart?.match(/^(Q[1-4]|P[1-3]|OT|I\d+)/);
-      const currentPeriod = periodMatch ? periodMatch[1] : null;
-      
-      // Only update if score numbers changed or period changed
-      if (scoreNumbers !== lastScoreNumbersRef.current || currentPeriod !== lastPeriodRef.current) {
-        stableScoreRef.current = scoreTextWithTime;
-        lastScoreNumbersRef.current = scoreNumbers;
-        lastPeriodRef.current = currentPeriod;
-      }
-    } else if (stableScoreRef.current) {
-      // Keep the last stable score even if current scoreTextWithTime is null
-      // This prevents flashing when scoreTextWithTime temporarily disappears
-    }
-  }, [scoreTextWithTime])
-  
-  // Always use stable score if available to prevent flashing
-  // Only fall back to current scoreTextWithTime if we don't have a stable value yet
-  const displayScoreText = stableScoreRef.current || scoreTextWithTime
-
-  const liveBadgeContent = (
-    <div className="flex w-full flex-col items-center justify-center gap-0">
-      <span
-        className="font-semibold text-xs leading-tight whitespace-nowrap text-center"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        {displayScoreText ?? "—"}
-      </span>
-      <span className="font-semibold text-[9px] leading-none text-emerald-800 text-center">
-        {statusLabel}
-      </span>
-    </div>
-  )
-
-  // Determine time prefix:
-  // 1. If sports market → "Starts" (deriveBadgeState uses game_start_time for sports markets)
-  // 2. Otherwise → "Resolves"
-  const isSportsMarket = resolvedMarketCategory === "SPORTS_SCOREABLE" || resolvedMarketCategory === "SPORTS_NON_SCOREABLE"
-  // If it's a sports market, deriveBadgeState will have used game_start_time for finalTime
-  // So if isSportsMarket is true and we have a time, it's the start time
-  const timePrefix = isSportsMarket ? "Starts" : "Resolves"
-
-  const eventTimeLabel = useMemo(() => {
-    // If no time is available, don't show the badge at all (no "Time TBD")
-    if (!resolvedBadgeState.time) return null
-    const parsed = new Date(resolvedBadgeState.time)
-    if (Number.isNaN(parsed.getTime())) return null
-    
-    // Use local timezone for all formatting
-    const formatter = new Intl.DateTimeFormat("en-US", { 
-      month: "short", 
-      day: "numeric",
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-    })
-    
-    // Compare dates in local timezone
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    const targetDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
-    
-    // For "Resolves" badge, show only date (no time)
-    if (timePrefix === "Resolves") {
-      if (targetDate.getTime() === today.getTime()) {
-        return `${timePrefix} Today`
-      }
-      if (targetDate.getTime() === tomorrow.getTime()) {
-        return `${timePrefix} Tomorrow`
-      }
-      return `${timePrefix} ${formatter.format(parsed)}`
-    }
-    
-    // For "Starts" badge, show date and time
-    const timeFormatter = new Intl.DateTimeFormat("en-US", { 
-      hour: "numeric", 
-      minute: "2-digit",
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-    })
-    
-    if (targetDate.getTime() === today.getTime()) {
-      return `${timePrefix} Today, ${timeFormatter.format(parsed)}`
-    }
-    if (targetDate.getTime() === tomorrow.getTime()) {
-      return `${timePrefix} Tomorrow, ${timeFormatter.format(parsed)}`
-    }
-    const includeTime = parsed.getHours() !== 0 || parsed.getMinutes() !== 0
-    const base = formatter.format(parsed)
-    return includeTime ? `${timePrefix} ${base}, ${timeFormatter.format(parsed)}` : `${timePrefix} ${base}`
-  }, [resolvedBadgeState.time, timePrefix])
-
-  // Don't show time badge if game is live (only show status badge)
-  const showTimeBadge = badgeType !== "none" && eventTimeLabel !== null && badgeType !== "live"
-  // Show status badge for live/ended/resolved, or if we have crypto price info
-  const hasCryptoPrice = scoreText && typeof scoreText === 'string' && (scoreText.includes('$') || /^[A-Z]{2,5}\s+\$/.test(scoreText.trim()))
-  const showStatusBadge =
-    badgeType === "live" || badgeType === "ended" || badgeType === "resolved" || hasCryptoPrice
-
-  const statusIconMap = {
-    live: SignalHigh,
-    ended: Flag,
-    resolved: CheckCircle2,
-    scheduled: Clock,
-    none: CircleDot,
-  } as const
-
-  const StatusIcon = statusIconMap[badgeType] || CircleDot
+    return "unknown"
+  }, [isSeasonLong, liveStatus, eventStatus, eventStartTime, looksLikeScore])
 
   const orderBookPrice = action === "Buy" ? bestAskPrice : bestBidPrice
   const resolvedLivePrice =
     typeof livePrice === "number" && !Number.isNaN(livePrice) ? livePrice : null
   const marketOpenHint = typeof marketIsOpen === "boolean" ? marketIsOpen : null
   const shouldUseOrderBook =
-    badgeType !== "ended" && badgeType !== "resolved" && marketOpenHint !== false
+    resolvedLiveStatus !== "final" && marketOpenHint !== false
   const currentPrice =
     shouldUseOrderBook && typeof orderBookPrice === "number" && Number.isFinite(orderBookPrice)
       ? orderBookPrice
@@ -941,8 +631,44 @@ export function TradeCard({
       : hasCurrentPrice
         ? currentPrice > 0.01 && currentPrice < 0.99
         : null
-  const isMarketEnded = badgeType === "ended" || badgeType === "resolved" || inferredMarketOpen === false
+  const isMarketEnded = inferredMarketOpen === false
 
+  const statusVariant = isMarketEnded
+    ? "resolved"
+    : resolvedLiveStatus === "live"
+      ? "live"
+      : resolvedLiveStatus === "final"
+        ? "ended"
+        : resolvedLiveStatus === "scheduled"
+          ? "scheduled"
+          : "open"
+
+  const forceResolvedBadge = resolvedLiveStatus === "final" && looksLikeScore && isMarketEnded
+  const statusBadgeVariant = forceResolvedBadge ? "resolved" : statusVariant
+
+  const eventStatusLabel =
+    statusBadgeVariant === "live"
+      ? "Live"
+      : statusBadgeVariant === "ended"
+        ? "Ended"
+        : statusBadgeVariant === "resolved"
+          ? "Resolved"
+          : statusBadgeVariant === "scheduled"
+            ? "Scheduled"
+            : "Open"
+
+  const statusIconMap = {
+    live: SignalHigh,
+    ended: Flag,
+    resolved: CheckCircle2,
+    scheduled: Clock,
+    open: CircleDot,
+  } as const
+
+  const StatusIcon = statusIconMap[statusBadgeVariant]
+
+  const badgeBaseClass =
+    "h-7 px-2.5 text-[11px] font-semibold border shadow-[0_1px_0_rgba(15,23,42,0.06)]"
   const espnLink = espnUrl?.trim() ? espnUrl : undefined
   const showTraderPositionBadge = Boolean(traderPositionBadge?.trades?.length)
   const showUserPositionBadge = Boolean(userPositionBadge?.trades?.length)
@@ -1065,6 +791,152 @@ export function TradeCard({
       isEven,
     }
   }, [traderPositionBadge?.trades])
+
+  const statusBadgeClass = cn(
+    badgeBaseClass,
+    statusBadgeVariant === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200",
+    statusBadgeVariant === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
+    statusBadgeVariant === "resolved" && "bg-rose-50 text-rose-700 border-rose-200",
+    statusBadgeVariant === "scheduled" && "bg-amber-50 text-amber-700 border-amber-200",
+    statusBadgeVariant === "open" && "bg-slate-50 text-slate-600 border-slate-200",
+  )
+
+  const showScoreBadge =
+    Boolean(cleanedLiveScore && looksLikeScore) &&
+    (resolvedLiveStatus === "live" || resolvedLiveStatus === "final")
+  const showInfoBadge = Boolean(cleanedLiveScore && !looksLikeScore)
+  const hideLiveStatusBadge = isCryptoMarket && statusBadgeVariant === "live"
+
+  const showCombinedScoreBadge =
+    showScoreBadge && (statusBadgeVariant === "live" || statusBadgeVariant === "ended")
+  const combinedScoreLabel = statusBadgeVariant === "ended" ? "Ended" : "Live"
+  const combinedScoreBadgeClass = cn(
+    badgeBaseClass,
+    "relative h-auto min-h-[34px] flex-col gap-0 px-3 pt-1 pb-3 leading-none",
+    statusBadgeVariant === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200",
+    statusBadgeVariant === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
+  )
+
+  const showEventTimeBadge =
+    statusBadgeVariant !== "live" &&
+    statusBadgeVariant !== "resolved" &&
+    statusBadgeVariant !== "ended" &&
+    !showInfoBadge
+  const hasEventTime = Boolean(eventStartTime || eventEndTime)
+  const sportsTitleHint = useMemo(() => {
+    if (!market) return false
+    const lower = market.toLowerCase()
+    const hasWinVerb = /\b(win|beat|defeat|draw|tie)\b/.test(lower)
+    if (!hasWinVerb) return false
+    const hasMatchToken = /\b(vs\.?|v\.?|@)\b/.test(lower)
+    const hasTeamToken = /\b(fc|sc|cf|afc)\b/.test(lower)
+    const hasLeagueToken =
+      /\b(nfl|nba|nhl|mlb|ncaa|ucl|uefa|champions league|premier league|la liga|serie a|bundesliga|ligue 1|mls)\b/.test(
+        lower
+      )
+    const slugHint = marketSlug?.toLowerCase() ?? ""
+    const hasSlugLeague =
+      slugHint.includes("ucl") ||
+      slugHint.includes("uefa") ||
+      slugHint.includes("champions") ||
+      slugHint.includes("premier") ||
+      slugHint.includes("bundesliga") ||
+      slugHint.includes("laliga") ||
+      slugHint.includes("seriea") ||
+      slugHint.includes("ligue1")
+    return hasMatchToken || hasTeamToken || hasLeagueToken || hasSlugLeague
+  }, [market, marketSlug])
+
+  const isSportsContext = Boolean(
+    looksLikeScore ||
+      liveStatus === "live" ||
+      liveStatus === "final" ||
+      sportsTitleHint ||
+      (category && category.toLowerCase().includes("sports")) ||
+      espnUrl
+  )
+  const { eventTimeValue, eventTimeKind } = useMemo(() => {
+    if (isSeasonLong && eventEndTime) {
+      return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
+    }
+    if (statusVariant === "ended" || statusVariant === "resolved") {
+      if (eventEndTime) return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
+      if (eventStartTime) return { eventTimeValue: eventStartTime, eventTimeKind: "start" as const }
+      return { eventTimeValue: null, eventTimeKind: "unknown" as const }
+    }
+    if (eventStartTime) return { eventTimeValue: eventStartTime, eventTimeKind: "start" as const }
+    if (eventEndTime) return { eventTimeValue: eventEndTime, eventTimeKind: "end" as const }
+    return { eventTimeValue: null, eventTimeKind: "unknown" as const }
+  }, [isSeasonLong, statusVariant, eventStartTime, eventEndTime])
+  const { eventTimeLabel, isEventTimeLoading } = useMemo(() => {
+    if (!eventTimeValue) {
+      if (typeof currentMarketUpdatedAt === "number") {
+        return { eventTimeLabel: "Time TBD", isEventTimeLoading: false }
+      }
+      return { eventTimeLabel: "Loading", isEventTimeLoading: true }
+    }
+    const prefix =
+      eventTimeKind === "start" ? "Starts" : eventTimeKind === "end" ? "Resolves" : "Time"
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(eventTimeValue)
+    const isMidnightUtc = /T00:00:00(?:\.000)?(?:Z|[+-]00:00)$/.test(eventTimeValue)
+    const useDateOnly = isDateOnly || (eventTimeKind !== "start" && isMidnightUtc)
+    const parsed = new Date(eventTimeValue)
+    if (Number.isNaN(parsed.getTime())) return { eventTimeLabel: null, isEventTimeLoading: true }
+    const timeZone = useDateOnly ? "UTC" : undefined
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+    const toYmd = (date: Date) => {
+      const parts = formatter.formatToParts(date)
+      const lookup = parts.reduce<Record<string, string>>((acc, part) => {
+        if (part.type !== "literal") acc[part.type] = part.value
+        return acc
+      }, {})
+      return `${lookup.year}-${lookup.month}-${lookup.day}`
+    }
+    const today = new Date()
+    const tomorrow = new Date(today)
+    tomorrow.setDate(today.getDate() + 1)
+    const targetKey = toYmd(parsed)
+    if (eventTimeKind === "start") {
+      if (targetKey === toYmd(today) || targetKey === toYmd(tomorrow)) {
+        const label = targetKey === toYmd(today) ? "Today" : "Tomorrow"
+        if (!useDateOnly) {
+          const timeLabel = new Intl.DateTimeFormat("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+          }).format(parsed)
+          return {
+            eventTimeLabel: `${prefix} ${label}, ${timeLabel}`,
+            isEventTimeLoading: false,
+          }
+        }
+        return { eventTimeLabel: `${prefix} ${label}`, isEventTimeLoading: false }
+      }
+    }
+    if (eventTimeKind === "end") {
+      if (targetKey === toYmd(today)) {
+        return { eventTimeLabel: `${prefix} Today`, isEventTimeLoading: false }
+      }
+      if (targetKey === toYmd(tomorrow)) {
+        return { eventTimeLabel: `${prefix} Tomorrow`, isEventTimeLoading: false }
+      }
+    }
+    const options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }
+    const allowTime = !useDateOnly && eventTimeKind !== "end"
+    if (allowTime && (parsed.getHours() !== 0 || parsed.getMinutes() !== 0)) {
+      options.hour = "numeric"
+      options.minute = "2-digit"
+    }
+    const formatted = new Intl.DateTimeFormat("en-US", {
+      ...options,
+      timeZone: useDateOnly ? "UTC" : undefined,
+    }).format(parsed)
+    return { eventTimeLabel: `${prefix} ${formatted}`, isEventTimeLoading: false }
+  }, [eventTimeValue, eventTimeKind, currentMarketUpdatedAt])
 
   useEffect(() => {
     if (userUpdatedSlippageRef.current) return
@@ -1314,61 +1186,9 @@ export function TradeCard({
     return formatted
   }
 
-  const tradeCardPosition: PositionTradeSummary | null = useMemo(() => {
-    const normalizedSide = action === "Sell" ? "SELL" : "BUY"
-    const amountUsd = Number.isFinite(size * price) ? Number((size * price).toFixed(4)) : null
-    return {
-      side: normalizedSide,
-      outcome: position,
-      size: Number.isFinite(size) ? size : null,
-      price: Number.isFinite(price) ? price : null,
-      amountUsd,
-      timestamp: Number.isFinite(tradeTimestampMs ?? NaN) ? tradeTimestampMs : null,
-    }
-  }, [action, position, price, size, tradeTimestampMs])
-
-  const isSameTradePosition = (
-    a: PositionTradeSummary | null | undefined,
-    b: PositionTradeSummary | null | undefined
-  ) => {
-    if (!a || !b) return false
-    if (a.side !== b.side) return false
-    const normalize = (value: string) => value?.trim().toLowerCase()
-    const outcomeMatch = normalize(a.outcome) === normalize(b.outcome)
-    if (!outcomeMatch) return false
-    const sizeMatch =
-      Number.isFinite(a.size ?? NaN) && Number.isFinite(b.size ?? NaN)
-        ? Math.abs((a.size ?? 0) - (b.size ?? 0)) < 0.0001
-        : true
-    const priceMatch =
-      Number.isFinite(a.price ?? NaN) && Number.isFinite(b.price ?? NaN)
-        ? Math.abs((a.price ?? 0) - (b.price ?? 0)) < 0.0001
-        : true
-    const timestampMatch =
-      Number.isFinite(a.timestamp ?? NaN) && Number.isFinite(b.timestamp ?? NaN)
-        ? Math.abs((a.timestamp ?? 0) - (b.timestamp ?? 0)) <= 2000
-        : true
-    return sizeMatch && priceMatch && timestampMatch
-  }
-
-  const ensureTradeIncluded = (
-    trades: PositionTradeSummary[],
-    target: PositionTradeSummary | null
-  ) => {
-    if (!target) return trades
-    const exists = trades.some((trade) => isSameTradePosition(trade, target))
-    if (exists) return trades
-    return [target, ...trades]
-  }
-
   const renderPositionDrawer = () => {
     if (!isPositionDrawerOpen || !activePositionBadge) return null
-    const baseTrades = activePositionBadge.trades ?? []
-    const shouldHighlightTrade = activePositionBadge.variant === "trader"
-    const trades =
-      shouldHighlightTrade && tradeCardPosition
-        ? ensureTradeIncluded(baseTrades, tradeCardPosition)
-        : baseTrades
+    const trades = activePositionBadge.trades ?? []
     if (trades.length === 0) return null
     const visibleTrades = trades
     const isUserTab = positionDrawerTab === "user"
@@ -1504,20 +1324,13 @@ export function TradeCard({
                 ? `${contractsLabel} contracts`
                 : "--"
               : investedLabel
-            const isHighlightedTrade =
-              shouldHighlightTrade && tradeCardPosition
-                ? isSameTradePosition(trade, tradeCardPosition)
-                : false
             return (
               <div
                 key={`${trade.side}-${trade.outcome}-${trade.timestamp ?? index}`}
                 className="flex items-start justify-between gap-3 text-xs"
               >
                 <div className="min-w-0">
-                  <p className="flex items-center gap-1.5 truncate text-slate-700">
-                    {isHighlightedTrade ? (
-                      <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-400" />
-                    ) : null}
+                  <p className="flex items-center gap-1 truncate text-slate-700">
                     <span className={cn("font-semibold", sideClass)}>{sideLabel}</span>
                     <Badge
                       variant="secondary"
@@ -2373,229 +2186,17 @@ export function TradeCard({
       return
     }
 
-    if (manualFlowStep === 'open-polymarket') {
-      onCopyTrade?.()
-      setManualFlowStep('enter-details')
-      return
-    }
-
-    if (!manualDrawerOpen) {
-      openManualDrawer()
-    }
+    // For manual experience, just open Polymarket
+    onCopyTrade?.()
   }
 
-  // Handler for Get PolyScore button
-  const handleGetPolyScore = async () => {
-    if (!conditionId || !trader.address || !hasCurrentPrice) {
-      setPolyScoreError('Missing required trade data')
-      return
-    }
-
-    setIsLoadingPolyScore(true)
-    setPolyScoreError(null)
-    setPolyScoreData(null)
-
-    try {
-      // Get user session token for authenticated request
-      const { supabase } = await import('@/lib/supabase')
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      // Fetch market metadata from Supabase first
-      let marketData: any = null
-      if (conditionId) {
-        const { data: marketRow } = await supabase
-          .from('markets')
-          .select('*')
-          .eq('condition_id', conditionId)
-          .single()
-        marketData = marketRow
-      }
-
-      // If market data is missing or incomplete, fetch from Polymarket Price API
-      let apiMarketData: any = null
-      if (conditionId && (!marketData || !marketData.tags || !marketData.volume_total)) {
-        try {
-          const priceResponse = await fetch(`/api/polymarket/price?conditionId=${conditionId}`)
-          if (priceResponse.ok) {
-            const priceData = await priceResponse.json()
-            if (priceData.success && priceData.market) {
-              apiMarketData = priceData.market
-              // Merge API data with database data (prefer database, fallback to API)
-              marketData = {
-                ...marketData,
-                title: marketData?.title || apiMarketData.question || market,
-                tags: marketData?.tags || apiMarketData.tags || null,
-                event_slug: marketData?.event_slug || apiMarketData.eventSlug || null,
-                game_start_time: marketData?.game_start_time || apiMarketData.gameStartTime || null,
-              }
-            }
-          }
-        } catch (error) {
-          console.warn('[PolyScore] Failed to fetch market data from Price API:', error)
-        }
-      }
-
-      // Fetch from CLOB API for additional market details (volumes, etc.)
-      if (conditionId && (!marketData?.volume_total)) {
-        try {
-          const clobResponse = await fetch(`/api/polymarket/market?conditionId=${conditionId}`)
-          if (clobResponse.ok) {
-            const clobData = await clobResponse.json()
-            if (clobData.ok) {
-              // CLOB API returns basic market info but not volumes
-              // Volumes would need to come from Gamma API or be calculated
-              marketData = {
-                ...marketData,
-                title: marketData?.title || clobData.question || market,
-              }
-            }
-          }
-        } catch (error) {
-          console.warn('[PolyScore] Failed to fetch market data from CLOB API:', error)
-        }
-      }
-
-      // Fetch from Gamma API for classification and additional metadata
-      if (conditionId) {
-        try {
-          const gammaResponse = await fetch(`/api/gamma/markets?conditionId=${conditionId}`)
-          if (gammaResponse.ok) {
-            const gammaData = await gammaResponse.json()
-            if (gammaData && !Array.isArray(gammaData) && gammaData.category) {
-              // Gamma returns category which can help with classification
-              marketData = {
-                ...marketData,
-                // Category can be used to infer bet_structure and market_subtype
-                // This would need your classification logic
-              }
-            }
-          }
-        } catch (error) {
-          console.warn('[PolyScore] Failed to fetch Gamma market data:', error)
-        }
-      }
-
-      // Fetch recent trader actions (last 5 trades in this market)
-      let recentTraderActions: any[] = []
-      if (conditionId && trader.address) {
-        const { data: recentTrades } = await supabase
-          .from('trades')
-          .select('side, price, shares_normalized, timestamp')
-          .eq('wallet_address', trader.address.toLowerCase())
-          .eq('condition_id', conditionId)
-          .order('timestamp', { ascending: false })
-          .limit(5)
-        
-        if (recentTrades) {
-          recentTraderActions = recentTrades.map(trade => ({
-            side: trade.side,
-            price: parseFloat(trade.price),
-            shares_normalized: parseFloat(trade.shares_normalized || 0),
-            timestamp: new Date(trade.timestamp).toISOString(),
-          }))
-        }
-      }
-
-      // Extract event slug from polymarketUrl or marketSlug
-      const eventSlugMatch = polymarketUrl?.match(/\/event\/([^\/]+)/)
-      const marketEventSlug = eventSlugMatch?.[1] || marketSlug || null
-
-      // Calculate market duration in days
-      const startTimeUnix = marketData?.start_time_unix || (eventStartTime ? Math.floor(new Date(eventStartTime).getTime() / 1000) : null)
-      const endTimeUnix = marketData?.end_time_unix || (eventEndTime ? Math.floor(new Date(eventEndTime).getTime() / 1000) : null)
-      const marketDurationDays = startTimeUnix && endTimeUnix 
-        ? Math.round((endTimeUnix - startTimeUnix) / (24 * 60 * 60))
-        : null
-
-      // Build structured request payload
-      const requestData = {
-        // --- The Triggering Trade (The one being copied) ---
-        original_trade: {
-          wallet_address: trader.address,
-          condition_id: conditionId,
-          side: action.toUpperCase() as "BUY" | "SELL",
-          price: price,
-          shares_normalized: size,
-          timestamp: tradeTimestampMs ? new Date(tradeTimestampMs).toISOString() : new Date().toISOString(),
-        },
-        
-        // --- The Live Market State ---
-        market_context: {
-          current_price: currentPrice,
-          current_timestamp: new Date().toISOString(),
-          market_volume_total: marketData?.volume_total || null,
-          market_tags: marketData?.tags 
-            ? (Array.isArray(marketData.tags) ? JSON.stringify(marketData.tags) : marketData.tags)
-            : (apiMarketData?.tags 
-                ? (Array.isArray(apiMarketData.tags) ? JSON.stringify(apiMarketData.tags) : apiMarketData.tags)
-                : null),
-          market_bet_structure: marketData?.bet_structure || null,
-          market_market_subtype: marketData?.market_subtype || null,
-          market_duration_days: marketDurationDays,
-          market_title: market || marketData?.title || apiMarketData?.question || null,
-          market_event_slug: marketEventSlug,
-          market_start_time_unix: startTimeUnix,
-          market_end_time_unix: endTimeUnix,
-          market_volume_1_week: marketData?.volume_1_week || null,
-          market_volume_1_month: marketData?.volume_1_month || null,
-          market_negative_risk_id: marketData?.negative_risk_id || null,
-          game_start_time: eventStartTime || marketData?.game_start_time || apiMarketData?.gameStartTime || null,
-          token_label: position || null,
-          token_id: tokenId || null,
-        },
-
-        // --- The User's Context ---
-        user_slippage: resolvedDefaultSlippage / 100, // Convert percentage to decimal
-      }
-
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      console.log('🎯 [PolyScore] TRADE CARD - Initiating Request')
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      console.log('Trader Name:', trader.name)
-      console.log('Trader Address:', trader.address)
-      console.log('Condition ID:', conditionId)
-      console.log('Current Price:', currentPrice)
-      console.log('User Slippage (%):', resolvedDefaultSlippage)
-      console.log('User Slippage (decimal):', requestData.user_slippage)
-      console.log('Has Session:', !!session)
-      console.log('Session User ID:', session?.user?.id)
-      console.log('Market Data Found:', !!marketData)
-      console.log('API Market Data Found:', !!apiMarketData)
-      console.log('Recent Trader Actions:', recentTraderActions.length)
-      console.log('Market Data Details:', {
-        hasTitle: !!marketData?.title,
-        hasTags: !!marketData?.tags,
-        hasVolumes: !!(marketData?.volume_total || marketData?.volume_1_week),
-        hasBetStructure: !!marketData?.bet_structure,
-        hasSubtype: !!marketData?.market_subtype,
-      })
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      console.log('📦 FULL REQUEST PAYLOAD (NEW STRUCTURE):')
-      console.log(JSON.stringify(requestData, null, 2))
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      console.log('📋 Original Trade:', JSON.stringify(requestData.original_trade, null, 2))
-      console.log('📋 Market Context:', JSON.stringify(requestData.market_context, null, 2))
-      console.log('📋 User Slippage:', requestData.user_slippage)
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      // Also log as object so it's expandable in console
-      console.log('📦 Request Data Object:', requestData)
-      console.log('Market Data:', marketData)
-
-      const result = await getPolyScore(requestData, accessToken)
-      
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      console.log('✅ [PolyScore] TRADE CARD - Request Complete')
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      console.log('Final Result:', JSON.stringify(result, null, 2))
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      
-      setPolyScoreData(result)
-    } catch (error: any) {
-      console.error('[PolyScore] Error:', error)
-      setPolyScoreError(error.message || 'Failed to get PolyScore')
-    } finally {
-      setIsLoadingPolyScore(false)
+  const handleMarkAsConfirmedClick = () => {
+    if (isMarketEnded) return
+    if (!shouldShowCopyCta) return
+    
+    // Open the manual drawer to enter order details
+    if (!manualDrawerOpen) {
+      openManualDrawer()
     }
   }
 
@@ -2603,7 +2204,6 @@ export function TradeCard({
     setManualDrawerOpen(false)
     setManualUsdAmount("")
     setManualPriceInput("")
-    setManualFlowStep('open-polymarket')
   }
 
   const handleManualMarkAsCopied = () => {
@@ -2657,17 +2257,17 @@ export function TradeCard({
   const fillPrice =
     typeof statusData?.price === 'number' ? statusData.price : null
   const pendingStatusLabel = "Order pending at Polymarket"
-  let orderStatusLabel: string
+  let statusLabel: string
   if (statusPhase === "filled") {
-    orderStatusLabel = "Filled"
+    statusLabel = "Filled"
   } else if (statusPhase === "partial") {
-    orderStatusLabel = "Partially filled"
+    statusLabel = "Partially filled"
   } else if (statusPhase === "timed_out") {
-    orderStatusLabel = "Failed to match on Polymarket"
+    statusLabel = "Failed to match on Polymarket"
   } else if (orderType === "FAK" && (statusPhase === "canceled" || statusPhase === "expired" || statusPhase === "rejected") && (!filledContracts || filledContracts <= 0)) {
-    orderStatusLabel = "Not filled (FAK)"
+    statusLabel = "Not filled (FAK)"
   } else {
-    orderStatusLabel = pendingStatusLabel
+    statusLabel = pendingStatusLabel
   }
   const filledAmountValue =
     filledContracts !== null && fillPrice !== null ? filledContracts * fillPrice : null
@@ -2995,21 +2595,25 @@ export function TradeCard({
               </div>
             </div>
             <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end">
-              {showTimeBadge ? (
+              {showEventTimeBadge && (
                 espnLink ? (
                   <Badge
                     asChild
                     variant="secondary"
                     className={cn(
                       badgeBaseClass,
-                      resolvedBadgeState.time
+                      hasEventTime
                         ? "bg-white text-slate-700 border-slate-200"
                         : "bg-white text-slate-400 border-slate-200",
                     )}
                   >
                     <a href={espnLink} target="_blank" rel="noopener noreferrer">
-                      <CalendarClock className="h-3.5 w-3.5" />
-                      {eventTimeLabel}
+                      {isEventTimeLoading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <CalendarClock className="h-3.5 w-3.5" />
+                      )}
+                      {eventTimeLabel ?? "Loading"}
                     </a>
                   </Badge>
                 ) : (
@@ -3017,55 +2621,107 @@ export function TradeCard({
                     variant="secondary"
                     className={cn(
                       badgeBaseClass,
-                      resolvedBadgeState.time
+                      hasEventTime
                         ? "bg-white text-slate-700 border-slate-200"
                         : "bg-white text-slate-400 border-slate-200",
                     )}
                   >
-                    <CalendarClock className="h-3.5 w-3.5" />
-                    {eventTimeLabel}
-                  </Badge>
-                )
-              ) : null}
-              {showStatusBadge ? (
-                espnLink ? (
-                  <Badge asChild variant="secondary" className={statusBadgeClass}>
-                    <a href={espnLink} target="_blank" rel="noopener noreferrer">
-                      {badgeType === "live" ? (
-                        liveBadgeContent
-                      ) : hasCryptoPrice ? (
-                        // For crypto prices, show just the price without status label
-                        <span className="font-semibold text-xs">{scoreText}</span>
-                      ) : (
-                        <>
-                          <StatusIcon className="h-3.5 w-3.5" />
-                          <span className="flex items-center gap-1">
-                            <span>{statusLabel}</span>
-                            {scoreText ? <span className="font-semibold">{scoreText}</span> : null}
-                          </span>
-                        </>
-                      )}
-                    </a>
-                  </Badge>
-                ) : (
-                  <Badge variant="secondary" className={statusBadgeClass}>
-                    {badgeType === "live" ? (
-                      liveBadgeContent
-                    ) : hasCryptoPrice ? (
-                      // For crypto prices, show just the price without status label
-                      <span className="font-semibold text-xs">{scoreText}</span>
+                    {isEventTimeLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      <>
-                        <StatusIcon className="h-3.5 w-3.5" />
-                        <span className="flex items-center gap-1">
-                          <span>{statusLabel}</span>
-                          {scoreText ? <span className="font-semibold">{scoreText}</span> : null}
-                        </span>
-                      </>
+                      <CalendarClock className="h-3.5 w-3.5" />
                     )}
+                    {eventTimeLabel ?? "Loading"}
                   </Badge>
                 )
+              )}
+              {!showCombinedScoreBadge &&
+                (statusBadgeVariant === "live" ||
+                  statusBadgeVariant === "ended" ||
+                  statusBadgeVariant === "resolved") &&
+                  !hideLiveStatusBadge && (
+                  espnLink ? (
+                    <Badge asChild variant="secondary" className={statusBadgeClass}>
+                      <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                        <StatusIcon className="h-3.5 w-3.5" />
+                        {eventStatusLabel}
+                      </a>
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" className={statusBadgeClass}>
+                      <StatusIcon className="h-3.5 w-3.5" />
+                      {eventStatusLabel}
+                    </Badge>
+                  )
+                )}
+              {showCombinedScoreBadge ? (
+                <div className="ml-auto md:ml-0">
+                  {espnLink ? (
+                    <Badge asChild variant="secondary" className={combinedScoreBadgeClass}>
+                      <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                        <span className="flex items-center gap-1">
+                          <Trophy className="h-3.5 w-3.5" />
+                          <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                        </span>
+                        <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
+                          {combinedScoreLabel}
+                        </span>
+                      </a>
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" className={combinedScoreBadgeClass}>
+                      <span className="flex items-center gap-1">
+                        <Trophy className="h-3.5 w-3.5" />
+                        <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                      </span>
+                      <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
+                        {combinedScoreLabel}
+                      </span>
+                    </Badge>
+                  )}
+                </div>
+              ) : showScoreBadge ? (
+                <div className="ml-auto md:ml-0">
+                  {espnLink ? (
+                    <Badge
+                      asChild
+                      variant="secondary"
+                      className={cn(
+                        badgeBaseClass,
+                        "bg-indigo-50 text-indigo-700 border-indigo-200",
+                      )}
+                    >
+                      <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                        <Trophy className="h-3.5 w-3.5" />
+                        <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                      </a>
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="secondary"
+                      className={cn(
+                        badgeBaseClass,
+                        "bg-indigo-50 text-indigo-700 border-indigo-200",
+                      )}
+                    >
+                      <Trophy className="h-3.5 w-3.5" />
+                      <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                    </Badge>
+                  )}
+                </div>
               ) : null}
+              {!showCombinedScoreBadge && showInfoBadge && (
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    badgeBaseClass,
+                    "bg-white text-slate-700 border-slate-200"
+                  )}
+                >
+                  <CircleDot className="h-3.5 w-3.5" />
+                  <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                </Badge>
+              )}
             </div>
           </div>
         </div>
@@ -3225,12 +2881,11 @@ export function TradeCard({
               <p className="text-sm md:text-base font-semibold">
                 <span
                   className={cn(
-                    "inline-flex items-center justify-center rounded-md px-1.5 py-0.5 transition-all duration-300",
-                    priceFlash && "ring-1 shadow-sm",
+                    "inline-flex items-center justify-center rounded-md px-1.5 py-0.5 transition-colors duration-300",
                     !hasCurrentPrice && "text-slate-400",
-                    priceFlash === "up" && "bg-emerald-50 text-emerald-700 ring-emerald-200",
-                    priceFlash === "down" && "bg-red-50 text-red-700 ring-red-200",
-                    priceFlash === "neutral" && "bg-slate-200 text-slate-800 ring-slate-300",
+                    priceFlash === "up" && "bg-emerald-50 text-emerald-700",
+                    priceFlash === "down" && "bg-red-50 text-red-700",
+                    priceFlash === "neutral" && "bg-slate-100 text-slate-700",
                     priceFlash === null && hasCurrentPrice && "text-slate-900"
                   )}
                 >
@@ -3283,12 +2938,9 @@ export function TradeCard({
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
                 <input
                   id="manual-copy-price"
-                  type="text"
+                  type="number"
                   inputMode="decimal"
-                  pattern="[0-9]*[.,]?[0-9]*"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="none"
+                  step="0.0001"
                   value={manualPriceInput}
                   onChange={(e) => setManualPriceInput(e.target.value)}
                   placeholder={manualDisplayPrice.toFixed(4)}
@@ -3305,12 +2957,9 @@ export function TradeCard({
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
                 <input
                   id="manual-copy-amount"
-                  type="text"
+                  type="number"
                   inputMode="decimal"
-                  pattern="[0-9]*[.,]?[0-9]*"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="none"
+                  step="0.01"
                   value={manualUsdAmount}
                   onChange={(e) => setManualUsdAmount(e.target.value)}
                   placeholder="0.00"
@@ -3324,75 +2973,32 @@ export function TradeCard({
               )}
             </div>
 
-            <Button
-              onClick={handleManualMarkAsCopied}
-              disabled={!manualAmountValid || isCopyDisabled || isCopied}
-              variant="outline"
-              className={cn(
-                'w-full max-w-[360px] mx-auto font-semibold text-sm',
-                isCopied
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
-                  : isCopyDisabled || !manualAmountValid
-                    ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                    : 'bg-[#FDB022] border-transparent hover:bg-[#E09A1A] text-slate-900'
-              )}
-            >
-              {isMarketEnded ? (
-                "Market Resolved"
-              ) : isCopied ? (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  Copied
-                </>
-              ) : (
-                'Mark trade as copied'
-              )}
-            </Button>
-          </div>
-        )}
-
-        {/* Get PolyScore Button - Admin Only, Top 5 Traders Only */}
-        {isAdmin && isTop5 && conditionId && hasCurrentPrice && (
-          <div className="px-5 md:px-6 py-2 border-t border-slate-200">
             <div className="flex justify-center">
               <Button
-                onClick={handleGetPolyScore}
-                disabled={isLoadingPolyScore}
+                onClick={handleManualMarkAsCopied}
+                disabled={!manualAmountValid || isCopyDisabled || isCopied}
                 variant="outline"
-                className="rounded-full border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-medium shadow-sm text-xs h-7 px-3"
-                size="sm"
+                className={cn(
+                  'w-full max-w-[360px] font-semibold text-sm',
+                  isCopied
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
+                    : isCopyDisabled || !manualAmountValid
+                      ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                      : 'bg-[#FDB022] border-transparent hover:bg-[#E09A1A] text-slate-900'
+                )}
               >
-                {isLoadingPolyScore ? (
+                {isMarketEnded ? (
+                  "Market Resolved"
+                ) : isCopied ? (
                   <>
-                    <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
-                    Analyzing...
+                    <Check className="h-4 w-4 mr-2" />
+                    Copied
                   </>
                 ) : (
-                  <>
-                    <Sparkles className="w-3 h-3 mr-1.5" />
-                    Get PolyScore
-                  </>
+                  'Mark trade as copied'
                 )}
               </Button>
             </div>
-            {polyScoreError && (
-              <div className="mt-2 flex justify-center">
-                <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-                  {polyScoreError}
-                </div>
-              </div>
-            )}
-            {polyScoreData && (
-              <div className="mt-2">
-                <PolyScoreResults
-                  data={polyScoreData}
-                  onClose={() => {
-                    setPolyScoreData(null)
-                    setPolyScoreError(null)
-                  }}
-                />
-              </div>
-            )}
           </div>
         )}
 
@@ -3472,39 +3078,101 @@ export function TradeCard({
                 </div>
               </div>
             ) : allowManualExperience ? (
-              <div className="w-full flex justify-center">
+              <div className="w-full">
                 {!manualDrawerOpen && (
                   isCopied ? (
-                    <Button
-                      disabled
-                      className="w-full max-w-[360px] rounded-full bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
-                      size="lg"
-                    >
-                      <Check className="w-4 h-4 mr-2" />
-                      Copied
-                    </Button>
+                    <div className="flex justify-center">
+                      <Button
+                        disabled
+                        className="w-full max-w-[360px] rounded-full bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
+                        size="lg"
+                      >
+                        <Check className="w-4 h-4 mr-2" />
+                        Copied
+                      </Button>
+                    </div>
                   ) : (
-                    <Button
-                      onClick={handleCopyTradeClick}
-                      disabled={isCopyDisabled}
-                      className={`w-full max-w-[360px] rounded-full font-semibold shadow-sm text-sm ${
-                        isMarketEnded
-                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                          : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
-                      }`}
-                      size="lg"
-                    >
-                      {isMarketEnded ? (
-                        "Market Resolved"
-                      ) : manualFlowStep === 'open-polymarket' ? (
-                        <>
-                          Open Polymarket to enter trade
-                          <ExternalLink className="w-4 h-4 ml-2" />
-                        </>
-                      ) : (
-                        'Enter order details'
-                      )}
-                    </Button>
+                    <div className="space-y-3">
+                      {/* Info tooltip */}
+                      <div className="flex justify-center">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                              <span className="font-medium">How to trade</span>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-[280px] text-center">
+                            <p className="mb-2">
+                              Free accounts manually execute copy trades on Polymarket, then input the trade details on Polycopy.
+                            </p>
+                            <p className="text-slate-300">
+                              <strong className="text-white">Premium users</strong> can trade directly from their Polycopy feed.{" "}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  window.location.href = '/profile?upgrade=true'
+                                }}
+                                className="underline hover:text-white transition-colors"
+                              >
+                                Upgrade now
+                              </button>
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+
+                      {/* Two-button flow */}
+                      <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                        <Button
+                          onClick={handleCopyTradeClick}
+                          disabled={isCopyDisabled}
+                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm ${
+                            isMarketEnded
+                              ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                              : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
+                          }`}
+                          size="lg"
+                        >
+                          {isMarketEnded ? (
+                            "Market Resolved"
+                          ) : (
+                            <>
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-900 text-[#FDB022] text-xs font-bold mr-2">
+                                1
+                              </span>
+                              Copy trade
+                              <ExternalLink className="w-4 h-4 ml-2" />
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          onClick={handleMarkAsConfirmedClick}
+                          disabled={isCopyDisabled}
+                          variant="outline"
+                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm ${
+                            isMarketEnded
+                              ? "border-slate-200 text-slate-400 cursor-not-allowed"
+                              : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                          }`}
+                          size="lg"
+                        >
+                          {isMarketEnded ? (
+                            "Market Resolved"
+                          ) : (
+                            <>
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-900 text-white text-xs font-bold mr-2">
+                                2
+                              </span>
+                              Mark as copied
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
                   )
                 )}
                 {showLinkWalletHint && (
@@ -3563,7 +3231,7 @@ export function TradeCard({
                     <p className="text-xs font-semibold tracking-wide text-slate-400">Status</p>
                     <p className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                       {!isFinalStatus && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
-                      {orderStatusLabel}
+                      {statusLabel}
                     </p>
                     {!isFinalStatus && (
                       <div className="mt-1">
@@ -3762,13 +3430,10 @@ export function TradeCard({
                     )}
                     <input
                       id="amount"
-                      type="text"
+                      type="number"
                       inputMode={amountMode === "usd" ? "decimal" : "numeric"}
                       pattern={amountMode === "usd" ? "[0-9]*[.,]?[0-9]*" : "[0-9]*"}
                       step={amountMode === "contracts" ? contractStep : 0.01}
-                      autoComplete="off"
-                      autoCorrect="off"
-                      autoCapitalize="none"
                       value={amountInput}
                             onChange={(e) => {
                               handleAmountChange(e.target.value)
@@ -4036,14 +3701,9 @@ export function TradeCard({
                   </Button>
                           ))}
                             <Input
-                              type="text"
+                              type="number"
                               placeholder="Custom"
                               value={customSlippage}
-                              inputMode="decimal"
-                              pattern="[0-9]*[.,]?[0-9]*"
-                              autoComplete="off"
-                              autoCorrect="off"
-                              autoCapitalize="none"
                               onChange={(e) => {
                                 setCustomSlippage(e.target.value)
                                 handleSlippagePresetChange("custom")
@@ -4164,17 +3824,6 @@ export function TradeCard({
             </div>
           </DialogContent>
         </Dialog>
-      )}
-
-      {/* PolyScore Results Modal */}
-      {polyScoreData && (
-        <PolyScoreResults
-          data={polyScoreData}
-          onClose={() => {
-            setPolyScoreData(null)
-            setPolyScoreError(null)
-          }}
-        />
       )}
 
       {onTogglePin && (
