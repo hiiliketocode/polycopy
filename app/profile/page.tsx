@@ -921,10 +921,16 @@ function ProfilePageContent() {
       }
     }
 
-    // Apply live prices to open trades so PnL is mark-to-market
+    // Apply live prices to open trades and auto-close manual trades when markets resolve
     if (newLiveData.size > 0) {
       setCopiedTradesBase((prev) => {
         let changed = false;
+        const manualTradesToAutoClose: Array<{
+          trade: CopiedTrade;
+          settlementPrice: number;
+          roi: number;
+        }> = [];
+        
         const next = prev.map((trade) => {
           if (!trade.market_id || trade.user_closed_at) return trade;
           const live = newLiveData.get(buildLiveMarketKey(trade.market_id, trade.outcome));
@@ -937,6 +943,30 @@ function ProfilePageContent() {
           if (!priceChanged && !resolvedChanged) return trade;
           
           changed = true;
+          
+          // Auto-close manually copied trades when market resolves
+          if (live.closed && trade.trade_method === 'manual' && !trade.user_closed_at) {
+            const settlementPrice = live.price;
+            const entryPrice = trade.price_entry || 0;
+            const roi = entryPrice > 0 ? ((settlementPrice - entryPrice) / entryPrice) * 100 : 0;
+            
+            manualTradesToAutoClose.push({
+              trade,
+              settlementPrice,
+              roi: parseFloat(roi.toFixed(2)),
+            });
+            
+            return {
+              ...trade,
+              current_price: live.price,
+              market_resolved: true,
+              market_resolved_at: new Date().toISOString(),
+              user_closed_at: new Date().toISOString(),
+              user_exit_price: settlementPrice,
+              roi: parseFloat(roi.toFixed(2)),
+            };
+          }
+          
           return {
             ...trade,
             current_price: live.price,
@@ -944,6 +974,39 @@ function ProfilePageContent() {
             market_resolved_at: live.closed && !trade.market_resolved ? new Date().toISOString() : trade.market_resolved_at,
           };
         });
+        
+        // Update database for auto-closed manual trades
+        if (manualTradesToAutoClose.length > 0 && user && supabase) {
+          console.log(`🔒 Auto-closing ${manualTradesToAutoClose.length} manual trade(s) for resolved markets`);
+          
+          manualTradesToAutoClose.forEach(async ({ trade, settlementPrice, roi }) => {
+            const identifier = resolveOrderIdentifier(trade);
+            if (!identifier) {
+              console.warn('[Profile] Unable to identify trade for auto-close', trade);
+              return;
+            }
+            
+            try {
+              const now = new Date().toISOString();
+              await supabase
+                .from('orders')
+                .update({
+                  user_closed_at: now,
+                  user_exit_price: settlementPrice,
+                  roi: roi,
+                  market_resolved: true,
+                  market_resolved_at: now,
+                })
+                .eq(identifier.column, identifier.value)
+                .eq('copy_user_id', user.id);
+              
+              console.log(`✅ Auto-closed manual trade: ${trade.market_title?.slice(0, 30)} | ${trade.outcome} | Exit: $${settlementPrice.toFixed(2)} | ROI: ${roi.toFixed(1)}%`);
+            } catch (err) {
+              console.error('Failed to auto-close manual trade in database:', err);
+            }
+          });
+        }
+        
         return changed ? next : prev;
       });
     }
