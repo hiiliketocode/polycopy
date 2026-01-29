@@ -961,6 +961,7 @@ function ProfilePageContent() {
       'Economics': '#06b6d4',
       'Tech': '#6366f1',
       'Weather': '#14b8a6',
+      // 'Real Estate': '#f97316', // Disabled until Polymarket API properly filters this category
       'Other': '#64748b'
     };
 
@@ -1001,6 +1002,10 @@ function ProfilePageContent() {
       else if (title.match(/temperature|weather|climate|hurricane|storm|tornado|flood|drought|snow|rain|heat wave|cold|frost|wind|forecast|meteorolog|el nino|la nina|global warming|celsius|fahrenheit/)) {
         category = 'Weather';
       }
+      // Real Estate - housing, property, real estate markets (disabled for now)
+      // else if (title.match(/home|house|housing|property|real estate|median home value|mortgage|rent|rental|apartment|condo|property value|home price|zillow|redfin|residential|commercial property/)) {
+      //   category = 'Real Estate';
+      // }
       
       categoryMap[category] = (categoryMap[category] || 0) + 1;
     });

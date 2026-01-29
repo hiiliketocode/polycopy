@@ -518,6 +518,8 @@ function DiscoverPageContent() {
   const [loadingBiggestTrades, setLoadingBiggestTrades] = useState(true);
   const [marketPrices, setMarketPrices] = useState<Record<string, number>>({});
   const priceLastFetchedRef = useRef<Record<string, number>>({});
+  const [mostActiveFromPublicTrades, setMostActiveFromPublicTrades] = useState<Array<{ wallet: string; displayName: string | null }>>([]);
+  const [loadingMostActive, setLoadingMostActive] = useState(true);
   const [tradeCounts, setTradeCounts] = useState<Record<string, { count: number; hasMore: boolean }>>({});
   const [realizedDailyMap, setRealizedDailyMap] = useState<Record<string, { date: string; realized_pnl: number }[]>>({});
   const [yesterdayWinners, setYesterdayWinners] = useState<Array<{ wallet: string; pnl: number; displayName: string | null }>>([]);
@@ -708,6 +710,7 @@ function DiscoverPageContent() {
   };
 
   // Category mapping - Polymarket API expects uppercase category names
+  // Note: REAL_ESTATE is commented out because Polymarket's API doesn't properly filter it yet
   const categoryMap: Record<string, string> = {
     'All': 'OVERALL',
     'Politics': 'POLITICS',
@@ -717,7 +720,8 @@ function DiscoverPageContent() {
     'Business': 'FINANCE',
     'Economics': 'ECONOMICS',
     'Tech': 'TECH',
-    'Weather': 'WEATHER'
+    'Weather': 'WEATHER',
+    // 'Real Estate': 'REAL_ESTATE' // Disabled - API returns same results as OVERALL
   };
 
   const categories = [
@@ -729,7 +733,8 @@ function DiscoverPageContent() {
     'Business',
     'Economics',
     'Tech',
-    'Weather'
+    'Weather',
+    // 'Real Estate' // Disabled until Polymarket API properly filters this category
   ];
 
   const sortOptions: Array<{ value: "30d" | "7d" | "all"; label: string }> = [
@@ -841,7 +846,7 @@ function DiscoverPageContent() {
   const visibleTraders = filteredTraders.slice(0, visibleCount);
 
   const trendingCandidateWallets = useMemo(
-    () => rankedTraders.slice(0, 20).map((trader) => trader.wallet),
+    () => rankedTraders.slice(0, 50).map((trader) => trader.wallet), // Increased from 20 to 50 for better coverage
     [rankedTraders]
   );
 
@@ -858,12 +863,21 @@ function DiscoverPageContent() {
 
   const trendingTraders = useMemo(() => {
     const entries: TrendingTraderRow[] = [];
+    let totalChecked = 0;
+    let hasDataCount = 0;
+    let hasWeeklyCount = 0;
+    
     for (const trader of rankedTraders) {
+      totalChecked++;
       const walletKey = normalizeWallet(trader.wallet);
       const rows = realizedDailyMap[walletKey];
       if (!rows || rows.length === 0) continue;
+      
+      hasDataCount++;
       const weekly = computeWeeklyRealized(rows);
       if (!weekly) continue;
+      
+      hasWeeklyCount++;
       entries.push({
         trader,
         weekly,
@@ -871,6 +885,14 @@ function DiscoverPageContent() {
         pctChange: computePercentChange(weekly),
       });
     }
+    
+    console.log(`Trending Traders Debug:
+      - Total traders checked: ${totalChecked}
+      - Traders with data: ${hasDataCount}
+      - Traders with weekly data: ${hasWeeklyCount}
+      - Final entries: ${entries.length}
+    `);
+    
     return entries
       .sort((a, b) => b.diff - a.diff)
       .slice(0, 10);
@@ -886,14 +908,9 @@ function DiscoverPageContent() {
   }, [selectedTickerTrades]);
 
   const mostActiveTraders = useMemo(() => {
-    const getCount = (trader: Trader) => {
-      const normalizedWallet = normalizeWallet(trader.wallet);
-      return tradeCounts[normalizedWallet]?.count ?? trader.totalTrades ?? 0;
-    };
-    return [...traders]
-      .sort((a, b) => getCount(b) - getCount(a))
-      .slice(0, 10);
-  }, [traders, tradeCounts]);
+    // Use data from public trades API instead of filtering leaderboard
+    return mostActiveFromPublicTrades.slice(0, 10);
+  }, [mostActiveFromPublicTrades]);
 
   const sortedYesterdayWinners = useMemo(() => {
     return [...yesterdayWinners]
@@ -901,16 +918,68 @@ function DiscoverPageContent() {
       .slice(0, 10);
   }, [yesterdayWinners]);
 
+  // Fetch most active traders from public trades
   useEffect(() => {
-    if (mostActiveTraders.length === 0) return;
     let cancelled = false;
 
+    const fetchMostActive = async () => {
+      setLoadingMostActive(true);
+      try {
+        const response = await fetch('/api/public-trades/most-active?hours=24&limit=10', {
+          cache: 'no-store',
+        });
+        
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!cancelled) {
+          setMostActiveFromPublicTrades(Array.isArray(data?.traders) ? data.traders : []);
+        }
+      } catch (error) {
+        console.error('Error fetching most active traders:', error);
+        if (!cancelled) {
+          setMostActiveFromPublicTrades([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingMostActive(false);
+        }
+      }
+    };
+
+    fetchMostActive();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (traders.length === 0) return;
+    let cancelled = false;
+
+    // Get top 15 traders by volume to check their activity (reduced from 20 for speed)
+    const topTraders = [...traders]
+      .sort((a, b) => b.volume - a.volume)
+      .slice(0, 15);
+
     const loadCounts = async () => {
-        const entries = await Promise.all(
-          mostActiveTraders.map(async (trader) => {
+      // Fetch in batches of 5 for better parallelization
+      const batchSize = 5;
+      const allEntries: [string, { count: number; hasMore: boolean }][] = [];
+      
+      for (let i = 0; i < topTraders.length; i += batchSize) {
+        if (cancelled) break;
+        
+        const batch = topTraders.slice(i, i + batchSize);
+        const batchEntries = await Promise.all(
+          batch.map(async (trader) => {
             const normalizedWallet = normalizeWallet(trader.wallet);
             try {
-              const response = await fetch(`/api/polymarket/trades-count?wallet=${trader.wallet}&hours=24&limit=200`, {
+              const response = await fetch(`/api/polymarket/trades-count?wallet=${trader.wallet}&hours=24&limit=300`, {
                 cache: 'no-store',
               });
               if (!response.ok) return [normalizedWallet, { count: 0, hasMore: false }] as const;
@@ -927,15 +996,19 @@ function DiscoverPageContent() {
             }
           })
         );
-
-      if (!cancelled) {
-        setTradeCounts((prev) => {
-          const next = { ...prev };
-          for (const [wallet, data] of entries) {
-            next[wallet] = data;
-          }
-          return next;
-        });
+        
+        allEntries.push(...batchEntries);
+        
+        // Update state after each batch for progressive loading
+        if (!cancelled) {
+          setTradeCounts((prev) => {
+            const next = { ...prev };
+            for (const [wallet, data] of batchEntries) {
+              next[wallet] = data;
+            }
+            return next;
+          });
+        }
       }
     };
 
@@ -944,7 +1017,7 @@ function DiscoverPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [mostActiveTraders]);
+  }, [traders]);
 
   useEffect(() => {
     let cancelled = false;
@@ -984,10 +1057,14 @@ function DiscoverPageContent() {
 
   useEffect(() => {
     const walletSet = new Set<string>();
+    // Prioritize trending candidates - fetch them first
+    trendingCandidateWallets.forEach((wallet) => walletSet.add(normalizeWallet(wallet)));
+    
+    // Add others
     visibleTraders.forEach((trader) => walletSet.add(normalizeWallet(trader.wallet)));
     mostConsistentEntries.forEach((entry) => walletSet.add(normalizeWallet(entry.trader.wallet)));
-    trendingCandidateWallets.forEach((wallet) => walletSet.add(normalizeWallet(wallet)));
     mostCopiedCandidateWallets.forEach((wallet) => walletSet.add(normalizeWallet(wallet)));
+    
     const wallets = Array.from(walletSet);
 
     const walletsToFetch = wallets.filter((wallet) => !(wallet in realizedDailyMap));
@@ -996,34 +1073,79 @@ function DiscoverPageContent() {
     let cancelled = false;
 
     const loadRealized = async () => {
-      const entries = await Promise.all(
-        walletsToFetch.map(async (wallet) => {
-          const normalizedWallet = wallet.toLowerCase();
-          try {
-            const response = await fetch(`/api/trader/${wallet}/realized-pnl`, { cache: 'no-store' });
-            if (!response.ok) return [normalizedWallet, []] as const;
-            const payload = await response.json();
-            const rows = Array.isArray(payload?.daily)
-              ? payload.daily.map((row: { date: string; realized_pnl: number }) => ({
-                  date: row.date,
-                  realized_pnl: Number(row.realized_pnl ?? 0),
-                }))
-              : [];
-            return [normalizedWallet, rows] as const;
-          } catch {
-            return [normalizedWallet, []] as const;
-          }
-        })
-      );
+      // Split into priority (trending) and non-priority wallets
+      const trendingSet = new Set(trendingCandidateWallets.map(w => normalizeWallet(w)));
+      const priorityWallets = walletsToFetch.filter(w => trendingSet.has(w));
+      const otherWallets = walletsToFetch.filter(w => !trendingSet.has(w));
+      
+      // Fetch priority wallets in small batches for progressive loading
+      const batchSize = 10; // Increased from 5 to 10 for faster loading
+      for (let i = 0; i < priorityWallets.length; i += batchSize) {
+        if (cancelled) break;
+        
+        const batch = priorityWallets.slice(i, i + batchSize);
+        const entries = await Promise.all(
+          batch.map(async (wallet) => {
+            const normalizedWallet = wallet.toLowerCase();
+            try {
+              const response = await fetch(`/api/trader/${wallet}/realized-pnl`, { cache: 'no-store' });
+              if (!response.ok) return [normalizedWallet, []] as const;
+              const payload = await response.json();
+              const rows = Array.isArray(payload?.daily)
+                ? payload.daily.map((row: { date: string; realized_pnl: number }) => ({
+                    date: row.date,
+                    realized_pnl: Number(row.realized_pnl ?? 0),
+                  }))
+                : [];
+              return [normalizedWallet, rows] as const;
+            } catch {
+              return [normalizedWallet, []] as const;
+            }
+          })
+        );
 
-      if (!cancelled) {
-        setRealizedDailyMap((prev) => {
-          const next = { ...prev };
-          for (const [wallet, rows] of entries) {
-            next[wallet] = rows;
-          }
-          return next;
-        });
+        if (!cancelled) {
+          setRealizedDailyMap((prev) => {
+            const next = { ...prev };
+            for (const [wallet, rows] of entries) {
+              next[wallet] = rows;
+            }
+            return next;
+          });
+        }
+      }
+      
+      // Then fetch other wallets
+      if (!cancelled && otherWallets.length > 0) {
+        const entries = await Promise.all(
+          otherWallets.map(async (wallet) => {
+            const normalizedWallet = wallet.toLowerCase();
+            try {
+              const response = await fetch(`/api/trader/${wallet}/realized-pnl`, { cache: 'no-store' });
+              if (!response.ok) return [normalizedWallet, []] as const;
+              const payload = await response.json();
+              const rows = Array.isArray(payload?.daily)
+                ? payload.daily.map((row: { date: string; realized_pnl: number }) => ({
+                    date: row.date,
+                    realized_pnl: Number(row.realized_pnl ?? 0),
+                  }))
+                : [];
+              return [normalizedWallet, rows] as const;
+            } catch {
+              return [normalizedWallet, []] as const;
+            }
+          })
+        );
+
+        if (!cancelled) {
+          setRealizedDailyMap((prev) => {
+            const next = { ...prev };
+            for (const [wallet, rows] of entries) {
+              next[wallet] = rows;
+            }
+            return next;
+          });
+        }
       }
     };
 
@@ -1285,19 +1407,45 @@ function DiscoverPageContent() {
 
 
         {/* Trending Traders Section */}
-        {trendingTraders.length > 0 && (
-          <div className="bg-white">
-            <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
-                <div>
-                <h3 className="text-lg font-semibold text-slate-900">Trending Traders</h3>
-                <p className="text-xs text-slate-500">Most improved by realized PnL week-on-week</p>
-                </div>
+        <div className="bg-white">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+              <div>
+              <h3 className="text-lg font-semibold text-slate-900">Trending Traders</h3>
+              <p className="text-xs text-slate-500">Most improved by realized PnL week-over-week</p>
               </div>
+            </div>
 
+          {trendingTraders.length === 0 && Object.keys(realizedDailyMap).length < 30 ? (
             <div className="overflow-x-auto">
               <div className="flex gap-4 pb-2">
-                {trendingTraders.slice(0, 10).map((entry, index) => {
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div
+                    key={i}
+                    className="min-w-[220px] flex-shrink-0 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm animate-pulse"
+                    style={{ minHeight: '240px' }}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 flex-1">
+                        <div className="h-10 w-10 bg-[#FFF6DA] rounded-full"></div>
+                        <div className="h-4 bg-[#FFF6DA] rounded w-24"></div>
+                      </div>
+                      <div className="h-4 bg-[#FFF6DA] rounded w-8"></div>
+                    </div>
+                    <div className="mt-4 h-6 bg-[#FFF6DA] rounded w-20 mx-auto"></div>
+                    <div className="mt-4 h-16 bg-[#FFF6DA] rounded"></div>
+                    <div className="mt-4 h-8 bg-[#FFF6DA] rounded"></div>
+                    <div className="mt-4 h-10 bg-[#FFF6DA] rounded-full"></div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500 mt-3 text-center">
+                Loading trader performance data... ({Object.keys(realizedDailyMap).length}/50)
+              </p>
+            </div>
+          ) : trendingTraders.length > 0 ? (
+            <div className="overflow-x-auto">
+              <div className="flex gap-4 pb-2">{trendingTraders.slice(0, 10).map((entry, index) => {
                     const trader = entry.trader;
                     const rows = realizedDailyMap[normalizeWallet(trader.wallet)] || [];
                     const isFollowing = followedWallets.has(trader.wallet.toLowerCase());
@@ -1385,9 +1533,13 @@ function DiscoverPageContent() {
                   })}
                 </div>
               </div>
+          ) : (
+            <div className="text-center py-8 text-slate-500">
+              <p>No trending traders available</p>
             </div>
+          )}
           </div>
-        )}
+        </div>
 
         {/* Top Traders Section */}
         <div className="bg-white">
@@ -1440,7 +1592,7 @@ function DiscoverPageContent() {
                 </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                   {categories.map((category) => {
                     const categoryValue = categoryMap[category];
                     const isActive = selectedCategory === categoryValue;
@@ -1455,7 +1607,7 @@ function DiscoverPageContent() {
                           newUrl.searchParams.set('category', categoryValue);
                           window.history.pushState({}, '', newUrl.toString());
                         }}
-                        className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-full font-medium text-xs sm:text-sm transition-all whitespace-nowrap ${
+                        className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-full font-medium text-xs sm:text-sm transition-all whitespace-nowrap flex-shrink-0 ${
                             isActive
                               ? "bg-[#FDB022] text-slate-900 shadow-sm"
                               : "bg-white text-slate-600 hover:bg-[#FFF6DA] border border-slate-200"
@@ -1639,11 +1791,11 @@ function DiscoverPageContent() {
                               openFollowModal({ wallet: trader.wallet, displayName: trader.displayName });
                             }
                           }}
-                          className="flex cursor-pointer items-center gap-3 px-4 py-3 transition hover:bg-[#FFF6DA]"
+                          className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-[#FFF6DA]"
                         >
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-semibold text-slate-400">{index + 1}</span>
-                            <div className="flex-1 min-w-0 max-w-[140px] sm:max-w-[180px]">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <span className="text-sm font-semibold text-slate-400 flex-shrink-0">{index + 1}</span>
+                            <div className="min-w-0 flex-1">
                               <Link href={`/trader/${trader.wallet}`}>
                                 <p className="text-sm font-semibold text-slate-900 truncate">
                                   {formatDisplayName(trader.displayName, trader.wallet)}
@@ -1651,9 +1803,7 @@ function DiscoverPageContent() {
                               </Link>
                             </div>
                           </div>
-                          <div className="flex flex-col items-end w-20">
-                          <span className="text-sm font-semibold text-emerald-600 tabular-nums">{daysUp}</span>
-                          </div>
+                          <span className="text-sm font-semibold text-emerald-600 tabular-nums flex-shrink-0">{daysUp}</span>
                         </div>
                       );
                     })
@@ -1687,9 +1837,9 @@ function DiscoverPageContent() {
                           }}
                           className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-[#FFF6DA]"
                         >
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-semibold text-slate-400">{index + 1}</span>
-                            <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <span className="text-sm font-semibold text-slate-400 flex-shrink-0">{index + 1}</span>
+                            <div className="min-w-0 flex-1">
                               <Link href={`/trader/${trader.wallet}`}>
                                 <p className="text-sm font-semibold text-slate-900 truncate">
                                   {formatDisplayName(name, trader.wallet)}
@@ -1697,7 +1847,7 @@ function DiscoverPageContent() {
                               </Link>
                             </div>
                           </div>
-                          <span className={`text-sm font-semibold tabular-nums ${pnlColor}`}>
+                          <span className={`text-sm font-semibold tabular-nums flex-shrink-0 ${pnlColor}`}>
                             {formatLargeNumber(trader.pnl)}
                           </span>
                         </div>
@@ -1713,14 +1863,15 @@ function DiscoverPageContent() {
                   <p className="text-xs text-slate-500">Trades in the last 24 hours</p>
                 </div>
                 <div className="divide-y divide-slate-100">
-                  {mostActiveTraders.length === 0 ? (
+                  {loadingMostActive ? (
+                    <div className="px-4 py-8 text-center">
+                      <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-solid border-[#FDB022] border-r-transparent"></div>
+                      <p className="mt-2 text-xs text-slate-500">Loading activity...</p>
+                    </div>
+                  ) : mostActiveTraders.length === 0 ? (
                     <div className="px-4 py-6 text-center text-sm text-slate-500">No active traders yet</div>
                   ) : (
                     mostActiveTraders.map((trader, index) => {
-                      const tradeCount = tradeCounts[normalizeWallet(trader.wallet)];
-                      const countValue = tradeCount?.count ?? trader.totalTrades ?? 0;
-                      const countLabel = tradeCount?.hasMore ? `${countValue}+` : `${countValue}`;
-                      const isFollowing = followedWallets.has(trader.wallet.toLowerCase());
                       return (
                         <div
                           key={trader.wallet}
@@ -1735,18 +1886,15 @@ function DiscoverPageContent() {
                           }}
                           className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-[#FFF6DA]"
                         >
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-semibold text-slate-400">{index + 1}</span>
-                            <div className="flex-1 min-w-0 max-w-[140px] sm:max-w-[170px]">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <span className="text-sm font-semibold text-slate-400 flex-shrink-0">{index + 1}</span>
+                            <div className="min-w-0 flex-1">
                               <Link href={`/trader/${trader.wallet}`}>
                                 <p className="text-sm font-semibold text-slate-900 truncate">
                                   {formatDisplayName(trader.displayName, trader.wallet)}
                                 </p>
                               </Link>
                             </div>
-                          </div>
-                          <div className="flex flex-col items-end w-20">
-                            <span className="text-sm font-semibold text-slate-900 tabular-nums">{countLabel}</span>
                           </div>
                         </div>
                       );
@@ -1758,23 +1906,13 @@ function DiscoverPageContent() {
               <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="px-4 py-3 border-b border-slate-100">
                   <h3 className="text-base font-semibold text-slate-900">Most Copied Traders</h3>
+                  <p className="text-xs text-slate-500">Ranked by popularity</p>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {mostCopiedTraders.length === 0 ? (
                     <div className="px-4 py-6 text-center text-sm text-slate-500">No copied traders found</div>
                   ) : (
                     mostCopiedTraders.map((trader, index) => {
-                      const rows = realizedDailyMap[normalizeWallet(trader.wallet)] || [];
-                      const weekly = computeWeeklyRealized(rows);
-                      const last7Label = weekly ? formatSignedLargeNumber(weekly.last7) : '—';
-                      const last7Color =
-                        weekly && weekly.last7 > 0
-                          ? 'text-emerald-600'
-                          : weekly && weekly.last7 < 0
-                          ? 'text-rose-500'
-                          : 'text-slate-900';
-                      const isFollowing = followedWallets.has(trader.wallet.toLowerCase());
-                      const copies = Number(trader.followerCount ?? 0);
                       return (
                         <div
                           key={trader.wallet}
@@ -1789,15 +1927,14 @@ function DiscoverPageContent() {
                           }}
                           className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition hover:bg-[#FFF6DA]"
                         >
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-semibold text-slate-400">{index + 1}</span>
-                            <div className="flex-1 min-w-0 max-w-[140px] sm:max-w-[190px]">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <span className="text-sm font-semibold text-slate-400 flex-shrink-0">{index + 1}</span>
+                            <div className="min-w-0 flex-1">
                               <Link href={`/trader/${trader.wallet}`}>
                                 <p className="text-sm font-semibold text-slate-900 truncate">
                                   {formatDisplayName(trader.displayName, trader.wallet)}
                                 </p>
                               </Link>
-                              <span className="sr-only">Copies: {copies}</span>
                             </div>
                           </div>
                         </div>
