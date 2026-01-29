@@ -105,7 +105,7 @@ export async function POST(request: Request) {
           }
           
           // Extract market_id from tokenId
-          const tokenId = order.asset_id || order.token_id || '';
+          const tokenId = order.asset_id || '';
           const marketId = tokenId.length >= 66 ? tokenId.slice(0, 66) : tokenId;
           
           if (marketId && order.outcome) {
