@@ -51,15 +51,21 @@ export async function POST(request: Request) {
 
     const supabase = createServiceClient();
 
-    // Fetch user's open manual trades
+    // Fetch user's open trades (both auto-copied and manual)
+    // For quick trades: trader_id is set (user's own trader_id for their executed orders)
+    // For manual trades: copy_user_id is set
     const { data: openTrades, error: tradesError } = await supabase
       .from('orders')
-      .select('order_id, copied_trade_id, market_id, outcome, price_when_copied, entry_size, current_price, side, trader_id')
-      .eq('copy_user_id', user.id)
+      .select('order_id, copied_trade_id, market_id, outcome, price_when_copied, entry_size, current_price, side, trader_id, copy_user_id, trade_method')
+      .or(`copy_user_id.eq.${user.id},trader_id.eq.${user.id}`)
       .is('user_closed_at', null)
       .is('market_resolved', false);
 
-    console.log(`[check-positions] Found ${openTrades?.length || 0} open trades for user ${user.id}`);
+    console.log(`[check-positions] Query for user ${user.id}, found ${openTrades?.length || 0} open trades`);
+    
+    if (tradesError) {
+      console.error('[check-positions] Query error:', tradesError);
+    }
 
     if (tradesError || !openTrades || openTrades.length === 0) {
       console.log('[check-positions] No open trades to check');
@@ -73,24 +79,24 @@ export async function POST(request: Request) {
 
     const now = new Date().toISOString();
 
-    // First, hide SELL orders that are just closing positions
-    // (these show up as duplicates when you use the Sell button)
-    const sellOrders = openTrades.filter(t => t.side === 'SELL' && t.trader_id);
+    // First, hide SELL orders that are duplicates of BUY orders
+    // When you click "Sell" on a position, it creates a SELL order that shows as a new entry
+    const sellOrders = openTrades.filter(t => t.side === 'SELL');
     const sellOrdersToHide: string[] = [];
 
     console.log(`[check-positions] Found ${sellOrders.length} SELL orders to check for duplicates`);
 
     for (const sellOrder of sellOrders) {
-      // Find matching BUY order for the same market/outcome/trader
+      // Find matching BUY order for the same market/outcome (from same user)
       const matchingBuyOrder = openTrades.find(t => 
         t.market_id === sellOrder.market_id &&
         t.outcome === sellOrder.outcome &&
-        t.trader_id === sellOrder.trader_id &&
         t.side === 'BUY' &&
-        t.order_id !== sellOrder.order_id
+        t.order_id !== sellOrder.order_id &&
+        (t.trader_id === sellOrder.trader_id || t.copy_user_id === sellOrder.copy_user_id)
       );
 
-      console.log(`[check-positions] SELL order ${sellOrder.order_id}: market=${sellOrder.market_id}, outcome=${sellOrder.outcome}, has match=${!!matchingBuyOrder}`);
+      console.log(`[check-positions] SELL order ${sellOrder.order_id?.slice(0, 8)}: market=${sellOrder.market_id?.slice(0, 10)}, outcome=${sellOrder.outcome}, has BUY match=${!!matchingBuyOrder}`);
 
       if (matchingBuyOrder) {
         // This SELL order is closing a BUY position - hide it by marking as closed
