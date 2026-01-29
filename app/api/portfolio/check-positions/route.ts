@@ -123,9 +123,9 @@ export async function POST(request: Request) {
           market_id: order.marketId,
           outcome: order.outcome,
           side: order.side || 'BUY',
-          price_when_copied: order.priceWhenCopied,
-          current_price: order.currentPrice,
-          entry_size: order.entrySize,
+          price_when_copied: order.priceOrAvgPrice || 0,
+          current_price: order.currentPrice || 0,
+          entry_size: order.filledSize || order.size || 0,
           source: 'clob',
         });
       }
