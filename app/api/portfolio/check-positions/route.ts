@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient as createAuthClient } from '@/lib/supabase/server';
 import { createClient } from '@supabase/supabase-js';
-import { OrderRow } from '@/lib/orders/types';
+import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client';
 
 // Minimum position value ($0.10) - positions below this are considered dust
 const DUST_THRESHOLD = 0.10;
@@ -75,23 +75,38 @@ export async function POST(request: Request) {
 
     console.log(`[check-positions] Found ${manualTrades?.length || 0} manual trades in database`);
 
-    // Fetch quick trades (auto-copied) from CLOB via /api/orders
-    let quickTrades: OrderRow[] = [];
+    // Fetch quick trades (auto-copied) directly from CLOB
+    const clobTrades: TradeToCheck[] = [];
     try {
-      const ordersResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/orders`, {
-        headers: {
-          'Cookie': request.headers.get('Cookie') || '',
-        },
-        cache: 'no-store',
-      });
-
-      if (ordersResponse.ok) {
-        const ordersData = await ordersResponse.json();
-        quickTrades = ordersData.orders || [];
-        console.log(`[check-positions] Found ${quickTrades.length} quick trades from CLOB`);
+      const { client } = await getAuthedClobClientForUser(user.id);
+      const openOrders = await client.getOpenOrders({}, true);
+      
+      console.log(`[check-positions] Found ${openOrders?.length || 0} open orders from CLOB`);
+      
+      if (Array.isArray(openOrders)) {
+        for (const order of openOrders) {
+          if (!order.id || !order.asset_id) continue;
+          
+          // Extract market_id from tokenId
+          const tokenId = order.asset_id || order.token_id || '';
+          const marketId = tokenId.length >= 66 ? tokenId.slice(0, 66) : tokenId;
+          
+          if (marketId && order.outcome) {
+            clobTrades.push({
+              order_id: order.id,
+              market_id: marketId,
+              outcome: order.outcome,
+              side: order.side || 'BUY',
+              price_when_copied: order.price || 0,
+              current_price: order.price || 0,
+              entry_size: order.size_matched || order.original_size || 0,
+              source: 'clob',
+            });
+          }
+        }
       }
     } catch (err) {
-      console.error('[check-positions] Failed to fetch quick trades:', err);
+      console.error('[check-positions] Failed to fetch CLOB orders:', err);
     }
 
     // Combine all trades to check
@@ -115,21 +130,8 @@ export async function POST(request: Request) {
       }
     }
 
-    // Add quick trades (filter to open ones)
-    for (const order of quickTrades) {
-      if (order.marketId && order.outcome && order.status === 'open') {
-        allTrades.push({
-          order_id: order.orderId,
-          market_id: order.marketId,
-          outcome: order.outcome,
-          side: order.side || 'BUY',
-          price_when_copied: order.priceOrAvgPrice || 0,
-          current_price: order.currentPrice || 0,
-          entry_size: order.filledSize || order.size || 0,
-          source: 'clob',
-        });
-      }
-    }
+    // Add CLOB trades
+    allTrades.push(...clobTrades);
 
     console.log(`[check-positions] Total trades to check: ${allTrades.length}`);
 
