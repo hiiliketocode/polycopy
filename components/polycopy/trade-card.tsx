@@ -23,6 +23,7 @@ import {
   CircleDot,
   Clock,
   Star,
+  Info,
 } from "lucide-react"
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -132,8 +133,6 @@ type StatusPhase =
   | 'rejected'
   | 'timed_out'
   | 'unknown'
-
-type ManualFlowStep = 'open-polymarket' | 'enter-details'
 
 type TradeExecutionNotificationPayload = {
   id: string
@@ -531,7 +530,6 @@ export function TradeCard({
   const [manualDrawerOpen, setManualDrawerOpen] = useState(false)
   const [manualUsdAmount, setManualUsdAmount] = useState("")
   const [manualPriceInput, setManualPriceInput] = useState("")
-  const [manualFlowStep, setManualFlowStep] = useState<ManualFlowStep>('open-polymarket')
   const [showWalletPrompt, setShowWalletPrompt] = useState(false)
   const [isInView, setIsInView] = useState(true)
   const [notificationPending, setNotificationPending] = useState(false)
@@ -2188,12 +2186,15 @@ export function TradeCard({
       return
     }
 
-    if (manualFlowStep === 'open-polymarket') {
-      onCopyTrade?.()
-      setManualFlowStep('enter-details')
-      return
-    }
+    // For manual experience, just open Polymarket
+    onCopyTrade?.()
+  }
 
+  const handleMarkAsConfirmedClick = () => {
+    if (isMarketEnded) return
+    if (!shouldShowCopyCta) return
+    
+    // Open the manual drawer to enter order details
     if (!manualDrawerOpen) {
       openManualDrawer()
     }
@@ -2203,7 +2204,6 @@ export function TradeCard({
     setManualDrawerOpen(false)
     setManualUsdAmount("")
     setManualPriceInput("")
-    setManualFlowStep('open-polymarket')
   }
 
   const handleManualMarkAsCopied = () => {
@@ -2973,30 +2973,32 @@ export function TradeCard({
               )}
             </div>
 
-            <Button
-              onClick={handleManualMarkAsCopied}
-              disabled={!manualAmountValid || isCopyDisabled || isCopied}
-              variant="outline"
-              className={cn(
-                'w-full max-w-[360px] mx-auto font-semibold text-sm',
-                isCopied
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
-                  : isCopyDisabled || !manualAmountValid
-                    ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                    : 'bg-[#FDB022] border-transparent hover:bg-[#E09A1A] text-slate-900'
-              )}
-            >
-              {isMarketEnded ? (
-                "Market Resolved"
-              ) : isCopied ? (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  Copied
-                </>
-              ) : (
-                'Mark trade as copied'
-              )}
-            </Button>
+            <div className="flex justify-center">
+              <Button
+                onClick={handleManualMarkAsCopied}
+                disabled={!manualAmountValid || isCopyDisabled || isCopied}
+                variant="outline"
+                className={cn(
+                  'w-full max-w-[360px] font-semibold text-sm',
+                  isCopied
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
+                    : isCopyDisabled || !manualAmountValid
+                      ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                      : 'bg-[#FDB022] border-transparent hover:bg-[#E09A1A] text-slate-900'
+                )}
+              >
+                {isMarketEnded ? (
+                  "Market Resolved"
+                ) : isCopied ? (
+                  <>
+                    <Check className="h-4 w-4 mr-2" />
+                    Copied
+                  </>
+                ) : (
+                  'Mark trade as copied'
+                )}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -3076,39 +3078,101 @@ export function TradeCard({
                 </div>
               </div>
             ) : allowManualExperience ? (
-              <div className="w-full flex justify-center">
+              <div className="w-full">
                 {!manualDrawerOpen && (
                   isCopied ? (
-                    <Button
-                      disabled
-                      className="w-full max-w-[360px] rounded-full bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
-                      size="lg"
-                    >
-                      <Check className="w-4 h-4 mr-2" />
-                      Copied
-                    </Button>
+                    <div className="flex justify-center">
+                      <Button
+                        disabled
+                        className="w-full max-w-[360px] rounded-full bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
+                        size="lg"
+                      >
+                        <Check className="w-4 h-4 mr-2" />
+                        Copied
+                      </Button>
+                    </div>
                   ) : (
-                    <Button
-                      onClick={handleCopyTradeClick}
-                      disabled={isCopyDisabled}
-                      className={`w-full max-w-[360px] rounded-full font-semibold shadow-sm text-sm ${
-                        isMarketEnded
-                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                          : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
-                      }`}
-                      size="lg"
-                    >
-                      {isMarketEnded ? (
-                        "Market Resolved"
-                      ) : manualFlowStep === 'open-polymarket' ? (
-                        <>
-                          Open Polymarket to enter trade
-                          <ExternalLink className="w-4 h-4 ml-2" />
-                        </>
-                      ) : (
-                        'Enter order details'
-                      )}
-                    </Button>
+                    <div className="space-y-3">
+                      {/* Info tooltip */}
+                      <div className="flex justify-center">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                              <span className="font-medium">How to trade</span>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-[280px] text-center">
+                            <p className="mb-2">
+                              Free accounts manually execute copy trades on Polymarket, then input the trade details on Polycopy.
+                            </p>
+                            <p className="text-slate-300">
+                              <strong className="text-white">Premium users</strong> can trade directly from their Polycopy feed.{" "}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  window.location.href = '/profile?upgrade=true'
+                                }}
+                                className="underline hover:text-white transition-colors"
+                              >
+                                Upgrade now
+                              </button>
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+
+                      {/* Two-button flow */}
+                      <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                        <Button
+                          onClick={handleCopyTradeClick}
+                          disabled={isCopyDisabled}
+                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm ${
+                            isMarketEnded
+                              ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                              : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
+                          }`}
+                          size="lg"
+                        >
+                          {isMarketEnded ? (
+                            "Market Resolved"
+                          ) : (
+                            <>
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-900 text-[#FDB022] text-xs font-bold mr-2">
+                                1
+                              </span>
+                              Copy trade
+                              <ExternalLink className="w-4 h-4 ml-2" />
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          onClick={handleMarkAsConfirmedClick}
+                          disabled={isCopyDisabled}
+                          variant="outline"
+                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm ${
+                            isMarketEnded
+                              ? "border-slate-200 text-slate-400 cursor-not-allowed"
+                              : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                          }`}
+                          size="lg"
+                        >
+                          {isMarketEnded ? (
+                            "Market Resolved"
+                          ) : (
+                            <>
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-900 text-white text-xs font-bold mr-2">
+                                2
+                              </span>
+                              Mark as copied
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
                   )
                 )}
                 {showLinkWalletHint && (
