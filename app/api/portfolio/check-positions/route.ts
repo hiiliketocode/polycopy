@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient as createAuthClient } from '@/lib/supabase/server';
 import { createClient } from '@supabase/supabase-js';
+import { OrderRow } from '@/lib/orders/types';
 
 // Minimum position value ($0.10) - positions below this are considered dust
 const DUST_THRESHOLD = 0.10;
@@ -27,11 +28,23 @@ interface PolymarketPosition {
   currentPrice?: number | string;
 }
 
+interface TradeToCheck {
+  order_id: string;
+  market_id: string;
+  outcome: string;
+  side: string;
+  price_when_copied?: number;
+  current_price?: number;
+  entry_size?: number;
+  source: 'database' | 'clob';
+}
+
 /**
  * POST /api/portfolio/check-positions
  * Check user's actual Polymarket positions and auto-close trades for:
  * - Positions that no longer exist
  * - Dust positions (< $0.10 value)
+ * - Duplicate SELL orders
  */
 export async function POST(request: Request) {
   try {
@@ -50,24 +63,77 @@ export async function POST(request: Request) {
     }
 
     const supabase = createServiceClient();
+    const now = new Date().toISOString();
 
-    // Fetch user's open trades (both auto-copied and manual)
-    // For quick trades: trader_id is set (user's own trader_id for their executed orders)
-    // For manual trades: copy_user_id is set
-    const { data: openTrades, error: tradesError } = await supabase
+    // Fetch manual trades from database
+    const { data: manualTrades, error: tradesError } = await supabase
       .from('orders')
       .select('order_id, copied_trade_id, market_id, outcome, price_when_copied, entry_size, current_price, side, trader_id, copy_user_id, trade_method')
-      .or(`copy_user_id.eq.${user.id},trader_id.eq.${user.id}`)
+      .eq('copy_user_id', user.id)
       .is('user_closed_at', null)
       .is('market_resolved', false);
 
-    console.log(`[check-positions] Query for user ${user.id}, found ${openTrades?.length || 0} open trades`);
-    
-    if (tradesError) {
-      console.error('[check-positions] Query error:', tradesError);
+    console.log(`[check-positions] Found ${manualTrades?.length || 0} manual trades in database`);
+
+    // Fetch quick trades (auto-copied) from CLOB via /api/orders
+    let quickTrades: OrderRow[] = [];
+    try {
+      const ordersResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/orders`, {
+        headers: {
+          'Cookie': request.headers.get('Cookie') || '',
+        },
+        cache: 'no-store',
+      });
+
+      if (ordersResponse.ok) {
+        const ordersData = await ordersResponse.json();
+        quickTrades = ordersData.orders || [];
+        console.log(`[check-positions] Found ${quickTrades.length} quick trades from CLOB`);
+      }
+    } catch (err) {
+      console.error('[check-positions] Failed to fetch quick trades:', err);
     }
 
-    if (tradesError || !openTrades || openTrades.length === 0) {
+    // Combine all trades to check
+    const allTrades: TradeToCheck[] = [];
+
+    // Add manual trades
+    if (manualTrades) {
+      for (const trade of manualTrades) {
+        if (trade.market_id && trade.outcome) {
+          allTrades.push({
+            order_id: trade.order_id,
+            market_id: trade.market_id,
+            outcome: trade.outcome,
+            side: trade.side || 'BUY',
+            price_when_copied: trade.price_when_copied,
+            current_price: trade.current_price,
+            entry_size: trade.entry_size,
+            source: 'database',
+          });
+        }
+      }
+    }
+
+    // Add quick trades (filter to open ones)
+    for (const order of quickTrades) {
+      if (order.marketId && order.outcome && order.status === 'open') {
+        allTrades.push({
+          order_id: order.orderId,
+          market_id: order.marketId,
+          outcome: order.outcome,
+          side: order.side || 'BUY',
+          price_when_copied: order.priceWhenCopied,
+          current_price: order.currentPrice,
+          entry_size: order.entrySize,
+          source: 'clob',
+        });
+      }
+    }
+
+    console.log(`[check-positions] Total trades to check: ${allTrades.length}`);
+
+    if (allTrades.length === 0) {
       console.log('[check-positions] No open trades to check');
       return NextResponse.json({ 
         message: 'No open trades to check',
@@ -77,51 +143,51 @@ export async function POST(request: Request) {
       });
     }
 
-    const now = new Date().toISOString();
-
     // First, hide SELL orders that are duplicates of BUY orders
     // When you click "Sell" on a position, it creates a SELL order that shows as a new entry
-    const sellOrders = openTrades.filter(t => t.side === 'SELL');
+    const sellOrders = allTrades.filter(t => t.side === 'SELL');
     const sellOrdersToHide: string[] = [];
 
     console.log(`[check-positions] Found ${sellOrders.length} SELL orders to check for duplicates`);
 
     for (const sellOrder of sellOrders) {
-      // Find matching BUY order for the same market/outcome (from same user)
-      const matchingBuyOrder = openTrades.find(t => 
+      // Find matching BUY order for the same market/outcome
+      const matchingBuyOrder = allTrades.find(t => 
         t.market_id === sellOrder.market_id &&
         t.outcome === sellOrder.outcome &&
         t.side === 'BUY' &&
-        t.order_id !== sellOrder.order_id &&
-        (t.trader_id === sellOrder.trader_id || t.copy_user_id === sellOrder.copy_user_id)
+        t.order_id !== sellOrder.order_id
       );
 
       console.log(`[check-positions] SELL order ${sellOrder.order_id?.slice(0, 8)}: market=${sellOrder.market_id?.slice(0, 10)}, outcome=${sellOrder.outcome}, has BUY match=${!!matchingBuyOrder}`);
 
       if (matchingBuyOrder) {
-        // This SELL order is closing a BUY position - hide it by marking as closed
-        const identifier = sellOrder.copied_trade_id || sellOrder.order_id;
-        const identifierColumn = sellOrder.copied_trade_id ? 'copied_trade_id' : 'order_id';
+        // This SELL order is closing a BUY position - hide it
+        if (sellOrder.source === 'database') {
+          // Update database entry
+          await supabase
+            .from('orders')
+            .update({
+              user_closed_at: now,
+              user_exit_price: sellOrder.price_when_copied,
+            })
+            .eq('order_id', sellOrder.order_id)
+            .eq('copy_user_id', user.id);
 
-        await supabase
-          .from('orders')
-          .update({
-            user_closed_at: now,
-            user_exit_price: sellOrder.price_when_copied,
-          })
-          .eq(identifierColumn, identifier)
-          .eq('copy_user_id', user.id);
-
-        sellOrdersToHide.push(identifier);
-        console.log(`🧹 Hid duplicate SELL order ${identifier} (closes BUY ${matchingBuyOrder.order_id})`);
+          console.log(`🧹 Hid duplicate SELL order from database: ${sellOrder.order_id}`);
+        }
+        
+        sellOrdersToHide.push(sellOrder.order_id);
       }
     }
 
-    // Now check actual positions for remaining trades (excluding hidden SELLs)
-    const manualTrades = openTrades.filter(t => 
-      t.side !== 'SELL' && // Only check BUY orders
-      !sellOrdersToHide.includes(t.copied_trade_id || t.order_id)
+    // Now check actual positions for remaining trades (excluding hidden SELLs and only BUY orders)
+    const tradesToCheck = allTrades.filter(t => 
+      t.side === 'BUY' && // Only check BUY orders
+      !sellOrdersToHide.includes(t.order_id)
     );
+
+    console.log(`[check-positions] Checking ${tradesToCheck.length} BUY positions against Polymarket`);
 
     // Fetch ALL user positions from Polymarket
     let allPositions: PolymarketPosition[] = [];
@@ -162,9 +228,9 @@ export async function POST(request: Request) {
     }
 
     // Check each remaining trade for dust/sold positions
-    const tradesToClose: Array<{ id: string; reason: string }> = [];
+    const tradesToClose: Array<{ id: string; reason: string; source: string }> = [];
 
-    for (const trade of manualTrades) {
+    for (const trade of tradesToCheck) {
       const marketId = trade.market_id;
       const outcome = trade.outcome?.toUpperCase();
       
@@ -187,27 +253,29 @@ export async function POST(request: Request) {
       }
 
       if (shouldClose) {
-        const identifier = trade.copied_trade_id || trade.order_id;
-        const identifierColumn = trade.copied_trade_id ? 'copied_trade_id' : 'order_id';
+        // Only update database for trades from database source
+        if (trade.source === 'database') {
+          await supabase
+            .from('orders')
+            .update({
+              user_closed_at: now,
+              user_exit_price: currentPrice,
+            })
+            .eq('order_id', trade.order_id)
+            .eq('copy_user_id', user.id);
 
-        await supabase
-          .from('orders')
-          .update({
-            user_closed_at: now,
-            user_exit_price: currentPrice,
-          })
-          .eq(identifierColumn, identifier)
-          .eq('copy_user_id', user.id);
-
-        tradesToClose.push({ id: identifier, reason });
+          console.log(`✅ Auto-closed database trade ${trade.order_id}: ${reason}, size: ${currentSize}, value: $${positionValue.toFixed(4)}`);
+        } else {
+          console.log(`ℹ️ Would auto-close CLOB trade ${trade.order_id}: ${reason}, size: ${currentSize}, value: $${positionValue.toFixed(4)} (CLOB trades auto-sync)`);
+        }
         
-        console.log(`✅ Auto-closed trade ${identifier}: ${reason}, size: ${currentSize}, value: $${positionValue.toFixed(4)}`);
+        tradesToClose.push({ id: trade.order_id, reason, source: trade.source });
       }
     }
 
     return NextResponse.json({
-      message: `Checked ${openTrades.length} trades, hidden ${sellOrdersToHide.length} duplicate SELLs, auto-closed ${tradesToClose.length}`,
-      checked: openTrades.length,
+      message: `Checked ${allTrades.length} trades, hidden ${sellOrdersToHide.length} duplicate SELLs, auto-closed ${tradesToClose.length}`,
+      checked: allTrades.length,
       hidden: sellOrdersToHide.length,
       closed: tradesToClose.length,
       details: tradesToClose,
