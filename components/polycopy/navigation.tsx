@@ -309,7 +309,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <Image src="/logos/polycopy-logo-primary.svg" alt="Polycopy" width={120} height={32} className="h-8 w-auto" />
+            <Image src="/logos/polycopy-logo-primary.svg" alt="Polycopy" width={120} height={32} priority className="h-8 w-auto" style={{ width: 'auto' }} />
           </Link>
 
           {/* Center Navigation Links */}
@@ -511,7 +511,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
           <div className="flex items-center h-14 px-4">
           {/* Logo - Left side, non-clickable branding */}
           <div className="mr-auto">
-            <Image src="/logos/polycopy-logo-primary.svg" alt="Polycopy" width={120} height={32} className="h-7 w-auto" />
+            <Image src="/logos/polycopy-logo-primary.svg" alt="Polycopy" width={105} height={28} className="h-7 w-auto" />
           </div>
 
           {/* Navigation Buttons - Right side with button-like styling */}

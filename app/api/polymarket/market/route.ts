@@ -13,12 +13,22 @@ function pickFirstString(...values: Array<string | null | undefined>) {
   return null
 }
 
+// In-memory cache with TTL
+const marketCache = new Map<string, { data: any; timestamp: number }>()
+const CACHE_TTL_MS = 60000 // 1 minute cache
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const conditionId = searchParams.get('conditionId')?.trim()
 
   if (!conditionId || !conditionId.startsWith('0x')) {
     return NextResponse.json({ error: 'conditionId is required' }, { status: 400 })
+  }
+
+  // Check cache first
+  const cached = marketCache.get(conditionId)
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return NextResponse.json(cached.data)
   }
 
   try {
@@ -88,7 +98,7 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({
+    const responseData = {
       ok: true,
       conditionId: market?.condition_id ?? conditionId,
       question: market?.question ?? null,
@@ -101,7 +111,19 @@ export async function GET(request: Request) {
       acceptingOrders: typeof market?.accepting_orders === 'boolean' ? market.accepting_orders : null,
       closed: typeof market?.closed === 'boolean' ? market.closed : null,
       resolved: typeof market?.resolved === 'boolean' ? market.resolved : null,
-    })
+    }
+
+    // Cache the result
+    marketCache.set(conditionId, { data: responseData, timestamp: Date.now() })
+
+    // Cleanup old cache entries (simple LRU)
+    if (marketCache.size > 1000) {
+      const sortedEntries = Array.from(marketCache.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp)
+      const toDelete = sortedEntries.slice(0, 500)
+      toDelete.forEach(([key]) => marketCache.delete(key))
+    }
+
+    return NextResponse.json(responseData)
   } catch (error: any) {
     return NextResponse.json(
       { error: error?.message || 'Failed to fetch market' },

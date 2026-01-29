@@ -761,34 +761,50 @@ function ProfilePageContent() {
 
     const fetchMeta = async () => {
       const entries: Array<[string, { title: string | null; image: string | null; slug?: string | null }]> = [];
-      await Promise.allSettled(
-        idsToFetch.map(async (conditionId) => {
-          try {
-            const resp = await fetch(`/api/polymarket/market?conditionId=${encodeURIComponent(conditionId)}`, {
-              cache: 'no-store',
-            });
-            if (!resp.ok) return;
-            const data = await resp.json();
-            entries.push([
-              conditionId,
-              {
-                title: data?.question ?? null,
-                image: data?.icon ?? data?.image ?? null,
-                slug: data?.slug ?? null,
-              },
-            ]);
-          } catch {
-            /* ignore fetch errors */
-          }
-        })
-      );
-
-      if (!cancelled && entries.length > 0) {
-        setMarketMeta((prev) => {
-          const next = new Map(prev);
-          entries.forEach(([id, meta]) => next.set(id, meta));
-          return next;
-        });
+      
+      // Rate limit: fetch markets in batches to avoid 429 errors
+      const BATCH_SIZE = 5;
+      const DELAY_BETWEEN_BATCHES_MS = 200;
+      
+      for (let i = 0; i < idsToFetch.length; i += BATCH_SIZE) {
+        if (cancelled) break;
+        
+        const batch = idsToFetch.slice(i, i + BATCH_SIZE);
+        await Promise.allSettled(
+          batch.map(async (conditionId) => {
+            try {
+              const resp = await fetch(`/api/polymarket/market?conditionId=${encodeURIComponent(conditionId)}`, {
+                cache: 'no-store',
+              });
+              if (!resp.ok) return;
+              const data = await resp.json();
+              entries.push([
+                conditionId,
+                {
+                  title: data?.question ?? null,
+                  image: data?.icon ?? data?.image ?? null,
+                  slug: data?.slug ?? null,
+                },
+              ]);
+            } catch {
+              /* ignore fetch errors */
+            }
+          })
+        );
+        
+        // Update UI with current batch results
+        if (!cancelled && entries.length > 0) {
+          setMarketMeta((prev) => {
+            const next = new Map(prev);
+            entries.forEach(([id, meta]) => next.set(id, meta));
+            return next;
+          });
+        }
+        
+        // Delay between batches to respect rate limits
+        if (i + BATCH_SIZE < idsToFetch.length && !cancelled) {
+          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES_MS));
+        }
       }
     };
 
