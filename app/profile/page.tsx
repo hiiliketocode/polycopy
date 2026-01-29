@@ -926,13 +926,22 @@ function ProfilePageContent() {
       setCopiedTradesBase((prev) => {
         let changed = false;
         const next = prev.map((trade) => {
-          if (!trade.market_id || trade.user_closed_at || trade.market_resolved) return trade;
+          if (!trade.market_id || trade.user_closed_at) return trade;
           const live = newLiveData.get(buildLiveMarketKey(trade.market_id, trade.outcome));
-          if (!live || trade.current_price === live.price) return trade;
+          if (!live) return trade;
+          
+          // Update both price and resolution status
+          const priceChanged = trade.current_price !== live.price;
+          const resolvedChanged = !trade.market_resolved && live.closed;
+          
+          if (!priceChanged && !resolvedChanged) return trade;
+          
           changed = true;
           return {
             ...trade,
             current_price: live.price,
+            market_resolved: live.closed || trade.market_resolved,
+            market_resolved_at: live.closed && !trade.market_resolved ? new Date().toISOString() : trade.market_resolved_at,
           };
         });
         return changed ? next : prev;
