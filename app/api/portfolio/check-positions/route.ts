@@ -165,7 +165,7 @@ export async function POST(request: Request) {
 
     // First, hide SELL orders that are duplicates of BUY orders
     // When you click "Sell" on a position, it creates a SELL order that shows as a new entry
-    const sellOrders = allTrades.filter(t => t.side === 'SELL');
+    const sellOrders = allTrades.filter(t => t.side?.toUpperCase() === 'SELL');
     const sellOrdersToHide: string[] = [];
 
     console.log(`[check-positions] Found ${sellOrders.length} SELL orders to check for duplicates`);
@@ -175,7 +175,7 @@ export async function POST(request: Request) {
       const matchingBuyOrder = allTrades.find(t => 
         t.market_id === sellOrder.market_id &&
         t.outcome === sellOrder.outcome &&
-        t.side === 'BUY' &&
+        t.side?.toUpperCase() === 'BUY' &&
         t.order_id !== sellOrder.order_id
       );
 
@@ -203,7 +203,7 @@ export async function POST(request: Request) {
 
     // Now check actual positions for remaining trades (excluding hidden SELLs and only BUY orders)
     const tradesToCheck = allTrades.filter(t => 
-      t.side === 'BUY' && // Only check BUY orders
+      t.side?.toUpperCase() === 'BUY' && // Only check BUY orders
       !sellOrdersToHide.includes(t.order_id)
     );
 
