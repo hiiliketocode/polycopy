@@ -2,14 +2,14 @@ import { Metadata } from 'next';
 import { createClient } from '@supabase/supabase-js';
 
 interface Props {
-  params: {
+  params: Promise<{
     wallet: string;
-  };
+  }>;
 }
 
 // Generate dynamic metadata for each trader profile
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { wallet } = params;
+  const { wallet } = await params;
   
   // Fetch trader data from API
   try {
