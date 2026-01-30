@@ -3126,11 +3126,11 @@ export function TradeCard({
                       </div>
 
                       {/* Two-button flow */}
-                      <div className="flex flex-row gap-2 justify-center">
+                      <div className="flex flex-col sm:flex-row gap-2 justify-center">
                         <Button
                           onClick={handleCopyTradeClick}
                           disabled={isCopyDisabled}
-                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm py-4 ${
+                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm ${
                             isMarketEnded
                               ? "bg-slate-200 text-slate-500 cursor-not-allowed"
                               : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
@@ -3153,7 +3153,7 @@ export function TradeCard({
                           onClick={handleMarkAsConfirmedClick}
                           disabled={isCopyDisabled}
                           variant="outline"
-                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm py-4 ${
+                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm ${
                             isMarketEnded
                               ? "border-slate-200 text-slate-400 cursor-not-allowed"
                               : "border-slate-300 text-slate-700 hover:bg-slate-50"
