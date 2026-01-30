@@ -3092,8 +3092,56 @@ export function TradeCard({
                       </Button>
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {/* Info tooltip */}
+                    <div className="space-y-3 px-5 md:px-6 pb-3">
+                      {/* Two-button flow */}
+                      <div className="flex flex-row gap-1 justify-center px-4">
+                        <Button
+                          onClick={handleCopyTradeClick}
+                          disabled={isCopyDisabled}
+                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm py-4 ${
+                            isMarketEnded
+                              ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                              : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
+                          }`}
+                          size="lg"
+                        >
+                          {isMarketEnded ? (
+                            "Market Resolved"
+                          ) : (
+                            <>
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-900 text-[#FDB022] text-xs font-bold mr-2">
+                                1
+                              </span>
+                              Copy trade
+                              <ExternalLink className="w-4 h-4 ml-2" />
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          onClick={handleMarkAsConfirmedClick}
+                          disabled={isCopyDisabled}
+                          variant="outline"
+                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm py-4 ${
+                            isMarketEnded
+                              ? "border-slate-200 text-slate-400 cursor-not-allowed"
+                              : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                          }`}
+                          size="lg"
+                        >
+                          {isMarketEnded ? (
+                            "Market Resolved"
+                          ) : (
+                            <>
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-900 text-white text-xs font-bold mr-2">
+                                2
+                              </span>
+                              Mark as copied
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      {/* Info tooltip - moved below buttons */}
                       <div className="flex justify-center">
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -3123,54 +3171,6 @@ export function TradeCard({
                             </p>
                           </TooltipContent>
                         </Tooltip>
-                      </div>
-
-                      {/* Two-button flow */}
-                      <div className="flex flex-col sm:flex-row gap-2 justify-center">
-                        <Button
-                          onClick={handleCopyTradeClick}
-                          disabled={isCopyDisabled}
-                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm ${
-                            isMarketEnded
-                              ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                              : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
-                          }`}
-                          size="lg"
-                        >
-                          {isMarketEnded ? (
-                            "Market Resolved"
-                          ) : (
-                            <>
-                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-900 text-[#FDB022] text-xs font-bold mr-2">
-                                1
-                              </span>
-                              Copy trade
-                              <ExternalLink className="w-4 h-4 ml-2" />
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          onClick={handleMarkAsConfirmedClick}
-                          disabled={isCopyDisabled}
-                          variant="outline"
-                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm ${
-                            isMarketEnded
-                              ? "border-slate-200 text-slate-400 cursor-not-allowed"
-                              : "border-slate-300 text-slate-700 hover:bg-slate-50"
-                          }`}
-                          size="lg"
-                        >
-                          {isMarketEnded ? (
-                            "Market Resolved"
-                          ) : (
-                            <>
-                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-900 text-white text-xs font-bold mr-2">
-                                2
-                              </span>
-                              Mark as copied
-                            </>
-                          )}
-                        </Button>
                       </div>
                     </div>
                   )
@@ -3827,7 +3827,7 @@ export function TradeCard({
       )}
 
       {onTogglePin && (
-        <div className="absolute bottom-3 right-3">
+        <div className="absolute bottom-2 right-3">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
