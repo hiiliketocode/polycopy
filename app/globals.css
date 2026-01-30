@@ -202,6 +202,12 @@ body {
       padding-bottom: 0;
     }
   }
+  
+  /* Hide mobile navigation when body has this class (for onboarding) */
+  .hide-mobile-nav > div:has(> nav[class*="fixed"]) > nav,
+  .hide-mobile-nav > nav[class*="bottom"] {
+    display: none !important;
+  }
 }
 
 @keyframes discover-ticker {

@@ -84,6 +84,7 @@ interface CopiedTrade {
   trade_method?: 'quick' | 'manual' | 'auto' | null;
   order_id?: string | null;
   copied_trade_id?: string | null;
+  side?: string; // 'buy' or 'sell' - the original trade direction
 }
 
 interface PositionSizeBucket {
@@ -598,6 +599,42 @@ function ProfilePageContent() {
 
         // Fetch live market data for the trades
         fetchLiveMarketData(tradesWithCorrectRoi);
+        
+        // Auto-close dust positions and hide duplicate SELL orders
+        console.log('🔍 Checking for duplicate positions and dust...');
+        const walletToCheck = profile?.trading_wallet_address || user.id; // Use user ID as fallback
+        
+        fetch('/api/portfolio/check-positions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ walletAddress: walletToCheck }),
+        })
+          .then(res => {
+            if (!res.ok) {
+              console.error('❌ check-positions failed:', res.status, res.statusText);
+              return res.json().then(data => {
+                console.error('Error details:', data);
+                throw new Error(data.error || 'Failed to check positions');
+              });
+            }
+            return res.json();
+          })
+          .then(data => {
+            console.log('✅ Check-positions result:', data);
+            if (data.closed > 0 || data.hidden > 0) {
+              console.log(`🧹 Auto-closed ${data.closed} dust/sold position(s), hidden ${data.hidden} duplicate SELL order(s)`);
+              // Refresh trades after auto-closing
+              hasLoadedTradesRef.current = false;
+              setTimeout(() => {
+                window.location.reload();
+              }, 1500);
+            } else {
+              console.log('ℹ️ No duplicates or dust positions found');
+            }
+          })
+          .catch(err => {
+            console.error('❌ Failed to check positions:', err);
+          });
       } catch (err) {
         console.error('Error fetching portfolio trades:', err);
         setCopiedTradesBase([]);
@@ -725,34 +762,50 @@ function ProfilePageContent() {
 
     const fetchMeta = async () => {
       const entries: Array<[string, { title: string | null; image: string | null; slug?: string | null }]> = [];
-      await Promise.allSettled(
-        idsToFetch.map(async (conditionId) => {
-          try {
-            const resp = await fetch(`/api/polymarket/market?conditionId=${encodeURIComponent(conditionId)}`, {
-              cache: 'no-store',
-            });
-            if (!resp.ok) return;
-            const data = await resp.json();
-            entries.push([
-              conditionId,
-              {
-                title: data?.question ?? null,
-                image: data?.icon ?? data?.image ?? null,
-                slug: data?.slug ?? null,
-              },
-            ]);
-          } catch {
-            /* ignore fetch errors */
-          }
-        })
-      );
-
-      if (!cancelled && entries.length > 0) {
-        setMarketMeta((prev) => {
-          const next = new Map(prev);
-          entries.forEach(([id, meta]) => next.set(id, meta));
-          return next;
-        });
+      
+      // Rate limit: fetch markets in batches to avoid 429 errors
+      const BATCH_SIZE = 5;
+      const DELAY_BETWEEN_BATCHES_MS = 200;
+      
+      for (let i = 0; i < idsToFetch.length; i += BATCH_SIZE) {
+        if (cancelled) break;
+        
+        const batch = idsToFetch.slice(i, i + BATCH_SIZE);
+        await Promise.allSettled(
+          batch.map(async (conditionId) => {
+            try {
+              const resp = await fetch(`/api/polymarket/market?conditionId=${encodeURIComponent(conditionId)}`, {
+                cache: 'no-store',
+              });
+              if (!resp.ok) return;
+              const data = await resp.json();
+              entries.push([
+                conditionId,
+                {
+                  title: data?.question ?? null,
+                  image: data?.icon ?? data?.image ?? null,
+                  slug: data?.slug ?? null,
+                },
+              ]);
+            } catch {
+              /* ignore fetch errors */
+            }
+          })
+        );
+        
+        // Update UI with current batch results
+        if (!cancelled && entries.length > 0) {
+          setMarketMeta((prev) => {
+            const next = new Map(prev);
+            entries.forEach(([id, meta]) => next.set(id, meta));
+            return next;
+          });
+        }
+        
+        // Delay between batches to respect rate limits
+        if (i + BATCH_SIZE < idsToFetch.length && !cancelled) {
+          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES_MS));
+        }
       }
     };
 
@@ -1452,10 +1505,17 @@ function ProfilePageContent() {
 
   // Filter trades
   const filteredTrades = copiedTrades.filter(trade => {
+    // Exclude SELL orders from most views (they're closing positions, not new positions)
+    // BUT allow them in 'history' view so users can see all activity
+    if (trade.side && trade.side.toLowerCase() === 'sell' && tradeFilter !== 'history') {
+      return false;
+    }
+    
     if (tradeFilter === 'all') return true;
     if (tradeFilter === 'open') return !trade.user_closed_at && !trade.market_resolved;
     if (tradeFilter === 'closed') return Boolean(trade.user_closed_at);
     if (tradeFilter === 'resolved') return Boolean(trade.market_resolved);
+    if (tradeFilter === 'history') return true; // Show all trades including sells
     return true;
   });
 
@@ -2375,6 +2435,14 @@ function ProfilePageContent() {
     const manualTrades = actualManualTrades.map(convertCopiedTradeToUnified);
     const quickTradesConverted = quickTrades
       .filter(isDisplayableQuickTrade)
+      .filter(order => {
+        // Exclude SELL orders from quick trades in all views except 'history'
+        // SELL orders are position closures, not new positions
+        if (tradeFilter !== 'history' && order.side?.toLowerCase() === 'sell') {
+          return false;
+        }
+        return true;
+      })
       .map((order) => {
         const createdAt = Date.parse(order.createdAt || '');
         const createdAtMs = Number.isFinite(createdAt) ? createdAt : 0;
@@ -2404,7 +2472,7 @@ function ProfilePageContent() {
     combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     
     return combined;
-  }, [copiedTrades, quickTrades, openPositionByKey]);
+  }, [copiedTrades, quickTrades, openPositionByKey, tradeFilter]);
 
   useEffect(() => {
     if (tradeFilter === 'history') return;
@@ -2451,6 +2519,8 @@ function ProfilePageContent() {
           return isSoldTrade(trade);
         case 'resolved':
           return (trade.status === 'resolved' || isLiveResolved(trade)) && !isSoldTrade(trade);
+        case 'history':
+          return true; // Show all trades including sells in activity view
         default:
           return true;
       }
@@ -2557,8 +2627,11 @@ function ProfilePageContent() {
       const tokenId = await resolveTokenIdForTrade(trade);
       const size = getTradeContracts(trade);
       if (tokenId && size && size > 0) {
+        // Get the original trade side
         const sideRaw =
-          trade.type === 'quick' ? trade.raw?.side : null;
+          trade.type === 'quick' 
+            ? trade.raw?.side 
+            : (trade.copiedTrade?.side || trade.raw?.side); // For manual trades, get from copiedTrade
         const normalizedSide = sideRaw ? String(sideRaw).trim().toUpperCase() : 'BUY';
         const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
         position = {
@@ -3154,15 +3227,21 @@ function ProfilePageContent() {
                             <React.Fragment key={trade.id}>
                               <tr className="border-b border-slate-100 align-top">
                                 <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 w-[120px] bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
-                                  {trade.trader_wallet && trade.trader_username ? (
-                                    <a
-                                      href={`/trader/${trade.trader_wallet}`}
-                                      className="text-sm font-medium text-slate-700 hover:text-slate-900 truncate block max-w-[120px]"
-                                      title={trade.trader_username}
-                                      onClick={(event) => event.stopPropagation()}
-                                    >
-                                      {trade.trader_username}
-                                    </a>
+                                  {trade.trader_username ? (
+                                    trade.trader_wallet ? (
+                                      <a
+                                        href={`/trader/${trade.trader_wallet}`}
+                                        className="text-sm font-medium text-slate-700 hover:text-slate-900 truncate block max-w-[120px]"
+                                        title={trade.trader_username}
+                                        onClick={(event) => event.stopPropagation()}
+                                      >
+                                        {trade.trader_username}
+                                      </a>
+                                    ) : (
+                                      <span className="text-sm font-medium text-slate-700 truncate block max-w-[120px]" title={trade.trader_username}>
+                                        {trade.trader_username}
+                                      </span>
+                                    )
                                   ) : (
                                     <span className="text-sm text-slate-400">Unknown</span>
                                   )}

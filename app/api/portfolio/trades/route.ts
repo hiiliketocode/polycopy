@@ -61,6 +61,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    const debug = searchParams.get('debug') === 'true'
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
     const pageSize = Math.min(
       100,
@@ -70,6 +71,69 @@ export async function GET(request: Request) {
     const to = from + pageSize - 1
 
     const supabase = createService()
+
+    // Debug mode: compare base orders table vs enriched view
+    if (debug) {
+      // Get all orders from base table
+      const { data: allOrders, error: ordersError } = await supabase
+        .from('orders')
+        .select('order_id, copied_trade_id, copied_market_title, status, filled_size, size, amount_invested, created_at, trade_method')
+        .eq('copy_user_id', requestedUserId)
+        .order('created_at', { ascending: false })
+
+      // Get orders from enriched view
+      const { data: enrichedOrders, error: enrichedError } = await supabase
+        .from('orders_copy_enriched')
+        .select('order_id, copied_trade_id')
+        .eq('copy_user_id', requestedUserId)
+
+      const enrichedIds = new Set(
+        (enrichedOrders || []).map(o => o.order_id || o.copied_trade_id)
+      )
+
+      const missingOrders = (allOrders || []).filter(order => {
+        const id = order.order_id || order.copied_trade_id
+        return !enrichedIds.has(id)
+      })
+
+      const seahawksOrders = (allOrders || []).filter(order =>
+        order.copied_market_title?.toLowerCase().includes('seahawks') ||
+        order.copied_market_title?.toLowerCase().includes('super bowl')
+      )
+
+      return NextResponse.json({
+        debug: true,
+        summary: {
+          totalOrders: allOrders?.length || 0,
+          ordersInEnrichedView: enrichedOrders?.length || 0,
+          missingFromView: missingOrders.length
+        },
+        missingOrders: missingOrders.map(o => ({
+          order_id: o.order_id,
+          copied_trade_id: o.copied_trade_id,
+          market_title: o.copied_market_title,
+          status: o.status,
+          filled_size: o.filled_size,
+          size: o.size,
+          amount_invested: o.amount_invested,
+          created_at: o.created_at,
+          trade_method: o.trade_method,
+          reason: (o.status?.toLowerCase() === 'open' && (o.filled_size === 0 || o.filled_size === null))
+            ? 'Filtered: status=open AND filled_size=0'
+            : 'Unknown'
+        })),
+        seahawksOrders: seahawksOrders.map(o => ({
+          order_id: o.order_id,
+          copied_trade_id: o.copied_trade_id,
+          market_title: o.copied_market_title,
+          status: o.status,
+          filled_size: o.filled_size,
+          size: o.size,
+          created_at: o.created_at,
+          inEnrichedView: enrichedIds.has(o.order_id || o.copied_trade_id)
+        }))
+      })
+    }
     const selectFields = [
       'order_id',
       'copied_trade_id',
