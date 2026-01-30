@@ -21,24 +21,49 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.9,
     },
     {
+      url: `${baseUrl}/faq`,
+      lastModified: new Date(),
+      changeFrequency: 'weekly' as const,
+      priority: 0.8,
+    },
+    {
       url: `${baseUrl}/login`,
       lastModified: new Date(),
       changeFrequency: 'monthly' as const,
-      priority: 0.5,
+      priority: 0.3,
     },
     {
       url: `${baseUrl}/terms`,
       lastModified: new Date(),
       changeFrequency: 'monthly' as const,
-      priority: 0.3,
+      priority: 0.2,
     },
     {
       url: `${baseUrl}/privacy`,
       lastModified: new Date(),
       changeFrequency: 'monthly' as const,
-      priority: 0.3,
+      priority: 0.2,
     },
   ]
+
+  // Category-specific discover pages for better SEO targeting
+  const categories = [
+    'POLITICS',
+    'SPORTS',
+    'CRYPTO',
+    'CULTURE',
+    'FINANCE',
+    'ECONOMICS',
+    'TECH',
+    'WEATHER',
+  ]
+
+  const categoryPages: MetadataRoute.Sitemap = categories.map(category => ({
+    url: `${baseUrl}/discover?category=${category}`,
+    lastModified: new Date(),
+    changeFrequency: 'daily' as const,
+    priority: 0.7,
+  }))
 
   // Dynamic trader profile pages (with quality filters)
   let traderPages: MetadataRoute.Sitemap = []
@@ -90,5 +115,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Continue without trader pages if there's an error
   }
 
-  return [...staticPages, ...traderPages]
+  return [...staticPages, ...categoryPages, ...traderPages]
 }

@@ -1,0 +1,27 @@
+# robots.txt for Polycopy
+# Allow all search engines to crawl the site
+
+User-agent: *
+Allow: /
+
+# Disallow admin and API routes from being indexed
+Disallow: /api/
+Disallow: /admin/
+
+# Disallow authentication pages
+Disallow: /login
+Disallow: /onboarding
+
+# Allow specific important pages
+Allow: /discover
+Allow: /faq
+Allow: /terms
+Allow: /privacy
+Allow: /trader/
+
+# Sitemap location
+Sitemap: https://polycopy.app/sitemap.xml
+
+# Crawl-delay (optional, helps prevent server overload)
+# Most major search engines ignore this, but some smaller ones respect it
+Crawl-delay: 1

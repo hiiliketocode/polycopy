@@ -29,6 +29,9 @@ export const metadata: Metadata = {
   authors: [{ name: 'Polycopy' }],
   creator: 'Polycopy',
   metadataBase: new URL('https://polycopy.app'),
+  alternates: {
+    canonical: 'https://polycopy.app'
+  },
   openGraph: {
     type: 'website',
     locale: 'en_US',
@@ -80,9 +83,47 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const organizationSchema = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Polycopy",
+    "url": "https://polycopy.app",
+    "logo": "https://polycopy.app/logos/polycopy-logo-primary.png",
+    "description": "Discover and copy top Polymarket traders. Track performance, follow winning strategies, and make smarter prediction market trades.",
+    "sameAs": [
+      "https://twitter.com/polycopyapp"
+    ],
+    "contactPoint": {
+      "@type": "ContactPoint",
+      "contactType": "Customer Support",
+      "url": "https://twitter.com/polycopyapp"
+    }
+  };
+
+  const websiteSchema = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "Polycopy",
+    "url": "https://polycopy.app",
+    "description": "Copy trading platform for Polymarket prediction markets",
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": "https://polycopy.app/discover?search={search_term_string}",
+      "query-input": "required name=search_term_string"
+    }
+  };
+
   return (
     <html lang="en">
       <head>
+        {/* Structured Data - Organization */}
+        <Script id="schema-organization" type="application/ld+json" strategy="beforeInteractive">
+          {JSON.stringify(organizationSchema)}
+        </Script>
+        {/* Structured Data - Website */}
+        <Script id="schema-website" type="application/ld+json" strategy="beforeInteractive">
+          {JSON.stringify(websiteSchema)}
+        </Script>
         {/* Google Tag Manager */}
         <Script id="google-tag-manager" strategy="afterInteractive">
           {`(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
