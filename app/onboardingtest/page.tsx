@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useCallback } from "react";
 import { StepFollowTraders } from "@/components/onboarding/step-follow-traders";
 import { PolycopyLogo } from "@/components/onboarding/polycopy-logo";
 import { StepTradeExplainer } from "@/components/onboarding/step-trade-explainer";
@@ -9,35 +8,17 @@ import { StepPremiumUpsell } from "@/components/onboarding/step-premium-upsell";
 import { StepComplete } from "@/components/onboarding/step-complete";
 import { ProgressIndicator } from "@/components/onboarding/progress-indicator";
 import { UpgradeModal } from "@/components/polycopy/upgrade-modal";
-import { supabase } from "@/lib/supabase";
-import { triggerLoggedOut } from "@/lib/auth/logout-events";
 
 type OnboardingStep = "follow" | "explainer" | "premium" | "complete";
 
 const STEPS: OnboardingStep[] = ["follow", "explainer", "premium", "complete"];
 
-export default function OnboardingPage() {
-  const router = useRouter();
+export default function OnboardingTestPage() {
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("follow");
   const [selectedTraders, setSelectedTraders] = useState<string[]>([]);
   const [isCompleting, setIsCompleting] = useState(false);
   const [traders, setTraders] = useState<any[]>([]);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
-
-  // Check auth on mount
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
-        triggerLoggedOut('session_missing');
-        router.push('/login');
-        return;
-      }
-      setUserId(session.user.id);
-    };
-    checkAuth();
-  }, [router]);
 
   // Hide mobile bottom nav and footer by adding class to body
   React.useEffect(() => {
@@ -86,33 +67,11 @@ export default function OnboardingPage() {
     setCurrentStep("explainer");
   };
 
-  const handleFollowTradersSkip = async () => {
-    if (!userId) return;
-    
-    try {
-      // Auto-follow top 5 traders
-      const top5Wallets = traders.slice(0, 5).map((t) => t.wallet);
-      
-      const follows = top5Wallets.map(wallet => ({
-        user_id: userId,
-        trader_wallet: wallet.toLowerCase()
-      }));
-      
-      const { error } = await supabase
-        .from('follows')
-        .insert(follows);
-        
-      if (error) {
-        console.error('Error auto-following traders:', error);
-        // Continue anyway
-      }
-      
-      setSelectedTraders(top5Wallets);
-      setCurrentStep("explainer");
-    } catch (error) {
-      console.error('Error in skip handler:', error);
-      setCurrentStep("explainer");
-    }
+  const handleFollowTradersSkip = () => {
+    const top5Wallets = traders.slice(0, 5).map((t) => t.wallet);
+    console.log('⚠️ PREVIEW: Auto-following top 5:', top5Wallets);
+    setSelectedTraders(top5Wallets);
+    setCurrentStep("explainer");
   };
 
   const handleExplainerNext = () => {
@@ -140,46 +99,20 @@ export default function OnboardingPage() {
   };
 
   const handleGoToFeed = async () => {
-    if (!userId) return;
-    
     setIsCompleting(true);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
-    try {
-      // Follow selected traders in database
-      if (selectedTraders.length > 0) {
-        const follows = selectedTraders.map(wallet => ({
-          user_id: userId,
-          trader_wallet: wallet.toLowerCase()
-        }));
-        
-        const { error } = await supabase
-          .from('follows')
-          .upsert(follows, {
-            onConflict: 'user_id,trader_wallet',
-            ignoreDuplicates: true
-          });
-          
-        if (error) {
-          console.error('Error following traders:', error);
-        }
-      }
-      
-      // Mark onboarding as complete
-      const response = await fetch('/api/onboarding/complete', {
-        method: 'POST',
-      });
-      
-      if (!response.ok) {
-        console.error('Failed to mark onboarding complete');
-      }
-      
-      // Redirect to feed
-      router.push('/feed');
-    } catch (error) {
-      console.error('Error completing onboarding:', error);
-      // Still redirect
-      router.push('/feed');
-    }
+    alert(
+      `✅ Preview Complete!\n\n` +
+      `In production, this would:\n\n` +
+      `1. Follow ${selectedTraders.length} traders in database\n` +
+      `2. Mark onboarding as complete\n` +
+      `3. Redirect to /feed\n\n` +
+      `Close this alert to restart preview.`
+    );
+    
+    // Reload to restart
+    window.location.reload();
   };
 
   const renderFooter = () => {
@@ -283,8 +216,7 @@ export default function OnboardingPage() {
           </header>
 
           {/* Main Content Area - Centered with full height, shifted down on desktop */}
-          <main className="flex-1 flex flex-col justify-center min-h-0 md:pt-[5vh]">
-            {currentStep === "follow" && (
+          <main className="flex-1 flex flex-col justify-center min-h-0 md:pt-[5vh]">{currentStep === "follow" && (
               <StepFollowTraders
                 selectedTraders={selectedTraders}
                 onSelectTrader={handleSelectTrader}

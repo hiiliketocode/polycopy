@@ -1,37 +1,40 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { StepFollowTraders } from "@/components/onboarding/step-follow-traders";
-import { PolycopyLogo } from "@/components/onboarding/polycopy-logo";
-import { StepTradeExplainer } from "@/components/onboarding/step-trade-explainer";
-import { StepPremiumUpsell } from "@/components/onboarding/step-premium-upsell";
-import { StepComplete } from "@/components/onboarding/step-complete";
-import { ProgressIndicator } from "@/components/onboarding/progress-indicator";
-import { UpgradeModal } from "@/components/polycopy/upgrade-modal";
+import { StepFollowTraders, MOCK_TRADERS } from "./step-follow-traders";
+import { PolycopyLogo } from "./polycopy-logo";
+import { StepTradeExplainer } from "./step-trade-explainer";
+import { StepPremiumUpsell } from "./step-premium-upsell";
+import { StepComplete } from "./step-complete";
+import { ProgressIndicator } from "./progress-indicator";
 import { supabase } from "@/lib/supabase";
 import { triggerLoggedOut } from "@/lib/auth/logout-events";
+import { UpgradeModal } from "@/components/polycopy/upgrade-modal";
 
 type OnboardingStep = "follow" | "explainer" | "premium" | "complete";
 
 const STEPS: OnboardingStep[] = ["follow", "explainer", "premium", "complete"];
 
-export default function OnboardingPage() {
+export function OnboardingFlow() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("follow");
   const [selectedTraders, setSelectedTraders] = useState<string[]>([]);
   const [isCompleting, setIsCompleting] = useState(false);
-  const [traders, setTraders] = useState<any[]>([]);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [traders, setTraders] = useState<any[]>([]); // Store traders at parent level
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   // Check auth on mount
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
-        triggerLoggedOut('session_missing');
-        router.push('/login');
+        // PREVIEW MODE: Comment out redirect for local testing
+        // triggerLoggedOut('session_missing');
+        // router.push('/login');
+        console.log('⚠️ PREVIEW MODE: No auth required (for local testing only)');
+        setUserId('preview-user-id'); // Mock user ID for preview
         return;
       }
       setUserId(session.user.id);
@@ -39,40 +42,9 @@ export default function OnboardingPage() {
     checkAuth();
   }, [router]);
 
-  // Hide mobile bottom nav and footer by adding class to body
-  React.useEffect(() => {
-    document.body.classList.add('hide-mobile-nav');
-    
-    // Hide the website footer more aggressively
-    const hideFooter = () => {
-      const footers = document.querySelectorAll('body > footer, body > div > footer:not([class*="fixed"])');
-      footers.forEach(footer => {
-        if (footer instanceof HTMLElement && !footer.querySelector('[class*="border-t"]')) {
-          // Only hide the main website footer, not our onboarding footer
-          footer.style.display = 'none';
-        }
-      });
-    };
-    
-    hideFooter();
-    // Check again after a brief delay in case footer loads later
-    const timer = setTimeout(hideFooter, 100);
-    
-    return () => {
-      clearTimeout(timer);
-      document.body.classList.remove('hide-mobile-nav');
-      // Restore all footers
-      const footers = document.querySelectorAll('body > footer, body > div > footer');
-      footers.forEach(footer => {
-        if (footer instanceof HTMLElement) {
-          footer.style.display = '';
-        }
-      });
-    };
-  }, []);
-
   const currentStepIndex = STEPS.indexOf(currentStep) + 1;
   const isPremiumStep = currentStep === "premium";
+  const isCompleteStep = currentStep === "complete";
 
   const handleSelectTrader = useCallback((wallet: string) => {
     setSelectedTraders((prev) =>
@@ -90,9 +62,18 @@ export default function OnboardingPage() {
     if (!userId) return;
     
     try {
-      // Auto-follow top 5 traders
+      // Get actual traders from state
       const top5Wallets = traders.slice(0, 5).map((t) => t.wallet);
       
+      // PREVIEW MODE: Skip DB operations
+      if (userId === 'preview-user-id') {
+        console.log('⚠️ PREVIEW MODE: Would auto-follow top 5:', top5Wallets);
+        setSelectedTraders(top5Wallets);
+        setCurrentStep("explainer");
+        return;
+      }
+      
+      // PRODUCTION MODE: Follow them in the database immediately
       const follows = top5Wallets.map(wallet => ({
         user_id: userId,
         trader_wallet: wallet.toLowerCase()
@@ -104,13 +85,14 @@ export default function OnboardingPage() {
         
       if (error) {
         console.error('Error auto-following traders:', error);
-        // Continue anyway
+        // Continue anyway, but log the error
       }
       
       setSelectedTraders(top5Wallets);
       setCurrentStep("explainer");
     } catch (error) {
       console.error('Error in skip handler:', error);
+      // Continue anyway
       setCurrentStep("explainer");
     }
   };
@@ -124,6 +106,7 @@ export default function OnboardingPage() {
   };
 
   const handlePremiumUpgrade = () => {
+    // Open the actual premium upgrade modal
     setShowUpgradeModal(true);
   };
 
@@ -135,36 +118,41 @@ export default function OnboardingPage() {
     setCurrentStep("explainer");
   };
 
-  const handleCompleteBack = () => {
-    setCurrentStep("premium");
-  };
-
   const handleGoToFeed = async () => {
     if (!userId) return;
     
     setIsCompleting(true);
-    
     try {
-      // Follow selected traders in database
+      // PREVIEW MODE: Skip database operations for preview
+      if (userId === 'preview-user-id') {
+        console.log('⚠️ PREVIEW MODE: Skipping DB operations');
+        console.log('Would follow traders:', selectedTraders);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate loading
+        alert('✅ Preview complete! In production, this would:\n\n1. Follow ' + selectedTraders.length + ' traders\n2. Mark onboarding as complete\n3. Redirect to /feed\n\nClose this alert to restart the preview.');
+        // Reload to restart preview
+        window.location.reload();
+        return;
+      }
+      
+      // PRODUCTION MODE: Real DB operations
+      // Step 1: Follow selected traders
       if (selectedTraders.length > 0) {
         const follows = selectedTraders.map(wallet => ({
           user_id: userId,
           trader_wallet: wallet.toLowerCase()
         }));
         
-        const { error } = await supabase
+        const { error: followError } = await supabase
           .from('follows')
-          .upsert(follows, {
-            onConflict: 'user_id,trader_wallet',
-            ignoreDuplicates: true
-          });
+          .insert(follows);
           
-        if (error) {
-          console.error('Error following traders:', error);
+        if (followError) {
+          console.error('Error following traders:', followError);
+          throw followError;
         }
       }
-      
-      // Mark onboarding as complete
+
+      // Step 2: Mark onboarding as complete
       const response = await fetch('/api/onboarding/complete', {
         method: 'POST',
       });
@@ -172,16 +160,16 @@ export default function OnboardingPage() {
       if (!response.ok) {
         console.error('Failed to mark onboarding complete');
       }
-      
-      // Redirect to feed
-      router.push('/feed');
+
+      // Step 3: Navigate to feed
+      router.replace("/feed");
     } catch (error) {
-      console.error('Error completing onboarding:', error);
-      // Still redirect
-      router.push('/feed');
+      console.error("Error completing onboarding:", error);
+      setIsCompleting(false);
     }
   };
 
+  // Footer actions based on current step
   const renderFooter = () => {
     const baseClasses = "flex items-center justify-between py-3 md:py-4 border-t";
     const borderColor = isPremiumStep ? "border-white/10" : "border-border";
@@ -248,7 +236,7 @@ export default function OnboardingPage() {
             onClick={handlePremiumSkip}
             className={`${textColor} transition-colors text-sm font-medium`}
           >
-            Next
+            Skip
           </button>
         </div>
       );
@@ -257,13 +245,7 @@ export default function OnboardingPage() {
     if (currentStep === "complete") {
       return (
         <div className={`${baseClasses} ${borderColor}`}>
-          <button
-            type="button"
-            onClick={handleCompleteBack}
-            className="text-foreground transition-colors text-sm font-medium hover:text-primary"
-          >
-            Back
-          </button>
+          <div />
           <ProgressIndicator currentStep={currentStepIndex} totalSteps={4} />
           <div />
         </div>
@@ -275,15 +257,16 @@ export default function OnboardingPage() {
 
   return (
     <>
-      <div className={`min-h-screen flex flex-col py-4 md:py-6 pb-24 md:pb-28 ${isPremiumStep ? "bg-[#0F172A]" : "bg-background"}`}>
+      <div className={`min-h-screen flex flex-col justify-center py-4 md:py-6 ${isPremiumStep ? "bg-[#0F172A]" : "bg-background"}`}>
+        {/* Centered container for logo + content + footer */}
         <div className="flex flex-col max-w-6xl mx-auto w-full px-4 md:px-8">
-          {/* Logo Header - Consistent positioning */}
+          {/* Logo Header */}
           <header className="flex items-center justify-center pb-4 md:pb-6 shrink-0">
             <PolycopyLogo size="large" variant={isPremiumStep ? "light" : "dark"} />
           </header>
 
-          {/* Main Content Area - Centered with full height, shifted down on desktop */}
-          <main className="flex-1 flex flex-col justify-center min-h-0 md:pt-[5vh]">
+          {/* Main Content Area */}
+          <main className="flex-1 flex flex-col">
             {currentStep === "follow" && (
               <StepFollowTraders
                 selectedTraders={selectedTraders}
@@ -294,7 +277,9 @@ export default function OnboardingPage() {
 
             {currentStep === "explainer" && <StepTradeExplainer />}
 
-            {currentStep === "premium" && <StepPremiumUpsell onUpgrade={handlePremiumUpgrade} onSkip={handlePremiumSkip} />}
+            {currentStep === "premium" && (
+              <StepPremiumUpsell onUpgrade={handlePremiumUpgrade} />
+            )}
 
             {currentStep === "complete" && (
               <StepComplete
@@ -305,11 +290,9 @@ export default function OnboardingPage() {
             )}
           </main>
 
-          {/* Footer - Fixed at bottom for all steps with matching background */}
-          <footer className={`fixed bottom-0 left-0 right-0 px-4 md:px-8 shrink-0 border-t z-20 ${isPremiumStep ? "bg-[#0F172A] border-white/10" : "bg-background border-border"}`}>
-            <div className="max-w-6xl mx-auto">
-              {renderFooter()}
-            </div>
+          {/* Footer */}
+          <footer className="pt-4 md:pt-6 shrink-0">
+            {renderFooter()}
           </footer>
         </div>
       </div>
