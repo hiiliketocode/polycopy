@@ -1,10 +1,13 @@
 import { MetadataRoute } from 'next'
 import { createClient } from '@supabase/supabase-js'
 
-export const revalidate = 3600 // Revalidate sitemap once per hour
+// Force regeneration by changing this
+export const revalidate = 0 // Temporarily set to 0 to force immediate regeneration
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = 'https://polycopy.app'
+  
+  console.log('[Sitemap] Starting sitemap generation...')
   
   // Static pages
   const staticPages: MetadataRoute.Sitemap = [
@@ -65,6 +68,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }))
 
+  console.log(`[Sitemap] Added ${staticPages.length} static pages and ${categoryPages.length} category pages`)
+
   // Dynamic trader profile pages (with quality filters)
   let traderPages: MetadataRoute.Sitemap = []
   
@@ -115,5 +120,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Continue without trader pages if there's an error
   }
 
+  console.log(`[Sitemap] Returning ${staticPages.length + categoryPages.length + traderPages.length} total URLs`)
   return [...staticPages, ...categoryPages, ...traderPages]
 }
