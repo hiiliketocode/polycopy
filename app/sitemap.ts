@@ -1,8 +1,7 @@
 import { MetadataRoute } from 'next'
 import { createClient } from '@supabase/supabase-js'
 
-// Force regeneration by changing this
-export const revalidate = 0 // Temporarily set to 0 to force immediate regeneration
+export const revalidate = 3600 // Revalidate sitemap once per hour
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = 'https://polycopy.app'
