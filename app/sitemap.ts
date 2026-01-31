@@ -74,11 +74,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let traderPages: MetadataRoute.Sitemap = []
   
   try {
-    // Only include traders who meet quality criteria:
-    // - Have at least 10 completed trades
-    // - Have at least 1 follower
-    // - Have been active in the last 30 days
+    // Include traders with relaxed criteria for better coverage
     // - Limit to top 1,000 traders by follower count
+    // - No minimum trade count (any activity is good)
+    // - No minimum follower count (discoverable profiles are valuable)
+    // - No recency filter (all traders remain in sitemap)
     
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -91,32 +91,30 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }
     )
 
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    console.log('[Sitemap] Fetching traders from Supabase...')
 
     const { data: traders, error } = await supabase
       .from('traders')
-      .select('wallet_address, updated_at, follower_count, total_trades')
-      .gte('total_trades', 10) // At least 10 trades
-      .gte('follower_count', 1) // At least 1 follower
-      .gte('updated_at', thirtyDaysAgo.toISOString()) // Active in last 30 days
+      .select('wallet_address, updated_at')
       .order('follower_count', { ascending: false })
       .limit(1000)
 
-    if (!error && traders && traders.length > 0) {
+    if (error) {
+      console.error('[Sitemap] Supabase error:', JSON.stringify(error))
+    } else if (!traders || traders.length === 0) {
+      console.warn('[Sitemap] No traders found in database')
+    } else {
       traderPages = traders.map((trader) => ({
         url: `${baseUrl}/trader/${trader.wallet_address}`,
         lastModified: new Date(trader.updated_at),
         changeFrequency: 'daily' as const,
-        priority: 0.7, // High priority for quality trader profiles
+        priority: 0.7,
       }))
       
-      console.log(`[Sitemap] Added ${traderPages.length} quality trader profiles`)
-    } else if (error) {
-      console.error('[Sitemap] Error fetching traders:', error)
+      console.log(`[Sitemap] Successfully added ${traderPages.length} trader profiles`)
     }
   } catch (error) {
-    console.error('[Sitemap] Failed to fetch trader profiles:', error)
+    console.error('[Sitemap] Exception while fetching traders:', error)
     // Continue without trader pages if there's an error
   }
 
