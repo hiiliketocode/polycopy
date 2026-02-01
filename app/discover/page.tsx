@@ -1374,8 +1374,12 @@ function DiscoverPageContent() {
         <div className="bg-white">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-4 sm:pt-8 sm:pb-6">
             <div className="max-w-2xl mx-auto relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" aria-hidden="true" />
+              <label htmlFor="trader-search" className="sr-only">
+                Search for trader by wallet address
+              </label>
               <input
+                id="trader-search"
                 type="text"
                 placeholder="Enter wallet address (0x...)..."
                 value={searchQuery}
@@ -1386,17 +1390,19 @@ function DiscoverPageContent() {
                     handleSearch();
                   }
                 }}
+                aria-describedby="search-instructions"
                 className="w-full h-12 pl-12 pr-24 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent shadow-sm"
               />
               <button
                 onClick={handleSearch}
                 disabled={isSearching || !searchQuery.trim()}
+                aria-label="Search for trader"
                 className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-[#FDB022] text-slate-900 rounded-lg hover:bg-[#E69E1A] disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium"
               >
                 {isSearching ? 'Searching...' : 'Search'}
               </button>
             </div>
-            <p className="text-xs text-slate-500 mt-2 text-center">
+            <p id="search-instructions" className="text-xs text-slate-500 mt-2 text-center">
               Enter the wallet address from a trader&apos;s Polymarket profile (e.g., 0x1234...5678)
             </p>
           </div>
@@ -1414,13 +1420,14 @@ function DiscoverPageContent() {
             </div>
 
           {trendingTraders.length === 0 && Object.keys(realizedDailyMap).length < 30 ? (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" role="status" aria-live="polite" aria-label="Loading trending traders">
               <div className="flex gap-4 pb-2">
                 {[1, 2, 3, 4, 5].map((i) => (
                   <div
                     key={i}
                     className="min-w-[220px] flex-shrink-0 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm animate-pulse"
                     style={{ minHeight: '240px' }}
+                    aria-hidden="true"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 flex-1">
@@ -1589,7 +1596,7 @@ function DiscoverPageContent() {
                 </div>
                 </div>
 
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide" role="group" aria-label="Category filter">
                   {categories.map((category) => {
                     const categoryValue = categoryMap[category];
                     const isActive = selectedCategory === categoryValue;
@@ -1604,6 +1611,8 @@ function DiscoverPageContent() {
                           newUrl.searchParams.set('category', categoryValue);
                           window.history.pushState({}, '', newUrl.toString());
                         }}
+                        aria-pressed={isActive}
+                        aria-label={`Filter by ${category}`}
                         className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-full font-medium text-xs sm:text-sm transition-all whitespace-nowrap flex-shrink-0 ${
                             isActive
                               ? "bg-[#FDB022] text-slate-900 shadow-sm"
@@ -1944,14 +1953,20 @@ function DiscoverPageContent() {
           </div>
         </div>
         {followModalTrader && (
-          <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div 
+            className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-4 py-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="follow-modal-title"
+            aria-describedby="follow-modal-description"
+          >
             <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">
+                  <p id="follow-modal-title" className="text-sm font-semibold text-slate-900">
                     Follow {formatDisplayName(followModalTrader.displayName || followModalTrader.wallet, followModalTrader.wallet)}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p id="follow-modal-description" className="text-xs text-slate-500">
                     Confirm to follow the trader and mirror their stats from the discovery tables.
                   </p>
                 </div>
