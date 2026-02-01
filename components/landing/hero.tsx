@@ -124,7 +124,7 @@ export function Hero() {
   
   const maxFeedScroll = 800
 
-  // Fetch the dynamic trade count
+  // Fetch the dynamic trade count (deferred to avoid blocking LCP)
   useEffect(() => {
     const fetchTradeCount = async () => {
       try {
@@ -141,51 +141,58 @@ export function Hero() {
       }
     }
 
-    fetchTradeCount()
+    // Defer fetch until after hero renders (improves LCP)
+    const timeoutId = setTimeout(fetchTradeCount, 100)
+    return () => clearTimeout(timeoutId)
   }, [])
 
   useEffect(() => {
-    const handleWheel = (e: WheelEvent) => {
-      if (!heroRef.current) return
-      
-      const heroRect = heroRef.current.getBoundingClientRect()
-      const isInHero = heroRect.top <= 100 && heroRect.bottom > window.innerHeight * 0.5
-      
-      if (isInHero && isScrollLocked) {
-        const newScrollY = feedScrollY + e.deltaY
+    // Defer scroll listeners until after initial render (improves LCP)
+    const timeoutId = setTimeout(() => {
+      const handleWheel = (e: WheelEvent) => {
+        if (!heroRef.current) return
         
-        if (newScrollY <= 0) {
-          setFeedScrollY(0)
-          return
+        const heroRect = heroRef.current.getBoundingClientRect()
+        const isInHero = heroRect.top <= 100 && heroRect.bottom > window.innerHeight * 0.5
+        
+        if (isInHero && isScrollLocked) {
+          const newScrollY = feedScrollY + e.deltaY
+          
+          if (newScrollY <= 0) {
+            setFeedScrollY(0)
+            return
+          }
+          
+          if (newScrollY >= maxFeedScroll) {
+            setFeedScrollY(maxFeedScroll)
+            setIsScrollLocked(false)
+            return
+          }
+          
+          e.preventDefault()
+          setFeedScrollY(newScrollY)
         }
+      }
+
+      const handleScroll = () => {
+        if (!heroRef.current) return
+        const heroRect = heroRef.current.getBoundingClientRect()
         
-        if (newScrollY >= maxFeedScroll) {
-          setFeedScrollY(maxFeedScroll)
-          setIsScrollLocked(false)
-          return
+        if (heroRect.top >= -50 && !isScrollLocked) {
+          setIsScrollLocked(true)
         }
-        
-        e.preventDefault()
-        setFeedScrollY(newScrollY)
       }
-    }
 
-    const handleScroll = () => {
-      if (!heroRef.current) return
-      const heroRect = heroRef.current.getBoundingClientRect()
+      window.addEventListener("wheel", handleWheel, { passive: false })
+      window.addEventListener("scroll", handleScroll)
       
-      if (heroRect.top >= -50 && !isScrollLocked) {
-        setIsScrollLocked(true)
+      return () => {
+        window.removeEventListener("wheel", handleWheel)
+        window.removeEventListener("scroll", handleScroll)
       }
-    }
+    }, 200)
 
-    window.addEventListener("wheel", handleWheel, { passive: false })
-    window.addEventListener("scroll", handleScroll)
-    
-    return () => {
-      window.removeEventListener("wheel", handleWheel)
-      window.removeEventListener("scroll", handleScroll)
-    }
+    return () => clearTimeout(timeoutId)
   }, [feedScrollY, isScrollLocked])
 
   return (
@@ -234,14 +241,14 @@ export function Hero() {
             </div>
 
             {/* Scroll hint - visible on mobile only */}
-            <div className="lg:hidden flex flex-col items-center gap-2 text-muted-foreground animate-bounce">
+            <div className="lg:hidden flex flex-col items-center gap-2 text-muted-foreground animate-bounce mt-6 py-3">
               <span className="text-xs font-medium">Scroll to explore</span>
-              <ChevronDown className="w-5 h-5" />
+              <ChevronDown className="w-6 h-6" aria-hidden="true" />
             </div>
           </div>
 
           {/* Right Content - iPhone with Feed */}
-          <div className="relative lg:h-[700px]">
+          <div className="relative h-[600px] lg:h-[700px]">
             {/* iPhone Frame Container */}
             <div 
               ref={feedContainerRef}
@@ -280,6 +287,7 @@ export function Hero() {
                         width={90} 
                         height={24}
                         className="h-6 w-auto"
+                        priority
                       />
                     </div>
                     <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
@@ -321,6 +329,7 @@ export function Hero() {
                           <Button 
                             onClick={() => triggerConfetti()}
                             className="w-full bg-polycopy-yellow text-neutral-black hover:bg-polycopy-yellow-hover font-semibold text-xs h-8"
+                            aria-label={`Copy ${trade.trader.name}'s trade on ${trade.market}`}
                           >
                             Copy Trade
                           </Button>

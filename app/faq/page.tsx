@@ -1,11 +1,25 @@
 'use client';
 
 import { useState } from 'react';
+import Script from 'next/script';
 import { Navigation } from '@/components/polycopy/navigation';
 import { FAQCard } from '@/components/faq/faq-card';
 import { faqData, FAQ_CATEGORIES } from './faq-data';
 
 export default function FAQPage() {
+  // Generate FAQ structured data for Google
+  const faqSchema = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": faqData.map(faq => ({
+      "@type": "Question",
+      "name": faq.question,
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": faq.answer
+      }
+    }))
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
@@ -22,6 +36,10 @@ export default function FAQPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+      {/* FAQ Schema for rich snippets in search results */}
+      <Script id="faq-schema" type="application/ld+json" strategy="beforeInteractive">
+        {JSON.stringify(faqSchema)}
+      </Script>
       <Navigation />
       
       <div className="max-w-4xl mx-auto px-4 py-16">

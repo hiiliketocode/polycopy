@@ -3092,41 +3092,9 @@ export function TradeCard({
                       </Button>
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {/* Info tooltip */}
-                      <div className="flex justify-center">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors"
-                            >
-                              <Info className="w-3.5 h-3.5" />
-                              <span className="font-medium">How to trade</span>
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-[280px] text-center">
-                            <p className="mb-2">
-                              Free accounts manually execute copy trades on Polymarket, then input the trade details on Polycopy.
-                            </p>
-                            <p className="text-slate-300">
-                              <strong className="text-white">Premium users</strong> can trade directly from their Polycopy feed.{" "}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  window.location.href = '/profile?upgrade=true'
-                                }}
-                                className="underline hover:text-white transition-colors"
-                              >
-                                Upgrade now
-                              </button>
-                            </p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
-
+                    <div className="space-y-3 px-5 md:px-6 pb-3">
                       {/* Two-button flow */}
-                      <div className="flex flex-row gap-2 justify-center">
+                      <div className="flex flex-row gap-1 justify-center px-4">
                         <Button
                           onClick={handleCopyTradeClick}
                           disabled={isCopyDisabled}
@@ -3171,6 +3139,38 @@ export function TradeCard({
                             </>
                           )}
                         </Button>
+                      </div>
+
+                      {/* Info tooltip - moved below buttons */}
+                      <div className="flex justify-center">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                              <span className="font-medium">How to trade</span>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-[280px] text-center">
+                            <p className="mb-2">
+                              Free accounts manually execute copy trades on Polymarket, then input the trade details on Polycopy.
+                            </p>
+                            <p className="text-slate-300">
+                              <strong className="text-white">Premium users</strong> can trade directly from their Polycopy feed.{" "}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  window.location.href = '/profile?upgrade=true'
+                                }}
+                                className="underline hover:text-white transition-colors"
+                              >
+                                Upgrade now
+                              </button>
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     </div>
                   )
@@ -3827,7 +3827,7 @@ export function TradeCard({
       )}
 
       {onTogglePin && (
-        <div className="absolute bottom-3 right-3">
+        <div className="absolute bottom-2 right-3">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>

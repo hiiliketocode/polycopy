@@ -1,8 +1,6 @@
 import AdminUsersConsole from './AdminUsersConsole'
 import { AdminUserSummary, TradeActivitySummary, UserActivityEvent, UserProfile } from './types'
 import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin'
-import { fetchContentData } from '../content-data/data'
-import type { DashboardData } from '../content-data/data'
 import { resolveOrdersTableName } from '@/lib/orders/table'
 
 export const dynamic = 'force-dynamic'
@@ -315,20 +313,15 @@ export default async function AdminUsersPage() {
     adminCount
   }
 
-  let contentData: DashboardData | null = null
-  try {
-    contentData = await fetchContentData()
-  } catch (error) {
-    console.error('[admin/users] failed to fetch content data', error)
-  }
-
+  // Content data is now lazy-loaded client-side via AdminContentDataLoader
+  // This significantly improves initial page load time
   return (
     <AdminUsersConsole
       users={users}
       events={trimmedEvents}
       tradeActivity={tradeActivity}
       summary={summary}
-      contentData={contentData}
+      contentData={null}
     />
   )
 }

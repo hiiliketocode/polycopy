@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
-import "./styles/design-system.css";
 import BottomNav from "./components/BottomNav";
 import Footer from "./components/Footer";
 import { LoggedOutModal } from "@/components/auth/LoggedOutModal";
@@ -10,6 +9,8 @@ import { LoggedOutModal } from "@/components/auth/LoggedOutModal";
 const inter = Inter({ 
   subsets: ['latin'],
   variable: '--font-inter',
+  display: 'swap', // Prevent FOIT (Flash of Invisible Text)
+  preload: true,
 });
 
 export const viewport: Viewport = {
@@ -29,6 +30,9 @@ export const metadata: Metadata = {
   authors: [{ name: 'Polycopy' }],
   creator: 'Polycopy',
   metadataBase: new URL('https://polycopy.app'),
+  alternates: {
+    canonical: 'https://polycopy.app'
+  },
   openGraph: {
     type: 'website',
     locale: 'en_US',
@@ -80,9 +84,52 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const organizationSchema = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Polycopy",
+    "url": "https://polycopy.app",
+    "logo": "https://polycopy.app/logos/polycopy-logo-primary.png",
+    "description": "Discover and copy top Polymarket traders. Track performance, follow winning strategies, and make smarter prediction market trades.",
+    "sameAs": [
+      "https://twitter.com/polycopyapp"
+    ],
+    "contactPoint": {
+      "@type": "ContactPoint",
+      "contactType": "Customer Support",
+      "url": "https://twitter.com/polycopyapp"
+    }
+  };
+
+  const websiteSchema = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "Polycopy",
+    "url": "https://polycopy.app",
+    "description": "Copy trading platform for Polymarket prediction markets",
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": "https://polycopy.app/discover?search={search_term_string}",
+      "query-input": "required name=search_term_string"
+    }
+  };
+
   return (
     <html lang="en">
       <head>
+        {/* Resource Hints for Performance */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
+        
+        {/* Structured Data - Organization */}
+        <Script id="schema-organization" type="application/ld+json" strategy="beforeInteractive">
+          {JSON.stringify(organizationSchema)}
+        </Script>
+        {/* Structured Data - Website */}
+        <Script id="schema-website" type="application/ld+json" strategy="beforeInteractive">
+          {JSON.stringify(websiteSchema)}
+        </Script>
         {/* Google Tag Manager */}
         <Script id="google-tag-manager" strategy="afterInteractive">
           {`(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
@@ -123,6 +170,15 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             }
           `}
         </Script>
+        
+        {/* Skip to main content link for keyboard navigation */}
+        <a 
+          href="#main-content" 
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:bg-polycopy-yellow focus:text-neutral-black focus:px-4 focus:py-2 focus:rounded-lg focus:font-semibold focus:shadow-lg"
+        >
+          Skip to main content
+        </a>
+        
         {/* Google Tag Manager (noscript) */}
         <noscript>
           <iframe 
@@ -130,11 +186,12 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             height="0" 
             width="0" 
             style={{ display: 'none', visibility: 'hidden' }}
+            title="Google Tag Manager"
           />
         </noscript>
         {/* End Google Tag Manager (noscript) */}
         
-        <div className="flex-1 bottom-nav-offset">
+        <div id="main-content" className="flex-1 bottom-nav-offset">
           {children}
         </div>
         <Footer />
