@@ -10,6 +10,8 @@ import { LoggedOutModal } from "@/components/auth/LoggedOutModal";
 const inter = Inter({ 
   subsets: ['latin'],
   variable: '--font-inter',
+  display: 'swap', // Prevent FOIT (Flash of Invisible Text)
+  preload: true,
 });
 
 export const viewport: Viewport = {
@@ -116,6 +118,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* Resource Hints for Performance */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
+        
         {/* Structured Data - Organization */}
         <Script id="schema-organization" type="application/ld+json" strategy="beforeInteractive">
           {JSON.stringify(organizationSchema)}
