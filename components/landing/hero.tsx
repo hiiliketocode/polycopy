@@ -124,7 +124,7 @@ export function Hero() {
   
   const maxFeedScroll = 800
 
-  // Fetch the dynamic trade count
+  // Fetch the dynamic trade count (deferred to avoid blocking LCP)
   useEffect(() => {
     const fetchTradeCount = async () => {
       try {
@@ -141,51 +141,58 @@ export function Hero() {
       }
     }
 
-    fetchTradeCount()
+    // Defer fetch until after hero renders (improves LCP)
+    const timeoutId = setTimeout(fetchTradeCount, 100)
+    return () => clearTimeout(timeoutId)
   }, [])
 
   useEffect(() => {
-    const handleWheel = (e: WheelEvent) => {
-      if (!heroRef.current) return
-      
-      const heroRect = heroRef.current.getBoundingClientRect()
-      const isInHero = heroRect.top <= 100 && heroRect.bottom > window.innerHeight * 0.5
-      
-      if (isInHero && isScrollLocked) {
-        const newScrollY = feedScrollY + e.deltaY
+    // Defer scroll listeners until after initial render (improves LCP)
+    const timeoutId = setTimeout(() => {
+      const handleWheel = (e: WheelEvent) => {
+        if (!heroRef.current) return
         
-        if (newScrollY <= 0) {
-          setFeedScrollY(0)
-          return
+        const heroRect = heroRef.current.getBoundingClientRect()
+        const isInHero = heroRect.top <= 100 && heroRect.bottom > window.innerHeight * 0.5
+        
+        if (isInHero && isScrollLocked) {
+          const newScrollY = feedScrollY + e.deltaY
+          
+          if (newScrollY <= 0) {
+            setFeedScrollY(0)
+            return
+          }
+          
+          if (newScrollY >= maxFeedScroll) {
+            setFeedScrollY(maxFeedScroll)
+            setIsScrollLocked(false)
+            return
+          }
+          
+          e.preventDefault()
+          setFeedScrollY(newScrollY)
         }
+      }
+
+      const handleScroll = () => {
+        if (!heroRef.current) return
+        const heroRect = heroRef.current.getBoundingClientRect()
         
-        if (newScrollY >= maxFeedScroll) {
-          setFeedScrollY(maxFeedScroll)
-          setIsScrollLocked(false)
-          return
+        if (heroRect.top >= -50 && !isScrollLocked) {
+          setIsScrollLocked(true)
         }
-        
-        e.preventDefault()
-        setFeedScrollY(newScrollY)
       }
-    }
 
-    const handleScroll = () => {
-      if (!heroRef.current) return
-      const heroRect = heroRef.current.getBoundingClientRect()
+      window.addEventListener("wheel", handleWheel, { passive: false })
+      window.addEventListener("scroll", handleScroll)
       
-      if (heroRect.top >= -50 && !isScrollLocked) {
-        setIsScrollLocked(true)
+      return () => {
+        window.removeEventListener("wheel", handleWheel)
+        window.removeEventListener("scroll", handleScroll)
       }
-    }
+    }, 200)
 
-    window.addEventListener("wheel", handleWheel, { passive: false })
-    window.addEventListener("scroll", handleScroll)
-    
-    return () => {
-      window.removeEventListener("wheel", handleWheel)
-      window.removeEventListener("scroll", handleScroll)
-    }
+    return () => clearTimeout(timeoutId)
   }, [feedScrollY, isScrollLocked])
 
   return (
@@ -241,7 +248,7 @@ export function Hero() {
           </div>
 
           {/* Right Content - iPhone with Feed */}
-          <div className="relative lg:h-[700px]">
+          <div className="relative h-[600px] lg:h-[700px]">
             {/* iPhone Frame Container */}
             <div 
               ref={feedContainerRef}

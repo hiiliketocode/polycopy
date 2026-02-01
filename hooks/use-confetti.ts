@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 import type { Options } from "canvas-confetti";
 
 const DEFAULT_CONFETTI_CONFIG: Options = {
@@ -11,23 +11,25 @@ const DEFAULT_CONFETTI_CONFIG: Options = {
 
 export function useConfetti() {
   const confettiRef = useRef<((options?: Options) => void) | null>(null);
+  const loadingRef = useRef(false);
 
-  useEffect(() => {
-    const loadConfetti = async () => {
+  const triggerConfetti = useCallback(async (overrides?: Options) => {
+    // Lazy load confetti only when user clicks (improves initial LCP)
+    if (!confettiRef.current && !loadingRef.current) {
+      loadingRef.current = true;
       try {
         const module = await import("canvas-confetti");
         confettiRef.current = module.default || module;
       } catch (error) {
         console.error("Failed to load confetti", error);
+        loadingRef.current = false;
+        return;
       }
-    };
+    }
 
-    loadConfetti();
-  }, []);
-
-  const triggerConfetti = useCallback((overrides?: Options) => {
-    if (!confettiRef.current) return;
-    confettiRef.current({ ...DEFAULT_CONFETTI_CONFIG, ...overrides });
+    if (confettiRef.current) {
+      confettiRef.current({ ...DEFAULT_CONFETTI_CONFIG, ...overrides });
+    }
   }, []);
 
   return { triggerConfetti };
