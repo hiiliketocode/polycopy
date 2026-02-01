@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
-import "./styles/design-system.css";
 import BottomNav from "./components/BottomNav";
 import Footer from "./components/Footer";
 import { LoggedOutModal } from "@/components/auth/LoggedOutModal";
@@ -144,6 +143,14 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         className={`${inter.variable} font-sans antialiased bg-slate-50 relative flex flex-col`}
         style={{ minHeight: '100vh', overflowX: 'hidden' }}
       >
+        {/* Skip to main content link for keyboard navigation */}
+        <a 
+          href="#main-content" 
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:bg-polycopy-yellow focus:text-neutral-black focus:px-4 focus:py-2 focus:rounded-lg focus:font-semibold focus:shadow-lg"
+        >
+          Skip to main content
+        </a>
+        
         {/* Google Tag Manager (noscript) */}
         <noscript>
           <iframe 
@@ -151,11 +158,12 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             height="0" 
             width="0" 
             style={{ display: 'none', visibility: 'hidden' }}
+            title="Google Tag Manager"
           />
         </noscript>
         {/* End Google Tag Manager (noscript) */}
         
-        <div className="flex-1 bottom-nav-offset">
+        <div id="main-content" className="flex-1 bottom-nav-offset">
           {children}
         </div>
         <Footer />

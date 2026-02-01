@@ -241,9 +241,9 @@ export function Hero() {
             </div>
 
             {/* Scroll hint - visible on mobile only */}
-            <div className="lg:hidden flex flex-col items-center gap-2 text-muted-foreground animate-bounce">
+            <div className="lg:hidden flex flex-col items-center gap-2 text-muted-foreground animate-bounce mt-6 py-3">
               <span className="text-xs font-medium">Scroll to explore</span>
-              <ChevronDown className="w-5 h-5" />
+              <ChevronDown className="w-6 h-6" aria-hidden="true" />
             </div>
           </div>
 
@@ -329,6 +329,7 @@ export function Hero() {
                           <Button 
                             onClick={() => triggerConfetti()}
                             className="w-full bg-polycopy-yellow text-neutral-black hover:bg-polycopy-yellow-hover font-semibold text-xs h-8"
+                            aria-label={`Copy ${trade.trader.name}'s trade on ${trade.market}`}
                           >
                             Copy Trade
                           </Button>
