@@ -124,20 +124,20 @@ export function Hero() {
   
   const maxFeedScroll = 800
 
-  // Fetch the dynamic trade count (deferred to avoid blocking LCP)
+  // Fetch the dynamic trade count from the most-active endpoint
   useEffect(() => {
     const fetchTradeCount = async () => {
       try {
-        const response = await fetch('/api/stats/followed-traders-activity')
+        const response = await fetch('/api/public-trades/most-active?limit=10')
         if (response.ok) {
           const data = await response.json()
-          if (data.tradeCount !== undefined) {
-            setTradeCount(data.tradeCount)
+          // Use tradesAnalyzed from meta as the trade count
+          if (data.meta?.tradesAnalyzed) {
+            setTradeCount(data.meta.tradesAnalyzed)
           }
         }
       } catch (error) {
-        console.error('Failed to fetch trade count:', error)
-        // Keep the default fallback value
+        // Silently use fallback value on error
       }
     }
 

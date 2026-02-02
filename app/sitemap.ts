@@ -48,26 +48,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ]
 
-  // Category-specific discover pages for better SEO targeting
-  const categories = [
-    'POLITICS',
-    'SPORTS',
-    'CRYPTO',
-    'CULTURE',
-    'FINANCE',
-    'ECONOMICS',
-    'TECH',
-    'WEATHER',
-  ]
-
-  const categoryPages: MetadataRoute.Sitemap = categories.map(category => ({
-    url: `${baseUrl}/discover?category=${category}`,
-    lastModified: new Date(),
-    changeFrequency: 'daily' as const,
-    priority: 0.7,
-  }))
-
-  console.log(`[Sitemap] Added ${staticPages.length} static pages and ${categoryPages.length} category pages`)
+  console.log(`[Sitemap] Added ${staticPages.length} static pages`)
 
   // Dynamic trader profile pages (with quality filters)
   let traderPages: MetadataRoute.Sitemap = []
@@ -117,6 +98,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Continue without trader pages if there's an error
   }
 
-  console.log(`[Sitemap] Returning ${staticPages.length + categoryPages.length + traderPages.length} total URLs`)
-  return [...staticPages, ...categoryPages, ...traderPages]
+  console.log(`[Sitemap] Returning ${staticPages.length + traderPages.length} total URLs`)
+  return [...staticPages, ...traderPages]
 }

@@ -34,9 +34,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       return {
         title: 'Trader Profile | Polycopy',
         description: 'View trader profile, performance statistics, and trading history on Polycopy.',
+        alternates: {
+          canonical: `https://polycopy.app/trader/${wallet}`,
+        },
         robots: {
-          index: false,
-          follow: false,
+          index: true,
+          follow: true,
         }
       };
     }
@@ -112,6 +115,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description: 'View trader profile, performance statistics, and trading history on Polycopy.',
       alternates: {
         canonical: `https://polycopy.app/trader/${wallet}`,
+      },
+      robots: {
+        index: true,
+        follow: true,
       },
     };
   }
