@@ -125,7 +125,7 @@ async function fetchWalletPositionSize(wallet: string, marketId: string, outcome
 
 /**
  * GET /api/cron/check-notifications
- * Vercel Cron job that runs every 5 minutes to check for notification triggers
+ * Vercel Cron job that runs every minute to check for notification triggers
  */
 export async function GET(request: NextRequest) {
   // Security: Verify this is called by Vercel Cron
@@ -172,7 +172,7 @@ export async function GET(request: NextRequest) {
       .or(
         'market_resolved.eq.false,notification_resolved_sent.is.null,notification_resolved_sent.eq.false,notification_closed_sent.is.null,notification_closed_sent.eq.false'
       )
-      .limit(100)
+      .limit(500)
     
     if (error) {
       console.error('Error fetching trades:', error)
@@ -236,7 +236,6 @@ export async function GET(request: NextRequest) {
 
     const attemptAutoCloseFromOrder = async (order: any) => {
       console.log(`[AUTO-CLOSE] attemptAutoCloseFromOrder called for order ${order.order_id}`)
-      console.error(`[AUTO-CLOSE] attemptAutoCloseFromOrder called for order ${order.order_id}`)
       
       const copiedTraderWallet = order.copied_trader_wallet?.toLowerCase()
       if (!copiedTraderWallet || !order.market_id || !order.outcome || !order.trader_id) {
@@ -266,16 +265,20 @@ export async function GET(request: NextRequest) {
         }
       }
       
-      // If we've already retried 5 times, skip (will send failure email on next check if still failing)
-      if (retryCount >= 5) {
-        console.log(`[AUTO-CLOSE] Order ${order.order_id} skipped - already retried 5 times`)
+      // Cap at 10 retries - after that, user needs to manually close
+      if (retryCount >= 10) {
+        console.log(`[AUTO-CLOSE] Order ${order.order_id} skipped - already attempted 10 times, user needs to close manually`)
         return
       }
       
+      // Progressive cooldown: 5min for first 5 attempts, then 10min
+      let cooldownMinutes = retryCount < 5 ? 5 : 10
+      
       if (order.auto_close_attempted_at) {
         const lastAttempt = new Date(order.auto_close_attempted_at)
-        if (Date.now() - lastAttempt.getTime() < 5 * 60 * 1000) {
-          console.log(`[AUTO-CLOSE] Order ${order.order_id} skipped - attempted recently (${Math.round((Date.now() - lastAttempt.getTime()) / 1000)}s ago)`)
+        const cooldownMs = cooldownMinutes * 60 * 1000
+        if (Date.now() - lastAttempt.getTime() < cooldownMs) {
+          console.log(`[AUTO-CLOSE] Order ${order.order_id} skipped - attempted recently (${Math.round((Date.now() - lastAttempt.getTime()) / 1000)}s ago, cooldown: ${cooldownMinutes}min, retry ${retryCount}/10)`)
           return
         }
       }
@@ -432,9 +435,11 @@ export async function GET(request: NextRequest) {
 
       const marketTitle = question || order.market_id
       const sendFailureEmail = async (reason: string, isFinalAttempt: boolean = false) => {
-        // Only send email on final attempt (5th retry)
-        if (!isFinalAttempt) {
-          console.log(`[AUTO-CLOSE] Order ${order.order_id}: Not sending failure email yet (retry ${retryCount + 1}/5)`)
+        // Send email on 3rd, 6th, and 10th (final) attempts
+        const shouldSendEmail = (retryCount + 1 === 3) || (retryCount + 1 === 6) || isFinalAttempt
+        
+        if (!shouldSendEmail) {
+          console.log(`[AUTO-CLOSE] Order ${order.order_id}: Not sending failure email yet (retry ${retryCount + 1}/10)`)
           return
         }
         
@@ -444,22 +449,31 @@ export async function GET(request: NextRequest) {
           typeof reason === 'string' && reason.trim().length > 0
             ? reason.trim().slice(0, 240)
             : 'The limit price was not hit.'
+        
+        const subject = isFinalAttempt 
+          ? `Auto-close failed after 10 attempts: ${marketTitle}`
+          : `Auto-close still trying: ${marketTitle}`
+        
+        const emailReason = isFinalAttempt
+          ? `${trimmedReason}\n\nWe attempted 10 times but were unable to close your position automatically. You can close it manually on your portfolio page.`
+          : `${trimmedReason} (Attempt ${retryCount + 1}/10)`
+        
         try {
           await resend.emails.send({
             from: 'Polycopy <notifications@polycopy.app>',
             to: context.email,
-            subject: `Auto-close failed: ${marketTitle}`,
+            subject,
             react: AutoCloseFailedEmail({
               userName: context.name,
               marketTitle,
               outcome: order.outcome,
-              reason: trimmedReason,
+              reason: emailReason,
               tradeUrl: quickTradesUrl,
               polymarketUrl: `https://polymarket.com/event/${order.market_id}`,
               unsubscribeUrl: quickTradesUrl,
             }),
           })
-          console.log(`[AUTO-CLOSE] Order ${order.order_id}: Sent failure email after 5 retries`)
+          console.log(`[AUTO-CLOSE] Order ${order.order_id}: Sent ${isFinalAttempt ? 'final' : 'progress'} email after ${retryCount + 1} attempts`)
         } catch (emailError: any) {
           console.error(`❌ Failed to send auto-close failure email for order ${order.order_id}:`, {
             error: emailError?.message || emailError,
@@ -556,7 +570,8 @@ export async function GET(request: NextRequest) {
         })
         await updateErrorWithRetryCount(message)
         console.warn('[AUTO-CLOSE] Evomi proxy required but unavailable:', message)
-        await sendFailureEmail(message, retryCount + 1 >= 5)
+        const isFinalAttempt = (retryCount + 1) >= 10
+        await sendFailureEmail(message, isFinalAttempt)
         return
       }
 
@@ -587,7 +602,8 @@ export async function GET(request: NextRequest) {
           const errorMsg = evaluation.message || 'Auto-close order was rejected by the exchange.'
           await updateErrorWithRetryCount(errorMsg)
           console.warn(`⚠️ Auto-close failed for order ${order.order_id}:`, errorMsg)
-          await sendFailureEmail(errorMsg, retryCount + 1 >= 5)
+          const isFinalAttempt = (retryCount + 1) >= 10
+          await sendFailureEmail(errorMsg, isFinalAttempt)
           return
         }
 
@@ -611,6 +627,11 @@ export async function GET(request: NextRequest) {
         })
 
         const autoCloseOrderId = evaluation.orderId
+        
+        // Wait 5 seconds for the order to fill before checking status
+        console.log(`[AUTO-CLOSE] Waiting 5 seconds for order ${autoCloseOrderId} to fill...`)
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        
         let filledSize = closeSize
         let executedPrice = limitPrice
         let orderLookupSucceeded = false
@@ -645,8 +666,9 @@ export async function GET(request: NextRequest) {
               auto_close_attempted_at: attemptedAt,
             })
             .eq('order_id', order.order_id)
-          console.warn(`[AUTO-CLOSE] Order ${order.order_id}: Retry ${retryCount + 1}/5 - ${errorMsg}`)
-          await sendFailureEmail('Auto-close order submitted but did not fill. Try closing manually at the current market price.', retryCount + 1 >= 5)
+          console.warn(`[AUTO-CLOSE] Order ${order.order_id}: Retry ${retryCount + 1}/10 - ${errorMsg}`)
+          const isFinalAttempt = (retryCount + 1) >= 10
+          await sendFailureEmail('Auto-close order submitted but did not fill. Try closing manually at the current market price.', isFinalAttempt)
           return
         }
 
@@ -731,7 +753,8 @@ export async function GET(request: NextRequest) {
         })
         await updateErrorWithRetryCount(message)
         console.warn(`⚠️ Auto-close error for order ${order.order_id}:`, message)
-        await sendFailureEmail(message, retryCount + 1 >= 5)
+        const isFinalAttempt = (retryCount + 1) >= 10
+        await sendFailureEmail(message, isFinalAttempt)
       }
     }
 
@@ -757,274 +780,284 @@ export async function GET(request: NextRequest) {
     if (normalizedTrades.length === 0) {
       console.log('ℹ️ No copied trades to check for notifications')
     } else {
-      for (const trade of normalizedTrades) {
-        try {
-          tradesChecked++
+      // Process trades in parallel with batching (10 at a time to avoid overwhelming APIs)
+      const BATCH_SIZE = 10
+      const processedResults: Array<{ checked: boolean; sent: boolean }> = []
+      
+      for (let i = 0; i < normalizedTrades.length; i += BATCH_SIZE) {
+        const batch = normalizedTrades.slice(i, i + BATCH_SIZE)
+        console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(normalizedTrades.length / BATCH_SIZE)} (${batch.length} trades)`)
         
-        // Check if user has notifications enabled
-        const { data: prefs } = await supabase
-          .from('notification_preferences')
-          .select('email_notifications_enabled')
-          .eq('user_id', trade.user_id)
-          .single()
-        
-        // Default to enabled if no preferences set
-        const notificationsEnabled = prefs?.email_notifications_enabled ?? true
-        
-        if (!notificationsEnabled) {
-          console.log(`⏭️ Skipping trade ${trade.id} - notifications disabled`)
-          continue
-        }
-        
-        // Get user email
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('email')
-          .eq('id', trade.user_id)
-          .single()
-        
-        if (!profile?.email) {
-          console.log(`⏭️ Skipping trade ${trade.id} - no email found`)
-          continue
-        }
-        
-        // Get current status from status API
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'
-        const statusResponse = await fetch(
-          `${appUrl}/api/copied-trades/${trade.id}/status?userId=${trade.user_id}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${process.env.CRON_SECRET}`
+        const batchResults = await Promise.allSettled(
+          batch.map(async (trade) => {
+            try {
+              // Check if user has notifications enabled
+              const { data: prefs } = await supabase
+                .from('notification_preferences')
+                .select('email_notifications_enabled')
+                .eq('user_id', trade.user_id)
+                .single()
+              
+              // Default to enabled if no preferences set
+              const notificationsEnabled = prefs?.email_notifications_enabled ?? true
+              
+              if (!notificationsEnabled) {
+                console.log(`⏭️ Skipping trade ${trade.id} - notifications disabled`)
+                return { checked: true, sent: false }
+              }
+              
+              // Get user email
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('email')
+                .eq('id', trade.user_id)
+                .single()
+              
+              if (!profile?.email) {
+                console.log(`⏭️ Skipping trade ${trade.id} - no email found`)
+                return { checked: true, sent: false }
+              }
+              
+              // Get current status from status API
+              const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'
+              const statusResponse = await fetch(
+                `${appUrl}/api/copied-trades/${trade.id}/status?userId=${trade.user_id}`,
+                {
+                  headers: {
+                    'Authorization': `Bearer ${process.env.CRON_SECRET}`
+                  }
+                }
+              )
+              
+              if (!statusResponse.ok) {
+                const errorText = await statusResponse.text()
+                console.error(`❌ Failed to get status for trade ${trade.id}:`, {
+                  status: statusResponse.status,
+                  statusText: statusResponse.statusText,
+                  error: errorText,
+                  url: `${appUrl}/api/copied-trades/${trade.id}/status?userId=${trade.user_id}`
+                })
+                return { checked: false, sent: false }
+              }
+              
+              const statusData = await statusResponse.json()
+
+              const tradeIdentifier = getTradeIdentifier(trade)
+              if (!tradeIdentifier) {
+                console.warn(`⚠️ Skipping trade ${trade.id} - missing identifier`)
+                return { checked: true, sent: false }
+              }
+              
+              console.log(`✅ Status check for trade ${trade.id}:`, {
+                traderHasPosition: statusData.traderStillHasPosition,
+                marketResolved: statusData.marketResolved,
+                resolvedOutcome: statusData.resolvedOutcome,
+                currentPrice: statusData.currentPrice,
+                roi: statusData.roi
+              })
+              
+              // Store previous state
+              const oldTraderHasPosition = trade.trader_still_has_position
+              const oldMarketResolved = trade.market_resolved
+              
+              // Get new state from status
+              const newTraderHasPosition = statusData.traderStillHasPosition
+              const newMarketResolved = statusData.marketResolved
+              
+              let emailSent = false
+              
+              // PRIORITY 1: Check for "Market Resolved" event (more urgent - affects everyone)
+              if (
+                !oldMarketResolved && 
+                newMarketResolved &&
+                !trade.notification_resolved_sent
+              ) {
+                console.log(`📧 Sending "Market Resolved" email for trade ${trade.id}`)
+                
+                // Determine if user won based on resolved outcome
+                const resolvedOutcome = statusData.resolvedOutcome
+                let didUserWin = false
+                
+                if (resolvedOutcome) {
+                  // Case-insensitive comparison
+                  didUserWin = resolvedOutcome.toUpperCase() === trade.outcome.toUpperCase()
+                } else {
+                  // Fallback: use ROI if no resolved outcome available
+                  didUserWin = (statusData.roi || 0) > 0
+                }
+                
+                const traderROI = calculateTraderROI(
+                  statusData.traderAvgPrice,
+                  statusData.currentPrice
+                )
+                
+                // Only send email if we have a resolved outcome
+                if (!resolvedOutcome) {
+                  console.log(`⚠️ Skipping email for trade ${trade.id} - no resolved outcome yet`)
+                  // Update market_resolved but don't mark notification as sent
+                  await supabase
+                    .from(ordersTable)
+                    .update({ market_resolved: true })
+                    .eq(tradeIdentifier.column, tradeIdentifier.value)
+                    .eq('copy_user_id', trade.user_id)
+                  return { checked: true, sent: false }
+                }
+                
+                try {
+                  if (!resend) {
+                    console.error('Resend not configured, skipping email notification')
+                    return { checked: true, sent: false }
+                  }
+                  
+                  await resend.emails.send({
+                    from: 'Polycopy <notifications@polycopy.app>',
+                    to: profile.email,
+                    subject: `Market Resolved: "${trade.market_title}"`,
+                    react: MarketResolvedEmail({
+                      userName: profile.email.split('@')[0],
+                      marketTitle: trade.market_title,
+                      resolvedOutcome: resolvedOutcome,
+                      userPosition: trade.outcome,
+                      userEntryPrice: trade.entry_price ?? trade.price_when_copied,
+                      userROI: statusData.roi || 0,
+                      betAmount: trade.invested_usd ?? 0,
+                      didUserWin,
+                      tradeUrl: `${appUrl}/profile`,
+                      unsubscribeUrl: `${appUrl}/profile`
+                    })
+                  })
+                  
+                  // Mark notification as sent and market as resolved
+                  await supabase
+                    .from(ordersTable)
+                    .update({ 
+                      notification_resolved_sent: true,
+                      market_resolved: true
+                    })
+                    .eq(tradeIdentifier.column, tradeIdentifier.value)
+                    .eq('copy_user_id', trade.user_id)
+                  
+                  emailSent = true
+                  console.log(`✅ Sent "Market Resolved" email for trade ${trade.id} to ${profile.email}`, {
+                    outcome: resolvedOutcome,
+                    userWon: didUserWin,
+                    userROI: statusData.roi
+                  })
+                } catch (emailError: any) {
+                  console.error(`❌ Failed to send "Market Resolved" email for trade ${trade.id}:`, {
+                    error: emailError.message || emailError,
+                    to: profile.email,
+                    trade: trade.market_title,
+                    resolvedOutcome
+                  })
+                }
+              }
+
+              // PRIORITY 2: Check for "Trader Closed Position" event
+              // Only send if market is NOT resolved yet (if market resolved, user already got that notification)
+              if (
+                oldTraderHasPosition === true && 
+                newTraderHasPosition === false &&
+                !trade.notification_closed_sent
+              ) {
+                // Skip if market is/was already resolved - user already got resolution notification
+                // Check BOTH the existing DB state AND the refreshed status
+                const marketAlreadyResolved = trade.market_resolved || newMarketResolved;
+                
+                if (marketAlreadyResolved) {
+                  console.log(`⏭️ Skipping "Trader Closed" email for trade ${trade.id} - market already resolved (DB: ${trade.market_resolved}, API: ${newMarketResolved})`)
+                  // Still mark as "sent" so we don't check again
+                  await supabase
+                    .from(ordersTable)
+                    .update({ 
+                      notification_closed_sent: true,
+                      trader_still_has_position: false
+                    })
+                    .eq(tradeIdentifier.column, tradeIdentifier.value)
+                    .eq('copy_user_id', trade.user_id)
+                } else {
+                  console.log(`📧 Sending "Trader Closed" email for trade ${trade.id}`)
+
+                const traderROI = calculateTraderROI(
+                  statusData.traderAvgPrice,
+                  statusData.currentPrice
+                )
+                
+                try {
+                  if (!resend) {
+                    console.error('Resend not configured, skipping email notification')
+                    return { checked: true, sent: false }
+                  }
+                  
+                  await resend.emails.send({
+                    from: 'Polycopy <notifications@polycopy.app>',
+                    to: profile.email,
+                    subject: `${trade.trader_username} closed their position`,
+                    react: TraderClosedPositionEmail({
+                      userName: profile.email.split('@')[0],
+                      traderUsername: trade.trader_username,
+                      marketTitle: trade.market_title,
+                      outcome: trade.outcome,
+                      userEntryPrice: trade.entry_price ?? trade.price_when_copied,
+                      traderExitPrice: statusData.currentPrice || 0,
+                      userROI: statusData.roi || 0,
+                      traderROI,
+                      tradeUrl: `${appUrl}/profile`,
+                      polymarketUrl: `https://polymarket.com/event/${trade.market_id}`,
+                      unsubscribeUrl: `${appUrl}/profile`
+                    })
+                  })
+                  
+                  // Mark notification as sent
+                  await supabase
+                    .from(ordersTable)
+                    .update({ 
+                      notification_closed_sent: true,
+                      trader_still_has_position: false
+                    })
+                    .eq(tradeIdentifier.column, tradeIdentifier.value)
+                    .eq('copy_user_id', trade.user_id)
+                  
+                  emailSent = true
+                  console.log(`✅ Sent "Trader Closed" email for trade ${trade.id} to ${profile.email}`)
+                } catch (emailError: any) {
+                  console.error(`❌ Failed to send "Trader Closed" email for trade ${trade.id}:`, {
+                    error: emailError.message || emailError,
+                    to: profile.email,
+                    trade: trade.market_title
+                  })
+                }
+                }
+              }
+              
+              // Update last_checked_at timestamp
+              await supabase
+                .from(ordersTable)
+                .update({ last_checked_at: new Date().toISOString() })
+                .eq(tradeIdentifier.column, tradeIdentifier.value)
+                .eq('copy_user_id', trade.user_id)
+              
+              return { checked: true, sent: emailSent }
+            } catch (err) {
+              console.error(`Error processing trade ${trade.id}:`, err)
+              return { checked: false, sent: false }
             }
-          }
+          })
         )
         
-        if (!statusResponse.ok) {
-          const errorText = await statusResponse.text()
-          console.error(`❌ Failed to get status for trade ${trade.id}:`, {
-            status: statusResponse.status,
-            statusText: statusResponse.statusText,
-            error: errorText,
-            url: `${appUrl}/api/copied-trades/${trade.id}/status?userId=${trade.user_id}`
-          })
-          continue
-        }
-        
-        const statusData = await statusResponse.json()
-
-        const tradeIdentifier = getTradeIdentifier(trade)
-        if (!tradeIdentifier) {
-          console.warn(`⚠️ Skipping trade ${trade.id} - missing identifier`)
-          continue
-        }
-        
-        console.log(`✅ Status check for trade ${trade.id}:`, {
-          traderHasPosition: statusData.traderStillHasPosition,
-          marketResolved: statusData.marketResolved,
-          resolvedOutcome: statusData.resolvedOutcome,
-          currentPrice: statusData.currentPrice,
-          roi: statusData.roi
-        })
-        
-        // Store previous state
-        const oldTraderHasPosition = trade.trader_still_has_position
-        const oldMarketResolved = trade.market_resolved
-        
-        // Get new state from status
-        const newTraderHasPosition = statusData.traderStillHasPosition
-        const newMarketResolved = statusData.marketResolved
-        
-        // Check for "Trader Closed Position" event
-        // Only send if market is NOT resolved yet (if market resolved, user already got that notification)
-        if (
-          oldTraderHasPosition === true && 
-          newTraderHasPosition === false &&
-          !trade.notification_closed_sent
-        ) {
-          // Skip if market is/was already resolved - user already got resolution notification
-          // Check BOTH the existing DB state AND the refreshed status
-          const marketAlreadyResolved = trade.market_resolved || newMarketResolved;
-          
-          if (marketAlreadyResolved) {
-            console.log(`⏭️ Skipping "Trader Closed" email for trade ${trade.id} - market already resolved (DB: ${trade.market_resolved}, API: ${newMarketResolved})`)
-            // Still mark as "sent" so we don't check again
-            await supabase
-              .from(ordersTable)
-              .update({ 
-                notification_closed_sent: true,
-                trader_still_has_position: false
-              })
-              .eq(tradeIdentifier.column, tradeIdentifier.value)
-              .eq('copy_user_id', trade.user_id)
-          } else {
-            console.log(`📧 Sending "Trader Closed" email for trade ${trade.id}`)
-
-          const traderROI = calculateTraderROI(
-            statusData.traderAvgPrice,
-            statusData.currentPrice
-          )
-          
-          try {
-            if (!resend) {
-              console.error('Resend not configured, skipping email notification')
-              continue
-            }
-            
-            await resend.emails.send({
-              from: 'Polycopy <notifications@polycopy.app>',
-              to: profile.email,
-              subject: `${trade.trader_username} closed their position`,
-              react: TraderClosedPositionEmail({
-                userName: profile.email.split('@')[0],
-                traderUsername: trade.trader_username,
-                marketTitle: trade.market_title,
-                outcome: trade.outcome,
-                userEntryPrice: trade.entry_price ?? trade.price_when_copied,
-                traderExitPrice: statusData.currentPrice || 0,
-                userROI: statusData.roi || 0,
-                traderROI,
-                tradeUrl: `${appUrl}/profile`,
-                polymarketUrl: `https://polymarket.com/event/${trade.market_id}`,
-                unsubscribeUrl: `${appUrl}/profile`
-              })
-            })
-            
-            // Mark notification as sent
-            await supabase
-              .from(ordersTable)
-              .update({ 
-                notification_closed_sent: true,
-                trader_still_has_position: false
-              })
-              .eq(tradeIdentifier.column, tradeIdentifier.value)
-              .eq('copy_user_id', trade.user_id)
-            
-            notificationsSent++
-            console.log(`✅ Sent "Trader Closed" email for trade ${trade.id} to ${profile.email}`)
-          } catch (emailError: any) {
-            console.error(`❌ Failed to send "Trader Closed" email for trade ${trade.id}:`, {
-              error: emailError.message || emailError,
-              to: profile.email,
-              trade: trade.market_title
-            })
+        // Count results from this batch
+        for (const result of batchResults) {
+          if (result.status === 'fulfilled') {
+            if (result.value.checked) tradesChecked++
+            if (result.value.sent) notificationsSent++
           }
-          }
-        }
-
-        // Check for "Market Resolved" event
-        if (
-          !oldMarketResolved && 
-          newMarketResolved &&
-          !trade.notification_resolved_sent
-        ) {
-          console.log(`📧 Sending "Market Resolved" email for trade ${trade.id}`)
-          
-          // Determine if user won based on resolved outcome
-          const resolvedOutcome = statusData.resolvedOutcome
-          let didUserWin = false
-          
-          if (resolvedOutcome) {
-            // Case-insensitive comparison
-            didUserWin = resolvedOutcome.toUpperCase() === trade.outcome.toUpperCase()
-          } else {
-            // Fallback: use ROI if no resolved outcome available
-            didUserWin = (statusData.roi || 0) > 0
-          }
-          
-          const traderROI = calculateTraderROI(
-            statusData.traderAvgPrice,
-            statusData.currentPrice
-          )
-          
-          // Only send email if we have a resolved outcome
-          if (!resolvedOutcome) {
-            console.log(`⚠️ Skipping email for trade ${trade.id} - no resolved outcome yet`)
-            // Update market_resolved but don't mark notification as sent
-            await supabase
-              .from(ordersTable)
-              .update({ market_resolved: true })
-              .eq(tradeIdentifier.column, tradeIdentifier.value)
-              .eq('copy_user_id', trade.user_id)
-            continue
-          }
-          
-          try {
-            if (!resend) {
-              console.error('Resend not configured, skipping email notification')
-              continue
-            }
-            
-            await resend.emails.send({
-              from: 'Polycopy <notifications@polycopy.app>',
-              to: profile.email,
-              subject: `Market Resolved: "${trade.market_title}"`,
-              react: MarketResolvedEmail({
-                userName: profile.email.split('@')[0],
-                marketTitle: trade.market_title,
-                resolvedOutcome: resolvedOutcome,
-                userPosition: trade.outcome,
-                userEntryPrice: trade.entry_price ?? trade.price_when_copied,
-                userROI: statusData.roi || 0,
-                betAmount: trade.invested_usd ?? 0,
-                didUserWin,
-                tradeUrl: `${appUrl}/profile`,
-                unsubscribeUrl: `${appUrl}/profile`
-              })
-            })
-            
-            // Mark notification as sent and market as resolved
-            await supabase
-              .from(ordersTable)
-              .update({ 
-                notification_resolved_sent: true,
-                market_resolved: true
-              })
-              .eq(tradeIdentifier.column, tradeIdentifier.value)
-              .eq('copy_user_id', trade.user_id)
-            
-            notificationsSent++
-            console.log(`✅ Sent "Market Resolved" email for trade ${trade.id} to ${profile.email}`, {
-              outcome: resolvedOutcome,
-              userWon: didUserWin,
-              userROI: statusData.roi
-            })
-          } catch (emailError: any) {
-            console.error(`❌ Failed to send "Market Resolved" email for trade ${trade.id}:`, {
-              error: emailError.message || emailError,
-              to: profile.email,
-              trade: trade.market_title,
-              resolvedOutcome
-            })
-          }
-        }
-        
-        // Update last_checked_at timestamp
-        await supabase
-          .from(ordersTable)
-          .update({ last_checked_at: new Date().toISOString() })
-          .eq(tradeIdentifier.column, tradeIdentifier.value)
-          .eq('copy_user_id', trade.user_id)
-        
-      } catch (err) {
-        console.error(`Error processing trade ${trade.id}:`, err)
         }
       }
     }
 
     console.log(`✅ Finished processing ${tradesChecked} trades. Now starting auto-close check...`)
-    console.error(`[AUTO-CLOSE] ========== STARTING AUTO-CLOSE CHECK ==========`)
-    console.error(`[AUTO-CLOSE] Orders table: ${ordersTable}`)
     console.log(`[AUTO-CLOSE] ========== STARTING AUTO-CLOSE CHECK ==========`)
     console.log(`[AUTO-CLOSE] Orders table: ${ordersTable}`)
-    
-    // Debug: Write to database to confirm we reached auto-close section
-    try {
-      await supabase.from(ordersTable).update({ 
-        auto_close_error: `Reached auto-close section at ${new Date().toISOString()}` 
-      }).eq('order_id', '0x7dd36d0ad08d9a427b0dde259495e7a1c5c57d029479d82a934842655c1e855e')
-    } catch (dbError) {
-      // Ignore
-    }
     
     try {
       const { data: openOrders, error: queryError } = await supabase
@@ -1038,7 +1071,7 @@ export async function GET(request: NextRequest) {
       .in('status', ['open', 'partial', 'pending', 'submitted', 'processing', 'matched', 'filled'])
       .gt('remaining_size', 0)
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(500)
     
     if (queryError) {
       console.error(`[AUTO-CLOSE] Query error:`, queryError)
@@ -1047,7 +1080,6 @@ export async function GET(request: NextRequest) {
     }
     
     console.log(`[AUTO-CLOSE] Found ${openOrders?.length || 0} orders eligible for auto-close check`)
-    console.error(`[AUTO-CLOSE] Found ${openOrders?.length || 0} orders eligible for auto-close check`)
     
     // Log order IDs being checked for debugging
     if (openOrders && openOrders.length > 0) {
@@ -1056,29 +1088,14 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`[AUTO-CLOSE] Processing ${openOrders?.length || 0} orders for auto-close...`)
-    console.error(`[AUTO-CLOSE] Processing ${openOrders?.length || 0} orders for auto-close...`)
-    
-    // Debug: Write to database to confirm we reached this point
-    if (openOrders && openOrders.length > 0) {
-      try {
-        await supabase.from(ordersTable).update({ 
-          auto_close_error: `Reached loop start at ${new Date().toISOString()}, ${openOrders.length} orders` 
-        }).eq('order_id', openOrders[0].order_id)
-      } catch (dbError) {
-        // Ignore
-      }
-    }
     
     if (!openOrders || openOrders.length === 0) {
       console.log(`[AUTO-CLOSE] No orders to process`)
-      console.error(`[AUTO-CLOSE] No orders to process`)
     } else {
       console.log(`[AUTO-CLOSE] Starting loop, will process ${openOrders.length} orders`)
-      console.error(`[AUTO-CLOSE] Starting loop, will process ${openOrders.length} orders`)
       
       for (const order of openOrders) {
         console.log(`[AUTO-CLOSE] Processing order ${order.order_id}...`)
-        console.error(`[AUTO-CLOSE] Processing order ${order.order_id}...`)
         try {
           await attemptAutoCloseFromOrder(order)
         } catch (orderError: any) {
@@ -1089,7 +1106,6 @@ export async function GET(request: NextRequest) {
     }
     
     console.log(`[AUTO-CLOSE] Finished processing all orders`)
-    console.error(`[AUTO-CLOSE] Finished processing all orders`)
     } catch (autoCloseError: any) {
       console.error(`[AUTO-CLOSE] ERROR in auto-close section:`, autoCloseError)
       console.error(`[AUTO-CLOSE] Error stack:`, autoCloseError?.stack)
