@@ -49,7 +49,6 @@ export function TopTraders() {
         const response = await fetch('/api/polymarket/leaderboard?limit=8&orderBy=PNL&category=OVERALL&timePeriod=month')
         if (response.ok) {
           const data = await response.json()
-          console.log('Fetched traders data:', data)
           
           // Calculate ROI for each trader
           const tradersWithROI = (data.traders || []).map((trader: any) => ({
@@ -63,10 +62,8 @@ export function TopTraders() {
           setTraders(sortedByROI.slice(0, 8))
         } else {
           setError('Failed to fetch traders')
-          console.error('API error:', response.status)
         }
       } catch (err) {
-        console.error('Failed to fetch traders:', err)
         setError('Network error')
       } finally {
         setLoading(false)

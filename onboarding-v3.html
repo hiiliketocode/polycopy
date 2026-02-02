@@ -4,11 +4,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Polycopy Onboarding v3</title>
+  
+  <!-- DNS prefetch and preconnect for faster resource loading -->
+  <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Preload critical assets -->
+  <link rel="preload" href="public/logos/polycopy-logo-primary.png" as="image">
+  <link rel="preload" href="public/logos/polycopy-logo-icon.png" as="image">
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" as="style">
+  
+  <!-- Load fonts asynchronously -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
   
   <style>
+    /* Critical CSS - Above the fold styles */
     * {
       margin: 0;
       padding: 0;
@@ -20,10 +33,10 @@
       --brand-yellow-hover: #F59E0B;
       --background: #F8FAFC;
       --text-primary: #0F172A;
-      --text-secondary: #64748B;
+      --text-secondary: #475569;
       --profit-green: #10B981;
       --radius: 0.625rem;
-      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-sans: 'Inter', 'Inter-fallback', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
     
     body {
@@ -36,6 +49,17 @@
       padding: 0;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+      font-display: swap;
+    }
+    
+    /* Inline critical font face for faster rendering */
+    @font-face {
+      font-family: 'Inter-fallback';
+      src: local('Arial');
+      ascent-override: 90%;
+      descent-override: 22%;
+      line-gap-override: 0%;
+      size-adjust: 107%;
     }
     
     html {
@@ -68,7 +92,9 @@
       font-size: 14px;
       font-weight: 500;
       cursor: pointer;
-      padding: 0.5rem 0.75rem;
+      padding: 0.75rem 1rem;
+      min-height: 48px;
+      min-width: 48px;
       border-radius: var(--radius);
       transition: all 0.2s;
     }
@@ -90,6 +116,7 @@
       display: flex;
       height: 100%;
       transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      will-change: transform;
     }
     
     .screen {
@@ -105,6 +132,8 @@
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
       background: var(--background);
+      contain: layout style paint;
+      content-visibility: auto;
     }
     
     .screen-content {
@@ -143,8 +172,10 @@
       background: white;
       border: 2px solid #E2E8F0;
       border-radius: 50%;
-      width: 40px;
-      height: 40px;
+      width: 48px;
+      height: 48px;
+      min-width: 48px;
+      min-height: 48px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -188,7 +219,8 @@
     .btn-primary {
       width: 100%;
       max-width: 400px;
-      padding: 0.875rem 1.5rem;
+      padding: 1rem 1.5rem;
+      min-height: 48px;
       background: var(--brand-yellow);
       color: var(--text-primary);
       border: none;
@@ -211,6 +243,12 @@
       transform: translateY(4px);
     }
     
+    /* Optimize button animations */
+    .btn-primary, .btn-secondary, .nav-arrow, .follow-btn, .copy-btn, .final-cta-btn {
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    
     .btn-secondary {
       background: none;
       border: none;
@@ -218,7 +256,8 @@
       font-size: 14px;
       font-weight: 500;
       cursor: pointer;
-      padding: 0.75rem 1rem;
+      padding: 0.875rem 1rem;
+      min-height: 48px;
       transition: all 0.2s;
       border-radius: 8px;
     }
@@ -230,7 +269,7 @@
     
     /* Premium screen buttons on dark background */
     #screen5 .btn-secondary {
-      color: rgba(255, 255, 255, 0.7);
+      color: rgba(255, 255, 255, 0.9);
     }
     
     #screen5 .btn-secondary:hover {
@@ -447,7 +486,8 @@
       background: var(--brand-yellow);
       border: none;
       border-bottom: 4px solid #D97706;
-      padding: 0.75rem 1.25rem;
+      padding: 0.875rem 1.25rem;
+      min-height: 48px;
       border-radius: 12px;
       font-size: 15px;
       font-weight: 700;
@@ -569,7 +609,8 @@
       background: var(--brand-yellow);
       border: none;
       border-bottom: 4px solid #D97706;
-      padding: 0.75rem;
+      padding: 0.875rem;
+      min-height: 48px;
       border-radius: 12px;
       font-size: 15px;
       font-weight: 700;
@@ -797,7 +838,8 @@
       margin: 2rem auto 0;
       width: 100%;
       max-width: 400px;
-      padding: 0.875rem 1.5rem;
+      padding: 1rem 1.5rem;
+      min-height: 48px;
       background: var(--brand-yellow);
       color: var(--text-primary);
       border: none;
@@ -867,7 +909,8 @@
     
     .modal-btn {
       flex: 1;
-      padding: 0.875rem;
+      padding: 1rem;
+      min-height: 48px;
       border-radius: 12px;
       font-size: 16px;
       font-weight: 600;
@@ -878,11 +921,12 @@
     
     .modal-btn-secondary {
       background: #F1F5F9;
-      color: var(--text-primary);
+      color: #0F172A;
     }
     
     .modal-btn-secondary:hover {
       background: #E2E8F0;
+      color: #0F172A;
     }
     
     .modal-btn-primary {
@@ -1024,18 +1068,18 @@
 <body>
   <div class="onboarding-container">
     <!-- Header -->
-    <div class="onboarding-header">
-      <button class="skip-btn" onclick="handleSkip()">Skip</button>
-    </div>
+    <header class="onboarding-header">
+      <button class="skip-btn" onclick="handleSkip()" aria-label="Skip onboarding tour">Skip</button>
+    </header>
     
     <!-- Screens Wrapper -->
-    <div class="screens-wrapper">
+    <main class="screens-wrapper" role="main">
       <div class="screens-container" id="screensContainer">
         <!-- Screen 1: Welcome -->
         <div class="screen" id="screen1">
           <div class="screen-content">
             <p class="welcome-text">Welcome to</p>
-            <img src="public/logos/polycopy-logo-primary.png" alt="Polycopy" class="welcome-logo" />
+            <img src="public/logos/polycopy-logo-primary.png" alt="Polycopy" class="welcome-logo" fetchpriority="high" />
             <p class="subtitle">Copy trades from the best Polymarket traders</p>
             
             <div class="value-props">
@@ -1112,8 +1156,8 @@
                     <div class="trader-stat-label">Followers</div>
                   </div>
                 </div>
-                <button class="follow-btn">
-                  <span class="animated-cursor">👆</span>
+                <button class="follow-btn" aria-label="Follow trader johndoe">
+                  <span class="animated-cursor" aria-hidden="true">👆</span>
                   Follow Trader
                 </button>
               </div>
@@ -1137,7 +1181,7 @@
                   </div>
                 </div>
                 
-                <div class="live-score">🏀 Live: Lakers 85 - 82 Celtics (Q3)</div>
+                <div class="live-score"><span role="img" aria-label="Basketball">🏀</span> Live: Lakers 85 - 82 Celtics (Q3)</div>
                 
                 <div class="trade-details">
                   <div class="trade-detail">
@@ -1158,8 +1202,8 @@
                   </div>
                 </div>
                 
-                <button class="copy-btn">
-                  <span class="animated-cursor">👆</span>
+                <button class="copy-btn" aria-label="Manually copy trade for Lakers to win vs Celtics">
+                  <span class="animated-cursor" aria-hidden="true">👆</span>
                   Manual Copy
                 </button>
               </div>
@@ -1206,25 +1250,25 @@
         <!-- Screen 5: Premium Upsell -->
         <div class="screen" id="screen5">
           <div class="screen-content">
-            <span class="premium-badge">⭐ PREMIUM</span>
+            <span class="premium-badge"><span role="img" aria-label="Star">⭐</span> PREMIUM</span>
             <h2>Want More?</h2>
             <p class="subtitle">Upgrade to Polycopy Premium</p>
             
             <div class="features-list">
               <div class="feature-item">
-                <div class="feature-icon">✓</div>
+                <div class="feature-icon" aria-hidden="true">✓</div>
                 <div class="feature-text">Execute copy trades directly in the Polycopy platform</div>
               </div>
               <div class="feature-item">
-                <div class="feature-icon">✓</div>
+                <div class="feature-icon" aria-hidden="true">✓</div>
                 <div class="feature-text">Real-time trade status notifications via Whatsapp</div>
               </div>
               <div class="feature-item">
-                <div class="feature-icon">✓</div>
+                <div class="feature-icon" aria-hidden="true">✓</div>
                 <div class="feature-text">Advanced analytics & insights</div>
               </div>
               <div class="feature-item">
-                <div class="feature-icon">✓</div>
+                <div class="feature-icon" aria-hidden="true">✓</div>
                 <div class="feature-text">Priority support</div>
               </div>
             </div>
@@ -1235,38 +1279,38 @@
         <div class="screen" id="screen6">
           <div class="screen-content">
             <div class="polycopy-logo">
-              <img src="public/logos/polycopy-logo-icon.png" alt="Polycopy Logo" />
+              <img src="public/logos/polycopy-logo-icon.png" alt="Polycopy Logo" loading="lazy" />
             </div>
             <h1>You're All Set!</h1>
             <p class="subtitle">Ready to start copying trades?</p>
             <p class="description">Follow some traders on the Discover page to see their trades in your feed</p>
-            <button class="final-cta-btn" onclick="handleComplete()">Find Traders to Follow</button>
+            <button class="final-cta-btn" onclick="handleComplete()" aria-label="Find traders to follow and start using Polycopy">Find Traders to Follow</button>
           </div>
         </div>
       </div>
-    </div>
+    </main>
     
     <!-- Footer -->
-    <div class="onboarding-footer">
+    <footer class="onboarding-footer">
       <!-- Progress Dots with Navigation Arrows -->
       <div class="progress-nav-row">
-        <button class="nav-arrow" id="prevBtn" onclick="handlePrev()" disabled>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button class="nav-arrow" id="prevBtn" onclick="handlePrev()" disabled aria-label="Go to previous screen">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M15 18l-6-6 6-6"/>
           </svg>
         </button>
         
-        <div class="progress-dots" id="progressDots">
-          <div class="dot active"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
+        <div class="progress-dots" id="progressDots" role="navigation" aria-label="Onboarding progress">
+          <div class="dot active" aria-label="Screen 1 of 6" aria-current="true"></div>
+          <div class="dot" aria-label="Screen 2 of 6"></div>
+          <div class="dot" aria-label="Screen 3 of 6"></div>
+          <div class="dot" aria-label="Screen 4 of 6"></div>
+          <div class="dot" aria-label="Screen 5 of 6"></div>
+          <div class="dot" aria-label="Screen 6 of 6"></div>
         </div>
         
-        <button class="nav-arrow" id="nextArrow" onclick="handleNextArrow()">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button class="nav-arrow" id="nextArrow" onclick="handleNextArrow()" aria-label="Go to next screen">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M9 18l6-6-6-6"/>
           </svg>
         </button>
@@ -1279,97 +1323,113 @@
       <button class="btn-secondary" id="secondaryBtn" style="display: none;" onclick="handleSecondary()">
         Maybe Later
       </button>
-    </div>
+    </footer>
   </div>
   
   <!-- Skip Confirmation Modal -->
-  <div id="skipModal" class="modal-overlay" style="display: none;">
+  <div id="skipModal" class="modal-overlay" style="display: none;" role="dialog" aria-labelledby="skip-modal-title" aria-modal="true">
     <div class="modal-content">
-      <h3>Skip Onboarding?</h3>
+      <h3 id="skip-modal-title">Skip Onboarding?</h3>
       <p>Are you sure you want to skip the tour? You can always view it later from settings.</p>
       <div class="modal-buttons">
-        <button class="modal-btn modal-btn-secondary" onclick="closeSkipModal()">Go Back</button>
-        <button class="modal-btn modal-btn-primary" onclick="confirmSkip()">Skip</button>
+        <button class="modal-btn modal-btn-secondary" onclick="closeSkipModal()" aria-label="Go back to onboarding">Go Back</button>
+        <button class="modal-btn modal-btn-primary" onclick="confirmSkip()" aria-label="Confirm skip onboarding">Skip</button>
       </div>
     </div>
   </div>
 
   <script>
-    let currentScreen = 1;
-    const totalScreens = 6;
+    // Onboarding state management
+    const state = {
+      currentScreen: 1,
+      totalScreens: 6,
+      touchStartX: 0,
+      touchEndX: 0
+    };
+    
+    // Cache DOM elements for better performance
+    const elements = {
+      container: null,
+      onboardingContainer: null,
+      primaryBtn: null,
+      secondaryBtn: null,
+      prevBtn: null,
+      nextArrow: null,
+      dots: null,
+      skipModal: null,
+      wrapper: null
+    };
+    
+    // Initialize cached elements
+    function initElements() {
+      elements.container = document.getElementById('screensContainer');
+      elements.onboardingContainer = document.querySelector('.onboarding-container');
+      elements.primaryBtn = document.getElementById('primaryBtn');
+      elements.secondaryBtn = document.getElementById('secondaryBtn');
+      elements.prevBtn = document.getElementById('prevBtn');
+      elements.nextArrow = document.getElementById('nextArrow');
+      elements.dots = document.querySelectorAll('.dot');
+      elements.skipModal = document.getElementById('skipModal');
+      elements.wrapper = document.querySelector('.screens-wrapper');
+    }
     
     function updateScreen() {
+      const { currentScreen } = state;
+      
       // Update progress dots
-      const dots = document.querySelectorAll('.dot');
-      dots.forEach((dot, index) => {
-        dot.classList.remove('active');
-        if (index + 1 === currentScreen) {
-          dot.classList.add('active');
+      elements.dots.forEach((dot, index) => {
+        const isActive = index + 1 === currentScreen;
+        dot.classList.toggle('active', isActive);
+        if (isActive) {
+          dot.setAttribute('aria-current', 'true');
+        } else {
+          dot.removeAttribute('aria-current');
         }
       });
       
-      // Transform the container (use percentage for smooth responsive behavior)
-      const container = document.getElementById('screensContainer');
-      container.style.transform = `translateX(-${(currentScreen - 1) * 100}%)`;
+      // Transform container with GPU acceleration
+      elements.container.style.transform = `translate3d(-${(currentScreen - 1) * 100}%, 0, 0)`;
       
-      // Update container class for premium screen
-      const onboardingContainer = document.querySelector('.onboarding-container');
+      // Update premium screen styling
+      elements.onboardingContainer.classList.toggle('on-premium-screen', currentScreen === 5);
+      
+      // Update navigation buttons
+      elements.prevBtn.disabled = currentScreen === 1;
+      elements.nextArrow.disabled = currentScreen === state.totalScreens;
+      
+      // Update arrow behavior for premium screen
+      elements.nextArrow.onclick = currentScreen === 5 ? handleSecondary : handleNextArrow;
+      
+      // Update button visibility and text
       if (currentScreen === 5) {
-        onboardingContainer.classList.add('on-premium-screen');
-      } else {
-        onboardingContainer.classList.remove('on-premium-screen');
-      }
-      
-      // Update button text and visibility
-      const primaryBtn = document.getElementById('primaryBtn');
-      const secondaryBtn = document.getElementById('secondaryBtn');
-      const prevBtn = document.getElementById('prevBtn');
-      const nextArrow = document.getElementById('nextArrow');
-      
-      // Update navigation arrows
-      prevBtn.disabled = currentScreen === 1;
-      nextArrow.disabled = currentScreen === totalScreens;
-      
-      // On screen 5, right arrow should act like "maybe later"
-      if (currentScreen === 5) {
-        nextArrow.onclick = handleSecondary;
-      } else {
-        nextArrow.onclick = handleNextArrow;
-      }
-      
-      if (currentScreen === 5) {
-        primaryBtn.textContent = 'Get Premium';
-        primaryBtn.style.display = 'block';
-        secondaryBtn.style.display = 'block';
+        elements.primaryBtn.textContent = 'Get Premium';
+        elements.primaryBtn.style.display = 'block';
+        elements.secondaryBtn.style.display = 'block';
       } else if (currentScreen === 6) {
-        primaryBtn.style.display = 'none';
-        secondaryBtn.style.display = 'none';
-      } else if (currentScreen === 1) {
-        primaryBtn.textContent = 'Get Started';
-        primaryBtn.style.display = 'block';
-        secondaryBtn.style.display = 'none';
+        elements.primaryBtn.style.display = 'none';
+        elements.secondaryBtn.style.display = 'none';
       } else {
-        primaryBtn.textContent = 'Next';
-        primaryBtn.style.display = 'block';
-        secondaryBtn.style.display = 'none';
+        elements.primaryBtn.textContent = currentScreen === 1 ? 'Get Started' : 'Next';
+        elements.primaryBtn.style.display = 'block';
+        elements.secondaryBtn.style.display = 'none';
       }
     }
     
     function handlePrev() {
-      if (currentScreen > 1) {
-        currentScreen--;
+      if (state.currentScreen > 1) {
+        state.currentScreen--;
         updateScreen();
       }
     }
     
     function handleNext() {
-      if (currentScreen === 5) {
+      if (state.currentScreen === 5) {
         alert('This would open the Premium upgrade modal');
         return;
       }
       
-      if (currentScreen < totalScreens) {
-        currentScreen++;
+      if (state.currentScreen < state.totalScreens) {
+        state.currentScreen++;
         updateScreen();
       } else {
         handleComplete();
@@ -1377,28 +1437,25 @@
     }
     
     function handleNextArrow() {
-      if (currentScreen < totalScreens) {
-        currentScreen++;
+      if (state.currentScreen < state.totalScreens) {
+        state.currentScreen++;
         updateScreen();
       }
     }
     
     function handleSecondary() {
-      if (currentScreen === 5) {
-        currentScreen++;
+      if (state.currentScreen === 5) {
+        state.currentScreen++;
         updateScreen();
       }
     }
     
     function handleSkip() {
-      // Show custom modal instead of browser confirm
-      const skipModal = document.getElementById('skipModal');
-      skipModal.style.display = 'flex';
+      elements.skipModal.style.display = 'flex';
     }
     
     function closeSkipModal() {
-      const skipModal = document.getElementById('skipModal');
-      skipModal.style.display = 'none';
+      elements.skipModal.style.display = 'none';
     }
     
     function confirmSkip() {
@@ -1409,47 +1466,56 @@
       window.location.href = '/discover';
     }
     
-    // Swipe support
-    let touchStartX = 0;
-    let touchEndX = 0;
-    
-    const wrapper = document.querySelector('.screens-wrapper');
-    
-    wrapper.addEventListener('touchstart', (e) => {
-      touchStartX = e.changedTouches[0].screenX;
-    }, { passive: true });
-    
-    wrapper.addEventListener('touchend', (e) => {
-      touchEndX = e.changedTouches[0].screenX;
-      handleSwipe();
-    }, { passive: true });
-    
+    // Swipe handling with debouncing
     function handleSwipe() {
       const swipeThreshold = 50;
-      const diff = touchStartX - touchEndX;
+      const diff = state.touchStartX - state.touchEndX;
       
       if (Math.abs(diff) > swipeThreshold) {
-        if (diff > 0 && currentScreen < totalScreens) {
+        if (diff > 0 && state.currentScreen < state.totalScreens) {
           handleNext();
-        } else if (diff < 0 && currentScreen > 1) {
-          currentScreen--;
+        } else if (diff < 0 && state.currentScreen > 1) {
+          state.currentScreen--;
           updateScreen();
         }
       }
     }
     
-    // Keyboard navigation
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowRight' || e.key === 'Enter') {
-        handleNext();
-      } else if (e.key === 'ArrowLeft' && currentScreen > 1) {
-        currentScreen--;
-        updateScreen();
-      }
-    });
+    // Event listeners
+    function setupEventListeners() {
+      // Touch events
+      elements.wrapper.addEventListener('touchstart', (e) => {
+        state.touchStartX = e.changedTouches[0].screenX;
+      }, { passive: true });
+      
+      elements.wrapper.addEventListener('touchend', (e) => {
+        state.touchEndX = e.changedTouches[0].screenX;
+        handleSwipe();
+      }, { passive: true });
+      
+      // Keyboard navigation
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight' || e.key === 'Enter') {
+          handleNext();
+        } else if (e.key === 'ArrowLeft' && state.currentScreen > 1) {
+          state.currentScreen--;
+          updateScreen();
+        }
+      });
+    }
     
-    // Initialize
-    updateScreen();
+    // Initialize on DOMContentLoaded for better performance
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        initElements();
+        setupEventListeners();
+        updateScreen();
+      });
+    } else {
+      initElements();
+      setupEventListeners();
+      updateScreen();
+    }
   </script>
 </body>
 </html>
