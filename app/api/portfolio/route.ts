@@ -236,9 +236,9 @@ export async function GET() {
       })
     }
 
-    // Orders table renamed to trades in migration 022.
+    // Query orders table (not trades - trades table is being removed)
     const { data: orders, error: ordersError } = await supabase
-      .from('trades')
+      .from('orders')
       .select('order_id, market_id, outcome, side, order_type, price, size, filled_size, remaining_size, status, created_at, updated_at')
       .eq('trader_id', trader.id)
       .order('created_at', { ascending: false })

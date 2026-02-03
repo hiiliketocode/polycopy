@@ -43,16 +43,124 @@ export interface PolyScoreRequest {
 }
 
 export interface PolyScoreResponse {
-  poly_score: number
-  alpha_score: number
-  conviction_score: number
-  value_score: number
-  ai_profit_probability: number
-  subtype_specific_win_rate: number
-  bet_type_specific_win_rate: number
-  position_adjustment_style: string
-  trade_sequence: number
-  is_hedged: number
+  success: boolean
+  prediction: {
+    probability: number // Raw Model Confidence (0.0 - 1.0)
+    edge_percent: number // ROI Potential (Edge)
+    score_0_100: number // For UI Gauges
+  }
+  polyscore?: number // Opportunity Score (0-100) - primary filter
+  verdict?: {
+    label: string // Verdict label (e.g., "Elite Strategic Entry")
+    color: string // Hex color code
+    icon: string // Emoji icon
+    tooltip: string // Explanatory tooltip text
+    type: string // Verdict type (e.g., "ELITE_VALUE")
+  }
+  indicators?: Array<{
+    label: string // Indicator label (e.g., "Niche Expert")
+    value: string // Display value (e.g., "74% Win Rate")
+    sentiment: 'positive' | 'neutral' | 'negative'
+    tooltip: string // Detailed explanation
+  }>
+  drawer?: {
+    valuation: {
+      market_price: number
+      ai_value: number
+      edge_points: number
+      edge_percent: number
+    }
+    competency: {
+      niche_win_rate: number
+      global_win_rate: number
+      total_trades: number
+    }
+    momentum: {
+      recent_win_rate: number
+      is_hot: boolean
+      current_streak: number
+    }
+    conviction: {
+      z_score: number
+      sizing_multiplier: string
+      total_exposure_usd: number
+      is_outlier: boolean
+    }
+    tactical: {
+      strategy_type: string
+      timing: string
+      minutes_to_start: number
+      is_hedged: boolean
+      is_chasing: boolean
+      is_avg_down: boolean
+    }
+  }
+  ui_presentation: {
+    verdict: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'AVOID'
+    verdict_color: 'green' | 'yellow' | 'red'
+    headline: string
+    badges: Array<{
+      label: string
+      icon: string
+    }>
+    takeaway?: string // Human-readable logic explanation
+  }
+  valuation?: {
+    spot_price: number
+    estimated_fill: number
+    ai_fair_value: number
+    real_edge_pct: number
+  }
+  house_instruction?: {
+    amount: number
+    label: string
+  }
+  analysis?: {
+    niche_name?: string
+    verdict?: string
+    color?: string
+    icon?: string
+    takeaway?: string
+    tactical?: {
+      sequence: number
+      timing: string
+      exposure: number
+      tempo: number
+    }
+    prediction_stats?: {
+      trade_profile: string | null
+      data_source: string
+      ai_fair_value: number
+      model_roi_pct: number
+      trader_historical_roi_pct: number
+      trader_win_rate: number
+      trade_count: number
+      conviction_multiplier: number | null
+      // Scorecard fields
+      profile_trades_count?: number
+      global_trades_total?: number
+      profile_win_rate?: number
+      global_win_rate?: number
+      profile_roi_pct?: number
+      global_roi_pct?: number
+      profile_avg_usd?: number
+      global_avg_usd?: number
+      profile_streak?: number
+      global_streak?: number
+      position_conviction?: number | null
+      trade_conviction?: number | null
+      exposure?: number
+    }
+    factors?: {
+      is_smart_money: boolean // Based on Niche Win Rate
+      is_value_bet: boolean // Based on Price < Prob
+      is_heavy_bet: boolean // Based on Z-Score
+    }
+    debug?: {
+      z_score: number
+      niche: string
+    }
+  }
 }
 
 export interface PolyScoreError {
@@ -61,7 +169,7 @@ export interface PolyScoreError {
 }
 
 /**
- * Get PolyScore for a trade
+ * Get PolyScore for a trade (calls predict-trade edge function)
  */
 export async function getPolyScore(
   request: PolyScoreRequest,
@@ -79,15 +187,15 @@ export async function getPolyScore(
 
   // Ensure URL doesn't have trailing slash
   const baseUrl = supabaseUrl.replace(/\/$/, '')
-  const url = `${baseUrl}/functions/v1/get-polyscore`
+  const url = `${baseUrl}/functions/v1/predict-trade`
   
   // Use access token if provided, otherwise use anon key
-  const authToken = accessToken || supabaseAnonKey
+  const authToken = accessToken || supabaseAnonKey || ''
   
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${authToken}`,
-    'apikey': supabaseAnonKey,
+    ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+    ...(supabaseAnonKey ? { 'apikey': supabaseAnonKey } : {}),
   }
   
   // Validate URL is valid
@@ -104,8 +212,8 @@ export async function getPolyScore(
   console.log('Method: POST')
   console.log('Headers:', {
     'Content-Type': requestHeaders['Content-Type'],
-    'Authorization': `Bearer ${authToken.substring(0, 20)}...`,
-    'apikey': `${supabaseAnonKey.substring(0, 20)}...`,
+    'Authorization': authToken ? `Bearer ${authToken.substring(0, 20)}...` : 'MISSING',
+    'apikey': supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : 'MISSING',
   })
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.log('📦 COMPLETE PAYLOAD BEING SENT TO API (ALL FIELDS):')
@@ -172,6 +280,13 @@ export async function getPolyScore(
   console.log('Response Body:', JSON.stringify(responseData, null, 2))
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
+  // Check for error in response body even if status is OK
+  if (typeof responseData === 'object' && responseData.error && !responseData.success) {
+    const errorMessage = responseData.error || 'Unknown error from edge function'
+    console.error('❌ [PolyScore] Error in response body:', errorMessage)
+    throw new Error(errorMessage)
+  }
+
   if (!response.ok) {
     const errorData: PolyScoreError = typeof responseData === 'object' && responseData.error 
       ? responseData 
@@ -191,6 +306,8 @@ export async function getPolyScore(
   }
 
   console.log('✅ [PolyScore] SUCCESS - Parsed Response:', JSON.stringify(responseData, null, 2))
+  console.log('Has analysis:', !!responseData.analysis)
+  console.log('Has prediction_stats:', !!responseData.analysis?.prediction_stats)
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   
   return responseData as PolyScoreResponse

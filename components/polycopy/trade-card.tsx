@@ -24,6 +24,7 @@ import {
   Clock,
   Star,
   Info,
+  Sparkles,
 } from "lucide-react"
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -49,6 +50,10 @@ import {
   isSeasonLongMarketTitle,
 } from "@/lib/market-status"
 import { getTraderAvatarInitials } from "@/lib/trader-name"
+import { GetPolyScoreButton } from "@/components/polyscore"
+import { PolyScoreRequest, PolyScoreResponse, getPolyScore } from "@/lib/polyscore/get-polyscore"
+import { PredictionStats } from "@/components/polyscore/PredictionStats"
+import { supabase } from "@/lib/supabase"
 
 type PositionTradeSummary = {
   side: "BUY" | "SELL"
@@ -503,10 +508,31 @@ export function TradeCard({
   const [orderType, setOrderType] = useState<'FAK' | 'GTC'>('FAK')
   const [orderId, setOrderId] = useState<string | null>(null)
   const [statusPhase, setStatusPhase] = useState<StatusPhase>('submitted')
+  // PolyScore state
+  const [polyScoreData, setPolyScoreData] = useState<PolyScoreResponse | null>(null)
+  const [polyScoreLoading, setPolyScoreLoading] = useState(false)
+  const [polyScoreError, setPolyScoreError] = useState<string | null>(null)
+  const [polyScoreDrawerOpen, setPolyScoreDrawerOpen] = useState(false)
+  const polyScoreFetchedRef = useRef<string | null>(null) // Track which trade we've fetched for (conditionId + wallet)
   const statusPhaseRef = useRef<StatusPhase>('submitted')
   const [statusData, setStatusData] = useState<any | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [confirmationError, setConfirmationError] = useState<TradeErrorInfo | null>(null)
+
+  // Best-effort market tags for classification (semantic mapping)
+  const marketTagsForInsights = useMemo(() => {
+    const tagsSource = null
+    if (Array.isArray(tagsSource)) return tagsSource
+    if (typeof tagsSource === "string") {
+      try {
+        const parsed = JSON.parse(tagsSource)
+        if (Array.isArray(parsed)) return parsed
+      } catch {
+        return [tagsSource]
+      }
+    }
+    return category ? [category] : null
+  }, [category])
   const [isCancelingOrder, setIsCancelingOrder] = useState(false)
   const [cancelStatus, setCancelStatus] = useState<CancelStatus | null>(null)
   const [showConfirmation, setShowConfirmation] = useState(false)
@@ -608,6 +634,7 @@ export function TradeCard({
     return "unknown"
   }, [isSeasonLong, liveStatus, eventStatus, eventStartTime, looksLikeScore])
 
+  // Calculate orderBookPrice - will be overridden in expanded card context via effectiveAction
   const orderBookPrice = action === "Buy" ? bestAskPrice : bestBidPrice
   const resolvedLivePrice =
     typeof livePrice === "number" && !Number.isNaN(livePrice) ? livePrice : null
@@ -812,7 +839,7 @@ export function TradeCard({
   const combinedScoreLabel = statusBadgeVariant === "ended" ? "Ended" : "Live"
   const combinedScoreBadgeClass = cn(
     badgeBaseClass,
-    "relative h-auto min-h-[34px] flex-col gap-0 px-3 pt-1 pb-3 leading-none",
+    "relative h-auto min-h-[34px] flex-col gap-0 px-3 pt-1 pb-3 leading-none w-[200px] min-w-[200px]",
     statusBadgeVariant === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200",
     statusBadgeVariant === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
   )
@@ -1274,10 +1301,10 @@ export function TradeCard({
                       variant="secondary"
                       className={cn(
                         badgeBaseClass,
-                        "h-6 px-2 text-[11px] font-semibold bg-yellow-50 text-yellow-700 border-yellow-200"
+                        "h-7 px-2.5 text-xs font-bold bg-yellow-100 text-yellow-900 border-2 border-yellow-400"
                       )}
                     >
-                      <ArrowLeftRight className="h-3 w-3" />
+                      <ArrowLeftRight className="h-3.5 w-3.5" />
                       Trader Hedging
                     </Badge>
                   </TooltipTrigger>
@@ -1606,7 +1633,9 @@ export function TradeCard({
         setBestAskPrice(Number.isFinite(bestAsk ?? NaN) ? bestAsk : null)
         setMarketTickSize(Number.isFinite(parsedTick) ? parsedTick : null)
         if (Number.isFinite(bestAsk ?? NaN) || Number.isFinite(bestBid ?? NaN)) {
-          setLivePrice(action === "Buy" ? bestAsk : bestBid)
+          // Use effectiveAction for price when in expanded card context
+          const currentEffectiveAction = isSellTrade && !userHasMatchingPosition ? "Buy" : action
+          setLivePrice(currentEffectiveAction === "Buy" ? bestAsk : bestBid)
         }
       } catch (error: any) {
         if (!cancelled) {
@@ -1669,6 +1698,7 @@ export function TradeCard({
     slippagePreset === "custom" ? Number(customSlippage) : Number(slippagePreset)
   const resolvedSlippage =
     Number.isFinite(slippagePercent) && slippagePercent >= 0 ? slippagePercent : defaultSlippagePercent
+  // Calculate limitPrice using action (will be recalculated with effectiveAction later)
   const rawLimitPrice =
     Number.isFinite(currentPrice) && currentPrice > 0
       ? action === "Buy"
@@ -2004,11 +2034,13 @@ export function TradeCard({
       const bestAskSnapshot = Number.isFinite(bestAskPrice ?? NaN) ? bestAskPrice : null
 
       // Execute the trade via API
+      // Use effectiveLimitPrice when showCopyBuyCta is true, otherwise use limitPrice
+      const finalLimitPrice = showCopyBuyCta && effectiveLimitPrice ? effectiveLimitPrice : limitPrice
       const requestBody = {
         tokenId: finalTokenId,
-        price: limitPrice,
+        price: finalLimitPrice,
         amount: finalContracts,
-        side: action === 'Buy' ? 'BUY' : 'SELL',
+        side: effectiveAction === 'Buy' ? 'BUY' : 'SELL',
         orderType,
         confirm: true,
         copiedTraderId,
@@ -2147,6 +2179,31 @@ export function TradeCard({
       )
   )
   const showCopyBuyCta = isSellTrade && !userHasMatchingPosition
+  // When showing "Copy Trade (Buy)" for a sell trade, we want to execute a buy order
+  const effectiveAction = showCopyBuyCta ? "Buy" : action
+  // Recalculate currentPrice using effectiveAction for correct buy/sell price display
+  const effectiveOrderBookPrice = effectiveAction === "Buy" ? bestAskPrice : bestBidPrice
+  const effectiveCurrentPrice = useMemo(() => {
+    const shouldUseOrderBook =
+      resolvedLiveStatus !== "final" && marketOpenHint !== false
+    return shouldUseOrderBook && typeof effectiveOrderBookPrice === "number" && Number.isFinite(effectiveOrderBookPrice)
+      ? effectiveOrderBookPrice
+      : resolvedLivePrice !== null
+        ? resolvedLivePrice
+        : price
+  }, [effectiveOrderBookPrice, resolvedLiveStatus, marketOpenHint, resolvedLivePrice, price])
+  // Recalculate limitPrice using effectiveAction and effectiveCurrentPrice
+  const effectiveLimitPrice = useMemo(() => {
+    const rawLimit =
+      Number.isFinite(effectiveCurrentPrice) && effectiveCurrentPrice > 0
+        ? effectiveAction === "Buy"
+          ? effectiveCurrentPrice * (1 + resolvedSlippage / 100)
+          : effectiveCurrentPrice * (1 - resolvedSlippage / 100)
+        : null
+    return rawLimit && Number.isFinite(rawLimit)
+      ? roundPriceToTickSize(rawLimit, marketTickSize)
+      : null
+  }, [effectiveCurrentPrice, effectiveAction, resolvedSlippage, marketTickSize])
   const shouldShowCopyCta = !isSellTrade || showCopyBuyCta
   const shouldShowPrimaryCta = isSellTrade || shouldShowCopyCta
   const copyCtaLabel = showCopyBuyCta ? "Copy Trade (Buy)" : "Copy Trade"
@@ -2177,6 +2234,11 @@ export function TradeCard({
   const handleCopyTradeClick = () => {
     if (isMarketEnded) return
     if (!shouldShowCopyCta) return
+    // If showing "Copy Trade (Buy)" for a sell trade, expand to show buy flow
+    if (showCopyBuyCta && onToggleExpand) {
+      onToggleExpand()
+      return
+    }
     if (allowQuickCopyExperience && onToggleExpand) {
       onToggleExpand()
       return
@@ -2528,6 +2590,92 @@ export function TradeCard({
     setSubmitError('Order failed to match. Try again with a wider spread or updated price.')
   }
 
+  // Fetch PolyScore analysis
+  const fetchPolyScore = useCallback(async () => {
+    if (!conditionId || !trader.address) return
+    
+    // Create a unique key for this trade
+    const tradeKey = `${conditionId}-${trader.address}`
+    
+    // Prevent duplicate fetches for the same trade
+    if (polyScoreFetchedRef.current === tradeKey) return
+    polyScoreFetchedRef.current = tradeKey
+
+    setPolyScoreLoading(true)
+    setPolyScoreError(null)
+
+    try {
+      // Get user session token
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      const request: PolyScoreRequest = {
+        original_trade: {
+          wallet_address: trader.address,
+          condition_id: conditionId,
+          side: action === 'Buy' ? 'BUY' : 'SELL',
+          price: price,
+          shares_normalized: size,
+          timestamp: new Date().toISOString(),
+        },
+        market_context: {
+          current_price: currentMarketPrice ?? price,
+          current_timestamp: new Date().toISOString(),
+          market_title: market,
+          market_tags: category ? JSON.stringify([category]) : null,
+          market_bet_structure: null,
+        },
+        user_slippage: action === 'Buy' 
+          ? (defaultBuySlippage ?? 0.05)
+          : (defaultSellSlippage ?? 0.05),
+      }
+
+      const response = await getPolyScore(request, token)
+      console.log('[TradeCard] PolyScore response received:', {
+        hasVerdict: !!response.verdict,
+        hasUiPresentation: !!response.ui_presentation,
+        polyscore: response.polyscore,
+        verdict: response.verdict,
+        verdictLabel: response.verdict?.label,
+        verdictIcon: response.verdict?.icon,
+        verdictColor: response.verdict?.color,
+        legacyVerdict: response.ui_presentation?.verdict,
+        fullResponse: response,
+      })
+      setPolyScoreData(response)
+    } catch (err: any) {
+      setPolyScoreError(err?.message || 'Failed to fetch PolyScore')
+      console.error('[TradeCard] PolyScore error:', err)
+    } finally {
+      setPolyScoreLoading(false)
+    }
+  }, [conditionId, trader.address, action, price, size, currentMarketPrice, market, category, defaultBuySlippage, defaultSellSlippage])
+
+  // Auto-fetch PolyScore when component mounts and required data is available (admin only)
+  useEffect(() => {
+    // Reset state when trade changes or if user is not admin
+    if (!isAdmin) {
+      setPolyScoreData(null)
+      setPolyScoreError(null)
+      return
+    }
+    
+    const tradeKey = conditionId && trader.address ? `${conditionId}-${trader.address}` : null
+    if (tradeKey && polyScoreFetchedRef.current !== tradeKey) {
+      // Reset data if this is a different trade
+      if (polyScoreFetchedRef.current !== null) {
+        setPolyScoreData(null)
+        setPolyScoreError(null)
+      }
+    }
+    
+    // Only fetch if user is admin, we have required data and haven't fetched for this specific trade yet
+    if (isAdmin && conditionId && trader.address && polyScoreFetchedRef.current !== tradeKey) {
+      fetchPolyScore()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, conditionId, trader.address]) // Only depend on the essential data to avoid infinite loops
+
   return (
     <div
       ref={cardRef}
@@ -2659,9 +2807,9 @@ export function TradeCard({
                   {espnLink ? (
                     <Badge asChild variant="secondary" className={combinedScoreBadgeClass}>
                       <a href={espnLink} target="_blank" rel="noopener noreferrer">
-                        <span className="flex items-center gap-1">
-                          <Trophy className="h-3.5 w-3.5" />
-                          <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                        <span className="flex items-center gap-1 min-w-0">
+                          <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
+                          <span className="flex-1 min-w-0 truncate">{cleanedLiveScore}</span>
                         </span>
                         <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
                           {combinedScoreLabel}
@@ -2670,9 +2818,9 @@ export function TradeCard({
                     </Badge>
                   ) : (
                     <Badge variant="secondary" className={combinedScoreBadgeClass}>
-                      <span className="flex items-center gap-1">
-                        <Trophy className="h-3.5 w-3.5" />
-                        <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                      <span className="flex items-center gap-1 min-w-0">
+                        <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="flex-1 min-w-0 truncate">{cleanedLiveScore}</span>
                       </span>
                       <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
                         {combinedScoreLabel}
@@ -2688,12 +2836,12 @@ export function TradeCard({
                       variant="secondary"
                       className={cn(
                         badgeBaseClass,
-                        "bg-indigo-50 text-indigo-700 border-indigo-200",
+                        "bg-indigo-50 text-indigo-700 border-indigo-200 w-[200px] min-w-[200px]",
                       )}
                     >
                       <a href={espnLink} target="_blank" rel="noopener noreferrer">
-                        <Trophy className="h-3.5 w-3.5" />
-                        <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                        <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="flex-1 min-w-0 truncate">{cleanedLiveScore}</span>
                       </a>
                     </Badge>
                   ) : (
@@ -2701,11 +2849,11 @@ export function TradeCard({
                       variant="secondary"
                       className={cn(
                         badgeBaseClass,
-                        "bg-indigo-50 text-indigo-700 border-indigo-200",
+                        "bg-indigo-50 text-indigo-700 border-indigo-200 w-[200px] min-w-[200px]",
                       )}
                     >
-                      <Trophy className="h-3.5 w-3.5" />
-                      <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                      <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
+                      <span className="flex-1 min-w-0 truncate">{cleanedLiveScore}</span>
                     </Badge>
                   )}
                 </div>
@@ -2715,79 +2863,67 @@ export function TradeCard({
                   variant="secondary"
                   className={cn(
                     badgeBaseClass,
-                    "bg-white text-slate-700 border-slate-200"
+                    "bg-white text-slate-700 border-slate-200 w-[200px] min-w-[200px]"
                   )}
                 >
-                  <CircleDot className="h-3.5 w-3.5" />
-                  <span className="max-w-[180px] truncate">{cleanedLiveScore}</span>
+                  <CircleDot className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="flex-1 min-w-0 truncate">{cleanedLiveScore}</span>
                 </Badge>
               )}
             </div>
           </div>
         </div>
 
-        {shouldShowInsightsSection && (
-          <div
-            className={cn(
-              "mb-3 rounded-lg bg-slate-50/70 px-3 py-2",
-              hasAnyPositionBadge && "cursor-pointer"
-            )}
-            onClick={hasAnyPositionBadge ? handlePositionBadgeClick : undefined}
-            role={hasAnyPositionBadge ? "button" : undefined}
-            tabIndex={hasAnyPositionBadge ? 0 : undefined}
-            onKeyDown={
-              hasAnyPositionBadge
-                ? (event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault()
-                      handlePositionBadgeClick()
-                    }
-                  }
-                : undefined
-            }
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {traderHedgingInfo.isHedging ? (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Badge
-                          variant="secondary"
-                          className={cn(
-                            badgeBaseClass,
-                            "h-6 px-2 text-[11px] font-semibold bg-yellow-50 text-yellow-700 border-yellow-200"
-                          )}
-                        >
-                          <ArrowLeftRight className="h-3 w-3" />
-                          Trader Hedging
-                        </Badge>
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-[220px] text-xs">
-                        Trader has bought multiple outcomes in this market to reduce directional risk.
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                ) : null}
-                {isSellTrade ? (
-                  <Badge
-                    variant="secondary"
-                    className={cn(
-                      badgeBaseClass,
-                      "h-6 px-2 text-[11px] font-semibold bg-rose-50 text-rose-700 border-rose-200"
-                    )}
-                  >
-                    Trader Sold
-                  </Badge>
-                ) : null}
-                {hasAnyPositionBadge ? (
+        {/* Existing Positions - Full Width */}
+        {hasAnyPositionBadge && (
+          <div className="mb-3">
+            <div
+              className="rounded-lg bg-slate-50/70 px-3 py-2 cursor-pointer"
+              onClick={handlePositionBadgeClick}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault()
+                  handlePositionBadgeClick()
+                }
+              }}
+            >
+              <div className="flex items-center gap-2">
+                {/* Badges Row - Always Single Row */}
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                  {traderHedgingInfo.isHedging && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge
+                            variant="secondary"
+                            className="h-7 px-2.5 text-xs font-bold bg-yellow-100 text-yellow-900 border-2 border-yellow-400 whitespace-nowrap flex-shrink-0"
+                          >
+                            <ArrowLeftRight className="h-3.5 w-3.5 mr-1" />
+                            Trader Hedging
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[220px] text-xs">
+                          Trader has bought multiple outcomes in this market to reduce directional risk.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                  {isSellTrade && (
+                    <Badge
+                      variant="secondary"
+                      className="h-7 px-2.5 text-xs font-bold bg-rose-100 text-rose-900 border-2 border-rose-400 whitespace-nowrap flex-shrink-0"
+                    >
+                      Trader Sold
+                    </Badge>
+                  )}
                   <Badge
                     asChild
                     variant="secondary"
                     className={cn(
-                      badgeBaseClass,
-                      "h-6 px-2 text-[11px] font-semibold text-slate-600 border-slate-200 hover:bg-slate-100 cursor-pointer",
-                      showUserPositionBadge && showTraderPositionBadge ? "bg-white" : "bg-transparent"
+                      "h-7 px-2.5 text-xs font-bold text-slate-700 border-2 border-slate-300 hover:bg-slate-100 cursor-pointer whitespace-nowrap flex-shrink-0",
+                      showUserPositionBadge && showTraderPositionBadge ? "bg-white" : "bg-slate-50"
                     )}
                   >
                     <button
@@ -2797,28 +2933,28 @@ export function TradeCard({
                         handlePositionBadgeClick()
                       }}
                       aria-expanded={isPositionDrawerOpen}
+                      className="flex items-center gap-1"
                     >
-                      <Star className="h-3 w-3 text-slate-500" />
+                      <Star className="h-3.5 w-3.5 text-slate-600" />
                       <span>{isSellTrade ? "Exiting Positions" : "Existing Positions"}</span>
                       {(showUserPositionBadge || showTraderPositionBadge) && (
-                        <span className="ml-1 inline-flex items-center gap-1">
-                          {showUserPositionBadge ? (
-                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500">
+                        <span className="ml-0.5 inline-flex items-center gap-0.5">
+                          {showUserPositionBadge && (
+                            <span className="rounded-full bg-slate-100 px-1 py-0.5 text-[8px] font-semibold text-slate-500">
                               You
                             </span>
-                          ) : null}
-                          {showTraderPositionBadge ? (
-                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500">
+                          )}
+                          {showTraderPositionBadge && (
+                            <span className="rounded-full bg-slate-100 px-1 py-0.5 text-[8px] font-semibold text-slate-500">
                               Trader
                             </span>
-                          ) : null}
+                          )}
                         </span>
                       )}
                     </button>
                   </Badge>
-                ) : null}
-              </div>
-              {hasAnyPositionBadge ? (
+                </div>
+                {/* Chevron Button */}
                 <button
                   type="button"
                   onClick={(event) => {
@@ -2827,7 +2963,7 @@ export function TradeCard({
                   }}
                   aria-label={isPositionDrawerOpen ? "Hide existing positions" : "Show existing positions"}
                   aria-expanded={isPositionDrawerOpen}
-                  className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 flex-shrink-0"
                 >
                   <ChevronDown
                     className={cn(
@@ -2836,11 +2972,13 @@ export function TradeCard({
                     )}
                   />
                 </button>
-              ) : null}
+              </div>
             </div>
+
+            {/* Position Drawer - Full Width */}
             {isPositionDrawerOpen && activePositionBadge && (
               <div
-                className="mt-2"
+                className="w-full mt-2"
                 onClick={(event) => {
                   event.stopPropagation()
                 }}
@@ -2905,6 +3043,21 @@ export function TradeCard({
             </div>
           </div>
         </div>
+
+        {/* Prediction Stats - Below Trade Data */}
+        {/* Prediction Stats - Fetches directly from Supabase */}
+        {conditionId && trader.address && (
+          <PredictionStats 
+            walletAddress={trader.address}
+            conditionId={conditionId}
+            price={price}
+            size={size}
+            marketTitle={market}
+            marketCategory={category}
+            marketTags={marketTagsForInsights}
+            isAdmin={isAdmin}
+          />
+        )}
 
         {!hideActions && allowManualExperience && manualDrawerOpen && shouldShowCopyCta && (
           <div className="p-4 mt-4 space-y-4 border border-slate-200 rounded-xl bg-slate-50">
@@ -3001,6 +3154,7 @@ export function TradeCard({
             </div>
           </div>
         )}
+
 
         {!hideActions && shouldShowPrimaryCta && !(allowQuickCopyExperience && isExpanded) && (
           <div className="py-4">
@@ -3209,7 +3363,7 @@ export function TradeCard({
         )}
       </div>
 
-        {!hideActions && allowQuickCopyExperience && isExpanded && shouldShowCopyCta && (
+        {!hideActions && (allowQuickCopyExperience || showCopyBuyCta) && isExpanded && shouldShowCopyCta && (
         <div className="bg-white px-6 pb-3 pt-0">
           <div className="-mt-4 mb-2 flex justify-center">
             <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">

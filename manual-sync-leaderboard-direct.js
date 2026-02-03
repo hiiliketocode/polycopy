@@ -1,53 +1,32 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+/**
+ * Manually run the sync-trader-leaderboard logic directly
+ * (without HTTP request - calls the logic directly)
+ */
 
-export const dynamic = 'force-dynamic'
-export const maxDuration = 300 // 5 minutes max duration for Vercel
+import { createClient } from '@supabase/supabase-js'
+import dotenv from 'dotenv'
+
+dotenv.config({ path: '.env.local' })
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error('Supabase env vars missing for leaderboard sync (NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)')
+  console.error('❌ Missing Supabase env vars')
+  process.exit(1)
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false }
 })
 
-type PolymarketLeaderboardEntry = {
-  rank?: string | number | null
-  proxyWallet?: string | null
-  userName?: string | null
-  xUsername?: string | null
-  verifiedBadge?: boolean | null
-  vol?: number | string | null
-  pnl?: number | string | null
-  profileImage?: string | null
-  marketsTraded?: number | string | null
-  markets_traded?: number | string | null
-  totalTrades?: number | string | null
-  total_trades?: number | string | null
-  winRate?: number | string | null
-  win_rate?: number | string | null
-  followerCount?: number | string | null
-  follower_count?: number | string | null
-  lastSeenAt?: number | string | null
-  last_seen_at?: number | string | null
-}
-
-const DEFAULT_LIMIT = 50 // Polymarket API max limit per request
-const MAX_LIMIT = 50
-const DEFAULT_PAGES = 20 // Top 1000 traders (20 pages × 50)
-const MAX_PAGES = 20
-
-function toNumber(value: unknown): number | null {
+function toNumber(value) {
   if (value === null || value === undefined) return null
   const num = Number(value)
   return Number.isFinite(num) ? num : null
 }
 
-function toIsoTimestamp(value: unknown): string | null {
+function toIsoTimestamp(value) {
   if (value === null || value === undefined) return null
   if (typeof value === 'number') {
     const ms = value < 1_000_000_000_000 ? value * 1000 : value
@@ -61,15 +40,10 @@ function toIsoTimestamp(value: unknown): string | null {
   return null
 }
 
-async function fetchLeaderboardPage(options: {
-  timePeriod: string
-  orderBy: string
-  category: string
-  limit: number
-  offset: number
-}): Promise<PolymarketLeaderboardEntry[]> {
+async function fetchLeaderboardPage(options) {
   const { timePeriod, orderBy, category, limit, offset } = options
   const url = `https://data-api.polymarket.com/v1/leaderboard?timePeriod=${timePeriod}&orderBy=${orderBy}&limit=${limit}&offset=${offset}&category=${category}`
+  
   const response = await fetch(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Polycopy/1.0)' },
     cache: 'no-store',
@@ -85,12 +59,12 @@ async function fetchLeaderboardPage(options: {
   return Array.isArray(data) ? data : []
 }
 
-async function fetchFollowerCounts(wallets: string[]): Promise<Map<string, number>> {
+async function fetchFollowerCounts(wallets) {
   if (wallets.length === 0) return new Map()
   
   // Batch queries to avoid Supabase limits (max ~1000 items per query)
   const BATCH_SIZE = 500
-  const counts = new Map<string, number>()
+  const counts = new Map()
   
   for (let i = 0; i < wallets.length; i += BATCH_SIZE) {
     const batch = wallets.slice(i, i + BATCH_SIZE)
@@ -100,7 +74,7 @@ async function fetchFollowerCounts(wallets: string[]): Promise<Map<string, numbe
       .in('trader_wallet', batch)
 
     if (error) {
-      console.error(`[sync-trader-leaderboard] Error fetching follower counts for batch ${Math.floor(i / BATCH_SIZE) + 1}:`, error.message)
+      console.error(`  ⚠️  Error fetching follower counts for batch ${i / BATCH_SIZE + 1}:`, error.message)
       continue
     }
 
@@ -114,14 +88,11 @@ async function fetchFollowerCounts(wallets: string[]): Promise<Map<string, numbe
   return counts
 }
 
-function buildTraderRow(
-  entry: PolymarketLeaderboardEntry,
-  followerCount: number | null
-): Record<string, string | number | boolean> | null {
+function buildTraderRow(entry, followerCount) {
   const wallet = entry.proxyWallet?.toLowerCase()
   if (!wallet) return null
 
-  const row: Record<string, string | number | boolean> = {
+  const row = {
     wallet_address: wallet,
     updated_at: new Date().toISOString(),
     is_active: true // Leaderboard traders are active
@@ -164,42 +135,27 @@ function buildTraderRow(
   return row
 }
 
-/**
- * GET /api/cron/sync-trader-leaderboard
- * Daily cron that syncs top 1000 Polymarket leaderboard traders into the traders table.
- * 
- * - Fetches top 1000 traders (5 pages × 200) from Polymarket leaderboard
- * - Upserts into traders table with is_active=true
- * - New wallets are automatically picked up by the daily backfill-wallet-pnl cron
- * 
- * Schedule: Daily at 1 AM UTC (configured in vercel.json)
- */
-export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const url = new URL(request.url)
-  const timePeriod = url.searchParams.get('timePeriod') || 'all'
-  const orderBy = url.searchParams.get('orderBy') || 'VOL'
-  const category = url.searchParams.get('category') || 'overall'
-  const limitParam = toNumber(url.searchParams.get('limit'))
-  const pageCountParam = toNumber(url.searchParams.get('pages'))
-
-  const limit = limitParam ? Math.min(Math.max(Math.trunc(limitParam), 1), MAX_LIMIT) : DEFAULT_LIMIT
-  const pages = pageCountParam
-    ? Math.min(Math.max(Math.trunc(pageCountParam), 1), MAX_PAGES)
-    : DEFAULT_PAGES
+async function syncLeaderboard() {
+  const DEFAULT_LIMIT = 50 // Polymarket API max limit per request
+  const DEFAULT_PAGES = 20 // Top 1000 traders (20 pages × 50)
+  
+  const timePeriod = 'all'
+  const orderBy = 'VOL'
+  const category = 'overall'
+  const limit = DEFAULT_LIMIT
+  const pages = DEFAULT_PAGES
 
   let totalUpserted = 0
   let totalFetched = 0
-  const allWallets = new Set<string>()
-  const allEntries: PolymarketLeaderboardEntry[] = []
+  const allWallets = new Set()
+  const allEntries = []
+
+  console.log('📊 Fetching top 1000 traders from Polymarket leaderboard...\n')
 
   // Fetch all leaderboard pages
   for (let page = 0; page < pages; page += 1) {
     const offset = page * limit
+    console.log(`  📄 Page ${page + 1}/${pages} (offset ${offset})...`)
     const entries = await fetchLeaderboardPage({ timePeriod, orderBy, category, limit, offset })
     totalFetched += entries.length
     allEntries.push(...entries)
@@ -210,79 +166,114 @@ export async function GET(request: NextRequest) {
     }
 
     if (entries.length < limit) {
+      console.log(`     Reached end (got ${entries.length} < ${limit})`)
       break
     }
-  }
-
-  // Check which wallets are already in traders (batch to avoid limits)
-  const existingWallets = new Set<string>()
-  if (allWallets.size > 0) {
-    const walletsArray = Array.from(allWallets)
-    const BATCH_SIZE = 500
     
-    for (let i = 0; i < walletsArray.length; i += BATCH_SIZE) {
-      const batch = walletsArray.slice(i, i + BATCH_SIZE)
-      const { data: existing } = await supabase
-        .from('traders')
-        .select('wallet_address')
-        .in('wallet_address', batch)
-
-      for (const row of existing || []) {
-        if (row.wallet_address) existingWallets.add(row.wallet_address.toLowerCase())
-      }
+    // Small delay to avoid rate limiting
+    if (page < pages - 1) {
+      await new Promise(resolve => setTimeout(resolve, 200))
     }
   }
 
-  const newWallets = new Set<string>()
+  console.log(`\n✅ Fetched ${totalFetched} traders\n`)
+
+  // Check which wallets are already in traders
+  const existingWallets = new Set()
+  if (allWallets.size > 0) {
+    console.log('🔍 Checking existing traders in database...')
+    const { data: existing } = await supabase
+      .from('traders')
+      .select('wallet_address')
+      .in('wallet_address', Array.from(allWallets))
+
+    for (const row of existing || []) {
+      if (row.wallet_address) existingWallets.add(row.wallet_address.toLowerCase())
+    }
+  }
+
+  const newWallets = new Set()
   for (const wallet of allWallets) {
     if (!existingWallets.has(wallet)) {
       newWallets.add(wallet)
     }
   }
 
+  console.log(`📋 Found ${newWallets.size} new wallets to add\n`)
+
   // Build payload and upsert
   const wallets = Array.from(allWallets)
+  console.log('📊 Fetching follower counts...')
   const followerCounts = await fetchFollowerCounts(wallets)
 
+  console.log('🔨 Building trader rows...')
   const payload = allEntries
     .map((entry) => {
       const wallet = entry.proxyWallet?.toLowerCase() || null
       const followerCount = wallet ? followerCounts.get(wallet) ?? 0 : null
       return buildTraderRow(entry, followerCount)
     })
-    .filter((row): row is Record<string, string | number | boolean> => Boolean(row))
+    .filter((row) => Boolean(row))
 
   if (payload.length > 0) {
+    console.log(`\n💾 Upserting ${payload.length} traders into traders table...`)
     const { error, count } = await supabase
       .from('traders')
       .upsert(payload, { onConflict: 'wallet_address', count: 'exact' })
 
     if (error) throw error
     totalUpserted += count ?? payload.length
+    console.log(`✅ Upserted ${totalUpserted} traders\n`)
   }
 
-  // Trigger PnL backfill for new wallets immediately
+  // Trigger PnL backfill for new wallets (optional - will be picked up by daily cron)
   if (newWallets.size > 0) {
-    console.log(`📊 Added ${newWallets.size} new wallets to traders table. Triggering PnL backfill...`)
-    
-    // Import and trigger backfill for each new wallet asynchronously
-    const { triggerWalletPnlBackfill } = await import('../../../../lib/backfill/trigger-wallet-pnl-backfill')
-    for (const wallet of newWallets) {
-      triggerWalletPnlBackfill(wallet).catch((err) => {
-        console.error(`[sync-trader-leaderboard] Failed to trigger backfill for ${wallet}:`, err)
-      })
-    }
+    console.log(`📊 Note: ${newWallets.size} new wallets will be backfilled by the daily cron job`)
+    console.log(`   (Skipping individual triggers to avoid rate limits)\n`)
   }
 
-  return NextResponse.json({
+  return {
     fetched: totalFetched,
     upserted: totalUpserted,
     newWallets: newWallets.size,
-    newWalletList: Array.from(newWallets).slice(0, 10), // Sample for debugging
+    newWalletList: Array.from(newWallets).slice(0, 10),
     timePeriod,
     orderBy,
     category,
     limit,
     pages
-  })
+  }
 }
+
+async function main() {
+  try {
+    console.log('='.repeat(60))
+    console.log('🚀 MANUAL SYNC: Top 1000 Traders Leaderboard')
+    console.log('='.repeat(60))
+    console.log()
+
+    const result = await syncLeaderboard()
+
+    console.log('='.repeat(60))
+    console.log('✅ SYNC COMPLETED SUCCESSFULLY')
+    console.log('='.repeat(60))
+    console.log()
+    console.log('📊 Results:')
+    console.log(`   Fetched: ${result.fetched} traders`)
+    console.log(`   Upserted: ${result.upserted} traders`)
+    console.log(`   New wallets: ${result.newWallets}`)
+    if (result.newWalletList && result.newWalletList.length > 0) {
+      console.log(`\n   Sample new wallets:`)
+      result.newWalletList.forEach((wallet, idx) => {
+        console.log(`     ${idx + 1}. ${wallet}`)
+      })
+    }
+    console.log()
+
+  } catch (error) {
+    console.error('\n❌ Error:', error)
+    process.exit(1)
+  }
+}
+
+main()

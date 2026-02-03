@@ -186,56 +186,37 @@ export default async function IWishCopiedThatPage({ searchParams }: PageProps) {
   const supabase = createAdminServiceClient()
   const since = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString()
 
-  const tradesResult = await supabase
-    .from('trades')
-    .select('id, wallet_address, timestamp, side, shares_normalized, price, token_label, condition_id, market_slug, title')
-    .gte('timestamp', since)
+  // Trades table removed - use trades_public instead
+  const publicTradesResult = await supabase
+    .from('trades_public')
+    .select('trade_id, trader_wallet, trade_timestamp, side, size, price, outcome, condition_id, market_slug, market_title')
+    .gte('trade_timestamp', since)
     .eq('side', 'BUY')
-    .order('timestamp', { ascending: false })
+    .order('trade_timestamp', { ascending: false })
     .limit(MAX_TRADES)
 
-  if (tradesResult.error) {
-    console.error('[admin/i-wish-id-copied-that] failed to load trades', tradesResult.error)
+  if (publicTradesResult.error) {
+    console.error('[admin/i-wish-id-copied-that] failed to load public trades', publicTradesResult.error)
   }
 
-  let trades = (tradesResult.data ?? []) as TradeRow[]
-  let usedPublicTrades = false
-
-  if (trades.length < 10) {
-    const publicTradesResult = await supabase
-      .from('trades_public')
-      .select('trade_id, trader_wallet, trade_timestamp, side, size, price, outcome, condition_id, market_slug, market_title')
-      .gte('trade_timestamp', since)
-      .eq('side', 'BUY')
-      .order('trade_timestamp', { ascending: false })
-      .limit(MAX_TRADES)
-
-    if (publicTradesResult.error) {
-      console.error('[admin/i-wish-id-copied-that] failed to load public trades', publicTradesResult.error)
+  const publicTrades = (publicTradesResult.data ?? []) as PublicTradeRow[]
+  const trades: TradeRow[] = publicTrades.map((trade) => {
+    const priceValue = Number(trade.price)
+    const sizeValue = Number(trade.size)
+    return {
+      id: trade.trade_id,
+      wallet_address: trade.trader_wallet,
+      timestamp: trade.trade_timestamp,
+      side: trade.side ?? 'BUY',
+      shares_normalized: Number.isFinite(sizeValue) ? sizeValue : Number.NaN,
+      price: Number.isFinite(priceValue) ? priceValue : Number.NaN,
+      token_label: trade.outcome,
+      condition_id: trade.condition_id,
+      market_slug: trade.market_slug,
+      title: trade.market_title
     }
-
-    const publicTrades = (publicTradesResult.data ?? []) as PublicTradeRow[]
-    const merged = new Map<string, TradeRow>()
-    trades.forEach((trade) => merged.set(trade.id, trade))
-    publicTrades.forEach((trade) => {
-      const priceValue = Number(trade.price)
-      const sizeValue = Number(trade.size)
-      merged.set(trade.trade_id, {
-        id: trade.trade_id,
-        wallet_address: trade.trader_wallet,
-        timestamp: trade.trade_timestamp,
-        side: trade.side ?? 'BUY',
-        shares_normalized: Number.isFinite(sizeValue) ? sizeValue : Number.NaN,
-        price: Number.isFinite(priceValue) ? priceValue : Number.NaN,
-        token_label: trade.outcome,
-        condition_id: trade.condition_id,
-        market_slug: trade.market_slug,
-        title: trade.market_title
-      })
-    })
-    trades = Array.from(merged.values())
-    usedPublicTrades = true
-  }
+  })
+  const usedPublicTrades = true
   const conditionIds = Array.from(
     new Set(trades.map((trade) => trade.condition_id).filter(Boolean))
   ) as string[]
