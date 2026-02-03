@@ -114,9 +114,9 @@ export default async function AdminUsersPage() {
       userId: wallet.user_id ?? null,
       email: profile?.email ?? null,
       detail: hasPrivateKey
-        ? `Imported turnkey private key ${wallet.turnkey_private_key_id}`
+        ? `Imported wallet via Turnkey`
         : `Linked wallet (${address})`,
-      extra: wallet.wallet_type ? `type: ${wallet.wallet_type}` : undefined
+      extra: undefined
     })
   }
 
@@ -298,19 +298,56 @@ export default async function AdminUsersPage() {
     }
   }
 
-  const totalUsers = authUsers.length || profiles.length
-  const premiumCount = profiles.length
-    ? profiles.filter((profile) => profile.is_premium || profile.is_admin).length
-    : users.filter((user) => user.isPremium).length
-  const adminCount = profiles.length
-    ? profiles.filter((profile) => profile.is_admin).length
-    : users.filter((user) => user.isAdmin).length
+  // Calculate 24 hours ago timestamp
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+  // Query full database counts (not limited to fetched users)
+  // Note: Using limit(0) instead of head:true for orders table due to PostgREST 400 error
+  // Note: ALL orders are copy trades (including those with copy_user_id IS NULL which are legacy)
+  const [
+    totalSignUpsResult,
+    totalCopiesResult,
+    manualCopiesWithTypeResult,
+    manualCopiesLegacyResult,
+    quickCopiesResult,
+    premiumCountResult,
+    walletsConnectedResult,
+    signUps24hResult,
+    premiumUpgrades24hResult,
+    manualCopiesWithType24hResult,
+    manualCopiesLegacy24hResult,
+    quickCopies24hResult
+  ] = await Promise.all([
+    // Row 1: Cumulative totals
+    supabase.from('profiles').select('id', { count: 'exact', head: true }),
+    supabase.from('orders').select('*', { count: 'exact' }).limit(0),
+    supabase.from('orders').select('*', { count: 'exact' }).eq('order_type', 'manual').limit(0),
+    supabase.from('orders').select('*', { count: 'exact' }).is('order_type', null).eq('trade_method', 'manual').limit(0),
+    supabase.from('orders').select('*', { count: 'exact' }).in('order_type', ['FAK', 'GTC']).limit(0),
+    
+    // Row 2: Premium & wallets
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_premium', true),
+    supabase.from('turnkey_wallets').select('id', { count: 'exact', head: true }),
+    
+    // Row 3: Last 24 hours
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', twentyFourHoursAgo),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('premium_since', twentyFourHoursAgo),
+    supabase.from('orders').select('*', { count: 'exact' }).eq('order_type', 'manual').gte('created_at', twentyFourHoursAgo).limit(0),
+    supabase.from('orders').select('*', { count: 'exact' }).is('order_type', null).eq('trade_method', 'manual').gte('created_at', twentyFourHoursAgo).limit(0),
+    supabase.from('orders').select('*', { count: 'exact' }).in('order_type', ['FAK', 'GTC']).gte('created_at', twentyFourHoursAgo).limit(0)
+  ])
 
   const summary: AdminUserSummary = {
-    totalUsers,
-    premiumCount,
-    walletCount: walletUserIds.size || users.filter((user) => Boolean(user.wallet)).length,
-    adminCount
+    totalSignUps: Number(totalSignUpsResult.count) || 0,
+    totalCopies: Number(totalCopiesResult.count) || 0,
+    manualCopies: (Number(manualCopiesWithTypeResult.count) || 0) + (Number(manualCopiesLegacyResult.count) || 0),
+    quickCopies: Number(quickCopiesResult.count) || 0,
+    premiumCount: Number(premiumCountResult.count) || 0,
+    walletsConnected: Number(walletsConnectedResult.count) || 0,
+    signUps24h: Number(signUps24hResult.count) || 0,
+    premiumUpgrades24h: Number(premiumUpgrades24hResult.count) || 0,
+    manualCopies24h: (Number(manualCopiesWithType24hResult.count) || 0) + (Number(manualCopiesLegacy24hResult.count) || 0),
+    quickCopies24h: Number(quickCopies24hResult.count) || 0
   }
 
   // Content data is now lazy-loaded client-side via AdminContentDataLoader

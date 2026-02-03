@@ -23,49 +23,57 @@ export function SubscriptionSuccessModal({
 }: SubscriptionSuccessModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[550px]">
+      <DialogContent className="sm:max-w-[550px]" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
-          <div className="flex justify-center mb-4">
-            <div className="rounded-full bg-green-100 p-3">
-              <CheckCircle className="h-12 w-12 text-green-600" />
+          {/* Progress Indicator */}
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-green-500 text-white text-sm font-semibold">
+                <CheckCircle className="h-5 w-5" />
+              </div>
+              <span className="text-sm font-medium text-slate-600">Payment Complete</span>
+            </div>
+            <div className="w-12 h-0.5 bg-slate-300"></div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-500 text-white text-sm font-semibold">
+                2
+              </div>
+              <span className="text-sm font-medium text-slate-900">Connect Wallet</span>
             </div>
           </div>
-          <DialogTitle className="text-2xl font-bold text-center text-slate-900">
-            Welcome to Polycopy Premium! 🎉
+
+          <DialogTitle className="text-3xl font-bold text-center text-slate-900 leading-tight">
+            Complete Setup to Start Copy Trading!
           </DialogTitle>
-          <DialogDescription className="text-center text-slate-600 mt-2">
-            Your subscription is now active. Let's get you set up!
+          <DialogDescription className="text-center text-slate-600 mt-3 text-base px-4">
+            Connect your wallet to automatically copy trades
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 my-6">
-          <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-            <h3 className="font-semibold text-yellow-900 mb-2 flex items-center gap-2">
-              <Wallet className="h-5 w-5" />
-              Next Step: Connect Your Polymarket Wallet
-            </h3>
-            <p className="text-sm text-yellow-700 mb-3">
-              To start using Real Copy Trading, you'll need to connect your Polymarket wallet to Polycopy.
-            </p>
-            <div className="space-y-2 text-sm text-yellow-700">
-              <p className="flex items-start gap-2">
-                <span className="font-bold shrink-0">1.</span>
-                <span>Look for the <span className="font-semibold">"Connect Wallet"</span> button at the top of your profile page</span>
-              </p>
-              <p className="flex items-start gap-2">
-                <span className="font-bold shrink-0">2.</span>
-                <span>Click it to securely link your Polymarket wallet</span>
-              </p>
-              <p className="flex items-start gap-2">
-                <span className="font-bold shrink-0">3.</span>
-                <span>Once connected, you can start copying trades automatically!</span>
-              </p>
+        <div className="space-y-4 my-6">
+          <div className="p-5 bg-gradient-to-br from-amber-50 via-orange-50 to-amber-50 rounded-xl border-2 border-amber-300 shadow-sm text-center">
+            <div className="flex justify-center mb-3">
+              <div className="p-2 bg-amber-200 rounded-lg">
+                <Wallet className="h-5 w-5 text-amber-800" />
+              </div>
             </div>
+            <h3 className="font-bold text-amber-900 mb-3 text-lg">
+              Connect your Polymarket Wallet
+            </h3>
+            <p className="text-sm text-amber-800 mb-2 leading-relaxed">
+              Your premium subscription is active, but you need to connect your wallet to unlock Real Copy Trading.
+            </p>
+            <p className="text-sm text-amber-900 font-semibold">
+              Without this step, you won't be able to automatically copy trades from top traders.
+            </p>
           </div>
 
-          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-sm text-blue-700">
-              <strong className="font-semibold">Quick tip:</strong> You can also connect your wallet by clicking the button below. Make sure you have your Polymarket account ready!
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+            <p className="text-sm text-slate-600 text-center flex items-center justify-center gap-2">
+              <span className="text-green-600">🔒</span>
+              <span className="font-medium">Secure connection via Turnkey</span>
+              <span className="text-slate-400">•</span>
+              <span>Takes less than 2 minutes</span>
             </p>
           </div>
         </div>
@@ -73,20 +81,19 @@ export function SubscriptionSuccessModal({
         <div className="flex flex-col gap-3">
           <Button
             onClick={onConnectWallet}
-            className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white"
+            className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg hover:shadow-xl transition-all duration-200"
             size="lg"
           >
             <Wallet className="mr-2 h-5 w-5" />
-            Connect Polymarket Account
+            Connect Wallet & Complete Setup
             <ArrowRight className="ml-2 h-5 w-5" />
           </Button>
-          <Button
+          <button
             onClick={() => onOpenChange(false)}
-            variant="outline"
-            className="w-full"
+            className="text-xs text-slate-500 hover:text-slate-700 underline"
           >
-            I'll Do This Later
-          </Button>
+            Skip for now (you can connect later from your profile)
+          </button>
         </div>
       </DialogContent>
     </Dialog>

@@ -97,12 +97,41 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
   }
 
   const computedSummary = useMemo(() => {
+    // Fallback computation if no summary provided (shouldn't happen in normal flow)
+    // Only compute if summaryOverride is not provided
+    if (summaryOverride) {
+      return summaryOverride
+    }
+    
     const premiumCount = users.filter((u) => u.isPremium).length
-    const adminCount = users.filter((u) => u.isAdmin).length
-    const walletCount = users.filter((u) => Boolean(u.wallet)).length
-    return { totalUsers: users.length, premiumCount, adminCount, walletCount }
-  }, [users])
-  const summary = summaryOverride ?? computedSummary
+    const walletsConnected = users.filter((u) => Boolean(u.wallet)).length
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    
+    const signUps24h = users.filter((u) => {
+      if (!u.createdAt) return false
+      return new Date(u.createdAt) >= twentyFourHoursAgo
+    }).length
+    
+    const premiumUpgrades24h = users.filter((u) => {
+      if (!u.premiumSince) return false
+      return new Date(u.premiumSince) >= twentyFourHoursAgo
+    }).length
+    
+    return { 
+      totalSignUps: users.length, 
+      totalCopies: 0,
+      manualCopies: 0,
+      quickCopies: 0,
+      premiumCount, 
+      walletsConnected, 
+      signUps24h,
+      premiumUpgrades24h,
+      manualCopies24h: 0,
+      quickCopies24h: 0
+    }
+  }, [users, summaryOverride])
+  
+  const summary = computedSummary
 
   return (
     <div className="min-h-screen bg-[#05070E] text-white p-6 md:p-10">
@@ -122,22 +151,74 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
           </p>
         </header>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="border border-white/10 rounded-xl p-4">
-            <p className="text-xs text-slate-400 uppercase">Total users</p>
-            <p className="text-2xl font-semibold">{summary.totalUsers}</p>
+        <div className="space-y-6">
+          {/* Row 1: Last 24 Hours */}
+          <div>
+            <h2 className="text-xs uppercase tracking-[0.3em] text-[#94a3b8] mb-3">Last 24 Hours</h2>
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Sign Ups (24h)</p>
+                <p className="text-2xl font-semibold">{String(summary.signUps24h ?? 0)}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Premium Upgrades (24h)</p>
+                <p className="text-2xl font-semibold">{String(summary.premiumUpgrades24h ?? 0)}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Manual Copies (24h)</p>
+                <p className="text-2xl font-semibold">{String(summary.manualCopies24h ?? 0)}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Quick Copies (24h)</p>
+                <p className="text-2xl font-semibold">{String(summary.quickCopies24h ?? 0)}</p>
+              </div>
+            </div>
           </div>
-          <div className="border border-white/10 rounded-xl p-4">
-            <p className="text-xs text-slate-400 uppercase">Premium</p>
-            <p className="text-2xl font-semibold">{summary.premiumCount}</p>
+
+          {/* Row 2: Cumulative Totals */}
+          <div>
+            <h2 className="text-xs uppercase tracking-[0.3em] text-[#94a3b8] mb-3">Cumulative Totals</h2>
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Total Sign Ups</p>
+                <p className="text-2xl font-semibold">{String(summary.totalSignUps ?? 0)}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Total Copies</p>
+                <p className="text-2xl font-semibold">{String(summary.totalCopies ?? 0)}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Manual Copies</p>
+                <p className="text-2xl font-semibold">{String(summary.manualCopies ?? 0)}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Quick Copies</p>
+                <p className="text-2xl font-semibold">{String(summary.quickCopies ?? 0)}</p>
+              </div>
+            </div>
           </div>
-          <div className="border border-white/10 rounded-xl p-4">
-            <p className="text-xs text-slate-400 uppercase">Wallets linked</p>
-            <p className="text-2xl font-semibold">{summary.walletCount}</p>
-          </div>
-          <div className="border border-white/10 rounded-xl p-4">
-            <p className="text-xs text-slate-400 uppercase">Admins</p>
-            <p className="text-2xl font-semibold">{summary.adminCount}</p>
+
+          {/* Row 3: Premium & Wallets */}
+          <div>
+            <h2 className="text-xs uppercase tracking-[0.3em] text-[#94a3b8] mb-3">Premium & Wallets</h2>
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Premium Subscribers</p>
+                <p className="text-2xl font-semibold">{String(summary.premiumCount ?? 0)}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Wallets Connected</p>
+                <p className="text-2xl font-semibold">{String(summary.walletsConnected ?? 0)}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4 opacity-40">
+                <p className="text-xs text-slate-400 uppercase">—</p>
+                <p className="text-2xl font-semibold">—</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4 opacity-40">
+                <p className="text-xs text-slate-400 uppercase">—</p>
+                <p className="text-2xl font-semibold">—</p>
+              </div>
+            </div>
           </div>
         </div>
 
