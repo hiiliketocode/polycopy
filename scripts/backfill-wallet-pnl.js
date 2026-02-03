@@ -104,7 +104,12 @@ async function fetchWithRetry(url, options, attempt = 1) {
 }
 
 function toDateString(tsSeconds) {
-  return new Date(tsSeconds * 1000).toISOString().slice(0, 10) // YYYY-MM-DD in UTC
+  // Dome API timestamps are one day behind - the timestamp represents the previous day's data
+  // So if timestamp is Feb 3 00:00 UTC, it actually means data for Feb 2
+  // We need to subtract 1 day to get the correct date
+  const date = new Date(tsSeconds * 1000)
+  date.setUTCDate(date.getUTCDate() - 1)
+  return date.toISOString().slice(0, 10) // YYYY-MM-DD in UTC
 }
 
 function addDays(dateStr, days) {
