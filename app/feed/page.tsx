@@ -3923,7 +3923,6 @@ export default function FeedPage() {
                           size={trade.trade.size}
                           total={trade.trade.price * trade.trade.size}
                           timestamp={getRelativeTime(trade.trade.timestamp)}
-                          tradeTimestampMs={trade.trade.timestamp}
                           onCopyTrade={() => handleCopyTrade(trade)}
                           onMarkAsCopied={(entryPrice, amountInvested) =>
                             handleMarkAsCopied(trade, entryPrice, amountInvested)
