@@ -661,9 +661,31 @@ export default function TraderProfilePage({
                     ? null
                     : Number(row.pnl_to_date),
               }))
-              .filter((row: RealizedPnlRow) => row.date && Number.isFinite(row.realized_pnl))
+              .filter((row: RealizedPnlRow) => {
+                // Include row if it has a valid date AND (valid realized_pnl OR valid pnl_to_date)
+                // This ensures we don't filter out rows that have cumulative data but zero daily change
+                return row.date && (
+                  Number.isFinite(row.realized_pnl) || 
+                  (row.pnl_to_date !== null && row.pnl_to_date !== undefined && Number.isFinite(row.pnl_to_date))
+                );
+              })
               .sort((a: RealizedPnlRow, b: RealizedPnlRow) => new Date(a.date).getTime() - new Date(b.date).getTime())
           : [];
+        
+        // Debug logging
+        if (process.env.NODE_ENV === 'development' && daily.length > 0) {
+          const latest = daily[daily.length - 1];
+          console.log('[Realized PnL] Fetched data:', {
+            totalRows: daily.length,
+            latestRow: {
+              date: latest.date,
+              realized_pnl: latest.realized_pnl,
+              pnl_to_date: latest.pnl_to_date
+            },
+            last5Rows: daily.slice(-5).map(r => ({ date: r.date, realized: r.realized_pnl, cumulative: r.pnl_to_date }))
+          });
+        }
+        
         if (!cancelled) {
           setRealizedPnlRows(daily);
           if (data?.rankings && typeof data.rankings === 'object') {
@@ -1627,7 +1649,7 @@ export default function TraderProfilePage({
       endDate = anchorDate;
     }
 
-    return realizedPnlRows
+    const filtered = realizedPnlRows
       .filter((row) => {
         const day = toDateObj(row.date);
         if (startDate && day < startDate) return false;
@@ -1635,6 +1657,23 @@ export default function TraderProfilePage({
         return true;
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    // Debug logging for All Time window
+    if (process.env.NODE_ENV === 'development' && pnlWindow === 'ALL' && filtered.length > 0) {
+      const latest = filtered[filtered.length - 1];
+      console.log('[realizedWindowRows] All Time filter result:', {
+        totalInputRows: realizedPnlRows.length,
+        filteredRows: filtered.length,
+        latestRow: {
+          date: latest.date,
+          realized_pnl: latest.realized_pnl,
+          pnl_to_date: latest.pnl_to_date
+        },
+        last5Filtered: filtered.slice(-5).map(r => ({ date: r.date, realized: r.realized_pnl, cumulative: r.pnl_to_date }))
+      });
+    }
+    
+    return filtered;
   }, [realizedPnlRows, pnlWindow]);
 
   const realizedChartSeries = useMemo(() => {
@@ -1651,13 +1690,56 @@ export default function TraderProfilePage({
   }, [realizedWindowRows]);
 
   const realizedSummary = useMemo(() => {
-    const totalPnl = realizedWindowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0);
+    // For "All Time" window, use pnl_to_date from latest row (cumulative PnL from Dome API)
+    // For time-limited windows, sum realized_pnl values
+    let totalPnl: number;
+    if (pnlWindow === 'ALL' && realizedWindowRows.length > 0) {
+      // Find the latest row with a valid pnl_to_date (in case the very last row doesn't have it)
+      let latestRow = realizedWindowRows[realizedWindowRows.length - 1];
+      
+      // If latest row doesn't have pnl_to_date, look backwards for the most recent one that does
+      if ((latestRow.pnl_to_date === null || latestRow.pnl_to_date === undefined || !Number.isFinite(latestRow.pnl_to_date)) && realizedWindowRows.length > 1) {
+        for (let i = realizedWindowRows.length - 2; i >= 0; i--) {
+          const row = realizedWindowRows[i];
+          if (row.pnl_to_date !== null && row.pnl_to_date !== undefined && Number.isFinite(row.pnl_to_date)) {
+            latestRow = row;
+            break;
+          }
+        }
+      }
+      
+      // Use pnl_to_date (cumulative) for All Time - this is the accurate total from Dome API
+      if (latestRow.pnl_to_date !== null && latestRow.pnl_to_date !== undefined && Number.isFinite(latestRow.pnl_to_date)) {
+        totalPnl = latestRow.pnl_to_date;
+      } else {
+        // Fall back to summing realized_pnl if pnl_to_date not available
+        totalPnl = realizedWindowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0);
+      }
+      
+      // Debug logging for All Time window
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[realizedSummary] All Time calculation:', {
+          windowRowsCount: realizedWindowRows.length,
+          latestRowDate: latestRow.date,
+          latestRowPnLToDate: latestRow.pnl_to_date,
+          latestRowRealizedPnl: latestRow.realized_pnl,
+          sumRealizedPnl: realizedWindowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0),
+          finalTotalPnl: totalPnl,
+          allRowsLast5: realizedWindowRows.slice(-5).map(r => ({ date: r.date, realized: r.realized_pnl, cumulative: r.pnl_to_date }))
+        });
+      }
+    } else {
+      // For time-limited windows, sum realized_pnl
+      totalPnl = realizedWindowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0);
+    }
+    
     const avgDaily = realizedWindowRows.length > 0 ? totalPnl / realizedWindowRows.length : 0;
     const daysUp = realizedWindowRows.filter((row) => row.realized_pnl > 0).length;
     const daysDown = realizedWindowRows.filter((row) => row.realized_pnl < 0).length;
     const daysActive = realizedWindowRows.filter((row) => row.realized_pnl !== 0).length;
+    
     return { totalPnl, avgDaily, daysUp, daysDown, daysActive };
-  }, [realizedWindowRows]);
+  }, [realizedWindowRows, pnlWindow]);
 
   const rankInfo = useMemo(() => {
     return rankingsByWindow[pnlWindow] ?? { rank: null, total: null, delta: null, previousRank: null };

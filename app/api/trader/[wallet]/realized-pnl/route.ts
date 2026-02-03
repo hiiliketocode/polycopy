@@ -97,16 +97,38 @@ export async function GET(
       .maybeSingle()
   ])
 
-  const { data: rows, error } = await supabase
-    .from('wallet_realized_pnl_daily')
-    .select('date, realized_pnl, pnl_to_date')
-    .eq('wallet_address', normalizedWallet)
-    .order('date', { ascending: true })
-
-  if (error) {
-    console.error('Failed to load realized PnL rows:', error)
-    return NextResponse.json({ error: 'Failed to load realized PnL' }, { status: 500 })
+  // Fetch all rows using pagination (Supabase default limit is 1000)
+  let allRows: any[] = []
+  let offset = 0
+  const pageSize = 1000
+  let hasMore = true
+  
+  while (hasMore) {
+    const { data: pageRows, error: pageError } = await supabase
+      .from('wallet_realized_pnl_daily')
+      .select('date, realized_pnl, pnl_to_date')
+      .eq('wallet_address', normalizedWallet)
+      .order('date', { ascending: true })
+      .range(offset, offset + pageSize - 1)
+    
+    if (pageError) {
+      console.error('Failed to load realized PnL rows:', pageError)
+      return NextResponse.json({ error: 'Failed to load realized PnL' }, { status: 500 })
+    }
+    
+    if (!pageRows || pageRows.length === 0) {
+      hasMore = false
+    } else {
+      allRows.push(...pageRows)
+      offset += pageSize
+      // If we got fewer rows than pageSize, we've reached the end
+      if (pageRows.length < pageSize) {
+        hasMore = false
+      }
+    }
   }
+  
+  const rows = allRows
 
   // If no PnL data exists, trigger an async backfill for this wallet
   // This ensures wallets viewed on trader pages get backfilled even if not in cron sources
