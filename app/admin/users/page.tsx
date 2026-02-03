@@ -325,13 +325,13 @@ export default async function AdminUsersPage() {
     supabase.from('orders').select('*', { count: 'exact' }).is('order_type', null).eq('trade_method', 'manual').limit(0),
     supabase.from('orders').select('*', { count: 'exact' }).in('order_type', ['FAK', 'GTC']).limit(0),
     
-    // Row 2: Premium & wallets
-    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_premium', true),
+    // Row 2: Premium & wallets (exclude admins from premium count/MRR)
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_premium', true).eq('is_admin', false),
     supabase.from('turnkey_wallets').select('id', { count: 'exact', head: true }),
     
     // Row 3: Last 24 hours
     supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', twentyFourHoursAgo),
-    supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('premium_since', twentyFourHoursAgo),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('premium_since', twentyFourHoursAgo).eq('is_admin', false),
     supabase.from('orders').select('*', { count: 'exact' }).eq('order_type', 'manual').gte('created_at', twentyFourHoursAgo).limit(0),
     supabase.from('orders').select('*', { count: 'exact' }).is('order_type', null).eq('trade_method', 'manual').gte('created_at', twentyFourHoursAgo).limit(0),
     supabase.from('orders').select('*', { count: 'exact' }).in('order_type', ['FAK', 'GTC']).gte('created_at', twentyFourHoursAgo).limit(0)
