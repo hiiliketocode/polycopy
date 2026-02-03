@@ -301,48 +301,47 @@ export default async function AdminUsersPage() {
   // Calculate 24 hours ago timestamp
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-  // Row 1: Cumulative totals
-  const totalSignUps = profiles.length || authUsers.length
-  const totalCopies = tradeRows.length
-  const manualCopies = tradeRows.filter((trade) => trade.trade_method === 'manual').length
-  const quickCopies = tradeRows.filter((trade) => trade.trade_method === 'quick').length
-
-  // Row 2: Premium & wallets
-  const premiumCount = profiles.filter((profile) => profile.is_premium).length
-  const walletsConnected = walletUserIds.size || users.filter((user) => Boolean(user.wallet)).length
-
-  // Row 3: Last 24 hours
-  const signUps24h = profiles.filter((profile) => {
-    if (!profile.created_at) return false
-    return new Date(profile.created_at) >= new Date(twentyFourHoursAgo)
-  }).length
-
-  const premiumUpgrades24h = profiles.filter((profile) => {
-    if (!profile.premium_since) return false
-    return new Date(profile.premium_since) >= new Date(twentyFourHoursAgo)
-  }).length
-
-  const manualCopies24h = tradeRows.filter((trade) => {
-    if (trade.trade_method !== 'manual' || !trade.created_at) return false
-    return new Date(trade.created_at) >= new Date(twentyFourHoursAgo)
-  }).length
-
-  const quickCopies24h = tradeRows.filter((trade) => {
-    if (trade.trade_method !== 'quick' || !trade.created_at) return false
-    return new Date(trade.created_at) >= new Date(twentyFourHoursAgo)
-  }).length
+  // Query full database counts (not limited to fetched users)
+  const [
+    totalSignUpsResult,
+    totalCopiesResult,
+    manualCopiesResult,
+    quickCopiesResult,
+    premiumCountResult,
+    walletsConnectedResult,
+    signUps24hResult,
+    premiumUpgrades24hResult,
+    manualCopies24hResult,
+    quickCopies24hResult
+  ] = await Promise.all([
+    // Row 1: Cumulative totals
+    supabase.from('profiles').select('id', { count: 'exact', head: true }),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('trade_method', 'manual'),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('trade_method', 'quick'),
+    
+    // Row 2: Premium & wallets
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_premium', true),
+    supabase.from('turnkey_wallets').select('id', { count: 'exact', head: true }),
+    
+    // Row 3: Last 24 hours
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', twentyFourHoursAgo),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('premium_since', twentyFourHoursAgo),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('trade_method', 'manual').gte('created_at', twentyFourHoursAgo),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('trade_method', 'quick').gte('created_at', twentyFourHoursAgo)
+  ])
 
   const summary: AdminUserSummary = {
-    totalSignUps,
-    totalCopies,
-    manualCopies,
-    quickCopies,
-    premiumCount,
-    walletsConnected,
-    signUps24h,
-    premiumUpgrades24h,
-    manualCopies24h,
-    quickCopies24h
+    totalSignUps: totalSignUpsResult.count ?? 0,
+    totalCopies: totalCopiesResult.count ?? 0,
+    manualCopies: manualCopiesResult.count ?? 0,
+    quickCopies: quickCopiesResult.count ?? 0,
+    premiumCount: premiumCountResult.count ?? 0,
+    walletsConnected: walletsConnectedResult.count ?? 0,
+    signUps24h: signUps24hResult.count ?? 0,
+    premiumUpgrades24h: premiumUpgrades24hResult.count ?? 0,
+    manualCopies24h: manualCopies24hResult.count ?? 0,
+    quickCopies24h: quickCopies24hResult.count ?? 0
   }
 
   // Content data is now lazy-loaded client-side via AdminContentDataLoader

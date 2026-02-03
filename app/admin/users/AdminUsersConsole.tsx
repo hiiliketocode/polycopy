@@ -146,7 +146,30 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
         </header>
 
         <div className="space-y-6">
-          {/* Row 1: Cumulative Totals */}
+          {/* Row 1: Last 24 Hours */}
+          <div>
+            <h2 className="text-xs uppercase tracking-[0.3em] text-[#94a3b8] mb-3">Last 24 Hours</h2>
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Sign Ups (24h)</p>
+                <p className="text-2xl font-semibold">{summary.signUps24h}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Premium Upgrades (24h)</p>
+                <p className="text-2xl font-semibold">{summary.premiumUpgrades24h}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Manual Copies (24h)</p>
+                <p className="text-2xl font-semibold">{summary.manualCopies24h}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Quick Copies (24h)</p>
+                <p className="text-2xl font-semibold">{summary.quickCopies24h}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 2: Cumulative Totals */}
           <div>
             <h2 className="text-xs uppercase tracking-[0.3em] text-[#94a3b8] mb-3">Cumulative Totals</h2>
             <div className="grid gap-4 md:grid-cols-4">
@@ -169,7 +192,7 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
             </div>
           </div>
 
-          {/* Row 2: Premium & Wallets */}
+          {/* Row 3: Premium & Wallets */}
           <div>
             <h2 className="text-xs uppercase tracking-[0.3em] text-[#94a3b8] mb-3">Premium & Wallets</h2>
             <div className="grid gap-4 md:grid-cols-4">
@@ -188,29 +211,6 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
               <div className="border border-white/10 rounded-xl p-4 opacity-40">
                 <p className="text-xs text-slate-400 uppercase">—</p>
                 <p className="text-2xl font-semibold">—</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Row 3: Last 24 Hours */}
-          <div>
-            <h2 className="text-xs uppercase tracking-[0.3em] text-[#94a3b8] mb-3">Last 24 Hours</h2>
-            <div className="grid gap-4 md:grid-cols-4">
-              <div className="border border-white/10 rounded-xl p-4">
-                <p className="text-xs text-slate-400 uppercase">Sign Ups (24h)</p>
-                <p className="text-2xl font-semibold">{summary.signUps24h}</p>
-              </div>
-              <div className="border border-white/10 rounded-xl p-4">
-                <p className="text-xs text-slate-400 uppercase">Premium Upgrades (24h)</p>
-                <p className="text-2xl font-semibold">{summary.premiumUpgrades24h}</p>
-              </div>
-              <div className="border border-white/10 rounded-xl p-4">
-                <p className="text-xs text-slate-400 uppercase">Manual Copies (24h)</p>
-                <p className="text-2xl font-semibold">{summary.manualCopies24h}</p>
-              </div>
-              <div className="border border-white/10 rounded-xl p-4">
-                <p className="text-xs text-slate-400 uppercase">Quick Copies (24h)</p>
-                <p className="text-2xl font-semibold">{summary.quickCopies24h}</p>
               </div>
             </div>
           </div>
