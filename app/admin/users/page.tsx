@@ -302,25 +302,26 @@ export default async function AdminUsersPage() {
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
   // Query full database counts (not limited to fetched users)
-  // Note: We filter by copy_user_id NOT NULL to ensure we're only counting copy trades
-  // Manual copies: order_type='manual' OR (order_type IS NULL AND trade_method='manual')
-  // Quick copies: order_type IN ('FAK', 'GTC')
+  // For manual copies, we need to sum two queries due to PostgREST limitations
   const [
     totalSignUpsResult,
     totalCopiesResult,
-    manualCopiesResult,
+    manualCopiesWithTypeResult,
+    manualCopiesLegacyResult,
     quickCopiesResult,
     premiumCountResult,
     walletsConnectedResult,
     signUps24hResult,
     premiumUpgrades24hResult,
-    manualCopies24hResult,
+    manualCopiesWithType24hResult,
+    manualCopiesLegacy24hResult,
     quickCopies24hResult
   ] = await Promise.all([
     // Row 1: Cumulative totals
     supabase.from('profiles').select('id', { count: 'exact', head: true }),
     supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).or('order_type.eq.manual,and(order_type.is.null,trade_method.eq.manual)'),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).eq('order_type', 'manual'),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).is('order_type', null).eq('trade_method', 'manual'),
     supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).in('order_type', ['FAK', 'GTC']),
     
     // Row 2: Premium & wallets
@@ -330,20 +331,21 @@ export default async function AdminUsersPage() {
     // Row 3: Last 24 hours
     supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', twentyFourHoursAgo),
     supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('premium_since', twentyFourHoursAgo),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).or('order_type.eq.manual,and(order_type.is.null,trade_method.eq.manual)').gte('created_at', twentyFourHoursAgo),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).eq('order_type', 'manual').gte('created_at', twentyFourHoursAgo),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).is('order_type', null).eq('trade_method', 'manual').gte('created_at', twentyFourHoursAgo),
     supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).in('order_type', ['FAK', 'GTC']).gte('created_at', twentyFourHoursAgo)
   ])
 
   const summary: AdminUserSummary = {
     totalSignUps: totalSignUpsResult.count ?? 0,
     totalCopies: totalCopiesResult.count ?? 0,
-    manualCopies: manualCopiesResult.count ?? 0,
+    manualCopies: (manualCopiesWithTypeResult.count ?? 0) + (manualCopiesLegacyResult.count ?? 0),
     quickCopies: quickCopiesResult.count ?? 0,
     premiumCount: premiumCountResult.count ?? 0,
     walletsConnected: walletsConnectedResult.count ?? 0,
     signUps24h: signUps24hResult.count ?? 0,
     premiumUpgrades24h: premiumUpgrades24hResult.count ?? 0,
-    manualCopies24h: manualCopies24hResult.count ?? 0,
+    manualCopies24h: (manualCopiesWithType24hResult.count ?? 0) + (manualCopiesLegacy24hResult.count ?? 0),
     quickCopies24h: quickCopies24hResult.count ?? 0
   }
 
