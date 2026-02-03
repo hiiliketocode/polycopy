@@ -98,6 +98,11 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
 
   const computedSummary = useMemo(() => {
     // Fallback computation if no summary provided (shouldn't happen in normal flow)
+    // Only compute if summaryOverride is not provided
+    if (summaryOverride) {
+      return summaryOverride
+    }
+    
     const premiumCount = users.filter((u) => u.isPremium).length
     const walletsConnected = users.filter((u) => Boolean(u.wallet)).length
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
@@ -124,21 +129,9 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
       manualCopies24h: 0,
       quickCopies24h: 0
     }
-  }, [users])
+  }, [users, summaryOverride])
   
-  // Ensure summary always has all required fields with fallback to 0
-  const summary = summaryOverride ? {
-    totalSignUps: Number(summaryOverride.totalSignUps) || 0,
-    totalCopies: Number(summaryOverride.totalCopies) || 0,
-    manualCopies: Number(summaryOverride.manualCopies) || 0,
-    quickCopies: Number(summaryOverride.quickCopies) || 0,
-    premiumCount: Number(summaryOverride.premiumCount) || 0,
-    walletsConnected: Number(summaryOverride.walletsConnected) || 0,
-    signUps24h: Number(summaryOverride.signUps24h) || 0,
-    premiumUpgrades24h: Number(summaryOverride.premiumUpgrades24h) || 0,
-    manualCopies24h: Number(summaryOverride.manualCopies24h) || 0,
-    quickCopies24h: Number(summaryOverride.quickCopies24h) || 0
-  } : computedSummary
+  const summary = computedSummary
 
   return (
     <div className="min-h-screen bg-[#05070E] text-white p-6 md:p-10">
