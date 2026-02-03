@@ -350,16 +350,16 @@ export default async function AdminUsersPage() {
   })
 
   const summary: AdminUserSummary = {
-    totalSignUps: totalSignUpsResult.count ?? 0,
-    totalCopies: totalCopiesResult.count ?? 0,
-    manualCopies: (manualCopiesWithTypeResult.count ?? 0) + (manualCopiesLegacyResult.count ?? 0),
-    quickCopies: quickCopiesResult.count ?? 0,
-    premiumCount: premiumCountResult.count ?? 0,
-    walletsConnected: walletsConnectedResult.count ?? 0,
-    signUps24h: signUps24hResult.count ?? 0,
-    premiumUpgrades24h: premiumUpgrades24hResult.count ?? 0,
-    manualCopies24h: (manualCopiesWithType24hResult.count ?? 0) + (manualCopiesLegacy24hResult.count ?? 0),
-    quickCopies24h: quickCopies24hResult.count ?? 0
+    totalSignUps: Number(totalSignUpsResult.count) || 0,
+    totalCopies: Number(totalCopiesResult.count) || 0,
+    manualCopies: (Number(manualCopiesWithTypeResult.count) || 0) + (Number(manualCopiesLegacyResult.count) || 0),
+    quickCopies: Number(quickCopiesResult.count) || 0,
+    premiumCount: Number(premiumCountResult.count) || 0,
+    walletsConnected: Number(walletsConnectedResult.count) || 0,
+    signUps24h: Number(signUps24hResult.count) || 0,
+    premiumUpgrades24h: Number(premiumUpgrades24hResult.count) || 0,
+    manualCopies24h: (Number(manualCopiesWithType24hResult.count) || 0) + (Number(manualCopiesLegacy24hResult.count) || 0),
+    quickCopies24h: Number(quickCopies24hResult.count) || 0
   }
 
   console.log('[admin] Summary object:', summary)

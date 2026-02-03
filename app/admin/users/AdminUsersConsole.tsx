@@ -128,16 +128,16 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
   
   // Ensure summary always has all required fields with fallback to 0
   const summary = summaryOverride ? {
-    totalSignUps: summaryOverride.totalSignUps ?? 0,
-    totalCopies: summaryOverride.totalCopies ?? 0,
-    manualCopies: summaryOverride.manualCopies ?? 0,
-    quickCopies: summaryOverride.quickCopies ?? 0,
-    premiumCount: summaryOverride.premiumCount ?? 0,
-    walletsConnected: summaryOverride.walletsConnected ?? 0,
-    signUps24h: summaryOverride.signUps24h ?? 0,
-    premiumUpgrades24h: summaryOverride.premiumUpgrades24h ?? 0,
-    manualCopies24h: summaryOverride.manualCopies24h ?? 0,
-    quickCopies24h: summaryOverride.quickCopies24h ?? 0
+    totalSignUps: Number(summaryOverride.totalSignUps) || 0,
+    totalCopies: Number(summaryOverride.totalCopies) || 0,
+    manualCopies: Number(summaryOverride.manualCopies) || 0,
+    quickCopies: Number(summaryOverride.quickCopies) || 0,
+    premiumCount: Number(summaryOverride.premiumCount) || 0,
+    walletsConnected: Number(summaryOverride.walletsConnected) || 0,
+    signUps24h: Number(summaryOverride.signUps24h) || 0,
+    premiumUpgrades24h: Number(summaryOverride.premiumUpgrades24h) || 0,
+    manualCopies24h: Number(summaryOverride.manualCopies24h) || 0,
+    quickCopies24h: Number(summaryOverride.quickCopies24h) || 0
   } : computedSummary
 
   return (
