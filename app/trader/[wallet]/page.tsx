@@ -2925,8 +2925,6 @@ export default function TraderProfilePage({
                         manualTradingEnabled={manualModeEnabled}
                         onSwitchToManualTrading={enableManualMode}
                         onOpenConnectWallet={() => setShowConnectWalletModal(true)}
-                        homeTeam={liveData?.homeTeam ?? null}
-                        awayTeam={liveData?.awayTeam ?? null}
                       />
                     </div>
                   );
