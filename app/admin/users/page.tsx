@@ -317,8 +317,8 @@ export default async function AdminUsersPage() {
     // Row 1: Cumulative totals
     supabase.from('profiles').select('id', { count: 'exact', head: true }),
     supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('trade_method', 'manual'),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('trade_method', 'quick'),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('order_type', 'manual').not('copy_user_id', 'is', null),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).in('order_type', ['FAK', 'GTC']).not('copy_user_id', 'is', null),
     
     // Row 2: Premium & wallets
     supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_premium', true),
@@ -327,8 +327,8 @@ export default async function AdminUsersPage() {
     // Row 3: Last 24 hours
     supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', twentyFourHoursAgo),
     supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('premium_since', twentyFourHoursAgo),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('trade_method', 'manual').gte('created_at', twentyFourHoursAgo),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('trade_method', 'quick').gte('created_at', twentyFourHoursAgo)
+    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('order_type', 'manual').not('copy_user_id', 'is', null).gte('created_at', twentyFourHoursAgo),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).in('order_type', ['FAK', 'GTC']).not('copy_user_id', 'is', null).gte('created_at', twentyFourHoursAgo)
   ])
 
   const summary: AdminUserSummary = {
