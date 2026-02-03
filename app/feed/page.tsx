@@ -3939,8 +3939,7 @@ export default function FeedPage() {
                           currentMarketPrice={currentPrice}
                           currentMarketUpdatedAt={liveMarket?.updatedAt}
                           marketIsOpen={liveMarket?.resolved === undefined ? undefined : !liveMarket.resolved}
-                          badgeState={badgeState}
-                          marketCategory={marketCategoryType}
+                          category={marketCategoryType}
                           liveScore={liveMarket?.scoreText ?? undefined}
                           eventStartTime={liveMarket?.gameStartTime ?? undefined}
                           eventEndTime={liveMarket?.endDateIso ?? undefined}
