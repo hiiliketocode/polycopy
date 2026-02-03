@@ -42,7 +42,8 @@ export type AdminUserSummary = {
   // Row 2: Premium & wallets
   premiumCount: number
   walletsConnected: number
-  mrr: number // Monthly Recurring Revenue
+  mrr: number // Monthly Recurring Revenue (actual, based on subscription_amount)
+  promoUsers: number // Users on promo codes (subscription_amount = 0)
   
   // Row 3: Last 24 hours
   signUps24h: number

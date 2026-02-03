@@ -124,7 +124,8 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
       quickCopies: 0,
       premiumCount, 
       walletsConnected,
-      mrr: premiumCount * 20, // $20/month per premium subscriber
+      mrr: 0, // Will be calculated from actual subscription amounts
+      promoUsers: 0,
       signUps24h,
       premiumUpgrades24h,
       manualCopies24h: 0,
@@ -215,9 +216,9 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
                 <p className="text-xs text-slate-400 uppercase">MRR</p>
                 <p className="text-2xl font-semibold">{formatCurrency(summary.mrr ?? 0)}</p>
               </div>
-              <div className="border border-white/10 rounded-xl p-4 opacity-40">
-                <p className="text-xs text-slate-400 uppercase">—</p>
-                <p className="text-2xl font-semibold">—</p>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Promo Users</p>
+                <p className="text-2xl font-semibold">{String(summary.promoUsers ?? 0)}</p>
               </div>
             </div>
           </div>

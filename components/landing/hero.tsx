@@ -122,7 +122,7 @@ export function Hero() {
   const feedContainerRef = useRef<HTMLDivElement>(null)
   const { triggerConfetti } = useConfetti()
   
-  const maxFeedScroll = 800
+  const maxFeedScroll = 500 // Reduced from 800 for better UX
 
   // Fetch the dynamic trade count from the most-active endpoint
   useEffect(() => {
@@ -147,7 +147,7 @@ export function Hero() {
   }, [])
 
   useEffect(() => {
-    // Defer scroll listeners until after initial render (improves LCP)
+    // Defer scroll listeners slightly to avoid blocking initial render, but keep it responsive
     const timeoutId = setTimeout(() => {
       const handleWheel = (e: WheelEvent) => {
         if (!heroRef.current) return
@@ -190,7 +190,7 @@ export function Hero() {
         window.removeEventListener("wheel", handleWheel)
         window.removeEventListener("scroll", handleScroll)
       }
-    }, 200)
+    }, 50) // Reduced from 200ms to be more responsive while still not blocking initial render
 
     return () => clearTimeout(timeoutId)
   }, [feedScrollY, isScrollLocked])

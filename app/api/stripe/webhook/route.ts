@@ -44,13 +44,28 @@ export async function POST(request: Request) {
         // SECURITY: Only grant premium if payment is actually complete
         // payment_status can be 'paid', 'unpaid', or 'no_payment_required'
         if (userId && session.payment_status === 'paid') {
-          // Update user profile
+          // Get subscription details from Stripe
+          const subscriptions = await stripe.subscriptions.list({
+            customer: customerId,
+            limit: 1,
+          })
+
+          const subscription = subscriptions.data[0]
+          const subscriptionAmount = subscription?.items.data[0]?.price?.unit_amount || 0
+          const subscriptionStatus = subscription?.status || 'active'
+          const currency = subscription?.currency || 'usd'
+
+          // Update user profile with subscription tracking
           await supabase
             .from('profiles')
             .update({ 
               is_premium: true,
               stripe_customer_id: customerId,
               premium_since: new Date().toISOString(),
+              stripe_subscription_id: subscription?.id || null,
+              subscription_amount: subscriptionAmount / 100, // Convert cents to dollars
+              subscription_status: subscriptionStatus,
+              subscription_currency: currency,
             })
             .eq('id', userId)
 
@@ -62,13 +77,6 @@ export async function POST(request: Request) {
             .single()
 
           if (profile?.email) {
-            // Get subscription details
-            const subscriptions = await stripe.subscriptions.list({
-              customer: customerId,
-              limit: 1,
-            })
-
-            const subscription = subscriptions.data[0]
             const interval = subscription?.items.data[0]?.price?.recurring?.interval
 
             // Send welcome email
@@ -84,7 +92,7 @@ export async function POST(request: Request) {
                     day: 'numeric',
                   }),
                   billingPeriod: interval === 'year' ? 'annual' : 'monthly',
-                  amount: `$${(subscription?.items.data[0]?.price?.unit_amount || 0) / 100}`,
+                  amount: `$${subscriptionAmount / 100}`,
                   profileUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://polycopy.app'}/profile`,
                 }),
               })
@@ -111,10 +119,15 @@ export async function POST(request: Request) {
           .single()
 
         if (user) {
-          // Update premium status to false
+          // Update premium status to false and clear subscription tracking
           await supabase
             .from('profiles')
-            .update({ is_premium: false })
+            .update({ 
+              is_premium: false,
+              stripe_subscription_id: null,
+              subscription_amount: 0,
+              subscription_status: 'canceled',
+            })
             .eq('id', user.id)
 
           // **AUTO-DISCONNECT WALLET**: Delete wallet connection and credentials
@@ -188,6 +201,8 @@ export async function POST(request: Request) {
 
         if (user) {
           const isActive = subscription.status === 'active' || subscription.status === 'trialing'
+          const subscriptionAmount = subscription.items.data[0]?.price?.unit_amount || 0
+          const currency = subscription.currency || 'usd'
           
           // If subscription is being canceled (but still active until period end), don't downgrade yet
           const willCancel = subscription.cancel_at_period_end
@@ -196,13 +211,23 @@ export async function POST(request: Request) {
             // Only downgrade if subscription is truly inactive
             await supabase
               .from('profiles')
-              .update({ is_premium: false })
+              .update({ 
+                is_premium: false,
+                subscription_status: subscription.status,
+                subscription_amount: 0,
+              })
               .eq('id', user.id)
           } else if (isActive) {
-            // Reactivate if they cancelled the cancellation
+            // Reactivate if they cancelled the cancellation OR update subscription details
             await supabase
               .from('profiles')
-              .update({ is_premium: true })
+              .update({ 
+                is_premium: true,
+                stripe_subscription_id: subscription.id,
+                subscription_amount: subscriptionAmount / 100, // Convert cents to dollars
+                subscription_status: subscription.status,
+                subscription_currency: currency,
+              })
               .eq('id', user.id)
           }
         }

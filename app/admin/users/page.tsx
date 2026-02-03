@@ -316,7 +316,9 @@ export default async function AdminUsersPage() {
     premiumUpgrades24hResult,
     manualCopiesWithType24hResult,
     manualCopiesLegacy24hResult,
-    quickCopies24hResult
+    quickCopies24hResult,
+    mrrDataResult,
+    promoUsersResult
   ] = await Promise.all([
     // Row 1: Cumulative totals
     supabase.from('profiles').select('id', { count: 'exact', head: true }),
@@ -334,8 +336,17 @@ export default async function AdminUsersPage() {
     supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('premium_since', twentyFourHoursAgo).eq('is_admin', false),
     supabase.from('orders').select('*', { count: 'exact' }).eq('order_type', 'manual').gte('created_at', twentyFourHoursAgo).limit(0),
     supabase.from('orders').select('*', { count: 'exact' }).is('order_type', null).eq('trade_method', 'manual').gte('created_at', twentyFourHoursAgo).limit(0),
-    supabase.from('orders').select('*', { count: 'exact' }).in('order_type', ['FAK', 'GTC']).gte('created_at', twentyFourHoursAgo).limit(0)
+    supabase.from('orders').select('*', { count: 'exact' }).in('order_type', ['FAK', 'GTC']).gte('created_at', twentyFourHoursAgo).limit(0),
+    
+    // Row 2 continued: Calculate actual MRR from subscription_amount
+    supabase.from('profiles').select('subscription_amount').eq('is_premium', true).eq('is_admin', false),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_premium', true).eq('is_admin', false).eq('subscription_amount', 0)
   ])
+
+  // Calculate actual MRR by summing subscription_amount for all premium users (excluding admins)
+  const actualMRR = (mrrDataResult.data || []).reduce((sum, profile) => {
+    return sum + (Number(profile.subscription_amount) || 0)
+  }, 0)
 
   const summary: AdminUserSummary = {
     totalSignUps: Number(totalSignUpsResult.count) || 0,
@@ -344,7 +355,8 @@ export default async function AdminUsersPage() {
     quickCopies: Number(quickCopiesResult.count) || 0,
     premiumCount: Number(premiumCountResult.count) || 0,
     walletsConnected: Number(walletsConnectedResult.count) || 0,
-    mrr: (Number(premiumCountResult.count) || 0) * 20, // $20/month per premium subscriber
+    mrr: actualMRR, // Actual MRR from subscription amounts
+    promoUsers: Number(promoUsersResult.count) || 0, // Premium users with $0 subscription (promo codes)
     signUps24h: Number(signUps24hResult.count) || 0,
     premiumUpgrades24h: Number(premiumUpgrades24hResult.count) || 0,
     manualCopies24h: (Number(manualCopiesWithType24hResult.count) || 0) + (Number(manualCopiesLegacy24hResult.count) || 0),
