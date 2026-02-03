@@ -298,19 +298,51 @@ export default async function AdminUsersPage() {
     }
   }
 
-  const totalUsers = authUsers.length || profiles.length
-  const premiumCount = profiles.length
-    ? profiles.filter((profile) => profile.is_premium || profile.is_admin).length
-    : users.filter((user) => user.isPremium).length
-  const adminCount = profiles.length
-    ? profiles.filter((profile) => profile.is_admin).length
-    : users.filter((user) => user.isAdmin).length
+  // Calculate 24 hours ago timestamp
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+  // Row 1: Cumulative totals
+  const totalSignUps = profiles.length || authUsers.length
+  const totalCopies = tradeRows.length
+  const manualCopies = tradeRows.filter((trade) => trade.trade_method === 'manual').length
+  const quickCopies = tradeRows.filter((trade) => trade.trade_method === 'quick').length
+
+  // Row 2: Premium & wallets
+  const premiumCount = profiles.filter((profile) => profile.is_premium).length
+  const walletsConnected = walletUserIds.size || users.filter((user) => Boolean(user.wallet)).length
+
+  // Row 3: Last 24 hours
+  const signUps24h = profiles.filter((profile) => {
+    if (!profile.created_at) return false
+    return new Date(profile.created_at) >= new Date(twentyFourHoursAgo)
+  }).length
+
+  const premiumUpgrades24h = profiles.filter((profile) => {
+    if (!profile.premium_since) return false
+    return new Date(profile.premium_since) >= new Date(twentyFourHoursAgo)
+  }).length
+
+  const manualCopies24h = tradeRows.filter((trade) => {
+    if (trade.trade_method !== 'manual' || !trade.created_at) return false
+    return new Date(trade.created_at) >= new Date(twentyFourHoursAgo)
+  }).length
+
+  const quickCopies24h = tradeRows.filter((trade) => {
+    if (trade.trade_method !== 'quick' || !trade.created_at) return false
+    return new Date(trade.created_at) >= new Date(twentyFourHoursAgo)
+  }).length
 
   const summary: AdminUserSummary = {
-    totalUsers,
+    totalSignUps,
+    totalCopies,
+    manualCopies,
+    quickCopies,
     premiumCount,
-    walletCount: walletUserIds.size || users.filter((user) => Boolean(user.wallet)).length,
-    adminCount
+    walletsConnected,
+    signUps24h,
+    premiumUpgrades24h,
+    manualCopies24h,
+    quickCopies24h
   }
 
   // Content data is now lazy-loaded client-side via AdminContentDataLoader

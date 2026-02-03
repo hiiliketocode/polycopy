@@ -33,8 +33,19 @@ export type TradeActivitySummary = {
 }
 
 export type AdminUserSummary = {
-  totalUsers: number
+  // Row 1: Cumulative totals
+  totalSignUps: number
+  totalCopies: number
+  manualCopies: number
+  quickCopies: number
+  
+  // Row 2: Premium & wallets
   premiumCount: number
-  walletCount: number
-  adminCount: number
+  walletsConnected: number
+  
+  // Row 3: Last 24 hours
+  signUps24h: number
+  premiumUpgrades24h: number
+  manualCopies24h: number
+  quickCopies24h: number
 }

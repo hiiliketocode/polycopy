@@ -97,10 +97,33 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
   }
 
   const computedSummary = useMemo(() => {
+    // Fallback computation if no summary provided (shouldn't happen in normal flow)
     const premiumCount = users.filter((u) => u.isPremium).length
-    const adminCount = users.filter((u) => u.isAdmin).length
-    const walletCount = users.filter((u) => Boolean(u.wallet)).length
-    return { totalUsers: users.length, premiumCount, adminCount, walletCount }
+    const walletsConnected = users.filter((u) => Boolean(u.wallet)).length
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    
+    const signUps24h = users.filter((u) => {
+      if (!u.createdAt) return false
+      return new Date(u.createdAt) >= twentyFourHoursAgo
+    }).length
+    
+    const premiumUpgrades24h = users.filter((u) => {
+      if (!u.premiumSince) return false
+      return new Date(u.premiumSince) >= twentyFourHoursAgo
+    }).length
+    
+    return { 
+      totalSignUps: users.length, 
+      totalCopies: 0,
+      manualCopies: 0,
+      quickCopies: 0,
+      premiumCount, 
+      walletsConnected, 
+      signUps24h,
+      premiumUpgrades24h,
+      manualCopies24h: 0,
+      quickCopies24h: 0
+    }
   }, [users])
   const summary = summaryOverride ?? computedSummary
 
@@ -122,22 +145,74 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
           </p>
         </header>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="border border-white/10 rounded-xl p-4">
-            <p className="text-xs text-slate-400 uppercase">Total users</p>
-            <p className="text-2xl font-semibold">{summary.totalUsers}</p>
+        <div className="space-y-6">
+          {/* Row 1: Cumulative Totals */}
+          <div>
+            <h2 className="text-xs uppercase tracking-[0.3em] text-[#94a3b8] mb-3">Cumulative Totals</h2>
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Total Sign Ups</p>
+                <p className="text-2xl font-semibold">{summary.totalSignUps}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Total Copies</p>
+                <p className="text-2xl font-semibold">{summary.totalCopies}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Manual Copies</p>
+                <p className="text-2xl font-semibold">{summary.manualCopies}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Quick Copies</p>
+                <p className="text-2xl font-semibold">{summary.quickCopies}</p>
+              </div>
+            </div>
           </div>
-          <div className="border border-white/10 rounded-xl p-4">
-            <p className="text-xs text-slate-400 uppercase">Premium</p>
-            <p className="text-2xl font-semibold">{summary.premiumCount}</p>
+
+          {/* Row 2: Premium & Wallets */}
+          <div>
+            <h2 className="text-xs uppercase tracking-[0.3em] text-[#94a3b8] mb-3">Premium & Wallets</h2>
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Premium Subscribers</p>
+                <p className="text-2xl font-semibold">{summary.premiumCount}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Wallets Connected</p>
+                <p className="text-2xl font-semibold">{summary.walletsConnected}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4 opacity-40">
+                <p className="text-xs text-slate-400 uppercase">—</p>
+                <p className="text-2xl font-semibold">—</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4 opacity-40">
+                <p className="text-xs text-slate-400 uppercase">—</p>
+                <p className="text-2xl font-semibold">—</p>
+              </div>
+            </div>
           </div>
-          <div className="border border-white/10 rounded-xl p-4">
-            <p className="text-xs text-slate-400 uppercase">Wallets linked</p>
-            <p className="text-2xl font-semibold">{summary.walletCount}</p>
-          </div>
-          <div className="border border-white/10 rounded-xl p-4">
-            <p className="text-xs text-slate-400 uppercase">Admins</p>
-            <p className="text-2xl font-semibold">{summary.adminCount}</p>
+
+          {/* Row 3: Last 24 Hours */}
+          <div>
+            <h2 className="text-xs uppercase tracking-[0.3em] text-[#94a3b8] mb-3">Last 24 Hours</h2>
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Sign Ups (24h)</p>
+                <p className="text-2xl font-semibold">{summary.signUps24h}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Premium Upgrades (24h)</p>
+                <p className="text-2xl font-semibold">{summary.premiumUpgrades24h}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Manual Copies (24h)</p>
+                <p className="text-2xl font-semibold">{summary.manualCopies24h}</p>
+              </div>
+              <div className="border border-white/10 rounded-xl p-4">
+                <p className="text-xs text-slate-400 uppercase">Quick Copies (24h)</p>
+                <p className="text-2xl font-semibold">{summary.quickCopies24h}</p>
+              </div>
+            </div>
           </div>
         </div>
 
