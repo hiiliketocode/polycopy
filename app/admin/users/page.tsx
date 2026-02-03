@@ -336,6 +336,19 @@ export default async function AdminUsersPage() {
     supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).in('order_type', ['FAK', 'GTC']).gte('created_at', twentyFourHoursAgo)
   ])
 
+  // Log any errors
+  if (totalCopiesResult.error) console.error('[admin] totalCopiesResult error:', totalCopiesResult.error)
+  if (manualCopiesWithTypeResult.error) console.error('[admin] manualCopiesWithTypeResult error:', manualCopiesWithTypeResult.error)
+  if (manualCopiesLegacyResult.error) console.error('[admin] manualCopiesLegacyResult error:', manualCopiesLegacyResult.error)
+  if (quickCopiesResult.error) console.error('[admin] quickCopiesResult error:', quickCopiesResult.error)
+
+  console.log('[admin] Query results:', {
+    totalCopies: totalCopiesResult.count,
+    manualWithType: manualCopiesWithTypeResult.count,
+    manualLegacy: manualCopiesLegacyResult.count,
+    quick: quickCopiesResult.count
+  })
+
   const summary: AdminUserSummary = {
     totalSignUps: totalSignUpsResult.count ?? 0,
     totalCopies: totalCopiesResult.count ?? 0,
@@ -348,6 +361,8 @@ export default async function AdminUsersPage() {
     manualCopies24h: (manualCopiesWithType24hResult.count ?? 0) + (manualCopiesLegacy24hResult.count ?? 0),
     quickCopies24h: quickCopies24hResult.count ?? 0
   }
+
+  console.log('[admin] Summary object:', summary)
 
   // Content data is now lazy-loaded client-side via AdminContentDataLoader
   // This significantly improves initial page load time
