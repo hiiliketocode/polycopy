@@ -489,7 +489,7 @@ export function TradeCard({
         : 3
   const [amountMode, setAmountMode] = useState<"usd" | "contracts">("usd")
   const [amountInput, setAmountInput] = useState<string>("")
-  const canUseAutoClose = Boolean(isAdmin)
+  const canUseAutoClose = Boolean(isPremium)
   const [autoClose, setAutoClose] = useState(() => canUseAutoClose)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
