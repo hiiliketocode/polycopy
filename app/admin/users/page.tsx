@@ -301,24 +301,9 @@ export default async function AdminUsersPage() {
   // Calculate 24 hours ago timestamp
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-  // Test basic orders table access
-  const testOrdersAccess = await supabase.from('orders').select('id', { count: 'exact', head: true })
-  console.log('[admin] TEST: Basic orders query (no filters):', {
-    error: testOrdersAccess.error,
-    count: testOrdersAccess.count,
-    status: testOrdersAccess.status,
-    statusText: testOrdersAccess.statusText
-  })
-
-  // Try alternative count method
-  const testOrdersCount = await supabase.from('orders').select('*', { count: 'exact', head: false }).limit(0)
-  console.log('[admin] TEST: Alternative count method:', {
-    error: testOrdersCount.error,
-    count: testOrdersCount.count
-  })
-
   // Query full database counts (not limited to fetched users)
   // Note: Using limit(0) instead of head:true for orders table due to PostgREST 400 error
+  // Note: ALL orders are copy trades (including those with copy_user_id IS NULL which are legacy)
   const [
     totalSignUpsResult,
     totalCopiesResult,
@@ -335,10 +320,10 @@ export default async function AdminUsersPage() {
   ] = await Promise.all([
     // Row 1: Cumulative totals
     supabase.from('profiles').select('id', { count: 'exact', head: true }),
-    supabase.from('orders').select('*', { count: 'exact' }).not('copy_user_id', 'is', null).limit(0),
-    supabase.from('orders').select('*', { count: 'exact' }).not('copy_user_id', 'is', null).eq('order_type', 'manual').limit(0),
-    supabase.from('orders').select('*', { count: 'exact' }).not('copy_user_id', 'is', null).is('order_type', null).eq('trade_method', 'manual').limit(0),
-    supabase.from('orders').select('*', { count: 'exact' }).not('copy_user_id', 'is', null).in('order_type', ['FAK', 'GTC']).limit(0),
+    supabase.from('orders').select('*', { count: 'exact' }).limit(0),
+    supabase.from('orders').select('*', { count: 'exact' }).eq('order_type', 'manual').limit(0),
+    supabase.from('orders').select('*', { count: 'exact' }).is('order_type', null).eq('trade_method', 'manual').limit(0),
+    supabase.from('orders').select('*', { count: 'exact' }).in('order_type', ['FAK', 'GTC']).limit(0),
     
     // Row 2: Premium & wallets
     supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_premium', true),
@@ -347,9 +332,9 @@ export default async function AdminUsersPage() {
     // Row 3: Last 24 hours
     supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', twentyFourHoursAgo),
     supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('premium_since', twentyFourHoursAgo),
-    supabase.from('orders').select('*', { count: 'exact' }).not('copy_user_id', 'is', null).eq('order_type', 'manual').gte('created_at', twentyFourHoursAgo).limit(0),
-    supabase.from('orders').select('*', { count: 'exact' }).not('copy_user_id', 'is', null).is('order_type', null).eq('trade_method', 'manual').gte('created_at', twentyFourHoursAgo).limit(0),
-    supabase.from('orders').select('*', { count: 'exact' }).not('copy_user_id', 'is', null).in('order_type', ['FAK', 'GTC']).gte('created_at', twentyFourHoursAgo).limit(0)
+    supabase.from('orders').select('*', { count: 'exact' }).eq('order_type', 'manual').gte('created_at', twentyFourHoursAgo).limit(0),
+    supabase.from('orders').select('*', { count: 'exact' }).is('order_type', null).eq('trade_method', 'manual').gte('created_at', twentyFourHoursAgo).limit(0),
+    supabase.from('orders').select('*', { count: 'exact' }).in('order_type', ['FAK', 'GTC']).gte('created_at', twentyFourHoursAgo).limit(0)
   ])
 
   // Log any errors
