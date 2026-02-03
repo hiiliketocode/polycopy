@@ -1626,9 +1626,18 @@ export default function TraderProfilePage({
     if (realizedPnlRows.length === 0) return [];
     const option = pnlWindowOptions.find((entry) => entry.key === pnlWindow) ?? pnlWindowOptions[3];
     const lastIndex = realizedPnlRows.length - 1;
-    let anchorDate = toDateObj(realizedPnlRows[lastIndex].date);
     const todayStr = new Date().toISOString().slice(0, 10);
-    if (realizedPnlRows[lastIndex].date === todayStr && lastIndex > 0) {
+    const latestRowDate = realizedPnlRows[lastIndex].date;
+    
+    // For date windows, use the latest row date as anchor (not the previous day)
+    // This ensures "Yesterday" includes today's data if it's the most recent available
+    let anchorDate = toDateObj(latestRowDate);
+    
+    // Only use previous day as anchor if:
+    // 1. Latest row is today AND
+    // 2. There's a previous row AND  
+    // 3. We're NOT looking at "Yesterday" (1D) - for 1D, we want to include today's data
+    if (latestRowDate === todayStr && lastIndex > 0 && option.key !== '1D') {
       anchorDate = toDateObj(realizedPnlRows[lastIndex - 1].date);
     }
 
@@ -1658,18 +1667,22 @@ export default function TraderProfilePage({
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
-    // Debug logging for All Time window
-    if (process.env.NODE_ENV === 'development' && pnlWindow === 'ALL' && filtered.length > 0) {
+    // Debug logging for development
+    if (process.env.NODE_ENV === 'development' && filtered.length > 0) {
       const latest = filtered[filtered.length - 1];
-      console.log('[realizedWindowRows] All Time filter result:', {
+      console.log(`[realizedWindowRows] ${pnlWindow} filter result:`, {
+        window: pnlWindow,
         totalInputRows: realizedPnlRows.length,
         filteredRows: filtered.length,
+        anchorDate: anchorDate.toISOString().slice(0, 10),
+        startDate: startDate?.toISOString().slice(0, 10) || null,
+        endDate: endDate?.toISOString().slice(0, 10) || null,
         latestRow: {
           date: latest.date,
           realized_pnl: latest.realized_pnl,
           pnl_to_date: latest.pnl_to_date
         },
-        last5Filtered: filtered.slice(-5).map(r => ({ date: r.date, realized: r.realized_pnl, cumulative: r.pnl_to_date }))
+        filteredDates: filtered.map(r => r.date)
       });
     }
     
