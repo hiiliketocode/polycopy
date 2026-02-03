@@ -104,9 +104,9 @@ async function fetchWithRetry(url, options, attempt = 1) {
 }
 
 function toDateString(tsSeconds) {
-  // Dome API timestamps are one day behind - the timestamp represents the previous day's data
-  // So if timestamp is Feb 3 00:00 UTC, it actually means data for Feb 2
-  // We need to subtract 1 day to get the correct date
+  // Dome API gives today's date timestamp for yesterday's data
+  // Example: If today is Feb 3, Dome returns Feb 3 00:00 UTC timestamp for Feb 2's data
+  // So we subtract 1 day to get the correct date
   const date = new Date(tsSeconds * 1000)
   date.setUTCDate(date.getUTCDate() - 1)
   return date.toISOString().slice(0, 10) // YYYY-MM-DD in UTC
