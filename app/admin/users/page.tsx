@@ -344,6 +344,7 @@ export default async function AdminUsersPage() {
     quickCopies: Number(quickCopiesResult.count) || 0,
     premiumCount: Number(premiumCountResult.count) || 0,
     walletsConnected: Number(walletsConnectedResult.count) || 0,
+    mrr: (Number(premiumCountResult.count) || 0) * 20, // $20/month per premium subscriber
     signUps24h: Number(signUps24hResult.count) || 0,
     premiumUpgrades24h: Number(premiumUpgrades24hResult.count) || 0,
     manualCopies24h: (Number(manualCopiesWithType24hResult.count) || 0) + (Number(manualCopiesLegacy24hResult.count) || 0),

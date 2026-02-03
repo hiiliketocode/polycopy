@@ -42,6 +42,7 @@ export type AdminUserSummary = {
   // Row 2: Premium & wallets
   premiumCount: number
   walletsConnected: number
+  mrr: number // Monthly Recurring Revenue
   
   // Row 3: Last 24 hours
   signUps24h: number
