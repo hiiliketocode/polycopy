@@ -682,7 +682,7 @@ export default function TraderProfilePage({
               realized_pnl: latest.realized_pnl,
               pnl_to_date: latest.pnl_to_date
             },
-            last5Rows: daily.slice(-5).map(r => ({ date: r.date, realized: r.realized_pnl, cumulative: r.pnl_to_date }))
+            last5Rows: daily.slice(-5).map((r: RealizedPnlRow) => ({ date: r.date, realized: r.realized_pnl, cumulative: r.pnl_to_date }))
           });
         }
         
