@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const mod = await import('../../../../scripts/backfill-wallet-pnl.js')
+    const mod = await import('../../../../scripts/backfill/backfill-wallet-pnl.js')
     const runBackfillWalletPnl =
       mod.runBackfillWalletPnl ?? mod.default?.runBackfillWalletPnl
 

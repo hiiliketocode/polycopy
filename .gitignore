@@ -45,3 +45,6 @@ temp-newdesign/
 
 # large data files
 top5_ml_full.csv
+
+# Cursor configuration (contains secrets)
+.cursor/
