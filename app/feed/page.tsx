@@ -3953,9 +3953,6 @@ export default function FeedPage() {
                               : undefined
                           }
                           espnUrl={liveMarket?.espnUrl}
-                          homeTeam={liveMarket?.homeTeam ?? null}
-                          awayTeam={liveMarket?.awayTeam ?? null}
-                          gameTimeInfo={liveMarket?.gameTimeInfo ?? null}
                           defaultBuySlippage={defaultBuySlippage}
                           defaultSellSlippage={defaultSellSlippage}
                           walletAddress={walletAddress}
