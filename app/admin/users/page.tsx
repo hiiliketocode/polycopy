@@ -114,9 +114,9 @@ export default async function AdminUsersPage() {
       userId: wallet.user_id ?? null,
       email: profile?.email ?? null,
       detail: hasPrivateKey
-        ? `Imported turnkey private key ${wallet.turnkey_private_key_id}`
+        ? `Imported wallet via Turnkey`
         : `Linked wallet (${address})`,
-      extra: wallet.wallet_type ? `type: ${wallet.wallet_type}` : undefined
+      extra: undefined
     })
   }
 
