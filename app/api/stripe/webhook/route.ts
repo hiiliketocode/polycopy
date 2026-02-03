@@ -41,7 +41,9 @@ export async function POST(request: Request) {
         const userId = session.metadata?.supabase_user_id
         const customerId = session.customer as string
 
-        if (userId) {
+        // SECURITY: Only grant premium if payment is actually complete
+        // payment_status can be 'paid', 'unpaid', or 'no_payment_required'
+        if (userId && session.payment_status === 'paid') {
           // Update user profile
           await supabase
             .from('profiles')
@@ -91,6 +93,8 @@ export async function POST(request: Request) {
               console.error('❌ Failed to send premium confirmation email:', emailError)
             }
           }
+        } else if (userId && session.payment_status !== 'paid') {
+          console.log(`⚠️ Checkout completed but payment not confirmed for user ${userId}. Payment status: ${session.payment_status}`)
         }
         break
       }
