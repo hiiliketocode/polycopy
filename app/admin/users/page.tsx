@@ -301,6 +301,13 @@ export default async function AdminUsersPage() {
   // Calculate 24 hours ago timestamp
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
+  // Test basic orders table access
+  const testOrdersAccess = await supabase.from('orders').select('id', { count: 'exact', head: true })
+  console.log('[admin] TEST: Basic orders query (no filters):', {
+    error: testOrdersAccess.error,
+    count: testOrdersAccess.count
+  })
+
   // Query full database counts (not limited to fetched users)
   // For manual copies, we need to sum two queries due to PostgREST limitations
   const [
