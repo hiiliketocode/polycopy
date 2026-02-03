@@ -337,38 +337,6 @@ export default async function AdminUsersPage() {
     supabase.from('orders').select('*', { count: 'exact' }).in('order_type', ['FAK', 'GTC']).gte('created_at', twentyFourHoursAgo).limit(0)
   ])
 
-  // Log any errors
-  if (totalCopiesResult.error) {
-    console.error('[admin] totalCopiesResult error:', totalCopiesResult.error)
-  } else {
-    console.log('[admin] totalCopiesResult success, count:', totalCopiesResult.count)
-  }
-  
-  if (manualCopiesWithTypeResult.error) {
-    console.error('[admin] manualCopiesWithTypeResult error:', manualCopiesWithTypeResult.error)
-  } else {
-    console.log('[admin] manualCopiesWithTypeResult success, count:', manualCopiesWithTypeResult.count)
-  }
-  
-  if (manualCopiesLegacyResult.error) {
-    console.error('[admin] manualCopiesLegacyResult error:', manualCopiesLegacyResult.error)
-  } else {
-    console.log('[admin] manualCopiesLegacyResult success, count:', manualCopiesLegacyResult.count)
-  }
-  
-  if (quickCopiesResult.error) {
-    console.error('[admin] quickCopiesResult error:', quickCopiesResult.error)
-  } else {
-    console.log('[admin] quickCopiesResult success, count:', quickCopiesResult.count)
-  }
-
-  console.log('[admin] Query results:', {
-    totalCopies: totalCopiesResult.count,
-    manualWithType: manualCopiesWithTypeResult.count,
-    manualLegacy: manualCopiesLegacyResult.count,
-    quick: quickCopiesResult.count
-  })
-
   const summary: AdminUserSummary = {
     totalSignUps: Number(totalSignUpsResult.count) || 0,
     totalCopies: Number(totalCopiesResult.count) || 0,
@@ -381,8 +349,6 @@ export default async function AdminUsersPage() {
     manualCopies24h: (Number(manualCopiesWithType24hResult.count) || 0) + (Number(manualCopiesLegacy24hResult.count) || 0),
     quickCopies24h: Number(quickCopies24hResult.count) || 0
   }
-
-  console.log('[admin] Summary object:', summary)
 
   // Content data is now lazy-loaded client-side via AdminContentDataLoader
   // This significantly improves initial page load time
