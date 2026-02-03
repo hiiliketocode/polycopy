@@ -158,19 +158,19 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
             <div className="grid gap-4 md:grid-cols-4">
               <div className="border border-white/10 rounded-xl p-4">
                 <p className="text-xs text-slate-400 uppercase">Sign Ups (24h)</p>
-                <p className="text-2xl font-semibold">{summary.signUps24h}</p>
+                <p className="text-2xl font-semibold">{String(summary.signUps24h ?? 0)}</p>
               </div>
               <div className="border border-white/10 rounded-xl p-4">
                 <p className="text-xs text-slate-400 uppercase">Premium Upgrades (24h)</p>
-                <p className="text-2xl font-semibold">{summary.premiumUpgrades24h}</p>
+                <p className="text-2xl font-semibold">{String(summary.premiumUpgrades24h ?? 0)}</p>
               </div>
               <div className="border border-white/10 rounded-xl p-4">
                 <p className="text-xs text-slate-400 uppercase">Manual Copies (24h)</p>
-                <p className="text-2xl font-semibold">{summary.manualCopies24h}</p>
+                <p className="text-2xl font-semibold">{String(summary.manualCopies24h ?? 0)}</p>
               </div>
               <div className="border border-white/10 rounded-xl p-4">
                 <p className="text-xs text-slate-400 uppercase">Quick Copies (24h)</p>
-                <p className="text-2xl font-semibold">{summary.quickCopies24h}</p>
+                <p className="text-2xl font-semibold">{String(summary.quickCopies24h ?? 0)}</p>
               </div>
             </div>
           </div>
@@ -181,19 +181,19 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
             <div className="grid gap-4 md:grid-cols-4">
               <div className="border border-white/10 rounded-xl p-4">
                 <p className="text-xs text-slate-400 uppercase">Total Sign Ups</p>
-                <p className="text-2xl font-semibold">{summary.totalSignUps}</p>
+                <p className="text-2xl font-semibold">{String(summary.totalSignUps ?? 0)}</p>
               </div>
               <div className="border border-white/10 rounded-xl p-4">
                 <p className="text-xs text-slate-400 uppercase">Total Copies</p>
-                <p className="text-2xl font-semibold">{summary.totalCopies}</p>
+                <p className="text-2xl font-semibold">{String(summary.totalCopies ?? 0)}</p>
               </div>
               <div className="border border-white/10 rounded-xl p-4">
                 <p className="text-xs text-slate-400 uppercase">Manual Copies</p>
-                <p className="text-2xl font-semibold">{summary.manualCopies}</p>
+                <p className="text-2xl font-semibold">{String(summary.manualCopies ?? 0)}</p>
               </div>
               <div className="border border-white/10 rounded-xl p-4">
                 <p className="text-xs text-slate-400 uppercase">Quick Copies</p>
-                <p className="text-2xl font-semibold">{summary.quickCopies}</p>
+                <p className="text-2xl font-semibold">{String(summary.quickCopies ?? 0)}</p>
               </div>
             </div>
           </div>
@@ -204,11 +204,11 @@ export default function AdminUsersConsole({ users, events, tradeActivity, conten
             <div className="grid gap-4 md:grid-cols-4">
               <div className="border border-white/10 rounded-xl p-4">
                 <p className="text-xs text-slate-400 uppercase">Premium Subscribers</p>
-                <p className="text-2xl font-semibold">{summary.premiumCount}</p>
+                <p className="text-2xl font-semibold">{String(summary.premiumCount ?? 0)}</p>
               </div>
               <div className="border border-white/10 rounded-xl p-4">
                 <p className="text-xs text-slate-400 uppercase">Wallets Connected</p>
-                <p className="text-2xl font-semibold">{summary.walletsConnected}</p>
+                <p className="text-2xl font-semibold">{String(summary.walletsConnected ?? 0)}</p>
               </div>
               <div className="border border-white/10 rounded-xl p-4 opacity-40">
                 <p className="text-xs text-slate-400 uppercase">—</p>
