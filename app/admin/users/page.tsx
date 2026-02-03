@@ -302,6 +302,7 @@ export default async function AdminUsersPage() {
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
   // Query full database counts (not limited to fetched users)
+  // Note: We filter by copy_user_id NOT NULL to ensure we're only counting copy trades
   const [
     totalSignUpsResult,
     totalCopiesResult,
@@ -317,8 +318,8 @@ export default async function AdminUsersPage() {
     // Row 1: Cumulative totals
     supabase.from('profiles').select('id', { count: 'exact', head: true }),
     supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('trade_method', 'manual').not('copy_user_id', 'is', null),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('trade_method', 'quick').not('copy_user_id', 'is', null),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).eq('order_type', 'manual'),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).in('order_type', ['FAK', 'GTC']),
     
     // Row 2: Premium & wallets
     supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_premium', true),
@@ -327,8 +328,8 @@ export default async function AdminUsersPage() {
     // Row 3: Last 24 hours
     supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', twentyFourHoursAgo),
     supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('premium_since', twentyFourHoursAgo),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('trade_method', 'manual').not('copy_user_id', 'is', null).gte('created_at', twentyFourHoursAgo),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('trade_method', 'quick').not('copy_user_id', 'is', null).gte('created_at', twentyFourHoursAgo)
+    supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).eq('order_type', 'manual').gte('created_at', twentyFourHoursAgo),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).not('copy_user_id', 'is', null).in('order_type', ['FAK', 'GTC']).gte('created_at', twentyFourHoursAgo)
   ])
 
   const summary: AdminUserSummary = {
