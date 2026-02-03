@@ -337,10 +337,29 @@ export default async function AdminUsersPage() {
   ])
 
   // Log any errors
-  if (totalCopiesResult.error) console.error('[admin] totalCopiesResult error:', totalCopiesResult.error)
-  if (manualCopiesWithTypeResult.error) console.error('[admin] manualCopiesWithTypeResult error:', manualCopiesWithTypeResult.error)
-  if (manualCopiesLegacyResult.error) console.error('[admin] manualCopiesLegacyResult error:', manualCopiesLegacyResult.error)
-  if (quickCopiesResult.error) console.error('[admin] quickCopiesResult error:', quickCopiesResult.error)
+  if (totalCopiesResult.error) {
+    console.error('[admin] totalCopiesResult error:', totalCopiesResult.error)
+  } else {
+    console.log('[admin] totalCopiesResult success, count:', totalCopiesResult.count)
+  }
+  
+  if (manualCopiesWithTypeResult.error) {
+    console.error('[admin] manualCopiesWithTypeResult error:', manualCopiesWithTypeResult.error)
+  } else {
+    console.log('[admin] manualCopiesWithTypeResult success, count:', manualCopiesWithTypeResult.count)
+  }
+  
+  if (manualCopiesLegacyResult.error) {
+    console.error('[admin] manualCopiesLegacyResult error:', manualCopiesLegacyResult.error)
+  } else {
+    console.log('[admin] manualCopiesLegacyResult success, count:', manualCopiesLegacyResult.count)
+  }
+  
+  if (quickCopiesResult.error) {
+    console.error('[admin] quickCopiesResult error:', quickCopiesResult.error)
+  } else {
+    console.log('[admin] quickCopiesResult success, count:', quickCopiesResult.count)
+  }
 
   console.log('[admin] Query results:', {
     totalCopies: totalCopiesResult.count,
