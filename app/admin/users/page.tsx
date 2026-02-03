@@ -305,7 +305,16 @@ export default async function AdminUsersPage() {
   const testOrdersAccess = await supabase.from('orders').select('id', { count: 'exact', head: true })
   console.log('[admin] TEST: Basic orders query (no filters):', {
     error: testOrdersAccess.error,
-    count: testOrdersAccess.count
+    count: testOrdersAccess.count,
+    status: testOrdersAccess.status,
+    statusText: testOrdersAccess.statusText
+  })
+
+  // Try alternative count method
+  const testOrdersCount = await supabase.from('orders').select('*', { count: 'exact', head: false }).limit(0)
+  console.log('[admin] TEST: Alternative count method:', {
+    error: testOrdersCount.error,
+    count: testOrdersCount.count
   })
 
   // Query full database counts (not limited to fetched users)
