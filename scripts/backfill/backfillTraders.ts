@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 import { createClient } from '@supabase/supabase-js'
-import { syncTrader } from '../lib/ingestion/syncTrader'
-import { getAuthedClobClientForUserAnyWallet } from '../lib/polymarket/authed-client'
+import { syncTrader } from '../../lib/ingestion/syncTrader'
+import { getAuthedClobClientForUserAnyWallet } from '../../lib/polymarket/authed-client'
 
 type CliOptions = {
   limit?: number
