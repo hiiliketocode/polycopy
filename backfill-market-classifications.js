@@ -115,11 +115,12 @@ async function backfillClassifications() {
   
   while (true) {
     // Fetch markets with tags but no classification
+    // Check for missing market_subtype OR final_niche (both should be populated)
     const { data: markets, error } = await supabase
       .from('markets')
-      .select('condition_id, tags, market_subtype, bet_structure, market_type, title')
+      .select('condition_id, tags, market_subtype, final_niche, bet_structure, market_type, title')
       .not('tags', 'is', null)
-      .is('market_subtype', null)
+      .or('market_subtype.is.null,final_niche.is.null')
       .range(offset, offset + batchSize - 1);
     
     if (error) {
@@ -150,9 +151,15 @@ async function backfillClassifications() {
       const betStructure = inferBetStructure(market.title);
       
       // Prepare update
+      // Write to both market_subtype AND final_niche (redundancy for compatibility)
+      // trader_profile_stats uses final_niche, so we need both
       const updateData = {};
       if (nicheResult.niche && !market.market_subtype) {
         updateData.market_subtype = nicheResult.niche;
+      }
+      // Also write to final_niche (used by trader_profile_stats)
+      if (nicheResult.niche && !market.final_niche) {
+        updateData.final_niche = nicheResult.niche;
       }
       if (nicheResult.marketType && !market.market_type) {
         updateData.market_type = nicheResult.marketType;

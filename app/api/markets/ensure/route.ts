@@ -192,7 +192,8 @@ export async function GET(request: Request) {
       }
 
       // Niche: prefer existing, otherwise infer from tags with service role, then fallback to title
-      let finalNiche = (existingMarket.market_subtype || '').trim().toUpperCase() || null
+      // Check both market_subtype and final_niche (redundancy for compatibility)
+      let finalNiche = (existingMarket.market_subtype || existingMarket.final_niche || '').trim().toUpperCase() || null
       if (!finalNiche && hasTags) {
         const { niche } = await inferNicheFromTags(tags)
         finalNiche = niche || null
@@ -200,8 +201,12 @@ export async function GET(request: Request) {
       if (!finalNiche) {
         finalNiche = fallbackNicheFromTitle(existingMarket.title)
       }
+      // Update both columns if missing (redundancy for compatibility)
       if (!existingMarket.market_subtype && finalNiche) {
         updatedFields.market_subtype = finalNiche
+      }
+      if (!existingMarket.final_niche && finalNiche) {
+        updatedFields.final_niche = finalNiche
       }
 
       // Bet structure: prefer existing, otherwise infer from title
@@ -349,8 +354,13 @@ export async function GET(request: Request) {
     marketRow.tags = normalizedTags
     
     // Store classification
+    // Write to both market_subtype AND final_niche (redundancy for compatibility)
+    // trader_profile_stats uses final_niche, so we need both
     if (finalMarketType) marketRow.market_type = finalMarketType
-    if (finalNiche) marketRow.market_subtype = finalNiche
+    if (finalNiche) {
+      marketRow.market_subtype = finalNiche
+      marketRow.final_niche = finalNiche // Also populate final_niche for trader_profile_stats compatibility
+    }
     if (finalBetStructure) marketRow.bet_structure = finalBetStructure
     
     console.log('[ensureMarket] Classification result:', {
