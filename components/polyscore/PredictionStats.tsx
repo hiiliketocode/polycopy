@@ -879,11 +879,11 @@ export function PredictionStats({
             </div>
             <p className={cn(
               "text-sm md:text-base font-semibold tabular-nums mb-0.5",
-              tradeTypeAvgPnl >= 0 ? "text-emerald-600" : "text-red-600",
+              (tradeTypeAvgPnl ?? 0) >= 0 ? "text-emerald-600" : "text-red-600",
               hasInsufficientData && "opacity-50",
               hasLowSampleSize && "opacity-75"
             )}>
-              {hasInsufficientData ? 'N/A' : formatCurrency(tradeTypeAvgPnl)}
+              {hasInsufficientData ? 'N/A' : formatCurrency(tradeTypeAvgPnl ?? 0)}
             </p>
             {hasLowSampleSize && <p className="text-[9px] text-amber-600 font-medium mt-0.5">Low sample</p>}
             <p className="text-[10px] text-slate-500 font-medium">
@@ -911,15 +911,15 @@ export function PredictionStats({
             </div>
             <p className={cn(
               "text-sm md:text-base font-semibold tabular-nums mb-0.5",
-              tradeTypeRoiPct >= 0 ? "text-emerald-600" : "text-red-600",
+              (tradeTypeRoiPct ?? 0) >= 0 ? "text-emerald-600" : "text-red-600",
               hasInsufficientData && "opacity-50",
               hasLowSampleSize && "opacity-75"
             )}>
-              {hasInsufficientData ? 'N/A' : `${formatPercent(tradeTypeRoiPct * 100)}%`}
+              {hasInsufficientData ? 'N/A' : `${formatPercent((tradeTypeRoiPct ?? 0) * 100)}%`}
             </p>
             {hasLowSampleSize && <p className="text-[9px] text-amber-600 font-medium mt-0.5">Low sample</p>}
             <p className="text-[10px] text-slate-500 font-medium">
-              ({formatPercent(allTradesRoiPct * 100)}% all)
+              ({formatPercent((allTradesRoiPct ?? 0) * 100)}% all)
             </p>
           </div>
         )
