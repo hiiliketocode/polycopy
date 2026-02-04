@@ -162,7 +162,7 @@ export async function GET(request: Request) {
     // Step 1: Check if market exists in database
     const { data: existingMarket, error: queryError } = await supabase
       .from('markets')
-      .select('market_type, market_subtype, bet_structure, tags, title')
+      .select('market_type, market_subtype, final_niche, bet_structure, tags, title')
       .eq('condition_id', conditionId)
       .maybeSingle()
 
@@ -238,6 +238,7 @@ export async function GET(request: Request) {
             tags,
             market_type: updatedFields.market_type || existingMarket.market_type || null,
             market_subtype: updatedFields.market_subtype || existingMarket.market_subtype || null,
+            final_niche: updatedFields.final_niche || existingMarket.final_niche || updatedFields.market_subtype || existingMarket.market_subtype || null,
             bet_structure: updatedFields.bet_structure || existingMarket.bet_structure || null,
           }
         })
@@ -412,7 +413,7 @@ export async function GET(request: Request) {
     // Step 6: Re-fetch from database to get any computed fields
     const { data: savedMarket } = await supabase
       .from('markets')
-      .select('market_type, market_subtype, bet_structure, tags, title')
+      .select('market_type, market_subtype, final_niche, bet_structure, tags, title')
       .eq('condition_id', conditionId)
       .maybeSingle()
 
