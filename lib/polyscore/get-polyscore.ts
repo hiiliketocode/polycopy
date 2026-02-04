@@ -77,17 +77,26 @@ export interface PolyScoreResponse {
       niche_win_rate: number
       global_win_rate: number
       total_trades: number
+      tooltip?: string
+      label?: string
+      value?: string
     }
     momentum: {
       recent_win_rate: number
       is_hot: boolean
       current_streak: number
+      tooltip?: string
+      label?: string
+      value?: string
     }
     conviction: {
       z_score: number
       sizing_multiplier: string
       total_exposure_usd: number
       is_outlier: boolean
+      tooltip?: string
+      label?: string
+      value?: string
     }
     tactical: {
       strategy_type: string
@@ -96,6 +105,11 @@ export interface PolyScoreResponse {
       is_hedged: boolean
       is_chasing: boolean
       is_avg_down: boolean
+    }
+    timing?: {
+      tooltip?: string
+      label?: string
+      value?: string
     }
   }
   ui_presentation: {

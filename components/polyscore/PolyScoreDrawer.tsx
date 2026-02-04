@@ -280,14 +280,14 @@ export function PolyScoreDrawer({
                               <Info className="h-3.5 w-3.5 text-slate-400" />
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p className="text-xs max-w-xs">{data.drawer.competency.tooltip}</p>
+                              <p className="text-xs max-w-xs">{data.drawer.competency.tooltip || `Niche win rate: ${(data.drawer.competency.niche_win_rate * 100).toFixed(1)}%, Global: ${(data.drawer.competency.global_win_rate * 100).toFixed(1)}%`}</p>
                             </TooltipContent>
                           </Tooltip>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-600">{data.drawer.competency.label}</span>
+                          <span className="text-xs text-slate-600">{data.drawer.competency.label || 'Win Rate'}</span>
                           <span className="text-lg font-bold text-slate-900">
-                            {data.drawer.competency.value}
+                            {data.drawer.competency.value || `${(data.drawer.competency.niche_win_rate * 100).toFixed(1)}%`}
                           </span>
                         </div>
                       </div>
@@ -303,14 +303,14 @@ export function PolyScoreDrawer({
                               <Info className="h-3.5 w-3.5 text-slate-400" />
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p className="text-xs max-w-xs">{data.drawer.momentum.tooltip}</p>
+                              <p className="text-xs max-w-xs">{data.drawer.momentum.tooltip || `Recent win rate: ${(data.drawer.momentum.recent_win_rate * 100).toFixed(1)}%, Hot streak: ${data.drawer.momentum.current_streak}`}</p>
                             </TooltipContent>
                           </Tooltip>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-600">{data.drawer.momentum.label}</span>
+                          <span className="text-xs text-slate-600">{data.drawer.momentum.label || 'Momentum'}</span>
                           <span className="text-lg font-bold text-slate-900">
-                            {data.drawer.momentum.value}
+                            {data.drawer.momentum.value || (data.drawer.momentum.is_hot ? 'Hot' : 'Normal')}
                           </span>
                         </div>
                       </div>
@@ -349,14 +349,14 @@ export function PolyScoreDrawer({
                               <Info className="h-3.5 w-3.5 text-slate-400" />
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p className="text-xs max-w-xs">{data.drawer.timing.tooltip}</p>
+                              <p className="text-xs max-w-xs">{data.drawer.timing?.tooltip || data.drawer.tactical?.timing || 'Timing analysis'}</p>
                             </TooltipContent>
                           </Tooltip>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-600">{data.drawer.timing.label}</span>
+                          <span className="text-xs text-slate-600">{data.drawer.timing?.label || 'Timing'}</span>
                           <span className="text-lg font-bold text-slate-900">
-                            {data.drawer.timing.value}
+                            {data.drawer.timing?.value || data.drawer.tactical?.timing || 'N/A'}
                           </span>
                         </div>
                       </div>
