@@ -2578,7 +2578,7 @@ export default function FeedPage() {
           // Single query for all markets with timeout (Supabase supports up to 1000 items in .in())
           const queryPromise = supabase
             .from('markets')
-            .select('condition_id, tags, market_subtype, bet_structure, market_type, title, raw_dome')
+            .select('condition_id, tags, market_subtype, final_niche, bet_structure, market_type, title, raw_dome')
             .in('condition_id', uniqueConditionIds.slice(0, 1000)); // Limit to 1000 for safety
           
           const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) => 
@@ -2645,7 +2645,8 @@ export default function FeedPage() {
                 
                 marketDataMap.set(market.condition_id, {
                   tags: tags && tags.length > 0 ? tags : null, // Store normalized lowercase tags
-                  market_subtype: market.market_subtype || null,
+                  market_subtype: market.market_subtype || market.final_niche || null, // Use final_niche as fallback
+                  final_niche: market.final_niche || market.market_subtype || null, // Use market_subtype as fallback
                   bet_structure: market.bet_structure || null,
                   market_type: market.market_type || null,
                   title: market.title || null,
@@ -2665,7 +2666,7 @@ export default function FeedPage() {
                 const marketData = marketDataMap.get(id);
                 if (!marketData?.tags || marketData.tags.length === 0) {
                   missingConditionIds.push(id);
-                } else if (!marketData.market_subtype) {
+                } else if (!marketData.market_subtype && !marketData.final_niche) {
                   // Market exists with tags but no classification - ensure it gets classified
                   missingConditionIds.push(id);
                 }
@@ -2683,43 +2684,77 @@ export default function FeedPage() {
         }
       }
       
-      // STEP 2.5: Ensure missing markets exist in DB (NON-BLOCKING - happens in background)
-      // This uses /api/markets/ensure which handles DOME/CLOB API fetch and semantic mapping classification
-      // Don't wait for this - show trades immediately, tags will be available on next load
+      // STEP 2.5: Ensure missing markets exist in DB and get classification
+      // BLOCKING for first 10 markets to ensure they have classification immediately
+      // Remaining markets are ensured in background
       if (missingConditionIds.length > 0) {
-        console.log(`[Feed] ${missingConditionIds.length} markets missing - ensuring in background (non-blocking)`);
+        const criticalMarkets = missingConditionIds.slice(0, 10); // First 10 markets - ensure synchronously
+        const backgroundMarkets = missingConditionIds.slice(10, 30); // Rest - ensure in background
         
-        // Fire-and-forget: ensure markets in background without blocking trade display
-        // Trades will show immediately, tags will be available on next page load or refresh
-        Promise.allSettled(
-          missingConditionIds.slice(0, 20).map(async (conditionId) => {
-            try {
-              // Use /api/markets/ensure which:
-              // 1. Fetches from CLOB/DOME API
-              // 2. Extracts tags
-              // 3. Uses semantic_mapping to classify (niche, bet_structure, market_type)
-              // 4. Saves to DB
-              const ensureResponse = await fetch(`/api/markets/ensure?conditionId=${conditionId}`, {
-                cache: 'no-store',
-                signal: AbortSignal.timeout(8000), // 8s timeout per market
-              });
-              
-              if (ensureResponse.ok) {
-                const ensureData = await ensureResponse.json();
-                if (ensureData?.found && ensureData?.market) {
-                  console.log(`[Feed] ✅ Ensured market ${conditionId} in background`);
+        // BLOCKING: Ensure first 10 markets so they have classification immediately
+        if (criticalMarkets.length > 0) {
+          console.log(`[Feed] Ensuring ${criticalMarkets.length} critical markets synchronously...`);
+          await Promise.allSettled(
+            criticalMarkets.map(async (conditionId) => {
+              try {
+                const ensureResponse = await fetch(`/api/markets/ensure?conditionId=${conditionId}`, {
+                  cache: 'no-store',
+                  signal: AbortSignal.timeout(8000),
+                });
+                
+                if (ensureResponse.ok) {
+                  const ensureData = await ensureResponse.json();
+                  if (ensureData?.found && ensureData?.market) {
+                    // Update marketDataMap with classification from ensure API
+                    const marketData = marketDataMap.get(conditionId);
+                    if (marketData) {
+                      marketData.market_subtype = ensureData.market.market_subtype || ensureData.market.final_niche || null;
+                      marketData.final_niche = ensureData.market.final_niche || ensureData.market.market_subtype || null;
+                      marketData.bet_structure = ensureData.market.bet_structure || null;
+                    } else {
+                      // Market wasn't in map, add it
+                      marketDataMap.set(conditionId, {
+                        tags: ensureData.market.tags || null,
+                        market_subtype: ensureData.market.market_subtype || ensureData.market.final_niche || null,
+                        final_niche: ensureData.market.final_niche || ensureData.market.market_subtype || null,
+                        bet_structure: ensureData.market.bet_structure || null,
+                        market_type: ensureData.market.market_type || null,
+                        title: ensureData.market.title || null,
+                      });
+                    }
+                    console.log(`[Feed] ✅ Ensured market ${conditionId} synchronously`);
+                  }
+                }
+              } catch (err: any) {
+                if (err?.name !== 'AbortError') {
+                  console.warn(`[Feed] Ensure failed for ${conditionId}:`, err.message);
                 }
               }
-            } catch (err: any) {
-              // Silently fail - non-blocking
-              if (err?.name !== 'AbortError') {
-                console.warn(`[Feed] Background ensure failed for ${conditionId}`);
+            })
+          );
+        }
+        
+        // NON-BLOCKING: Ensure remaining markets in background
+        if (backgroundMarkets.length > 0) {
+          console.log(`[Feed] Ensuring ${backgroundMarkets.length} markets in background...`);
+          Promise.allSettled(
+            backgroundMarkets.map(async (conditionId) => {
+              try {
+                const ensureResponse = await fetch(`/api/markets/ensure?conditionId=${conditionId}`, {
+                  cache: 'no-store',
+                  signal: AbortSignal.timeout(8000),
+                });
+                if (ensureResponse.ok) {
+                  console.log(`[Feed] ✅ Ensured market ${conditionId} in background`);
+                }
+              } catch (err: any) {
+                if (err?.name !== 'AbortError') {
+                  console.warn(`[Feed] Background ensure failed for ${conditionId}`);
+                }
               }
-            }
-          })
-        ).then(() => {
-          console.log(`[Feed] Background ensure completed for ${Math.min(missingConditionIds.length, 20)} markets`);
-        });
+            })
+          );
+        }
       }
 
       // STEP 3: Format trades with market data from database (tags guaranteed to be available)
@@ -2837,7 +2872,7 @@ export default function FeedPage() {
             ),
             avatarUrl: extractMarketAvatarUrl(trade) || undefined,
             tags: (tags && Array.isArray(tags) && tags.length > 0) ? tags : undefined,
-            marketSubtype: dbMarketData?.market_subtype || undefined, // Pass niche from DB
+            marketSubtype: dbMarketData?.market_subtype || dbMarketData?.final_niche || undefined, // Pass niche from DB (use final_niche as fallback)
             betStructure: dbMarketData?.bet_structure || undefined, // Pass bet_structure from DB
           },
           trade: {
