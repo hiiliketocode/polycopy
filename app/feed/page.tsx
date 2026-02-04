@@ -2655,12 +2655,18 @@ export default function FeedPage() {
               }
             });
             
-            // Track missing markets (not in DB or missing tags)
+            // Track missing markets (not in DB, missing tags, OR missing classification)
             uniqueConditionIds.forEach((id) => {
               if (!foundIds.has(id)) {
                 missingConditionIds.push(id);
-              } else if (!marketDataMap.get(id)?.tags) {
-                missingConditionIds.push(id);
+              } else {
+                const marketData = marketDataMap.get(id);
+                if (!marketData?.tags || marketData.tags.length === 0) {
+                  missingConditionIds.push(id);
+                } else if (!marketData.market_subtype) {
+                  // Market exists with tags but no classification - ensure it gets classified
+                  missingConditionIds.push(id);
+                }
               }
             });
           } else {
