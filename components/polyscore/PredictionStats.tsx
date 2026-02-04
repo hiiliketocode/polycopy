@@ -708,9 +708,25 @@ export function PredictionStats({
           raw_d30_avg_trade_size_usd: globalStats?.d30_avg_trade_size_usd,
         })
 
+        console.log('[PredictionStats] ✅ About to setStats with data:', {
+          hasProfileWinRate: statsData.profile_L_win_rate !== undefined,
+          hasGlobalWinRate: statsData.global_L_win_rate !== undefined,
+          hasProfileCount: statsData.profile_L_count > 0,
+          hasGlobalCount: statsData.global_trade_count > 0,
+          profileWinRate: statsData.profile_L_win_rate,
+          globalWinRate: statsData.global_L_win_rate,
+          profileCount: statsData.profile_L_count,
+          globalCount: statsData.global_trade_count,
+        })
+        
         setStats(statsData)
+        setResolvedNiche(finalNiche)
+        setResolvedBetStructure(finalBetStructure)
+        
+        console.log('[PredictionStats] ✅ Stats set, setting loading to false')
       } catch (err: any) {
-        console.error('[PredictionStats] Error:', err)
+        console.error('[PredictionStats] ❌ Error:', err)
+        console.error('[PredictionStats] Error stack:', err?.stack)
         setError(err?.message || 'Failed to load stats')
         // Even on error, set default stats so UI doesn't break
         setStats({
