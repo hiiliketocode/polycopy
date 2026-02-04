@@ -396,58 +396,60 @@ export function PolyScoreDrawer({
               </div>
 
               {/* Analysis Factors */}
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-6">
-                <h4 className="text-sm font-semibold text-slate-900 mb-4">Analysis Factors</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-white border border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <Brain className={cn(
-                        'h-4 w-4',
-                        data.analysis.factors.is_smart_money ? 'text-emerald-600' : 'text-slate-400'
-                      )} />
-                      <span className="text-sm font-medium text-slate-900">Smart Money</span>
+              {data.analysis?.factors && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-6">
+                  <h4 className="text-sm font-semibold text-slate-900 mb-4">Analysis Factors</h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-white border border-slate-200">
+                      <div className="flex items-center gap-2">
+                        <Brain className={cn(
+                          'h-4 w-4',
+                          data.analysis.factors.is_smart_money ? 'text-emerald-600' : 'text-slate-400'
+                        )} />
+                        <span className="text-sm font-medium text-slate-900">Smart Money</span>
+                      </div>
+                      {data.analysis.factors.is_smart_money ? (
+                        <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                      ) : (
+                        <XCircle className="h-5 w-5 text-slate-300" />
+                      )}
                     </div>
-                    {data.analysis.factors.is_smart_money ? (
-                      <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                    ) : (
-                      <XCircle className="h-5 w-5 text-slate-300" />
-                    )}
-                  </div>
 
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-white border border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <DollarSign className={cn(
-                        'h-4 w-4',
-                        data.analysis.factors.is_value_bet ? 'text-emerald-600' : 'text-slate-400'
-                      )} />
-                      <span className="text-sm font-medium text-slate-900">Value Bet</span>
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-white border border-slate-200">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className={cn(
+                          'h-4 w-4',
+                          data.analysis.factors.is_value_bet ? 'text-emerald-600' : 'text-slate-400'
+                        )} />
+                        <span className="text-sm font-medium text-slate-900">Value Bet</span>
+                      </div>
+                      {data.analysis.factors.is_value_bet ? (
+                        <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                      ) : (
+                        <XCircle className="h-5 w-5 text-slate-300" />
+                      )}
                     </div>
-                    {data.analysis.factors.is_value_bet ? (
-                      <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                    ) : (
-                      <XCircle className="h-5 w-5 text-slate-300" />
-                    )}
-                  </div>
 
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-white border border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <Zap className={cn(
-                        'h-4 w-4',
-                        data.analysis.factors.is_heavy_bet ? 'text-emerald-600' : 'text-slate-400'
-                      )} />
-                      <span className="text-sm font-medium text-slate-900">Heavy Bet</span>
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-white border border-slate-200">
+                      <div className="flex items-center gap-2">
+                        <Zap className={cn(
+                          'h-4 w-4',
+                          data.analysis.factors.is_heavy_bet ? 'text-emerald-600' : 'text-slate-400'
+                        )} />
+                        <span className="text-sm font-medium text-slate-900">Heavy Bet</span>
+                      </div>
+                      {data.analysis.factors.is_heavy_bet ? (
+                        <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                      ) : (
+                        <XCircle className="h-5 w-5 text-slate-300" />
+                      )}
                     </div>
-                    {data.analysis.factors.is_heavy_bet ? (
-                      <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                    ) : (
-                      <XCircle className="h-5 w-5 text-slate-300" />
-                    )}
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Debug Info (Collapsible) */}
-              {data.analysis.debug && (
+              {data.analysis?.debug && (
                 <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <summary className="text-xs font-medium text-slate-600 cursor-pointer">
                     Debug Information
