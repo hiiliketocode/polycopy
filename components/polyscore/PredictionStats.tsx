@@ -263,16 +263,16 @@ export function PredictionStats({
               }
               
               // If still no tags, market needs to be ensured - trigger ensure API
-              if (tagsToUse.length === 0) {
+              if (tagsToUse.length === 0 && conditionId && conditionId.startsWith('0x')) {
                 console.warn(`[PredictionStats] Market ${conditionId} exists but has no tags - triggering ensure`);
                 // Trigger ensure in background (don't await)
-                fetch(`/api/markets/ensure?conditionId=${conditionId}`, { cache: 'no-store' })
+                fetch(`/api/markets/ensure?conditionId=${encodeURIComponent(conditionId)}`, { cache: 'no-store' })
                   .catch((err) => console.warn(`[PredictionStats] Failed to ensure market:`, err));
               }
-            } else if (!dbMarket) {
+            } else if (!dbMarket && conditionId && conditionId.startsWith('0x')) {
               // Market doesn't exist - trigger ensure
               console.warn(`[PredictionStats] Market ${conditionId} not in DB - triggering ensure`);
-              fetch(`/api/markets/ensure?conditionId=${conditionId}`, { cache: 'no-store' })
+              fetch(`/api/markets/ensure?conditionId=${encodeURIComponent(conditionId)}`, { cache: 'no-store' })
                 .catch((err) => console.warn(`[PredictionStats] Failed to ensure market:`, err));
             }
           } catch (err) {
