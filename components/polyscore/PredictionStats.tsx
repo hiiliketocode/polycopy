@@ -237,37 +237,59 @@ export function PredictionStats({
           }
         }
         
-        // Priority 3: Extract tags from market title as last resort
+        // Priority 3: Extract tags from market title as last resort (ALWAYS do this if tags empty)
         if (tagsToUse.length === 0 && marketTitle) {
           const titleLower = marketTitle.toLowerCase();
           const titleTags: string[] = [];
           
-          // Extract common categories from title
+          // Extract common categories from title - be aggressive
           if (titleLower.includes('nba') || titleLower.includes('basketball')) titleTags.push('nba');
-          if (titleLower.includes('nfl') || titleLower.includes('football')) titleTags.push('nfl');
+          if (titleLower.includes('nfl') || titleLower.includes('football') || titleLower.includes('super bowl')) titleTags.push('nfl');
           if (titleLower.includes('tennis')) titleTags.push('tennis');
-          if (titleLower.includes('crypto') || titleLower.includes('bitcoin')) titleTags.push('crypto');
-          if (titleLower.includes('politics') || titleLower.includes('election')) titleTags.push('politics');
-          if (titleLower.includes('sports')) titleTags.push('sports');
+          if (titleLower.includes('crypto') || titleLower.includes('bitcoin') || titleLower.includes('btc') || titleLower.includes('ethereum') || titleLower.includes('eth')) titleTags.push('crypto');
+          if (titleLower.includes('politics') || titleLower.includes('election') || titleLower.includes('trump') || titleLower.includes('biden')) titleTags.push('politics');
+          if (titleLower.includes('sports') || titleLower.includes('game') || titleLower.includes('match')) titleTags.push('sports');
           if (titleLower.includes('mlb') || titleLower.includes('baseball')) titleTags.push('mlb');
           if (titleLower.includes('nhl') || titleLower.includes('hockey')) titleTags.push('nhl');
+          if (titleLower.includes('soccer') || titleLower.includes('football')) titleTags.push('soccer');
+          if (titleLower.includes('mma') || titleLower.includes('ufc')) titleTags.push('mma');
+          if (titleLower.includes('golf') || titleLower.includes('pga')) titleTags.push('golf');
+          if (titleLower.includes('ncaa')) titleTags.push('ncaa');
+          
+          // Also check for team names that indicate sports
+          const teamIndicators = ['seahawks', 'patriots', 'cowboys', 'chiefs', 'packers', 'lakers', 'warriors', 'celtics', 'heat', 'bulls'];
+          if (teamIndicators.some(team => titleLower.includes(team))) {
+            if (titleLower.includes('basketball') || titleLower.includes('nba')) {
+              titleTags.push('nba');
+            } else if (titleLower.includes('football') || titleLower.includes('nfl')) {
+              titleTags.push('nfl');
+            } else {
+              titleTags.push('sports');
+            }
+          }
           
           if (titleTags.length > 0) {
-            tagsToUse = titleTags;
+            tagsToUse = Array.from(new Set(titleTags)); // De-dupe
+            console.log('[PredictionStats] ✅ Extracted tags from title:', {
+              title: marketTitle.substring(0, 50),
+              tags: tagsToUse,
+            });
           }
         }
         
         // De-dupe tags
         tagsToUse = Array.from(new Set(tagsToUse));
         
-        // Log summary (only if tags found or if debugging)
-        if (tagsToUse.length > 0) {
-          console.log('[PredictionStats] ✅ Collected tags:', {
-            count: tagsToUse.length,
-            tags: tagsToUse.slice(0, 5), // Log first 5 only
-            source: marketTags ? 'props' : 'db_or_title',
-          });
-        }
+        // Log summary for debugging
+        console.log('[PredictionStats] Tag collection result:', {
+          conditionId,
+          hasPropsTags: !!marketTags,
+          tagsFromProps: marketTags ? (Array.isArray(marketTags) ? marketTags.length : 'not-array') : 'none',
+          tagsCollected: tagsToUse.length,
+          tags: tagsToUse.length > 0 ? tagsToUse.slice(0, 5) : [],
+          source: marketTags ? 'props' : (tagsToUse.length > 0 ? 'db_or_title' : 'none'),
+          marketTitle: marketTitle?.substring(0, 50),
+        });
 
         // Semantic mapping lookup (primary niche resolver)
         if (tagsToUse.length > 0) {

@@ -2657,16 +2657,29 @@ export default function FeedPage() {
               if (clobResponse.ok) {
                 const clobMarket = await clobResponse.json();
                 if (clobMarket?.question) {
-                  // Extract tags from CLOB response
-                  let tags: string[] | null = null;
+                  // Extract tags from CLOB response - normalize aggressively
+                  let tags: string[] = [];
                   if (Array.isArray(clobMarket.tags) && clobMarket.tags.length > 0) {
-                    tags = clobMarket.tags.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
+                    tags = clobMarket.tags
+                      .map((t: any) => {
+                        if (typeof t === 'object' && t !== null) {
+                          return t.name || t.tag || t.value || String(t);
+                        }
+                        return String(t);
+                      })
+                      .map((t: string) => t.trim().toLowerCase())
+                      .filter((t: string) => t.length > 0 && t !== 'null' && t !== 'undefined');
                   }
                   
-                  // Update marketDataMap with CLOB data (even if tags are null, we have title)
+                  // Also try category if tags empty
+                  if (tags.length === 0 && clobMarket.category) {
+                    tags = [String(clobMarket.category).trim().toLowerCase()];
+                  }
+                  
+                  // Update marketDataMap with CLOB data
                   const existing = marketDataMap.get(conditionId);
                   marketDataMap.set(conditionId, {
-                    tags: tags || existing?.tags || null,
+                    tags: tags.length > 0 ? tags : (existing?.tags || null),
                     market_subtype: existing?.market_subtype || null,
                     bet_structure: existing?.bet_structure || null,
                     market_type: existing?.market_type || null,
@@ -2741,39 +2754,116 @@ export default function FeedPage() {
         // Get market data from batch-fetched map (preferred) or extract from trade
         const dbMarketData = conditionId ? marketDataMap.get(conditionId) : null;
         
-        // Extract tags: prefer database, then try trade data
-        let tags: string[] | null = null;
+        // Helper function to normalize tags from various sources
+        const normalizeTags = (source: any): string[] => {
+          if (!source) return [];
+          
+          // Handle arrays
+          if (Array.isArray(source)) {
+            return source
+              .map((t: any) => {
+                if (typeof t === 'object' && t !== null) {
+                  return t.name || t.tag || t.value || String(t);
+                }
+                return String(t);
+              })
+              .map((t: string) => t.trim().toLowerCase())
+              .filter((t: string) => t.length > 0 && t !== 'null' && t !== 'undefined');
+          }
+          
+          // Handle strings (could be JSON)
+          if (typeof source === 'string' && source.trim()) {
+            try {
+              const parsed = JSON.parse(source);
+              return normalizeTags(parsed);
+            } catch {
+              const trimmed = source.trim().toLowerCase();
+              return trimmed.length > 0 ? [trimmed] : [];
+            }
+          }
+          
+          // Handle objects
+          if (typeof source === 'object' && source !== null) {
+            if (source.tags && Array.isArray(source.tags)) {
+              return normalizeTags(source.tags);
+            }
+            if (source.data && Array.isArray(source.data)) {
+              return normalizeTags(source.data);
+            }
+          }
+          
+          return [];
+        };
         
-        if (dbMarketData?.tags && Array.isArray(dbMarketData.tags) && dbMarketData.tags.length > 0) {
-          tags = dbMarketData.tags;
-        } else {
-          // Fallback: try extracting from raw trade data
+        // Extract tags: Priority 1 = DB/CLOB, Priority 2 = trade data, Priority 3 = title extraction
+        let tags: string[] = [];
+        
+        // Priority 1: Database/CLOB market data
+        if (dbMarketData?.tags) {
+          tags = normalizeTags(dbMarketData.tags);
+        }
+        
+        // Priority 2: Try extracting from raw trade data
+        if (tags.length === 0) {
           const tagSources = [
             trade.tags,
             trade.market?.tags,
             trade.market_tags,
             trade.marketTags,
+            trade.category,
+            trade.market?.category,
+            trade.market_category,
+            trade.marketCategory,
           ];
           
           for (const source of tagSources) {
-            if (Array.isArray(source) && source.length > 0) {
-              tags = source.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
-              if (tags.length > 0) break;
-            }
-            if (typeof source === 'string' && source.trim()) {
-              try {
-                const parsed = JSON.parse(source);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  tags = parsed.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
-                  if (tags.length > 0) break;
-                }
-              } catch {
-                tags = [source.trim()];
-                break;
-              }
+            const normalized = normalizeTags(source);
+            if (normalized.length > 0) {
+              tags = normalized;
+              break;
             }
           }
         }
+        
+        // Priority 3: Extract from market title as LAST RESORT (ALWAYS do this if tags still empty)
+        if (tags.length === 0 && marketTitle) {
+          const titleLower = marketTitle.toLowerCase();
+          const titleTags: string[] = [];
+          
+          // Extract common categories from title - be aggressive
+          if (titleLower.includes('nba') || titleLower.includes('basketball')) titleTags.push('nba');
+          if (titleLower.includes('nfl') || titleLower.includes('football') || titleLower.includes('super bowl')) titleTags.push('nfl');
+          if (titleLower.includes('tennis')) titleTags.push('tennis');
+          if (titleLower.includes('crypto') || titleLower.includes('bitcoin') || titleLower.includes('btc') || titleLower.includes('ethereum') || titleLower.includes('eth')) titleTags.push('crypto');
+          if (titleLower.includes('politics') || titleLower.includes('election') || titleLower.includes('trump') || titleLower.includes('biden')) titleTags.push('politics');
+          if (titleLower.includes('sports') || titleLower.includes('game') || titleLower.includes('match')) titleTags.push('sports');
+          if (titleLower.includes('mlb') || titleLower.includes('baseball')) titleTags.push('mlb');
+          if (titleLower.includes('nhl') || titleLower.includes('hockey')) titleTags.push('nhl');
+          if (titleLower.includes('soccer') || titleLower.includes('football')) titleTags.push('soccer');
+          if (titleLower.includes('mma') || titleLower.includes('ufc')) titleTags.push('mma');
+          if (titleLower.includes('golf') || titleLower.includes('pga')) titleTags.push('golf');
+          if (titleLower.includes('ncaa')) titleTags.push('ncaa');
+          
+          // Also check for team names that indicate sports
+          const teamIndicators = ['seahawks', 'patriots', 'cowboys', 'chiefs', 'packers', 'lakers', 'warriors', 'celtics', 'heat', 'bulls'];
+          if (teamIndicators.some(team => titleLower.includes(team))) {
+            if (titleLower.includes('basketball') || titleLower.includes('nba')) {
+              titleTags.push('nba');
+            } else if (titleLower.includes('football') || titleLower.includes('nfl')) {
+              titleTags.push('nfl');
+            } else {
+              titleTags.push('sports');
+            }
+          }
+          
+          if (titleTags.length > 0) {
+            tags = Array.from(new Set(titleTags)); // De-dupe
+          }
+        }
+        
+        // ALWAYS ensure tags is an array (never null/undefined)
+        // If still empty, that's OK - PredictionStats will handle it
+        tags = tags || [];
         
         const formattedTrade: FeedTrade = {
           id: feedTradeId,
@@ -2791,7 +2881,7 @@ export default function FeedPage() {
               trade.category || trade.market_category || trade.marketCategory || trade.market?.category
             ),
             avatarUrl: extractMarketAvatarUrl(trade) || undefined,
-            tags: tags || undefined,
+            tags: tags.length > 0 ? tags : undefined,
           },
           trade: {
             side,
@@ -2920,12 +3010,22 @@ export default function FeedPage() {
         }
       });
 
-      // Market data already fetched in batch above - tags are guaranteed to be available
-      // Log summary of tag availability
+      // Market data already fetched in batch above - tags should be available
+      // Log summary of tag availability for debugging
       const tradesWithTags = uniqueFormattedTrades.filter(
         (t) => t.market.tags && Array.isArray(t.market.tags) && t.market.tags.length > 0
       );
-      console.log(`[Feed] Processed ${uniqueFormattedTrades.length} trades, ${tradesWithTags.length} have tags`);
+      const tradesWithoutTags = uniqueFormattedTrades.length - tradesWithTags.length;
+      console.log(`[Feed] Processed ${uniqueFormattedTrades.length} trades: ${tradesWithTags.length} with tags, ${tradesWithoutTags} without tags`);
+      
+      // Log sample of trades without tags for debugging
+      if (tradesWithoutTags > 0 && tradesWithoutTags <= 5) {
+        const sample = uniqueFormattedTrades
+          .filter((t) => !t.market.tags || !Array.isArray(t.market.tags) || t.market.tags.length === 0)
+          .slice(0, 3)
+          .map((t) => ({ conditionId: t.market.conditionId, title: t.market.title }));
+        console.log('[Feed] Sample trades without tags:', sample);
+      }
 
       const latestTimestamp =
         uniqueFormattedTrades.length > 0
