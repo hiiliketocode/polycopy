@@ -4,7 +4,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Info, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, ReactElement } from 'react'
 
 interface PredictionStatsProps {
   walletAddress: string
@@ -803,7 +803,7 @@ export function PredictionStats({
       {/* Trader Insight Stats Card */}
       {(() => {
         const showStreakCard = tradeTypeStreak >= 2 || allTradesStreak >= 2
-        const cards: JSX.Element[] = []
+        const cards: ReactElement[] = []
 
         cards.push(
           <div key="trade-count" className="text-center md:border-l border-slate-200 first:border-l-0">
