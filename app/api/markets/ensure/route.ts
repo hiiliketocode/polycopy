@@ -10,12 +10,13 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 })
 
 // Normalize tags coming from a variety of shapes (JSON string, array of strings, etc.)
+// CRITICAL: Must lowercase to match semantic_mapping table format
 function normalizeTags(rawTags: any): string[] {
   if (!rawTags) return []
   if (Array.isArray(rawTags)) {
     return rawTags
       .map((t: any) => (typeof t === 'string' ? t : String(t)))
-      .map((t: string) => t.trim())
+      .map((t: string) => t.trim().toLowerCase()) // CRITICAL: lowercase for semantic_mapping
       .filter((t: string) => t.length > 0)
   }
 
@@ -25,14 +26,14 @@ function normalizeTags(rawTags: any): string[] {
       if (Array.isArray(parsed)) {
         return parsed
           .map((t: any) => (typeof t === 'string' ? t : String(t)))
-          .map((t: string) => t.trim())
+          .map((t: string) => t.trim().toLowerCase()) // CRITICAL: lowercase for semantic_mapping
           .filter((t: string) => t.length > 0)
       }
     } catch {
       // Not JSON, treat as a single tag string
     }
 
-    const single = rawTags.trim()
+    const single = rawTags.trim().toLowerCase() // CRITICAL: lowercase for semantic_mapping
     return single.length > 0 ? [single] : []
   }
 
