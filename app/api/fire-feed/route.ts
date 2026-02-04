@@ -51,24 +51,28 @@ function winRateForTradeType(
   category?: string
 ): number | null {
   if (!stats) return null;
-  const normalizedCategory = category?.toLowerCase() ?? '';
-
-  if (stats.profiles && stats.profiles.length > 0 && normalizedCategory) {
+  
+  // If category is provided, try to find matching profile first
+  if (category && stats.profiles && stats.profiles.length > 0) {
+    const normalizedCategory = category.toLowerCase();
     const matchingProfile = stats.profiles.find((profile: any) => {
       const niche = (profile.final_niche || '').toLowerCase();
       if (!niche) return false;
       if (niche === normalizedCategory) return true;
-      return niche.includes(normalizedCategory);
+      return niche.includes(normalizedCategory) || normalizedCategory.includes(niche);
     });
 
-    const profileWinRate =
-      normalizeWinRateValue(matchingProfile?.d30_win_rate) ??
-      normalizeWinRateValue(matchingProfile?.win_rate);
-    if (profileWinRate !== null) {
-      return profileWinRate;
+    if (matchingProfile) {
+      const profileWinRate =
+        normalizeWinRateValue(matchingProfile?.d30_win_rate) ??
+        normalizeWinRateValue(matchingProfile?.win_rate);
+      if (profileWinRate !== null) {
+        return profileWinRate;
+      }
     }
   }
 
+  // Fallback to global stats (always use this if no category or no matching profile)
   const globalWinRate = normalizeWinRateValue(stats.globalWinRate);
   return globalWinRate;
 }
@@ -348,13 +352,19 @@ export async function GET(request: Request) {
             debugStats.sampleRejectedTrade = {
               wallet: wallet.slice(0, 10) + '...',
               conditionId: trade.condition_id?.slice(0, 20) + '...',
-              category,
+              category: category || 'undefined',
+              hasCategory: !!category,
+              winRate,
+              roiPct,
+              conviction,
               stats: {
                 globalWinRate: stats.globalWinRate,
                 globalRoiPct: stats.globalRoiPct,
                 avgBetSizeUsd: stats.avgBetSizeUsd,
                 d30_avg_trade_size_usd: stats.d30_avg_trade_size_usd,
+                l_avg_trade_size_usd: stats.l_avg_trade_size_usd,
                 profilesCount: stats.profiles?.length || 0,
+                tradeValue: Number(trade.shares_normalized ?? trade.size ?? 0) * Number(trade.price ?? 0),
               },
             };
           }
@@ -364,6 +374,22 @@ export async function GET(request: Request) {
         const meetsWinRate = winRate !== null && winRate >= FIRE_WIN_RATE_THRESHOLD;
         const meetsRoi = roiPct !== null && roiPct >= FIRE_ROI_THRESHOLD;
         const meetsConviction = conviction !== null && conviction >= FIRE_CONVICTION_MULTIPLIER_THRESHOLD;
+        
+        // Log first few trades that don't meet criteria for debugging
+        if (!meetsWinRate && !meetsRoi && !meetsConviction && debugStats.tradesChecked <= 5) {
+          console.log(`[FIRE Feed] Trade ${debugStats.tradesChecked} rejected:`, {
+            wallet: wallet.slice(0, 10) + '...',
+            category: category || 'undefined',
+            winRate: winRate !== null ? `${(winRate * 100).toFixed(1)}%` : 'null',
+            roiPct: roiPct !== null ? `${(roiPct * 100).toFixed(1)}%` : 'null',
+            conviction: conviction !== null ? `${conviction.toFixed(2)}x` : 'null',
+            thresholds: {
+              winRate: `${(FIRE_WIN_RATE_THRESHOLD * 100).toFixed(0)}%`,
+              roi: `${(FIRE_ROI_THRESHOLD * 100).toFixed(0)}%`,
+              conviction: `${FIRE_CONVICTION_MULTIPLIER_THRESHOLD}x`,
+            },
+          });
+        }
         
         if (meetsWinRate || meetsConviction || meetsRoi) {
           debugStats.tradesPassed++;
