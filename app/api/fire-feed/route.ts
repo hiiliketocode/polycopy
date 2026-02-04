@@ -259,9 +259,13 @@ export async function GET(request: Request) {
 
     // 3. Fetch trades from Polymarket API for each trader
     console.log('[fire-feed] Fetching trades from Polymarket API...');
-    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgoMs = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    console.log(`[fire-feed] Filtering trades since: ${new Date(thirtyDaysAgoMs).toISOString()}`);
     
-    const tradePromises = wallets.slice(0, FIRE_TOP_TRADERS_LIMIT).map(async (wallet) => {
+    let totalTradesFetched = 0;
+    let totalTradesAfterFilter = 0;
+    
+    const tradePromises = wallets.slice(0, FIRE_TOP_TRADERS_LIMIT).map(async (wallet, index) => {
       try {
         const response = await fetch(
           `https://data-api.polymarket.com/trades?user=${encodeURIComponent(wallet)}&limit=${FIRE_TRADES_PER_TRADER * 2}`, // Fetch more to filter
@@ -274,24 +278,65 @@ export async function GET(request: Request) {
         );
 
         if (!response.ok) {
-          console.warn(`[fire-feed] Failed to fetch trades for ${wallet.slice(0, 10)}...: ${response.status}`);
+          if (index < 3) {
+            console.warn(`[fire-feed] Failed to fetch trades for ${wallet.slice(0, 10)}...: ${response.status}`);
+          }
           return [];
         }
 
         const trades = await response.json();
-        if (!Array.isArray(trades)) return [];
+        if (!Array.isArray(trades)) {
+          if (index < 3) {
+            console.warn(`[fire-feed] Non-array response for ${wallet.slice(0, 10)}...:`, typeof trades);
+          }
+          return [];
+        }
+
+        totalTradesFetched += trades.length;
 
         // Filter to last 30 days and BUY trades only
-        return trades
+        // Handle timestamp: Polymarket can return seconds or milliseconds
+        const filteredTrades = trades
           .filter((trade: any) => {
-            const timestamp = typeof trade.timestamp === 'string' 
+            if (trade.side !== 'BUY') return false;
+            
+            let timestamp = typeof trade.timestamp === 'string' 
               ? parseInt(trade.timestamp) 
               : trade.timestamp;
-            return trade.side === 'BUY' && timestamp >= thirtyDaysAgo;
+            
+            // Convert to milliseconds if it's in seconds (< 10000000000 = before year 2001)
+            if (timestamp < 10000000000) {
+              timestamp = timestamp * 1000;
+            }
+            
+            const isRecent = timestamp >= thirtyDaysAgoMs;
+            
+            if (index < 3 && trades.length > 0) {
+              console.log(`[fire-feed] Sample trade for ${wallet.slice(0, 10)}...:`, {
+                side: trade.side,
+                rawTimestamp: trade.timestamp,
+                parsedTimestamp: timestamp,
+                timestampDate: new Date(timestamp).toISOString(),
+                thirtyDaysAgo: new Date(thirtyDaysAgoMs).toISOString(),
+                isRecent,
+              });
+            }
+            
+            return isRecent;
           })
           .slice(0, FIRE_TRADES_PER_TRADER);
+        
+        totalTradesAfterFilter += filteredTrades.length;
+        
+        if (index < 3 && filteredTrades.length > 0) {
+          console.log(`[fire-feed] ${wallet.slice(0, 10)}...: ${trades.length} total trades, ${filteredTrades.length} after filter`);
+        }
+        
+        return filteredTrades;
       } catch (error) {
-        console.warn(`[fire-feed] Error fetching trades for ${wallet.slice(0, 10)}...:`, error);
+        if (index < 3) {
+          console.warn(`[fire-feed] Error fetching trades for ${wallet.slice(0, 10)}...:`, error);
+        }
         return [];
       }
     });
@@ -306,7 +351,17 @@ export async function GET(request: Request) {
       }
     });
 
+    console.log(`[fire-feed] Summary: ${totalTradesFetched} total trades fetched, ${totalTradesAfterFilter} after 30-day filter`);
     console.log(`[fire-feed] Fetched trades for ${tradesByWallet.size} traders`);
+    
+    if (tradesByWallet.size === 0) {
+      console.warn('[fire-feed] ⚠️  No trades found after filtering!');
+      console.warn(`[fire-feed] Checked ${wallets.length} traders, fetched ${totalTradesFetched} trades`);
+      console.warn(`[fire-feed] Possible issues:`);
+      console.warn(`  - All trades are older than 30 days`);
+      console.warn(`  - All trades are SELL (not BUY)`);
+      console.warn(`  - Timestamp format mismatch`);
+    }
 
     // 4. Filter trades based on FIRE criteria
     const fireTrades: any[] = [];
@@ -324,10 +379,15 @@ export async function GET(request: Request) {
       sampleRejectedTrade: null as any,
     };
     
+    console.log(`[fire-feed] Starting to filter ${Array.from(tradesByWallet.values()).reduce((sum, t) => sum + t.length, 0)} trades through thresholds...`);
+    
     for (const [wallet, trades] of tradesByWallet.entries()) {
       const stats = statsMap.get(wallet);
       if (!stats) {
         debugStats.tradersWithoutStats++;
+        if (debugStats.tradersWithoutStats <= 3) {
+          console.warn(`[fire-feed] Trader ${wallet.slice(0, 10)}... has no stats, skipping ${trades.length} trades`);
+        }
         continue;
       }
 
@@ -358,6 +418,26 @@ export async function GET(request: Request) {
         const meetsRoi = roiPct !== null && roiPct >= FIRE_ROI_THRESHOLD;
         const meetsConviction = conviction !== null && conviction >= FIRE_CONVICTION_MULTIPLIER_THRESHOLD;
         
+        // Log first few trades for debugging
+        if (debugStats.tradesChecked <= 5) {
+          console.log(`[fire-feed] Trade ${debugStats.tradesChecked}:`, {
+            wallet: wallet.slice(0, 10) + '...',
+            category: category || 'undefined',
+            winRate: winRate !== null ? `${(winRate * 100).toFixed(1)}%` : 'null',
+            roiPct: roiPct !== null ? `${(roiPct * 100).toFixed(1)}%` : 'null',
+            conviction: conviction !== null ? `${conviction.toFixed(2)}x` : 'null',
+            meetsWinRate,
+            meetsRoi,
+            meetsConviction,
+            passes: meetsWinRate || meetsRoi || meetsConviction,
+            thresholds: {
+              winRate: `${(FIRE_WIN_RATE_THRESHOLD * 100).toFixed(0)}%`,
+              roi: `${(FIRE_ROI_THRESHOLD * 100).toFixed(0)}%`,
+              conviction: `${FIRE_CONVICTION_MULTIPLIER_THRESHOLD}x`,
+            },
+          });
+        }
+        
         if (meetsWinRate || meetsRoi || meetsConviction) {
           debugStats.tradesPassed++;
           if (meetsWinRate) debugStats.passedByWinRate++;
@@ -369,9 +449,14 @@ export async function GET(request: Request) {
           if (meetsConviction) reasons.push('conviction');
           if (meetsRoi) reasons.push('roi');
           
-          const timestamp = typeof trade.timestamp === 'string' 
+          let timestamp = typeof trade.timestamp === 'string' 
             ? parseInt(trade.timestamp) 
             : trade.timestamp;
+          
+          // Convert to milliseconds if needed
+          if (timestamp < 10000000000) {
+            timestamp = timestamp * 1000;
+          }
           
           const formattedTrade = {
             id: trade.id || `${wallet}-${timestamp}`,
