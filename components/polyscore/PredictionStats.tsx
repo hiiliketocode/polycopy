@@ -53,6 +53,8 @@ export function PredictionStats({
   marketTitle = '',
   marketCategory,
   marketTags,
+  marketSubtype: propMarketSubtype, // niche from feed (already classified)
+  betStructure: propBetStructure, // bet_structure from feed (already classified)
   isAdmin = false,
 }: PredictionStatsProps) {
   const [stats, setStats] = useState<StatsData | null>(null)
@@ -149,7 +151,7 @@ export function PredictionStats({
 
         // Fetch market data from database to get classification
         // PRIORITY: Use props if provided (already classified by feed)
-        let finalNiche = propMarketSubtype ? propMarketSubtype.toUpperCase() : niche
+        let finalNiche = propMarketSubtype ? propMarketSubtype.toUpperCase() : (niche || null)
         let finalBetStructure = propBetStructure ? propBetStructure.toUpperCase() : betStructure
         
         // Market data (tags, market_subtype, bet_structure) is batch-fetched in feed page
