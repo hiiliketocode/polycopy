@@ -46,6 +46,8 @@ interface StatsData {
   profile_L_avg_trade_size_usd?: number
 }
 
+type TimePeriod = '7d' | '30d' | 'all'
+
 export function PredictionStats({ 
   walletAddress, 
   conditionId, 
@@ -63,6 +65,11 @@ export function PredictionStats({
   const [error, setError] = useState<string | null>(null)
   const [resolvedNiche, setResolvedNiche] = useState<string | null>(null)
   const [resolvedBetStructure, setResolvedBetStructure] = useState<string>('STANDARD')
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>('30d')
+  
+  // Store raw API response so we can re-render with different time periods without refetching
+  const [rawGlobalStats, setRawGlobalStats] = useState<any>(null)
+  const [rawProfileStats, setRawProfileStats] = useState<any[]>([])
 
   // Helper: fetch with timeout to avoid hanging UI on slow endpoints
   const fetchWithTimeout = async (url: string, opts: RequestInit = {}, timeoutMs = 15000) => {
@@ -97,6 +104,15 @@ export function PredictionStats({
   // - display badge: still flag low sample when <5 trades
   const MIN_TRADES_SELECTION = 1
   const LOW_SAMPLE_THRESHOLD = 5
+
+  // Helper to get the appropriate field based on time period
+  const getTimePeriodPrefix = (period: TimePeriod): string => {
+    switch (period) {
+      case '7d': return 'd7'
+      case '30d': return 'd30'
+      case 'all': return 'l'
+    }
+  }
 
   // Helper: pick the first finite number in a list (case-insensitive fields supported upstream)
   const pickNumber = (...values: Array<number | string | null | undefined>) => {
@@ -139,11 +155,20 @@ export function PredictionStats({
     return null
   }, [marketTags])
 
+  // Track previous wallet/conditionId to detect if only timePeriod changed
+  const [lastFetchKey, setLastFetchKey] = useState<string>('')
+  
   useEffect(() => {
     if (!walletAddress || !conditionId) return
 
+    const currentFetchKey = `${walletAddress}-${conditionId}`
+    const onlyTimePeriodChanged = lastFetchKey === currentFetchKey && rawGlobalStats !== null
+
     const fetchStats = async () => {
-      setLoading(true)
+      // Don't show loading spinner if we're just reprocessing existing data for a new time period
+      if (!onlyTimePeriodChanged) {
+        setLoading(true)
+      }
       setError(null)
 
       console.log('[PredictionStats] fetchStats called', {
@@ -152,6 +177,8 @@ export function PredictionStats({
         propBetStructure,
         hasMarketTags: !!marketTags,
         marketTagsLength: Array.isArray(marketTags) ? marketTags.length : 0,
+        timePeriod,
+        onlyTimePeriodChanged,
         timestamp: new Date().toISOString(),
       })
 
@@ -384,91 +411,99 @@ export function PredictionStats({
         })
 
         // Fetch stats via API route (uses service role key, bypasses RLS)
+        // Skip fetch if we're just changing time period and have cached data
         let globalStats: any = null
         let profileStats: any[] = []
-        try {
-          console.log('[PredictionStats] Fetching trader stats for wallet:', wallet)
-          const response = await fetch(`/api/trader/stats?wallet=${encodeURIComponent(wallet)}`)
-          
-          if (!response.ok) {
-            const errorText = await response.text()
-            console.error('[PredictionStats] ❌ API route error:', {
-              status: response.status,
-              statusText: response.statusText,
-              error: errorText,
+        
+        if (onlyTimePeriodChanged && rawGlobalStats !== null) {
+          console.log('[PredictionStats] Using cached raw stats for time period change')
+          globalStats = rawGlobalStats
+          profileStats = rawProfileStats
+        } else {
+          try {
+            console.log('[PredictionStats] Fetching trader stats for wallet:', wallet)
+            const response = await fetch(`/api/trader/stats?wallet=${encodeURIComponent(wallet)}`)
+            
+            if (!response.ok) {
+              const errorText = await response.text()
+              console.error('[PredictionStats] ❌ API route error:', {
+                status: response.status,
+                statusText: response.statusText,
+                error: errorText,
+              })
+              throw new Error(`Stats API failed: ${response.status} ${response.statusText}`)
+            }
+            
+            const data = await response.json()
+            globalStats = data.global || null
+            profileStats = data.profiles || []
+            
+            // Update the fetch key after successful fetch
+            setLastFetchKey(currentFetchKey)
+            
+            console.log('[PredictionStats] Stats API response:', {
+              wallet: wallet,
+              hasGlobalStats: !!globalStats,
+              globalStatsKeys: globalStats ? Object.keys(globalStats) : [],
+              profileStatsCount: profileStats.length,
+              globalStatsSample: globalStats ? {
+                l_win_rate: globalStats.l_win_rate,
+                d30_win_rate: globalStats.d30_win_rate,
+                d7_win_rate: globalStats.d7_win_rate,
+                l_count: globalStats.l_count,
+                d30_count: globalStats.d30_count,
+                d7_count: globalStats.d7_count,
+              } : null,
             })
-            throw new Error(`Stats API failed: ${response.status} ${response.statusText}`)
+          } catch (statsErr: any) {
+            console.error('[PredictionStats] ❌ Stats fetch failed', statsErr)
+            setError('Trader insights unavailable')
+            // Don't set empty stats - let component show error state
+            setStats(null)
+            setLoading(false)
+            return
           }
-          
-          const data = await response.json()
-          globalStats = data.global || null
-          profileStats = data.profiles || []
-          
-          console.log('[PredictionStats] Stats API response:', {
-            wallet: wallet,
-            hasGlobalStats: !!globalStats,
-            globalStatsKeys: globalStats ? Object.keys(globalStats) : [],
-            profileStatsCount: profileStats.length,
-            globalStatsSample: globalStats ? {
-              l_win_rate: globalStats.l_win_rate,
-              d30_win_rate: globalStats.d30_win_rate,
-              l_count: globalStats.l_count,
-              d30_count: globalStats.d30_count,
-            } : null,
-          })
-        } catch (statsErr: any) {
-          console.error('[PredictionStats] ❌ Stats fetch failed', statsErr)
-          setError('Trader insights unavailable')
-          // Don't set empty stats - let component show error state
-          setStats(null)
-          setLoading(false)
-          return
         }
 
+        // Store raw stats for time period switching
+        setRawGlobalStats(globalStats)
+        setRawProfileStats(profileStats)
+        
         // Normalize global stats - sync script writes lowercase fields from BigQuery
         console.log('[PredictionStats] Available globalStats fields:', globalStats ? Object.keys(globalStats) : 'null')
         console.log('[PredictionStats] Raw globalStats values:', globalStats)
         
-        // Sync script writes: l_win_rate, d30_win_rate, l_total_roi_pct, l_count, l_avg_trade_size_usd
-        // Table schema shows: global_win_rate, global_roi_pct, total_lifetime_trades, avg_bet_size_usdc
-        // Check BOTH sets of field names to handle either case
+        // Helper to pick stats based on time period
+        // Priority: selected period → fallback to lifetime
+        const prefix = getTimePeriodPrefix(timePeriod)
+        const lifetimePrefix = 'l'
+        
         const globalWinRate = pickNumber(
-          // Fields from sync script (BigQuery → Supabase)
-          globalStats?.d30_win_rate, globalStats?.D30_win_rate, // 30-day preferred
-          globalStats?.l_win_rate, globalStats?.L_win_rate, // lifetime fallback
-          // Fields from table schema
-          globalStats?.recent_win_rate, // 30-day from schema
-          globalStats?.global_win_rate, // lifetime from schema
+          globalStats?.[`${prefix}_win_rate`], globalStats?.[`${prefix.toUpperCase()}_win_rate`],
+          globalStats?.[`${lifetimePrefix}_win_rate`], globalStats?.[`${lifetimePrefix.toUpperCase()}_win_rate`],
+          globalStats?.global_win_rate,
         )
 
         const globalRoiPct = pickNumber(
-          // Fields from sync script
-          globalStats?.d30_total_roi_pct, globalStats?.D30_total_roi_pct, // 30-day preferred
-          globalStats?.l_total_roi_pct, globalStats?.L_total_roi_pct, // lifetime fallback
-          // Fields from table schema
+          globalStats?.[`${prefix}_total_roi_pct`], globalStats?.[`${prefix.toUpperCase()}_total_roi_pct`],
+          globalStats?.[`${lifetimePrefix}_total_roi_pct`], globalStats?.[`${lifetimePrefix.toUpperCase()}_total_roi_pct`],
           globalStats?.global_roi_pct,
         )
 
         const globalAvgPnlUsd = pickNumber(
-          // Fields from sync script
-          globalStats?.d30_avg_pnl_trade_usd, globalStats?.D30_avg_pnl_trade_usd,
-          globalStats?.l_avg_pnl_trade_usd, globalStats?.L_avg_pnl_trade_usd,
+          globalStats?.[`${prefix}_avg_pnl_trade_usd`], globalStats?.[`${prefix.toUpperCase()}_avg_pnl_trade_usd`],
+          globalStats?.[`${lifetimePrefix}_avg_pnl_trade_usd`], globalStats?.[`${lifetimePrefix.toUpperCase()}_avg_pnl_trade_usd`],
         )
 
-        // Trade size - sync script writes l_avg_trade_size_usd, table schema has avg_bet_size_usdc
         const globalAvgTradeSizeUsd = pickNumber(
-          // Fields from sync script
-          globalStats?.d30_avg_trade_size_usd, globalStats?.D30_avg_trade_size_usd, // 30-day preferred
-          globalStats?.l_avg_trade_size_usd, globalStats?.L_avg_trade_size_usd, // lifetime fallback
-          // Fields from table schema
+          globalStats?.[`${prefix}_avg_trade_size_usd`], globalStats?.[`${prefix.toUpperCase()}_avg_trade_size_usd`],
+          globalStats?.[`${lifetimePrefix}_avg_trade_size_usd`], globalStats?.[`${lifetimePrefix.toUpperCase()}_avg_trade_size_usd`],
           globalStats?.avg_bet_size_usdc,
         )
 
         const globalTradeCount = pickNumber(
-          // Fields from sync script
-          globalStats?.d30_count, globalStats?.D30_count, // 30-day preferred
-          globalStats?.l_count, globalStats?.L_count, // lifetime fallback
-          // Fields from table schema
+          globalStats?.[`${prefix}_count`], globalStats?.[`${prefix.toUpperCase()}_count`],
+          globalStats?.[`${lifetimePrefix}_count`], globalStats?.[`${lifetimePrefix.toUpperCase()}_count`],
           globalStats?.total_lifetime_trades,
         )
 
@@ -477,20 +512,16 @@ export function PredictionStats({
           globalStats?.l_avg_pos_size_usd, globalStats?.L_avg_pos_size_usd, // From sync script
         ) ?? globalAvgTradeSizeUsd ?? null
         
-        console.log('[PredictionStats] Extracted global stats:', {
+        console.log('[PredictionStats] Extracted global stats for period:', timePeriod, {
           globalWinRate,
           globalRoiPct,
           globalAvgPnlUsd,
           globalAvgTradeSizeUsd,
           globalTradeCount,
           globalAvgPosSizeUsd,
-          // Debug: show what we found
-          found_l_win_rate: globalStats?.l_win_rate,
+          found_d7_win_rate: globalStats?.d7_win_rate,
           found_d30_win_rate: globalStats?.d30_win_rate,
-          found_l_total_roi_pct: globalStats?.l_total_roi_pct,
-          found_l_count: globalStats?.l_count,
-          found_l_avg_trade_size_usd: globalStats?.l_avg_trade_size_usd,
-          found_avg_bet_size_usdc: globalStats?.avg_bet_size_usdc,
+          found_l_win_rate: globalStats?.l_win_rate,
         })
 
         // Safety check: if averages seem unreasonably high compared to current trade, cap them
@@ -521,26 +552,55 @@ export function PredictionStats({
           const structureVal = normalizeKey(p.bet_structure || p.structure)
           const bracketVal = normalizeBracket(p.price_bracket || p.bracket)
 
+          // Get counts for each period
+          const d7Count = pickNumber(p.d7_count, p.D7_count)
           const d30Count = pickNumber(p.d30_count, p.D30_count)
           const lCount = pickNumber(p.trade_count, p.l_count, p.L_count)
-          const use30 = d30Count !== null && d30Count !== undefined && d30Count >= MIN_TRADES_SELECTION
-          const tradeCount = use30 ? d30Count! : (lCount ?? 0)
+          
+          // Determine which period to use based on selected time period
+          let usePrefix: string
+          let tradeCount: number
+          let windowLabel: string
+          
+          if (timePeriod === '7d' && d7Count !== null && d7Count !== undefined && d7Count >= MIN_TRADES_SELECTION) {
+            usePrefix = 'd7'
+            tradeCount = d7Count
+            windowLabel = '7d'
+          } else if (timePeriod === '30d' && d30Count !== null && d30Count !== undefined && d30Count >= MIN_TRADES_SELECTION) {
+            usePrefix = 'd30'
+            tradeCount = d30Count
+            windowLabel = '30d'
+          } else if (timePeriod === 'all') {
+            usePrefix = 'l'
+            tradeCount = lCount ?? 0
+            windowLabel = 'lifetime'
+          } else {
+            // Fallback: if selected period has no data, try lifetime
+            usePrefix = 'l'
+            tradeCount = lCount ?? 0
+            windowLabel = 'lifetime'
+          }
 
-          const winRate = use30
-            ? pickNumber(p.d30_win_rate, p.D30_win_rate)
-            : pickNumber(p.win_rate, p.l_win_rate, p.L_win_rate)
+          const winRate = pickNumber(
+            p[`${usePrefix}_win_rate`], p[`${usePrefix.toUpperCase()}_win_rate`],
+            p.win_rate, p.l_win_rate, p.L_win_rate
+          )
 
-          const roiPct = use30
-            ? pickNumber(p.d30_total_roi_pct, p.D30_total_roi_pct, p.d30_roi_pct)
-            : pickNumber(p.roi_pct, p.l_roi_pct, p.L_roi_pct, p.l_total_roi_pct, p.L_total_roi_pct)
+          const roiPct = pickNumber(
+            p[`${usePrefix}_total_roi_pct`], p[`${usePrefix.toUpperCase()}_total_roi_pct`],
+            p[`${usePrefix}_roi_pct`], p[`${usePrefix.toUpperCase()}_roi_pct`],
+            p.roi_pct, p.l_roi_pct, p.L_roi_pct, p.l_total_roi_pct, p.L_total_roi_pct
+          )
 
-          const avgPnlUsd = use30
-            ? pickNumber(p.d30_avg_pnl_trade_usd, p.D30_avg_pnl_trade_usd)
-            : pickNumber(p.l_avg_pnl_trade_usd, p.avg_pnl_trade_usd, p.L_avg_pnl_trade_usd)
+          const avgPnlUsd = pickNumber(
+            p[`${usePrefix}_avg_pnl_trade_usd`], p[`${usePrefix.toUpperCase()}_avg_pnl_trade_usd`],
+            p.l_avg_pnl_trade_usd, p.avg_pnl_trade_usd, p.L_avg_pnl_trade_usd
+          )
 
-          const avgTradeSizeUsd = use30
-            ? pickNumber(p.d30_avg_trade_size_usd, p.D30_avg_trade_size_usd)
-            : pickNumber(p.l_avg_trade_size_usd, p.L_avg_trade_size_usd)
+          const avgTradeSizeUsd = pickNumber(
+            p[`${usePrefix}_avg_trade_size_usd`], p[`${usePrefix.toUpperCase()}_avg_trade_size_usd`],
+            p.l_avg_trade_size_usd, p.L_avg_trade_size_usd
+          )
 
           return {
             niche: nicheVal,
@@ -551,7 +611,7 @@ export function PredictionStats({
             avg_pnl_usd: avgPnlUsd ?? 0,
             avg_trade_size_usd: avgTradeSizeUsd ?? null,
             trade_count: tradeCount,
-            window: use30 ? '30d' : 'lifetime',
+            window: windowLabel,
           }
         }
 
@@ -762,7 +822,7 @@ export function PredictionStats({
     }
 
     fetchStats()
-  }, [walletAddress, conditionId, price, size, priceBracket, marketTags, marketTitle, marketCategory, isAdmin, propMarketSubtype, propBetStructure])
+  }, [walletAddress, conditionId, price, size, priceBracket, marketTags, marketTitle, marketCategory, isAdmin, propMarketSubtype, propBetStructure, timePeriod])
 
   // Only show N/A if stats is null or if we truly have no data
   // Since we always set trade_profile and use defaults, we should always have data
@@ -880,20 +940,62 @@ export function PredictionStats({
     <div className="mt-4 mb-4">
       {/* Header */}
       <div className="mb-2">
-        <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2 flex-wrap">
-          <span>Trader Insights</span>
-          <div className="inline-flex flex-wrap gap-1">
-            <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
-              Niche: {(resolvedNiche || stats.trade_profile?.split('_')?.[0] || 'other')?.toString().toLowerCase() || 'other'}
-            </span>
-            <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
-              Bet: {(resolvedBetStructure || stats.trade_profile?.split('_')?.[1])?.toString().toLowerCase() ?? 'standard'}
-            </span>
-            <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
-              Price: {(priceBracket || stats.trade_profile?.split('_')?.[2])?.toString().toLowerCase() ?? 'even'}
-            </span>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2 flex-wrap">
+            <span>Trader Insights</span>
+            <div className="inline-flex flex-wrap gap-1">
+              <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
+                Niche: {(resolvedNiche || stats.trade_profile?.split('_')?.[0] || 'other')?.toString().toLowerCase() || 'other'}
+              </span>
+              <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
+                Bet: {(resolvedBetStructure || stats.trade_profile?.split('_')?.[1])?.toString().toLowerCase() ?? 'standard'}
+              </span>
+              <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
+                Price: {(priceBracket || stats.trade_profile?.split('_')?.[2])?.toString().toLowerCase() ?? 'even'}
+              </span>
+            </div>
+          </h3>
+          
+          {/* Time Period Toggle */}
+          <div className="inline-flex rounded-md shadow-sm" role="group">
+            <button
+              type="button"
+              onClick={() => setTimePeriod('7d')}
+              className={cn(
+                "px-2.5 py-1 text-[11px] font-medium rounded-l-md border transition-colors",
+                timePeriod === '7d'
+                  ? "bg-slate-900 text-white border-slate-900"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+              )}
+            >
+              7D
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimePeriod('30d')}
+              className={cn(
+                "px-2.5 py-1 text-[11px] font-medium border-t border-b transition-colors",
+                timePeriod === '30d'
+                  ? "bg-slate-900 text-white border-slate-900"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+              )}
+            >
+              30D
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimePeriod('all')}
+              className={cn(
+                "px-2.5 py-1 text-[11px] font-medium rounded-r-md border transition-colors",
+                timePeriod === 'all'
+                  ? "bg-slate-900 text-white border-slate-900"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+              )}
+            >
+              All
+            </button>
           </div>
-        </h3>
+        </div>
       </div>
 
       {/* Trader Insight Stats Card */}

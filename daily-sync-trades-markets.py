@@ -327,6 +327,139 @@ def fetch_markets_by_condition_ids(session: requests.Session, condition_ids: Lis
     
     return all_markets_mapped, all_markets_raw
 
+def classify_market(market: Dict) -> Dict[str, Optional[str]]:
+    """
+    Classify market with market_type, market_subtype, and bet_structure.
+    Uses heuristics based on tags and title.
+    """
+    import re
+    
+    # Extract text from market
+    title = (market.get('title') or '').lower()
+    description = (market.get('description') or '').lower()
+    tags = market.get('tags', [])
+    
+    # Normalize tags - filter out 'none', 'null', empty values
+    tag_texts = []
+    if isinstance(tags, list):
+        tag_texts = [str(t).lower().strip() for t in tags if t and str(t).lower().strip() not in ['none', 'null', '']]
+    elif isinstance(tags, str):
+        try:
+            if tags.strip().startswith('[') or tags.strip().startswith('{'):
+                tags_parsed = json.loads(tags)
+                if isinstance(tags_parsed, list):
+                    tag_texts = [str(t).lower().strip() for t in tags_parsed if t and str(t).lower().strip() not in ['none', 'null', '']]
+                elif isinstance(tags_parsed, dict):
+                    tag_texts = [str(v).lower().strip() for v in tags_parsed.values() if v and str(v).lower().strip() not in ['none', 'null', '']]
+            else:
+                tag_lower = tags.lower().strip()
+                if tag_lower not in ['none', 'null', '']:
+                    tag_texts = [tag_lower]
+        except:
+            tag_lower = tags.lower().strip()
+            if tag_lower not in ['none', 'null', '']:
+                tag_texts = [tag_lower]
+    
+    market_text = ' '.join([title, description] + tag_texts)
+    
+    # Classify market_type - check tags list first (more reliable), then market_text
+    market_type = None
+    tag_lower_list = [t.lower() for t in tag_texts]
+    
+    # Esports tags (check BEFORE sports since esports is more specific)
+    esports_tags = ['esports', 'gaming', 'league', 'tournament', 'video game', 'counter-strike', 'cs:', 'honor of kings', 'dota', 'lol', 'league of legends']
+    esports_title_patterns = ['counter-strike', 'cs:', 'honor of kings', 'dota', 'lol', 'league of legends', 'bo3', 'bo5', 'bo7', 'game 1', 'game 2', 'game 3']
+    if any(est in tag_lower_list for est in esports_tags) or any(est in market_text for est in esports_tags) or any(pattern in title.lower() for pattern in esports_title_patterns):
+        market_type = 'ESPORTS'
+    # Sports tags and title patterns
+    elif any(st in tag_lower_list for st in ['sport', 'sports', 'nba', 'nfl', 'nhl', 'mlb', 'soccer', 'football', 'basketball', 'tennis', 'golf', 'baseball', 'hockey']) or any(st in market_text for st in ['sport', 'sports', 'nba', 'nfl', 'nhl', 'mlb', 'soccer', 'football', 'basketball', 'tennis', 'golf', 'baseball', 'hockey']) or any(pattern in title.lower() for pattern in [' vs ', ' vs. ', 'fc', 'fc vs', 'o/u', 'over/under', 'both teams to score', 'draw', 'league', 'championship', 'premier league', 'ligue 1', 'serie a', 'bundesliga']):
+        market_type = 'SPORTS'
+    # Crypto tags
+    elif any(ct in tag_lower_list for ct in ['crypto', 'bitcoin', 'ethereum', 'btc', 'eth', 'blockchain', 'cryptocurrency']) or any(ct in market_text for ct in ['crypto', 'bitcoin', 'ethereum', 'btc', 'eth', 'blockchain']):
+        market_type = 'CRYPTO'
+    # Politics tags
+    elif any(pt in tag_lower_list for pt in ['politics', 'election', 'president', 'congress', 'senate', 'political']) or any(pt in market_text for pt in ['politics', 'election', 'president', 'congress', 'senate']):
+        market_type = 'POLITICS'
+    # Finance/Tech tags (Tech, Big Tech, Finance, Stock Market, Economy, GDP, Forex, etc.)
+    elif any(ft in tag_lower_list for ft in ['finance', 'stock', 'nasdaq', 'sp500', 'dow', 'tech', 'big tech', 'financial', 'trading', 'technology', 'economy', 'gdp', 'forex', 'earnings', 'macro indicators', 'exchange rate', 'dollar', 'currency']) or any(ft in market_text for ft in ['finance', 'stock', 'nasdaq', 'sp500', 'dow', 'trading', 'economy', 'gdp', 'forex', 'earnings']):
+        market_type = 'FINANCE'
+    # Entertainment tags
+    elif any(et in tag_lower_list for et in ['entertainment', 'movie', 'tv', 'music', 'celebrity', 'culture', 'media']) or any(et in market_text for et in ['entertainment', 'movie', 'tv', 'music', 'celebrity']):
+        market_type = 'ENTERTAINMENT'
+    # Weather tags
+    elif any(wt in tag_lower_list for wt in ['weather', 'climate', 'temperature']) or any(wt in market_text for wt in ['weather', 'climate', 'temperature']):
+        market_type = 'WEATHER'
+    
+    # Classify market_subtype (niche)
+    market_subtype = None
+    tag_lower_list = [t.lower() for t in tag_texts]
+    
+    if market_type == 'SPORTS':
+        if 'nba' in market_text or 'basketball' in market_text or 'nba' in tag_lower_list:
+            market_subtype = 'NBA'
+        elif 'nfl' in market_text or ('football' in market_text and 'soccer' not in market_text) or 'nfl' in tag_lower_list:
+            market_subtype = 'NFL'
+        elif 'nhl' in market_text or 'hockey' in market_text or 'nhl' in tag_lower_list:
+            market_subtype = 'NHL'
+        elif 'mlb' in market_text or 'baseball' in market_text or 'mlb' in tag_lower_list:
+            market_subtype = 'MLB'
+        elif 'soccer' in market_text or 'soccer' in tag_lower_list:
+            market_subtype = 'SOCCER'
+        elif 'tennis' in market_text or 'tennis' in tag_lower_list:
+            market_subtype = 'TENNIS'
+        else:
+            market_subtype = 'SPORTS'
+    elif market_type == 'CRYPTO':
+        if 'bitcoin' in market_text or 'btc' in market_text or 'bitcoin' in tag_lower_list:
+            market_subtype = 'BITCOIN'
+        elif 'ethereum' in market_text or 'eth' in market_text or 'ethereum' in tag_lower_list:
+            market_subtype = 'ETHEREUM'
+        else:
+            market_subtype = 'CRYPTO'
+    elif market_type == 'POLITICS':
+        if 'election' in market_text or 'president' in market_text or 'election' in tag_lower_list:
+            market_subtype = 'ELECTION'
+        else:
+            market_subtype = 'POLITICS'
+    elif market_type == 'FINANCE':
+        # Tech/Big Tech markets
+        if any(tt in tag_lower_list for tt in ['tech', 'big tech', 'technology']):
+            market_subtype = 'TECH'
+        else:
+            market_subtype = 'FINANCE'
+    elif market_type == 'ENTERTAINMENT':
+        # Culture, Media, etc.
+        if 'culture' in tag_lower_list:
+            market_subtype = 'CULTURE'
+        elif any(mt in tag_lower_list for mt in ['movie', 'film']):
+            market_subtype = 'MOVIES'
+        elif any(mt in tag_lower_list for mt in ['music', 'song']):
+            market_subtype = 'MUSIC'
+        else:
+            market_subtype = 'ENTERTAINMENT'
+    
+    # Classify bet_structure from title
+    bet_structure = None
+    title_lower = title.lower()
+    if 'over' in title_lower or 'under' in title_lower or 'o/u' in title_lower:
+        bet_structure = 'OVER_UNDER'
+    elif 'spread' in title_lower or 'handicap' in title_lower:
+        bet_structure = 'SPREAD'
+    elif title_lower.startswith('will ') or 'winner' in title_lower:
+        bet_structure = 'YES_NO'
+    elif 'prop' in title_lower:
+        bet_structure = 'PROP'
+    elif 'head' in title_lower and 'head' in title_lower:
+        bet_structure = 'HEAD_TO_HEAD'
+    else:
+        bet_structure = 'STANDARD'
+    
+    return {
+        'market_type': market_type,
+        'market_subtype': market_subtype,
+        'bet_structure': bet_structure
+    }
+
 def map_market_to_schema(market: Dict) -> Dict:
     """Maps Dome API market to BigQuery schema."""
     def to_timestamp(unix_seconds):
@@ -343,13 +476,16 @@ def map_market_to_schema(market: Dict) -> Dict:
         except:
             return None
     
+    # Classify market if classification fields are missing
+    classification = classify_market(market)
+    
     return {
         'condition_id': market.get('condition_id'),
         'event_slug': market.get('event_slug'),
         'market_slug': market.get('market_slug'),
-        'bet_structure': market.get('bet_structure'),
-        'market_subtype': market.get('market_subtype'),
-        'market_type': market.get('market_type'),
+        'bet_structure': market.get('bet_structure') or classification.get('bet_structure'),
+        'market_subtype': market.get('market_subtype') or classification.get('market_subtype'),
+        'market_type': market.get('market_type') or classification.get('market_type'),
         'liquidity': to_number(market.get('liquidity')),
         'status': market.get('status'),
         'winning_label': market.get('winning_side', {}).get('label') if isinstance(market.get('winning_side'), dict) else market.get('winning_side'),
@@ -541,16 +677,16 @@ def load_markets_to_bigquery(client: bigquery.Client, markets: List[Dict]) -> bo
         USING (
             SELECT *
             FROM `{temp_table_id}`
-            QUALIFY ROW_NUMBER() OVER (PARTITION BY condition_id ORDER BY last_updated DESC) = 1
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY condition_id ORDER BY condition_id DESC) = 1
         ) AS source
         ON target.condition_id = source.condition_id
         WHEN NOT MATCHED THEN INSERT ROW
         WHEN MATCHED THEN UPDATE SET
             event_slug = source.event_slug,
             market_slug = source.market_slug,
-            bet_structure = source.bet_structure,
-            market_subtype = source.market_subtype,
-            market_type = source.market_type,
+            bet_structure = COALESCE(source.bet_structure, target.bet_structure),
+            market_subtype = COALESCE(source.market_subtype, target.market_subtype),
+            market_type = COALESCE(source.market_type, target.market_type),
             liquidity = source.liquidity,
             status = source.status,
             winning_label = source.winning_label,
@@ -576,7 +712,7 @@ def load_markets_to_bigquery(client: bigquery.Client, markets: List[Dict]) -> bo
             close_time_unix = source.close_time_unix,
             side_a = source.side_a,
             side_b = source.side_b,
-            tags = source.tags,
+            tags = COALESCE(source.tags, target.tags),
             last_updated = CURRENT_TIMESTAMP()
         """
         
@@ -590,6 +726,65 @@ def load_markets_to_bigquery(client: bigquery.Client, markets: List[Dict]) -> bo
         import traceback
         traceback.print_exc()
         return False
+
+def discover_and_add_new_wallets(bq_client: bigquery.Client) -> int:
+    """
+    Discovers wallets in trades table that are not in traders table and adds them.
+    Returns the number of wallets added.
+    """
+    try:
+        print("Step 5.5: Discovering new wallets from trades...", flush=True)
+        
+        # Find wallets in trades table not in traders table
+        discovery_query = f"""
+        SELECT DISTINCT wallet_address
+        FROM `{TRADES_TABLE}`
+        WHERE wallet_address IS NOT NULL
+          AND wallet_address NOT IN (
+            SELECT DISTINCT wallet_address 
+            FROM `{TRADERS_TABLE}` 
+            WHERE wallet_address IS NOT NULL
+          )
+        """
+        
+        results = bq_client.query(discovery_query).result()
+        new_wallets = [row['wallet_address'] for row in results if row.get('wallet_address')]
+        
+        if not new_wallets:
+            print("  ✅ No new wallets found", flush=True)
+            return 0
+        
+        print(f"  📊 Found {len(new_wallets)} new wallets to add", flush=True)
+        
+        # Insert new wallets in batches
+        BATCH_SIZE = 1000
+        inserted = 0
+        
+        for i in range(0, len(new_wallets), BATCH_SIZE):
+            batch = new_wallets[i:i + BATCH_SIZE]
+            rows_to_insert = [{'wallet_address': w.lower().strip()} for w in batch]
+            
+            try:
+                errors = bq_client.insert_rows_json(TRADERS_TABLE, rows_to_insert)
+                if errors:
+                    print(f"  ⚠️  Errors inserting batch {i // BATCH_SIZE + 1}: {errors}", flush=True)
+                    continue
+                
+                inserted += len(batch)
+                if (i // BATCH_SIZE + 1) % 10 == 0:
+                    print(f"  📤 Inserted {inserted}/{len(new_wallets)} wallets...", flush=True)
+            except Exception as e:
+                print(f"  ⚠️  Error inserting batch {i // BATCH_SIZE + 1}: {e}", flush=True)
+                continue
+        
+        print(f"  ✅ Added {inserted} new wallets to traders table", flush=True)
+        return inserted
+        
+    except Exception as e:
+        print(f"  ⚠️  Error discovering new wallets: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return 0
 
 def load_events_to_bigquery(client: bigquery.Client, events: List[Dict]) -> bool:
     """Loads events using MERGE."""
@@ -610,12 +805,21 @@ def load_events_to_bigquery(client: bigquery.Client, events: List[Dict]) -> bool
         load_job = client.load_table_from_json(events, temp_table_id, job_config=job_config)
         load_job.result()
         
+        # Check if created_at column exists
+        try:
+            table = client.get_table(EVENTS_TABLE)
+            has_created_at = any(field.name == 'created_at' for field in table.schema)
+        except:
+            has_created_at = False
+        
+        order_by = 'created_at DESC' if has_created_at else 'event_slug DESC'
+        
         merge_query = f"""
         MERGE `{EVENTS_TABLE}` AS target
         USING (
             SELECT *
             FROM `{temp_table_id}`
-            QUALIFY ROW_NUMBER() OVER (PARTITION BY event_slug ORDER BY created_at DESC) = 1
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY event_slug ORDER BY {order_by}) = 1
         ) AS source
         ON target.event_slug = source.event_slug
         WHEN NOT MATCHED THEN INSERT ROW
@@ -790,6 +994,13 @@ def main():
         else:
             print("  ❌ Trades load failed", flush=True)
         print()
+        
+        # Step 5.5: Discover and add new wallets from trades
+        if trades_success:
+            new_wallets_count = discover_and_add_new_wallets(bq_client)
+            if new_wallets_count > 0:
+                print(f"  ✅ Discovered and added {new_wallets_count} new wallets", flush=True)
+            print()
     
     if markets_mapped:
         print("Step 6: Loading markets to BigQuery...", flush=True)
