@@ -2705,16 +2705,27 @@ export default function FeedPage() {
                 if (ensureResponse.ok) {
                   const ensureData = await ensureResponse.json();
                   if (ensureData?.found && ensureData?.market) {
-                    // Update marketDataMap with classification from ensure API
+                    // Update marketDataMap with classification AND tags from ensure API
                     const marketData = marketDataMap.get(conditionId);
+                    const normalizedTags = Array.isArray(ensureData.market.tags) 
+                      ? ensureData.market.tags.map((t: any) => String(t).toLowerCase().trim()).filter((t: string) => t.length > 0)
+                      : null;
+                    
                     if (marketData) {
+                      // Update existing entry
+                      if (normalizedTags && normalizedTags.length > 0) {
+                        marketData.tags = normalizedTags;
+                      }
                       marketData.market_subtype = ensureData.market.market_subtype || ensureData.market.final_niche || null;
                       marketData.final_niche = ensureData.market.final_niche || ensureData.market.market_subtype || null;
                       marketData.bet_structure = ensureData.market.bet_structure || null;
+                      if (ensureData.market.market_type) {
+                        marketData.market_type = ensureData.market.market_type;
+                      }
                     } else {
                       // Market wasn't in map, add it
                       marketDataMap.set(conditionId, {
-                        tags: ensureData.market.tags || null,
+                        tags: normalizedTags,
                         market_subtype: ensureData.market.market_subtype || ensureData.market.final_niche || null,
                         final_niche: ensureData.market.final_niche || ensureData.market.market_subtype || null,
                         bet_structure: ensureData.market.bet_structure || null,
@@ -2722,7 +2733,7 @@ export default function FeedPage() {
                         title: ensureData.market.title || null,
                       });
                     }
-                    console.log(`[Feed] ✅ Ensured market ${conditionId} synchronously`);
+                    console.log(`[Feed] ✅ Ensured market ${conditionId} synchronously - tags: ${normalizedTags?.length || 0}, niche: ${ensureData.market.market_subtype || ensureData.market.final_niche || 'NULL'}`);
                   }
                 }
               } catch (err: any) {
