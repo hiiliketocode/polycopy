@@ -132,6 +132,8 @@ interface TradeCardProps {
   fireRoi?: number | null
   fireConviction?: number | null
   tags?: string[] | null
+  marketSubtype?: string // niche (market_subtype from DB)
+  betStructure?: string // bet_structure from DB
 }
 
 type StatusPhase =
@@ -3342,6 +3344,8 @@ export function TradeCard({
             marketTitle={market}
             marketCategory={category}
             marketTags={marketTagsForInsights}
+            marketSubtype={marketSubtype} // Pass niche from feed
+            betStructure={betStructure} // Pass bet_structure from feed
             isAdmin={isAdmin}
           />
         )}

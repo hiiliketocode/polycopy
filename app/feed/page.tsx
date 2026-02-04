@@ -55,6 +55,8 @@ export interface FeedTrade {
     avatarUrl?: string;
     tags?: unknown;
     marketCategoryType?: MarketCategoryType;
+    marketSubtype?: string; // niche (market_subtype from DB)
+    betStructure?: string; // bet_structure from DB
   };
   trade: {
     side: 'BUY' | 'SELL';
@@ -2835,6 +2837,8 @@ export default function FeedPage() {
             ),
             avatarUrl: extractMarketAvatarUrl(trade) || undefined,
             tags: (tags && Array.isArray(tags) && tags.length > 0) ? tags : undefined,
+            marketSubtype: dbMarketData?.market_subtype || undefined, // Pass niche from DB
+            betStructure: dbMarketData?.bet_structure || undefined, // Pass bet_structure from DB
           },
           trade: {
             side,
@@ -4616,6 +4620,8 @@ export default function FeedPage() {
                           fireRoi={trade.fireRoi}
                           fireConviction={trade.fireConviction}
                           tags={Array.isArray(trade.market.tags) && trade.market.tags.length > 0 ? trade.market.tags : null}
+                          marketSubtype={trade.market.marketSubtype}
+                          betStructure={trade.market.betStructure}
                         />
                       </div>
                     )

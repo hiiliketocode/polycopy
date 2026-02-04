@@ -14,6 +14,8 @@ interface PredictionStatsProps {
   marketTitle?: string
   marketCategory?: string
   marketTags?: string[] | null
+  marketSubtype?: string // niche (market_subtype from DB) - use immediately if provided
+  betStructure?: string // bet_structure from DB - use immediately if provided
   isAdmin?: boolean
 }
 
@@ -146,8 +148,9 @@ export function PredictionStats({
         const tradeTotal = price * size
 
         // Fetch market data from database to get classification
-        let finalNiche = niche
-        let finalBetStructure = betStructure
+        // PRIORITY: Use props if provided (already classified by feed)
+        let finalNiche = marketSubtype ? marketSubtype.toUpperCase() : niche
+        let finalBetStructure = betStructure || betStructure
         
         // Market data (tags, market_subtype, bet_structure) is batch-fetched in feed page
         // But tags might still be missing if market doesn't exist in DB yet
