@@ -39,9 +39,9 @@ export function PolyScoreResults({ data, onClose }: PolyScoreResultsProps) {
         <div className="p-6 space-y-6">
           {/* Main PolyScore */}
           <div className="text-center">
-            <div className={`inline-flex items-center justify-center w-32 h-32 rounded-full border-4 ${getScoreBgColor(data.poly_score)} border-slate-300`}>
-              <span className={`text-4xl font-bold ${getScoreColor(data.poly_score)}`}>
-                {data.poly_score}
+            <div className={`inline-flex items-center justify-center w-32 h-32 rounded-full border-4 ${getScoreBgColor(data.polyscore ?? 0)} border-slate-300`}>
+              <span className={`text-4xl font-bold ${getScoreColor(data.polyscore ?? 0)}`}>
+                {data.polyscore ?? 'N/A'}
               </span>
             </div>
             <p className="mt-4 text-sm text-slate-600">Overall PolyScore</p>
