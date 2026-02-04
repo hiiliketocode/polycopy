@@ -149,8 +149,8 @@ export function PredictionStats({
 
         // Fetch market data from database to get classification
         // PRIORITY: Use props if provided (already classified by feed)
-        let finalNiche = marketSubtype ? marketSubtype.toUpperCase() : niche
-        let finalBetStructure = betStructure || betStructure
+        let finalNiche = propMarketSubtype ? propMarketSubtype.toUpperCase() : niche
+        let finalBetStructure = propBetStructure ? propBetStructure.toUpperCase() : betStructure
         
         // Market data (tags, market_subtype, bet_structure) is batch-fetched in feed page
         // But tags might still be missing if market doesn't exist in DB yet
