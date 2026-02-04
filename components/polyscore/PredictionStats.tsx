@@ -145,6 +145,15 @@ export function PredictionStats({
       setLoading(true)
       setError(null)
 
+      console.log('[PredictionStats] fetchStats called', {
+        conditionId: conditionId.substring(0, 20) + '...',
+        propMarketSubtype,
+        propBetStructure,
+        hasMarketTags: !!marketTags,
+        marketTagsLength: Array.isArray(marketTags) ? marketTags.length : 0,
+        timestamp: new Date().toISOString(),
+      })
+
       try {
         const wallet = walletAddress.toLowerCase()
         const tradeTotal = price * size
@@ -153,6 +162,12 @@ export function PredictionStats({
         // PRIORITY: Use props if provided (already classified by feed)
         let finalNiche = propMarketSubtype ? propMarketSubtype.toUpperCase() : (niche || null)
         let finalBetStructure = propBetStructure ? propBetStructure.toUpperCase() : betStructure
+        
+        console.log('[PredictionStats] Classification resolved', {
+          finalNiche,
+          finalBetStructure,
+          fromProps: !!(propMarketSubtype && propBetStructure),
+        })
         
         // If props are provided, we already have classification - skip DB query and semantic_mapping
         const hasClassificationFromProps = !!(propMarketSubtype && propBetStructure)
@@ -367,9 +382,6 @@ export function PredictionStats({
           priceBracket,
         })
 
-        setResolvedNiche(finalNiche)
-        setResolvedBetStructure(finalBetStructure)
-
         // Fetch global stats directly from Supabase - skip API route for speed
         let globalStats: any = null
         let profileStats: any[] = []
@@ -391,6 +403,8 @@ export function PredictionStats({
         } catch (statsErr: any) {
           console.error('[PredictionStats] stats fetch failed', statsErr)
           setError('Trader insights unavailable')
+          // Don't set empty stats - let component show error state
+          setStats(null)
           setLoading(false)
           return
         }
@@ -677,7 +691,7 @@ export function PredictionStats({
     }
 
     fetchStats()
-  }, [walletAddress, conditionId, price, size, niche, betStructure, priceBracket, marketTags, marketTitle, marketCategory, isAdmin])
+  }, [walletAddress, conditionId, price, size, priceBracket, marketTags, marketTitle, marketCategory, isAdmin, propMarketSubtype, propBetStructure])
 
   // Only show N/A if stats is null or if we truly have no data
   // Since we always set trade_profile and use defaults, we should always have data
