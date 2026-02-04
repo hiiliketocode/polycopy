@@ -17,7 +17,7 @@ const supabase = createClient(supabaseUrl || '', serviceKey || '', {
 });
 
 // Thresholds matching feed/page.tsx
-const FIRE_TOP_TRADERS_LIMIT = 100;
+// Note: FIRE_TOP_TRADERS_LIMIT removed - now includes ALL traders
 const FIRE_TRADES_PER_TRADER = 10;
 const FIRE_WIN_RATE_THRESHOLD = 0.55;
 const FIRE_ROI_THRESHOLD = 0.15;
@@ -160,30 +160,46 @@ export async function GET(request: Request) {
       throw new Error('Supabase configuration missing. Check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.');
     }
 
-    // 1. Fetch top traders from leaderboard (call function directly, no HTTP fetch)
-    console.log('[fire-feed] Fetching leaderboard traders...');
-    const tradersRaw = await fetchPolymarketLeaderboard({
-      limit: FIRE_TOP_TRADERS_LIMIT,
-      orderBy: 'PNL',
-      timePeriod: 'month',
-      category: 'overall',
-    });
+    // 1. Fetch all recent trades (30 days) and get unique wallet addresses
+    // No longer limited to top 100 traders - includes ALL traders
+    console.log('[fire-feed] Fetching all trades from last 30 days...');
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const { data: allTradesData, error: allTradesError } = await supabase
+      .from('trades')
+      .select('wallet_address')
+      .gte('timestamp', thirtyDaysAgo.toISOString())
+      .eq('side', 'BUY') // Only BUY trades for FIRE feed
+      .limit(10000); // Get enough to find unique wallets
+    
+    if (allTradesError) {
+      console.error('Error fetching trades for wallet extraction:', allTradesError);
+      return NextResponse.json({ trades: [], traders: {} });
+    }
 
-    const wallets: string[] = tradersRaw
-      .map((trader: any) => (trader.wallet || trader.proxyWallet || '').toLowerCase())
-      .filter(Boolean)
-      .slice(0, FIRE_TOP_TRADERS_LIMIT);
+    // Extract unique wallet addresses
+    const walletsSet = new Set<string>();
+    (allTradesData || []).forEach((trade: any) => {
+      const wallet = (trade.wallet_address || '').toLowerCase();
+      if (wallet) {
+        walletsSet.add(wallet);
+      }
+    });
+    
+    const wallets = Array.from(walletsSet);
+    console.log(`[fire-feed] Found ${wallets.length} unique traders with trades in last 30 days`);
 
     if (wallets.length === 0) {
       return NextResponse.json({ trades: [], traders: {} });
     }
 
+    // Build trader meta from wallet addresses (will be enriched later if needed)
     const traderMeta: Record<string, { displayName: string }> = {};
-    tradersRaw.forEach((trader: any) => {
-      const w = (trader.wallet || trader.proxyWallet || '').toLowerCase();
-      if (w) {
-        traderMeta[w] = { displayName: trader.displayName || trader.userName || trader.username || '' };
-      }
+    wallets.forEach((wallet) => {
+      traderMeta[wallet] = { 
+        displayName: wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : 'Unknown'
+      };
     });
 
     // 2. Fetch stats for all traders in parallel from Supabase
@@ -256,10 +272,7 @@ export async function GET(request: Request) {
     });
 
     // 3. Fetch recent trades from Supabase for all traders in ONE query
-    // Use 30 days to match the "top 30-day ROI traders" concept
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
+    // Use 30 days - same window as wallet extraction
     const { data: tradesData, error: tradesError } = await supabase
       .from('trades')
       .select('*')
@@ -267,7 +280,7 @@ export async function GET(request: Request) {
       .gte('timestamp', thirtyDaysAgo.toISOString())
       .eq('side', 'BUY') // Only BUY trades for FIRE feed
       .order('timestamp', { ascending: false })
-      .limit(2000); // Get more trades to filter from
+      .limit(5000); // Increased limit since we're including all traders now
 
     if (tradesError) {
       console.error('Error fetching trades from Supabase:', tradesError);
