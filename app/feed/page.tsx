@@ -2560,26 +2560,11 @@ export default function FeedPage() {
       };
 
       // STEP 1: Extract all conditionIds from trades BEFORE formatting
-      console.log('[Feed] STEP 1: Extracting conditionIds from trades', {
-        totalTrades: rawTrades.length,
-        sampleTrade: rawTrades[0] ? {
-          conditionId: rawTrades[0].conditionId,
-          condition_id: rawTrades[0].condition_id,
-          hasConditionId: !!(rawTrades[0].conditionId || rawTrades[0].condition_id),
-        } : null,
-      });
-      
       const conditionIds = rawTrades
         .map((t: any) => t.conditionId || t.condition_id)
         .filter((id: any): id is string => !!id && typeof id === 'string' && id.startsWith('0x'));
       
       const uniqueConditionIds = Array.from(new Set(conditionIds));
-      
-      console.log('[Feed] STEP 1 RESULT:', {
-        extractedConditionIds: conditionIds.length,
-        uniqueConditionIds: uniqueConditionIds.length,
-        sampleIds: uniqueConditionIds.slice(0, 3),
-      });
       
       // STEP 2: Batch fetch ALL market data from database (tags, market_subtype, bet_structure, etc.)
       // Use single query with timeout to avoid blocking
@@ -2598,29 +2583,7 @@ export default function FeedPage() {
             setTimeout(() => resolve({ data: null, error: { message: 'Timeout' } }), 5000)
           );
           
-          console.log('[Feed] STEP 2: Querying markets table', {
-            queryingCount: uniqueConditionIds.length,
-            sampleConditionIds: uniqueConditionIds.slice(0, 3),
-          });
-          
           const { data: markets, error } = await Promise.race([queryPromise, timeoutPromise]);
-          
-          console.log('[Feed] STEP 2 RESULT: Markets query completed', {
-            hasError: !!error,
-            errorMessage: error?.message,
-            marketsReturned: markets?.length || 0,
-            isArray: Array.isArray(markets),
-            sampleMarket: markets && markets[0] ? {
-              condition_id: markets[0].condition_id,
-              hasTags: !!markets[0].tags,
-              tagsType: typeof markets[0].tags,
-              tagsIsArray: Array.isArray(markets[0].tags),
-              tagsLength: Array.isArray(markets[0].tags) ? markets[0].tags.length : 0,
-              tagsSample: Array.isArray(markets[0].tags) ? markets[0].tags.slice(0, 3) : markets[0].tags,
-              hasRawDome: !!markets[0].raw_dome,
-              market_subtype: markets[0].market_subtype,
-            } : null,
-          });
           
           if (!error && markets && Array.isArray(markets)) {
             const foundIds = new Set<string>();
@@ -2660,7 +2623,6 @@ export default function FeedPage() {
                   const normalized = normalizeTagsForMap(market.tags);
                   if (normalized.length > 0) {
                     tags = normalized;
-                    console.log(`[Feed] Extracted and normalized tags for ${market.condition_id}:`, tags);
                   }
                 }
                 
@@ -2672,11 +2634,10 @@ export default function FeedPage() {
                       const normalized = normalizeTagsForMap(rawDome.tags);
                       if (normalized.length > 0) {
                         tags = normalized;
-                        console.log(`[Feed] Extracted tags from raw_dome for ${market.condition_id}:`, tags);
                       }
                     }
                   } catch (err) {
-                    console.warn(`[Feed] Failed to parse raw_dome for ${market.condition_id}:`, err);
+                    // Silent fail - raw_dome parse error
                   }
                 }
                 
@@ -2698,19 +2659,10 @@ export default function FeedPage() {
             uniqueConditionIds.forEach((id) => {
               if (!foundIds.has(id)) {
                 missingConditionIds.push(id);
-                console.log(`[Feed] Market ${id} not found in DB`);
               } else if (!marketDataMap.get(id)?.tags) {
                 missingConditionIds.push(id);
-                console.log(`[Feed] Market ${id} found but has no tags`);
               }
             });
-            
-            console.log(`[Feed] STEP 2 SUMMARY: Batch fetched ${marketDataMap.size} markets, ${missingConditionIds.length} missing`);
-            console.log('[Feed] Markets with tags:', Array.from(marketDataMap.entries())
-              .filter(([_, data]) => data.tags && data.tags.length > 0)
-              .map(([id, data]) => ({ conditionId: id, tagsCount: data.tags?.length || 0, tags: data.tags }))
-              .slice(0, 3)
-            );
           } else {
             // If query failed or timed out, mark all as missing but continue
             console.warn('[Feed] Market fetch failed or timed out, continuing without market data');
@@ -2803,19 +2755,7 @@ export default function FeedPage() {
         // Get market data from batch-fetched map (preferred) or extract from trade
         const dbMarketData = conditionId ? marketDataMap.get(conditionId) : null;
         
-        // DEBUG: Log market data lookup
-        if (!dbMarketData && conditionId) {
-          console.warn(`[Feed] STEP 3: No market data found for conditionId ${conditionId}`);
-        } else if (dbMarketData) {
-          console.log(`[Feed] STEP 3: Found market data for ${conditionId}:`, {
-            hasTags: !!dbMarketData.tags,
-            tagsType: typeof dbMarketData.tags,
-            tagsIsArray: Array.isArray(dbMarketData.tags),
-            tagsValue: dbMarketData.tags,
-            market_subtype: dbMarketData.market_subtype,
-            bet_structure: dbMarketData.bet_structure,
-          });
-        }
+        // Get market data - tags should already be normalized from Step 2
         
         // Helper function to normalize tags from various sources
         const normalizeTags = (source: any): string[] => {
@@ -2862,28 +2802,14 @@ export default function FeedPage() {
         // Every market has tags - if missing, market needs to be ensured
         let tags: string[] | null = null;
         
-        if (dbMarketData?.tags) {
-          const normalized = normalizeTags(dbMarketData.tags);
-          console.log(`[Feed] STEP 3: Normalized tags for ${conditionId}:`, {
-            original: dbMarketData.tags,
-            normalized,
-            normalizedLength: normalized.length,
-          });
-          if (normalized.length > 0) {
-            tags = normalized;
-          }
+        // Tags from marketDataMap are already normalized to lowercase
+        if (dbMarketData?.tags && Array.isArray(dbMarketData.tags) && dbMarketData.tags.length > 0) {
+          tags = dbMarketData.tags; // Already normalized in Step 2
         }
         
-        // If no tags found, log warning - market should have been ensured above
+        // If no tags found, market will be ensured in background
         if (!tags || tags.length === 0) {
-          console.warn(`[Feed] ⚠️ STEP 3: No tags found for market ${conditionId}`, {
-            hasDbMarketData: !!dbMarketData,
-            dbMarketDataTags: dbMarketData?.tags,
-            conditionId,
-            marketTitle,
-          });
-        } else {
-          console.log(`[Feed] ✅ STEP 3: Tags extracted for ${conditionId}:`, tags);
+          // Silent - market will be ensured in background
         }
         
         const formattedTrade: FeedTrade = {
@@ -2933,21 +2859,14 @@ export default function FeedPage() {
         return formattedTrade;
       });
       
-      // DEBUG: Log sample of formatted trades to verify tags
-      console.log('[Feed] STEP 3 COMPLETE: Formatted trades sample', {
-        totalFormatted: formattedTrades.length,
-        sampleTrades: formattedTrades.slice(0, 3).map(t => ({
-          conditionId: t.market.conditionId,
-          hasTags: !!t.market.tags,
-          tagsType: typeof t.market.tags,
-          tagsIsArray: Array.isArray(t.market.tags),
-          tagsLength: Array.isArray(t.market.tags) ? t.market.tags.length : 0,
-          tags: t.market.tags,
-          title: t.market.title,
-        })),
-        tradesWithTags: formattedTrades.filter(t => t.market.tags && Array.isArray(t.market.tags) && t.market.tags.length > 0).length,
-        tradesWithoutTags: formattedTrades.filter(t => !t.market.tags || !Array.isArray(t.market.tags) || t.market.tags.length === 0).length,
-      });
+      // Log summary (only in dev)
+      if (process.env.NODE_ENV === 'development') {
+        const tradesWithTags = formattedTrades.filter(t => t.market.tags && Array.isArray(t.market.tags) && t.market.tags.length > 0).length;
+        const tradesWithoutTags = formattedTrades.length - tradesWithTags;
+        if (tradesWithoutTags > 0) {
+          console.log(`[Feed] Processed ${formattedTrades.length} trades: ${tradesWithTags} with tags, ${tradesWithoutTags} without`);
+        }
+      }
       
       const uniqueFormattedTrades: FeedTrade[] = [];
       const seenTradeIds = new Set<string>();
@@ -4690,21 +4609,7 @@ export default function FeedPage() {
                           fireWinRate={trade.fireWinRate}
                           fireRoi={trade.fireRoi}
                           fireConviction={trade.fireConviction}
-                          tags={(() => {
-                            const tagsToPass = Array.isArray(trade.market.tags) && trade.market.tags.length > 0 ? trade.market.tags : null;
-                            if (!tagsToPass && trade.market.conditionId) {
-                              console.warn(`[Feed] STEP 6: Passing null tags to TradeCard for ${trade.market.conditionId}`, {
-                                conditionId: trade.market.conditionId,
-                                hasTags: !!trade.market.tags,
-                                tagsType: typeof trade.market.tags,
-                                tagsIsArray: Array.isArray(trade.market.tags),
-                                tagsValue: trade.market.tags,
-                              });
-                            } else if (tagsToPass) {
-                              console.log(`[Feed] ✅ STEP 6: Passing tags to TradeCard for ${trade.market.conditionId}:`, tagsToPass);
-                            }
-                            return tagsToPass;
-                          })()}
+                          tags={Array.isArray(trade.market.tags) && trade.market.tags.length > 0 ? trade.market.tags : null}
                         />
                       </div>
                     )

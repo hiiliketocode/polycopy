@@ -59,8 +59,6 @@ async function inferNicheFromTags(tags: string[]): Promise<{ niche: string | nul
     return { niche: null, marketType: null, source: 'no_tags' }
   }
 
-  console.log('[ensureMarket] Querying semantic_mapping with tags:', cleanTags)
-
   // Try case-sensitive match first (original_tag should be lowercase)
   let { data: mappings, error } = await supabase
     .from('semantic_mapping')
@@ -69,7 +67,6 @@ async function inferNicheFromTags(tags: string[]): Promise<{ niche: string | nul
 
   // If no matches and we have tags, try case-insensitive match as fallback
   if ((!mappings || mappings.length === 0) && cleanTags.length > 0) {
-    console.log('[ensureMarket] No case-sensitive matches, trying case-insensitive for all tags...')
     // Try each tag individually with ilike (case-insensitive) and collect ALL matches
     const allCiMappings: any[] = [];
     for (const tag of cleanTags) {
@@ -80,13 +77,11 @@ async function inferNicheFromTags(tags: string[]): Promise<{ niche: string | nul
       
       if (!ciError && ciMappings && ciMappings.length > 0) {
         allCiMappings.push(...ciMappings);
-        console.log(`[ensureMarket] Found ${ciMappings.length} case-insensitive match(es) for tag: ${tag}`);
       }
     }
     
     if (allCiMappings.length > 0) {
       mappings = allCiMappings;
-      console.log(`[ensureMarket] Collected ${allCiMappings.length} total case-insensitive matches`);
     }
   }
 
@@ -100,12 +95,6 @@ async function inferNicheFromTags(tags: string[]): Promise<{ niche: string | nul
     const best = mappings[0]
     const cleanNiche = (best?.clean_niche || '').toUpperCase()
     const marketType = (best?.type || '').toUpperCase() || null
-    console.log('[ensureMarket] ✅ Found semantic mapping:', {
-      tag: best?.original_tag,
-      niche: cleanNiche,
-      type: marketType,
-      score: best?.specificity_score,
-    })
     return {
       niche: cleanNiche || null,
       marketType: marketType || null,
@@ -114,7 +103,6 @@ async function inferNicheFromTags(tags: string[]): Promise<{ niche: string | nul
     }
   }
 
-  console.warn('[ensureMarket] ⚠️ No semantic_mapping matches found for tags:', cleanTags)
   return { niche: null, marketType: null, source: 'no_match' }
 }
 
@@ -256,7 +244,6 @@ export async function GET(request: Request) {
     }
 
     // Step 3: Fetch from CLOB API
-    console.log('[ensureMarket] STEP 3: Fetching from CLOB API for conditionId:', conditionId)
     const clobUrl = `https://clob.polymarket.com/markets/${conditionId}`
     console.log('[ensureMarket] CLOB URL:', clobUrl)
     
@@ -317,18 +304,8 @@ export async function GET(request: Request) {
     }
 
     // Step 4: Map to database schema
-    console.log('[ensureMarket] STEP 4: Mapping CLOB data to database schema')
     const marketRow = mapClobMarketToRow(clobMarket)
     const normalizedTags = normalizeTags(marketRow.tags)
-    console.log('[ensureMarket] STEP 4 RESULT: Mapped market row:', {
-      condition_id: marketRow.condition_id,
-      title: marketRow.title?.substring(0, 50),
-      hasTags: normalizedTags.length > 0,
-      tagsType: typeof marketRow.tags,
-      tagsIsArray: Array.isArray(marketRow.tags),
-      tagsLength: normalizedTags.length,
-      tags: normalizedTags.slice(0, 5),
-    })
 
     // Infer classification on the server (service role bypasses RLS)
     // PRIMARY: Use semantic_mapping (core semantic engine)

@@ -252,38 +252,26 @@ export function PredictionStats({
         // De-dupe tags
         tagsToUse = Array.from(new Set(tagsToUse));
         
-        // Log summary for debugging
-        console.log('[PredictionStats] Tag collection result:', {
-          conditionId,
-          hasPropsTags: !!marketTags,
-          tagsFromProps: marketTags ? (Array.isArray(marketTags) ? marketTags.length : 'not-array') : 'none',
-          tagsCollected: tagsToUse.length,
-          tags: tagsToUse.length > 0 ? tagsToUse.slice(0, 5) : [],
-          source: marketTags ? 'props' : (tagsToUse.length > 0 ? 'db_or_title' : 'none'),
-          marketTitle: marketTitle?.substring(0, 50),
-        });
+        // Log summary only if no tags found (for debugging)
+        if (tagsToUse.length === 0 && process.env.NODE_ENV === 'development') {
+          console.warn('[PredictionStats] No tags collected:', {
+            conditionId,
+            hasPropsTags: !!marketTags,
+            marketTitle: marketTitle?.substring(0, 50),
+          });
+        }
 
         // Semantic mapping lookup (primary niche resolver)
         if (tagsToUse.length > 0) {
           try {
-            console.log('[PredictionStats] STEP 7: Querying semantic_mapping with tags:', tagsToUse);
-            
             // Try case-sensitive match first (tags are already normalized to lowercase)
             let { data: mappings, error: mappingError } = await supabase
               .from('semantic_mapping')
               .select('clean_niche, type, specificity_score, original_tag')
               .in('original_tag', tagsToUse)
 
-            console.log('[PredictionStats] STEP 7 RESULT (case-sensitive):', {
-              mappingsFound: mappings?.length || 0,
-              mappings: mappings?.map(m => ({ tag: m.original_tag, niche: m.clean_niche, type: m.type })),
-              error: mappingError?.message,
-            });
-
-            // If no matches, try case-insensitive for each tag (collect ALL matches, not just first)
+            // If no matches, try case-insensitive for each tag (collect ALL matches)
             if ((!mappings || mappings.length === 0) && tagsToUse.length > 0) {
-              console.log('[PredictionStats] No case-sensitive matches, trying case-insensitive for all tags...');
-              
               // Query all tags in parallel and collect ALL results
               const ciQueries = tagsToUse.map(tag => 
                 supabase
@@ -303,7 +291,6 @@ export function PredictionStats({
               
               if (allCiMappings.length > 0) {
                 mappings = allCiMappings;
-                console.log('[PredictionStats] Found case-insensitive matches:', allCiMappings.length);
               }
             }
 
@@ -315,24 +302,13 @@ export function PredictionStats({
               // Sort by specificity_score (lower is more specific)
               mappings.sort((a: any, b: any) => (a.specificity_score || 99) - (b.specificity_score || 99))
               finalNiche = (mappings[0].clean_niche || '').toUpperCase() || null
-              console.log('[PredictionStats] ✅ STEP 7: Selected niche from semantic_mapping:', {
-                niche: finalNiche,
-                type: mappings[0].type,
-                fromTag: mappings[0].original_tag,
-                specificity: mappings[0].specificity_score,
-                totalMatches: mappings.length,
-              })
-            } else if (tagsToUse.length > 0) {
-              // No semantic mapping match - log which tags were tried
-              console.warn('[PredictionStats] ⚠️ STEP 7: No semantic_mapping matches found for tags:', tagsToUse);
-              console.warn('[PredictionStats] Check if semantic_mapping table has entries for these tags');
             }
           } catch (err) {
-            console.error('[PredictionStats] ❌ STEP 7: Error during semantic mapping lookup:', err)
-            // Continue without niche - will use fallback
+            // Silent fail - continue without niche
+            if (process.env.NODE_ENV === 'development') {
+              console.warn('[PredictionStats] Error during semantic mapping lookup:', err);
+            }
           }
-        } else {
-          console.warn('[PredictionStats] ⚠️ STEP 7: No tags available for semantic mapping lookup');
         }
         
         console.log('[PredictionStats] Final classification before fallback:', {
@@ -352,19 +328,10 @@ export function PredictionStats({
             
             if (dbMarket?.market_subtype) {
               finalNiche = (dbMarket.market_subtype || '').trim().toUpperCase() || null;
-              if (finalNiche) {
-                console.log('[PredictionStats] ✅ Using stored market_subtype:', finalNiche);
-              }
             }
           } catch (err) {
             // Non-fatal - continue without niche
           }
-        }
-        
-        // If still no niche, leave as null (will show "other" in UI)
-        // This is OK - not all markets need classification immediately
-        if (!finalNiche) {
-          console.log('[PredictionStats] No niche found - will show "other" badge');
         }
         if (!finalBetStructure) {
           console.warn('[PredictionStats] No bet structure found, defaulting to STANDARD')
