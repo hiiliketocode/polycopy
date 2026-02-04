@@ -386,10 +386,25 @@ export function PredictionStats({
         let globalStats: any = null
         let profileStats: any[] = []
         try {
+          console.log('[PredictionStats] Fetching trader stats for wallet:', wallet)
           const [{ data: g, error: gErr }, { data: p, error: pErr }] = await Promise.all([
             supabase.from('trader_global_stats').select('*').eq('wallet_address', wallet).maybeSingle(),
             supabase.from('trader_profile_stats').select('*').eq('wallet_address', wallet),
           ])
+          
+          console.log('[PredictionStats] Global stats query result:', {
+            hasData: !!g,
+            data: g,
+            error: gErr,
+            errorCode: gErr?.code,
+            errorMessage: gErr?.message,
+          })
+          console.log('[PredictionStats] Profile stats query result:', {
+            count: p?.length || 0,
+            error: pErr,
+            errorCode: pErr?.code,
+            errorMessage: pErr?.message,
+          })
           
           if (gErr) {
             console.error('[PredictionStats] Error fetching global stats:', gErr)
@@ -400,6 +415,12 @@ export function PredictionStats({
           
           globalStats = g || null
           profileStats = p || []
+          
+          console.log('[PredictionStats] Processed stats:', {
+            globalStatsExists: !!globalStats,
+            globalStatsKeys: globalStats ? Object.keys(globalStats) : [],
+            profileStatsCount: profileStats.length,
+          })
         } catch (statsErr: any) {
           console.error('[PredictionStats] stats fetch failed', statsErr)
           setError('Trader insights unavailable')
@@ -409,7 +430,10 @@ export function PredictionStats({
           return
         }
 
-        // Normalize global stats with 30d preference
+        // Normalize global stats - check what fields actually exist
+        console.log('[PredictionStats] Available globalStats fields:', globalStats ? Object.keys(globalStats) : 'null')
+        
+        // Try all possible field names (case-insensitive matching via pickNumber)
         const globalWinRate = pickNumber(
           globalStats?.d30_win_rate, globalStats?.D30_win_rate,
           globalStats?.recent_win_rate,
@@ -449,6 +473,15 @@ export function PredictionStats({
           globalStats?.l_avg_pos_size_usd,
           globalStats?.avg_bet_size_usdc
         ) ?? globalAvgTradeSizeUsd ?? null
+        
+        console.log('[PredictionStats] Extracted global stats:', {
+          globalWinRate,
+          globalRoiPct,
+          globalAvgPnlUsd,
+          globalAvgTradeSizeUsd,
+          globalTradeCount,
+          globalAvgPosSizeUsd,
+        })
 
         // Safety check: if averages seem unreasonably high compared to current trade, cap them
         // This prevents inflated averages from making conviction appear artificially low
