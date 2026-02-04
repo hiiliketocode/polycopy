@@ -48,43 +48,45 @@ export function PolyScoreResults({ data, onClose }: PolyScoreResultsProps) {
           </div>
 
           {/* Score Breakdown */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Alpha Score */}
-            <div className="rounded-lg border border-slate-200 p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Award className="h-5 w-5 text-slate-600" />
-                <h3 className="font-medium text-slate-900">Alpha Score</h3>
+          {data.drawer && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Competency Score (Alpha) */}
+              <div className="rounded-lg border border-slate-200 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Award className="h-5 w-5 text-slate-600" />
+                  <h3 className="font-medium text-slate-900">Competency</h3>
+                </div>
+                <p className={`text-2xl font-bold ${getScoreColor((data.drawer.competency.niche_win_rate * 100))}`}>
+                  {Math.round(data.drawer.competency.niche_win_rate * 100)}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">Niche Win Rate</p>
               </div>
-              <p className={`text-2xl font-bold ${getScoreColor(data.alpha_score)}`}>
-                {data.alpha_score}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">Trader Expertise</p>
-            </div>
 
-            {/* Conviction Score */}
-            <div className="rounded-lg border border-slate-200 p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <TrendingUp className="h-5 w-5 text-slate-600" />
-                <h3 className="font-medium text-slate-900">Conviction Score</h3>
+              {/* Conviction Score */}
+              <div className="rounded-lg border border-slate-200 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <TrendingUp className="h-5 w-5 text-slate-600" />
+                  <h3 className="font-medium text-slate-900">Conviction</h3>
+                </div>
+                <p className={`text-2xl font-bold ${getScoreColor(Math.abs(data.drawer.conviction.z_score) * 10)}`}>
+                  {Math.round(Math.abs(data.drawer.conviction.z_score) * 10)}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">Z-Score Based</p>
               </div>
-              <p className={`text-2xl font-bold ${getScoreColor(data.conviction_score)}`}>
-                {data.conviction_score}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">Trader Confidence</p>
-            </div>
 
-            {/* Value Score */}
-            <div className="rounded-lg border border-slate-200 p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <DollarSign className="h-5 w-5 text-slate-600" />
-                <h3 className="font-medium text-slate-900">Value Score</h3>
+              {/* Value Score */}
+              <div className="rounded-lg border border-slate-200 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className="h-5 w-5 text-slate-600" />
+                  <h3 className="font-medium text-slate-900">Edge</h3>
+                </div>
+                <p className={`text-2xl font-bold ${getScoreColor(data.drawer.valuation.edge_percent + 50)}`}>
+                  {data.drawer.valuation.edge_percent > 0 ? '+' : ''}{data.drawer.valuation.edge_percent.toFixed(1)}%
+                </p>
+                <p className="text-xs text-slate-500 mt-1">Price Edge</p>
               </div>
-              <p className={`text-2xl font-bold ${getScoreColor(data.value_score)}`}>
-                {data.value_score}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">Price Value</p>
             </div>
-          </div>
+          )}
 
           {/* Deep Dive Section */}
           <div className="border-t border-slate-200 pt-6">
@@ -93,37 +95,47 @@ export function PolyScoreResults({ data, onClose }: PolyScoreResultsProps) {
               <div className="flex justify-between items-center py-2 border-b border-slate-100">
                 <span className="text-sm text-slate-600">AI Profit Probability</span>
                 <span className="font-medium text-slate-900">
-                  {(data.ai_profit_probability * 100).toFixed(1)}%
+                  {(data.prediction.probability * 100).toFixed(1)}%
                 </span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                <span className="text-sm text-slate-600">Subtype Win Rate</span>
+                <span className="text-sm text-slate-600">Edge Percentage</span>
                 <span className="font-medium text-slate-900">
-                  {(data.subtype_specific_win_rate * 100).toFixed(1)}%
+                  {data.prediction.edge_percent > 0 ? '+' : ''}{data.prediction.edge_percent.toFixed(1)}%
                 </span>
               </div>
-              <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                <span className="text-sm text-slate-600">Bet Type Win Rate</span>
-                <span className="font-medium text-slate-900">
-                  {(data.bet_type_specific_win_rate * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                <span className="text-sm text-slate-600">Position Style</span>
-                <span className="font-medium text-slate-900">
-                  {data.position_adjustment_style || 'N/A'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                <span className="text-sm text-slate-600">Trade Sequence</span>
-                <span className="font-medium text-slate-900">{data.trade_sequence}</span>
-              </div>
-              <div className="flex justify-between items-center py-2">
-                <span className="text-sm text-slate-600">Hedged</span>
-                <span className="font-medium text-slate-900">
-                  {data.is_hedged ? 'Yes' : 'No'}
-                </span>
-              </div>
+              {data.drawer && (
+                <>
+                  <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                    <span className="text-sm text-slate-600">Niche Win Rate</span>
+                    <span className="font-medium text-slate-900">
+                      {(data.drawer.competency.niche_win_rate * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                    <span className="text-sm text-slate-600">Global Win Rate</span>
+                    <span className="font-medium text-slate-900">
+                      {(data.drawer.competency.global_win_rate * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                    <span className="text-sm text-slate-600">Total Trades</span>
+                    <span className="font-medium text-slate-900">{data.drawer.competency.total_trades}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                    <span className="text-sm text-slate-600">Momentum</span>
+                    <span className="font-medium text-slate-900">
+                      {data.drawer.momentum.is_hot ? '🔥 Hot' : 'Normal'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-sm text-slate-600">Strategy</span>
+                    <span className="font-medium text-slate-900">
+                      {data.drawer.tactical.strategy_type || 'N/A'}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
