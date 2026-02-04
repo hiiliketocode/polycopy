@@ -213,6 +213,7 @@ type TraderStatsSnapshot = {
   globalWinRate: number | null;
   globalRoiPct?: number | null;
   avgBetSizeUsd: number | null;
+  d30_avg_trade_size_usd?: number | null;
   profiles: Array<{
     final_niche?: string | null;
     bet_structure?: string | null;
