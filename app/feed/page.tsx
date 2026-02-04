@@ -4530,22 +4530,20 @@ export default function FeedPage() {
                     Try Again
                   </Button>
                 </div>
+              ) : (feedMode === 'fire' && allTrades.length === 0 && !loadingFeed && initialFeedCheckComplete) ? (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+                  <div className="text-6xl mb-4">🔥</div>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">No 🔥 traders yet</h3>
+                  <p className="text-slate-600">
+                    We couldn't find top-ROI traders with strong conviction right now. Check back soon.
+                  </p>
+                </div>
               ) : sourceTraderCount === 0 ? (
-                feedMode === 'fire' ? (
-                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
-                    <div className="text-6xl mb-4">🔥</div>
-                    <h3 className="text-xl font-bold text-slate-900 mb-2">No 🔥 traders yet</h3>
-                    <p className="text-slate-600">
-                      We couldn't find top-ROI traders with strong conviction right now. Check back soon.
-                    </p>
-                  </div>
-                ) : (
-                  <EmptyState
-                    icon={Activity}
-                    title="Your feed is empty"
-                    description="Follow traders on the Discover page to see their activity here"
-                  />
-                )
+                <EmptyState
+                  icon={Activity}
+                  title="Your feed is empty"
+                  description="Follow traders on the Discover page to see their activity here"
+                />
               ) : displayedTrades.length === 0 ? (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
                   <div className="text-6xl mb-4">{feedMode === 'fire' ? '🔥' : '🔍'}</div>
