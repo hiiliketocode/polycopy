@@ -339,12 +339,15 @@ def copy_staging_to_production(client, batch_size=1000000):
     print(f"Found {staging_count:,} rows in staging table", flush=True)
     
     # Copy in batches to minimize partition modifications
-    # Use INSERT INTO which is more efficient than individual loads
+    # Use INSERT INTO with idempotency key deduplication
     copy_query = f"""
     INSERT INTO `{TRADES_TABLE}`
     SELECT * FROM `{TRADES_STAGING_TABLE}`
     WHERE TRUE
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY timestamp DESC) = 1
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY wallet_address, tx_hash, COALESCE(order_hash, '')
+        ORDER BY timestamp DESC, id DESC
+    ) = 1
     """
     
     print(f"Copying {staging_count:,} rows to production table...", flush=True)

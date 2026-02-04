@@ -43,24 +43,30 @@ echo ""
 # Step 2: Delete duplicates (preserves partitioning)
 echo "Step 2: Deleting duplicate rows..."
 echo "  This will:"
-echo "    • Keep latest record for each id (ORDER BY timestamp DESC)"
+echo "    • Keep latest record for each idempotency key (wallet_address + tx_hash + order_hash)"
 echo "    • Delete all duplicate rows"
 echo "  This may take several minutes..."
 echo ""
 
 # Use DELETE with CTE to remove duplicates in place (preserves partitioning)
-# Delete all rows that are NOT the latest for each id
+# Delete all rows that are NOT the latest for each idempotency key
 DELETE_QUERY="
 DELETE FROM \`${TABLE}\` t
 WHERE EXISTS (
   SELECT 1
   FROM (
-    SELECT id, timestamp,
-           ROW_NUMBER() OVER (PARTITION BY id ORDER BY timestamp DESC) as rn
+    SELECT wallet_address, tx_hash, COALESCE(order_hash, '') as order_hash, timestamp, id,
+           ROW_NUMBER() OVER (
+             PARTITION BY wallet_address, tx_hash, COALESCE(order_hash, '')
+             ORDER BY timestamp DESC, id DESC
+           ) as rn
     FROM \`${TABLE}\`
   ) ranked
-  WHERE ranked.id = t.id
+  WHERE ranked.wallet_address = t.wallet_address
+    AND ranked.tx_hash = t.tx_hash
+    AND COALESCE(ranked.order_hash, '') = COALESCE(t.order_hash, '')
     AND ranked.timestamp = t.timestamp
+    AND ranked.id = t.id
     AND ranked.rn > 1
 )
 "

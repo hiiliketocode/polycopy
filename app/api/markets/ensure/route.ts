@@ -49,35 +49,68 @@ function inferBetStructure(title: string | null | undefined): string | null {
 }
 
 // Fallback niche inference using semantic_mapping (service role avoids RLS issues)
-async function inferNicheFromTags(tags: string[]): Promise<{ niche: string | null; source?: string; fromTag?: string }> {
+async function inferNicheFromTags(tags: string[]): Promise<{ niche: string | null; marketType?: string | null; source?: string; fromTag?: string }> {
   const cleanTags = tags
     .map((t) => t.toLowerCase().trim())
     .filter((t) => t.length > 0)
 
-  if (cleanTags.length === 0) return { niche: null }
+  if (cleanTags.length === 0) {
+    console.log('[ensureMarket] No tags to classify')
+    return { niche: null, marketType: null, source: 'no_tags' }
+  }
 
-  const { data: mappings, error } = await supabase
+  console.log('[ensureMarket] Querying semantic_mapping with tags:', cleanTags)
+
+  // Try case-sensitive match first (original_tag should be lowercase)
+  let { data: mappings, error } = await supabase
     .from('semantic_mapping')
-    .select('clean_niche, specificity_score, original_tag')
+    .select('clean_niche, type, specificity_score, original_tag')
     .in('original_tag', cleanTags)
+
+  // If no matches and we have tags, try case-insensitive match as fallback
+  if ((!mappings || mappings.length === 0) && cleanTags.length > 0) {
+    console.log('[ensureMarket] No case-sensitive matches, trying case-insensitive...')
+    // Try each tag individually with ilike (case-insensitive)
+    for (const tag of cleanTags) {
+      const { data: ciMappings, error: ciError } = await supabase
+        .from('semantic_mapping')
+        .select('clean_niche, type, specificity_score, original_tag')
+        .ilike('original_tag', tag)
+      
+      if (!ciError && ciMappings && ciMappings.length > 0) {
+        mappings = (mappings || []).concat(ciMappings)
+        console.log('[ensureMarket] Found case-insensitive match for tag:', tag)
+        break // Use first match found
+      }
+    }
+  }
 
   if (error) {
     console.error('[ensureMarket] Error querying semantic_mapping:', error)
-    return { niche: null, source: 'semantic_mapping_error' }
+    return { niche: null, marketType: null, source: 'semantic_mapping_error' }
   }
 
   if (mappings && mappings.length > 0) {
     mappings.sort((a: any, b: any) => (a.specificity_score || 99) - (b.specificity_score || 99))
     const best = mappings[0]
     const cleanNiche = (best?.clean_niche || '').toUpperCase()
+    const marketType = (best?.type || '').toUpperCase() || null
+    console.log('[ensureMarket] ✅ Found semantic mapping:', {
+      tag: best?.original_tag,
+      niche: cleanNiche,
+      type: marketType,
+      score: best?.specificity_score,
+    })
     return {
       niche: cleanNiche || null,
+      marketType: marketType || null,
       source: 'semantic_mapping',
       fromTag: best?.original_tag,
     }
   }
 
-  return { niche: null }
+  console.warn('[ensureMarket] ⚠️ No semantic_mapping matches found for tags:', cleanTags)
+  return { niche: null, marketType: null, source: 'no_match' }
 }
 
 function fallbackNicheFromTitle(title: string | null | undefined): string {
@@ -100,8 +133,9 @@ function mapClobMarketToRow(clobMarket: any) {
     condition_id: clobMarket?.condition_id ?? null,
     title: clobMarket?.question ?? clobMarket?.title ?? null,
     tags: clobMarket?.tags ?? [],
-    market_subtype: null, // Will be populated by classification script
-    bet_structure: null, // Will be populated by classification script
+    market_type: null, // Will be populated by classification
+    market_subtype: null, // Will be populated by classification
+    bet_structure: null, // Will be populated by classification
     volume_total: clobMarket?.volume_total ?? null,
     volume_1_week: clobMarket?.volume_1_week ?? null,
     volume_1_month: clobMarket?.volume_1_month ?? null,
@@ -134,7 +168,7 @@ export async function GET(request: Request) {
     // Step 1: Check if market exists in database
     const { data: existingMarket, error: queryError } = await supabase
       .from('markets')
-      .select('market_subtype, bet_structure, tags, title')
+      .select('market_type, market_subtype, bet_structure, tags, title')
       .eq('condition_id', conditionId)
       .maybeSingle()
 
@@ -152,6 +186,16 @@ export async function GET(request: Request) {
       const hasTags = tags.length > 0
 
       let updatedFields: Record<string, any> = {}
+
+      // Market type: prefer existing, otherwise infer from tags
+      let finalMarketType = (existingMarket.market_type || '').trim().toUpperCase() || null
+      if (!finalMarketType && hasTags) {
+        const { marketType } = await inferNicheFromTags(tags)
+        finalMarketType = marketType || null
+      }
+      if (!existingMarket.market_type && finalMarketType) {
+        updatedFields.market_type = finalMarketType
+      }
 
       // Niche: prefer existing, otherwise infer from tags with service role, then fallback to title
       let finalNiche = (existingMarket.market_subtype || '').trim().toUpperCase() || null
@@ -189,7 +233,14 @@ export async function GET(request: Request) {
         return NextResponse.json({
           found: true,
           source: 'database',
-          market: { ...existingMarket, ...updatedFields, tags }
+          market: { 
+            ...existingMarket, 
+            ...updatedFields, 
+            tags,
+            market_type: updatedFields.market_type || existingMarket.market_type || null,
+            market_subtype: updatedFields.market_subtype || existingMarket.market_subtype || null,
+            bet_structure: updatedFields.bet_structure || existingMarket.bet_structure || null,
+          }
         })
       }
 
@@ -275,12 +326,51 @@ export async function GET(request: Request) {
     })
 
     // Infer classification on the server (service role bypasses RLS)
+    // PRIMARY: Use semantic_mapping (core semantic engine)
     const nicheResult = await inferNicheFromTags(normalizedTags)
-    const finalNiche = nicheResult.niche || fallbackNicheFromTitle(marketRow.title)
+    let finalNiche = nicheResult.niche
+    let finalMarketType = nicheResult.marketType || null
+    
+    // If semantic_mapping failed, log warning but still try fallback
+    // This ensures markets are added to DB even if semantic_mapping table needs population
+    if (!finalNiche && normalizedTags.length > 0) {
+      console.warn('[ensureMarket] ⚠️ Semantic mapping failed for tags:', normalizedTags, '- using fallback')
+      finalNiche = fallbackNicheFromTitle(marketRow.title)
+      // Infer market_type from niche if semantic_mapping didn't provide it
+      if (!finalMarketType && finalNiche) {
+        // Map common niches to types
+        const nicheUpper = finalNiche.toUpperCase()
+        if (['NBA', 'NFL', 'TENNIS', 'SOCCER', 'SPORTS'].includes(nicheUpper)) {
+          finalMarketType = 'SPORTS'
+        } else if (['BITCOIN', 'CRYPTO'].includes(nicheUpper)) {
+          finalMarketType = 'CRYPTO'
+        } else if (['POLITICS', 'ELECTION'].includes(nicheUpper)) {
+          finalMarketType = 'POLITICS'
+        }
+      }
+    } else if (!finalNiche) {
+      console.warn('[ensureMarket] ⚠️ No tags available for market:', marketRow.condition_id)
+      finalNiche = fallbackNicheFromTitle(marketRow.title)
+    }
+    
     const finalBetStructure = inferBetStructure(marketRow.title) || null
+    
+    // ALWAYS store tags (required for semantic engine)
     marketRow.tags = normalizedTags
+    
+    // Store classification
+    if (finalMarketType) marketRow.market_type = finalMarketType
     if (finalNiche) marketRow.market_subtype = finalNiche
     if (finalBetStructure) marketRow.bet_structure = finalBetStructure
+    
+    console.log('[ensureMarket] Classification result:', {
+      condition_id: marketRow.condition_id,
+      tags: normalizedTags,
+      market_type: finalMarketType,
+      niche: finalNiche,
+      nicheSource: nicheResult.source || 'fallback',
+      betStructure: finalBetStructure,
+    })
 
     // Step 5: Upsert to database
     console.log('[ensureMarket] Step 5: Upserting to database')
@@ -308,8 +398,9 @@ export async function GET(request: Request) {
         found: true,
         source: 'clob_api',
         market: {
-          market_subtype: null,
-          bet_structure: null,
+          market_type: finalMarketType || null,
+          market_subtype: finalNiche || null,
+          bet_structure: finalBetStructure || null,
           tags: marketRow.tags,
           title: marketRow.title,
         },
@@ -321,7 +412,7 @@ export async function GET(request: Request) {
     // Step 6: Re-fetch from database to get any computed fields
     const { data: savedMarket } = await supabase
       .from('markets')
-      .select('market_subtype, bet_structure, tags, title')
+      .select('market_type, market_subtype, bet_structure, tags, title')
       .eq('condition_id', conditionId)
       .maybeSingle()
 

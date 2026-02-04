@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
-import { POLYGON_RPC_URL, USDC_CONTRACT_ADDRESS, USDC_E_CONTRACT_ADDRESS, USDC_DECIMALS } from '@/lib/turnkey/config'
+import { USDC_CONTRACT_ADDRESS, USDC_E_CONTRACT_ADDRESS, USDC_DECIMALS } from '@/lib/turnkey/config'
 import { badRequest, externalApiError } from '@/lib/http/error-response'
+import { fetchUsdcBalance } from '@/lib/polygon/rpc'
 
 /**
  * POST /api/turnkey/polymarket/usdc-balance
@@ -35,69 +36,35 @@ export async function POST(request: Request) {
 
     console.log('[POLYMARKET-LAB] Fetching USDC balance for:', accountAddress)
 
-    // Encode balanceOf(address) call
-    const paddedAddress = accountAddress.slice(2).padStart(64, '0')
-    const data = `0x70a08231${paddedAddress}`
+    // Fetch balance with retry logic
+    const balanceData = await fetchUsdcBalance(
+      accountAddress,
+      USDC_CONTRACT_ADDRESS,
+      USDC_E_CONTRACT_ADDRESS,
+      USDC_DECIMALS
+    )
 
-    // Fetch both USDC and USDC.e balances in parallel
-    const [nativeResponse, bridgedResponse] = await Promise.all([
-      // Native USDC
-      fetch(POLYGON_RPC_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'eth_call',
-          params: [{ to: USDC_CONTRACT_ADDRESS, data }, 'latest'],
-          id: 1,
-        }),
-      }),
-      // USDC.e (bridged)
-      fetch(POLYGON_RPC_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'eth_call',
-          params: [{ to: USDC_E_CONTRACT_ADDRESS, data }, 'latest'],
-          id: 2,
-        }),
-      }),
-    ])
-
-    const [nativeData, bridgedData] = await Promise.all([
-      nativeResponse.json(),
-      bridgedResponse.json(),
-    ])
-
-    if (nativeData.error || bridgedData.error) {
-      throw new Error('RPC error fetching balances')
-    }
-
-    // Parse balances
-    const nativeBalanceRaw = BigInt(nativeData.result).toString()
-    const bridgedBalanceRaw = BigInt(bridgedData.result).toString()
-    
-    // Calculate totals
-    const totalBalanceRaw = (BigInt(nativeBalanceRaw) + BigInt(bridgedBalanceRaw)).toString()
-    const totalBalanceNum = Number(totalBalanceRaw) / Math.pow(10, USDC_DECIMALS)
-    const nativeBalanceNum = Number(nativeBalanceRaw) / Math.pow(10, USDC_DECIMALS)
-    const bridgedBalanceNum = Number(bridgedBalanceRaw) / Math.pow(10, USDC_DECIMALS)
-
-    console.log('[POLYMARKET-LAB] Balance fetched - Native:', nativeBalanceNum, 'Bridged:', bridgedBalanceNum, 'Total:', totalBalanceNum)
+    console.log(
+      '[POLYMARKET-LAB] Balance fetched - Native:',
+      balanceData.nativeBalanceFormatted,
+      'Bridged:',
+      balanceData.bridgedBalanceFormatted,
+      'Total:',
+      balanceData.totalBalanceFormatted
+    )
     console.log('[POLYMARKET-LAB] USDC balance request finished')
 
     return NextResponse.json({
       accountAddress,
-      usdcBalanceRaw: totalBalanceRaw,
-      usdcBalanceFormatted: `${totalBalanceNum.toFixed(2)} USDC`,
+      usdcBalanceRaw: balanceData.totalBalance.toString(),
+      usdcBalanceFormatted: `${balanceData.totalBalanceFormatted.toFixed(2)} USDC`,
       breakdown: {
         native: {
-          balance: nativeBalanceNum.toFixed(2),
+          balance: balanceData.nativeBalanceFormatted.toFixed(2),
           contract: USDC_CONTRACT_ADDRESS,
         },
         bridged: {
-          balance: bridgedBalanceNum.toFixed(2),
+          balance: balanceData.bridgedBalanceFormatted.toFixed(2),
           contract: USDC_E_CONTRACT_ADDRESS,
         },
       },

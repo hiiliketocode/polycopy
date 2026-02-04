@@ -494,9 +494,14 @@ def load_trades_to_bigquery(client: bigquery.Client, trades: List[Dict]) -> bool
         USING (
             SELECT *
             FROM `{temp_table_id}`
-            QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY timestamp DESC) = 1
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY wallet_address, tx_hash, COALESCE(order_hash, '')
+                ORDER BY timestamp DESC, id DESC
+            ) = 1
         ) AS source
-        ON target.id = source.id
+        ON target.wallet_address = source.wallet_address
+           AND target.tx_hash = source.tx_hash
+           AND COALESCE(target.order_hash, '') = COALESCE(source.order_hash, '')
         WHEN NOT MATCHED THEN INSERT ROW
         """
         

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { POLYGON_RPC_URL, USDC_CONTRACT_ADDRESS, USDC_E_CONTRACT_ADDRESS, USDC_DECIMALS } from '@/lib/turnkey/config'
+import { USDC_CONTRACT_ADDRESS, USDC_E_CONTRACT_ADDRESS, USDC_DECIMALS } from '@/lib/turnkey/config'
+import { fetchUsdcBalance } from '@/lib/polygon/rpc'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,62 +25,26 @@ export async function GET(
   }
   
   try {
-    // 1. Get Cash Balance directly from Polygon RPC
+    // 1. Get Cash Balance directly from Polygon RPC with retry logic
     let cashBalance = 0
     
     try {
-      // Encode balanceOf(address) call
-      const paddedAddress = address.slice(2).padStart(64, '0')
-      const data = `0x70a08231${paddedAddress}`
+      const balanceData = await fetchUsdcBalance(
+        address,
+        USDC_CONTRACT_ADDRESS,
+        USDC_E_CONTRACT_ADDRESS,
+        USDC_DECIMALS
+      )
       
-      // Fetch both USDC and USDC.e balances in parallel
-      const [nativeResponse, bridgedResponse] = await Promise.all([
-        // Native USDC
-        fetch(POLYGON_RPC_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'eth_call',
-            params: [{ to: USDC_CONTRACT_ADDRESS, data }, 'latest'],
-            id: 1,
-          }),
-          signal: AbortSignal.timeout(5000)
-        }),
-        // USDC.e (bridged)
-        fetch(POLYGON_RPC_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'eth_call',
-            params: [{ to: USDC_E_CONTRACT_ADDRESS, data }, 'latest'],
-            id: 2,
-          }),
-          signal: AbortSignal.timeout(5000)
-        }),
-      ])
-      
-      const [nativeData, bridgedData] = await Promise.all([
-        nativeResponse.json(),
-        bridgedResponse.json(),
-      ])
-      
-      if (!nativeData.error && !bridgedData.error) {
-        // Parse balances
-        const nativeBalanceRaw = BigInt(nativeData.result).toString()
-        const bridgedBalanceRaw = BigInt(bridgedData.result).toString()
-        
-        // Calculate total
-        const totalBalanceRaw = (BigInt(nativeBalanceRaw) + BigInt(bridgedBalanceRaw)).toString()
-        cashBalance = Number(totalBalanceRaw) / Math.pow(10, USDC_DECIMALS)
-        
-        console.log(`Cash balance for ${address}: $${cashBalance.toFixed(2)}`)
-      } else {
-        console.warn('RPC error fetching USDC balance:', nativeData.error || bridgedData.error)
+      cashBalance = balanceData.totalBalanceFormatted
+      console.log(`Cash balance for ${address}: $${cashBalance.toFixed(2)}`)
+    } catch (balanceError: any) {
+      // Log but don't fail the entire request - return 0 balance
+      console.warn('Failed to fetch cash balance from Polygon RPC:', balanceError?.message || balanceError)
+      // If it's a rate limit error, we'll return 0 but log it for monitoring
+      if (balanceError?.message?.includes('rate limit') || balanceError?.message?.includes('Too many requests')) {
+        console.warn('Rate limit hit while fetching USDC balance - returning 0')
       }
-    } catch (balanceError) {
-      console.warn('Failed to fetch cash balance from Polygon RPC:', balanceError)
     }
     
     // 2. Get Open Positions from Polymarket
@@ -131,8 +96,8 @@ export async function GET(
       positionsValue: parseFloat(positionsValue.toFixed(2))
     }, {
       headers: {
-        // Cache for 30 seconds to avoid hammering the API
-        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60'
+        // Cache for 60 seconds to reduce RPC load (increased from 30s)
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120'
       }
     })
     

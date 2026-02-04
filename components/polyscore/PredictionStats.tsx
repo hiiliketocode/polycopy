@@ -53,11 +53,11 @@ export function PredictionStats({
   marketTags,
   isAdmin = false,
 }: PredictionStatsProps) {
-  // Admin-only visibility
-  if (!isAdmin) return null
   const [stats, setStats] = useState<StatsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [resolvedNiche, setResolvedNiche] = useState<string | null>(null)
+  const [resolvedBetStructure, setResolvedBetStructure] = useState<string>('STANDARD')
 
   // Helper: fetch with timeout to avoid hanging UI on slow endpoints
   const fetchWithTimeout = async (url: string, opts: RequestInit = {}, timeoutMs = 15000) => {
@@ -110,11 +110,11 @@ export function PredictionStats({
     return k
   }
 
-  // Determine price bracket
+  // Determine price bracket (entry price → underdog / even / favorite)
   const priceBracket = useMemo(() => {
-    if (price < 0.4) return 'LOW'
-    if (price > 0.6) return 'HIGH'
-    return 'MID'
+    if (price < 0.4) return 'UNDERDOG'
+    if (price > 0.6) return 'FAVORITE'
+    return 'EVEN'
   }, [price])
 
   // Determine bet structure from title
@@ -126,29 +126,13 @@ export function PredictionStats({
     return 'STANDARD'
   }, [marketTitle])
 
-  // Determine niche from tags, category, or title
+    // Determine niche from semantic_mapping only (no fallbacks)
   const niche = useMemo(() => {
-    // Try category first
-    if (marketCategory && marketCategory !== 'OTHER') {
-      return marketCategory.toUpperCase()
-    }
-    
-    // Try tags via semantic_mapping
-    if (marketTags && marketTags.length > 0) {
-      // We'll fetch semantic mapping in the effect
-      return null // Will be determined in effect
-    }
-    
-    // Fallback to title keywords
-    const titleLower = (marketTitle || '').toLowerCase()
-    if (titleLower.includes('tennis')) return 'TENNIS'
-    if (titleLower.includes('nba') || titleLower.includes('basketball')) return 'NBA'
-    if (titleLower.includes('nfl') || titleLower.includes('football')) return 'NFL'
-    if (titleLower.includes('politics') || titleLower.includes('election')) return 'POLITICS'
-    if (titleLower.includes('crypto') || titleLower.includes('bitcoin')) return 'CRYPTO'
-    
-    return 'OTHER'
-  }, [marketCategory, marketTags, marketTitle])
+    // Semantic mapping handled in effect; return null to signal lookup when tags exist
+    if (marketTags && marketTags.length > 0) return null
+    // No fallback - rely entirely on semantic_mapping via useEffect
+    return null
+  }, [marketTags])
 
   useEffect(() => {
     if (!walletAddress || !conditionId) return
@@ -165,155 +149,174 @@ export function PredictionStats({
         let finalNiche = niche
         let finalBetStructure = betStructure
         
-        // Use API route to ensure market exists in database
-        let marketDataToUse: any = null
+        // Market data (tags, market_subtype, bet_structure) is batch-fetched in feed page
+        // But tags might still be missing if market doesn't exist in DB yet
+        // So we'll try props first, then fallback to DB query, then use title
         
-        try {
-          const apiUrl = `/api/markets/ensure?conditionId=${encodeURIComponent(conditionId)}`
-          // Fire-and-forget with timeout; don't block stats on slow ensure
-          fetchWithTimeout(apiUrl, { cache: 'no-store' }, 5000)
-            .then(async (resp) => {
-              if (resp && resp.ok) {
-                const ensureData = await resp.json().catch(() => null)
-                if (ensureData?.found && ensureData.market) {
-                  marketDataToUse = ensureData.market
+        // Helper function to normalize tags from various sources
+        const normalizeTags = (source: any): string[] => {
+          if (!source) return [];
+          
+          // Handle arrays
+          if (Array.isArray(source)) {
+            return source
+              .map((t: any) => {
+                if (typeof t === 'object' && t !== null) {
+                  return t.name || t.tag || t.value || String(t);
+                }
+                return String(t);
+              })
+              .map((t: string) => t.trim().toLowerCase())
+              .filter((t: string) => t.length > 0 && t !== 'null' && t !== 'undefined');
+          }
+          
+          // Handle strings (could be JSON)
+          if (typeof source === 'string' && source.trim()) {
+            try {
+              const parsed = JSON.parse(source);
+              return normalizeTags(parsed);
+            } catch {
+              const trimmed = source.trim().toLowerCase();
+              return trimmed.length > 0 ? [trimmed] : [];
+            }
+          }
+          
+          // Handle objects
+          if (typeof source === 'object' && source !== null) {
+            if (source.tags && Array.isArray(source.tags)) {
+              return normalizeTags(source.tags);
+            }
+            if (source.data && Array.isArray(source.data)) {
+              return normalizeTags(source.data);
+            }
+          }
+          
+          return [];
+        };
+        
+        // Collect tags: Priority 1 = props, Priority 2 = DB query, Priority 3 = title extraction
+        let tagsToUse: string[] = [];
+        
+        // Priority 1: Use tags from props (batch-fetched by feed)
+        if (marketTags) {
+          tagsToUse = normalizeTags(marketTags);
+        }
+        
+        // Priority 2: If no tags from props, try fetching from DB (fallback)
+        if (tagsToUse.length === 0 && conditionId) {
+          try {
+            const { data: dbMarket, error: dbError } = await supabase
+              .from('markets')
+              .select('tags, raw_dome')
+              .eq('condition_id', conditionId)
+              .maybeSingle();
+            
+            if (!dbError && dbMarket) {
+              // Try tags column first
+              if (dbMarket.tags) {
+                tagsToUse = normalizeTags(dbMarket.tags);
+              }
+              
+              // Fallback to raw_dome if tags missing
+              if (tagsToUse.length === 0 && dbMarket.raw_dome) {
+                try {
+                  const rawDome = typeof dbMarket.raw_dome === 'string' 
+                    ? JSON.parse(dbMarket.raw_dome) 
+                    : dbMarket.raw_dome;
+                  if (rawDome?.tags) {
+                    tagsToUse = normalizeTags(rawDome.tags);
+                  }
+                } catch {
+                  // Ignore parse errors
                 }
               }
-            })
-            .catch(() => {})
-        } catch {
-          // ignore ensure failure
+            }
+          } catch (err) {
+            // Non-fatal - continue without DB tags
+            console.warn('[PredictionStats] Error fetching tags from DB:', err);
+          }
+        }
+        
+        // Priority 3: Extract tags from market title as last resort
+        if (tagsToUse.length === 0 && marketTitle) {
+          const titleLower = marketTitle.toLowerCase();
+          const titleTags: string[] = [];
+          
+          // Extract common categories from title
+          if (titleLower.includes('nba') || titleLower.includes('basketball')) titleTags.push('nba');
+          if (titleLower.includes('nfl') || titleLower.includes('football')) titleTags.push('nfl');
+          if (titleLower.includes('tennis')) titleTags.push('tennis');
+          if (titleLower.includes('crypto') || titleLower.includes('bitcoin')) titleTags.push('crypto');
+          if (titleLower.includes('politics') || titleLower.includes('election')) titleTags.push('politics');
+          if (titleLower.includes('sports')) titleTags.push('sports');
+          if (titleLower.includes('mlb') || titleLower.includes('baseball')) titleTags.push('mlb');
+          if (titleLower.includes('nhl') || titleLower.includes('hockey')) titleTags.push('nhl');
+          
+          if (titleTags.length > 0) {
+            tagsToUse = titleTags;
+          }
+        }
+        
+        // De-dupe tags
+        tagsToUse = Array.from(new Set(tagsToUse));
+        
+        // Log summary (only if tags found or if debugging)
+        if (tagsToUse.length > 0) {
+          console.log('[PredictionStats] ✅ Collected tags:', {
+            count: tagsToUse.length,
+            tags: tagsToUse.slice(0, 5), // Log first 5 only
+            source: marketTags ? 'props' : 'db_or_title',
+          });
         }
 
-        console.log('[PredictionStats] Market data to use:', {
-          conditionId,
-          marketExists: !!marketDataToUse,
-          market_subtype: marketDataToUse?.market_subtype,
-          bet_structure: marketDataToUse?.bet_structure,
-          tags: marketDataToUse?.tags,
-          tagsType: typeof marketDataToUse?.tags,
-          tagsLength: Array.isArray(marketDataToUse?.tags) ? marketDataToUse.tags.length : 0,
-          title: marketDataToUse?.title,
-        })
+        // Semantic mapping lookup (primary niche resolver)
+        if (tagsToUse.length > 0) {
+          try {
+            let { data: mappings, error: mappingError } = await supabase
+              .from('semantic_mapping')
+              .select('clean_niche, type, specificity_score, original_tag')
+              .in('original_tag', tagsToUse)
 
-        // Use market_subtype from database if available
-        if (marketDataToUse?.market_subtype && marketDataToUse.market_subtype.trim().length > 0) {
-          finalNiche = marketDataToUse.market_subtype.trim().toUpperCase()
-          console.log('[PredictionStats] Using market_subtype:', finalNiche)
-        } else {
-          // Get tags from database (JSONB array) or from props
-          let tagsToUse: string[] = []
-          
-          // First try database tags (JSONB array)
-          // Match edge function logic: convert to lowercase and trim
-          if (marketDataToUse?.tags) {
-            if (Array.isArray(marketDataToUse.tags)) {
-              tagsToUse = marketDataToUse.tags
-                .map((t: any) => {
-                  const tagStr = typeof t === 'string' ? t : String(t)
-                  return tagStr.toLowerCase().trim()
-                })
-                .filter((t: string) => t.length > 0)
-            } else if (typeof marketDataToUse.tags === 'string') {
-              try {
-                const parsed = JSON.parse(marketDataToUse.tags)
-                if (Array.isArray(parsed)) {
-                  tagsToUse = parsed
-                    .map((t: any) => {
-                      const tagStr = typeof t === 'string' ? t : String(t)
-                      return tagStr.toLowerCase().trim()
-                    })
-                    .filter((t: string) => t.length > 0)
+            // If no matches, try case-insensitive (batch queries in parallel for speed)
+            if ((!mappings || mappings.length === 0) && tagsToUse.length > 0) {
+              // Query all tags in parallel (faster than sequential)
+              const ciQueries = tagsToUse.map(tag => 
+                supabase
+                  .from('semantic_mapping')
+                  .select('clean_niche, type, specificity_score, original_tag')
+                  .ilike('original_tag', tag)
+              )
+              const ciResults = await Promise.all(ciQueries)
+              
+              // Find first successful result
+              for (const result of ciResults) {
+                if (!result.error && result.data && result.data.length > 0) {
+                  mappings = result.data
+                  break
                 }
-              } catch {
-                // Not JSON, treat as single tag
-                tagsToUse = [marketDataToUse.tags.toLowerCase().trim()].filter((t: string) => t.length > 0)
               }
             }
-          }
-          
-          // Fallback to props if database tags are empty
-          if (tagsToUse.length === 0 && marketTags && marketTags.length > 0) {
-            tagsToUse = marketTags
-              .map((t: any) => {
-                const tagStr = typeof t === 'string' ? t : String(t)
-                return tagStr.toLowerCase().trim()
-              })
-              .filter((t: string) => t.length > 0)
-          }
-          
-          console.log('[PredictionStats] Tags to use for semantic_mapping (lowercase, trimmed):', {
-            tags: tagsToUse,
-            count: tagsToUse.length,
-          })
-          
-          // Look up niche from semantic_mapping using tags (exactly like edge function)
-          if (tagsToUse.length > 0) {
-            console.log('[PredictionStats] Querying semantic_mapping table with cleanTags:', tagsToUse)
-            
-            // Query semantic_mapping - tags are already lowercase (matching edge function)
-            const { data: mappings, error: mappingError } = await supabase
-              .from('semantic_mapping')
-              .select('clean_niche, specificity_score, original_tag')
-              .in('original_tag', tagsToUse)
-            
-            console.log('[PredictionStats] Semantic mapping query result:', {
-              hasError: !!mappingError,
-              errorMessage: mappingError?.message,
-              errorCode: mappingError?.code,
-              errorDetails: mappingError?.details,
-              mappingsFound: mappings?.length || 0,
-              mappings: mappings,
-            })
-            
+
             if (mappingError) {
-              console.error('[PredictionStats] Error querying semantic_mapping:', {
-                error: mappingError,
-                message: mappingError.message,
-                code: mappingError.code,
-                details: mappingError.details,
-                hint: mappingError.hint,
-              })
+              console.warn('[PredictionStats] Error querying semantic_mapping:', mappingError)
             }
-            
+
             if (mappings && mappings.length > 0) {
-              console.log('[PredictionStats] Found mappings, sorting by specificity_score')
               mappings.sort((a: any, b: any) => (a.specificity_score || 99) - (b.specificity_score || 99))
-              console.log('[PredictionStats] Sorted mappings:', mappings.map((m: any) => ({
-                original_tag: m.original_tag,
-                clean_niche: m.clean_niche,
-                specificity_score: m.specificity_score,
-              })))
-              
-              finalNiche = mappings[0].clean_niche || null
+              finalNiche = (mappings[0].clean_niche || '').toUpperCase() || null
               console.log('[PredictionStats] ✅ Selected niche from semantic_mapping:', {
                 niche: finalNiche,
+                type: mappings[0].type,
                 fromTag: mappings[0].original_tag,
-                specificity: mappings[0].specificity_score,
               })
-            } else {
-              console.warn('[PredictionStats] ⚠️ No mappings found for tags:', {
-                tagsQueried: tagsToUse,
-                suggestion: 'Check semantic_mapping table for these tag values',
-              })
+            } else if (tagsToUse.length > 0) {
+              // No semantic mapping match - this is OK, we'll use fallback
+              console.log('[PredictionStats] No semantic_mapping matches for tags:', tagsToUse.slice(0, 3))
             }
-          } else {
-            console.warn('[PredictionStats] No tags to query semantic_mapping')
+          } catch (err) {
+            console.warn('[PredictionStats] Error during semantic mapping lookup:', err)
+            // Continue without niche - will use fallback
           }
-          
-          // If still no niche from semantic_mapping, log why
-          if (!finalNiche && tagsToUse.length > 0) {
-            console.warn('[PredictionStats] No niche found from semantic_mapping despite having tags:', {
-              tagsQueried: tagsToUse,
-              tagsCount: tagsToUse.length,
-              suggestion: 'Check if semantic_mapping table has entries for these tags',
-            })
-          }
-        }
-        
-        // Use bet_structure from database if available
-        if (marketDataToUse?.bet_structure && marketDataToUse.bet_structure.trim().length > 0) {
-          finalBetStructure = marketDataToUse.bet_structure.trim().toUpperCase()
         }
         
         console.log('[PredictionStats] Final classification before fallback:', {
@@ -322,9 +325,30 @@ export function PredictionStats({
           priceBracket,
         })
         
+        // Fallback: Try to get market_subtype from DB if semantic mapping failed
+        if (!finalNiche && conditionId) {
+          try {
+            const { data: dbMarket } = await supabase
+              .from('markets')
+              .select('market_subtype')
+              .eq('condition_id', conditionId)
+              .maybeSingle();
+            
+            if (dbMarket?.market_subtype) {
+              finalNiche = (dbMarket.market_subtype || '').trim().toUpperCase() || null;
+              if (finalNiche) {
+                console.log('[PredictionStats] ✅ Using stored market_subtype:', finalNiche);
+              }
+            }
+          } catch (err) {
+            // Non-fatal - continue without niche
+          }
+        }
+        
+        // If still no niche, leave as null (will show "other" in UI)
+        // This is OK - not all markets need classification immediately
         if (!finalNiche) {
-          console.warn('[PredictionStats] No niche found, defaulting to OTHER')
-          finalNiche = 'OTHER'
+          console.log('[PredictionStats] No niche found - will show "other" badge');
         }
         if (!finalBetStructure) {
           console.warn('[PredictionStats] No bet structure found, defaulting to STANDARD')
@@ -337,19 +361,27 @@ export function PredictionStats({
           priceBracket,
         })
 
-        // Fetch global stats
-        // Use service-role API proxy to avoid RLS / PostgREST cache issues
+        setResolvedNiche(finalNiche)
+        setResolvedBetStructure(finalBetStructure)
+
+        // Fetch global stats directly from Supabase - skip API route for speed
         let globalStats: any = null
         let profileStats: any[] = []
         try {
-          const statsResp = await fetch(`/api/trader/stats?wallet=${encodeURIComponent(wallet)}`, { cache: 'no-store' })
-          if (!statsResp.ok) {
-            const txt = await statsResp.text().catch(() => '')
-            throw new Error(`/api/trader/stats ${statsResp.status}: ${txt.slice(0,200)}`)
+          const [{ data: g, error: gErr }, { data: p, error: pErr }] = await Promise.all([
+            supabase.from('trader_global_stats').select('*').eq('wallet_address', wallet).maybeSingle(),
+            supabase.from('trader_profile_stats').select('*').eq('wallet_address', wallet),
+          ])
+          
+          if (gErr) {
+            console.error('[PredictionStats] Error fetching global stats:', gErr)
           }
-          const json = await statsResp.json()
-          globalStats = json.global || null
-          profileStats = json.profiles || []
+          if (pErr) {
+            console.error('[PredictionStats] Error fetching profile stats:', pErr)
+          }
+          
+          globalStats = g || null
+          profileStats = p || []
         } catch (statsErr: any) {
           console.error('[PredictionStats] stats fetch failed', statsErr)
           setError('Trader insights unavailable')
@@ -363,40 +395,64 @@ export function PredictionStats({
           globalStats?.recent_win_rate,
           globalStats?.l_win_rate, globalStats?.L_win_rate,
           globalStats?.global_win_rate,
-        ) ?? 0.5
+        )
 
         const globalRoiPct = pickNumber(
           globalStats?.d30_total_roi_pct, globalStats?.D30_total_roi_pct,
           globalStats?.l_total_roi_pct, globalStats?.L_total_roi_pct,
           globalStats?.global_roi_pct,
-        ) ?? 0
+        )
 
         const globalAvgPnlUsd = pickNumber(
           globalStats?.d30_avg_pnl_trade_usd, globalStats?.D30_avg_pnl_trade_usd,
           globalStats?.l_avg_pnl_trade_usd, globalStats?.L_avg_pnl_trade_usd,
-        ) ?? 0
+        )
 
+        // Prefer 30-day averages (more recent, less inflated by old outliers)
+        // Fallback to lifetime if 30-day not available
         const globalAvgTradeSizeUsd = pickNumber(
           globalStats?.d30_avg_trade_size_usd, globalStats?.D30_avg_trade_size_usd,
           globalStats?.l_avg_trade_size_usd, globalStats?.L_avg_trade_size_usd,
-          globalStats?.avg_bet_size_usdc,
-        ) ?? tradeTotal
+          globalStats?.avg_bet_size_usdc
+        )
 
         const globalTradeCount = pickNumber(
           globalStats?.d30_count, globalStats?.D30_count,
           globalStats?.l_count, globalStats?.L_count,
-          globalStats?.total_lifetime_trades,
-        ) ?? 0
+          globalStats?.total_lifetime_trades
+        )
 
+        // For position size, prefer 30-day if available, otherwise lifetime
+        // Position size should be similar to trade size, so use trade size as fallback
         const globalAvgPosSizeUsd = pickNumber(
+          globalStats?.d30_avg_trade_size_usd, // Use 30d trade size as proxy for position size
           globalStats?.l_avg_pos_size_usd,
-          globalStats?.avg_bet_size_usdc,
-        ) ?? globalAvgTradeSizeUsd
+          globalStats?.avg_bet_size_usdc
+        ) ?? globalAvgTradeSizeUsd ?? null
+
+        // Safety check: if averages seem unreasonably high compared to current trade, cap them
+        // This prevents inflated averages from making conviction appear artificially low
+        const MAX_REASONABLE_AVG_MULTIPLIER = 5.0 // Don't let avg be more than 5x current trade
+        const cappedAvgTradeSize = globalAvgTradeSizeUsd && tradeTotal > 0 && globalAvgTradeSizeUsd > tradeTotal * MAX_REASONABLE_AVG_MULTIPLIER
+          ? tradeTotal * MAX_REASONABLE_AVG_MULTIPLIER
+          : globalAvgTradeSizeUsd
+        const cappedAvgPosSize = globalAvgPosSizeUsd && tradeTotal > 0 && globalAvgPosSizeUsd > tradeTotal * MAX_REASONABLE_AVG_MULTIPLIER
+          ? tradeTotal * MAX_REASONABLE_AVG_MULTIPLIER
+          : globalAvgPosSizeUsd
+
+        console.log('[PredictionStats] Average size calculation:', {
+          tradeTotal,
+          globalAvgTradeSizeUsd,
+          globalAvgPosSizeUsd,
+          cappedAvgTradeSize,
+          cappedAvgPosSize,
+          wasCapped: globalAvgTradeSizeUsd !== cappedAvgTradeSize || globalAvgPosSizeUsd !== cappedAvgPosSize,
+        })
 
         // Waterfall logic: find best matching profile
         const finalNicheKey = normalizeKey(finalNiche)
         const finalBetStructureKey = normalizeKey(finalBetStructure)
-        const priceBracketKey = normalizeBracket(priceBracket)
+        const priceBracketKey = normalizeKey(priceBracket)
         const normalizeProfile = (p: any) => {
           const nicheVal = normalizeKey(p.final_niche)
           const structureVal = normalizeKey(p.bet_structure || p.structure)
@@ -529,34 +585,39 @@ export function PredictionStats({
         })
 
         // Calculate avg PnL per trade (prefer direct column, fallback to ROI * avg bet size)
-        const profileAvgPnl = profileAvgPnlUsd !== 0
+        const profileAvgPnl = profileAvgPnlUsd !== null && profileAvgPnlUsd !== undefined
           ? profileAvgPnlUsd
-          : (avgBetSize > 0 && profileRoiPct !== 0 ? avgBetSize * (profileRoiPct / 100) : 0)
-        const globalAvgPnl = globalAvgPnlUsd !== 0
+          : (avgBetSize !== null && avgBetSize !== undefined && avgBetSize > 0 && profileRoiPct
+            ? avgBetSize * profileRoiPct
+            : null)
+        const globalAvgPnl = globalAvgPnlUsd !== null && globalAvgPnlUsd !== undefined
           ? globalAvgPnlUsd
-          : (globalAvgTradeSizeUsd > 0 && globalRoiPct !== 0 ? globalAvgTradeSizeUsd * (globalRoiPct / 100) : 0)
+          : (globalAvgTradeSizeUsd !== null && globalAvgTradeSizeUsd !== undefined && globalAvgTradeSizeUsd > 0 && globalRoiPct
+            ? globalAvgTradeSizeUsd * globalRoiPct
+            : null)
 
         // Calculate current exposure (sum of all positions in this market)
         // For now, use current trade size as exposure
         const currentExposure = tradeTotal
 
         const statsData: StatsData = {
-          profile_L_win_rate: profileWinRate,
-          global_L_win_rate: globalWinRate,
-          profile_L_avg_pnl_per_trade_usd: profileAvgPnl,
-          global_L_avg_pnl_per_trade_usd: globalAvgPnl,
-          profile_L_roi_pct: profileRoiPct / 100, // Convert percentage to decimal
-          global_L_roi_pct: globalRoiPct / 100,
+          profile_L_win_rate: profileWinRate ?? null,
+          global_L_win_rate: globalWinRate ?? null,
+          profile_L_avg_pnl_per_trade_usd: profileAvgPnl ?? null,
+          global_L_avg_pnl_per_trade_usd: globalAvgPnl ?? null,
+          // ROI values in DB are stored as decimals (e.g., 0.03 = 3%), keep as-is
+          profile_L_roi_pct: profileRoiPct ?? null,
+          global_L_roi_pct: globalRoiPct ?? null,
           profile_current_win_streak: 0, // Would need to query recent trades
           global_current_win_streak: 0,
-          profile_L_count: profileCount,
-          global_trade_count: globalTradeCount,
+          profile_L_count: profileCount ?? 0,
+          global_trade_count: globalTradeCount ?? 0,
           trade_profile: tradeProfile,
           data_source: dataSource,
           current_market_exposure: currentExposure,
           current_trade_size: tradeTotal,
-          global_L_avg_pos_size_usd: globalAvgPosSizeUsd,
-          global_L_avg_trade_size_usd: globalAvgTradeSizeUsd,
+          global_L_avg_pos_size_usd: cappedAvgPosSize ?? null,
+          global_L_avg_trade_size_usd: cappedAvgTradeSize ?? null,
         }
 
         console.log('[PredictionStats] Setting stats:', {
@@ -567,6 +628,16 @@ export function PredictionStats({
           global_L_avg_pnl_per_trade_usd: statsData.global_L_avg_pnl_per_trade_usd,
           profile_L_roi_pct: statsData.profile_L_roi_pct,
           global_L_roi_pct: statsData.global_L_roi_pct,
+          // Conviction calculation inputs
+          current_market_exposure: statsData.current_market_exposure,
+          current_trade_size: statsData.current_trade_size,
+          global_L_avg_pos_size_usd: statsData.global_L_avg_pos_size_usd,
+          global_L_avg_trade_size_usd: statsData.global_L_avg_trade_size_usd,
+          // Raw values from globalStats
+          raw_avg_bet_size_usdc: globalStats?.avg_bet_size_usdc,
+          raw_l_avg_pos_size_usd: globalStats?.l_avg_pos_size_usd,
+          raw_l_avg_trade_size_usd: globalStats?.l_avg_trade_size_usd,
+          raw_d30_avg_trade_size_usd: globalStats?.d30_avg_trade_size_usd,
         })
 
         setStats(statsData)
@@ -575,33 +646,38 @@ export function PredictionStats({
         setError(err?.message || 'Failed to load stats')
         // Even on error, set default stats so UI doesn't break
         setStats({
-          profile_L_win_rate: 0.5,
-          global_L_win_rate: 0.5,
-          profile_L_avg_pnl_per_trade_usd: 0,
-          global_L_avg_pnl_per_trade_usd: 0,
-          profile_L_roi_pct: 0,
-          global_L_roi_pct: 0,
+          profile_L_win_rate: null,
+          global_L_win_rate: null,
+          profile_L_avg_pnl_per_trade_usd: null,
+          global_L_avg_pnl_per_trade_usd: null,
+          profile_L_roi_pct: null,
+          global_L_roi_pct: null,
           profile_current_win_streak: 0,
           global_current_win_streak: 0,
           profile_L_count: 0,
-          trade_profile: `${niche || 'OTHER'}_${betStructure}_${priceBracket}`,
-          data_source: 'Error - Using Defaults',
+          global_trade_count: 0,
+          trade_profile: `${(resolvedNiche || niche || 'OTHER')}_${resolvedBetStructure || betStructure}_${priceBracket}`,
+          data_source: 'Error - No Data',
           current_market_exposure: price * size,
           current_trade_size: price * size,
-          global_L_avg_pos_size_usd: price * size,
-          global_L_avg_trade_size_usd: price * size,
-        })
+          // Don't set averages to current trade size - that would make conviction always 1.0x
+          // Leave as null so conviction shows N/A
+          global_L_avg_pos_size_usd: null,
+          global_L_avg_trade_size_usd: null,
+        } as StatsData)
       } finally {
         setLoading(false)
       }
     }
 
     fetchStats()
-  }, [walletAddress, conditionId, price, size, niche, betStructure, priceBracket, marketTags, marketTitle, marketCategory])
+  }, [walletAddress, conditionId, price, size, niche, betStructure, priceBracket, marketTags, marketTitle, marketCategory, isAdmin])
 
   // Only show N/A if stats is null or if we truly have no data
   // Since we always set trade_profile and use defaults, we should always have data
-  const hasInsufficientData = !stats
+  const hasInsufficientData =
+    !stats ||
+    ((stats.profile_L_count ?? 0) === 0 && (stats.global_trade_count ?? 0) === 0)
   // Low sample size only applies to profile-specific data, not global fallback
   const hasLowSampleSize = stats && 
     stats.data_source !== 'Global Fallback' &&
@@ -610,13 +686,13 @@ export function PredictionStats({
 
   // Format helpers
   const formatCurrency = (value: number | null | undefined) => {
-    if (value === null || value === undefined || !Number.isFinite(value)) return '$0.00'
+    if (value === null || value === undefined || !Number.isFinite(value)) return 'N/A'
     const sign = value >= 0 ? '+' : '-'
     return `${sign}$${Math.abs(value).toFixed(2)}`
   }
 
   const formatPercent = (value: number | null | undefined) => {
-    if (value === null || value === undefined || !Number.isFinite(value)) return '0.00'
+    if (value === null || value === undefined || !Number.isFinite(value)) return 'N/A'
     const sign = value >= 0 ? '+' : '-'
     return `${sign}${Math.abs(value).toFixed(2)}`
   }
@@ -627,7 +703,7 @@ export function PredictionStats({
   }
 
   const formatMultiplier = (value: number | null | undefined) => {
-    if (value === null || value === undefined || !Number.isFinite(value) || value === 0) return '0.00'
+    if (value === null || value === undefined || !Number.isFinite(value) || value === 0) return 'N/A'
     return value.toFixed(2)
   }
 
@@ -637,23 +713,50 @@ export function PredictionStats({
   }
 
   // Extract values with fallbacks
-  const tradeTypeWinRate = stats?.profile_L_win_rate ?? 0
-  const allTradesWinRate = stats?.global_L_win_rate ?? 0
-  const tradeTypeAvgPnl = stats?.profile_L_avg_pnl_per_trade_usd ?? 0
-  const allTradesAvgPnl = stats?.global_L_avg_pnl_per_trade_usd ?? 0
-  const tradeTypeRoiPct = stats?.profile_L_roi_pct ?? 0
-  const allTradesRoiPct = stats?.global_L_roi_pct ?? 0
+  const tradeTypeWinRate = stats?.profile_L_win_rate ?? null
+  const allTradesWinRate = stats?.global_L_win_rate ?? null
+  const tradeTypeAvgPnl = stats?.profile_L_avg_pnl_per_trade_usd ?? null
+  const allTradesAvgPnl = stats?.global_L_avg_pnl_per_trade_usd ?? null
+  const tradeTypeRoiPct = stats?.profile_L_roi_pct ?? null
+  const allTradesRoiPct = stats?.global_L_roi_pct ?? null
   const tradeTypeStreak = stats?.profile_current_win_streak ?? 0
   const allTradesStreak = stats?.global_current_win_streak ?? 0
   const profileCount = stats?.profile_L_count ?? 0
   const globalTradeCount = stats?.global_trade_count ?? 0
+  // Conviction calculation: current size / historical average
+  // If average is missing or zero, conviction can't be calculated
   const positionConviction = stats?.current_market_exposure && stats?.global_L_avg_pos_size_usd && stats.global_L_avg_pos_size_usd > 0
     ? stats.current_market_exposure / stats.global_L_avg_pos_size_usd
     : null
   const tradeConviction = stats?.current_trade_size && stats?.global_L_avg_trade_size_usd && stats?.global_L_avg_trade_size_usd > 0
     ? stats.current_trade_size / stats.global_L_avg_trade_size_usd
     : null
-  
+
+  // Debug logging for conviction calculation
+  if (stats) {
+    console.log('[PredictionStats] Conviction calculation:', {
+      current_market_exposure: stats.current_market_exposure,
+      current_trade_size: stats.current_trade_size,
+      global_L_avg_pos_size_usd: stats.global_L_avg_pos_size_usd,
+      global_L_avg_trade_size_usd: stats.global_L_avg_trade_size_usd,
+      positionConviction,
+      tradeConviction,
+      // Check if averages seem too high
+      posAvgTooHigh: stats.global_L_avg_pos_size_usd && stats.current_market_exposure 
+        ? stats.global_L_avg_pos_size_usd > stats.current_market_exposure * 2 
+        : null,
+      tradeAvgTooHigh: stats.global_L_avg_trade_size_usd && stats.current_trade_size
+        ? stats.global_L_avg_trade_size_usd > stats.current_trade_size * 2
+        : null,
+    })
+  }
+  const safeWinRateDisplay = (value: number | null | undefined) =>
+    value === null || value === undefined ? 'N/A' : `${(value * 100).toFixed(2)}%`
+
+  if (!isAdmin) {
+    return null
+  }
+
   if (loading) {
     return (
       <div className="mt-4 mb-4">
@@ -685,13 +788,13 @@ export function PredictionStats({
           <span>Trader Insights</span>
           <div className="inline-flex flex-wrap gap-1">
             <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
-              {normalizeKey(stats.trade_profile?.split('_')?.[0] || finalNiche) || 'OTHER'}
+              Niche: {(resolvedNiche || stats.trade_profile?.split('_')?.[0] || 'other')?.toString().toLowerCase() || 'other'}
             </span>
             <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
-              {normalizeKey(stats.trade_profile?.split('_')?.[1] || betStructure)}
+              Bet: {(resolvedBetStructure || stats.trade_profile?.split('_')?.[1])?.toString().toLowerCase() ?? 'standard'}
             </span>
             <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
-              {normalizeKey(stats.trade_profile?.split('_')?.[2] || priceBracket)}
+              Price: {(priceBracket || stats.trade_profile?.split('_')?.[2])?.toString().toLowerCase() ?? 'even'}
             </span>
           </div>
         </h3>
@@ -748,11 +851,11 @@ export function PredictionStats({
               hasInsufficientData && "opacity-50",
               hasLowSampleSize && "opacity-75"
             )}>
-              {hasInsufficientData ? 'N/A' : `${(tradeTypeWinRate * 100).toFixed(2)}%`}
+              {hasInsufficientData ? 'N/A' : safeWinRateDisplay(tradeTypeWinRate)}
             </p>
             {hasLowSampleSize && <p className="text-[9px] text-amber-600 font-medium mt-0.5">Low sample</p>}
             <p className="text-[10px] text-slate-500 font-medium">
-              ({(allTradesWinRate * 100).toFixed(2)}% all)
+              ({safeWinRateDisplay(allTradesWinRate)} all)
             </p>
           </div>
         )

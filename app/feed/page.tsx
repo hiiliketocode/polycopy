@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { getOrRefreshSession } from '@/lib/auth/session';
@@ -65,6 +65,11 @@ export interface FeedTrade {
     tradeId?: string;
     tokenId?: string;
   };
+  fireReasons?: string[];
+  fireScore?: number;
+  fireWinRate?: number | null;
+  fireRoi?: number | null;
+  fireConviction?: number | null;
 }
 
 type PositionTradeSummary = {
@@ -201,6 +206,36 @@ const defaultFilters: FilterState = {
   priceMaxCents: PRICE_RANGE.max,
   traderIds: [],
 };
+
+type FeedMode = 'all' | 'fire';
+
+type TraderStatsSnapshot = {
+  globalWinRate: number | null;
+  globalRoiPct?: number | null;
+  avgBetSizeUsd: number | null;
+  profiles: Array<{
+    final_niche?: string | null;
+    bet_structure?: string | null;
+    price_bracket?: string | null;
+    win_rate?: number | null;
+    d30_win_rate?: number | null;
+    roi_pct?: number | null;
+    d30_roi_pct?: number | null;
+    d30_count?: number | null;
+    trade_count?: number | null;
+  }>;
+};
+
+const FIRE_TOP_TRADERS_LIMIT = 100;
+const FIRE_TRADES_PER_TRADER = 10;
+// Updated thresholds based on data analysis:
+// - Lowered win rate from 0.65 to 0.55 to capture more quality traders
+// - Lowered ROI from 0.25 to 0.15 to show more positive trades
+// - Lowered conviction from 5 to 2.5 since avgBetSizeUsd is often missing
+// These thresholds balance showing enough trades while maintaining quality
+const FIRE_WIN_RATE_THRESHOLD = 0.55;
+const FIRE_ROI_THRESHOLD = 0.15;
+const FIRE_CONVICTION_MULTIPLIER_THRESHOLD = 2.5;
 
 const LOW_BALANCE_TOOLTIP =
   'Quick trades use your Polymarket USDC balance. Add funds before retrying this order.';
@@ -517,8 +552,112 @@ function normalizeOutcomeValue(value: string | null | undefined) {
   return trimmed ? trimmed.toUpperCase() : null;
 }
 
+const normalizeWinRateValue = (raw: unknown): number | null => {
+  if (raw === null || raw === undefined) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return null;
+  if (value > 1.01) return value / 100;
+  if (value < 0) return null;
+  return value;
+};
+
+const deriveCategoryFromTrade = (trade: any): string | undefined => {
+  const candidates = [
+    trade.category,
+    trade.market_category,
+    trade.marketCategory,
+    trade.market?.category,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim().toLowerCase();
+    }
+  }
+  return undefined;
+};
+
+const convictionMultiplierForTrade = (
+  trade: any,
+  stats?: TraderStatsSnapshot | null
+): number | null => {
+  const size = Number(trade.size ?? trade.amount ?? 0);
+  const price = Number(trade.price ?? 0);
+  if (!Number.isFinite(size) || !Number.isFinite(price)) return null;
+  const tradeValue = size * price;
+  
+  // Prefer 30-day average (more recent, less inflated)
+  // Fallback to lifetime average
+  const avgBetSize = stats?.d30_avg_trade_size_usd ?? stats?.avgBetSizeUsd ?? null;
+  
+  if (!avgBetSize || !Number.isFinite(avgBetSize) || avgBetSize <= 0) return null;
+  
+  // Safety cap: don't let average be more than 5x current trade
+  // This prevents inflated averages from making conviction appear artificially low
+  const MAX_REASONABLE_MULTIPLIER = 5.0;
+  const cappedAvgBetSize = avgBetSize > tradeValue * MAX_REASONABLE_MULTIPLIER
+    ? tradeValue * MAX_REASONABLE_MULTIPLIER
+    : avgBetSize;
+  
+  return tradeValue / cappedAvgBetSize;
+};
+
+const winRateForTradeType = (
+  stats: TraderStatsSnapshot | undefined,
+  category?: string
+): number | null => {
+  if (!stats) return null;
+  const normalizedCategory = category?.toLowerCase() ?? '';
+
+  if (stats.profiles && stats.profiles.length > 0 && normalizedCategory) {
+    const matchingProfile = stats.profiles.find((profile) => {
+      const niche = (profile.final_niche || '').toLowerCase();
+      if (!niche) return false;
+      if (niche === normalizedCategory) return true;
+      return niche.includes(normalizedCategory);
+    });
+
+    const profileWinRate =
+      normalizeWinRateValue(matchingProfile?.d30_win_rate) ??
+      normalizeWinRateValue(matchingProfile?.win_rate);
+    if (profileWinRate !== null) {
+      return profileWinRate;
+    }
+  }
+
+  const globalWinRate = normalizeWinRateValue(stats.globalWinRate);
+  return globalWinRate;
+};
+
+const roiForTradeType = (
+  stats: TraderStatsSnapshot | undefined,
+  category?: string
+): number | null => {
+  if (!stats) return null;
+  const normalizedCategory = category?.toLowerCase() ?? '';
+  if (stats.profiles && stats.profiles.length > 0 && normalizedCategory) {
+    const match = stats.profiles.find((profile) => {
+      const niche = (profile.final_niche || '').toLowerCase();
+      if (!niche) return false;
+      if (niche === normalizedCategory) return true;
+      return niche.includes(normalizedCategory);
+    });
+    const roi =
+      match?.d30_roi_pct ??
+      match?.roi_pct ??
+      null;
+    if (roi !== null && roi !== undefined && Number.isFinite(Number(roi))) {
+      return Number(roi);
+    }
+  }
+  if (stats.globalRoiPct !== null && stats.globalRoiPct !== undefined && Number.isFinite(Number(stats.globalRoiPct))) {
+    return Number(stats.globalRoiPct);
+  }
+  return null;
+};
+
 export default function FeedPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [userTier, setUserTier] = useState<FeatureTier>('anon');
@@ -528,6 +667,10 @@ export default function FeedPage() {
   const [showConnectWalletModal, setShowConnectWalletModal] = useState(false);
   const [defaultBuySlippage, setDefaultBuySlippage] = useState(3);
   const [defaultSellSlippage, setDefaultSellSlippage] = useState(3);
+  const [feedMode, setFeedMode] = useState<FeedMode>(() => {
+    const path = typeof pathname === 'string' ? pathname : '';
+    return path.includes('/fire-feed') ? 'fire' : 'all';
+  });
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilters);
@@ -542,6 +685,7 @@ export default function FeedPage() {
   const allTradesRef = useRef<FeedTrade[]>([]);
   const [displayedTradesCount, setDisplayedTradesCount] = useState(35);
   const [followingCount, setFollowingCount] = useState(0);
+  const [fireTraderCount, setFireTraderCount] = useState(0);
   const [loadingFeed, setLoadingFeed] = useState(false);
   const [initialFeedCheckComplete, setInitialFeedCheckComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -610,6 +754,9 @@ export default function FeedPage() {
   const badgeStateCacheRef = useRef<Map<string, BadgeState>>(new Map());
   const gameTimeCacheRef = useRef<Map<string, ResolvedGameTime>>(new Map());
   const missingTimeLoggedRef = useRef<Set<string>>(new Set());
+  const fireStatsCacheRef = useRef<Map<string, TraderStatsSnapshot>>(new Map());
+  const attemptedModesRef = useRef<Set<FeedMode>>(new Set());
+  const fetchedModesRef = useRef<Set<FeedMode>>(new Set());
 
   const triggerSellToast = useCallback((message: string) => {
     setSellToastMessage(message);
@@ -768,6 +915,7 @@ export default function FeedPage() {
     () => countActiveFilters(draftFilters) > 0,
     [draftFilters, countActiveFilters]
   );
+  const sourceTraderCount = feedMode === 'fire' ? fireTraderCount : followingCount;
 
   const formatPriceCents = (value: number) => `${value}¢`;
   const formatTradeSize = (value: number) => `$${value.toLocaleString('en-US')}+`;
@@ -776,6 +924,9 @@ export default function FeedPage() {
   const filterTabBase = "rounded-full px-2.5 py-1 text-[11px] font-medium transition-all whitespace-nowrap";
   const filterTabActive = "bg-slate-900 text-white shadow-sm";
   const filterTabInactive = "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50";
+  const modeTabBase = "rounded-full px-3 py-1.5 text-sm font-semibold transition border";
+  const modeTabActive = "bg-slate-900 text-white border-slate-900 shadow-sm";
+  const modeTabInactive = "bg-white text-slate-700 border-slate-200 hover:bg-slate-50";
   const togglePillBase =
     "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition";
   const togglePillActive = "border-emerald-200 bg-emerald-50 text-emerald-700";
@@ -2344,6 +2495,508 @@ export default function FeedPage() {
     });
   }, []);
 
+  const processTrades = useCallback(
+    async ({
+      rawTrades,
+      traderNames,
+      merge = false,
+      preserveDisplayCount = false,
+      preserveScroll = false,
+      scrollAnchor = null,
+      mode = 'all',
+    }: {
+      rawTrades: any[];
+      traderNames: Record<string, string>;
+      merge?: boolean;
+      preserveDisplayCount?: boolean;
+      preserveScroll?: boolean;
+      scrollAnchor?: ReturnType<typeof captureScrollAnchor> | null;
+      mode?: FeedMode;
+    }) => {
+      if (!rawTrades || rawTrades.length === 0) {
+        if (!merge) {
+          setAllTrades([]);
+          setDisplayedTradesCount(35);
+        }
+        setLastFeedFetchAt(Date.now());
+        return;
+      }
+
+      const extractTokenId = (rawTrade: any): string | undefined => {
+        const candidates = [
+          rawTrade.asset,
+          rawTrade.asset_id,
+          rawTrade.assetId,
+          rawTrade.token_id,
+          rawTrade.tokenId,
+          rawTrade.tokenID,
+        ];
+        for (const candidate of candidates) {
+          if (candidate === undefined || candidate === null) continue;
+          const value =
+            typeof candidate === 'number' ? candidate.toString() : String(candidate).trim();
+          if (value) return value;
+        }
+        return undefined;
+      };
+
+      const normalizedCategory = (value?: string | null) =>
+        value ? value.trim().toLowerCase() : undefined;
+      const getMarketTitle = (rawTrade: any) => {
+        const candidates = [
+          rawTrade.title,
+          rawTrade.market_title,
+          rawTrade.marketTitle,
+          rawTrade.question,
+          rawTrade.market,
+        ];
+        for (const candidate of candidates) {
+          if (typeof candidate === 'string' && candidate.trim()) {
+            return candidate;
+          }
+        }
+        return 'Unknown Market';
+      };
+
+      // STEP 1: Extract all conditionIds from trades BEFORE formatting
+      const conditionIds = rawTrades
+        .map((t: any) => t.conditionId || t.condition_id)
+        .filter((id: any): id is string => !!id && typeof id === 'string' && id.startsWith('0x'));
+      
+      const uniqueConditionIds = Array.from(new Set(conditionIds));
+      
+      // STEP 2: Batch fetch ALL market data from database (tags, market_subtype, bet_structure, etc.)
+      const marketDataMap = new Map<string, any>();
+      const missingConditionIds: string[] = [];
+      
+      if (uniqueConditionIds.length > 0) {
+        const BATCH_SIZE = 100;
+        try {
+          for (let i = 0; i < uniqueConditionIds.length; i += BATCH_SIZE) {
+            const batch = uniqueConditionIds.slice(i, i + BATCH_SIZE);
+            const { data: markets, error } = await supabase
+              .from('markets')
+              .select('condition_id, tags, market_subtype, bet_structure, market_type, title, raw_dome')
+              .in('condition_id', batch);
+            
+            if (!error && markets) {
+              const foundIds = new Set<string>();
+              markets.forEach((market) => {
+                if (market.condition_id) {
+                  foundIds.add(market.condition_id);
+                  let tags: string[] | null = null;
+                  
+                  // Extract tags from tags column
+                  if (Array.isArray(market.tags) && market.tags.length > 0) {
+                    tags = market.tags.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
+                  }
+                  
+                  // Fallback to raw_dome if tags missing
+                  if ((!tags || tags.length === 0) && market.raw_dome) {
+                    try {
+                      const rawDome = typeof market.raw_dome === 'string' ? JSON.parse(market.raw_dome) : market.raw_dome;
+                      if (rawDome?.tags && Array.isArray(rawDome.tags) && rawDome.tags.length > 0) {
+                        tags = rawDome.tags.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
+                      }
+                    } catch {
+                      // Ignore parse errors
+                    }
+                  }
+                  
+                  marketDataMap.set(market.condition_id, {
+                    tags: tags || null,
+                    market_subtype: market.market_subtype || null,
+                    bet_structure: market.bet_structure || null,
+                    market_type: market.market_type || null,
+                    title: market.title || null,
+                  });
+                }
+              });
+              
+              // Track missing markets (not in DB or missing tags)
+              batch.forEach((id) => {
+                if (!foundIds.has(id) || !marketDataMap.get(id)?.tags) {
+                  missingConditionIds.push(id);
+                }
+              });
+            } else {
+              // If query failed, mark all as missing
+              batch.forEach((id) => missingConditionIds.push(id));
+            }
+          }
+          
+          if (marketDataMap.size > 0) {
+            console.log(`[Feed] Batch fetched market data for ${marketDataMap.size} markets`);
+          }
+          if (missingConditionIds.length > 0) {
+            console.log(`[Feed] Found ${missingConditionIds.length} markets missing from DB or missing tags`);
+          }
+        } catch (err) {
+          console.error('[Feed] Error batch fetching market data:', err);
+          // Mark all as missing if query failed
+          uniqueConditionIds.forEach((id) => missingConditionIds.push(id));
+        }
+      }
+      
+      // STEP 2.5: Fetch missing markets from CLOB API in parallel (non-blocking for UI)
+      // This ensures tags are available even if markets don't exist in DB yet
+      if (missingConditionIds.length > 0) {
+        const CLOB_BATCH_SIZE = 10; // Smaller batches for external API
+        const clobPromises: Promise<void>[] = [];
+        
+        for (let i = 0; i < missingConditionIds.length; i += CLOB_BATCH_SIZE) {
+          const batch = missingConditionIds.slice(i, i + CLOB_BATCH_SIZE);
+          const batchPromises = batch.map(async (conditionId) => {
+            try {
+              const clobResponse = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, {
+                cache: 'no-store',
+                signal: AbortSignal.timeout(5000), // 5s timeout per market
+              });
+              
+              if (clobResponse.ok) {
+                const clobMarket = await clobResponse.json();
+                if (clobMarket?.question) {
+                  // Extract tags from CLOB response
+                  let tags: string[] | null = null;
+                  if (Array.isArray(clobMarket.tags) && clobMarket.tags.length > 0) {
+                    tags = clobMarket.tags.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
+                  }
+                  
+                  // Update marketDataMap with CLOB data (even if tags are null, we have title)
+                  const existing = marketDataMap.get(conditionId);
+                  marketDataMap.set(conditionId, {
+                    tags: tags || existing?.tags || null,
+                    market_subtype: existing?.market_subtype || null,
+                    bet_structure: existing?.bet_structure || null,
+                    market_type: existing?.market_type || null,
+                    title: clobMarket.question || clobMarket.title || existing?.title || null,
+                    _fromClob: true, // Flag to indicate this came from CLOB
+                  });
+                  
+                  // Async save to DB (non-blocking)
+                  // Don't await - let it happen in background
+                  fetch(`/api/markets/ensure?conditionId=${conditionId}`, { cache: 'no-store' })
+                    .catch((err) => console.warn(`[Feed] Failed to ensure market ${conditionId}:`, err));
+                }
+              }
+            } catch (err: any) {
+              // Timeout or network error - continue without this market's tags
+              if (err?.name !== 'AbortError') {
+                console.warn(`[Feed] Error fetching CLOB data for ${conditionId}:`, err);
+              }
+            }
+          });
+          
+          clobPromises.push(...batchPromises);
+        }
+        
+        // Wait for CLOB fetches to complete (with timeout)
+        try {
+          await Promise.allSettled(clobPromises);
+          console.log(`[Feed] Completed CLOB fetches for ${missingConditionIds.length} missing markets`);
+        } catch (err) {
+          console.warn('[Feed] Some CLOB fetches failed:', err);
+        }
+      }
+
+      // STEP 3: Format trades with market data from database (tags guaranteed to be available)
+      const formattedTrades: FeedTrade[] = rawTrades.map((trade: any) => {
+        const wallet = trade._followedWallet || trade.user || trade.wallet || '';
+        const walletKey = wallet.toLowerCase();
+        const displayName =
+          traderNames[walletKey] ||
+          (wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : 'Unknown');
+
+        const marketId =
+          trade.conditionId ||
+          trade.condition_id ||
+          trade.market_slug ||
+          trade.slug ||
+          trade.asset_id ||
+          trade.market ||
+          trade.title ||
+          '';
+        const conditionId = trade.conditionId || trade.condition_id || '';
+        const side = (trade.side || 'BUY').toUpperCase() as 'BUY' | 'SELL';
+        const outcome = trade.outcome || trade.option || 'YES';
+        const size = parseFloat(trade.size || trade.amount || 0);
+        const price = parseFloat(trade.price || 0);
+        const timestamp = (trade.timestamp || Date.now() / 1000) * 1000;
+        const rawTradeId =
+          trade.trade_id || trade.id || trade.tx_hash || trade.transactionHash || '';
+        const tradeId = rawTradeId ? String(rawTradeId) : undefined;
+        const feedTradeId = buildFeedTradeId({
+          wallet,
+          tradeId,
+          timestamp,
+          side,
+          outcome,
+          size,
+          price,
+          marketId,
+        });
+        const marketTitle = getMarketTitle(trade);
+        
+        // Get market data from batch-fetched map (preferred) or extract from trade
+        const dbMarketData = conditionId ? marketDataMap.get(conditionId) : null;
+        
+        // Extract tags: prefer database, then try trade data
+        let tags: string[] | null = null;
+        
+        if (dbMarketData?.tags && Array.isArray(dbMarketData.tags) && dbMarketData.tags.length > 0) {
+          tags = dbMarketData.tags;
+        } else {
+          // Fallback: try extracting from raw trade data
+          const tagSources = [
+            trade.tags,
+            trade.market?.tags,
+            trade.market_tags,
+            trade.marketTags,
+          ];
+          
+          for (const source of tagSources) {
+            if (Array.isArray(source) && source.length > 0) {
+              tags = source.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
+              if (tags.length > 0) break;
+            }
+            if (typeof source === 'string' && source.trim()) {
+              try {
+                const parsed = JSON.parse(source);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  tags = parsed.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
+                  if (tags.length > 0) break;
+                }
+              } catch {
+                tags = [source.trim()];
+                break;
+              }
+            }
+          }
+        }
+        
+        const formattedTrade: FeedTrade = {
+          id: feedTradeId,
+          trader: {
+            wallet: wallet,
+            displayName: displayName,
+          },
+          market: {
+            id: marketId,
+            conditionId,
+            title: marketTitle,
+            slug: trade.market_slug || trade.slug || '',
+            eventSlug: trade.eventSlug || trade.event_slug || '',
+            category: normalizedCategory(
+              trade.category || trade.market_category || trade.marketCategory || trade.market?.category
+            ),
+            avatarUrl: extractMarketAvatarUrl(trade) || undefined,
+            tags: tags || undefined,
+          },
+          trade: {
+            side,
+            outcome,
+            size,
+            price,
+            timestamp,
+            tradeId,
+            tokenId: extractTokenId(trade),
+          },
+          fireReasons: Array.isArray((trade as any)._fireReasons)
+            ? (trade as any)._fireReasons
+            : undefined,
+          fireScore: Number.isFinite((trade as any)._fireScore)
+            ? Number((trade as any)._fireScore)
+            : undefined,
+          fireWinRate: (trade as any)._fireWinRate !== undefined ? (trade as any)._fireWinRate : null,
+          fireRoi: (trade as any)._fireRoi !== undefined ? (trade as any)._fireRoi : null,
+          fireConviction: (trade as any)._fireConviction !== undefined ? (trade as any)._fireConviction : null,
+        };
+        formattedTrade.market.marketCategoryType = resolveMarketCategoryType({
+          marketKey: marketId || formattedTrade.market.slug || marketTitle,
+          title: marketTitle,
+          category: formattedTrade.market.category,
+          tags: formattedTrade.market.tags,
+          outcomes: undefined,
+        });
+        return formattedTrade;
+      });
+      const uniqueFormattedTrades: FeedTrade[] = [];
+      const seenTradeIds = new Set<string>();
+      for (const trade of formattedTrades) {
+        if (seenTradeIds.has(trade.id)) continue;
+        seenTradeIds.add(trade.id);
+        uniqueFormattedTrades.push(trade);
+      }
+
+      const isSportsTitle = (title: string) => {
+        const text = title.toLowerCase();
+        if (
+          text.includes('vs.') ||
+          text.includes(' vs ') ||
+          text.includes(' v ') ||
+          text.includes(' at ') ||
+          text.includes('@')
+        ) {
+          return true;
+        }
+        return [
+          'nfl',
+          'nba',
+          'wnba',
+          'mlb',
+          'nhl',
+          'ncaa',
+          'soccer',
+          'tennis',
+          'golf',
+          'mma',
+          'ufc',
+          'boxing',
+          'football',
+          'basketball',
+          'baseball',
+          'hockey',
+          'pga',
+          'lpga',
+          'atp',
+          'wta',
+          'wimbledon',
+          'roland garros',
+          'australian open',
+          'us open',
+          'liga mx',
+          'ligamx',
+          'f1',
+          'formula 1',
+          'world cup',
+          'champions league',
+          'premier league',
+          'premiership',
+          'epl',
+          'super bowl',
+        ].some((term) => text.includes(term));
+      };
+
+      uniqueFormattedTrades.forEach((trade) => {
+        if (trade.market.category) return;
+        const title = trade.market.title.toLowerCase();
+
+        if (
+          title.includes('trump') ||
+          title.includes('biden') ||
+          title.includes('election') ||
+          title.includes('senate') ||
+          title.includes('congress') ||
+          title.includes('president')
+        ) {
+          trade.market.category = 'politics';
+        } else if (isSportsTitle(title)) {
+          trade.market.category = 'sports';
+        } else if (
+          title.includes('bitcoin') ||
+          title.includes('btc') ||
+          title.includes('ethereum') ||
+          title.includes('eth') ||
+          title.includes('crypto')
+        ) {
+          trade.market.category = 'crypto';
+        } else if (title.includes('stock') || title.includes('economy') || title.includes('inflation')) {
+          trade.market.category = 'economics';
+        } else if (
+          title.includes('ai') ||
+          title.includes('tech') ||
+          title.includes('apple') ||
+          title.includes('google') ||
+          title.includes('microsoft')
+        ) {
+          trade.market.category = 'tech';
+        } else if (title.includes('weather') || title.includes('temperature')) {
+          trade.market.category = 'weather';
+        } else if (title.includes('movie') || title.includes('album') || title.includes('celebrity')) {
+          trade.market.category = 'culture';
+        } else if (title.includes('company') || title.includes('ceo') || title.includes('revenue')) {
+          trade.market.category = 'finance';
+        }
+      });
+
+      // Market data already fetched in batch above - tags are guaranteed to be available
+      // Log summary of tag availability
+      const tradesWithTags = uniqueFormattedTrades.filter(
+        (t) => t.market.tags && Array.isArray(t.market.tags) && t.market.tags.length > 0
+      );
+      console.log(`[Feed] Processed ${uniqueFormattedTrades.length} trades, ${tradesWithTags.length} have tags`);
+
+      const latestTimestamp =
+        uniqueFormattedTrades.length > 0
+          ? Math.max(...uniqueFormattedTrades.map((t) => t.trade.timestamp))
+          : null;
+
+      if (mode === 'fire') {
+        uniqueFormattedTrades.sort((a, b) => {
+          const scoreA = a.fireScore ?? 0;
+          const scoreB = b.fireScore ?? 0;
+          if (scoreA !== scoreB) return scoreB - scoreA;
+          return (b.trade.timestamp || 0) - (a.trade.timestamp || 0);
+        });
+      }
+
+      const existingTrades = allTradesRef.current;
+      const existingIds = new Set(existingTrades.map((trade) => trade.id));
+      const newTrades = merge
+        ? uniqueFormattedTrades.filter((trade) => !existingIds.has(trade.id))
+        : uniqueFormattedTrades;
+      const nextTrades = merge ? [...newTrades, ...existingTrades] : uniqueFormattedTrades;
+
+      if (merge && preserveDisplayCount && newTrades.length > 0) {
+        setDisplayedTradesCount((prev) => prev + newTrades.length);
+      } else if (!merge) {
+        setDisplayedTradesCount(35);
+      }
+
+      setAllTrades(nextTrades);
+
+      if (merge) {
+        if (latestTimestamp !== null) {
+          setLatestTradeTimestamp((prev) => {
+            if (!prev) return latestTimestamp;
+            return Math.max(prev, latestTimestamp);
+          });
+        }
+      } else {
+        setLatestTradeTimestamp(latestTimestamp);
+      }
+      setLastFeedFetchAt(Date.now());
+
+        if (merge) {
+          if (newTrades.length > 0) {
+            fetchLiveMarketData(newTrades);
+          }
+        } else {
+          fetchLiveMarketData(nextTrades.slice(0, 35));
+        }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayTimestamp = today.getTime();
+
+      const tradesForStats = merge ? nextTrades : uniqueFormattedTrades;
+      const todaysTrades = tradesForStats.filter((t) => {
+        const tradeDate = new Date(t.trade.timestamp);
+        tradeDate.setHours(0, 0, 0, 0);
+        return tradeDate.getTime() === todayTimestamp;
+      });
+
+      const volumeToday = todaysTrades.reduce((sum, t) => sum + t.trade.price * t.trade.size, 0);
+      setTodayVolume(volumeToday);
+      setTodaysTradeCount(todaysTrades.length);
+
+      if (merge && preserveScroll && newTrades.length > 0 && scrollAnchor) {
+        restoreScrollAnchor(scrollAnchor);
+      }
+    },
+    [fetchLiveMarketData, restoreScrollAnchor]
+  );
+
   // Fetch feed data
   const fetchFeed = useCallback(async (options: FetchFeedOptions = {}) => {
     const {
@@ -2486,267 +3139,15 @@ export default function FeedPage() {
 
         allTradesRaw.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
 
-        // 4. Format trades
-        const extractTokenId = (rawTrade: any): string | undefined => {
-          const candidates = [
-            rawTrade.asset,
-            rawTrade.asset_id,
-            rawTrade.assetId,
-            rawTrade.token_id,
-            rawTrade.tokenId,
-            rawTrade.tokenID,
-          ];
-          for (const candidate of candidates) {
-            if (candidate === undefined || candidate === null) continue;
-            const value =
-              typeof candidate === 'number' ? candidate.toString() : String(candidate).trim();
-            if (value) return value;
-          }
-          return undefined;
-        };
-
-        const normalizedCategory = (value?: string | null) =>
-          value ? value.trim().toLowerCase() : undefined;
-        const getMarketTitle = (rawTrade: any) => {
-          const candidates = [
-            rawTrade.title,
-            rawTrade.market_title,
-            rawTrade.marketTitle,
-            rawTrade.question,
-            rawTrade.market,
-          ];
-          for (const candidate of candidates) {
-            if (typeof candidate === 'string' && candidate.trim()) {
-              return candidate;
-            }
-          }
-          return 'Unknown Market';
-        };
-
-        const formattedTrades: FeedTrade[] = allTradesRaw.map((trade: any) => {
-          const wallet = trade._followedWallet || trade.user || trade.wallet || '';
-          const walletKey = wallet.toLowerCase();
-          const displayName = traderNames[walletKey] || 
-                             (wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : 'Unknown');
-          
-          const marketId =
-            trade.conditionId ||
-            trade.condition_id ||
-            trade.market_slug ||
-            trade.slug ||
-            trade.asset_id ||
-            trade.market ||
-            trade.title ||
-            '';
-          const conditionId = trade.conditionId || trade.condition_id || '';
-          const side = (trade.side || 'BUY').toUpperCase() as 'BUY' | 'SELL';
-          const outcome = trade.outcome || trade.option || 'YES';
-          const size = parseFloat(trade.size || trade.amount || 0);
-          const price = parseFloat(trade.price || 0);
-          const timestamp = (trade.timestamp || Date.now() / 1000) * 1000;
-          const rawTradeId =
-            trade.trade_id || trade.id || trade.tx_hash || trade.transactionHash || '';
-          const tradeId = rawTradeId ? String(rawTradeId) : undefined;
-          const feedTradeId = buildFeedTradeId({
-            wallet,
-            tradeId,
-            timestamp,
-            side,
-            outcome,
-            size,
-            price,
-            marketId,
-          });
-          const marketTitle = getMarketTitle(trade);
-          const formattedTrade: FeedTrade = {
-            id: feedTradeId,
-            trader: {
-              wallet: wallet,
-              displayName: displayName,
-            },
-            market: {
-              id: marketId,
-              conditionId,
-              title: marketTitle,
-              slug: trade.market_slug || trade.slug || '',
-              eventSlug: trade.eventSlug || trade.event_slug || '',
-              category: normalizedCategory(
-                trade.category ||
-                  trade.market_category ||
-                  trade.marketCategory ||
-                  trade.market?.category
-              ),
-              avatarUrl: extractMarketAvatarUrl(trade) || undefined,
-            },
-            trade: {
-              side,
-              outcome,
-              size,
-              price,
-              timestamp,
-              tradeId,
-              tokenId: extractTokenId(trade),
-            },
-          };
-          formattedTrade.market.marketCategoryType = resolveMarketCategoryType({
-            marketKey: marketId || formattedTrade.market.slug || marketTitle,
-            title: marketTitle,
-            category: formattedTrade.market.category,
-            tags: formattedTrade.market.tags,
-            outcomes: undefined,
-          });
-          return formattedTrade;
+        await processTrades({
+          rawTrades: allTradesRaw,
+          traderNames,
+          merge,
+          preserveDisplayCount,
+          preserveScroll,
+          scrollAnchor,
+          mode: 'all',
         });
-        const uniqueFormattedTrades: FeedTrade[] = [];
-        const seenTradeIds = new Set<string>();
-        for (const trade of formattedTrades) {
-          if (seenTradeIds.has(trade.id)) continue;
-          seenTradeIds.add(trade.id);
-          uniqueFormattedTrades.push(trade);
-        }
-
-        // 5. Categorize trades
-        const isSportsTitle = (title: string) => {
-          const text = title.toLowerCase();
-          if (
-            text.includes('vs.') ||
-            text.includes(' vs ') ||
-            text.includes(' v ') ||
-            text.includes(' at ') ||
-            text.includes('@')
-          ) {
-            return true;
-          }
-          return [
-            'nfl',
-            'nba',
-            'wnba',
-            'mlb',
-            'nhl',
-            'ncaa',
-            'soccer',
-            'tennis',
-            'golf',
-            'mma',
-            'ufc',
-            'boxing',
-            'football',
-            'basketball',
-            'baseball',
-            'hockey',
-            'pga',
-            'lpga',
-            'atp',
-            'wta',
-            'wimbledon',
-            'roland garros',
-            'australian open',
-            'us open',
-            'liga mx',
-            'ligamx',
-            'f1',
-            'formula 1',
-            'world cup',
-            'champions league',
-            'premier league',
-            'premiership',
-            'epl',
-            'super bowl',
-          ].some((term) => text.includes(term));
-        };
-
-        uniqueFormattedTrades.forEach(trade => {
-          if (trade.market.category) return;
-          const title = trade.market.title.toLowerCase();
-          
-          if (title.includes('trump') || title.includes('biden') || title.includes('election') || 
-              title.includes('senate') || title.includes('congress') || title.includes('president')) {
-            trade.market.category = 'politics';
-          }
-          else if (isSportsTitle(title)) {
-            trade.market.category = 'sports';
-          }
-          else if (title.includes('bitcoin') || title.includes('btc') || title.includes('ethereum') || 
-                   title.includes('eth') || title.includes('crypto')) {
-            trade.market.category = 'crypto';
-          }
-          else if (title.includes('stock') || title.includes('economy') || title.includes('inflation')) {
-            trade.market.category = 'economics';
-          }
-          else if (title.includes('ai') || title.includes('tech') || title.includes('apple') || 
-                   title.includes('google') || title.includes('microsoft')) {
-            trade.market.category = 'tech';
-          }
-          else if (title.includes('weather') || title.includes('temperature')) {
-            trade.market.category = 'weather';
-          }
-          else if (title.includes('movie') || title.includes('album') || title.includes('celebrity')) {
-            trade.market.category = 'culture';
-          }
-          else if (title.includes('company') || title.includes('ceo') || title.includes('revenue')) {
-            trade.market.category = 'finance';
-          }
-        });
-
-        const latestTimestamp = uniqueFormattedTrades.length > 0
-          ? Math.max(...uniqueFormattedTrades.map(t => t.trade.timestamp))
-          : null;
-
-        const existingTrades = allTradesRef.current;
-        const existingIds = new Set(existingTrades.map((trade) => trade.id));
-        const newTrades = merge
-          ? uniqueFormattedTrades.filter((trade) => !existingIds.has(trade.id))
-          : uniqueFormattedTrades;
-        const nextTrades = merge ? [...newTrades, ...existingTrades] : uniqueFormattedTrades;
-
-        if (merge && preserveDisplayCount && newTrades.length > 0) {
-          setDisplayedTradesCount((prev) => prev + newTrades.length);
-        } else if (!merge) {
-          setDisplayedTradesCount(35);
-        }
-
-        setAllTrades(nextTrades);
-
-        if (merge) {
-          if (latestTimestamp !== null) {
-            setLatestTradeTimestamp((prev) => {
-              if (!prev) return latestTimestamp;
-              return Math.max(prev, latestTimestamp);
-            });
-          }
-        } else {
-          setLatestTradeTimestamp(latestTimestamp);
-        }
-        setLastFeedFetchAt(Date.now());
-        
-        // Fetch live market data for displayed trades
-        if (merge) {
-          if (newTrades.length > 0) {
-            fetchLiveMarketData(newTrades);
-          }
-        } else {
-          fetchLiveMarketData(nextTrades.slice(0, 35));
-        }
-
-        // Calculate today's volume and trade count
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayTimestamp = today.getTime();
-        
-        const tradesForStats = merge ? nextTrades : uniqueFormattedTrades;
-        const todaysTrades = tradesForStats.filter(t => {
-          const tradeDate = new Date(t.trade.timestamp);
-          tradeDate.setHours(0, 0, 0, 0);
-          return tradeDate.getTime() === todayTimestamp;
-        });
-        
-        const volumeToday = todaysTrades.reduce((sum, t) => sum + (t.trade.price * t.trade.size), 0);
-        setTodayVolume(volumeToday);
-        setTodaysTradeCount(todaysTrades.length);
-
-        if (merge && preserveScroll && newTrades.length > 0) {
-          restoreScrollAnchor(scrollAnchor);
-        }
 
     } catch (err: any) {
       console.error('Error fetching feed:', err);
@@ -2760,7 +3161,110 @@ export default function FeedPage() {
       }
       markInitialFeedCheckComplete();
     }
-  }, [captureScrollAnchor, restoreScrollAnchor, user, fetchLiveMarketData, markInitialFeedCheckComplete]);
+  }, [captureScrollAnchor, user, processTrades, markInitialFeedCheckComplete]);
+
+  const fetchFireFeed = useCallback(
+    async (options: FetchFeedOptions = {}) => {
+      const {
+        userOverride,
+        merge = false,
+        preserveDisplayCount = false,
+        preserveScroll = false,
+        silent = false,
+      } = options;
+
+      const currentUser = userOverride || user;
+      if (!currentUser) {
+        return;
+      }
+
+      if (userTier !== 'admin') {
+        if (!silent) {
+          setError('The 🔥 feed is only available to admins.');
+        }
+        markInitialFeedCheckComplete();
+        return;
+      }
+
+      const shouldSetLoading = !silent;
+      const scrollAnchor = preserveScroll ? captureScrollAnchor() : null;
+
+      if (shouldSetLoading) {
+        setLoadingFeed(true);
+        setError(null);
+      }
+
+      try {
+        // Use optimized API endpoint that fetches everything from Supabase in parallel
+        const fireFeedRes = await fetch('/api/fire-feed', { cache: 'no-store' });
+        if (!fireFeedRes.ok) {
+          const errorText = await fireFeedRes.text().catch(() => 'Unknown error');
+          let errorMessage = 'Failed to fetch FIRE feed';
+          try {
+            const errorJson = JSON.parse(errorText);
+            errorMessage = errorJson.error || errorMessage;
+          } catch {
+            errorMessage = `${errorMessage}: ${fireFeedRes.status} ${errorText.slice(0, 200)}`;
+          }
+          throw new Error(errorMessage);
+        }
+        const fireFeedData = await fireFeedRes.json();
+        
+        const allTradesRaw: any[] = Array.isArray(fireFeedData?.trades) ? fireFeedData.trades : [];
+        const traderNames: Record<string, string> = fireFeedData?.traders || {};
+        
+        // Cache stats for future use
+        if (fireFeedData?.stats) {
+          Object.entries(fireFeedData.stats).forEach(([wallet, stats]: [string, any]) => {
+            fireStatsCacheRef.current.set(wallet.toLowerCase(), stats);
+          });
+        }
+
+        setFireTraderCount(Object.keys(traderNames).length);
+
+        if (allTradesRaw.length === 0) {
+          if (!merge) {
+            setAllTrades([]);
+          }
+          setLastFeedFetchAt(Date.now());
+          return;
+        }
+
+        // Trades are already filtered and sorted by the API
+        await processTrades({
+          rawTrades: allTradesRaw,
+          traderNames,
+          merge,
+          preserveDisplayCount,
+          preserveScroll,
+          scrollAnchor,
+          mode: 'fire',
+        });
+      } catch (err: any) {
+        console.error('Error fetching fire feed:', err);
+        if (!silent) {
+          setError(err.message || 'Failed to load 🔥 feed');
+          setLastFeedFetchAt(Date.now());
+        }
+      } finally {
+        if (shouldSetLoading) {
+          setLoadingFeed(false);
+        }
+        markInitialFeedCheckComplete();
+      }
+    },
+    [user, userTier, captureScrollAnchor, processTrades, markInitialFeedCheckComplete]
+  );
+
+  const fetchCurrentFeed = useCallback(
+    (options: FetchFeedOptions = {}) => {
+      if (feedMode === 'fire') {
+        return fetchFireFeed(options);
+      }
+      return fetchFeed(options);
+    },
+    [feedMode, fetchFeed, fetchFireFeed]
+  );
 
   // Manual refresh handler
   const handleManualRefresh = async () => {
@@ -2768,47 +3272,45 @@ export default function FeedPage() {
     
     setIsRefreshing(true);
     
-    const sessionKey = `feed-fetched-${user.id}`;
+    const sessionKey = `feed-${feedMode}-fetched-${user.id}`;
     sessionStorage.removeItem(sessionKey);
-    hasFetchedRef.current = false;
+    fetchedModesRef.current.delete(feedMode);
     
-    await fetchFeed({ userOverride: user });
+    await fetchCurrentFeed({ userOverride: user });
     
-    hasFetchedRef.current = true;
+    fetchedModesRef.current.add(feedMode);
     sessionStorage.setItem(sessionKey, 'true');
     
     setIsRefreshing(false);
   };
 
-  const hasFetchedRef = useRef(false);
-  const hasAttemptedFetchRef = useRef(false);
   const lastLiveRefreshRef = useRef(0);
   const liveIdleIntervalRef = useRef<number | null>(null);
   const scrollStopTimeoutRef = useRef<number | null>(null);
 
   // Fetch feed data when user is available
   useEffect(() => {
-    if (hasAttemptedFetchRef.current || !user || loading) {
+    if (!user || loading) {
       return;
     }
-    hasAttemptedFetchRef.current = true;
 
     const attemptFetch = async () => {
-      if (!user) {
-        return;
-      }
+      if (!user) return;
 
-      const sessionKey = `feed-fetched-${user.id}`;
+      const sessionKey = `feed-${feedMode}-fetched-${user.id}`;
       const alreadyFetched = sessionStorage.getItem(sessionKey);
-      
-      if (alreadyFetched === 'true' && hasFetchedRef.current) {
+      const hasFetched = fetchedModesRef.current.has(feedMode);
+
+      if (alreadyFetched === 'true' && hasFetched) {
         markInitialFeedCheckComplete();
         return;
       }
-      
+
+      attemptedModesRef.current.add(feedMode);
+
       try {
-        await fetchFeed({ userOverride: user });
-        hasFetchedRef.current = true;
+        await fetchCurrentFeed({ userOverride: user });
+        fetchedModesRef.current.add(feedMode);
         sessionStorage.setItem(sessionKey, 'true');
       } catch (err) {
         console.error('Feed fetch error:', err);
@@ -2817,7 +3319,7 @@ export default function FeedPage() {
     };
 
     attemptFetch();
-  }, [user, loading, fetchFeed, markInitialFeedCheckComplete]);
+  }, [user, loading, feedMode, fetchCurrentFeed, markInitialFeedCheckComplete]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -2841,6 +3343,29 @@ export default function FeedPage() {
       window.removeEventListener('blur', handleBlur);
     };
   }, []);
+
+  useEffect(() => {
+    setError(null);
+    setDisplayedTradesCount(35);
+    setLatestTradeTimestamp(null);
+    setLastFeedFetchAt(null);
+    setAllTrades([]);
+  }, [feedMode]);
+
+  useEffect(() => {
+    if (feedMode === 'fire' && userTier !== 'admin') {
+      setFeedMode('all');
+    }
+  }, [feedMode, userTier]);
+
+  useEffect(() => {
+    const path = typeof pathname === 'string' ? pathname : '';
+    if (path.includes('/fire-feed')) {
+      setFeedMode('fire');
+    } else {
+      setFeedMode('all');
+    }
+  }, [pathname]);
 
   // Load more trades
   const handleLoadMore = () => {
@@ -2922,6 +3447,16 @@ export default function FeedPage() {
       }
     }
     
+    if (feedMode === 'fire') {
+      const marketKey = getMarketKeyForTrade(trade);
+      if (marketKey) {
+        const liveData = liveMarketData.get(marketKey);
+        if (liveData?.resolved === true || liveData?.liveStatus === 'final') {
+          return false;
+        }
+      }
+    }
+
     return true;
   }), [
     allTrades,
@@ -2932,6 +3467,8 @@ export default function FeedPage() {
     getCurrentOutcomePrice,
     traderMarketTrades,
     userPositionTradesByMarket,
+    feedMode,
+    liveMarketData,
   ]);
 
   useEffect(() => {
@@ -3745,19 +4282,49 @@ export default function FeedPage() {
                 </a>
               )}
               <div className="flex flex-col gap-2 md:flex-1 mt-2 md:mt-0">
-                <div className="flex items-center justify-between gap-2">
-                  <Button
-                    onClick={filtersOpen ? closeFilters : openFilters}
-                    variant="outline"
-                    size="sm"
-                    className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white flex items-center gap-2"
-                    aria-label="Open filters"
-                  >
-                    <Filter className="h-4 w-4" />
-                    <span className="text-sm font-semibold">
-                      Filter{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ''}
-                    </span>
-                  </Button>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {userTier === 'admin' && (
+                      <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-1 py-1 shadow-sm">
+                        {(['all', 'fire'] as FeedMode[])
+                          .filter((mode) => mode === 'fire' ? userTier === 'admin' : true)
+                          .map((mode) => {
+                            const isActive = feedMode === mode;
+                            return (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() => {
+                                  if (feedMode !== mode) {
+                                    setFeedMode(mode);
+                                  }
+                                }}
+                                aria-pressed={isActive}
+                                className={cn(
+                                  modeTabBase,
+                                  isActive ? modeTabActive : modeTabInactive
+                                )}
+                                title={mode === 'fire' ? 'Admin-only curated feed' : 'Followed traders'}
+                              >
+                                {mode === 'fire' ? '🔥' : 'All'}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    )}
+                    <Button
+                      onClick={filtersOpen ? closeFilters : openFilters}
+                      variant="outline"
+                      size="sm"
+                      className="border-slate-300 text-slate-700 hover:bg-slate-50 bg-white flex items-center gap-2"
+                      aria-label="Open filters"
+                    >
+                      <Filter className="h-4 w-4" />
+                      <span className="text-sm font-semibold">
+                        Filter{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ''}
+                      </span>
+                    </Button>
+                  </div>
                   <div className="flex items-center gap-2">
                     <Button
                       onClick={handleManualRefresh}
@@ -3836,18 +4403,32 @@ export default function FeedPage() {
                     Try Again
                   </Button>
                 </div>
-              ) : followingCount === 0 ? (
-                <EmptyState
-                  icon={Activity}
-                  title="Your feed is empty"
-                  description="Follow traders on the Discover page to see their activity here"
-                />
+              ) : sourceTraderCount === 0 ? (
+                feedMode === 'fire' ? (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+                    <div className="text-6xl mb-4">🔥</div>
+                    <h3 className="text-xl font-bold text-slate-900 mb-2">No 🔥 traders yet</h3>
+                    <p className="text-slate-600">
+                      We couldn't find top-ROI traders with strong conviction right now. Check back soon.
+                    </p>
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={Activity}
+                    title="Your feed is empty"
+                    description="Follow traders on the Discover page to see their activity here"
+                  />
+                )
               ) : displayedTrades.length === 0 ? (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
-                  <div className="text-6xl mb-4">🔍</div>
-                  <h3 className="text-xl font-bold text-slate-900 mb-2">No trades match your filters</h3>
+                  <div className="text-6xl mb-4">{feedMode === 'fire' ? '🔥' : '🔍'}</div>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">
+                    {feedMode === 'fire' ? 'No trades meet the 🔥 criteria' : 'No trades match your filters'}
+                  </h3>
                   <p className="text-slate-600">
-                    Try selecting a different filter to see more trades.
+                    {feedMode === 'fire'
+                      ? 'We filter for high-conviction or high-win-rate moves from top 30-day ROI traders.'
+                      : 'Try selecting a different filter to see more trades.'}
                   </p>
                 </div>
               ) : (
@@ -3923,6 +4504,7 @@ export default function FeedPage() {
                           size={trade.trade.size}
                           total={trade.trade.price * trade.trade.size}
                           timestamp={getRelativeTime(trade.trade.timestamp)}
+                          tradeTimestamp={trade.trade.timestamp}
                           onCopyTrade={() => handleCopyTrade(trade)}
                           onMarkAsCopied={(entryPrice, amountInvested) =>
                             handleMarkAsCopied(trade, entryPrice, amountInvested)
@@ -3964,6 +4546,12 @@ export default function FeedPage() {
                           traderPositionBadge={traderPositionBadge}
                           userPositionBadge={userPositionBadge}
                           onSellPosition={() => handleSellTrade(trade, marketAvatar)}
+                          fireReasons={trade.fireReasons}
+                          fireScore={trade.fireScore}
+                          fireWinRate={trade.fireWinRate}
+                          fireRoi={trade.fireRoi}
+                          fireConviction={trade.fireConviction}
+                          tags={Array.isArray(trade.market.tags) && trade.market.tags.length > 0 ? trade.market.tags : null}
                         />
                       </div>
                     )

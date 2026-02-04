@@ -1758,6 +1758,32 @@ export default function TraderProfilePage({
     return rankingsByWindow[pnlWindow] ?? { rank: null, total: null, delta: null, previousRank: null };
   }, [rankingsByWindow, pnlWindow]);
 
+  // Calculate all-time realized P&L for Key Stats "Winnings"
+  const allTimeRealizedPnl = useMemo(() => {
+    if (realizedPnlRows.length === 0) return 0;
+    
+    // Find the latest row with a valid pnl_to_date (cumulative P&L)
+    let latestRow = realizedPnlRows[realizedPnlRows.length - 1];
+    
+    // If latest row doesn't have pnl_to_date, look backwards for the most recent one that does
+    if ((latestRow.pnl_to_date === null || latestRow.pnl_to_date === undefined || !Number.isFinite(latestRow.pnl_to_date)) && realizedPnlRows.length > 1) {
+      for (let i = realizedPnlRows.length - 2; i >= 0; i--) {
+        const row = realizedPnlRows[i];
+        if (row.pnl_to_date !== null && row.pnl_to_date !== undefined && Number.isFinite(row.pnl_to_date)) {
+          latestRow = row;
+          break;
+        }
+      }
+    }
+    
+    // Use pnl_to_date (cumulative) if available, otherwise sum all realized_pnl
+    if (latestRow.pnl_to_date !== null && latestRow.pnl_to_date !== undefined && Number.isFinite(latestRow.pnl_to_date)) {
+      return latestRow.pnl_to_date;
+    } else {
+      return realizedPnlRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0);
+    }
+  }, [realizedPnlRows]);
+
   const realizedRangeLabel = useMemo(() => {
     if (realizedWindowRows.length === 0) return pnlWindowLabel;
     const start = new Date(`${realizedWindowRows[0].date}T00:00:00Z`);
@@ -2727,9 +2753,9 @@ export default function TraderProfilePage({
                       <p className="text-xs text-slate-500">Winnings</p>
                       <p className={cn(
                         'text-lg font-semibold',
-                        effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-500' : 'text-slate-900'
+                        allTimeRealizedPnl > 0 ? 'text-emerald-600' : allTimeRealizedPnl < 0 ? 'text-red-500' : 'text-slate-900'
                       )}>
-                        {formatCompactCurrency(effectivePnl)}
+                        {formatCompactCurrency(allTimeRealizedPnl)}
                       </p>
                     </div>
                     <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
@@ -2925,6 +2951,7 @@ export default function TraderProfilePage({
                         manualTradingEnabled={manualModeEnabled}
                         onSwitchToManualTrading={enableManualMode}
                         onOpenConnectWallet={() => setShowConnectWalletModal(true)}
+                        tags={Array.isArray(liveData?.tags) ? liveData.tags : liveData?.tags ? [liveData.tags] : null}
                       />
                     </div>
                   );

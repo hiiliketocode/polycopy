@@ -54,6 +54,7 @@ import { GetPolyScoreButton } from "@/components/polyscore"
 import { PolyScoreRequest, PolyScoreResponse, getPolyScore } from "@/lib/polyscore/get-polyscore"
 import { PredictionStats } from "@/components/polyscore/PredictionStats"
 import { supabase } from "@/lib/supabase"
+import type { GeminiAssessment, GeminiChatMessage, TradeAssessmentSnapshot } from "@/lib/gemini/trade-assessment"
 
 type PositionTradeSummary = {
   side: "BUY" | "SELL"
@@ -86,6 +87,7 @@ interface TradeCardProps {
   size: number
   total: number
   timestamp: string
+  tradeTimestamp?: number
   onCopyTrade?: () => void
   onMarkAsCopied?: (entryPrice: number, amountInvested?: number) => void
   onAdvancedCopy?: () => void
@@ -124,6 +126,12 @@ interface TradeCardProps {
   traderPositionBadge?: PositionBadgeData
   userPositionBadge?: PositionBadgeData
   onSellPosition?: () => void
+  fireReasons?: string[]
+  fireScore?: number
+  fireWinRate?: number | null
+  fireRoi?: number | null
+  fireConviction?: number | null
+  tags?: string[] | null
 }
 
 type StatusPhase =
@@ -447,6 +455,7 @@ export function TradeCard({
   size,
   total,
   timestamp,
+  tradeTimestamp,
   onCopyTrade,
   onMarkAsCopied,
   onAdvancedCopy,
@@ -483,6 +492,12 @@ export function TradeCard({
   traderPositionBadge,
   userPositionBadge,
   onSellPosition,
+  fireReasons,
+  fireScore,
+  fireWinRate,
+  fireRoi,
+  fireConviction,
+  tags,
 }: TradeCardProps) {
   const resolvedDefaultSlippage =
     action === "Buy"
@@ -513,26 +528,45 @@ export function TradeCard({
   const [polyScoreLoading, setPolyScoreLoading] = useState(false)
   const [polyScoreError, setPolyScoreError] = useState<string | null>(null)
   const [polyScoreDrawerOpen, setPolyScoreDrawerOpen] = useState(false)
+  const [assessmentPanelOpen, setAssessmentPanelOpen] = useState(false)
+  const [assessmentMessages, setAssessmentMessages] = useState<GeminiChatMessage[]>([])
+  const [assessmentLoading, setAssessmentLoading] = useState(false)
+  const [assessmentError, setAssessmentError] = useState<string | null>(null)
+  const [assessmentInput, setAssessmentInput] = useState("")
+  const [assessmentResult, setAssessmentResult] = useState<GeminiAssessment | null>(null)
   const polyScoreFetchedRef = useRef<string | null>(null) // Track which trade we've fetched for (conditionId + wallet)
   const statusPhaseRef = useRef<StatusPhase>('submitted')
   const [statusData, setStatusData] = useState<any | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [confirmationError, setConfirmationError] = useState<TradeErrorInfo | null>(null)
 
-  // Best-effort market tags for classification (semantic mapping)
+  // Market tags for semantic mapping (core semantic engine)
+  // Tags are batch-fetched by feed page, but may be missing for new markets
+  // PredictionStats will handle fallback to DB query if needed
   const marketTagsForInsights = useMemo(() => {
-    const tagsSource = null
-    if (Array.isArray(tagsSource)) return tagsSource
-    if (typeof tagsSource === "string") {
-      try {
-        const parsed = JSON.parse(tagsSource)
-        if (Array.isArray(parsed)) return parsed
-      } catch {
-        return [tagsSource]
-      }
+    if (!tags || !Array.isArray(tags) || tags.length === 0) {
+      return null;
     }
-    return category ? [category] : null
-  }, [category])
+    
+    // Normalize tags array - handle nested objects, strings, etc.
+    const filtered = tags
+      .map((t: any) => {
+        // Handle nested objects/arrays
+        if (typeof t === 'object' && t !== null) {
+          return t.name || t.tag || t.value || String(t);
+        }
+        return String(t);
+      })
+      .map((t: string) => t.trim())
+      .filter((t: string) => t.length > 0 && t !== 'null' && t !== 'undefined');
+    
+    return filtered.length > 0 ? filtered : null;
+  }, [tags])
+
+  // Market data is now batch-fetched in feed page before trades are displayed
+  // No need to call slow /api/markets/ensure endpoint here
+  // Tags and market data are guaranteed to be available via props
+
   const [isCancelingOrder, setIsCancelingOrder] = useState(false)
   const [cancelStatus, setCancelStatus] = useState<CancelStatus | null>(null)
   const [showConfirmation, setShowConfirmation] = useState(false)
@@ -594,6 +628,18 @@ export function TradeCard({
     )
   }, [category, market, marketSlug])
   const isSeasonLong = useMemo(() => isSeasonLongMarketTitle(market), [market])
+  const isSportsCategory = useMemo(
+    () => typeof category === "string" && category.toLowerCase().includes("sports"),
+    [category]
+  )
+  const assessmentBetStructure = useMemo(() => {
+    const titleLower = (market || "").toLowerCase()
+    if (titleLower.includes("over") || titleLower.includes("under") || titleLower.includes("o/u")) return "OVER_UNDER"
+    if (titleLower.includes("spread") || titleLower.includes("handicap")) return "SPREAD"
+    if (titleLower.includes("total") && titleLower.includes("points")) return "TOTAL_POINTS"
+    if (titleLower.includes("winner") || titleLower.includes("win") || titleLower.includes("will")) return "WINNER"
+    return "STANDARD"
+  }, [market])
   const resolvedLiveStatus = useMemo(() => {
     if (isSeasonLong) {
       const normalized = normalizeEventStatus(eventStatus)
@@ -2208,6 +2254,28 @@ export function TradeCard({
   const shouldShowPrimaryCta = isSellTrade || shouldShowCopyCta
   const copyCtaLabel = showCopyBuyCta ? "Copy Trade (Buy)" : "Copy Trade"
   const copyAgainLabel = "Buy Again"
+  const fireReasonLabel = useCallback((reason: string) => {
+    // Show actual values when available, otherwise show threshold
+    if (reason === "win_rate") {
+      if (fireWinRate !== null && fireWinRate !== undefined) {
+        return `Win rate ${(fireWinRate * 100).toFixed(0)}%`
+      }
+      return "Win rate ≥55%"
+    }
+    if (reason === "conviction") {
+      if (fireConviction !== null && fireConviction !== undefined) {
+        return `Conviction ${fireConviction.toFixed(1)}x`
+      }
+      return "Conviction ≥2.5x"
+    }
+    if (reason === "roi") {
+      if (fireRoi !== null && fireRoi !== undefined) {
+        return `ROI ${(fireRoi * 100).toFixed(0)}%`
+      }
+      return "ROI ≥15%"
+    }
+    return reason
+  }, [fireWinRate, fireRoi, fireConviction])
   const allowQuickCopyExperience = showQuickCopyExperience && !isSellTrade
   const canSellAsWell =
     isSellTrade && userHasMatchingPosition && Boolean(onSellPosition) && !isMarketEnded
@@ -2676,6 +2744,192 @@ export function TradeCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, conditionId, trader.address]) // Only depend on the essential data to avoid infinite loops
 
+  const buildAssessmentSnapshot = useCallback((): TradeAssessmentSnapshot => {
+    const nowIso = new Date().toISOString()
+    const livePriceValue = Number.isFinite(currentPrice) ? currentPrice : null
+    const roiFromLive =
+      livePriceValue !== null && price > 0 ? ((livePriceValue - price) / price) * 100 : null
+    const priceEdgePct =
+      livePriceValue !== null ? (livePriceValue - price) * 100 : null
+
+    let minsBeforeClose: number | null = null
+    if (eventEndTime) {
+      const end = new Date(eventEndTime)
+      if (!Number.isNaN(end.getTime())) {
+        minsBeforeClose = Math.round((end.getTime() - Date.now()) / 60000)
+      }
+    }
+    let minutesToStart: number | null = null
+    let minutesToEnd: number | null = null
+    if (eventStartTime) {
+      const start = new Date(eventStartTime)
+      if (!Number.isNaN(start.getTime())) {
+        minutesToStart = Math.round((start.getTime() - Date.now()) / 60000)
+      }
+    }
+    if (eventEndTime) {
+      const end = new Date(eventEndTime)
+      if (!Number.isNaN(end.getTime())) {
+        minutesToEnd = Math.round((end.getTime() - Date.now()) / 60000)
+      }
+    }
+
+    return {
+      tradeId: tradeAnchorId || conditionId || tokenId || null,
+      trader: {
+        name: trader.name,
+        wallet: trader.address,
+        roi: trader.roi ?? null,
+        convictionScore: fireConviction ?? null,
+      },
+      market: {
+        title: market,
+        category: category ?? null,
+        isSports: isSportsCategory,
+        position,
+        action,
+        conditionId: conditionId ?? null,
+        tokenId: tokenId ?? null,
+        marketSlug: marketSlug ?? null,
+        polymarketUrl: polymarketUrl ?? null,
+        espnUrl: espnUrl ?? null,
+        betStructure: assessmentBetStructure ?? null,
+      },
+      numbers: {
+        entryPrice: price,
+        size,
+        totalUsd: total,
+        currentPrice: livePriceValue,
+        roiFromLive,
+        priceEdgePct,
+      },
+      timing: {
+        tradeTimestamp: tradeTimestamp ?? null,
+        eventStartTime: eventStartTime ?? null,
+        eventEndTime: eventEndTime ?? null,
+        liveStatus: resolvedLiveStatus,
+        eventStatus: eventStatus ?? null,
+        currentTimestampIso: nowIso,
+        minutesToStart,
+        minutesToEnd,
+      },
+      live: {
+        liveScore: liveScore ?? null,
+        liveStatusSource: liveStatus ?? null,
+        gameTimeInfo: null,
+        minsBeforeClose,
+      },
+      insights: {
+        fireReasons: fireReasons ?? null,
+        fireScore: fireScore ?? null,
+        fireWinRate: fireWinRate ?? null,
+        fireRoi: fireRoi ?? null,
+        fireConviction: fireConviction ?? null,
+      },
+    }
+  }, [
+    action,
+    category,
+    conditionId,
+    eventEndTime,
+    eventStartTime,
+    eventStatus,
+    fireConviction,
+    fireReasons,
+    fireRoi,
+    fireScore,
+    fireWinRate,
+    liveScore,
+    liveStatus,
+    market,
+    marketSlug,
+    polymarketUrl,
+    position,
+    price,
+    resolvedLiveStatus,
+    size,
+    tokenId,
+    total,
+    tradeAnchorId,
+    tradeTimestamp,
+    trader.address,
+    trader.name,
+    trader.roi,
+    currentPrice,
+  ])
+
+  const runAssessment = useCallback(
+    async (userMessage?: string) => {
+      if (!isAdmin) return
+      const trimmed = userMessage?.trim()
+      const messagesForRequest = trimmed
+        ? [...assessmentMessages, { role: 'user' as const, content: trimmed }]
+        : [...assessmentMessages]
+
+      if (trimmed) {
+        setAssessmentMessages(messagesForRequest)
+        setAssessmentInput("")
+      }
+
+      setAssessmentLoading(true)
+      setAssessmentError(null)
+
+      try {
+        const snapshot = buildAssessmentSnapshot()
+        const response = await fetch("/api/admin/gemini-trade-assessor", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            snapshot,
+            messages: messagesForRequest,
+            userMessage: trimmed,
+          }),
+        })
+
+        const payload = await response.json()
+        if (!response.ok) {
+          throw new Error(payload?.error || "Failed to get Gemini verdict")
+        }
+
+        const rawText: string = payload?.text || ""
+        const parsed: GeminiAssessment | null = payload?.analysis
+          ? {
+              recommendation: payload.analysis.recommendation || "uncertain",
+              betSize: payload.analysis.betSize || "regular",
+              confidence: payload.analysis.confidence ?? undefined,
+              headline: payload.analysis.headline,
+              rationale: payload.analysis.rationale,
+              liveInsights: payload.analysis.liveInsights,
+              riskNotes: payload.analysis.riskNotes,
+              timingCallout: payload.analysis.timingCallout,
+              rawText: payload.analysis.rawText || rawText,
+            }
+          : rawText
+            ? { recommendation: "uncertain", betSize: "regular", rawText }
+            : null
+
+        const assistantText =
+          parsed && parsed.headline
+            ? `${parsed.headline}${parsed.rationale?.length ? `\n• ${parsed.rationale.slice(0, 2).join("\n• ")}` : ""}`
+            : rawText || "No response"
+
+        setAssessmentResult(parsed)
+        setAssessmentMessages([...messagesForRequest, { role: "assistant", content: assistantText }])
+      } catch (error: any) {
+        setAssessmentError(error?.message || "Failed to get Gemini verdict")
+      } finally {
+        setAssessmentLoading(false)
+      }
+    },
+    [assessmentMessages, buildAssessmentSnapshot, isAdmin]
+  )
+
+  useEffect(() => {
+    if (isAdmin && assessmentPanelOpen && assessmentMessages.length === 0 && !assessmentLoading) {
+      runAssessment()
+    }
+  }, [assessmentPanelOpen, assessmentLoading, assessmentMessages.length, isAdmin, runAssessment])
+
   return (
     <div
       ref={cardRef}
@@ -2705,6 +2959,18 @@ export function TradeCard({
             </Avatar>
             <div className="min-w-0">
               <p className="font-medium text-slate-900 text-sm leading-tight">{trader.name}</p>
+              {fireReasons && fireReasons.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1 mt-1">
+                  {fireReasons.map((reason, idx) => (
+                    <span
+                      key={`${reason}-${idx}`}
+                      className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 text-[10px] font-semibold"
+                    >
+                      🔥 {fireReasonLabel(reason)}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </Link>
           <div className="flex flex-col items-end gap-1 shrink-0">
@@ -3040,6 +3306,18 @@ export function TradeCard({
               }`}>
                 {!hasCurrentPrice ? '--' : `${priceChange > 0 ? '+' : ''}${priceChange.toFixed(1)}%`}
               </p>
+              {fireReasons && fireReasons.length > 0 && (
+                <div className="mt-1 flex flex-wrap justify-center gap-1">
+                  {fireReasons.map((reason, idx) => (
+                    <span
+                      key={`${reason}-${idx}`}
+                      className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 text-[10px] font-semibold"
+                    >
+                      🔥 {fireReasonLabel(reason)}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -3057,6 +3335,184 @@ export function TradeCard({
             marketTags={marketTagsForInsights}
             isAdmin={isAdmin}
           />
+        )}
+
+        {isAdmin && (
+          <div className="flex justify-end mt-3">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-slate-300 text-slate-800 hover:bg-slate-100"
+              onClick={() => {
+                setAssessmentPanelOpen((open) => !open)
+                if (!assessmentMessages.length && !assessmentLoading) {
+                  runAssessment()
+                }
+              }}
+            >
+              <Sparkles className="w-4 h-4 mr-2 text-amber-500" />
+              Gemini verdict
+            </Button>
+          </div>
+        )}
+
+        {isAdmin && assessmentPanelOpen && (
+          <div className="mt-4 border border-slate-200 rounded-xl bg-white shadow-sm">
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Gemini Trade Verdict</p>
+                <p className="text-xs text-slate-600">Admin-only Gemini read on this trade with live context.</p>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-slate-600">
+                {assessmentLoading && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
+                {assessmentResult?.confidence !== undefined && (
+                  <span className="font-semibold">{Math.round(assessmentResult.confidence)}% conf.</span>
+                )}
+              </div>
+            </div>
+
+            {assessmentError && (
+              <div className="mx-4 mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {assessmentError}
+              </div>
+            )}
+
+            <div className="px-4 py-4 space-y-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary" className="text-xs font-semibold">
+                    Verdict: {(assessmentResult?.recommendation ?? "pending").replace(/_/g, " ")}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs font-semibold">
+                    Size: {assessmentResult?.betSize ?? "—"}
+                  </Badge>
+                  {assessmentResult?.timingCallout && (
+                    <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 border border-slate-200">
+                      {assessmentResult.timingCallout}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 space-y-2">
+                  {assessmentResult?.headline ? (
+                    <p className="text-sm font-semibold text-slate-900">{assessmentResult.headline}</p>
+                  ) : (
+                    <p className="text-sm text-slate-600">
+                      {assessmentLoading ? "Gemini is analyzing this trade…" : "Run Gemini to get a verdict."}
+                    </p>
+                  )}
+                  {assessmentResult?.rationale?.length ? (
+                    <ul className="list-disc space-y-1 pl-5 text-sm text-slate-800">
+                      {assessmentResult.rationale.slice(0, 4).map((item, idx) => (
+                        <li key={idx}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {assessmentResult?.liveInsights?.length ? (
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Live Notes
+                      </p>
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-slate-800">
+                        {assessmentResult.liveInsights.slice(0, 3).map((item, idx) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {assessmentResult?.riskNotes?.length ? (
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Risk
+                      </p>
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-slate-800">
+                        {assessmentResult.riskNotes.slice(0, 3).map((item, idx) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {!assessmentResult?.headline && assessmentResult?.rawText && (
+                    <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-slate-900/90 p-3 text-[11px] text-slate-100">
+                      {assessmentResult.rawText}
+                    </pre>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                  Conversation
+                </p>
+                <div className="max-h-64 overflow-y-auto space-y-3">
+                  {assessmentMessages.length === 0 ? (
+                    <p className="text-sm text-slate-600">No messages yet. Gemini will drop a verdict when you ask.</p>
+                  ) : (
+                    assessmentMessages.map((message, idx) => {
+                      const isAssistant = message.role === "assistant"
+                      return (
+                        <div
+                          key={`${message.role}-${idx}-${message.content.slice(0, 8)}`}
+                          className={`flex ${isAssistant ? "justify-start" : "justify-end"}`}
+                        >
+                          <div
+                            className={cn(
+                              "max-w-[78%] rounded-lg border px-3 py-2 text-sm shadow-sm whitespace-pre-wrap",
+                              isAssistant
+                                ? "bg-slate-50 border-slate-200 text-slate-800"
+                                : "bg-slate-900 border-slate-800 text-white"
+                            )}
+                          >
+                            <p
+                              className={cn(
+                                "text-[11px] font-semibold uppercase tracking-wide mb-1",
+                                isAssistant ? "text-slate-500" : "text-slate-200"
+                              )}
+                            >
+                              {isAssistant ? "Gemini" : "You"}
+                            </p>
+                            {message.content}
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                  {assessmentLoading && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600">
+                      <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+                      <span>Gemini is thinking…</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 flex w-full items-center gap-2">
+                  <Input
+                    value={assessmentInput}
+                    onChange={(e) => setAssessmentInput(e.target.value)}
+                    placeholder="Ask Gemini about this trade (timing, size, hedge, etc.)"
+                    disabled={assessmentLoading}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault()
+                        if (assessmentInput.trim()) {
+                          runAssessment(assessmentInput)
+                        }
+                      }
+                    }}
+                  />
+                  <Button
+                    onClick={() => assessmentInput.trim() && runAssessment(assessmentInput)}
+                    disabled={assessmentLoading || !assessmentInput.trim()}
+                    className="bg-slate-900 text-white hover:bg-slate-800"
+                  >
+                    {assessmentLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send"}
+                  </Button>
+                </div>
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Gemini only sees the snapshot we send (price, size, live score, timing, fire stats). No external browsing.
+                </p>
+              </div>
+            </div>
+          </div>
         )}
 
         {!hideActions && allowManualExperience && manualDrawerOpen && shouldShowCopyCta && (

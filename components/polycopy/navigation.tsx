@@ -297,8 +297,9 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
     }
 
     fetchBalance()
-    // Refresh balance every minute
-    const interval = setInterval(() => fetchBalance(), 60000)
+    // Refresh balance every 2 minutes (reduced frequency to avoid rate limits)
+    // Backend caches for 60s, so this gives some buffer
+    const interval = setInterval(() => fetchBalance(), 120000)
     return () => clearInterval(interval)
   }, [hasPremiumAccess, walletAddress, activeUser, initialBalanceLoad])
 

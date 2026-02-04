@@ -34,7 +34,7 @@ echo ""
 # Step 3: Copy with deduplication
 echo "Step 3: Copying with deduplication..."
 echo "  This will:"
-echo "    • Deduplicate on 'id' field"
+echo "    • Deduplicate on idempotency key (wallet_address + tx_hash + order_hash)"
 echo "    • Keep latest record (ORDER BY timestamp DESC)"
 echo "    • Insert only new records"
 echo "  This may take several minutes..."
@@ -44,7 +44,10 @@ COPY_QUERY="
 INSERT INTO \`${PRODUCTION_TABLE}\`
 SELECT *
 FROM \`${STAGING_TABLE}\`
-QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY timestamp DESC) = 1
+QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY wallet_address, tx_hash, COALESCE(order_hash, '')
+    ORDER BY timestamp DESC, id DESC
+) = 1
 "
 
 bq query --use_legacy_sql=false --project_id=${PROJECT_ID} "${COPY_QUERY}" 2>&1

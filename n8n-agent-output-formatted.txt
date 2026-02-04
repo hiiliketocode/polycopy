@@ -1,0 +1,55 @@
+STEP 4: OUTPUT YOUR RESPONSE DIRECTLY AS JSON (1 iteration)
+CRITICAL: Output your complete JSON response directly in your text response. Do NOT use any tools or function calls. Just output the JSON.
+
+Your response should be ONLY valid JSON starting with { and ending with }. No markdown, no code blocks, no explanations - just pure JSON.
+
+Format with readable tweet fields:
+{
+  "selected_trades": [
+    {
+      "trade_id": "...",
+      "wallet_address": "...",
+      "wallet_truncated": "0x31a5...8ed9",
+      "market_title": "...",
+      "entry_price": 0.082,
+      "invested_usd": 7215.0,
+      "profit_usd": 80971.77,
+      "roi_pct": 1122.3,
+      "excitement_category": "Clutch Play",
+      "polycopy_url": "https://polycopy.app/trader/0x31a56e9e...",
+      
+      // Formatted tweet fields (ready to use)
+      "tweet_main": "0x31a5...8ed9 bet Yes on \"Maduro out by Jan 31\". Entry: 8.2% Result: Yes ROI: +1,122.3%\n\nThey went big right before resolution. That's conviction.\n\nWould you have made this call?",
+      "tweet_reply": "↓ https://polycopy.app/trader/0x31a56e9e690c621...",
+      "tweet_full": "0x31a5...8ed9 bet Yes on \"Maduro out by Jan 31\". Entry: 8.2% Result: Yes ROI: +1,122.3%\n\nThey went big right before resolution. That's conviction.\n\nWould you have made this call?\n\n↓ https://polycopy.app/trader/0x31a56e9e690c621...",
+      
+      // For Google Sheets / easy reading
+      "tweet_formatted": "0x31a5...8ed9 bet Yes on \"Maduro out by Jan 31\". Entry: 8.2% Result: Yes ROI: +1,122.3%\n\nThey went big right before resolution. That's conviction.\n\nWould you have made this call?\n\n↓ https://polycopy.app/trader/0x31a56e9e690c621...",
+      
+      "selected": true
+    }
+  ],
+  "all_trades": [
+    {
+      "trade_id": "...",
+      "wallet_address": "...",
+      "wallet_truncated": "0x0154...2a21",
+      "polycopy_url": "https://polycopy.app/trader/0x01542a21...",
+      "tweet_main": null,
+      "tweet_reply": null,
+      "tweet_full": null,
+      "tweet_formatted": null,
+      "selected": false
+    }
+  ]
+}
+
+IMPORTANT OUTPUT FORMATTING RULES:
+- tweet_main: Main tweet text only (no link, no ↓ symbol)
+- tweet_reply: Reply thread with link (starts with ↓)
+- tweet_full: Complete tweet ready to post (main + reply combined with \n\n separator)
+- tweet_formatted: Same as tweet_full, ready for Google Sheets (uses \n for line breaks)
+
+Use \n for line breaks in tweets. Keep main tweet under 280 chars, reply can be longer.
+
+IMPORTANT: Output the JSON directly. Do not call any tools. Do not use Structured Output Parser. Just output the JSON as your text response.

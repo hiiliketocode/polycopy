@@ -396,17 +396,39 @@ def load_gcs_to_bigquery(client: bigquery.Client, gcs_file: str, table_id: str) 
                 load_job = client.load_table_from_uri(gcs_uri, temp_table_id, job_config=job_config)
                 load_job.result()
                 
-                # MERGE to production (deduplicates on id)
-                merge_query = f"""
-                MERGE `{table_id}` AS target
-                USING (
-                    SELECT *
-                    FROM `{temp_table_id}`
-                    QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY timestamp DESC) = 1
-                ) AS source
-                ON target.id = source.id
-                WHEN NOT MATCHED THEN INSERT ROW
-                """
+                # MERGE to production with appropriate deduplication
+                # For trades table: use idempotency key (wallet_address + tx_hash + order_hash)
+                # For other tables: use id
+                is_trades_table = 'trades' in table_id.lower() and 'staging' not in table_id.lower()
+                
+                if is_trades_table:
+                    merge_query = f"""
+                    MERGE `{table_id}` AS target
+                    USING (
+                        SELECT *
+                        FROM `{temp_table_id}`
+                        QUALIFY ROW_NUMBER() OVER (
+                            PARTITION BY wallet_address, tx_hash, COALESCE(order_hash, '')
+                            ORDER BY timestamp DESC, id DESC
+                        ) = 1
+                    ) AS source
+                    ON target.wallet_address = source.wallet_address
+                       AND target.tx_hash = source.tx_hash
+                       AND COALESCE(target.order_hash, '') = COALESCE(source.order_hash, '')
+                    WHEN NOT MATCHED THEN INSERT ROW
+                    """
+                else:
+                    # For markets, events, etc. - use id-based deduplication
+                    merge_query = f"""
+                    MERGE `{table_id}` AS target
+                    USING (
+                        SELECT *
+                        FROM `{temp_table_id}`
+                        QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY timestamp DESC) = 1
+                    ) AS source
+                    ON target.id = source.id
+                    WHEN NOT MATCHED THEN INSERT ROW
+                    """
                 
                 merge_job = client.query(merge_query)
                 merge_job.result()
