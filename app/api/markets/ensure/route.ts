@@ -251,7 +251,7 @@ export async function GET(request: Request) {
     }
 
     // Step 3: Fetch from CLOB API
-    console.log('[ensureMarket] Step 3: Fetching from CLOB API for conditionId:', conditionId)
+    console.log('[ensureMarket] STEP 3: Fetching from CLOB API for conditionId:', conditionId)
     const clobUrl = `https://clob.polymarket.com/markets/${conditionId}`
     console.log('[ensureMarket] CLOB URL:', clobUrl)
     
@@ -284,7 +284,7 @@ export async function GET(request: Request) {
     }
 
     const clobMarket = await clobResponse.json()
-    console.log('[ensureMarket] CLOB market data:', {
+    console.log('[ensureMarket] STEP 3 RESULT: CLOB market data:', {
       hasData: !!clobMarket,
       hasQuestion: !!clobMarket?.question,
       question: clobMarket?.question?.substring(0, 50),
@@ -312,10 +312,10 @@ export async function GET(request: Request) {
     }
 
     // Step 4: Map to database schema
-    console.log('[ensureMarket] Step 4: Mapping CLOB data to database schema')
+    console.log('[ensureMarket] STEP 4: Mapping CLOB data to database schema')
     const marketRow = mapClobMarketToRow(clobMarket)
     const normalizedTags = normalizeTags(marketRow.tags)
-    console.log('[ensureMarket] Mapped market row:', {
+    console.log('[ensureMarket] STEP 4 RESULT: Mapped market row:', {
       condition_id: marketRow.condition_id,
       title: marketRow.title?.substring(0, 50),
       hasTags: normalizedTags.length > 0,
@@ -327,7 +327,14 @@ export async function GET(request: Request) {
 
     // Infer classification on the server (service role bypasses RLS)
     // PRIMARY: Use semantic_mapping (core semantic engine)
+    console.log('[ensureMarket] STEP 5: Inferring niche from tags via semantic_mapping:', normalizedTags)
     const nicheResult = await inferNicheFromTags(normalizedTags)
+    console.log('[ensureMarket] STEP 5 RESULT:', {
+      niche: nicheResult.niche,
+      marketType: nicheResult.marketType,
+      source: nicheResult.source,
+      fromTag: nicheResult.fromTag,
+    })
     let finalNiche = nicheResult.niche
     let finalMarketType = nicheResult.marketType || null
     
