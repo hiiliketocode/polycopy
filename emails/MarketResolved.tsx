@@ -49,13 +49,16 @@ export default function MarketResolvedEmail({
     return `$${amount.toFixed(2)}`
   }
   
-  // Calculate winnings: profit = (final payout - entry price) * bet amount
-  // If won: (1.00 - entry price) * bet amount
-  // If lost: (0.00 - entry price) * bet amount = negative
+  // Calculate winnings based on shares purchased
+  // shares = betAmount / userEntryPrice
+  // totalPayout = shares * finalPayout (1.00 for win, 0.00 for loss)
+  // profit = totalPayout - betAmount
   const calculateWinnings = () => {
-    if (!betAmount) return '$0.00'
+    if (!betAmount || !userEntryPrice || userEntryPrice === 0) return '$0.00'
+    const shares = betAmount / userEntryPrice
     const finalPayout = didUserWin ? 1.00 : 0.00
-    const profit = (finalPayout - userEntryPrice) * betAmount
+    const totalPayout = shares * finalPayout
+    const profit = totalPayout - betAmount
     return formatMoney(profit)
   }
 

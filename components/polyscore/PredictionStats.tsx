@@ -43,6 +43,7 @@ interface StatsData {
   current_trade_size?: number
   global_L_avg_pos_size_usd?: number
   global_L_avg_trade_size_usd?: number
+  profile_L_avg_trade_size_usd?: number
 }
 
 export function PredictionStats({ 
@@ -537,6 +538,10 @@ export function PredictionStats({
             ? pickNumber(p.d30_avg_pnl_trade_usd, p.D30_avg_pnl_trade_usd)
             : pickNumber(p.l_avg_pnl_trade_usd, p.avg_pnl_trade_usd, p.L_avg_pnl_trade_usd)
 
+          const avgTradeSizeUsd = use30
+            ? pickNumber(p.d30_avg_trade_size_usd, p.D30_avg_trade_size_usd)
+            : pickNumber(p.l_avg_trade_size_usd, p.L_avg_trade_size_usd)
+
           return {
             niche: nicheVal,
             structure: structureVal,
@@ -544,6 +549,7 @@ export function PredictionStats({
             win_rate: winRate ?? 0.5,
             roi_pct: roiPct ?? 0,
             avg_pnl_usd: avgPnlUsd ?? 0,
+            avg_trade_size_usd: avgTradeSizeUsd ?? null,
             trade_count: tradeCount,
             window: use30 ? '30d' : 'lifetime',
           }
@@ -582,15 +588,17 @@ export function PredictionStats({
                 acc.win_weighted += p.win_rate * p.trade_count
                 acc.roi_weighted += p.roi_pct * p.trade_count
                 acc.pnl_weighted += p.avg_pnl_usd * p.trade_count
+                acc.trade_size_weighted += (p.avg_trade_size_usd ?? 0) * p.trade_count
                 acc.window30d = acc.window30d || p.window === '30d'
                 return acc
-              }, { trade_count: 0, win_weighted: 0, roi_weighted: 0, pnl_weighted: 0, window30d: false })
+              }, { trade_count: 0, win_weighted: 0, roi_weighted: 0, pnl_weighted: 0, trade_size_weighted: 0, window30d: false })
 
               if (assignIfValid({
                 trade_count: agg.trade_count,
                 win_rate: agg.trade_count > 0 ? agg.win_weighted / agg.trade_count : 0.5,
                 roi_pct: agg.trade_count > 0 ? agg.roi_weighted / agg.trade_count : 0,
                 avg_pnl_usd: agg.trade_count > 0 ? agg.pnl_weighted / agg.trade_count : 0,
+                avg_trade_size_usd: agg.trade_count > 0 && agg.trade_size_weighted > 0 ? agg.trade_size_weighted / agg.trade_count : null,
                 window: agg.window30d ? '30d' : 'lifetime',
               }, 'Structure-Specific', `${finalNicheKey}_${finalBetStructureKey}`)) {
                 // assigned
@@ -605,15 +613,17 @@ export function PredictionStats({
                   acc.win_weighted += p.win_rate * p.trade_count
                   acc.roi_weighted += p.roi_pct * p.trade_count
                   acc.pnl_weighted += p.avg_pnl_usd * p.trade_count
+                  acc.trade_size_weighted += (p.avg_trade_size_usd ?? 0) * p.trade_count
                   acc.window30d = acc.window30d || p.window === '30d'
                   return acc
-                }, { trade_count: 0, win_weighted: 0, roi_weighted: 0, pnl_weighted: 0, window30d: false })
+                }, { trade_count: 0, win_weighted: 0, roi_weighted: 0, pnl_weighted: 0, trade_size_weighted: 0, window30d: false })
 
                 assignIfValid({
                   trade_count: agg.trade_count,
                   win_rate: agg.trade_count > 0 ? agg.win_weighted / agg.trade_count : 0.5,
                   roi_pct: agg.trade_count > 0 ? agg.roi_weighted / agg.trade_count : 0,
                   avg_pnl_usd: agg.trade_count > 0 ? agg.pnl_weighted / agg.trade_count : 0,
+                  avg_trade_size_usd: agg.trade_count > 0 && agg.trade_size_weighted > 0 ? agg.trade_size_weighted / agg.trade_count : null,
                   window: agg.window30d ? '30d' : 'lifetime',
                 }, 'Niche-Specific', finalNicheKey)
               }
@@ -627,7 +637,9 @@ export function PredictionStats({
         const profileRoiPct = profileResult?.roi_pct ?? globalRoiPct
         const profileAvgPnlUsd = profileResult?.avg_pnl_usd ?? globalAvgPnlUsd // Use global if profile missing
         const profileCount = profileResult?.trade_count ?? globalTradeCount
-        const avgBetSize = globalAvgPosSizeUsd || globalAvgTradeSizeUsd || tradeTotal
+        // Use profile-specific average trade size when available, fallback to global
+        const profileAvgTradeSizeUsd = profileResult?.avg_trade_size_usd ?? null
+        const avgBetSize = profileAvgTradeSizeUsd ?? globalAvgPosSizeUsd ?? globalAvgTradeSizeUsd ?? tradeTotal
 
         console.log('[PredictionStats] Data fetched:', {
           wallet,
@@ -680,6 +692,7 @@ export function PredictionStats({
           current_trade_size: tradeTotal,
           global_L_avg_pos_size_usd: cappedAvgPosSize !== null ? cappedAvgPosSize : undefined,
           global_L_avg_trade_size_usd: cappedAvgTradeSize !== null ? cappedAvgTradeSize : undefined,
+          profile_L_avg_trade_size_usd: profileAvgTradeSizeUsd !== null ? profileAvgTradeSizeUsd : undefined,
         }
 
         console.log('[PredictionStats] Setting stats:', {
@@ -802,12 +815,17 @@ export function PredictionStats({
   const profileCount = stats?.profile_L_count ?? 0
   const globalTradeCount = stats?.global_trade_count ?? 0
   // Conviction calculation: current size / historical average
+  // Use profile-specific average trade size when available (to match profile-specific PnL/ROI),
+  // otherwise fallback to global average position size or trade size
   // If average is missing or zero, conviction can't be calculated
-  const positionConviction = stats?.current_market_exposure && stats?.global_L_avg_pos_size_usd && stats.global_L_avg_pos_size_usd > 0
-    ? stats.current_market_exposure / stats.global_L_avg_pos_size_usd
+  const profileAvgTradeSize = stats?.profile_L_avg_trade_size_usd ?? null
+  const avgSizeForConviction = profileAvgTradeSize ?? stats?.global_L_avg_pos_size_usd ?? stats?.global_L_avg_trade_size_usd ?? null
+  
+  const positionConviction = stats?.current_market_exposure && avgSizeForConviction && avgSizeForConviction > 0
+    ? stats.current_market_exposure / avgSizeForConviction
     : null
-  const tradeConviction = stats?.current_trade_size && stats?.global_L_avg_trade_size_usd && stats?.global_L_avg_trade_size_usd > 0
-    ? stats.current_trade_size / stats.global_L_avg_trade_size_usd
+  const tradeConviction = stats?.current_trade_size && avgSizeForConviction && avgSizeForConviction > 0
+    ? stats.current_trade_size / avgSizeForConviction
     : null
 
   // Debug logging for conviction calculation
@@ -815,16 +833,16 @@ export function PredictionStats({
     console.log('[PredictionStats] Conviction calculation:', {
       current_market_exposure: stats.current_market_exposure,
       current_trade_size: stats.current_trade_size,
+      profile_L_avg_trade_size_usd: stats.profile_L_avg_trade_size_usd,
       global_L_avg_pos_size_usd: stats.global_L_avg_pos_size_usd,
       global_L_avg_trade_size_usd: stats.global_L_avg_trade_size_usd,
+      avgSizeForConviction,
       positionConviction,
       tradeConviction,
+      usingProfileAvg: profileAvgTradeSize !== null,
       // Check if averages seem too high
-      posAvgTooHigh: stats.global_L_avg_pos_size_usd && stats.current_market_exposure 
-        ? stats.global_L_avg_pos_size_usd > stats.current_market_exposure * 2 
-        : null,
-      tradeAvgTooHigh: stats.global_L_avg_trade_size_usd && stats.current_trade_size
-        ? stats.global_L_avg_trade_size_usd > stats.current_trade_size * 2
+      avgTooHigh: avgSizeForConviction && stats.current_market_exposure 
+        ? avgSizeForConviction > stats.current_market_exposure * 2 
         : null,
     })
   }

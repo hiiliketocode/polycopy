@@ -6,7 +6,16 @@ export function Footer() {
     <footer className="bg-slate-900 text-slate-300 mt-auto">
       <div className="max-w-7xl mx-auto px-4 py-8">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center justify-center gap-4 md:gap-6">
+            <Link href="/copy-trading" className="text-sm hover:text-white transition-colors">
+              Copy Trading
+            </Link>
+            <Link href="/top-traders" className="text-sm hover:text-white transition-colors">
+              Top Traders
+            </Link>
+            <Link href="/pricing" className="text-sm hover:text-white transition-colors">
+              Pricing
+            </Link>
             <Link href="/faq" className="text-sm hover:text-white transition-colors">
               FAQ
             </Link>
