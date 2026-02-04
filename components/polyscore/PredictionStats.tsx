@@ -601,13 +601,13 @@ export function PredictionStats({
         const currentExposure = tradeTotal
 
         const statsData: StatsData = {
-          profile_L_win_rate: profileWinRate ?? null,
-          global_L_win_rate: globalWinRate ?? null,
-          profile_L_avg_pnl_per_trade_usd: profileAvgPnl ?? null,
-          global_L_avg_pnl_per_trade_usd: globalAvgPnl ?? null,
+          profile_L_win_rate: profileWinRate !== null ? profileWinRate : undefined,
+          global_L_win_rate: globalWinRate !== null ? globalWinRate : undefined,
+          profile_L_avg_pnl_per_trade_usd: profileAvgPnl !== null ? profileAvgPnl : undefined,
+          global_L_avg_pnl_per_trade_usd: globalAvgPnl !== null ? globalAvgPnl : undefined,
           // ROI values in DB are stored as decimals (e.g., 0.03 = 3%), keep as-is
-          profile_L_roi_pct: profileRoiPct ?? null,
-          global_L_roi_pct: globalRoiPct ?? null,
+          profile_L_roi_pct: profileRoiPct !== null ? profileRoiPct : undefined,
+          global_L_roi_pct: globalRoiPct !== null ? globalRoiPct : undefined,
           profile_current_win_streak: 0, // Would need to query recent trades
           global_current_win_streak: 0,
           profile_L_count: profileCount ?? 0,
@@ -616,8 +616,8 @@ export function PredictionStats({
           data_source: dataSource,
           current_market_exposure: currentExposure,
           current_trade_size: tradeTotal,
-          global_L_avg_pos_size_usd: cappedAvgPosSize ?? null,
-          global_L_avg_trade_size_usd: cappedAvgTradeSize ?? null,
+          global_L_avg_pos_size_usd: cappedAvgPosSize !== null ? cappedAvgPosSize : undefined,
+          global_L_avg_trade_size_usd: cappedAvgTradeSize !== null ? cappedAvgTradeSize : undefined,
         }
 
         console.log('[PredictionStats] Setting stats:', {
@@ -646,12 +646,12 @@ export function PredictionStats({
         setError(err?.message || 'Failed to load stats')
         // Even on error, set default stats so UI doesn't break
         setStats({
-          profile_L_win_rate: null,
-          global_L_win_rate: null,
-          profile_L_avg_pnl_per_trade_usd: null,
-          global_L_avg_pnl_per_trade_usd: null,
-          profile_L_roi_pct: null,
-          global_L_roi_pct: null,
+          profile_L_win_rate: undefined,
+          global_L_win_rate: undefined,
+          profile_L_avg_pnl_per_trade_usd: undefined,
+          global_L_avg_pnl_per_trade_usd: undefined,
+          profile_L_roi_pct: undefined,
+          global_L_roi_pct: undefined,
           profile_current_win_streak: 0,
           global_current_win_streak: 0,
           profile_L_count: 0,
@@ -661,9 +661,9 @@ export function PredictionStats({
           current_market_exposure: price * size,
           current_trade_size: price * size,
           // Don't set averages to current trade size - that would make conviction always 1.0x
-          // Leave as null so conviction shows N/A
-          global_L_avg_pos_size_usd: null,
-          global_L_avg_trade_size_usd: null,
+          // Leave as undefined so conviction shows N/A
+          global_L_avg_pos_size_usd: undefined,
+          global_L_avg_trade_size_usd: undefined,
         } as StatsData)
       } finally {
         setLoading(false)
