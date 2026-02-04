@@ -293,6 +293,11 @@ export async function GET(request: Request) {
       passedByWinRate: 0,
       passedByRoi: 0,
       passedByConviction: 0,
+      tradesWithNullWinRate: 0,
+      tradesWithNullRoi: 0,
+      tradesWithNullConviction: 0,
+      tradesWithAllNull: 0,
+      sampleRejectedTrade: null as any,
     };
     
     for (const [wallet, trades] of tradesByWallet.entries()) {
@@ -312,6 +317,29 @@ export async function GET(request: Request) {
         const winRate = winRateForTradeType(stats, category);
         const roiPct = roiForTradeType(stats, category);
         const conviction = convictionMultiplierForTrade(trade, stats);
+        
+        // Track null stats for debugging
+        if (winRate === null) debugStats.tradesWithNullWinRate++;
+        if (roiPct === null) debugStats.tradesWithNullRoi++;
+        if (conviction === null) debugStats.tradesWithNullConviction++;
+        if (winRate === null && roiPct === null && conviction === null) {
+          debugStats.tradesWithAllNull++;
+          // Store first trade with all null stats for debugging
+          if (!debugStats.sampleRejectedTrade) {
+            debugStats.sampleRejectedTrade = {
+              wallet: wallet.slice(0, 10) + '...',
+              conditionId: trade.condition_id?.slice(0, 20) + '...',
+              category,
+              stats: {
+                globalWinRate: stats.globalWinRate,
+                globalRoiPct: stats.globalRoiPct,
+                avgBetSizeUsd: stats.avgBetSizeUsd,
+                d30_avg_trade_size_usd: stats.d30_avg_trade_size_usd,
+                profilesCount: stats.profiles?.length || 0,
+              },
+            };
+          }
+        }
         
         // ROI is stored as decimal (0.15 = 15%), so compare directly
         const meetsWinRate = winRate !== null && winRate >= FIRE_WIN_RATE_THRESHOLD;
@@ -394,7 +422,22 @@ export async function GET(request: Request) {
     });
 
     console.log('[FIRE Feed] Debug stats:', debugStats);
+    console.log(`[FIRE Feed] Filter thresholds: Win Rate ≥${FIRE_WIN_RATE_THRESHOLD}, ROI ≥${FIRE_ROI_THRESHOLD}, Conviction ≥${FIRE_CONVICTION_MULTIPLIER_THRESHOLD}`);
     console.log(`[FIRE Feed] Returning ${fireTrades.length} filtered trades`);
+    
+    // Log detailed breakdown if no trades passed
+    if (fireTrades.length === 0 && debugStats.tradesChecked > 0) {
+      console.warn('[FIRE Feed] ⚠️  NO TRADES PASSED FILTERS');
+      console.warn(`[FIRE Feed] Checked ${debugStats.tradesChecked} trades from ${tradesByWallet.size} traders`);
+      console.warn(`[FIRE Feed] ${debugStats.tradersWithoutStats} traders had no stats`);
+      console.warn(`[FIRE Feed] ${debugStats.tradesWithAllNull} trades had all null stats (winRate, roi, conviction)`);
+      console.warn(`[FIRE Feed] ${debugStats.tradesWithNullWinRate} trades had null winRate`);
+      console.warn(`[FIRE Feed] ${debugStats.tradesWithNullRoi} trades had null ROI`);
+      console.warn(`[FIRE Feed] ${debugStats.tradesWithNullConviction} trades had null conviction`);
+      if (debugStats.sampleRejectedTrade) {
+        console.warn('[FIRE Feed] Sample rejected trade:', JSON.stringify(debugStats.sampleRejectedTrade, null, 2));
+      }
+    }
 
     return NextResponse.json({
       trades: fireTrades,
