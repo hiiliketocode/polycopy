@@ -711,8 +711,8 @@ export function PredictionStats({
         console.log('[PredictionStats] ✅ About to setStats with data:', {
           hasProfileWinRate: statsData.profile_L_win_rate !== undefined,
           hasGlobalWinRate: statsData.global_L_win_rate !== undefined,
-          hasProfileCount: statsData.profile_L_count > 0,
-          hasGlobalCount: statsData.global_trade_count > 0,
+          hasProfileCount: (statsData.profile_L_count ?? 0) > 0,
+          hasGlobalCount: (statsData.global_trade_count ?? 0) > 0,
           profileWinRate: statsData.profile_L_win_rate,
           globalWinRate: statsData.global_L_win_rate,
           profileCount: statsData.profile_L_count,
