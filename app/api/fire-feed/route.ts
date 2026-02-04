@@ -187,10 +187,11 @@ export async function GET(request: Request) {
     });
 
     // 2. Fetch stats for all traders in parallel from Supabase
+    // Include both d30_* (30-day) and l_* (lifetime) fields for fallback
     const [globalsRes, profilesRes] = await Promise.all([
       supabase
         .from('trader_global_stats')
-        .select('wallet_address, global_win_rate, recent_win_rate, d30_win_rate, d30_total_roi_pct, global_roi_pct, avg_bet_size_usdc, d30_avg_trade_size_usd, l_avg_trade_size_usd')
+        .select('wallet_address, l_win_rate, d30_win_rate, l_total_roi_pct, d30_total_roi_pct, l_avg_trade_size_usd, d30_avg_trade_size_usd, l_avg_pos_size_usd, global_win_rate, recent_win_rate, global_roi_pct, avg_bet_size_usdc')
         .in('wallet_address', wallets),
       supabase
         .from('trader_profile_stats')
@@ -225,11 +226,13 @@ export async function GET(request: Request) {
       if (!wallet) return;
       statsMap.set(wallet, {
         globalWinRate:
-          normalizeWinRateValue(row.d30_win_rate) ??
+          normalizeWinRateValue(row.d30_win_rate) ?? // 30-day preferred
+          normalizeWinRateValue(row.l_win_rate) ?? // lifetime fallback
           normalizeWinRateValue(row.recent_win_rate) ??
           normalizeWinRateValue(row.global_win_rate),
         globalRoiPct:
-          Number.isFinite(Number(row.d30_total_roi_pct)) ? Number(row.d30_total_roi_pct) :
+          Number.isFinite(Number(row.d30_total_roi_pct)) ? Number(row.d30_total_roi_pct) : // 30-day preferred
+          Number.isFinite(Number(row.l_total_roi_pct)) ? Number(row.l_total_roi_pct) : // lifetime fallback
           Number.isFinite(Number(row.global_roi_pct)) ? Number(row.global_roi_pct) :
           null,
         avgBetSizeUsd:
@@ -244,6 +247,10 @@ export async function GET(request: Request) {
           typeof row.l_avg_trade_size_usd === 'number'
             ? row.l_avg_trade_size_usd
             : Number(row.l_avg_trade_size_usd) || null,
+        l_avg_pos_size_usd:
+          typeof row.l_avg_pos_size_usd === 'number'
+            ? row.l_avg_pos_size_usd
+            : Number(row.l_avg_pos_size_usd) || null,
         profiles: profilesByWallet.get(wallet) || [],
       });
     });
