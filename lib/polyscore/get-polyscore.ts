@@ -69,6 +69,9 @@ export interface PolyScoreResponse {
       ai_value: number
       edge_points: number
       edge_percent: number
+      tooltip?: string
+      label?: string
+      value?: string
     }
     competency: {
       niche_win_rate: number

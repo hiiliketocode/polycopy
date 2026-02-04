@@ -252,19 +252,19 @@ export function PolyScoreDrawer({
                               <Info className="h-3.5 w-3.5 text-slate-400" />
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p className="text-xs max-w-xs">{data.drawer.valuation.tooltip}</p>
+                              <p className="text-xs max-w-xs">{data.drawer.valuation.tooltip || 'Valuation analysis based on market price vs AI fair value'}</p>
                             </TooltipContent>
                           </Tooltip>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-600">{data.drawer.valuation.label}</span>
+                          <span className="text-xs text-slate-600">{data.drawer.valuation.label || 'Edge'}</span>
                           <span className={cn(
                             'text-lg font-bold',
-                            data.drawer.valuation.value.startsWith('+') ? 'text-emerald-900' :
-                            data.drawer.valuation.value.includes('-') && !data.drawer.valuation.value.startsWith('-') ? 'text-red-900' :
+                            data.drawer.valuation.value?.startsWith('+') ? 'text-emerald-900' :
+                            data.drawer.valuation.value?.includes('-') && !data.drawer.valuation.value?.startsWith('-') ? 'text-red-900' :
                             'text-slate-900'
                           )}>
-                            {data.drawer.valuation.value}
+                            {data.drawer.valuation.value || `${data.drawer.valuation.edge_percent > 0 ? '+' : ''}${data.drawer.valuation.edge_percent.toFixed(1)}%`}
                           </span>
                         </div>
                       </div>
