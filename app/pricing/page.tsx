@@ -231,6 +231,9 @@ export default function PricingPage() {
             <p className="text-center text-slate-600 max-w-2xl mx-auto">
               <strong>The feed and curation work the same on both tiers.</strong> Premium is about convenience and speed, not access. Start free, see the value, upgrade when you want faster execution.
             </p>
+            <p className="text-center text-sm text-slate-500 mt-4">
+              Want to see copy trading in action? Read our <Link href="/how-to-copy-trade-polymarket" className="text-polycopy-yellow hover:underline font-medium">step-by-step guide</Link>.
+            </p>
           </div>
         </section>
 
@@ -458,6 +461,9 @@ export default function PricingPage() {
             <div className="mt-8 bg-slate-100 border-l-4 border-polycopy-yellow p-6 rounded-lg">
               <p className="text-slate-700 leading-relaxed">
                 <strong className="text-slate-900">Pro tip:</strong> Start free to validate the feed works for you. If you find yourself copying 5+ trades in your first week, upgrade to Premium to save time. Many users stay free for months before upgrading - that's totally fine.
+              </p>
+              <p className="text-sm text-slate-600 mt-3">
+                Learn more: <Link href="/copy-trading" className="text-polycopy-yellow hover:underline font-medium">What is copy trading on Polycopy?</Link>
               </p>
             </div>
           </div>

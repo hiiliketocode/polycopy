@@ -317,6 +317,9 @@ export default function TopTradersPage() {
               <p className="text-slate-700 leading-relaxed">
                 <strong className="text-slate-900">Pro tip:</strong> Don't optimize for a single metric. The best traders balance ROI, consistency, and volume. A 200% ROI on $50 traded is less meaningful than 30% ROI on $50,000 traded.
               </p>
+              <p className="text-sm text-slate-600 mt-3">
+                Once you find great traders: <Link href="/copy-trading" className="text-polycopy-yellow hover:underline font-medium">Learn how copy trading works</Link>
+              </p>
             </div>
           </div>
         </section>
