@@ -210,18 +210,48 @@ export async function GET(request: Request) {
     console.log('[fire-feed] Fetching all trades from last 30 days...');
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
+    console.log(`[fire-feed] Querying trades since: ${thirtyDaysAgoISO}`);
+    
+    // First, check if there are ANY trades at all (diagnostic)
+    const { count: totalTradesCount, error: countError } = await supabase
+      .from('trades')
+      .select('*', { count: 'exact', head: true })
+      .eq('side', 'BUY');
+    
+    console.log(`[fire-feed] Total BUY trades in database: ${totalTradesCount ?? 'unknown'}`);
+    if (countError) {
+      console.warn('[fire-feed] Could not count total trades:', countError);
+    }
+    
+    // Check recent trades count
+    const { count: recentTradesCount } = await supabase
+      .from('trades')
+      .select('*', { count: 'exact', head: true })
+      .gte('timestamp', thirtyDaysAgoISO)
+      .eq('side', 'BUY');
+    
+    console.log(`[fire-feed] BUY trades in last 30 days: ${recentTradesCount ?? 'unknown'}`);
     
     const { data: allTradesData, error: allTradesError } = await supabase
       .from('trades')
       .select('wallet_address')
-      .gte('timestamp', thirtyDaysAgo.toISOString())
+      .gte('timestamp', thirtyDaysAgoISO)
       .eq('side', 'BUY') // Only BUY trades for FIRE feed
       .limit(10000); // Get enough to find unique wallets
     
     if (allTradesError) {
-      console.error('Error fetching trades for wallet extraction:', allTradesError);
-      return NextResponse.json({ trades: [], traders: {} });
+      console.error('[fire-feed] ❌ Error fetching trades for wallet extraction:', allTradesError);
+      return NextResponse.json({ 
+        trades: [], 
+        traders: {},
+        stats: {},
+        error: 'Failed to fetch trades',
+        debug: process.env.NODE_ENV === 'development' ? { error: allTradesError.message } : undefined,
+      });
     }
+    
+    console.log(`[fire-feed] Query returned ${allTradesData?.length || 0} trades`);
 
     // Extract unique wallet addresses
     const walletsSet = new Set<string>();
@@ -234,9 +264,22 @@ export async function GET(request: Request) {
     
     const wallets = Array.from(walletsSet);
     console.log(`[fire-feed] Found ${wallets.length} unique traders with trades in last 30 days`);
+    console.log(`[fire-feed] Total trades found: ${allTradesData?.length || 0}`);
 
     if (wallets.length === 0) {
-      return NextResponse.json({ trades: [], traders: {} });
+      console.warn('[fire-feed] ⚠️  No traders found with trades in last 30 days');
+      return NextResponse.json({ 
+        trades: [], 
+        traders: {},
+        stats: {},
+        debug: process.env.NODE_ENV === 'development' ? {
+          tradersWithoutStats: 0,
+          tradesChecked: 0,
+          tradesPassed: 0,
+          tradesFound: allTradesData?.length || 0,
+          uniqueWallets: 0,
+        } : undefined,
+      });
     }
 
     // Build trader meta from wallet addresses (will be enriched later if needed)
@@ -310,20 +353,23 @@ export async function GET(request: Request) {
 
     // 3. Fetch recent trades from Supabase for all traders in ONE query
     // Use 30 days - same window as wallet extraction
+    console.log(`[fire-feed] Fetching trades for ${wallets.length} traders...`);
     const { data: tradesData, error: tradesError } = await supabase
       .from('trades')
       .select('*')
       .in('wallet_address', wallets)
-      .gte('timestamp', thirtyDaysAgo.toISOString())
+      .gte('timestamp', thirtyDaysAgoISO)
       .eq('side', 'BUY') // Only BUY trades for FIRE feed
       .order('timestamp', { ascending: false })
       .limit(5000); // Increased limit since we're including all traders now
 
     if (tradesError) {
-      console.error('Error fetching trades from Supabase:', tradesError);
+      console.error('[fire-feed] ❌ Error fetching trades from Supabase:', tradesError);
       // Don't fail completely - return empty trades if query fails
       // This allows the feed to still work if trades table has issues
-      console.warn('Continuing with empty trades due to Supabase error');
+      console.warn('[fire-feed] Continuing with empty trades due to Supabase error');
+    } else {
+      console.log(`[fire-feed] Fetched ${tradesData?.length || 0} trades from Supabase`);
     }
 
     // 4. Group trades by wallet and limit per trader
