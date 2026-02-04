@@ -306,6 +306,32 @@ export async function GET(request: Request) {
 
     console.log(`[FIRE Feed] Processed ${wallets.length} traders, ${tradesData?.length || 0} trades, ${tradesByWallet.size} traders with trades`);
     console.log(`[FIRE Feed] Stats available for ${statsMap.size} traders`);
+    
+    // Log sample stats to verify data
+    if (statsMap.size > 0) {
+      const sampleWallet = Array.from(statsMap.keys())[0];
+      const sampleStats = statsMap.get(sampleWallet);
+      console.log(`[FIRE Feed] Sample stats for ${sampleWallet.slice(0, 10)}...:`, {
+        globalWinRate: sampleStats?.globalWinRate,
+        globalRoiPct: sampleStats?.globalRoiPct,
+        d30_avg_trade_size_usd: sampleStats?.d30_avg_trade_size_usd,
+        l_avg_trade_size_usd: sampleStats?.l_avg_trade_size_usd,
+        profilesCount: sampleStats?.profiles?.length || 0,
+      });
+    }
+    
+    // Log sample trade to verify structure
+    if (tradesData && tradesData.length > 0) {
+      const sampleTrade = tradesData[0];
+      console.log(`[FIRE Feed] Sample trade structure:`, {
+        hasWallet: !!sampleTrade.wallet_address,
+        hasConditionId: !!sampleTrade.condition_id,
+        hasPrice: !!sampleTrade.price,
+        hasSize: !!(sampleTrade.shares_normalized || sampleTrade.size),
+        hasCategory: !!(sampleTrade.category || sampleTrade.market_category),
+        category: sampleTrade.category || sampleTrade.market_category || 'undefined',
+      });
+    }
 
     // 5. Filter trades based on FIRE criteria
     const fireTrades: any[] = [];
