@@ -500,6 +500,8 @@ export function TradeCard({
   fireRoi,
   fireConviction,
   tags,
+  marketSubtype,
+  betStructure,
 }: TradeCardProps) {
   const resolvedDefaultSlippage =
     action === "Buy"
