@@ -393,24 +393,43 @@ export function PredictionStats({
           ])
           
           console.log('[PredictionStats] Global stats query result:', {
+            wallet: wallet,
+            walletLength: wallet?.length,
             hasData: !!g,
             data: g,
             error: gErr,
             errorCode: gErr?.code,
             errorMessage: gErr?.message,
+            errorDetails: gErr?.details,
+            errorHint: gErr?.hint,
           })
           console.log('[PredictionStats] Profile stats query result:', {
+            wallet: wallet,
             count: p?.length || 0,
             error: pErr,
             errorCode: pErr?.code,
             errorMessage: pErr?.message,
+            errorDetails: pErr?.details,
+            errorHint: pErr?.hint,
           })
           
           if (gErr) {
-            console.error('[PredictionStats] Error fetching global stats:', gErr)
+            console.error('[PredictionStats] ❌ Error fetching global stats:', gErr)
+            console.error('[PredictionStats] Error details:', {
+              code: gErr.code,
+              message: gErr.message,
+              details: gErr.details,
+              hint: gErr.hint,
+            })
           }
           if (pErr) {
-            console.error('[PredictionStats] Error fetching profile stats:', pErr)
+            console.error('[PredictionStats] ❌ Error fetching profile stats:', pErr)
+            console.error('[PredictionStats] Error details:', {
+              code: pErr.code,
+              message: pErr.message,
+              details: pErr.details,
+              hint: pErr.hint,
+            })
           }
           
           globalStats = g || null
@@ -418,8 +437,11 @@ export function PredictionStats({
           
           console.log('[PredictionStats] Processed stats:', {
             globalStatsExists: !!globalStats,
+            globalStatsIsNull: globalStats === null,
             globalStatsKeys: globalStats ? Object.keys(globalStats) : [],
             profileStatsCount: profileStats.length,
+            // If no data, check if it's an RLS issue
+            noDataReason: !globalStats ? 'No data returned - check RLS policies or wallet address format' : 'Data found',
           })
         } catch (statsErr: any) {
           console.error('[PredictionStats] stats fetch failed', statsErr)
