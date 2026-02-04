@@ -154,6 +154,9 @@ export function PredictionStats({
         let finalNiche = propMarketSubtype ? propMarketSubtype.toUpperCase() : (niche || null)
         let finalBetStructure = propBetStructure ? propBetStructure.toUpperCase() : betStructure
         
+        // If props are provided, we already have classification - skip DB query and semantic_mapping
+        const hasClassificationFromProps = !!(propMarketSubtype && propBetStructure)
+        
         // Market data (tags, market_subtype, bet_structure) is batch-fetched in feed page
         // But tags might still be missing if market doesn't exist in DB yet
         // So we'll try props first, then fallback to DB query, then use title
@@ -207,9 +210,9 @@ export function PredictionStats({
           tagsToUse = normalizeTags(marketTags);
         }
         
-        // Priority 2: If no tags from props, fetch from DB (market should exist after ensure)
+        // Priority 2: If no tags from props AND no classification from props, fetch from DB
         let dbMarketData: any = null;
-        if (tagsToUse.length === 0 && conditionId) {
+        if (tagsToUse.length === 0 && conditionId && !hasClassificationFromProps) {
           try {
             const { data: dbMarket, error: dbError } = await supabase
               .from('markets')
@@ -275,7 +278,8 @@ export function PredictionStats({
         }
 
         // Semantic mapping lookup (primary niche resolver)
-        if (tagsToUse.length > 0) {
+        // SKIP if we already have classification from props
+        if (tagsToUse.length > 0 && !hasClassificationFromProps) {
           try {
             // Try case-sensitive match first (tags are already normalized to lowercase)
             let { data: mappings, error: mappingError } = await supabase
@@ -331,12 +335,13 @@ export function PredictionStats({
         })
         
         // Fallback: Use market_subtype from DB if semantic mapping failed (already fetched above)
-        if (!finalNiche && dbMarketData?.market_subtype) {
+        // SKIP if we already have classification from props
+        if (!finalNiche && !hasClassificationFromProps && dbMarketData?.market_subtype) {
           finalNiche = (dbMarketData.market_subtype || '').trim().toUpperCase() || null;
         }
         
-        // Last resort: Query DB again if we don't have dbMarketData (shouldn't happen, but safety check)
-        if (!finalNiche && conditionId && !dbMarketData) {
+        // Last resort: Query DB again if we don't have dbMarketData and no props (shouldn't happen, but safety check)
+        if (!finalNiche && !hasClassificationFromProps && conditionId && !dbMarketData) {
           try {
             const { data: dbMarket } = await supabase
               .from('markets')
