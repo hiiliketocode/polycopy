@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { fetchPolymarketLeaderboard } from '@/lib/polymarket-leaderboard';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -159,28 +160,14 @@ export async function GET(request: Request) {
       throw new Error('Supabase configuration missing. Check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.');
     }
 
-    // 1. Fetch top traders from leaderboard
-    // Construct URL from request or use env var
-    const url = new URL(request.url);
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `${url.protocol}//${url.host}`;
-    const leaderboardUrl = `${baseUrl}/api/polymarket/leaderboard?limit=${FIRE_TOP_TRADERS_LIMIT}&orderBy=PNL&timePeriod=month&category=overall`;
-    
-    const leaderboardRes = await fetch(leaderboardUrl, {
-      cache: 'no-store',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+    // 1. Fetch top traders from leaderboard (call function directly, no HTTP fetch)
+    console.log('[fire-feed] Fetching leaderboard traders...');
+    const tradersRaw = await fetchPolymarketLeaderboard({
+      limit: FIRE_TOP_TRADERS_LIMIT,
+      orderBy: 'PNL',
+      timePeriod: 'month',
+      category: 'overall',
     });
-    
-    if (!leaderboardRes.ok) {
-      const errorText = await leaderboardRes.text().catch(() => 'Unknown error');
-      console.error('Leaderboard fetch failed:', leaderboardRes.status, errorText);
-      throw new Error(`Failed to fetch leaderboard: ${leaderboardRes.status} ${errorText.slice(0, 200)}`);
-    }
-    const leaderboardData = await leaderboardRes.json();
-    const tradersRaw: any[] = Array.isArray(leaderboardData?.traders)
-      ? leaderboardData.traders
-      : [];
 
     const wallets: string[] = tradersRaw
       .map((trader: any) => (trader.wallet || trader.proxyWallet || '').toLowerCase())
