@@ -202,12 +202,12 @@ export function PredictionStats({
           tagsToUse = normalizeTags(marketTags);
         }
         
-        // Priority 2: If no tags from props, try fetching from DB (fallback)
+        // Priority 2: If no tags from props, fetch from DB (market should exist after ensure)
         if (tagsToUse.length === 0 && conditionId) {
           try {
             const { data: dbMarket, error: dbError } = await supabase
               .from('markets')
-              .select('tags, raw_dome')
+              .select('tags, raw_dome, market_subtype')
               .eq('condition_id', conditionId)
               .maybeSingle();
             
@@ -230,50 +230,22 @@ export function PredictionStats({
                   // Ignore parse errors
                 }
               }
+              
+              // If still no tags, market needs to be ensured - trigger ensure API
+              if (tagsToUse.length === 0) {
+                console.warn(`[PredictionStats] Market ${conditionId} exists but has no tags - triggering ensure`);
+                // Trigger ensure in background (don't await)
+                fetch(`/api/markets/ensure?conditionId=${conditionId}`, { cache: 'no-store' })
+                  .catch((err) => console.warn(`[PredictionStats] Failed to ensure market:`, err));
+              }
+            } else if (!dbMarket) {
+              // Market doesn't exist - trigger ensure
+              console.warn(`[PredictionStats] Market ${conditionId} not in DB - triggering ensure`);
+              fetch(`/api/markets/ensure?conditionId=${conditionId}`, { cache: 'no-store' })
+                .catch((err) => console.warn(`[PredictionStats] Failed to ensure market:`, err));
             }
           } catch (err) {
-            // Non-fatal - continue without DB tags
             console.warn('[PredictionStats] Error fetching tags from DB:', err);
-          }
-        }
-        
-        // Priority 3: Extract tags from market title as last resort (ALWAYS do this if tags empty)
-        if (tagsToUse.length === 0 && marketTitle) {
-          const titleLower = marketTitle.toLowerCase();
-          const titleTags: string[] = [];
-          
-          // Extract common categories from title - be aggressive
-          if (titleLower.includes('nba') || titleLower.includes('basketball')) titleTags.push('nba');
-          if (titleLower.includes('nfl') || titleLower.includes('football') || titleLower.includes('super bowl')) titleTags.push('nfl');
-          if (titleLower.includes('tennis')) titleTags.push('tennis');
-          if (titleLower.includes('crypto') || titleLower.includes('bitcoin') || titleLower.includes('btc') || titleLower.includes('ethereum') || titleLower.includes('eth')) titleTags.push('crypto');
-          if (titleLower.includes('politics') || titleLower.includes('election') || titleLower.includes('trump') || titleLower.includes('biden')) titleTags.push('politics');
-          if (titleLower.includes('sports') || titleLower.includes('game') || titleLower.includes('match')) titleTags.push('sports');
-          if (titleLower.includes('mlb') || titleLower.includes('baseball')) titleTags.push('mlb');
-          if (titleLower.includes('nhl') || titleLower.includes('hockey')) titleTags.push('nhl');
-          if (titleLower.includes('soccer') || titleLower.includes('football')) titleTags.push('soccer');
-          if (titleLower.includes('mma') || titleLower.includes('ufc')) titleTags.push('mma');
-          if (titleLower.includes('golf') || titleLower.includes('pga')) titleTags.push('golf');
-          if (titleLower.includes('ncaa')) titleTags.push('ncaa');
-          
-          // Also check for team names that indicate sports
-          const teamIndicators = ['seahawks', 'patriots', 'cowboys', 'chiefs', 'packers', 'lakers', 'warriors', 'celtics', 'heat', 'bulls'];
-          if (teamIndicators.some(team => titleLower.includes(team))) {
-            if (titleLower.includes('basketball') || titleLower.includes('nba')) {
-              titleTags.push('nba');
-            } else if (titleLower.includes('football') || titleLower.includes('nfl')) {
-              titleTags.push('nfl');
-            } else {
-              titleTags.push('sports');
-            }
-          }
-          
-          if (titleTags.length > 0) {
-            tagsToUse = Array.from(new Set(titleTags)); // De-dupe
-            console.log('[PredictionStats] ✅ Extracted tags from title:', {
-              title: marketTitle.substring(0, 50),
-              tags: tagsToUse,
-            });
           }
         }
         

@@ -2639,77 +2639,81 @@ export default function FeedPage() {
         }
       }
       
-      // STEP 2.5: Fetch missing markets from CLOB API in parallel (non-blocking for UI)
-      // This ensures tags are available even if markets don't exist in DB yet
+      // STEP 2.5: Ensure missing markets exist in DB (fetches from API and classifies via semantic_mapping)
+      // This uses /api/markets/ensure which handles DOME/CLOB API fetch and semantic mapping classification
       if (missingConditionIds.length > 0) {
-        const CLOB_BATCH_SIZE = 10; // Smaller batches for external API
-        const clobPromises: Promise<void>[] = [];
+        const ENSURE_BATCH_SIZE = 5; // Smaller batches to avoid rate limits
+        const ensurePromises: Promise<void>[] = [];
         
-        for (let i = 0; i < missingConditionIds.length; i += CLOB_BATCH_SIZE) {
-          const batch = missingConditionIds.slice(i, i + CLOB_BATCH_SIZE);
+        for (let i = 0; i < missingConditionIds.length; i += ENSURE_BATCH_SIZE) {
+          const batch = missingConditionIds.slice(i, i + ENSURE_BATCH_SIZE);
           const batchPromises = batch.map(async (conditionId) => {
             try {
-              const clobResponse = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, {
+              // Use /api/markets/ensure which:
+              // 1. Fetches from CLOB/DOME API
+              // 2. Extracts tags
+              // 3. Uses semantic_mapping to classify (niche, bet_structure, market_type)
+              // 4. Saves to DB
+              const ensureResponse = await fetch(`/api/markets/ensure?conditionId=${conditionId}`, {
                 cache: 'no-store',
-                signal: AbortSignal.timeout(5000), // 5s timeout per market
+                signal: AbortSignal.timeout(10000), // 10s timeout per market
               });
               
-              if (clobResponse.ok) {
-                const clobMarket = await clobResponse.json();
-                if (clobMarket?.question) {
-                  // Extract tags from CLOB response - normalize aggressively
+              if (ensureResponse.ok) {
+                const ensureData = await ensureResponse.json();
+                if (ensureData?.found && ensureData?.market) {
+                  const market = ensureData.market;
+                  
+                  // Normalize tags
                   let tags: string[] = [];
-                  if (Array.isArray(clobMarket.tags) && clobMarket.tags.length > 0) {
-                    tags = clobMarket.tags
-                      .map((t: any) => {
-                        if (typeof t === 'object' && t !== null) {
-                          return t.name || t.tag || t.value || String(t);
-                        }
-                        return String(t);
-                      })
-                      .map((t: string) => t.trim().toLowerCase())
+                  if (Array.isArray(market.tags) && market.tags.length > 0) {
+                    tags = market.tags
+                      .map((t: any) => String(t).trim().toLowerCase())
                       .filter((t: string) => t.length > 0 && t !== 'null' && t !== 'undefined');
                   }
                   
-                  // Also try category if tags empty
-                  if (tags.length === 0 && clobMarket.category) {
-                    tags = [String(clobMarket.category).trim().toLowerCase()];
-                  }
-                  
-                  // Update marketDataMap with CLOB data
-                  const existing = marketDataMap.get(conditionId);
+                  // Update marketDataMap with ensured market data (includes classification)
                   marketDataMap.set(conditionId, {
-                    tags: tags.length > 0 ? tags : (existing?.tags || null),
-                    market_subtype: existing?.market_subtype || null,
-                    bet_structure: existing?.bet_structure || null,
-                    market_type: existing?.market_type || null,
-                    title: clobMarket.question || clobMarket.title || existing?.title || null,
-                    _fromClob: true, // Flag to indicate this came from CLOB
+                    tags: tags.length > 0 ? tags : null,
+                    market_subtype: market.market_subtype || null,
+                    bet_structure: market.bet_structure || null,
+                    market_type: market.market_type || null,
+                    title: market.title || null,
+                    _fromEnsure: true, // Flag to indicate this came from ensure API
                   });
                   
-                  // Async save to DB (non-blocking)
-                  // Don't await - let it happen in background
-                  fetch(`/api/markets/ensure?conditionId=${conditionId}`, { cache: 'no-store' })
-                    .catch((err) => console.warn(`[Feed] Failed to ensure market ${conditionId}:`, err));
+                  console.log(`[Feed] Ensured market ${conditionId}:`, {
+                    hasTags: tags.length > 0,
+                    tagsCount: tags.length,
+                    niche: market.market_subtype,
+                    betStructure: market.bet_structure,
+                  });
                 }
+              } else {
+                console.warn(`[Feed] Failed to ensure market ${conditionId}:`, ensureResponse.status);
               }
             } catch (err: any) {
               // Timeout or network error - continue without this market's tags
               if (err?.name !== 'AbortError') {
-                console.warn(`[Feed] Error fetching CLOB data for ${conditionId}:`, err);
+                console.warn(`[Feed] Error ensuring market ${conditionId}:`, err);
               }
             }
           });
           
-          clobPromises.push(...batchPromises);
+          ensurePromises.push(...batchPromises);
+          
+          // Small delay between batches to avoid rate limits
+          if (i + ENSURE_BATCH_SIZE < missingConditionIds.length) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
         }
         
-        // Wait for CLOB fetches to complete (with timeout)
+        // Wait for all ensure calls to complete
         try {
-          await Promise.allSettled(clobPromises);
-          console.log(`[Feed] Completed CLOB fetches for ${missingConditionIds.length} missing markets`);
+          await Promise.allSettled(ensurePromises);
+          console.log(`[Feed] Completed ensure calls for ${missingConditionIds.length} missing markets`);
         } catch (err) {
-          console.warn('[Feed] Some CLOB fetches failed:', err);
+          console.warn('[Feed] Some ensure calls failed:', err);
         }
       }
 
@@ -2795,75 +2799,21 @@ export default function FeedPage() {
           return [];
         };
         
-        // Extract tags: Priority 1 = DB/CLOB, Priority 2 = trade data, Priority 3 = title extraction
-        let tags: string[] = [];
+        // Extract tags: ONLY from market data (DB or ensure API)
+        // Every market has tags - if missing, market needs to be ensured
+        let tags: string[] | null = null;
         
-        // Priority 1: Database/CLOB market data
         if (dbMarketData?.tags) {
-          tags = normalizeTags(dbMarketData.tags);
-        }
-        
-        // Priority 2: Try extracting from raw trade data
-        if (tags.length === 0) {
-          const tagSources = [
-            trade.tags,
-            trade.market?.tags,
-            trade.market_tags,
-            trade.marketTags,
-            trade.category,
-            trade.market?.category,
-            trade.market_category,
-            trade.marketCategory,
-          ];
-          
-          for (const source of tagSources) {
-            const normalized = normalizeTags(source);
-            if (normalized.length > 0) {
-              tags = normalized;
-              break;
-            }
+          const normalized = normalizeTags(dbMarketData.tags);
+          if (normalized.length > 0) {
+            tags = normalized;
           }
         }
         
-        // Priority 3: Extract from market title as LAST RESORT (ALWAYS do this if tags still empty)
-        if (tags.length === 0 && marketTitle) {
-          const titleLower = marketTitle.toLowerCase();
-          const titleTags: string[] = [];
-          
-          // Extract common categories from title - be aggressive
-          if (titleLower.includes('nba') || titleLower.includes('basketball')) titleTags.push('nba');
-          if (titleLower.includes('nfl') || titleLower.includes('football') || titleLower.includes('super bowl')) titleTags.push('nfl');
-          if (titleLower.includes('tennis')) titleTags.push('tennis');
-          if (titleLower.includes('crypto') || titleLower.includes('bitcoin') || titleLower.includes('btc') || titleLower.includes('ethereum') || titleLower.includes('eth')) titleTags.push('crypto');
-          if (titleLower.includes('politics') || titleLower.includes('election') || titleLower.includes('trump') || titleLower.includes('biden')) titleTags.push('politics');
-          if (titleLower.includes('sports') || titleLower.includes('game') || titleLower.includes('match')) titleTags.push('sports');
-          if (titleLower.includes('mlb') || titleLower.includes('baseball')) titleTags.push('mlb');
-          if (titleLower.includes('nhl') || titleLower.includes('hockey')) titleTags.push('nhl');
-          if (titleLower.includes('soccer') || titleLower.includes('football')) titleTags.push('soccer');
-          if (titleLower.includes('mma') || titleLower.includes('ufc')) titleTags.push('mma');
-          if (titleLower.includes('golf') || titleLower.includes('pga')) titleTags.push('golf');
-          if (titleLower.includes('ncaa')) titleTags.push('ncaa');
-          
-          // Also check for team names that indicate sports
-          const teamIndicators = ['seahawks', 'patriots', 'cowboys', 'chiefs', 'packers', 'lakers', 'warriors', 'celtics', 'heat', 'bulls'];
-          if (teamIndicators.some(team => titleLower.includes(team))) {
-            if (titleLower.includes('basketball') || titleLower.includes('nba')) {
-              titleTags.push('nba');
-            } else if (titleLower.includes('football') || titleLower.includes('nfl')) {
-              titleTags.push('nfl');
-            } else {
-              titleTags.push('sports');
-            }
-          }
-          
-          if (titleTags.length > 0) {
-            tags = Array.from(new Set(titleTags)); // De-dupe
-          }
+        // If no tags found, log warning - market should have been ensured above
+        if (!tags || tags.length === 0) {
+          console.warn(`[Feed] No tags found for market ${conditionId} - market may need to be ensured`);
         }
-        
-        // ALWAYS ensure tags is an array (never null/undefined)
-        // If still empty, that's OK - PredictionStats will handle it
-        tags = tags || [];
         
         const formattedTrade: FeedTrade = {
           id: feedTradeId,
@@ -2881,7 +2831,7 @@ export default function FeedPage() {
               trade.category || trade.market_category || trade.marketCategory || trade.market?.category
             ),
             avatarUrl: extractMarketAvatarUrl(trade) || undefined,
-            tags: tags.length > 0 ? tags : undefined,
+            tags: (tags && Array.isArray(tags) && tags.length > 0) ? tags : undefined,
           },
           trade: {
             side,
