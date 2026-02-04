@@ -2567,87 +2567,88 @@ export default function FeedPage() {
       const uniqueConditionIds = Array.from(new Set(conditionIds));
       
       // STEP 2: Batch fetch ALL market data from database (tags, market_subtype, bet_structure, etc.)
+      // Use single query with timeout to avoid blocking
       const marketDataMap = new Map<string, any>();
       const missingConditionIds: string[] = [];
       
       if (uniqueConditionIds.length > 0) {
-        const BATCH_SIZE = 100;
         try {
-          for (let i = 0; i < uniqueConditionIds.length; i += BATCH_SIZE) {
-            const batch = uniqueConditionIds.slice(i, i + BATCH_SIZE);
-            const { data: markets, error } = await supabase
-              .from('markets')
-              .select('condition_id, tags, market_subtype, bet_structure, market_type, title, raw_dome')
-              .in('condition_id', batch);
-            
-            if (!error && markets) {
-              const foundIds = new Set<string>();
-              markets.forEach((market) => {
-                if (market.condition_id) {
-                  foundIds.add(market.condition_id);
-                  let tags: string[] | null = null;
-                  
-                  // Extract tags from tags column
-                  if (Array.isArray(market.tags) && market.tags.length > 0) {
-                    tags = market.tags.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
-                  }
-                  
-                  // Fallback to raw_dome if tags missing
-                  if ((!tags || tags.length === 0) && market.raw_dome) {
-                    try {
-                      const rawDome = typeof market.raw_dome === 'string' ? JSON.parse(market.raw_dome) : market.raw_dome;
-                      if (rawDome?.tags && Array.isArray(rawDome.tags) && rawDome.tags.length > 0) {
-                        tags = rawDome.tags.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
-                      }
-                    } catch {
-                      // Ignore parse errors
-                    }
-                  }
-                  
-                  marketDataMap.set(market.condition_id, {
-                    tags: tags || null,
-                    market_subtype: market.market_subtype || null,
-                    bet_structure: market.bet_structure || null,
-                    market_type: market.market_type || null,
-                    title: market.title || null,
-                  });
-                }
-              });
-              
-              // Track missing markets (not in DB or missing tags)
-              batch.forEach((id) => {
-                if (!foundIds.has(id) || !marketDataMap.get(id)?.tags) {
-                  missingConditionIds.push(id);
-                }
-              });
-            } else {
-              // If query failed, mark all as missing
-              batch.forEach((id) => missingConditionIds.push(id));
-            }
-          }
+          // Single query for all markets with timeout (Supabase supports up to 1000 items in .in())
+          const queryPromise = supabase
+            .from('markets')
+            .select('condition_id, tags, market_subtype, bet_structure, market_type, title, raw_dome')
+            .in('condition_id', uniqueConditionIds.slice(0, 1000)); // Limit to 1000 for safety
           
-          if (marketDataMap.size > 0) {
-            console.log(`[Feed] Batch fetched market data for ${marketDataMap.size} markets`);
-          }
-          if (missingConditionIds.length > 0) {
-            console.log(`[Feed] Found ${missingConditionIds.length} markets missing from DB or missing tags`);
+          const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) => 
+            setTimeout(() => resolve({ data: null, error: { message: 'Timeout' } }), 5000)
+          );
+          
+          const { data: markets, error } = await Promise.race([queryPromise, timeoutPromise]);
+          
+          if (!error && markets && Array.isArray(markets)) {
+            const foundIds = new Set<string>();
+            markets.forEach((market) => {
+              if (market.condition_id) {
+                foundIds.add(market.condition_id);
+                let tags: string[] | null = null;
+                
+                // Extract tags from tags column
+                if (Array.isArray(market.tags) && market.tags.length > 0) {
+                  tags = market.tags.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
+                }
+                
+                // Fallback to raw_dome if tags missing
+                if ((!tags || tags.length === 0) && market.raw_dome) {
+                  try {
+                    const rawDome = typeof market.raw_dome === 'string' ? JSON.parse(market.raw_dome) : market.raw_dome;
+                    if (rawDome?.tags && Array.isArray(rawDome.tags) && rawDome.tags.length > 0) {
+                      tags = rawDome.tags.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
+                    }
+                  } catch {
+                    // Ignore parse errors
+                  }
+                }
+                
+                marketDataMap.set(market.condition_id, {
+                  tags: tags || null,
+                  market_subtype: market.market_subtype || null,
+                  bet_structure: market.bet_structure || null,
+                  market_type: market.market_type || null,
+                  title: market.title || null,
+                });
+              }
+            });
+            
+            // Track missing markets (not in DB or missing tags)
+            uniqueConditionIds.forEach((id) => {
+              if (!foundIds.has(id) || !marketDataMap.get(id)?.tags) {
+                missingConditionIds.push(id);
+              }
+            });
+            
+            console.log(`[Feed] Batch fetched ${marketDataMap.size} markets, ${missingConditionIds.length} missing`);
+          } else {
+            // If query failed or timed out, mark all as missing but continue
+            console.warn('[Feed] Market fetch failed or timed out, continuing without market data');
+            uniqueConditionIds.forEach((id) => missingConditionIds.push(id));
           }
         } catch (err) {
           console.error('[Feed] Error batch fetching market data:', err);
-          // Mark all as missing if query failed
+          // Mark all as missing but continue - trades will show without tags
           uniqueConditionIds.forEach((id) => missingConditionIds.push(id));
         }
       }
       
-      // STEP 2.5: Ensure missing markets exist in DB (fetches from API and classifies via semantic_mapping)
+      // STEP 2.5: Ensure missing markets exist in DB (NON-BLOCKING - happens in background)
       // This uses /api/markets/ensure which handles DOME/CLOB API fetch and semantic mapping classification
+      // Don't wait for this - show trades immediately, tags will be available on next load
       if (missingConditionIds.length > 0) {
-        const ENSURE_BATCH_SIZE = 5; // Smaller batches to avoid rate limits
-        const ensurePromises: Promise<void>[] = [];
+        console.log(`[Feed] ${missingConditionIds.length} markets missing - ensuring in background (non-blocking)`);
         
-        for (let i = 0; i < missingConditionIds.length; i += ENSURE_BATCH_SIZE) {
-          const batch = missingConditionIds.slice(i, i + ENSURE_BATCH_SIZE);
-          const batchPromises = batch.map(async (conditionId) => {
+        // Fire-and-forget: ensure markets in background without blocking trade display
+        // Trades will show immediately, tags will be available on next page load or refresh
+        Promise.allSettled(
+          missingConditionIds.slice(0, 20).map(async (conditionId) => {
             try {
               // Use /api/markets/ensure which:
               // 1. Fetches from CLOB/DOME API
@@ -2656,65 +2657,25 @@ export default function FeedPage() {
               // 4. Saves to DB
               const ensureResponse = await fetch(`/api/markets/ensure?conditionId=${conditionId}`, {
                 cache: 'no-store',
-                signal: AbortSignal.timeout(10000), // 10s timeout per market
+                signal: AbortSignal.timeout(8000), // 8s timeout per market
               });
               
               if (ensureResponse.ok) {
                 const ensureData = await ensureResponse.json();
                 if (ensureData?.found && ensureData?.market) {
-                  const market = ensureData.market;
-                  
-                  // Normalize tags
-                  let tags: string[] = [];
-                  if (Array.isArray(market.tags) && market.tags.length > 0) {
-                    tags = market.tags
-                      .map((t: any) => String(t).trim().toLowerCase())
-                      .filter((t: string) => t.length > 0 && t !== 'null' && t !== 'undefined');
-                  }
-                  
-                  // Update marketDataMap with ensured market data (includes classification)
-                  marketDataMap.set(conditionId, {
-                    tags: tags.length > 0 ? tags : null,
-                    market_subtype: market.market_subtype || null,
-                    bet_structure: market.bet_structure || null,
-                    market_type: market.market_type || null,
-                    title: market.title || null,
-                    _fromEnsure: true, // Flag to indicate this came from ensure API
-                  });
-                  
-                  console.log(`[Feed] Ensured market ${conditionId}:`, {
-                    hasTags: tags.length > 0,
-                    tagsCount: tags.length,
-                    niche: market.market_subtype,
-                    betStructure: market.bet_structure,
-                  });
+                  console.log(`[Feed] ✅ Ensured market ${conditionId} in background`);
                 }
-              } else {
-                console.warn(`[Feed] Failed to ensure market ${conditionId}:`, ensureResponse.status);
               }
             } catch (err: any) {
-              // Timeout or network error - continue without this market's tags
+              // Silently fail - non-blocking
               if (err?.name !== 'AbortError') {
-                console.warn(`[Feed] Error ensuring market ${conditionId}:`, err);
+                console.warn(`[Feed] Background ensure failed for ${conditionId}`);
               }
             }
-          });
-          
-          ensurePromises.push(...batchPromises);
-          
-          // Small delay between batches to avoid rate limits
-          if (i + ENSURE_BATCH_SIZE < missingConditionIds.length) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-        }
-        
-        // Wait for all ensure calls to complete
-        try {
-          await Promise.allSettled(ensurePromises);
-          console.log(`[Feed] Completed ensure calls for ${missingConditionIds.length} missing markets`);
-        } catch (err) {
-          console.warn('[Feed] Some ensure calls failed:', err);
-        }
+          })
+        ).then(() => {
+          console.log(`[Feed] Background ensure completed for ${Math.min(missingConditionIds.length, 20)} markets`);
+        });
       }
 
       // STEP 3: Format trades with market data from database (tags guaranteed to be available)
