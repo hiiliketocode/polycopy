@@ -631,9 +631,9 @@ export function PredictionStats({
         // Always provide defaults so we always have data to show
         const profileWinRate = profileResult?.win_rate ?? globalWinRate
         const profileRoiPct = profileResult?.roi_pct ?? globalRoiPct
-        const profileAvgPnlUsd = profileResult?.avg_pnl_usd ?? 0
+        const profileAvgPnlUsd = profileResult?.avg_pnl_usd ?? globalAvgPnlUsd // Use global if profile missing
         const profileCount = profileResult?.trade_count ?? globalTradeCount
-        const avgBetSize = globalAvgPosSizeUsd || tradeTotal
+        const avgBetSize = globalAvgPosSizeUsd || globalAvgTradeSizeUsd || tradeTotal
 
         console.log('[PredictionStats] Data fetched:', {
           wallet,
@@ -653,14 +653,14 @@ export function PredictionStats({
         })
 
         // Calculate avg PnL per trade (prefer direct column, fallback to ROI * avg bet size)
-        const profileAvgPnl = profileAvgPnlUsd !== null && profileAvgPnlUsd !== undefined
+        const profileAvgPnl = profileAvgPnlUsd !== null && profileAvgPnlUsd !== undefined && profileAvgPnlUsd !== 0
           ? profileAvgPnlUsd
-          : (avgBetSize !== null && avgBetSize !== undefined && avgBetSize > 0 && profileRoiPct
+          : (avgBetSize !== null && avgBetSize !== undefined && avgBetSize > 0 && profileRoiPct !== null && profileRoiPct !== undefined
             ? avgBetSize * profileRoiPct
             : null)
-        const globalAvgPnl = globalAvgPnlUsd !== null && globalAvgPnlUsd !== undefined
+        const globalAvgPnl = globalAvgPnlUsd !== null && globalAvgPnlUsd !== undefined && globalAvgPnlUsd !== 0
           ? globalAvgPnlUsd
-          : (globalAvgTradeSizeUsd !== null && globalAvgTradeSizeUsd !== undefined && globalAvgTradeSizeUsd > 0 && globalRoiPct
+          : (globalAvgTradeSizeUsd !== null && globalAvgTradeSizeUsd !== undefined && globalAvgTradeSizeUsd > 0 && globalRoiPct !== null && globalRoiPct !== undefined
             ? globalAvgTradeSizeUsd * globalRoiPct
             : null)
 
