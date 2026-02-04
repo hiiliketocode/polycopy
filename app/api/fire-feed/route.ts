@@ -31,6 +31,20 @@ function normalizeWinRateValue(raw: unknown): number | null {
   return value;
 }
 
+function normalizeRoiValue(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return null;
+  // ROI can be stored as decimal (0.15 = 15%) or percentage (15 = 15%)
+  // Based on audit: ROI is stored as decimal in BigQuery, but Supabase might differ
+  // If value > 10, assume it's a percentage (e.g., 15% = 15) and convert to decimal (0.15)
+  // Threshold of 10 is safe: 10% ROI as percentage = 10, as decimal = 0.10
+  // Values > 10 are very unlikely to be decimals (would be >1000% ROI)
+  if (Math.abs(value) > 10) return value / 100;
+  // If value is between -10 and 10, assume it's already a decimal
+  return value;
+}
+
 function deriveCategoryFromTrade(trade: any): string | undefined {
   const candidates = [
     trade.category,
@@ -94,12 +108,12 @@ function roiForTradeType(
       match?.d30_roi_pct ??
       match?.roi_pct ??
       null;
-    if (roi !== null && roi !== undefined && Number.isFinite(Number(roi))) {
-      return Number(roi);
+    if (roi !== null && roi !== undefined) {
+      return normalizeRoiValue(roi);
     }
   }
-  if (stats.globalRoiPct !== null && stats.globalRoiPct !== undefined && Number.isFinite(Number(stats.globalRoiPct))) {
-    return Number(stats.globalRoiPct);
+  if (stats.globalRoiPct !== null && stats.globalRoiPct !== undefined) {
+    return normalizeRoiValue(stats.globalRoiPct);
   }
   return null;
 }
@@ -250,10 +264,9 @@ export async function GET(request: Request) {
           normalizeWinRateValue(row.recent_win_rate) ??
           normalizeWinRateValue(row.global_win_rate),
         globalRoiPct:
-          Number.isFinite(Number(row.d30_total_roi_pct)) ? Number(row.d30_total_roi_pct) : // 30-day preferred
-          Number.isFinite(Number(row.l_total_roi_pct)) ? Number(row.l_total_roi_pct) : // lifetime fallback
-          Number.isFinite(Number(row.global_roi_pct)) ? Number(row.global_roi_pct) :
-          null,
+          normalizeRoiValue(row.d30_total_roi_pct) ?? // 30-day preferred
+          normalizeRoiValue(row.l_total_roi_pct) ?? // lifetime fallback
+          normalizeRoiValue(row.global_roi_pct),
         avgBetSizeUsd:
           typeof row.avg_bet_size_usdc === 'number'
             ? row.avg_bet_size_usdc
@@ -396,13 +409,13 @@ export async function GET(request: Request) {
           }
         }
         
-        // ROI is stored as decimal (0.15 = 15%), so compare directly
+        // ROI and win rate are normalized to decimals (0.15 = 15%), so compare directly
         const meetsWinRate = winRate !== null && winRate >= FIRE_WIN_RATE_THRESHOLD;
         const meetsRoi = roiPct !== null && roiPct >= FIRE_ROI_THRESHOLD;
         const meetsConviction = conviction !== null && conviction >= FIRE_CONVICTION_MULTIPLIER_THRESHOLD;
         
         // Log first few trades that don't meet criteria for debugging
-        if (!meetsWinRate && !meetsRoi && !meetsConviction && debugStats.tradesChecked <= 5) {
+        if (!meetsWinRate && !meetsRoi && !meetsConviction && debugStats.tradesChecked <= 10) {
           console.log(`[FIRE Feed] Trade ${debugStats.tradesChecked} rejected:`, {
             wallet: wallet.slice(0, 10) + '...',
             category: category || 'undefined',
@@ -413,6 +426,14 @@ export async function GET(request: Request) {
               winRate: `${(FIRE_WIN_RATE_THRESHOLD * 100).toFixed(0)}%`,
               roi: `${(FIRE_ROI_THRESHOLD * 100).toFixed(0)}%`,
               conviction: `${FIRE_CONVICTION_MULTIPLIER_THRESHOLD}x`,
+            },
+            meetsWinRate,
+            meetsRoi,
+            meetsConviction,
+            rawStats: {
+              globalWinRate: stats.globalWinRate,
+              globalRoiPct: stats.globalRoiPct,
+              profilesCount: stats.profiles?.length || 0,
             },
           });
         }
@@ -493,8 +514,9 @@ export async function GET(request: Request) {
     });
 
     console.log('[FIRE Feed] Debug stats:', debugStats);
-    console.log(`[FIRE Feed] Filter thresholds: Win Rate ≥${FIRE_WIN_RATE_THRESHOLD}, ROI ≥${FIRE_ROI_THRESHOLD}, Conviction ≥${FIRE_CONVICTION_MULTIPLIER_THRESHOLD}`);
+    console.log(`[FIRE Feed] Filter thresholds: Win Rate ≥${(FIRE_WIN_RATE_THRESHOLD * 100).toFixed(0)}%, ROI ≥${(FIRE_ROI_THRESHOLD * 100).toFixed(0)}%, Conviction ≥${FIRE_CONVICTION_MULTIPLIER_THRESHOLD}x`);
     console.log(`[FIRE Feed] Returning ${fireTrades.length} filtered trades`);
+    console.log(`[FIRE Feed] Trades passed by: Win Rate: ${debugStats.passedByWinRate}, ROI: ${debugStats.passedByRoi}, Conviction: ${debugStats.passedByConviction}`);
     
     // Log detailed breakdown if no trades passed
     if (fireTrades.length === 0 && debugStats.tradesChecked > 0) {
@@ -507,6 +529,23 @@ export async function GET(request: Request) {
       console.warn(`[FIRE Feed] ${debugStats.tradesWithNullConviction} trades had null conviction`);
       if (debugStats.sampleRejectedTrade) {
         console.warn('[FIRE Feed] Sample rejected trade:', JSON.stringify(debugStats.sampleRejectedTrade, null, 2));
+      }
+      
+      // Log sample stats to help diagnose
+      if (statsMap.size > 0) {
+        const sampleWallets = Array.from(statsMap.keys()).slice(0, 3);
+        sampleWallets.forEach((sampleWallet) => {
+          const sampleStats = statsMap.get(sampleWallet);
+          const sampleTrades = tradesByWallet.get(sampleWallet) || [];
+          console.warn(`[FIRE Feed] Sample trader ${sampleWallet.slice(0, 10)}...:`, {
+            globalWinRate: sampleStats?.globalWinRate,
+            globalRoiPct: sampleStats?.globalRoiPct,
+            avgBetSizeUsd: sampleStats?.avgBetSizeUsd,
+            d30_avg_trade_size_usd: sampleStats?.d30_avg_trade_size_usd,
+            profilesCount: sampleStats?.profiles?.length || 0,
+            tradesCount: sampleTrades.length,
+          });
+        });
       }
     }
 

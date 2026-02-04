@@ -3327,6 +3327,14 @@ export default function FeedPage() {
         const allTradesRaw: any[] = Array.isArray(fireFeedData?.trades) ? fireFeedData.trades : [];
         const traderNames: Record<string, string> = fireFeedData?.traders || {};
         
+        console.log('[Fire Feed] API response:', {
+          tradesCount: allTradesRaw.length,
+          tradersCount: Object.keys(traderNames).length,
+          hasStats: !!fireFeedData?.stats,
+          statsCount: fireFeedData?.stats ? Object.keys(fireFeedData.stats).length : 0,
+          debug: fireFeedData?.debug,
+        });
+        
         // Cache stats for future use
         if (fireFeedData?.stats) {
           Object.entries(fireFeedData.stats).forEach(([wallet, stats]: [string, any]) => {
@@ -3334,9 +3342,14 @@ export default function FeedPage() {
           });
         }
 
-        setFireTraderCount(Object.keys(traderNames).length);
-
+        const traderCount = Object.keys(traderNames).length;
+        setFireTraderCount(traderCount);
+        
         if (allTradesRaw.length === 0) {
+          console.warn('[Fire Feed] No trades returned from API', {
+            traderCount,
+            debug: fireFeedData?.debug,
+          });
           if (!merge) {
             setAllTrades([]);
           }
