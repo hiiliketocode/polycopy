@@ -203,15 +203,23 @@ export function PredictionStats({
         }
         
         // Priority 2: If no tags from props, fetch from DB (market should exist after ensure)
+        let dbMarketData: any = null;
         if (tagsToUse.length === 0 && conditionId) {
           try {
             const { data: dbMarket, error: dbError } = await supabase
               .from('markets')
-              .select('tags, raw_dome, market_subtype')
+              .select('tags, raw_dome, market_subtype, bet_structure')
               .eq('condition_id', conditionId)
               .maybeSingle();
             
+            dbMarketData = dbMarket; // Store for later use
+            
             if (!dbError && dbMarket) {
+              // PRIORITY: Use market_subtype from DB if available (already classified)
+              if (dbMarket.market_subtype && !finalNiche) {
+                finalNiche = (dbMarket.market_subtype || '').trim().toUpperCase() || null;
+              }
+              
               // Try tags column first
               if (dbMarket.tags) {
                 tagsToUse = normalizeTags(dbMarket.tags);
@@ -317,8 +325,13 @@ export function PredictionStats({
           priceBracket,
         })
         
-        // Fallback: Try to get market_subtype from DB if semantic mapping failed
-        if (!finalNiche && conditionId) {
+        // Fallback: Use market_subtype from DB if semantic mapping failed (already fetched above)
+        if (!finalNiche && dbMarketData?.market_subtype) {
+          finalNiche = (dbMarketData.market_subtype || '').trim().toUpperCase() || null;
+        }
+        
+        // Last resort: Query DB again if we don't have dbMarketData (shouldn't happen, but safety check)
+        if (!finalNiche && conditionId && !dbMarketData) {
           try {
             const { data: dbMarket } = await supabase
               .from('markets')
