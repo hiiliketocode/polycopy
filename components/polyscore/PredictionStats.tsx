@@ -382,69 +382,41 @@ export function PredictionStats({
           priceBracket,
         })
 
-        // Fetch global stats directly from Supabase - skip API route for speed
+        // Fetch stats via API route (uses service role key, bypasses RLS)
         let globalStats: any = null
         let profileStats: any[] = []
         try {
           console.log('[PredictionStats] Fetching trader stats for wallet:', wallet)
-          const [{ data: g, error: gErr }, { data: p, error: pErr }] = await Promise.all([
-            supabase.from('trader_global_stats').select('*').eq('wallet_address', wallet).maybeSingle(),
-            supabase.from('trader_profile_stats').select('*').eq('wallet_address', wallet),
-          ])
+          const response = await fetch(`/api/trader/stats?wallet=${encodeURIComponent(wallet)}`)
           
-          console.log('[PredictionStats] Global stats query result:', {
-            wallet: wallet,
-            walletLength: wallet?.length,
-            hasData: !!g,
-            data: g,
-            error: gErr,
-            errorCode: gErr?.code,
-            errorMessage: gErr?.message,
-            errorDetails: gErr?.details,
-            errorHint: gErr?.hint,
-          })
-          console.log('[PredictionStats] Profile stats query result:', {
-            wallet: wallet,
-            count: p?.length || 0,
-            error: pErr,
-            errorCode: pErr?.code,
-            errorMessage: pErr?.message,
-            errorDetails: pErr?.details,
-            errorHint: pErr?.hint,
-          })
-          
-          if (gErr) {
-            console.error('[PredictionStats] ❌ Error fetching global stats:', gErr)
-            console.error('[PredictionStats] Error details:', {
-              code: gErr.code,
-              message: gErr.message,
-              details: gErr.details,
-              hint: gErr.hint,
+          if (!response.ok) {
+            const errorText = await response.text()
+            console.error('[PredictionStats] ❌ API route error:', {
+              status: response.status,
+              statusText: response.statusText,
+              error: errorText,
             })
-          }
-          if (pErr) {
-            console.error('[PredictionStats] ❌ Error fetching profile stats:', pErr)
-            console.error('[PredictionStats] Error details:', {
-              code: pErr.code,
-              message: pErr.message,
-              details: pErr.details,
-              hint: pErr.hint,
-            })
+            throw new Error(`Stats API failed: ${response.status} ${response.statusText}`)
           }
           
-          globalStats = g || null
-          profileStats = p || []
+          const data = await response.json()
+          globalStats = data.global || null
+          profileStats = data.profiles || []
           
-          console.log('[PredictionStats] Processed stats:', {
-            globalStatsExists: !!globalStats,
-            globalStatsIsNull: globalStats === null,
+          console.log('[PredictionStats] Stats API response:', {
+            wallet: wallet,
+            hasGlobalStats: !!globalStats,
             globalStatsKeys: globalStats ? Object.keys(globalStats) : [],
             profileStatsCount: profileStats.length,
-            // If no data, check if it's an RLS issue
-            noDataReason: !globalStats ? 'No data returned - check RLS policies or wallet address format' : 'Data found',
+            globalStatsSample: globalStats ? {
+              l_win_rate: globalStats.l_win_rate,
+              d30_win_rate: globalStats.d30_win_rate,
+              l_count: globalStats.l_count,
+              d30_count: globalStats.d30_count,
+            } : null,
           })
         } catch (statsErr: any) {
-          console.error('[PredictionStats] stats fetch failed', statsErr)
+          console.error('[PredictionStats] ❌ Stats fetch failed', statsErr)
           setError('Trader insights unavailable')
           // Don't set empty stats - let component show error state
           setStats(null)
