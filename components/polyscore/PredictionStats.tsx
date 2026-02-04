@@ -430,49 +430,53 @@ export function PredictionStats({
           return
         }
 
-        // Normalize global stats - check what fields actually exist
+        // Normalize global stats - use ACTUAL column names from trader_global_stats table
         console.log('[PredictionStats] Available globalStats fields:', globalStats ? Object.keys(globalStats) : 'null')
+        console.log('[PredictionStats] Raw globalStats values:', globalStats)
         
-        // Try all possible field names (case-insensitive matching via pickNumber)
+        // Use ACTUAL column names from trader_global_stats table:
+        // - global_win_rate (or recent_win_rate for 30-day)
+        // - global_roi_pct
+        // - total_lifetime_trades
+        // - avg_bet_size_usdc
         const globalWinRate = pickNumber(
+          globalStats?.recent_win_rate, // 30-day preferred
+          globalStats?.global_win_rate, // lifetime fallback
+          // Legacy field names (in case table was migrated)
           globalStats?.d30_win_rate, globalStats?.D30_win_rate,
-          globalStats?.recent_win_rate,
           globalStats?.l_win_rate, globalStats?.L_win_rate,
-          globalStats?.global_win_rate,
         )
 
         const globalRoiPct = pickNumber(
+          globalStats?.global_roi_pct, // Primary field
+          // Legacy field names
           globalStats?.d30_total_roi_pct, globalStats?.D30_total_roi_pct,
           globalStats?.l_total_roi_pct, globalStats?.L_total_roi_pct,
-          globalStats?.global_roi_pct,
         )
 
         const globalAvgPnlUsd = pickNumber(
+          // Legacy field names (if they exist)
           globalStats?.d30_avg_pnl_trade_usd, globalStats?.D30_avg_pnl_trade_usd,
           globalStats?.l_avg_pnl_trade_usd, globalStats?.L_avg_pnl_trade_usd,
         )
 
-        // Prefer 30-day averages (more recent, less inflated by old outliers)
-        // Fallback to lifetime if 30-day not available
+        // Use avg_bet_size_usdc directly (this is the actual column name)
         const globalAvgTradeSizeUsd = pickNumber(
+          globalStats?.avg_bet_size_usdc, // PRIMARY - actual column name
+          // Legacy field names
           globalStats?.d30_avg_trade_size_usd, globalStats?.D30_avg_trade_size_usd,
           globalStats?.l_avg_trade_size_usd, globalStats?.L_avg_trade_size_usd,
-          globalStats?.avg_bet_size_usdc
         )
 
         const globalTradeCount = pickNumber(
+          globalStats?.total_lifetime_trades, // PRIMARY - actual column name
+          // Legacy field names
           globalStats?.d30_count, globalStats?.D30_count,
           globalStats?.l_count, globalStats?.L_count,
-          globalStats?.total_lifetime_trades
         )
 
-        // For position size, prefer 30-day if available, otherwise lifetime
-        // Position size should be similar to trade size, so use trade size as fallback
-        const globalAvgPosSizeUsd = pickNumber(
-          globalStats?.d30_avg_trade_size_usd, // Use 30d trade size as proxy for position size
-          globalStats?.l_avg_pos_size_usd,
-          globalStats?.avg_bet_size_usdc
-        ) ?? globalAvgTradeSizeUsd ?? null
+        // For position size, use avg_bet_size_usdc as proxy (position size ≈ trade size)
+        const globalAvgPosSizeUsd = globalAvgTradeSizeUsd ?? null
         
         console.log('[PredictionStats] Extracted global stats:', {
           globalWinRate,
@@ -481,6 +485,10 @@ export function PredictionStats({
           globalAvgTradeSizeUsd,
           globalTradeCount,
           globalAvgPosSizeUsd,
+          raw_avg_bet_size_usdc: globalStats?.avg_bet_size_usdc,
+          raw_total_lifetime_trades: globalStats?.total_lifetime_trades,
+          raw_global_win_rate: globalStats?.global_win_rate,
+          raw_global_roi_pct: globalStats?.global_roi_pct,
         })
 
         // Safety check: if averages seem unreasonably high compared to current trade, cap them
