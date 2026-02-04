@@ -69,8 +69,9 @@ async function inferNicheFromTags(tags: string[]): Promise<{ niche: string | nul
 
   // If no matches and we have tags, try case-insensitive match as fallback
   if ((!mappings || mappings.length === 0) && cleanTags.length > 0) {
-    console.log('[ensureMarket] No case-sensitive matches, trying case-insensitive...')
-    // Try each tag individually with ilike (case-insensitive)
+    console.log('[ensureMarket] No case-sensitive matches, trying case-insensitive for all tags...')
+    // Try each tag individually with ilike (case-insensitive) and collect ALL matches
+    const allCiMappings: any[] = [];
     for (const tag of cleanTags) {
       const { data: ciMappings, error: ciError } = await supabase
         .from('semantic_mapping')
@@ -78,10 +79,14 @@ async function inferNicheFromTags(tags: string[]): Promise<{ niche: string | nul
         .ilike('original_tag', tag)
       
       if (!ciError && ciMappings && ciMappings.length > 0) {
-        mappings = (mappings || []).concat(ciMappings)
-        console.log('[ensureMarket] Found case-insensitive match for tag:', tag)
-        break // Use first match found
+        allCiMappings.push(...ciMappings);
+        console.log(`[ensureMarket] Found ${ciMappings.length} case-insensitive match(es) for tag: ${tag}`);
       }
+    }
+    
+    if (allCiMappings.length > 0) {
+      mappings = allCiMappings;
+      console.log(`[ensureMarket] Collected ${allCiMappings.length} total case-insensitive matches`);
     }
   }
 

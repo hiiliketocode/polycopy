@@ -2624,24 +2624,56 @@ export default function FeedPage() {
           
           if (!error && markets && Array.isArray(markets)) {
             const foundIds = new Set<string>();
+            // Helper to normalize tags (same as in Step 3)
+            const normalizeTagsForMap = (source: any): string[] => {
+              if (!source) return [];
+              if (Array.isArray(source)) {
+                return source
+                  .map((t: any) => {
+                    if (typeof t === 'object' && t !== null) {
+                      return t.name || t.tag || t.value || String(t);
+                    }
+                    return String(t);
+                  })
+                  .map((t: string) => t.trim().toLowerCase())
+                  .filter((t: string) => t.length > 0 && t !== 'null' && t !== 'undefined');
+              }
+              if (typeof source === 'string' && source.trim()) {
+                try {
+                  const parsed = JSON.parse(source);
+                  return normalizeTagsForMap(parsed);
+                } catch {
+                  const trimmed = source.trim().toLowerCase();
+                  return trimmed.length > 0 ? [trimmed] : [];
+                }
+              }
+              return [];
+            };
+            
             markets.forEach((market) => {
               if (market.condition_id) {
                 foundIds.add(market.condition_id);
                 let tags: string[] | null = null;
                 
-                // Extract tags from tags column
+                // Extract and normalize tags from tags column
                 if (Array.isArray(market.tags) && market.tags.length > 0) {
-                  tags = market.tags.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
-                  console.log(`[Feed] Extracted tags from tags column for ${market.condition_id}:`, tags);
+                  const normalized = normalizeTagsForMap(market.tags);
+                  if (normalized.length > 0) {
+                    tags = normalized;
+                    console.log(`[Feed] Extracted and normalized tags for ${market.condition_id}:`, tags);
+                  }
                 }
                 
                 // Fallback to raw_dome if tags missing
                 if ((!tags || tags.length === 0) && market.raw_dome) {
                   try {
                     const rawDome = typeof market.raw_dome === 'string' ? JSON.parse(market.raw_dome) : market.raw_dome;
-                    if (rawDome?.tags && Array.isArray(rawDome.tags) && rawDome.tags.length > 0) {
-                      tags = rawDome.tags.filter((t: any) => t && typeof t === 'string' && t.trim().length > 0);
-                      console.log(`[Feed] Extracted tags from raw_dome for ${market.condition_id}:`, tags);
+                    if (rawDome?.tags) {
+                      const normalized = normalizeTagsForMap(rawDome.tags);
+                      if (normalized.length > 0) {
+                        tags = normalized;
+                        console.log(`[Feed] Extracted tags from raw_dome for ${market.condition_id}:`, tags);
+                      }
                     }
                   } catch (err) {
                     console.warn(`[Feed] Failed to parse raw_dome for ${market.condition_id}:`, err);
@@ -2649,7 +2681,7 @@ export default function FeedPage() {
                 }
                 
                 marketDataMap.set(market.condition_id, {
-                  tags: tags || null,
+                  tags: tags && tags.length > 0 ? tags : null, // Store normalized lowercase tags
                   market_subtype: market.market_subtype || null,
                   bet_structure: market.bet_structure || null,
                   market_type: market.market_type || null,

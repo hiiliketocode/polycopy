@@ -543,12 +543,15 @@ export function TradeCard({
   // Market tags for semantic mapping (core semantic engine)
   // Tags are batch-fetched by feed page, but may be missing for new markets
   // PredictionStats will handle fallback to DB query if needed
+  // IMPORTANT: Normalize to lowercase to match semantic_mapping table
   const marketTagsForInsights = useMemo(() => {
     if (!tags || !Array.isArray(tags) || tags.length === 0) {
+      console.log('[TradeCard] No tags prop provided');
       return null;
     }
     
     // Normalize tags array - handle nested objects, strings, etc.
+    // Convert to lowercase to match semantic_mapping table format
     const filtered = tags
       .map((t: any) => {
         // Handle nested objects/arrays
@@ -557,10 +560,16 @@ export function TradeCard({
         }
         return String(t);
       })
-      .map((t: string) => t.trim())
+      .map((t: string) => t.trim().toLowerCase()) // Normalize to lowercase!
       .filter((t: string) => t.length > 0 && t !== 'null' && t !== 'undefined');
     
-    return filtered.length > 0 ? filtered : null;
+    if (filtered.length > 0) {
+      console.log('[TradeCard] Normalized tags for PredictionStats:', filtered);
+      return filtered;
+    }
+    
+    console.warn('[TradeCard] No valid tags after normalization');
+    return null;
   }, [tags])
 
   // Market data is now batch-fetched in feed page before trades are displayed

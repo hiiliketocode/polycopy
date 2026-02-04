@@ -266,14 +266,25 @@ export function PredictionStats({
         // Semantic mapping lookup (primary niche resolver)
         if (tagsToUse.length > 0) {
           try {
+            console.log('[PredictionStats] STEP 7: Querying semantic_mapping with tags:', tagsToUse);
+            
+            // Try case-sensitive match first (tags are already normalized to lowercase)
             let { data: mappings, error: mappingError } = await supabase
               .from('semantic_mapping')
               .select('clean_niche, type, specificity_score, original_tag')
               .in('original_tag', tagsToUse)
 
-            // If no matches, try case-insensitive (batch queries in parallel for speed)
+            console.log('[PredictionStats] STEP 7 RESULT (case-sensitive):', {
+              mappingsFound: mappings?.length || 0,
+              mappings: mappings?.map(m => ({ tag: m.original_tag, niche: m.clean_niche, type: m.type })),
+              error: mappingError?.message,
+            });
+
+            // If no matches, try case-insensitive for each tag (collect ALL matches, not just first)
             if ((!mappings || mappings.length === 0) && tagsToUse.length > 0) {
-              // Query all tags in parallel (faster than sequential)
+              console.log('[PredictionStats] No case-sensitive matches, trying case-insensitive for all tags...');
+              
+              // Query all tags in parallel and collect ALL results
               const ciQueries = tagsToUse.map(tag => 
                 supabase
                   .from('semantic_mapping')
@@ -282,12 +293,17 @@ export function PredictionStats({
               )
               const ciResults = await Promise.all(ciQueries)
               
-              // Find first successful result
+              // Collect all matches from all queries
+              const allCiMappings: any[] = [];
               for (const result of ciResults) {
                 if (!result.error && result.data && result.data.length > 0) {
-                  mappings = result.data
-                  break
+                  allCiMappings.push(...result.data);
                 }
+              }
+              
+              if (allCiMappings.length > 0) {
+                mappings = allCiMappings;
+                console.log('[PredictionStats] Found case-insensitive matches:', allCiMappings.length);
               }
             }
 
@@ -296,21 +312,27 @@ export function PredictionStats({
             }
 
             if (mappings && mappings.length > 0) {
+              // Sort by specificity_score (lower is more specific)
               mappings.sort((a: any, b: any) => (a.specificity_score || 99) - (b.specificity_score || 99))
               finalNiche = (mappings[0].clean_niche || '').toUpperCase() || null
-              console.log('[PredictionStats] ✅ Selected niche from semantic_mapping:', {
+              console.log('[PredictionStats] ✅ STEP 7: Selected niche from semantic_mapping:', {
                 niche: finalNiche,
                 type: mappings[0].type,
                 fromTag: mappings[0].original_tag,
+                specificity: mappings[0].specificity_score,
+                totalMatches: mappings.length,
               })
             } else if (tagsToUse.length > 0) {
-              // No semantic mapping match - this is OK, we'll use fallback
-              console.log('[PredictionStats] No semantic_mapping matches for tags:', tagsToUse.slice(0, 3))
+              // No semantic mapping match - log which tags were tried
+              console.warn('[PredictionStats] ⚠️ STEP 7: No semantic_mapping matches found for tags:', tagsToUse);
+              console.warn('[PredictionStats] Check if semantic_mapping table has entries for these tags');
             }
           } catch (err) {
-            console.warn('[PredictionStats] Error during semantic mapping lookup:', err)
+            console.error('[PredictionStats] ❌ STEP 7: Error during semantic mapping lookup:', err)
             // Continue without niche - will use fallback
           }
+        } else {
+          console.warn('[PredictionStats] ⚠️ STEP 7: No tags available for semantic mapping lookup');
         }
         
         console.log('[PredictionStats] Final classification before fallback:', {
