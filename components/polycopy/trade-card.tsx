@@ -626,14 +626,24 @@ export function TradeCard({
 
   const copiedTraderId = isUuid(trader.id) ? trader.id! : null
 
+  // Cache last valid score to prevent flickering when data momentarily disappears
+  const lastValidScoreRef = useRef<string | null>(null)
+  
   const cleanedLiveScore = useMemo(() => {
-    if (!liveScore) return null
+    if (!liveScore) {
+      // Return cached score to prevent flickering
+      return lastValidScoreRef.current
+    }
     // Remove leading non-alphanumeric, and strip any embedded time like " (Q4 5:30)" or " (Halftime)"
-    // since we show gameTimeInfo separately
     let cleaned = liveScore.replace(/^[^A-Za-z0-9]+/, "").trim()
     // Remove parenthesized time/status suffix (e.g., "(Q4 5:30)", "(Halftime)", "(OT 2:15)")
     cleaned = cleaned.replace(/\s*\([^)]*\)\s*$/, "").trim()
-    return cleaned.length ? cleaned : null
+    const result = cleaned.length ? cleaned : null
+    // Update cache if we have a valid score
+    if (result && /\d+\s*-\s*\d+/.test(result)) {
+      lastValidScoreRef.current = result
+    }
+    return result
   }, [liveScore])
 
   const looksLikeScore = Boolean(cleanedLiveScore && /\d+\s*-\s*\d+/.test(cleanedLiveScore))
