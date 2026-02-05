@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Prediction Markets for Beginners: Complete Guide 2026 | Polycopy',
+  title: 'Prediction Markets for Beginners Guide | Polycopy',
   description: 'New to prediction markets? Learn how they work, how to get started, betting strategies for beginners, and common mistakes to avoid on Polymarket.',
   keywords: [
     'prediction markets for beginners',

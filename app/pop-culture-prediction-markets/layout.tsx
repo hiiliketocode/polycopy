@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Pop Culture Prediction Markets: Oscars, Grammys & Entertainment Trading 2026 | Polycopy',
+  title: 'Pop Culture Prediction Markets | Oscars & More | Polycopy',
   description: 'Trade pop culture markets on Polymarket. Follow entertainment experts profiting from Oscars, Grammys, box office, celebrity events. Copy strategies.',
   keywords: ['pop culture prediction markets', 'oscars markets', 'grammys markets', 'entertainment trading', 'celebrity markets', 'pop culture traders', 'polymarket entertainment'],
   alternates: {

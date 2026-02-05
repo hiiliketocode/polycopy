@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Polymarket Trading Strategies - Learn from Top Traders | Polycopy",
+  title: "Polymarket Trading Strategies | Polycopy",
   description: "Master proven Polymarket betting strategies: momentum trading, event-based betting, arbitrage, portfolio management from successful traders.",
   keywords: [
     'polymarket trading strategies',
