@@ -36,6 +36,14 @@ export default function Footer() {
               </li>
               <li>
                 <Link 
+                  href="/polymarket-market-categories" 
+                  className="text-sm text-slate-400 hover:text-[#FDB022] transition-colors"
+                >
+                  Market Categories
+                </Link>
+              </li>
+              <li>
+                <Link 
                   href="/faq" 
                   className="text-sm text-slate-400 hover:text-[#FDB022] transition-colors"
                 >
