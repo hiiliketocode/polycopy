@@ -208,7 +208,41 @@ Test on held-out trades and measure:
 4. [x] Add new features (price_vs_trader_avg, selectivity, etc.)
 5. [x] Train V9 model
 6. [x] Compare V9 vs V7 vs V8 performance
-7. [ ] Update predict-trade function
+7. [x] Update predict-trade function
+
+---
+
+## Stage 8: V10 Model - High-Value Features
+
+Based on comprehensive feature analysis, V10 adds the highest-impact behavioral features.
+
+### New Features Added in V10
+
+| Feature | Win Rate Signal | Attribution |
+|---------|-----------------|-------------|
+| **is_with_crowd** | 69.4% vs 30.3% | **0.1246** (4th overall!) |
+| **trade_size_tier** | 67.9% vs 48.3% | 0.0108 |
+| **is_in_best_niche** | 51.8% vs 48.6% | 0.0047 |
+| **market_age_bucket** | 52.2% vs 48.8% | 0.0050 |
+| **is_hedging** | Directional | 0.0027 |
+| **trader_sells_ratio** | 54.0% vs 43.9% | 0.0024 |
+
+### V10 Performance
+
+| Model | Accuracy | AUC-ROC | Key Changes |
+|-------|----------|---------|-------------|
+| V8 | 71.85% | 0.8054 | Broken niche, redundant features |
+| V9 | 71.75% | 0.7997 | Fixed niche, removed redundancies |
+| **V10** | **71.80%** | **0.8032** | +whale, +crowd, +best_niche |
+
+**V10 recovers AUC lost in V9** while maintaining clean, principled feature set.
+
+### predict-trade Function Updated
+
+Updated `supabase/functions/predict-trade/index.ts` to:
+- Use `poly_predictor_v10` model
+- Calculate V10 features at inference time
+- Return V10 feature values in response for transparency
 
 ---
 

@@ -1,18 +1,18 @@
 // supabase/functions/predict-trade/index.ts
 //
-// PREDICT-TRADE EDGE FUNCTION - V8 MODEL
+// PREDICT-TRADE EDGE FUNCTION - V10 MODEL
 // Last Updated: Feb 5, 2026
 //
-// OBJECTIVE: Provide clear, actionable trade analysis using poly_predictor_v8 model
-// with enhanced features: D7/D30 win rates, ROI metrics, price brackets, experience levels.
+// OBJECTIVE: Provide clear, actionable trade analysis using poly_predictor_v10 model
+// with high-value features from comprehensive analysis.
 // 
-// V8 MODEL FEATURES (32 total):
-// - Trader skill: global_win_rate, D30_win_rate, D7_win_rate, niche_win_rate_history, bracket_win_rate, recent_win_rate
-// - ROI metrics: lifetime_roi_pct, D30_roi_pct, D7_roi_pct, niche_roi_pct
-// - Experience: total_lifetime_trades, trader_experience_bucket
-// - Conviction: conviction_z_score, trade_sequence, bet_size_vs_avg
-// - Behavioral: trader_tempo_seconds, is_chasing_price_up, is_averaging_down, stddev_bet_size, is_hedged
-// - Trade: final_niche, bet_structure, position_direction, entry_price, price_bracket, trade_size_log, total_exposure_log
+// V10 MODEL FEATURES (27 total):
+// - Trader skill: global_win_rate, niche_win_rate_history, total_lifetime_trades
+// - Trader behavior: niche_experience_pct, trader_selectivity, price_vs_trader_avg
+// - Conviction: conviction_z_score, trade_sequence
+// - Behavioral: trader_tempo_seconds, is_chasing_price_up, is_averaging_down
+// - V10 NEW: trade_size_tier, trader_sells_ratio, is_hedging, is_in_best_niche, is_with_crowd, market_age_bucket
+// - Trade: final_niche, bet_structure, position_direction, entry_price, trade_size_log, total_exposure_log
 // - Market: volume_momentum_ratio, liquidity_impact_ratio
 // - Timing: minutes_to_start, hours_to_close, market_age_days
 
@@ -839,65 +839,109 @@ serve(async (req) => {
     const marketAgeDays = marketStart ? Math.floor((nowMs - marketStartMs) / 86400000) : 0;
     const isHedged = hedgingInfo?.isHedging === true ? 1 : 0;
     
-    // Calculate v8 model features
-    const bet_size_vs_avg = dna_avg > 0 ? tradeTotal / dna_avg : 1.0;
-    const trader_experience_bucket = dna_trades < 100 ? 'NOVICE' 
-      : dna_trades < 1000 ? 'INTERMEDIATE' 
-      : dna_trades < 10000 ? 'EXPERIENCED' 
-      : 'EXPERT';
+    // Calculate V10 model features
     
-    // D7/D30 win rates - use recent_win_rate as fallback until Supabase schema updated
-    const d7_win_rate = dna_recent_win_rate;
-    const d30_win_rate = (dna_recent_win_rate + dna_global_win_rate) / 2; // Blend as approximation
+    // trade_size_tier based on liquidity impact ratio
+    const trade_size_tier = liquidityImpactRatio > 0.01 ? 'WHALE'
+      : liquidityImpactRatio > 0.001 ? 'LARGE'
+      : liquidityImpactRatio > 0.0001 ? 'MEDIUM'
+      : 'SMALL';
     
-    // ROI features - use trader_historical_roi_pct if available
-    const lifetime_roi_pct = trader_historical_roi_pct || 0;
-    const d7_roi_pct = 0; // Will be populated when Supabase schema updated
-    const d30_roi_pct = 0;
+    // trader_sells_ratio - from global stats if available, else default to 0
+    const trader_sells_ratio = typeof globalStats.sells_ratio === 'number' 
+      ? globalStats.sells_ratio 
+      : 0;
     
-    // BigQuery query with COALESCE for all inputs - V8 MODEL
+    // is_hedging - from hedgingInfo passed in payload
+    const is_hedging = hedgingInfo?.isHedging === true ? 1 : 0;
+    
+    // is_in_best_niche - check if trader's best niche matches current trade
+    // First, find trader's best niche from profile stats
+    let trader_best_niche = 'OTHER';
+    if (profileStats && profileStats.length > 0) {
+      // Sort by win rate and trade count to find best niche
+      const sortedProfiles = [...profileStats]
+        .filter((p: any) => (p.L_count || p.l_count || p.trade_count || 0) >= 10)
+        .sort((a: any, b: any) => {
+          const aWR = a.L_win_rate || a.l_win_rate || a.win_rate || 0;
+          const bWR = b.L_win_rate || b.l_win_rate || b.win_rate || 0;
+          return bWR - aWR;
+        });
+      if (sortedProfiles.length > 0) {
+        trader_best_niche = sortedProfiles[0].final_niche || 'OTHER';
+      }
+    }
+    const is_in_best_niche = finalNiche === trader_best_niche ? 1 : 0;
+    
+    // is_with_crowd - determine if trade aligns with volume direction
+    // Heuristic: if price > 0.5, assume "YES" is popular; check if trader is buying YES
+    // This is an approximation since we don't have real-time volume direction
+    const is_with_crowd = (entryPrice > 0.5 && positionDirection === 'LONG') || 
+                         (entryPrice <= 0.5 && positionDirection === 'SHORT') ? 1 : 0;
+    
+    // market_age_bucket
+    const market_age_bucket = marketAgeDays < 1 ? 'DAY_1'
+      : marketAgeDays < 7 ? 'WEEK_1'
+      : marketAgeDays < 30 ? 'MONTH_1'
+      : 'OLDER';
+    
+    // niche_experience_pct - what % of trader's trades are in this niche
+    let niche_experience_pct = 0;
+    if (profileStats && profileStats.length > 0) {
+      const nicheProfile = profileStats.find((p: any) => p.final_niche === finalNiche);
+      const nicheCount = nicheProfile?.L_count || nicheProfile?.l_count || nicheProfile?.trade_count || 0;
+      const totalCount = profileStats.reduce((sum: number, p: any) => {
+        return sum + (p.L_count || p.l_count || p.trade_count || 0);
+      }, 0);
+      niche_experience_pct = totalCount > 0 ? nicheCount / totalCount : 0;
+    }
+    
+    // trader_selectivity - inverse of trades per day (approximation)
+    const trader_selectivity = dna_trades > 0 ? Math.min(1.0 / Math.max(dna_trades / 30, 0.1), 1.0) : 0.5;
+    
+    // price_vs_trader_avg - normalized entry price vs trader's historical average
+    const trader_avg_entry_price = typeof globalStats.avg_entry_price === 'number' 
+      ? globalStats.avg_entry_price 
+      : 0.5;
+    const price_vs_trader_avg = (entryPrice - trader_avg_entry_price) / 0.2;
+    
+    // BigQuery query with COALESCE for all inputs - V10 MODEL
     const query = `
-      SELECT * FROM ML.PREDICT(MODEL \`polycopy_v1.poly_predictor_v8\`, 
+      SELECT * FROM ML.PREDICT(MODEL \`polycopy_v1.poly_predictor_v10\`, 
       (
         SELECT 
-          -- Trader skill features
+          -- Trader skill features (core)
           COALESCE(${dna_global_win_rate}, 0.5) as global_win_rate,
-          COALESCE(${d30_win_rate}, 0.5) as D30_win_rate,
-          COALESCE(${d7_win_rate}, 0.5) as D7_win_rate,
           COALESCE(${niche_win_rate}, ${dna_global_win_rate}, 0.5) as niche_win_rate_history,
-          COALESCE(${niche_win_rate}, ${dna_global_win_rate}, 0.5) as bracket_win_rate,
-          COALESCE(${niche_win_rate}, ${dna_global_win_rate}, 0.5) as niche_bracket_win_rate,
-          COALESCE(${dna_recent_win_rate}, 0.5) as recent_win_rate,
-          
-          -- ROI features (new in v8)
-          COALESCE(${lifetime_roi_pct}, 0) as lifetime_roi_pct,
-          COALESCE(${d30_roi_pct}, 0) as D30_roi_pct,
-          COALESCE(${d7_roi_pct}, 0) as D7_roi_pct,
-          COALESCE(${lifetime_roi_pct}, 0) as niche_roi_pct,
-          
-          -- Experience features
           COALESCE(${dna_trades}, 0) as total_lifetime_trades,
-          '${trader_experience_bucket}' as trader_experience_bucket,
+          
+          -- Trader behavior features (V9)
+          COALESCE(${niche_experience_pct}, 0) as niche_experience_pct,
+          COALESCE(${trader_selectivity}, 0.5) as trader_selectivity,
+          COALESCE(${price_vs_trader_avg}, 0) as price_vs_trader_avg,
           
           -- Conviction features
           COALESCE(${z_score}, 0) as conviction_z_score,
           COALESCE(${trade_sequence}, 1) as trade_sequence,
-          COALESCE(${bet_size_vs_avg}, 1.0) as bet_size_vs_avg,
           
           -- Behavioral features
           COALESCE(${tempo}, 300) as trader_tempo_seconds,
           COALESCE(${is_chasing}, 0) as is_chasing_price_up,
           COALESCE(${is_avg_down_num}, 0) as is_averaging_down,
-          10 as max_trades_per_day,
-          COALESCE(${dna_stddev}, 50) as stddev_bet_size,
-          COALESCE(${isHedged}, 0) as is_hedged,
+          
+          -- V10 NEW FEATURES
+          '${trade_size_tier}' as trade_size_tier,
+          COALESCE(${trader_sells_ratio}, 0) as trader_sells_ratio,
+          COALESCE(${is_hedging}, 0) as is_hedging,
+          COALESCE(${is_in_best_niche}, 0) as is_in_best_niche,
+          COALESCE(${is_with_crowd}, 0) as is_with_crowd,
+          '${market_age_bucket}' as market_age_bucket,
           
           -- Trade features
           COALESCE('${finalNiche}', 'OTHER') as final_niche,
           COALESCE('${betStructure}', 'STANDARD') as bet_structure,
           COALESCE('${positionDirection}', 'LONG') as position_direction,
           COALESCE(${entryPrice}, 0.5) as entry_price,
-          '${priceBracket}' as price_bracket,
           COALESCE(LOG(${tradeTotal} + 1), 0) as trade_size_log,
           COALESCE(LOG(${exposure} + 1), 0) as total_exposure_log,
           
@@ -1130,6 +1174,19 @@ serve(async (req) => {
           current_trade_size: parseFloat(tradeTotal.toFixed(2)),
           global_L_avg_pos_size_usd: dna_avg, // Using avg bet size as proxy for avg position size
           global_L_avg_trade_size_usd: dna_avg,
+          // V10 features for transparency
+          v10_features: {
+            trade_size_tier: trade_size_tier,
+            trader_sells_ratio: parseFloat(trader_sells_ratio.toFixed(3)),
+            is_hedging: is_hedging === 1,
+            is_in_best_niche: is_in_best_niche === 1,
+            trader_best_niche: trader_best_niche,
+            is_with_crowd: is_with_crowd === 1,
+            market_age_bucket: market_age_bucket,
+            niche_experience_pct: parseFloat(niche_experience_pct.toFixed(3)),
+            trader_selectivity: parseFloat(trader_selectivity.toFixed(3)),
+            price_vs_trader_avg: parseFloat(price_vs_trader_avg.toFixed(3)),
+          },
         },
       },
     };
