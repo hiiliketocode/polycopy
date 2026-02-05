@@ -4337,6 +4337,9 @@ export default function FeedPage() {
         walletAddress={walletAddress}
         profileImageUrl={profileImageUrl}
       />
+      
+      {/* SEO H1 - Visually hidden but present for search engines */}
+      <h1 className="sr-only">Your Trading Feed - Copy Top Polymarket Traders</h1>
 
       <div className="min-h-screen bg-slate-50 md:pt-0 pb-36 md:pb-8 overflow-x-hidden">
         {/* Page Header */}

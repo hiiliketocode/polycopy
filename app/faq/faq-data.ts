@@ -767,6 +767,332 @@ For Polymarket's own funding guide, see [the Polymarket FAQ](https://legacy-docs
   // TECHNICAL & GENERAL
   // ============================================
   {
+    id: 'what-is-polymarket-platform',
+    category: 'Technical & General',
+    question: 'What is Polymarket?',
+    answer: `**Polymarket is the world's largest prediction market platform.** It lets you bet on the outcome of future events by buying and selling shares that represent different outcomes.
+
+**How it works:**
+- Each market has multiple outcomes (e.g., "Will Candidate A win?" has "Yes" and "No")
+- Share prices range from $0.01 to $0.99, representing the market's belief about probability
+- If you buy "Yes" shares at $0.70 and the outcome happens, each share pays $1.00 (profit: $0.30 per share)
+- If the outcome doesn't happen, shares are worth $0
+
+**What you can bet on:**
+- **Politics:** Elections, approval ratings, policy outcomes
+- **Sports:** Game results, player performances, championships
+- **Crypto:** Bitcoin prices, DeFi protocols, regulations
+- **Business:** Stock prices, earnings, mergers & acquisitions
+- **Entertainment:** Award shows, box office, streaming numbers
+- **Current Events:** News events, global incidents, trending topics
+
+**Why Polymarket is popular:**
+- **Real money:** Trade with USDC (digital dollars) - not play money
+- **High liquidity:** Millions in trading volume daily on major markets
+- **Fast settlements:** Markets resolve quickly after outcomes are known
+- **Low fees:** ~2% fee on winnings, no gas fees
+- **Transparency:** Built on blockchain (Polygon) - all trades are public
+
+**Polymarket vs Traditional Betting:**
+- More markets than sports betting (politics, business, science, etc.)
+- Better odds due to market-driven pricing (not set by a bookmaker)
+- Can trade in/out before resolution (like stocks) - don't have to hold until the end
+- Global platform with no geographical restrictions on most markets
+
+Learn more: Visit [polymarket.com](https://polymarket.com) to start trading.`,
+  },
+  {
+    id: 'is-polymarket-legit',
+    category: 'Technical & General',
+    question: 'Is Polymarket legit?',
+    answer: `**Yes, Polymarket is a legitimate prediction market platform.**
+
+**Proof of legitimacy:**
+
+**1. Regulatory Compliance**
+- Registered with the Commodity Futures Trading Commission (CFTC)
+- Paid $1.4M fine in 2022 for operating without proper registration (they've since corrected this)
+- Now operates within US regulations with proper oversight
+- Currently available to most users worldwide (with some restrictions)
+
+**2. Backed by Major Investors**
+- Raised $74M from top-tier venture capital firms
+- Investors include: Peter Thiel's Founders Fund, Polychain Capital, Alexis Ohanian (Reddit founder)
+- These investors conduct extensive due diligence before investing
+
+**3. Proven Track Record**
+- Launched in 2020 and operational for 4+ years
+- Processed hundreds of millions of dollars in trading volume
+- Successfully resolved thousands of markets
+- Large, active community of traders
+
+**4. Blockchain Transparency**
+- All trades and payouts are on the Polygon blockchain (public record)
+- You can verify any transaction independently
+- Smart contracts handle payouts automatically - no human intervention needed
+
+**5. Security**
+- Non-custodial model (you control your funds in your wallet)
+- Uses Polygon blockchain for security
+- Polymarket doesn't hold user funds directly
+
+**What About the 2022 CFTC Fine?**
+In 2022, Polymarket paid a $1.4M fine to the CFTC for operating without proper registration. **This was a regulatory issue, not a fraud issue.** They cooperated fully, paid the fine, and now operate with proper regulatory approval. Many crypto companies faced similar early compliance challenges.
+
+**User Reviews:**
+- Active community on Twitter/X
+- Transparent about volumes and liquidity
+- Disputes handled through UMA oracle protocol (decentralized resolution)
+
+**Red Flags? None.**
+- No exit scam history
+- No reports of stolen funds
+- No fake volume or wash trading
+- Transparent operations
+
+**Is it Safe?** Yes, with normal crypto precautions:
+- Only invest what you can afford to lose
+- Understand prediction markets carry risk
+- Your trading decisions determine success, not Polymarket legitimacy
+- Markets can be volatile - prices change quickly
+
+**Bottom Line:** Polymarket is as legitimate as any major crypto platform. It's backed by reputable investors, operates under regulatory oversight, and has a proven track record. The main risk is market risk (you can lose money on bad bets), not platform risk (scam/fraud).`,
+  },
+  {
+    id: 'how-does-polymarket-work-platform',
+    category: 'Technical & General',
+    question: 'How does Polymarket work?',
+    answer: `Polymarket is a prediction market where you can buy and sell shares based on future event outcomes. Here's exactly how it works:
+
+**1. Creating an Account**
+- Sign up at [polymarket.com](https://polymarket.com)
+- Polymarket creates a wallet for you automatically
+- No cryptocurrency experience required
+- Fund your wallet with USDC (digital dollars) using credit card or bank transfer
+
+**2. Browsing Markets**
+- Browse thousands of active markets across politics, sports, crypto, business, and more
+- Each market asks a question about a future event (e.g., "Will Candidate A win the election?")
+- Multiple outcomes available: usually "Yes" and "No", sometimes multiple options
+
+**3. Share Pricing**
+- Share prices range from $0.01 to $0.99
+- Price represents the market's collective belief about probability
+- Example: "Yes" shares at $0.65 = market thinks 65% chance of "Yes" outcome
+- Prices fluctuate based on supply/demand - just like stocks
+
+**4. Buying Shares**
+- Click "Buy" on an outcome you believe will happen
+- Enter dollar amount you want to bet
+- Example: Buy 100 "Yes" shares at $0.65 = costs $65
+- Shares appear in your portfolio immediately
+
+**5. Selling Before Resolution** (Optional)
+- You don't have to wait for the event to resolve
+- Sell your shares anytime if the price moves in your favor
+- Example: Buy at $0.65, sell at $0.80 = profit $0.15 per share ($15 on 100 shares)
+- This is what active traders do - buy low, sell high before resolution
+
+**6. Market Resolution**
+- After the event happens, the market resolves to the correct outcome
+- Resolution handled by UMA Protocol (decentralized oracle)
+- Winning shares pay $1.00 each
+- Losing shares pay $0
+- Example: You hold 100 "Yes" shares, "Yes" wins → you receive $100
+
+**7. Withdrawing Funds**
+- Withdraw your USDC to your bank account or crypto wallet anytime
+- Polymarket uses a "gasless" system - no transaction fees to withdraw
+- Funds are yours - Polymarket doesn't custody them
+
+**Fees:**
+- ~2% fee on winning positions when markets resolve
+- No trading fees, no withdrawal fees, no gas fees
+
+**Risk:**
+- You can lose your entire investment if your prediction is wrong
+- Market volatility - prices can swing quickly on news
+- Liquidity varies - some markets are harder to enter/exit
+
+**Example Trade:**
+1. Market: "Will Team A win the championship?"
+2. You believe they will win
+3. "Yes" shares currently cost $0.40
+4. You buy 100 "Yes" shares for $40
+5. Two weeks later, "Yes" shares rise to $0.60 (Team A doing well)
+6. You sell for $60 (profit: $20, or 50% ROI)
+7. Alternatively, you could hold until resolution and get $100 if Team A wins ($60 profit) or $0 if they lose
+
+**Polymarket vs Regular Betting:**
+- **More flexibility:** Sell anytime, not just at resolution
+- **Better odds:** Market-driven pricing, not bookmaker odds
+- **More markets:** Bet on politics, business, science - not just sports
+- **Transparency:** All trades on blockchain
+
+Learn more at [Polymarket's documentation](https://legacy-docs.polymarket.com)`,
+  },
+  {
+    id: 'is-polymarket-legal-usa',
+    category: 'Technical & General',
+    question: 'Is Polymarket legal in the USA?',
+    answer: `**Yes, Polymarket is legal in the USA with some restrictions.**
+
+**Current Legal Status (2026):**
+
+**Federal Level:**
+- **Legal and regulated** by the Commodity Futures Trading Commission (CFTC)
+- Polymarket paid a $1.4M fine in 2022 for initial non-compliance, then registered properly
+- Now operates under CFTC oversight with required compliance measures
+- Treated similarly to commodity trading platforms
+
+**State Level:**
+- **Legal in most US states**
+- Some states have additional restrictions on prediction markets
+- Check your state's gambling laws if concerned
+- Polymarket doesn't currently enforce state-level restrictions but recommends checking local laws
+
+**How is this different from gambling?**
+The CFTC regulates Polymarket as a **derivatives/commodities market**, not as gambling:
+- Based on information aggregation and price discovery
+- Serves a legitimate purpose beyond entertainment
+- Similar regulatory treatment to futures markets
+- NOT considered traditional "gambling" under federal law
+
+**Polymarket is NOT available for:**
+- Users under 18 years old (21+ in some jurisdictions)
+- Certain restricted countries (check Polymarket's terms)
+- Some specific markets may be restricted to non-US users (rare)
+
+**Is it safe legally?**
+Yes. Using Polymarket in the US is:
+- ✅ Federally compliant and regulated
+- ✅ Backed by legitimate venture capital
+- ✅ No risk of prosecution for users
+- ✅ Similar legal standing to crypto exchanges
+
+**Tax Implications:**
+- Trading profits are taxable as capital gains
+- Similar to stock trading taxes
+- Keep records of trades for tax reporting
+- Consult a tax professional for specific guidance
+
+**What about the 2022 fine?**
+Polymarket's 2022 CFTC fine was for **operating without proper registration initially** - not for being illegal. They:
+- Cooperated fully with regulators
+- Paid the fine immediately
+- Implemented required compliance measures
+- Now operate with proper oversight
+
+Many crypto companies faced similar early regulatory challenges (Coinbase, Kraken, etc.) and resolved them similarly.
+
+**Legality by State (Simplified):**
+Most states allow Polymarket usage, but a few have stricter gambling laws that *might* apply:
+- **Generally OK:** Most states including CA, NY, TX, FL, IL
+- **Grey area:** States with very strict gambling laws (check locally)
+- **Consult local laws if concerned**
+
+Polymarket doesn't currently block US state IPs, indicating they believe their federal compliance satisfies requirements.
+
+**Compare to Other Platforms:**
+- **Kalshi:** Also US-legal, CFTC-regulated (more restrictive market selection)
+- **PredictIt:** Was legal, shut down by CFTC in 2023 (different regulatory approach)
+- **Offshore betting sites:** Often not US-legal
+
+**Bottom Line:**
+Polymarket is federally legal in the US and operates under CFTC regulation. As a user, you're participating in a regulated derivatives market, not illegal gambling. The main considerations are:
+1. Are you 18+? (21+ in some areas)
+2. Do you report earnings for taxes?
+3. Are you comfortable with the regulatory framework?
+
+If you answer yes to all three, you're good to go.
+
+**Disclaimer:** This is general information, not legal advice. Consult an attorney for specific legal questions about your jurisdiction.`,
+  },
+  {
+    id: 'how-polymarket-makes-money',
+    category: 'Technical & General',
+    question: 'How does Polymarket make money?',
+    answer: `Polymarket makes money primarily through **trading fees on winning positions**. Here's the complete breakdown:
+
+**Main Revenue Source:**
+**Trading Fees: ~2% on winning positions**
+- When a market resolves and you have winning shares, Polymarket takes ~2% of your profit
+- Example: You win $100 → Polymarket keeps ~$2, you get ~$98
+- Losing trades pay $0 fees (you already lost your bet)
+- This is similar to how betting sites take a "vig" or commission
+
+**Why ~2%?**
+- Competitive with other prediction markets
+- Lower than traditional sportsbooks (5-10% vig)
+- Covers platform operational costs
+- Funds oracle resolution costs (UMA Protocol)
+- Pays for customer support and development
+
+**No Other Fees:**
+- ✅ **No trading fees:** Free to buy and sell shares
+- ✅ **No deposit fees:** Fund your wallet for free
+- ✅ **No withdrawal fees:** Take your money out anytime
+- ✅ **No subscription fees:** Platform is completely free to use
+- ✅ **No gas fees:** "Gasless" system on Polygon
+- ✅ **No inactivity fees:** Account is free forever
+
+**Example Calculations:**
+
+**Scenario 1: You win**
+- Buy 100 shares at $0.60 = $60 cost
+- Market resolves in your favor
+- Winning shares pay $1.00 each = $100 gross
+- Polymarket fee: ~2% of profit = ~$0.80
+- You receive: ~$99.20
+- Your net profit: $39.20 (65% ROI)
+
+**Scenario 2: You lose**
+- Buy 100 shares at $0.60 = $60 cost
+- Market resolves against you
+- Shares worth $0
+- Polymarket fee: $0 (no fee on losses)
+- You receive: $0
+- Your net loss: $60 (100% loss)
+
+**Scenario 3: You sell before resolution**
+- Buy 100 shares at $0.60 = $60 cost
+- Sell at $0.80 = $80 received
+- Polymarket fee: $0 (no fee on trades, only resolution)
+- Your profit: $20 (33% ROI)
+
+**Other Potential Revenue (Minor):**
+- **Interest on float:** Money sitting in platform between trades (minimal)
+- **API access:** May charge institutional users for API (future potential)
+- **Premium features:** Possible future revenue streams
+
+**How Polymarket Stays Profitable:**
+
+**Math works out like this:**
+- 2% fee seems small, but...
+- High trading volume ($100M+ monthly)
+- 2% of millions = substantial revenue
+- Example: $100M in resolved markets → ~$2M in fees (if average winning position is same as total volume)
+
+**Compared to Competitors:**
+- **Traditional sportsbooks:** 5-10% vig (higher fees)
+- **Kalshi:** Similar ~2-3% fee structure
+- **Stock trading apps:** $0 commission (make money on order flow, spreads)
+- **Crypto exchanges:** 0.1-0.5% per trade (lower but charge on every trade, not just wins)
+
+**Is the 2% fee fair?**
+Most traders consider it reasonable because:
+- Only pay when you win (not on every trade)
+- Lower than traditional bookmakers
+- Platform needs revenue to operate
+- Covers oracle resolution costs (decentralized verification)
+- No hidden fees elsewhere
+
+**Pro Tip:** Because fees only apply to resolved markets, active traders who buy low and sell high before resolution pay $0 fees. This is how sophisticated traders minimize costs.
+
+**Bottom Line:**
+Polymarket makes money from a ~2% fee on winning positions. This is transparent, competitive with the industry, and only charged when you profit. There are no hidden fees, subscriptions, or other charges.`,
+  },
+  {
     id: 'supported-markets',
     category: 'Technical & General',
     question: 'What markets does Polycopy support?',

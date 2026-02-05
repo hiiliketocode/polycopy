@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Copy Trading for Polymarket - See What Top Traders Are Doing",
-  description: "Curated feed of trades from top Polymarket traders. See moves in real-time, pick what makes sense, execute with one click. Curation over automation.",
+  description: "Curated feed of bets from top Polymarket traders. See moves in real-time, pick what makes sense, execute with one click. Curation over automation.",
   keywords: [
     'copy trading',
     'polymarket copy trading',

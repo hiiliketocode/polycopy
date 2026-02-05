@@ -28,6 +28,22 @@ const nextConfig: NextConfig = {
         destination: '/:path+',
         permanent: true,
       },
+      // SEO-friendly redirects for high-volume keywords
+      {
+        source: '/polymarket-leaderboard',
+        destination: '/top-traders',
+        permanent: true,
+      },
+      {
+        source: '/polymarket-betting',
+        destination: '/polymarket-trading-strategies',
+        permanent: true,
+      },
+      {
+        source: '/polymarket-betting-strategies',
+        destination: '/polymarket-trading-strategies',
+        permanent: true,
+      },
     ];
   },
   

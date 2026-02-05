@@ -1536,6 +1536,10 @@ function TradeExecutePageInner() {
   return (
     <div>
       <Navigation />
+      
+      {/* SEO H1 - Visually hidden but present for search engines */}
+      <h1 className="sr-only">Execute Trade - Copy Polymarket Trader</h1>
+      
       <main className="mx-auto max-w-3xl px-4 py-10 space-y-6">
         <div className="space-y-4">
           <div className="text-2xl font-semibold text-slate-900">Trade You're Copying</div>

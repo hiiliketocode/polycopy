@@ -638,6 +638,10 @@ export function OrdersScreen({
           profileImageUrl={profileImageUrl}
         />
       )}
+      
+      {/* SEO H1 - Visually hidden but present for search engines */}
+      <h1 className="sr-only">Your Orders & Positions - Polymarket Copy Trading</h1>
+      
       <div className={contentWrapperClassName}>
         <main className="mx-auto max-w-6xl px-4 py-8">
         {refreshing && !ordersLoading && (

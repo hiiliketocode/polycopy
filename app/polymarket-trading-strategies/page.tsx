@@ -79,8 +79,8 @@ export default function TradingStrategiesPage() {
               </h1>
 
               <p className="text-xl text-slate-600 mb-8 leading-relaxed">
-                Learn the strategies top Polymarket traders actually use.<br className="hidden sm:inline" />
-                From momentum trading to event-based bets to risk management.
+                Learn the betting strategies top Polymarket traders actually use.<br className="hidden sm:inline" />
+                From momentum trading to event-based betting to risk management.
               </p>
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -105,10 +105,10 @@ export default function TradingStrategiesPage() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
               <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">
-                6 Prediction Market Trading Strategies
+                6 Prediction Market Betting Strategies
               </h2>
               <p className="text-xl text-slate-600">
-                Choose based on your knowledge and time commitment
+                Choose betting strategies based on your knowledge and time commitment
               </p>
             </div>
 

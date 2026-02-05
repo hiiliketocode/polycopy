@@ -241,9 +241,12 @@ export default function ComparisonPage() {
                     </h4>
                     <ul className="space-y-2 text-sm text-slate-700">
                       <li>• Legal for US users (CFTC regulated)</li>
-                      <li>• No crypto needed (USD deposits)</li>
-                      <li>• Growing market selection (~100 markets)</li>
-                      <li>• Decent liquidity ($10-20M monthly)</li>
+                      <li>• No crypto needed (USD deposits via ACH/wire)</li>
+                      <li>• Growing market selection (~100+ markets)</li>
+                      <li>• Decent liquidity ($10-20M monthly volume)</li>
+                      <li>• Easy onboarding (traditional banking)</li>
+                      <li>• Mobile app available (iOS & Android)</li>
+                      <li>• Tax reporting built-in (1099 forms)</li>
                     </ul>
                   </div>
                   <div>
@@ -252,15 +255,17 @@ export default function ComparisonPage() {
                       Weaknesses
                     </h4>
                     <ul className="space-y-2 text-sm text-slate-700">
-                      <li>• 7% fee on all winnings (adds up fast)</li>
-                      <li>• Lower liquidity than Polymarket</li>
-                      <li>• Fewer markets available</li>
-                      <li>• No copy trading infrastructure</li>
+                      <li>• 7% fee on all winnings (significantly higher than Polymarket)</li>
+                      <li>• Lower liquidity than Polymarket (10-20x less)</li>
+                      <li>• Fewer markets available (100 vs 1000+)</li>
+                      <li>• No copy trading infrastructure or public trader data</li>
                       <li>• US-only (geo-blocked internationally)</li>
+                      <li>• More conservative market approval (slower new markets)</li>
+                      <li>• Limited to CFTC-approved event types</li>
                     </ul>
                     <div className="mt-4 bg-blue-50 p-4 rounded-lg border border-blue-200">
                       <p className="text-xs text-blue-900 font-semibold">
-                        Best For: US traders who want regulation, those uncomfortable with crypto
+                        <strong>Best For:</strong> US traders who want full regulatory compliance and traditional banking integration. Ideal if you're uncomfortable with crypto or want built-in tax reporting. Choose Kalshi if: (1) You're based in the US, (2) You prefer USD over stablecoins, (3) You want CFTC oversight, (4) You don't need copy trading features. However, expect to pay significantly more in fees (7% vs 0-2%) and accept lower liquidity and fewer markets compared to Polymarket.
                       </p>
                     </div>
                   </div>

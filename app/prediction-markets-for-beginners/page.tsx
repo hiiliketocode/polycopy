@@ -46,7 +46,7 @@ export default function PredictionMarketsForBeginnersPage() {
               Prediction Markets for Beginners
             </h1>
             <p className="text-xl text-slate-600 mb-8 leading-relaxed">
-              Never traded prediction markets before? No problem. This guide will teach you everything you need to know to start trading confidently on Polymarket.
+              Never traded prediction markets before? No problem. This guide will teach you everything you need to know to start betting confidently on Polymarket.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link href="/how-to-copy-trade-polymarket">
@@ -74,7 +74,7 @@ export default function PredictionMarketsForBeginnersPage() {
             </h2>
             <div className="prose prose-lg max-w-none text-slate-700">
               <p className="text-lg leading-relaxed mb-6">
-                Prediction markets are platforms where you can buy and sell shares based on the outcome of future events. Think of it like the stock market, but instead of trading company shares, you're trading on whether something will happen.
+                Prediction markets are platforms where you can buy and sell shares based on the outcome of future events. Think of it like betting on sports, but instead of just sports outcomes, you can bet on elections, economics, entertainment, and more - all based on real-world outcomes.
               </p>
               <div className="bg-blue-50 border-l-4 border-blue-500 p-6 rounded-r-lg my-8">
                 <h3 className="text-xl font-semibold text-slate-900 mb-3 flex items-center">

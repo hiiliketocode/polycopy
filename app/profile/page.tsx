@@ -2718,6 +2718,9 @@ function ProfilePageContent() {
         profileImageUrl={profileImageUrl}
       />
       
+      {/* SEO H1 - Visually hidden but present for search engines */}
+      <h1 className="sr-only">Your Profile - Polymarket Trading Performance</h1>
+      
       {/* Mobile top nav banner (logo only, no page title) */}
       <div className="md:hidden sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
         <div className="px-4 py-3">
