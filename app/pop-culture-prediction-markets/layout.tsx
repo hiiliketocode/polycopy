@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Pop Culture Prediction Markets: Oscars, Grammys & Entertainment Trading 2026 | Polycopy',
-  description: 'Trade pop culture prediction markets on Polymarket. Follow entertainment experts profiting from Oscars, Grammys, celebrity events, box office, and awards shows. Copy expert strategies.',
+  description: 'Trade pop culture markets on Polymarket. Follow entertainment experts profiting from Oscars, Grammys, box office, celebrity events. Copy strategies.',
   keywords: ['pop culture prediction markets', 'oscars markets', 'grammys markets', 'entertainment trading', 'celebrity markets', 'pop culture traders', 'polymarket entertainment'],
   alternates: {
     canonical: 'https://polycopy.app/pop-culture-prediction-markets',

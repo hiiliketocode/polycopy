@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Polymarket vs Other Prediction Markets - Platform Comparison | Polycopy",
-  description: "Compare Polymarket to Kalshi, PredictIt, Manifold, and other prediction markets. Liquidity, fees, markets, and which platform is best for copy trading.",
+  description: "Compare Polymarket to Kalshi, PredictIt, Manifold. Compare liquidity, fees, markets, and which platform is best for copy trading.",
   keywords: [
     'polymarket vs kalshi',
     'polymarket vs predictit',

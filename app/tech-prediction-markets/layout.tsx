@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Tech Prediction Markets: AI, Product Launches & Tech Trading 2026 | Polycopy',
-  description: 'Trade tech prediction markets on Polymarket. Follow tech experts profiting from AI releases, Apple launches, Big Tech earnings, and Silicon Valley events. Copy expert strategies.',
+  description: 'Trade tech markets on Polymarket. Follow tech experts profiting from AI releases, Apple launches, Big Tech earnings, Silicon Valley events. Copy strategies.',
   keywords: ['tech prediction markets', 'AI prediction markets', 'tech trading', 'silicon valley markets', 'AI releases', 'tech traders', 'polymarket tech'],
   alternates: {
     canonical: 'https://polycopy.app/tech-prediction-markets',

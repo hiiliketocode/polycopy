@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Economics Prediction Markets: Fed, Inflation, GDP Trading 2026 | Polycopy',
-  description: 'Trade economics prediction markets on Polymarket. Follow top macro traders profiting from Fed decisions, CPI, unemployment, GDP, and recession markets. Copy expert strategies.',
+  description: 'Trade economics markets on Polymarket. Follow top macro traders profiting from Fed decisions, CPI, unemployment, GDP, recession markets. Copy strategies.',
   keywords: ['economics prediction markets', 'macro trading', 'fed prediction markets', 'inflation trading', 'GDP markets', 'economics traders', 'polymarket economics'],
   alternates: {
     canonical: 'https://polycopy.app/economics-prediction-markets',

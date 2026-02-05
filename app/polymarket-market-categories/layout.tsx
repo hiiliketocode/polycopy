@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Polymarket Market Categories: Complete Guide 2026 | Polycopy',
-  description: 'Explore all Polymarket market categories: Sports, Politics, Crypto, Pop Culture, Business, Economics, Tech, and Weather. Find top traders in each category.',
+  description: 'Explore all Polymarket categories: Sports, Politics, Crypto, Pop Culture, Business, Economics, Tech, Weather. Find top traders in each category.',
   keywords: [
     'polymarket categories',
     'prediction market types',
