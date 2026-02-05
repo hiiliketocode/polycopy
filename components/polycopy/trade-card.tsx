@@ -3010,18 +3010,6 @@ export function TradeCard({
             </Avatar>
             <div className="min-w-0">
               <p className="font-medium text-slate-900 text-sm leading-tight">{trader.name}</p>
-              {fireReasons && fireReasons.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1 mt-1">
-                  {fireReasons.map((reason, idx) => (
-                    <span
-                      key={`${reason}-${idx}`}
-                      className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 text-[10px] font-semibold"
-                    >
-                      🔥 {fireReasonLabel(reason)}
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
           </Link>
           <div className="flex flex-col items-end gap-1 shrink-0">
@@ -3346,18 +3334,6 @@ export function TradeCard({
               }`}>
                 {!hasCurrentPrice ? '--' : `${priceChange > 0 ? '+' : ''}${priceChange.toFixed(1)}%`}
               </p>
-              {fireReasons && fireReasons.length > 0 && (
-                <div className="mt-1 flex flex-wrap justify-center gap-1">
-                  {fireReasons.map((reason, idx) => (
-                    <span
-                      key={`${reason}-${idx}`}
-                      className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 text-[10px] font-semibold"
-                    >
-                      🔥 {fireReasonLabel(reason)}
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -3376,6 +3352,10 @@ export function TradeCard({
             marketSubtype={marketSubtype} // Pass niche from feed
             betStructure={betStructure} // Pass bet_structure from feed
             isAdmin={isAdmin}
+            fireReasons={fireReasons}
+            fireWinRate={fireWinRate}
+            fireRoi={fireRoi}
+            fireConviction={fireConviction}
           />
         )}
 

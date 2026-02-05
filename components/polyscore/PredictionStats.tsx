@@ -17,6 +17,11 @@ interface PredictionStatsProps {
   marketSubtype?: string // niche (market_subtype from DB) - use immediately if provided
   betStructure?: string // bet_structure from DB - use immediately if provided
   isAdmin?: boolean
+  // Fire badge props - shown as icons next to values
+  fireReasons?: string[]
+  fireWinRate?: number | null
+  fireRoi?: number | null
+  fireConviction?: number | null
 }
 
 interface StatsData {
@@ -63,6 +68,10 @@ export function PredictionStats({
   marketSubtype: propMarketSubtype, // niche from feed (already classified)
   betStructure: propBetStructure, // bet_structure from feed (already classified)
   isAdmin = false,
+  fireReasons,
+  fireWinRate,
+  fireRoi,
+  fireConviction,
 }: PredictionStatsProps) {
   const [stats, setStats] = useState<StatsData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -671,13 +680,19 @@ export function PredictionStats({
           }
 
           // Helper to aggregate multiple profiles correctly
-          // FIX: Use total_pnl/total_invested for ROI instead of weight-averaging percentages
+          // FIX: Use total_pnl for BOTH avg_pnl and ROI to ensure sign consistency
           const aggregateProfiles = (profiles: any[]) => {
             const agg = profiles.reduce((acc: any, p: any) => {
               acc.trade_count += p.trade_count
-              acc.resolved_count += p.resolved_count ?? 0
+              // Only count resolved trades that actually have resolved_count > 0
+              const resolvedCount = p.resolved_count ?? 0
+              acc.resolved_count += resolvedCount
               acc.win_weighted += p.win_rate * p.trade_count
-              acc.pnl_weighted += p.avg_pnl_usd * (p.resolved_count ?? p.trade_count)
+              // FIX: Weight pnl by resolved_count only (not trade_count fallback)
+              // This ensures profiles with no resolved trades don't affect the average
+              if (resolvedCount > 0) {
+                acc.pnl_weighted += p.avg_pnl_usd * resolvedCount
+              }
               acc.trade_size_weighted += (p.avg_trade_size_usd ?? 0) * p.trade_count
               acc.window30d = acc.window30d || p.window === '30d'
               
@@ -703,21 +718,28 @@ export function PredictionStats({
               window30d: false 
             })
 
-            // Calculate ROI properly: if we have totals, use them; otherwise estimate
+            // Calculate both metrics using total_pnl to ensure sign consistency
             // Note: ROI is stored as DECIMAL (0.15 = 15%), frontend multiplies by 100 for display
             let roiPct: number
+            let avgPnlUsd: number
+            
             if (agg.has_totals && agg.resolved_invested_usd > 0) {
-              // FIX: Proper ROI = total_pnl / resolved_invested (decimal form)
+              // BEST: Use total_pnl directly for both metrics (guaranteed consistent signs)
               roiPct = agg.total_pnl_usd / agg.resolved_invested_usd
-            } else {
-              // Fallback: estimate using avg PnL and avg trade size
-              // This is imperfect but better than weight-averaging percentages
-              const avgPnl = agg.trade_count > 0 ? agg.pnl_weighted / agg.trade_count : 0
+              // avg_pnl = total_pnl / resolved_count (same numerator as ROI = same sign)
+              avgPnlUsd = agg.resolved_count > 0 ? agg.total_pnl_usd / agg.resolved_count : 0
+            } else if (agg.resolved_count > 0) {
+              // FALLBACK: Use weighted average, but divide by resolved_count (not trade_count!)
+              avgPnlUsd = agg.pnl_weighted / agg.resolved_count
+              // Estimate ROI from avg_pnl / avg_trade_size
               const avgTradeSize = agg.trade_count > 0 && agg.trade_size_weighted > 0 
                 ? agg.trade_size_weighted / agg.trade_count 
                 : null
-              // avgPnl / avgTradeSize gives decimal ROI (0.15 = 15%)
-              roiPct = avgTradeSize && avgTradeSize > 0 ? avgPnl / avgTradeSize : 0
+              roiPct = avgTradeSize && avgTradeSize > 0 ? avgPnlUsd / avgTradeSize : 0
+            } else {
+              // No resolved trades - return zeros
+              avgPnlUsd = 0
+              roiPct = 0
             }
 
             return {
@@ -725,7 +747,7 @@ export function PredictionStats({
               resolved_count: agg.resolved_count,
               win_rate: agg.trade_count > 0 ? agg.win_weighted / agg.trade_count : 0.5,
               roi_pct: roiPct,
-              avg_pnl_usd: agg.trade_count > 0 ? agg.pnl_weighted / agg.trade_count : 0,
+              avg_pnl_usd: avgPnlUsd,
               avg_trade_size_usd: agg.trade_count > 0 && agg.trade_size_weighted > 0 
                 ? agg.trade_size_weighted / agg.trade_count 
                 : null,
@@ -781,13 +803,15 @@ export function PredictionStats({
           tradeProfile,
         })
 
-        // Calculate avg PnL per trade (prefer direct column, fallback to ROI * avg bet size)
-        const profileAvgPnl = profileAvgPnlUsd !== null && profileAvgPnlUsd !== undefined && profileAvgPnlUsd !== 0
+        // Calculate avg PnL per trade
+        // FIX: Use direct value if available (even if 0), only fallback if truly missing
+        // This ensures avg_pnl and roi_pct stay consistent since both derive from total_pnl
+        const profileAvgPnl = profileAvgPnlUsd !== null && profileAvgPnlUsd !== undefined
           ? profileAvgPnlUsd
           : (avgBetSize !== null && avgBetSize !== undefined && avgBetSize > 0 && profileRoiPct !== null && profileRoiPct !== undefined
             ? avgBetSize * profileRoiPct
             : null)
-        const globalAvgPnl = globalAvgPnlUsd !== null && globalAvgPnlUsd !== undefined && globalAvgPnlUsd !== 0
+        const globalAvgPnl = globalAvgPnlUsd !== null && globalAvgPnlUsd !== undefined
           ? globalAvgPnlUsd
           : (globalAvgTradeSizeUsd !== null && globalAvgTradeSizeUsd !== undefined && globalAvgTradeSizeUsd > 0 && globalRoiPct !== null && globalRoiPct !== undefined
             ? globalAvgTradeSizeUsd * globalRoiPct
@@ -996,6 +1020,30 @@ export function PredictionStats({
   const safeWinRateDisplay = (value: number | null | undefined) =>
     value === null || value === undefined ? 'N/A' : `${(value * 100).toFixed(1)}%`
 
+  // Check if a fire reason is present
+  const hasFireReason = (reason: string) => fireReasons?.includes(reason) ?? false
+
+  // Fire icon component for inline display
+  const FireIcon = ({ reason, value }: { reason: string; value?: string }) => {
+    if (!hasFireReason(reason)) return null
+    return (
+      <Tooltip delayDuration={300}>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center text-amber-500 cursor-help ml-1">
+            <span className="text-sm">🔥</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs z-50" side="top" sideOffset={5}>
+          <p className="text-xs font-medium">
+            {reason === 'win_rate' && `High Win Rate${fireWinRate !== null && fireWinRate !== undefined ? `: ${(fireWinRate * 100).toFixed(0)}%` : ''}`}
+            {reason === 'roi' && `High ROI${fireRoi !== null && fireRoi !== undefined ? `: ${(fireRoi * 100).toFixed(0)}%` : ''}`}
+            {reason === 'conviction' && `High Conviction${fireConviction !== null && fireConviction !== undefined ? `: ${fireConviction.toFixed(1)}x` : ''}`}
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    )
+  }
+
   if (!isAdmin) {
     return null
   }
@@ -1130,6 +1178,7 @@ export function PredictionStats({
                   </p>
                 </TooltipContent>
               </Tooltip>
+              <FireIcon reason="win_rate" />
             </div>
             <p className={cn(
               "text-sm md:text-base font-semibold text-slate-900 tabular-nums mb-0.5",
@@ -1146,7 +1195,7 @@ export function PredictionStats({
         )
 
         cards.push(
-          <div key="avg-pnl-usd" className="text-center md:border-l border-slate-200">
+          <div key="avg-pnl" className="text-center md:border-l border-slate-200">
             <div className="flex items-center justify-center gap-1 mb-1">
               <p className="text-xs text-slate-500 font-medium">Ave PnL</p>
               <Tooltip delayDuration={300}>
@@ -1157,10 +1206,11 @@ export function PredictionStats({
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs z-50" side="top" sideOffset={5}>
                   <p className="text-xs">
-                    Average dollar profit per trade for this type.
+                    Average profit per trade ($ and %) for this trade type.
                   </p>
                 </TooltipContent>
               </Tooltip>
+              <FireIcon reason="roi" />
             </div>
             <p className={cn(
               "text-sm md:text-base font-semibold tabular-nums mb-0.5",
@@ -1168,43 +1218,11 @@ export function PredictionStats({
               hasInsufficientData && "opacity-50",
               hasLowSampleSize && "opacity-75"
             )}>
-              {hasInsufficientData ? 'N/A' : formatCurrency(tradeTypeAvgPnl ?? 0)}
+              {hasInsufficientData ? 'N/A' : `${formatCurrency(tradeTypeAvgPnl ?? 0)} (${formatPercent((tradeTypeRoiPct ?? 0) * 100)}%)`}
             </p>
             {hasLowSampleSize && <p className="text-[9px] text-amber-600 font-medium mt-0.5">Low sample</p>}
             <p className="text-[10px] text-slate-500 font-medium">
-              ({formatCurrency(allTradesAvgPnl)} all)
-            </p>
-          </div>
-        )
-
-        cards.push(
-          <div key="avg-pnl-pct" className="text-center md:border-l border-slate-200">
-            <div className="flex items-center justify-center gap-1 mb-1">
-              <p className="text-xs text-slate-500 font-medium">Ave PnL</p>
-              <Tooltip delayDuration={300}>
-                <TooltipTrigger asChild>
-                  <button type="button" className="cursor-help focus:outline-none" aria-label="Average ROI information">
-                    <Info className="h-3 w-3 text-slate-400 hover:text-slate-600 transition-colors" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-xs z-50" side="top" sideOffset={5}>
-                  <p className="text-xs">
-                    Average ROI (%) for this trade type.
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <p className={cn(
-              "text-sm md:text-base font-semibold tabular-nums mb-0.5",
-              (tradeTypeRoiPct ?? 0) >= 0 ? "text-emerald-600" : "text-red-600",
-              hasInsufficientData && "opacity-50",
-              hasLowSampleSize && "opacity-75"
-            )}>
-              {hasInsufficientData ? 'N/A' : `${formatPercent((tradeTypeRoiPct ?? 0) * 100)}%`}
-            </p>
-            {hasLowSampleSize && <p className="text-[9px] text-amber-600 font-medium mt-0.5">Low sample</p>}
-            <p className="text-[10px] text-slate-500 font-medium">
-              ({formatPercent((allTradesRoiPct ?? 0) * 100)}% all)
+              ({formatCurrency(allTradesAvgPnl)} / {formatPercent((allTradesRoiPct ?? 0) * 100)}% all)
             </p>
           </div>
         )
@@ -1226,6 +1244,7 @@ export function PredictionStats({
                   </p>
                 </TooltipContent>
               </Tooltip>
+              <FireIcon reason="conviction" />
             </div>
             <p className={cn(
               "text-sm md:text-base font-semibold text-slate-900 tabular-nums mb-0.5",
