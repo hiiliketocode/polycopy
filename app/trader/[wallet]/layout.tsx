@@ -32,13 +32,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
     if (!trader) {
       return {
-        title: 'Trader Profile | Polycopy',
-        description: 'View trader profile, performance statistics, and trading history on Polycopy.',
+        title: 'Trader Not Found | Polycopy',
+        description: 'This trader profile was not found. Discover other top Polymarket traders on Polycopy.',
         alternates: {
           canonical: `https://polycopy.app/trader/${wallet}`,
         },
         robots: {
-          index: true,
+          index: false,
           follow: true,
         }
       };
@@ -111,13 +111,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   } catch (error) {
     console.error('Error generating trader metadata:', error);
     return {
-      title: 'Trader Profile | Polycopy',
-      description: 'View trader profile, performance statistics, and trading history on Polycopy.',
+      title: 'Trader Not Found | Polycopy',
+      description: 'This trader profile could not be loaded. Discover other top Polymarket traders on Polycopy.',
       alternates: {
         canonical: `https://polycopy.app/trader/${wallet}`,
       },
       robots: {
-        index: true,
+        index: false,
         follow: true,
       },
     };

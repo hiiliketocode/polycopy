@@ -8,9 +8,14 @@ Allow: /
 Disallow: /api/
 Disallow: /admin/
 
-# Disallow authentication pages
+# Disallow authentication and user-specific pages
 Disallow: /login
 Disallow: /onboarding
+Disallow: /profile
+Disallow: /orders
+Disallow: /portfolio
+Disallow: /settings
+Disallow: /trade-execute
 
 # Allow specific important pages
 Allow: /discover

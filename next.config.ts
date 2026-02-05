@@ -28,6 +28,12 @@ const nextConfig: NextConfig = {
         destination: '/:path+',
         permanent: true,
       },
+      // Fix malformed URL
+      {
+        source: '/$',
+        destination: '/',
+        permanent: true,
+      },
       // SEO-friendly redirects for high-volume keywords
       {
         source: '/polymarket-leaderboard',
