@@ -15,6 +15,9 @@ export const metadata: Metadata = {
     'what are prediction markets',
     'prediction market strategies',
   ],
+  alternates: {
+    canonical: 'https://polycopy.app/prediction-markets-for-beginners',
+  },
   openGraph: {
     title: 'Prediction Markets for Beginners: Complete Guide 2026',
     description: 'New to prediction markets? Learn everything you need to know to start trading on Polymarket, from basic concepts to beginner strategies.',

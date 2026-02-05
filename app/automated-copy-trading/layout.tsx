@@ -15,6 +15,9 @@ export const metadata: Metadata = {
     'copy trading speed',
     'trade execution platform',
   ],
+  alternates: {
+    canonical: 'https://polycopy.app/automated-copy-trading',
+  },
   openGraph: {
     title: 'One-Click Copy Trading on Polymarket | Polycopy Premium',
     description: 'Execute trades instantly with one-click. Copy trades directly through Polycopy without manual navigation.',

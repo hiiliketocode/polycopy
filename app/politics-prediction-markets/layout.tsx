@@ -15,6 +15,9 @@ export const metadata: Metadata = {
     'election odds',
     'polymarket elections',
   ],
+  alternates: {
+    canonical: 'https://polycopy.app/politics-prediction-markets',
+  },
   openGraph: {
     title: 'Politics Prediction Markets: Elections & Trading Strategies 2026',
     description: 'Follow the best politics traders on Polymarket. Trade elections, policy outcomes, and political events.',

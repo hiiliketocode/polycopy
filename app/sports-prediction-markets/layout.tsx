@@ -15,6 +15,9 @@ export const metadata: Metadata = {
     'best sports traders',
     'polymarket sports betting',
   ],
+  alternates: {
+    canonical: 'https://polycopy.app/sports-prediction-markets',
+  },
   openGraph: {
     title: 'Sports Prediction Markets: Top Traders & Strategies 2026',
     description: 'Follow the best sports traders on Polymarket. See their NFL, NBA, and soccer strategies in real-time.',

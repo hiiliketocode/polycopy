@@ -15,6 +15,9 @@ export const metadata: Metadata = {
     'follow polymarket traders',
     'best prediction market traders',
   ],
+  alternates: {
+    canonical: 'https://polycopy.app/best-polymarket-traders',
+  },
   openGraph: {
     title: 'Best Polymarket Traders: Top Performers & Leaderboard 2026',
     description: 'See who the most profitable Polymarket traders are. Real-time leaderboard with ROI, P&L, volume, and performance metrics.',

@@ -15,6 +15,9 @@ export const metadata: Metadata = {
     'prediction market categories',
     'polymarket markets overview',
   ],
+  alternates: {
+    canonical: 'https://polycopy.app/polymarket-market-categories',
+  },
   openGraph: {
     title: 'Polymarket Market Categories: Complete Guide 2026',
     description: 'Explore every Polymarket category and find top traders in sports, politics, crypto, and more.',
