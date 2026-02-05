@@ -105,9 +105,9 @@ export default function CopyTradingPage() {
                     <ArrowRight className="w-5 h-5 ml-2" />
                   </Button>
                 </Link>
-                <Link href="/discover">
+                <Link href="/top-traders">
                   <Button size="lg" variant="outline" className="font-semibold text-base px-8 h-12">
-                    Browse Traders
+                    Browse Top Traders
                   </Button>
                 </Link>
               </div>
@@ -175,7 +175,6 @@ export default function CopyTradingPage() {
                 </div>
               </div>
 
-              {/* Right: Explanation */}
               <div className="order-1 md:order-2">
                 <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-6">
                   Think of it like Twitter for trading
@@ -189,6 +188,9 @@ export default function CopyTradingPage() {
                   </p>
                   <p className="text-lg leading-relaxed">
                     <strong>You maintain agency.</strong> You're not blindly following anyone - you're using their trades as informed signals to make better decisions.
+                  </p>
+                  <p className="text-base text-slate-600 mt-4">
+                    New to copy trading? Check out our <Link href="/how-to-copy-trade-polymarket" className="text-polycopy-yellow hover:underline font-medium">complete beginner's guide</Link>.
                   </p>
                 </div>
               </div>

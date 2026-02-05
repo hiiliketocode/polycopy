@@ -48,3 +48,13 @@ top5_ml_full.csv
 
 # Cursor configuration (contains secrets)
 .cursor/
+
+# Google Cloud credentials (NEVER commit these)
+**/polycopy-key.json
+**/*-key.json
+**/*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!vercel.json
+!**/supabase/**/*.json

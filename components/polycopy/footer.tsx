@@ -16,14 +16,23 @@ export function Footer() {
             <Link href="/pricing" className="text-sm hover:text-white transition-colors">
               Pricing
             </Link>
+            <Link href="/polymarket-trading-strategies" className="text-sm hover:text-white transition-colors">
+              Strategies
+            </Link>
+            <Link href="/how-to-copy-trade-polymarket" className="text-sm hover:text-white transition-colors">
+              How-To Guide
+            </Link>
+            <Link href="/polymarket-vs-other-platforms" className="text-sm hover:text-white transition-colors">
+              Platform Compare
+            </Link>
             <Link href="/faq" className="text-sm hover:text-white transition-colors">
               FAQ
             </Link>
             <Link href="/terms" className="text-sm hover:text-white transition-colors">
-              Terms of Service
+              Terms
             </Link>
             <Link href="/privacy" className="text-sm hover:text-white transition-colors">
-              Privacy Policy
+              Privacy
             </Link>
             <a
               href="https://x.com/polycopyapp"
