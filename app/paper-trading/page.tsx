@@ -42,6 +42,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -180,6 +181,10 @@ interface MultiPeriodResult {
 }
 
 export default function PaperTradingPage() {
+  // Admin access control
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  
   const [result, setResult] = useState<SimulationResult | null>(null);
   const [multiPeriodResult, setMultiPeriodResult] = useState<MultiPeriodResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -190,6 +195,36 @@ export default function PaperTradingPage() {
   const [simMode, setSimMode] = useState<SimMode>('backtest');
   const [durationDays, setDurationDays] = useState('4');
   const [initialCapital, setInitialCapital] = useState('1000');
+  
+  // Check admin access on mount
+  useEffect(() => {
+    const checkAdminAccess = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          setIsAdmin(false);
+          setAuthLoading(false);
+          return;
+        }
+        
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('is_admin')
+          .eq('id', user.id)
+          .maybeSingle();
+        
+        setIsAdmin(Boolean(profile?.is_admin && !error));
+      } catch (err) {
+        console.error('[PaperTrading] Failed to check admin status:', err);
+        setIsAdmin(false);
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+    
+    checkAdminAccess();
+  }, []);
   
   // Multi-period config
   const [numPeriods, setNumPeriods] = useState('4');
@@ -391,6 +426,42 @@ export default function PaperTradingPage() {
   
   // Get selected portfolio
   const selectedPortfolio = result?.portfolios?.[selectedStrategy];
+  
+  // Show loading state while checking auth
+  if (authLoading) {
+    return (
+      <>
+        <Navigation />
+        <main className="min-h-screen bg-slate-50 pt-16 pb-20">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="flex items-center justify-center min-h-[400px]">
+              <RefreshCw className="w-8 h-8 animate-spin text-slate-400" />
+            </div>
+          </div>
+        </main>
+      </>
+    );
+  }
+  
+  // Show access denied if not admin
+  if (!isAdmin) {
+    return (
+      <>
+        <Navigation />
+        <main className="min-h-screen bg-slate-50 pt-16 pb-20">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+              <AlertCircle className="w-16 h-16 text-red-400 mb-4" />
+              <h1 className="text-2xl font-bold text-slate-900 mb-2">Access Denied</h1>
+              <p className="text-slate-600 max-w-md">
+                Paper trading is only available to admin users. Please log in with an admin account to access this feature.
+              </p>
+            </div>
+          </div>
+        </main>
+      </>
+    );
+  }
   
   return (
     <>
