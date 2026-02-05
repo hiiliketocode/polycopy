@@ -396,6 +396,23 @@ export async function GET(request: Request) {
 
     console.log(`[fire-feed] Summary: ${totalTradesFetched} total trades fetched, ${totalTradesAfterFilter} after 30-day filter`);
     console.log(`[fire-feed] Fetched trades for ${tradesByWallet.size} traders`);
+
+    // 4. Filter trades based on FIRE criteria
+    const fireTrades: any[] = [];
+    const debugStats = {
+      tradersWithoutStats: 0,
+      tradesChecked: 0,
+      tradesPassed: 0,
+      passedByWinRate: 0,
+      passedByRoi: 0,
+      passedByConviction: 0,
+      tradesWithNullWinRate: 0,
+      tradesWithNullRoi: 0,
+      tradesWithNullConviction: 0,
+      tradesWithAllNull: 0,
+      sampleRejectedTrade: null as any,
+      summary: null as any,
+    };
     
     // Add summary to debug stats (before filtering loop updates tradersWithoutStats)
     debugStats.summary = {
@@ -421,22 +438,6 @@ export async function GET(request: Request) {
       console.warn(`  - All trades are SELL (not BUY)`);
       console.warn(`  - Timestamp format mismatch`);
     }
-
-    // 4. Filter trades based on FIRE criteria
-    const fireTrades: any[] = [];
-    const debugStats = {
-      tradersWithoutStats: 0,
-      tradesChecked: 0,
-      tradesPassed: 0,
-      passedByWinRate: 0,
-      passedByRoi: 0,
-      passedByConviction: 0,
-      tradesWithNullWinRate: 0,
-      tradesWithNullRoi: 0,
-      tradesWithNullConviction: 0,
-      tradesWithAllNull: 0,
-      sampleRejectedTrade: null as any,
-    };
     
     console.log(`[fire-feed] Starting to filter ${Array.from(tradesByWallet.values()).reduce((sum, t) => sum + t.length, 0)} trades through thresholds...`);
     
