@@ -235,52 +235,128 @@ export async function GET(request: NextRequest) {
       strategies,
     });
     
-    // Fetch historical trades from top5_trades_with_markets
-    // This table contains trades from top traders with market data already joined
-    console.log(`[paper-trading] Fetching trades from ${start.toISOString()} to ${end.toISOString()}`);
+    // Fetch top traders from leaderboard stats
+    console.log(`[paper-trading] Fetching top traders for backtesting...`);
     
-    const { data: trades, error: tradesError } = await supabase
-      .from('top5_trades_with_markets')
-      .select('*')
-      .gte('timestamp', start.toISOString())
-      .lte('timestamp', end.toISOString())
-      .eq('side', 'BUY')
-      .order('timestamp', { ascending: true })
-      .limit(3000);
+    // First try with filters, fallback to just getting any traders
+    let topTraders: { wallet_address: string }[] = [];
     
-    if (tradesError) {
-      console.error('[paper-trading] Error fetching trades:', tradesError);
-      return NextResponse.json({ 
-        error: 'Failed to fetch trades', 
-        details: tradesError.message 
-      }, { status: 500 });
+    const { data: filteredTraders, error: filteredError } = await supabase
+      .from('trader_global_stats')
+      .select('wallet_address')
+      .gte('l_total_roi_pct', 5)   // At least 5% ROI (relaxed)
+      .order('l_total_roi_pct', { ascending: false })
+      .limit(30);
+    
+    if (filteredError) {
+      console.error('[paper-trading] Error fetching filtered traders:', filteredError);
     }
     
-    if (!trades || trades.length === 0) {
-      // If no trades found, try a wider date range (last 30 days)
-      console.log('[paper-trading] No trades in date range, trying last 30 days...');
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    if (filteredTraders && filteredTraders.length > 0) {
+      topTraders = filteredTraders;
+    } else {
+      // Fallback: get any traders from the stats table
+      console.log('[paper-trading] No filtered traders, fetching any available...');
+      const { data: anyTraders, error: anyError } = await supabase
+        .from('trader_global_stats')
+        .select('wallet_address')
+        .limit(30);
       
-      const { data: recentTrades, error: recentError } = await supabase
-        .from('top5_trades_with_markets')
-        .select('*')
-        .gte('timestamp', thirtyDaysAgo.toISOString())
-        .eq('side', 'BUY')
-        .order('timestamp', { ascending: true })
-        .limit(3000);
+      if (anyError) {
+        console.error('[paper-trading] Error fetching any traders:', anyError);
+        return NextResponse.json({ 
+          error: 'Failed to fetch traders', 
+          details: anyError.message 
+        }, { status: 500 });
+      }
       
-      if (recentError || !recentTrades || recentTrades.length === 0) {
+      topTraders = anyTraders || [];
+    }
+    
+    // If still no traders, use hardcoded list of known active traders
+    if (topTraders.length === 0) {
+      console.log('[paper-trading] No traders in stats table, using known wallets...');
+      topTraders = [
+        { wallet_address: '0xea8f98624311923b566af3a11b85b53b2be862a9' },
+        { wallet_address: '0xf247584e41117bbbe4cc06e4d2c95741792a5216' },
+        { wallet_address: '0x38b408789fdb584782a5d521e794c69b150527e4' },
+        { wallet_address: '0x7e279561b5766f199a34f596da04d9c3783e178d' },
+      ];
+    }
+    
+    console.log(`[paper-trading] Using ${topTraders.length} traders for backtesting`);
+    
+    // Fetch recent trades from Polymarket API for each trader
+    const allTrades: any[] = [];
+    const fetchPromises = topTraders.map(async (trader) => {
+      try {
+        const response = await fetch(
+          `https://data-api.polymarket.com/trades?limit=50&user=${trader.wallet_address}`,
+          { 
+            cache: 'no-store',
+            headers: { 'Accept': 'application/json' }
+          }
+        );
+        
+        if (!response.ok) return [];
+        
+        const walletTrades = await response.json();
+        return walletTrades.map((trade: any) => ({
+          ...trade,
+          wallet_address: trader.wallet_address,
+          // Normalize timestamp
+          timestamp: trade.timestamp || trade.matchTime || trade.created_at,
+        }));
+      } catch (error) {
+        console.warn(`[paper-trading] Error fetching trades for ${trader.wallet_address}:`, error);
+        return [];
+      }
+    });
+    
+    const tradeResults = await Promise.all(fetchPromises);
+    tradeResults.forEach(trades => allTrades.push(...trades));
+    
+    // Helper to convert timestamp (could be Unix seconds or ISO string)
+    const getTradeTimeMs = (t: any): number => {
+      const ts = t.timestamp;
+      // If it's a number less than year 3000 in seconds, it's Unix seconds
+      if (typeof ts === 'number' && ts < 32503680000) {
+        return ts * 1000; // Convert seconds to milliseconds
+      }
+      // Otherwise try to parse as date string or milliseconds
+      return new Date(ts).getTime();
+    };
+    
+    // Filter to BUY trades within the date range and sort by timestamp
+    const trades = allTrades
+      .filter(t => {
+        const tradeTime = getTradeTimeMs(t);
+        return t.side === 'BUY' && tradeTime >= start.getTime() && tradeTime <= end.getTime();
+      })
+      .sort((a, b) => getTradeTimeMs(a) - getTradeTimeMs(b));
+    
+    console.log(`[paper-trading] Found ${trades.length} BUY trades in date range (${allTrades.length} total fetched)`);
+    
+    if (trades.length === 0) {
+      // If no trades in date range, use all recent BUY trades
+      console.log('[paper-trading] No trades in date range, using all BUY trades...');
+      
+      const recentTrades = allTrades
+        .filter(t => t.side === 'BUY')
+        .sort((a, b) => getTradeTimeMs(a) - getTradeTimeMs(b));
+      
+      if (recentTrades.length === 0) {
         return NextResponse.json({ 
           error: 'No trade data available', 
-          details: 'No trades found in the top5_trades_with_markets table for the specified period or last 30 days. Please ensure the data pipeline is running.'
+          details: `Fetched ${allTrades.length} total trades but none were BUY trades in the date range. Try again later.`
         }, { status: 404 });
       }
       
-      // Use the most recent trades, adjusting the simulation window
-      (trades as any).push(...recentTrades);
-      console.log(`[paper-trading] Found ${recentTrades.length} trades from expanded date range`);
+      trades.push(...recentTrades);
+      console.log(`[paper-trading] Using ${recentTrades.length} recent BUY trades instead`);
     }
+    
+    console.log(`[paper-trading] Loaded ${trades.length} trades for backtesting`);
     
     console.log(`[paper-trading] Loaded ${trades?.length || 0} historical trades`);
     state.logs.push(`[BACKTEST] Loaded ${trades?.length || 0} historical trades`);
