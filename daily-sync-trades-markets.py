@@ -340,11 +340,13 @@ def classify_market(market: Dict) -> Dict[str, Optional[str]]:
     tags = market.get('tags', [])
     
     # Normalize tags - filter out 'none', 'null', empty values
+    # BigQuery JSON columns come as strings, need to parse
     tag_texts = []
     if isinstance(tags, list):
         tag_texts = [str(t).lower().strip() for t in tags if t and str(t).lower().strip() not in ['none', 'null', '']]
     elif isinstance(tags, str):
         try:
+            # Try parsing as JSON first (BigQuery returns JSON as string)
             if tags.strip().startswith('[') or tags.strip().startswith('{'):
                 tags_parsed = json.loads(tags)
                 if isinstance(tags_parsed, list):
@@ -352,10 +354,17 @@ def classify_market(market: Dict) -> Dict[str, Optional[str]]:
                 elif isinstance(tags_parsed, dict):
                     tag_texts = [str(v).lower().strip() for v in tags_parsed.values() if v and str(v).lower().strip() not in ['none', 'null', '']]
             else:
+                # Not JSON, treat as single tag
                 tag_lower = tags.lower().strip()
                 if tag_lower not in ['none', 'null', '']:
                     tag_texts = [tag_lower]
+        except json.JSONDecodeError:
+            # If JSON parse fails, try treating as single tag
+            tag_lower = tags.lower().strip()
+            if tag_lower not in ['none', 'null', '']:
+                tag_texts = [tag_lower]
         except:
+            # Fallback: treat as single tag
             tag_lower = tags.lower().strip()
             if tag_lower not in ['none', 'null', '']:
                 tag_texts = [tag_lower]
@@ -367,24 +376,25 @@ def classify_market(market: Dict) -> Dict[str, Optional[str]]:
     tag_lower_list = [t.lower() for t in tag_texts]
     
     # Esports tags (check BEFORE sports since esports is more specific)
-    esports_tags = ['esports', 'gaming', 'league', 'tournament', 'video game', 'counter-strike', 'cs:', 'honor of kings', 'dota', 'lol', 'league of legends']
-    esports_title_patterns = ['counter-strike', 'cs:', 'honor of kings', 'dota', 'lol', 'league of legends', 'bo3', 'bo5', 'bo7', 'game 1', 'game 2', 'game 3']
+    # Expanded based on audit findings
+    esports_tags = ['esports', 'gaming', 'league', 'tournament', 'video game', 'counter-strike', 'cs:', 'cs2', 'honor of kings', 'dota', 'lol', 'league of legends', 'valorant', 'starcraft', 'starcraft 2', 'mobile legends', 'rainbow six']
+    esports_title_patterns = ['counter-strike', 'cs:', 'cs2', 'honor of kings', 'dota', 'lol', 'league of legends', 'valorant', 'bo3', 'bo5', 'bo7', 'game 1', 'game 2', 'game 3', 'map 1', 'map 2']
     if any(est in tag_lower_list for est in esports_tags) or any(est in market_text for est in esports_tags) or any(pattern in title.lower() for pattern in esports_title_patterns):
         market_type = 'ESPORTS'
-    # Sports tags and title patterns
-    elif any(st in tag_lower_list for st in ['sport', 'sports', 'nba', 'nfl', 'nhl', 'mlb', 'soccer', 'football', 'basketball', 'tennis', 'golf', 'baseball', 'hockey']) or any(st in market_text for st in ['sport', 'sports', 'nba', 'nfl', 'nhl', 'mlb', 'soccer', 'football', 'basketball', 'tennis', 'golf', 'baseball', 'hockey']) or any(pattern in title.lower() for pattern in [' vs ', ' vs. ', 'fc', 'fc vs', 'o/u', 'over/under', 'both teams to score', 'draw', 'league', 'championship', 'premier league', 'ligue 1', 'serie a', 'bundesliga']):
+    # Sports tags and title patterns - expanded based on audit
+    elif any(st in tag_lower_list for st in ['sport', 'sports', 'nba', 'nfl', 'nhl', 'mlb', 'soccer', 'football', 'basketball', 'tennis', 'golf', 'baseball', 'hockey', 'games']) or any(st in market_text for st in ['sport', 'sports', 'nba', 'nfl', 'nhl', 'mlb', 'soccer', 'football', 'basketball', 'tennis', 'golf', 'baseball', 'hockey']) or any(pattern in title.lower() for pattern in [' vs ', ' vs. ', 'fc', 'fc vs', 'o/u', 'over/under', 'both teams to score', 'draw', 'league', 'championship', 'premier league', 'ligue 1', 'serie a', 'bundesliga', 'super bowl', 'nba finals', 'nfl week']):
         market_type = 'SPORTS'
-    # Crypto tags
-    elif any(ct in tag_lower_list for ct in ['crypto', 'bitcoin', 'ethereum', 'btc', 'eth', 'blockchain', 'cryptocurrency']) or any(ct in market_text for ct in ['crypto', 'bitcoin', 'ethereum', 'btc', 'eth', 'blockchain']):
+    # Crypto tags - expanded based on audit
+    elif any(ct in tag_lower_list for ct in ['crypto', 'crypto prices', 'bitcoin', 'ethereum', 'btc', 'eth', 'blockchain', 'cryptocurrency', 'xrp', 'ripple', 'solana', 'dogecoin', 'up or down', '15m', '4h', '1h', 'neg risk', 'today 🚀', 'weekly', 'multi strikes']) or any(ct in market_text for ct in ['crypto', 'crypto prices', 'bitcoin', 'ethereum', 'btc', 'eth', 'blockchain', 'xrp', 'ripple', 'solana', 'dogecoin']):
         market_type = 'CRYPTO'
-    # Politics tags
-    elif any(pt in tag_lower_list for pt in ['politics', 'election', 'president', 'congress', 'senate', 'political']) or any(pt in market_text for pt in ['politics', 'election', 'president', 'congress', 'senate']):
+    # Politics tags - expanded based on audit
+    elif any(pt in tag_lower_list for pt in ['politics', 'election', 'president', 'congress', 'senate', 'political', 'trump', 'mentions', 'uk election', 'us elections', 'inauguration', 'declassification']) or any(pt in market_text for pt in ['politics', 'election', 'president', 'congress', 'senate', 'trump', 'debate', 'inauguration']):
         market_type = 'POLITICS'
-    # Finance/Tech tags (Tech, Big Tech, Finance, Stock Market, Economy, GDP, Forex, etc.)
-    elif any(ft in tag_lower_list for ft in ['finance', 'stock', 'nasdaq', 'sp500', 'dow', 'tech', 'big tech', 'financial', 'trading', 'technology', 'economy', 'gdp', 'forex', 'earnings', 'macro indicators', 'exchange rate', 'dollar', 'currency']) or any(ft in market_text for ft in ['finance', 'stock', 'nasdaq', 'sp500', 'dow', 'trading', 'economy', 'gdp', 'forex', 'earnings']):
+    # Finance/Tech tags - expanded based on audit
+    elif any(ft in tag_lower_list for ft in ['finance', 'stock', 'stocks', 'nasdaq', 'sp500', 'dow', 'tech', 'big tech', 'financial', 'trading', 'technology', 'economy', 'gdp', 'forex', 'earnings', 'macro indicators', 'exchange rate', 'dollar', 'currency', 'equities', 'tsla', 'amzn', 'amazon', 'apple', 'aapl']) or any(ft in market_text for ft in ['finance', 'stock', 'stocks', 'nasdaq', 'sp500', 'dow', 'trading', 'economy', 'gdp', 'forex', 'earnings', 'equities', 'tsla', 'amzn']):
         market_type = 'FINANCE'
-    # Entertainment tags
-    elif any(et in tag_lower_list for et in ['entertainment', 'movie', 'tv', 'music', 'celebrity', 'culture', 'media']) or any(et in market_text for et in ['entertainment', 'movie', 'tv', 'music', 'celebrity']):
+    # Entertainment tags - expanded based on audit
+    elif any(et in tag_lower_list for et in ['entertainment', 'movie', 'movies', 'tv', 'music', 'celebrity', 'culture', 'media', 'reality tv', 'film']) or any(et in market_text for et in ['entertainment', 'movie', 'movies', 'tv', 'music', 'celebrity', 'reality tv', 'film']):
         market_type = 'ENTERTAINMENT'
     # Weather tags
     elif any(wt in tag_lower_list for wt in ['weather', 'climate', 'temperature']) or any(wt in market_text for wt in ['weather', 'climate', 'temperature']):

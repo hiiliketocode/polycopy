@@ -134,6 +134,7 @@ interface TradeCardProps {
   tags?: string[] | null
   marketSubtype?: string // niche (market_subtype from DB)
   betStructure?: string // bet_structure from DB
+  gameTimeInfo?: string // e.g., "Q4 5:30" or "Halftime"
 }
 
 type StatusPhase =
@@ -502,6 +503,7 @@ export function TradeCard({
   tags,
   marketSubtype,
   betStructure,
+  gameTimeInfo,
 }: TradeCardProps) {
   const resolvedDefaultSlippage =
     action === "Buy"
@@ -626,7 +628,11 @@ export function TradeCard({
 
   const cleanedLiveScore = useMemo(() => {
     if (!liveScore) return null
-    const cleaned = liveScore.replace(/^[^A-Za-z0-9]+/, "").trim()
+    // Remove leading non-alphanumeric, and strip any embedded time like " (Q4 5:30)" or " (Halftime)"
+    // since we show gameTimeInfo separately
+    let cleaned = liveScore.replace(/^[^A-Za-z0-9]+/, "").trim()
+    // Remove parenthesized time/status suffix (e.g., "(Q4 5:30)", "(Halftime)", "(OT 2:15)")
+    cleaned = cleaned.replace(/\s*\([^)]*\)\s*$/, "").trim()
     return cleaned.length ? cleaned : null
   }, [liveScore])
 
@@ -895,7 +901,10 @@ export function TradeCard({
 
   const showCombinedScoreBadge =
     showScoreBadge && (statusBadgeVariant === "live" || statusBadgeVariant === "ended")
-  const combinedScoreLabel = statusBadgeVariant === "ended" ? "Ended" : "Live"
+  // Use gameTimeInfo (e.g., "Q4 5:30") if available, otherwise show "Live" or "Ended"
+  const combinedScoreLabel = statusBadgeVariant === "ended" 
+    ? "Ended" 
+    : (gameTimeInfo && gameTimeInfo.trim()) || "Live"
   const combinedScoreBadgeClass = cn(
     badgeBaseClass,
     "relative h-auto min-h-[34px] flex-col gap-0 px-3 pt-1 pb-3 leading-none w-[200px] min-w-[200px]",
@@ -903,11 +912,13 @@ export function TradeCard({
     statusBadgeVariant === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
   )
 
+  // Show event time badge for non-live, non-resolved, non-ended markets
+  // Note: showInfoBadge displays odds for non-sports markets - we want to show BOTH
+  // the resolves time AND the odds info for non-game markets
   const showEventTimeBadge =
     statusBadgeVariant !== "live" &&
     statusBadgeVariant !== "resolved" &&
-    statusBadgeVariant !== "ended" &&
-    !showInfoBadge
+    statusBadgeVariant !== "ended"
   const hasEventTime = Boolean(eventStartTime || eventEndTime)
   const sportsTitleHint = useMemo(() => {
     if (!market) return false

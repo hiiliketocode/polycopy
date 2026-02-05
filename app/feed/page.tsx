@@ -4652,6 +4652,7 @@ export default function FeedPage() {
                           eventEndTime={liveMarket?.endDateIso ?? undefined}
                           eventStatus={liveMarket?.eventStatus ?? undefined}
                           liveStatus={liveMarket?.liveStatus}
+                          gameTimeInfo={liveMarket?.gameTimeInfo ?? undefined}
                           polymarketUrl={
                             (liveMarket?.eventSlug || trade.market.eventSlug)
                               ? `https://polymarket.com/event/${liveMarket?.eventSlug || trade.market.eventSlug}`
