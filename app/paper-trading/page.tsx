@@ -276,8 +276,6 @@ export default function PaperTradingPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'create',
-          sizingMode,
-          betSize: parseInt(betSize),
           initialCapital: parseInt(initialCapital),
           durationDays: parseInt(durationDays),
         }),
