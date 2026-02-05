@@ -1287,8 +1287,28 @@ function DiscoverPageContent() {
         profileImageUrl={profileImageUrl}
       />
       
-      {/* SEO H1 - Visually hidden but present for search engines */}
-      <h1 className="sr-only">Discover Top Polymarket Traders - Copy Trading Leaderboard</h1>
+      {/* SEO H1 - Visually hidden but present for search engines, dynamic based on category */}
+      <h1 className="sr-only">
+        {selectedCategory === 'OVERALL' 
+          ? 'Discover Top Polymarket Traders - Copy Trading Leaderboard'
+          : selectedCategory === 'SPORTS'
+          ? 'Top Sports Prediction Market Traders'
+          : selectedCategory === 'POLITICS'
+          ? 'Top Politics Prediction Market Traders'
+          : selectedCategory === 'CRYPTO'
+          ? 'Top Crypto Prediction Market Traders'
+          : selectedCategory === 'POP_CULTURE'
+          ? 'Top Pop Culture Prediction Market Traders'
+          : selectedCategory === 'FINANCE'
+          ? 'Top Business & Finance Prediction Market Traders'
+          : selectedCategory === 'ECONOMICS'
+          ? 'Top Economics Prediction Market Traders'
+          : selectedCategory === 'TECH'
+          ? 'Top Tech Prediction Market Traders'
+          : selectedCategory === 'WEATHER'
+          ? 'Top Weather Prediction Market Traders'
+          : 'Discover Top Polymarket Traders'}
+      </h1>
       
       {/* Mobile top nav banner (logo only, no page title) */}
       <div className="md:hidden sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-sm">

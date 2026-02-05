@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Crypto Prediction Markets: Bitcoin, ETH & Altcoin Trading 2026 | Polycopy',
+  title: 'Crypto Prediction Markets | Bitcoin & ETH | Polycopy',
   description: 'Trade crypto prediction markets on Polymarket. Follow top crypto traders, see Bitcoin, Ethereum, and altcoin strategies in real-time.',
   keywords: ['crypto prediction markets', 'polymarket crypto', 'bitcoin prediction markets', 'ethereum prediction markets', 'crypto traders polymarket', 'cryptocurrency betting', 'crypto price predictions', 'altcoin markets'],
   alternates: {

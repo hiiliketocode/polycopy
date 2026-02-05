@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Pricing - Free & Premium Copy Trading for Polymarket | Polycopy",
+  title: "Pricing: Free & Premium Plans | Polycopy",
   description: "Polycopy pricing: Free forever with unlimited follows. Premium ($20/mo) adds one-click execution and auto-close. No credit card required.",
   keywords: [
     'polycopy pricing',

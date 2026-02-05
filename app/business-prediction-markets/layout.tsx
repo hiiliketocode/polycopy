@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Business & Finance Prediction Markets | Trade IPOs, M&A, Corporate Events | Polycopy',
+  title: 'Business & Finance Markets | IPOs & M&A | Polycopy',
   description: 'Trade business and finance markets on Polymarket. Follow expert traders profiting from IPOs, mergers, CEO changes, earnings. Copy winning strategies.',
   keywords: ['business prediction markets', 'finance prediction markets', 'IPO trading', 'merger arbitrage', 'corporate events', 'Polymarket business', 'copy trading business', 'follow business traders'],
   alternates: {

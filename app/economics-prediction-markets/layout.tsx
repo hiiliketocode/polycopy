@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Economics Prediction Markets: Fed, Inflation, GDP Trading 2026 | Polycopy',
+  title: 'Economics Markets | Fed, Inflation, GDP | Polycopy',
   description: 'Trade economics markets on Polymarket. Follow top macro traders profiting from Fed decisions, CPI, unemployment, GDP, recession markets. Copy strategies.',
   keywords: ['economics prediction markets', 'macro trading', 'fed prediction markets', 'inflation trading', 'GDP markets', 'economics traders', 'polymarket economics'],
   alternates: {
