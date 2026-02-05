@@ -374,20 +374,20 @@ export async function POST(request: NextRequest) {
 
       if (createResp.status === 401) {
         console.error('[POLY-CLOB] Polymarket L1 auth failed', logPayload)
-        return NextResponse.json(
-          {
-            error: 'Polymarket L1 authentication failed',
-            debugInfo: responseDebugPayload,
-          },
-          { status: 401 }
-        )
+      return NextResponse.json(
+        {
+          error: 'Polymarket L1 authentication failed',
+          // SECURITY: Debug info removed for production
+        },
+        { status: 401 }
+      )
       }
 
       console.error('[POLY-CLOB] Unexpected Polymarket response', logPayload)
       return NextResponse.json(
         {
           error: 'Failed to create/derive Polymarket API credentials',
-          debugInfo: responseDebugPayload,
+          // SECURITY: Debug info removed for production
         },
         { status: 502 }
       )

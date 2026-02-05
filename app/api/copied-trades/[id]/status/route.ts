@@ -67,18 +67,49 @@ export async function GET(
       return NextResponse.json({ error: 'Trade ID is required' }, { status: 400 })
     }
 
-    // Get userId from query params
+    // SECURITY: Get userId - NEVER trust query params for auth
+    // For cron requests, we still need userId from query params BUT we verify ownership via database
     const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
+    const requestedUserId = searchParams.get('userId')
     
-    if (!userId) {
+    if (!requestedUserId) {
       console.error('❌ Missing userId in status request')
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
     }
 
-    // Check if this is a cron job request (bypass auth)
+    // Check if this is a cron job request
     const authHeader = request.headers.get('authorization')
     const isCronRequest = authHeader === `Bearer ${process.env.CRON_SECRET}`
+    
+    // For non-cron requests, verify the authenticated user matches the requested userId
+    let authenticatedUserId: string | null = null
+    if (!isCronRequest) {
+      try {
+        const supabaseAuth = await createAuthClient()
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+        
+        if (!user || authError) {
+          console.error('❌ Authentication required for non-cron requests')
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+        
+        authenticatedUserId = user.id
+        
+        // CRITICAL: Authenticated user MUST match requested userId
+        if (authenticatedUserId !== requestedUserId) {
+          console.error('❌ User ID mismatch - auth user:', authenticatedUserId, 'requested:', requestedUserId)
+          return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
+        }
+      } catch (authErr) {
+        console.error('❌ Auth check failed:', authErr)
+        return NextResponse.json({ error: 'Authentication failed' }, { status: 401 })
+      }
+    } else {
+      console.log('🤖 Cron request authenticated with secret')
+    }
+    
+    // Use the verified userId (for cron, we'll verify ownership via database query)
+    const userId = requestedUserId
     
     // Use service role client to bypass RLS
     const supabase = createServiceClient()
@@ -168,30 +199,6 @@ export async function GET(
     if (trade.trade_method === 'quick') {
       const followerWallet = await resolveTraderWallet(supabase, trade.trader_id)
       walletForStatus = followerWallet ?? trade.trader_wallet
-    }
-
-    // Additional auth check for non-cron requests (optional, ownership already verified)
-    if (!isCronRequest) {
-      try {
-        const supabaseAuth = await createAuthClient()
-        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
-        
-        if (user && user.id !== userId) {
-          // If we can authenticate and the IDs don't match, that's suspicious
-          console.error('❌ User ID mismatch - auth user:', user.id, 'requested:', userId)
-          return NextResponse.json({ error: 'Forbidden - user ID mismatch' }, { status: 403 })
-        }
-        
-        // If auth fails or no user, we already verified ownership above, so continue
-        if (!user) {
-          console.log('ℹ️ No session auth but ownership verified for trade:', id)
-        }
-      } catch (authErr) {
-        // Auth check failed but ownership is verified, so continue
-        console.log('ℹ️ Auth check skipped, ownership verified for trade:', id)
-      }
-    } else {
-      console.log('🤖 Cron request authenticated')
     }
 
     // Rate limit: 200 status checks per hour per user (skip for cron)
