@@ -10,7 +10,28 @@
 -- ============================================================================
 
 CREATE OR REPLACE TABLE `gen-lang-client-0299056258.polycopy_v1.trader_profile_stats` AS
-WITH buy_trades AS (
+-- FIX: Deduplicate markets table to prevent JOIN from multiplying trades
+WITH deduped_markets AS (
+  SELECT 
+    condition_id,
+    status,
+    winning_label,
+    market_subtype,
+    bet_structure,
+    -- Pick the most recent/complete record for each condition_id
+    ROW_NUMBER() OVER (PARTITION BY condition_id ORDER BY 
+      CASE WHEN status = 'closed' THEN 0 ELSE 1 END,  -- Prefer closed markets
+      CASE WHEN winning_label IS NOT NULL THEN 0 ELSE 1 END,  -- Prefer those with winning_label
+      CASE WHEN market_subtype IS NOT NULL THEN 0 ELSE 1 END  -- Prefer classified
+    ) as rn
+  FROM `gen-lang-client-0299056258.polycopy_v1.markets`
+),
+unique_markets AS (
+  SELECT condition_id, status, winning_label, market_subtype, bet_structure
+  FROM deduped_markets
+  WHERE rn = 1
+),
+buy_trades AS (
   SELECT 
     LOWER(TRIM(t.wallet_address)) as wallet_address,
     t.timestamp,
@@ -45,7 +66,7 @@ WITH buy_trades AS (
       ELSE NULL
     END as is_win
   FROM `gen-lang-client-0299056258.polycopy_v1.trades` t
-  LEFT JOIN `gen-lang-client-0299056258.polycopy_v1.markets` m 
+  LEFT JOIN unique_markets m 
     ON t.condition_id = m.condition_id
   WHERE t.side = 'BUY'
     AND t.price IS NOT NULL
