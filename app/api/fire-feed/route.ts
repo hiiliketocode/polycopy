@@ -521,7 +521,12 @@ export async function GET(request: Request) {
       traderNames[trader.wallet.toLowerCase()] = trader.displayName;
     });
 
-    console.log('[FIRE Feed] Debug stats:', debugStats);
+    // Update summary with final stats
+    debugStats.summary.tradersWithoutStats = debugStats.tradersWithoutStats;
+    debugStats.summary.tradesChecked = debugStats.tradesChecked;
+    debugStats.summary.tradesPassed = debugStats.tradesPassed;
+    
+    console.log('[FIRE Feed] Debug stats:', JSON.stringify(debugStats, null, 2));
     console.log(`[FIRE Feed] Filter thresholds: Win Rate ≥${(FIRE_WIN_RATE_THRESHOLD * 100).toFixed(0)}%, ROI ≥${(FIRE_ROI_THRESHOLD * 100).toFixed(0)}%, Conviction ≥${FIRE_CONVICTION_MULTIPLIER_THRESHOLD}x`);
     console.log(`[FIRE Feed] Returning ${fireTrades.length} filtered trades`);
     console.log(`[FIRE Feed] Trades passed by: Win Rate: ${debugStats.passedByWinRate}, ROI: ${debugStats.passedByRoi}, Conviction: ${debugStats.passedByConviction}`);
