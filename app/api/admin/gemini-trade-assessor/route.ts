@@ -9,7 +9,8 @@ import {
 } from '@/lib/gemini/trade-assessment'
 
 // Default to a fast but sharper model; allow override via env
-const MODEL_NAME = process.env.GEMINI_TRADE_MODEL || 'gemini-1.5-flash-001'
+// gemini-2.5-flash is the current balanced model (fast + capable)
+const MODEL_NAME = process.env.GEMINI_TRADE_MODEL || 'gemini-2.5-flash'
 
 type AssessmentRequest = {
   snapshot: TradeAssessmentSnapshot
@@ -133,7 +134,7 @@ export async function POST(request: Request) {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
       generationConfig: {
-        maxOutputTokens: 420,
+        maxOutputTokens: 1024,
         temperature: 0.32,
       },
       systemInstruction: SYSTEM_INSTRUCTION,

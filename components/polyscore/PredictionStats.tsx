@@ -152,11 +152,13 @@ export function PredictionStats({
   }, [price])
 
   // Determine bet structure from title
+  // NOTE: Must match profile_stats structures: YES_NO, STANDARD, OVER_UNDER, SPREAD
   const betStructure = useMemo(() => {
     const titleLower = (marketTitle || '').toLowerCase()
     if (titleLower.includes('over') || titleLower.includes('under') || titleLower.includes('o/u')) return 'OVER_UNDER'
     if (titleLower.includes('spread') || titleLower.includes('handicap')) return 'SPREAD'
-    if (titleLower.includes('will') || titleLower.includes('winner')) return 'WINNER'
+    // "Will X happen?" questions are YES/NO bets
+    if (titleLower.includes('will') || titleLower.includes('winner')) return 'YES_NO'
     return 'STANDARD'
   }, [marketTitle])
 
@@ -543,23 +545,21 @@ export function PredictionStats({
           found_l_win_rate: globalStats?.l_win_rate,
         })
 
-        // Safety check: if averages seem unreasonably high compared to current trade, cap them
-        // This prevents inflated averages from making conviction appear artificially low
-        const MAX_REASONABLE_AVG_MULTIPLIER = 5.0 // Don't let avg be more than 5x current trade
-        const cappedAvgTradeSize = globalAvgTradeSizeUsd && tradeTotal > 0 && globalAvgTradeSizeUsd > tradeTotal * MAX_REASONABLE_AVG_MULTIPLIER
-          ? tradeTotal * MAX_REASONABLE_AVG_MULTIPLIER
-          : globalAvgTradeSizeUsd
-        const cappedAvgPosSize = globalAvgPosSizeUsd && tradeTotal > 0 && globalAvgPosSizeUsd > tradeTotal * MAX_REASONABLE_AVG_MULTIPLIER
-          ? tradeTotal * MAX_REASONABLE_AVG_MULTIPLIER
-          : globalAvgPosSizeUsd
+        // NOTE: Previously we capped averages at 5x current trade size to prevent "artificially low"
+        // conviction scores. This was WRONG - it destroyed data integrity by:
+        // 1. Making conviction inconsistent with avg_pnl and ROI calculations
+        // 2. Hiding the true conviction ratio (which IS meaningful when low)
+        // 
+        // If a whale's avg trade is $4,000 and they make a $148 bet, conviction IS 0.04x and
+        // that's valuable info - it means they're not very committed to this specific trade.
+        // 
+        // The fix for displaying very low values is in formatMultiplier() showing "<0.01x" etc.,
+        // NOT by falsifying the underlying math.
 
         console.log('[PredictionStats] Average size calculation:', {
           tradeTotal,
           globalAvgTradeSizeUsd,
           globalAvgPosSizeUsd,
-          cappedAvgTradeSize,
-          cappedAvgPosSize,
-          wasCapped: globalAvgTradeSizeUsd !== cappedAvgTradeSize || globalAvgPosSizeUsd !== cappedAvgPosSize,
         })
 
         // Waterfall logic: find best matching profile
@@ -856,8 +856,8 @@ export function PredictionStats({
           data_source: dataSource,
           current_market_exposure: currentExposure,
           current_trade_size: tradeTotal,
-          global_L_avg_pos_size_usd: cappedAvgPosSize !== null ? cappedAvgPosSize : undefined,
-          global_L_avg_trade_size_usd: cappedAvgTradeSize !== null ? cappedAvgTradeSize : undefined,
+          global_L_avg_pos_size_usd: globalAvgPosSizeUsd !== null ? globalAvgPosSizeUsd : undefined,
+          global_L_avg_trade_size_usd: globalAvgTradeSizeUsd !== null ? globalAvgTradeSizeUsd : undefined,
           profile_L_avg_trade_size_usd: profileAvgTradeSizeUsd !== null ? profileAvgTradeSizeUsd : undefined,
         }
 
@@ -965,6 +965,8 @@ export function PredictionStats({
 
   const formatMultiplier = (value: number | null | undefined) => {
     if (value === null || value === undefined || !Number.isFinite(value) || value === 0) return 'N/A'
+    // Show "<0.01" for very small positive values instead of "0.00"
+    if (value > 0 && value < 0.01) return '<0.01'
     return value.toFixed(2)
   }
 

@@ -41,11 +41,14 @@ function normalizeTags(rawTags: any): string[] {
 }
 
 // Lightweight bet structure inference (mirrors frontend logic)
+// NOTE: Must match profile_stats structures: YES_NO, STANDARD, OVER_UNDER, SPREAD
 function inferBetStructure(title: string | null | undefined): string | null {
   const t = (title || '').toLowerCase()
   if (t.includes('over') || t.includes('under') || t.includes('o/u')) return 'OVER_UNDER'
   if (t.includes('spread') || t.includes('handicap')) return 'SPREAD'
-  if (t.includes('will') || t.includes('winner')) return 'WINNER'
+  // "Will X happen?" questions are YES/NO bets, not WINNER
+  // "winner" in context of "who will win" is also YES/NO per outcome
+  if (t.includes('will') || t.includes('winner')) return 'YES_NO'
   return 'STANDARD'
 }
 
@@ -107,11 +110,25 @@ async function inferNicheFromTags(tags: string[]): Promise<{ niche: string | nul
   return { niche: null, marketType: null, source: 'no_match' }
 }
 
+// NHL team names for fallback detection (when title doesn't include "nhl" or "hockey")
+const NHL_TEAMS = [
+  'avalanche', 'blackhawks', 'blue jackets', 'blues', 'bruins', 'canadiens',
+  'canucks', 'capitals', 'coyotes', 'devils', 'ducks', 'flames', 'flyers',
+  'golden knights', 'hurricanes', 'islanders', 'jets', 'kings', 'kraken',
+  'lightning', 'maple leafs', 'oilers', 'panthers', 'penguins', 'predators',
+  'rangers', 'red wings', 'sabres', 'senators', 'sharks', 'stars', 'wild'
+]
+
 function fallbackNicheFromTitle(title: string | null | undefined): string {
   const t = (title || '').toLowerCase()
   if (t.includes('tennis')) return 'TENNIS'
   if (t.includes('nba') || t.includes('basketball')) return 'NBA'
   if (t.includes('nfl') || t.includes('football')) return 'NFL'
+  // NHL: check explicit keywords first, then team names
+  if (t.includes('nhl') || t.includes('hockey')) return 'NHL'
+  // Check for NHL team names (e.g., "Hurricanes vs. Rangers")
+  const matchedNhlTeams = NHL_TEAMS.filter(team => t.includes(team))
+  if (matchedNhlTeams.length >= 2) return 'NHL' // Two teams = likely NHL matchup
   if (t.includes('politics') || t.includes('election')) return 'POLITICS'
   if (t.includes('crypto') || t.includes('bitcoin')) return 'CRYPTO'
   return 'OTHER'
@@ -194,6 +211,20 @@ export async function GET(request: Request) {
       // Niche: prefer existing, otherwise infer from tags with service role, then fallback to title
       // Check both market_subtype and final_niche (redundancy for compatibility)
       let finalNiche = (existingMarket.market_subtype || existingMarket.final_niche || '').trim().toUpperCase() || null
+      
+      // Special case: if market is classified as "OTHER", try to re-classify from title
+      // This allows us to fix markets that were previously misclassified
+      const existingNicheIsOther = finalNiche === 'OTHER'
+      if (existingNicheIsOther) {
+        const betterNiche = fallbackNicheFromTitle(existingMarket.title)
+        if (betterNiche && betterNiche !== 'OTHER') {
+          console.log(`[ensureMarket] Re-classifying market from OTHER to ${betterNiche} based on title: "${existingMarket.title}"`)
+          finalNiche = betterNiche
+          updatedFields.market_subtype = finalNiche
+          updatedFields.final_niche = finalNiche
+        }
+      }
+      
       if (!finalNiche && hasTags) {
         const { niche } = await inferNicheFromTags(tags)
         finalNiche = niche || null

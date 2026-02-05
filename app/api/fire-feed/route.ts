@@ -115,12 +115,12 @@ function convictionMultiplierForTrade(trade: any, stats: any): number | null {
   
   if (!avgBetSize || !Number.isFinite(avgBetSize) || avgBetSize <= 0) return null;
   
-  const MAX_REASONABLE_MULTIPLIER = 5.0;
-  const cappedAvgBetSize = avgBetSize > tradeValue * MAX_REASONABLE_MULTIPLIER
-    ? tradeValue * MAX_REASONABLE_MULTIPLIER
-    : avgBetSize;
+  // NOTE: Previously we capped averages at 5x current trade size to prevent "artificially low"
+  // conviction scores. This was REMOVED because it destroyed data integrity - it made conviction
+  // inconsistent with avg_pnl and ROI calculations. A low conviction (e.g., 0.04x) is MEANINGFUL:
+  // it means the trader is making a small bet relative to their normal behavior.
   
-  const conviction = tradeValue / cappedAvgBetSize;
+  const conviction = tradeValue / avgBetSize;
   if (!Number.isFinite(conviction) || conviction <= 0) return null;
   return conviction;
 }
@@ -372,8 +372,9 @@ export async function GET(request: Request) {
           question: trade.title || trade.question || trade.market,
           tx_hash: trade.txHash || trade.tx_hash,
           transactionHash: trade.txHash || trade.tx_hash,
-          token_id: trade.tokenId || trade.token_id,
-          tokenId: trade.tokenId || trade.token_id,
+          token_id: trade.asset || trade.tokenId || trade.token_id,
+          tokenId: trade.asset || trade.tokenId || trade.token_id,
+          asset: trade.asset,
           user: wallet,
           wallet: wallet,
           _followedWallet: wallet,

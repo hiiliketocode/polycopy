@@ -140,12 +140,8 @@ function convictionMultiplierForTrade(trade, stats) {
   
   if (!avgBetSize || !Number.isFinite(avgBetSize) || avgBetSize <= 0) return null;
   
-  const MAX_REASONABLE_MULTIPLIER = 5.0;
-  const cappedAvgBetSize = avgBetSize > tradeValue * MAX_REASONABLE_MULTIPLIER
-    ? tradeValue * MAX_REASONABLE_MULTIPLIER
-    : avgBetSize;
-  
-  const conviction = tradeValue / cappedAvgBetSize;
+  // Use actual average - don't cap at 5x (that was causing data integrity issues)
+  const conviction = tradeValue / avgBetSize;
   
   if (!Number.isFinite(conviction) || conviction <= 0) return null;
   

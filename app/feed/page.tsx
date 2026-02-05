@@ -594,14 +594,13 @@ const convictionMultiplierForTrade = (
   
   if (!avgBetSize || !Number.isFinite(avgBetSize) || avgBetSize <= 0) return null;
   
-  // Safety cap: don't let average be more than 5x current trade
-  // This prevents inflated averages from making conviction appear artificially low
-  const MAX_REASONABLE_MULTIPLIER = 5.0;
-  const cappedAvgBetSize = avgBetSize > tradeValue * MAX_REASONABLE_MULTIPLIER
-    ? tradeValue * MAX_REASONABLE_MULTIPLIER
-    : avgBetSize;
+  // NOTE: Previously we capped averages at 5x current trade size to prevent "artificially low"
+  // conviction scores. This was REMOVED because it destroyed data integrity - it made conviction
+  // inconsistent with avg_pnl and ROI calculations. A low conviction (e.g., 0.04x) is MEANINGFUL:
+  // it means the trader is making a small bet relative to their normal behavior.
+  // The fix for displaying very low values is in formatMultiplier() showing "<0.01x" etc.
   
-  return tradeValue / cappedAvgBetSize;
+  return tradeValue / avgBetSize;
 };
 
 const winRateForTradeType = (
