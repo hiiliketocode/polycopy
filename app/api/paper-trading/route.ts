@@ -90,6 +90,14 @@ function simulateValueScore(trade: any): { valueScore: number; edge: number; pol
 }
 
 export async function GET(request: NextRequest) {
+  // Check for required configuration
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return NextResponse.json({ 
+      error: 'Server configuration error', 
+      details: 'Missing Supabase environment variables. Please ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.'
+    }, { status: 500 });
+  }
+  
   const searchParams = request.nextUrl.searchParams;
   
   // Parse config from query params
@@ -227,22 +235,13 @@ export async function GET(request: NextRequest) {
       strategies,
     });
     
-    // Fetch historical trades from the trades table (broader than just top5)
-    // This includes all trades from tracked wallets
+    // Fetch historical trades from top5_trades_with_markets
+    // This table contains trades from top traders with market data already joined
+    console.log(`[paper-trading] Fetching trades from ${start.toISOString()} to ${end.toISOString()}`);
+    
     const { data: trades, error: tradesError } = await supabase
-      .from('trades')
-      .select(`
-        *,
-        markets!left (
-          condition_id,
-          winning_side,
-          resolved_outcome,
-          closed,
-          title,
-          tags,
-          category
-        )
-      `)
+      .from('top5_trades_with_markets')
+      .select('*')
       .gte('timestamp', start.toISOString())
       .lte('timestamp', end.toISOString())
       .eq('side', 'BUY')
@@ -251,27 +250,36 @@ export async function GET(request: NextRequest) {
     
     if (tradesError) {
       console.error('[paper-trading] Error fetching trades:', tradesError);
+      return NextResponse.json({ 
+        error: 'Failed to fetch trades', 
+        details: tradesError.message 
+      }, { status: 500 });
+    }
+    
+    if (!trades || trades.length === 0) {
+      // If no trades found, try a wider date range (last 30 days)
+      console.log('[paper-trading] No trades in date range, trying last 30 days...');
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       
-      // Fallback to top5 table if trades table fails
-      console.log('[paper-trading] Falling back to top5_trades_with_markets...');
-      const { data: fallbackTrades, error: fallbackError } = await supabase
+      const { data: recentTrades, error: recentError } = await supabase
         .from('top5_trades_with_markets')
         .select('*')
-        .gte('timestamp', start.toISOString())
-        .lte('timestamp', end.toISOString())
+        .gte('timestamp', thirtyDaysAgo.toISOString())
         .eq('side', 'BUY')
         .order('timestamp', { ascending: true })
-        .limit(2000);
+        .limit(3000);
       
-      if (fallbackError) {
+      if (recentError || !recentTrades || recentTrades.length === 0) {
         return NextResponse.json({ 
-          error: 'Failed to fetch trades', 
-          details: fallbackError.message 
-        }, { status: 500 });
+          error: 'No trade data available', 
+          details: 'No trades found in the top5_trades_with_markets table for the specified period or last 30 days. Please ensure the data pipeline is running.'
+        }, { status: 404 });
       }
       
-      // Use fallback trades
-      (trades as any) = fallbackTrades;
+      // Use the most recent trades, adjusting the simulation window
+      (trades as any).push(...recentTrades);
+      console.log(`[paper-trading] Found ${recentTrades.length} trades from expanded date range`);
     }
     
     console.log(`[paper-trading] Loaded ${trades?.length || 0} historical trades`);
