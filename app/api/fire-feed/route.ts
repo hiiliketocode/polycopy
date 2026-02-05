@@ -278,18 +278,23 @@ export async function GET(request: Request) {
         );
 
         if (!response.ok) {
-          if (index < 3) {
-            console.warn(`[fire-feed] Failed to fetch trades for ${wallet.slice(0, 10)}...: ${response.status}`);
+          const errorText = await response.text().catch(() => 'Unknown error');
+          if (index < 5) {
+            console.warn(`[fire-feed] Failed to fetch trades for ${wallet.slice(0, 10)}...: ${response.status}`, errorText.slice(0, 200));
           }
           return [];
         }
 
         const trades = await response.json();
         if (!Array.isArray(trades)) {
-          if (index < 3) {
-            console.warn(`[fire-feed] Non-array response for ${wallet.slice(0, 10)}...:`, typeof trades);
+          if (index < 5) {
+            console.warn(`[fire-feed] Non-array response for ${wallet.slice(0, 10)}...:`, typeof trades, trades);
           }
           return [];
+        }
+        
+        if (trades.length === 0 && index < 5) {
+          console.log(`[fire-feed] No trades returned from Polymarket API for ${wallet.slice(0, 10)}...`);
         }
 
         totalTradesFetched += trades.length;
@@ -354,6 +359,15 @@ export async function GET(request: Request) {
     console.log(`[fire-feed] Summary: ${totalTradesFetched} total trades fetched, ${totalTradesAfterFilter} after 30-day filter`);
     console.log(`[fire-feed] Fetched trades for ${tradesByWallet.size} traders`);
     
+    // Add summary to debug stats (before filtering loop updates tradersWithoutStats)
+    debugStats.summary = {
+      tradersChecked: wallets.length,
+      tradersWithStats: statsMap.size,
+      totalTradesFetched,
+      totalTradesAfterFilter,
+      tradersWithTrades: tradesByWallet.size,
+    };
+    
     if (tradesByWallet.size === 0) {
       console.warn('[fire-feed] ⚠️  No trades found after filtering!');
       console.warn(`[fire-feed] Checked ${wallets.length} traders, fetched ${totalTradesFetched} trades`);
@@ -361,6 +375,7 @@ export async function GET(request: Request) {
       console.warn(`  - All trades are older than 30 days`);
       console.warn(`  - All trades are SELL (not BUY)`);
       console.warn(`  - Timestamp format mismatch`);
+      console.warn(`  - Polymarket API returning empty results`);
     }
 
     // 4. Filter trades based on FIRE criteria
@@ -529,7 +544,7 @@ export async function GET(request: Request) {
       trades: fireTrades,
       traders: traderNames,
       stats: Object.fromEntries(statsMap),
-      debug: process.env.NODE_ENV === 'development' ? debugStats : undefined,
+      debug: debugStats, // Always include debug info
     });
   } catch (error: any) {
     console.error('Error fetching FIRE feed:', error);
