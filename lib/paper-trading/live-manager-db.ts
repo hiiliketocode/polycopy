@@ -330,6 +330,8 @@ export async function loadSimulationState(
         slippagePct: sim.slippage_pct,
         cooldownHours: sim.cooldown_hours,
         strategies: sim.strategies as StrategyType[],
+        controlledPositionUsd: 50,  // Deprecated - edge-based sizing used
+        useHistoricalData: false,   // Live mode uses real-time data
       },
       portfolios,
       isActive: sim.status === 'active' && new Date(sim.ends_at).getTime() > Date.now(),
