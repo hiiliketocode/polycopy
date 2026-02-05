@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Pricing - Free & Premium Copy Trading for Polymarket | Polycopy",
-  description: "Polycopy pricing: Start free forever with unlimited follows and full feed access. Upgrade to Premium ($20/mo) for one-click execution and auto-close. No credit card required to start.",
+  description: "Polycopy pricing: Free forever with unlimited follows. Premium ($20/mo) adds one-click execution and auto-close. No credit card required.",
   keywords: [
     'polycopy pricing',
     'polymarket copy trading cost',

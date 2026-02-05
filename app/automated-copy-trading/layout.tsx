@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'One-Click Copy Trading on Polymarket | Polycopy Premium',
-  description: 'Copy trades instantly with one-click execution. Polycopy Premium users can execute trades directly through the platform - no manual navigation to Polymarket required.',
+  description: 'Copy trades instantly with one-click execution. Polycopy Premium lets you execute trades directly without manual navigation to Polymarket.',
   keywords: [
     'one-click copy trading',
     'polycopy premium',

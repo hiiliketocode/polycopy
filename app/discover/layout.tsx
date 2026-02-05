@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Discover Top Polymarket Traders | Copy Trading Leaderboard",
-  description: "Discover and follow the best Polymarket traders. View real-time leaderboards, track performance metrics, and copy winning prediction market strategies. Browse by category: Sports, Politics, Crypto, and more.",
+  description: "Discover top Polymarket traders. Real-time leaderboards, performance metrics, and copy trading strategies. Browse by category: Sports, Politics, Crypto.",
   keywords: [
     'Polymarket traders',
     'Polymarket leaderboard',

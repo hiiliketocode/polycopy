@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Best Polymarket Traders: Top Performers & Leaderboard 2026 | Polycopy',
-  description: 'Discover the best Polymarket traders ranked by ROI, P&L, and win rate. Follow profitable traders, see their strategies, and learn from the top performers.',
+  description: 'Best Polymarket traders ranked by ROI, P&L, and win rate. Follow profitable traders, see their strategies, learn from top performers.',
   keywords: [
     'best polymarket traders',
     'top polymarket traders',

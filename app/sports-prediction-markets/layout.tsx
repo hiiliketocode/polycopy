@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Sports Prediction Markets: Top Traders & Betting Strategies 2026 | Polycopy',
-  description: 'Trade sports prediction markets on Polymarket. Follow top sports traders, see NFL, NBA, soccer strategies, and copy profitable sports bets in real-time.',
+  description: 'Trade sports prediction markets on Polymarket. Follow top sports traders, see NFL, NBA, soccer strategies, and copy profitable sports bets.',
   keywords: [
     'sports prediction markets',
     'polymarket sports',

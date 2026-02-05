@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Politics Prediction Markets: Elections & Political Betting 2026 | Polycopy',
-  description: 'Trade political prediction markets on Polymarket. Follow top politics traders, election forecasts, and copy profitable political betting strategies.',
+  description: 'Trade political prediction markets on Polymarket. Follow top politics traders, election forecasts, copy profitable political strategies.',
   keywords: [
     'politics prediction markets',
     'polymarket politics',
