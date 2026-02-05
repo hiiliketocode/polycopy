@@ -33,7 +33,10 @@ function normalizeRoiValue(raw: unknown): number | null {
   if (raw === null || raw === undefined) return null;
   const value = Number(raw);
   if (!Number.isFinite(value)) return null;
-  if (Math.abs(value) > 10) return value / 100;
+  // ROI values from the database are stored as percentages (e.g., 13.87 means 13.87%)
+  // Convert to decimal form (0.1387) for consistent threshold comparison
+  // Values close to 0 (-1 to 1) might already be decimals, so only convert larger values
+  if (Math.abs(value) > 1) return value / 100;
   return value;
 }
 
@@ -69,7 +72,8 @@ function winRateForTradeType(stats: any, category?: string): number | null {
       return niche === normalizedCategory || niche.includes(normalizedCategory) || normalizedCategory.includes(niche);
     });
     if (matchingProfile) {
-      const profileWinRate = normalizeWinRateValue(matchingProfile?.d30_win_rate) ?? normalizeWinRateValue(matchingProfile?.win_rate);
+      // Use actual column names: d30_win_rate, l_win_rate
+      const profileWinRate = normalizeWinRateValue(matchingProfile?.d30_win_rate) ?? normalizeWinRateValue(matchingProfile?.l_win_rate);
       if (profileWinRate !== null) return profileWinRate;
     }
   }
@@ -85,7 +89,8 @@ function roiForTradeType(stats: any, category?: string): number | null {
       if (!niche) return false;
       return niche === normalizedCategory || niche.includes(normalizedCategory);
     });
-    const roi = match?.d30_roi_pct ?? match?.roi_pct ?? null;
+    // Use actual column names: d30_total_roi_pct, l_total_roi_pct
+    const roi = match?.d30_total_roi_pct ?? match?.l_total_roi_pct ?? null;
     if (roi !== null && roi !== undefined) return normalizeRoiValue(roi);
   }
   if (stats.globalRoiPct !== null && stats.globalRoiPct !== undefined) {
@@ -168,18 +173,35 @@ export async function GET(request: Request) {
     console.log(`[fire-feed] Processing ${wallets.length} wallets`);
 
     // 2. Fetch stats (but don't fail if none found)
+    // NOTE: Column names must match actual database schema
     const [globalsRes, profilesRes] = await Promise.all([
       supabase.from('trader_global_stats')
-        .select('wallet_address, l_win_rate, d30_win_rate, l_total_roi_pct, d30_total_roi_pct, l_avg_trade_size_usd, d30_avg_trade_size_usd, l_avg_pos_size_usd, global_win_rate, recent_win_rate, global_roi_pct, avg_bet_size_usdc')
+        .select('wallet_address, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct, l_avg_trade_size_usd, d30_avg_trade_size_usd, d7_avg_trade_size_usd, l_avg_pos_size_usd')
         .in('wallet_address', wallets),
       supabase.from('trader_profile_stats')
-        .select('wallet_address, final_niche, bet_structure, price_bracket, win_rate, d30_win_rate, roi_pct, d30_roi_pct')
+        .select('wallet_address, final_niche, structure, bracket, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct')
         .in('wallet_address', wallets),
     ]);
 
+    // Log query results and any errors
+    if (globalsRes.error) {
+      console.error('[fire-feed] Global stats query error:', globalsRes.error);
+      debugStats.errors.push(`Global stats query error: ${globalsRes.error.message}`);
+    }
+    if (profilesRes.error) {
+      console.error('[fire-feed] Profile stats query error:', profilesRes.error);
+      debugStats.errors.push(`Profile stats query error: ${profilesRes.error.message}`);
+    }
+    
     const globals = globalsRes.error ? [] : globalsRes.data || [];
     const profiles = profilesRes.error ? [] : profilesRes.data || [];
     console.log(`[fire-feed] Stats: ${globals.length} global, ${profiles.length} profile records`);
+    console.log(`[fire-feed] Sample wallets queried: ${wallets.slice(0, 3).join(', ')}`);
+    
+    // Log first global stat record to verify data structure
+    if (globals.length > 0) {
+      console.log(`[fire-feed] First global stat record:`, JSON.stringify(globals[0]));
+    }
 
     // Build stats map
     const statsMap = new Map<string, any>();
@@ -198,9 +220,10 @@ export async function GET(request: Request) {
       const wallet = (row.wallet_address || '').toLowerCase();
       if (wallet) {
         statsMap.set(wallet, {
-          globalWinRate: normalizeWinRateValue(row.d30_win_rate) ?? normalizeWinRateValue(row.l_win_rate) ?? normalizeWinRateValue(row.recent_win_rate) ?? normalizeWinRateValue(row.global_win_rate),
-          globalRoiPct: normalizeRoiValue(row.d30_total_roi_pct) ?? normalizeRoiValue(row.l_total_roi_pct) ?? normalizeRoiValue(row.global_roi_pct),
-          avgBetSizeUsd: pickNumber(row.avg_bet_size_usdc, row.d30_avg_trade_size_usd, row.l_avg_trade_size_usd, row.l_avg_pos_size_usd),
+          // Use d30 (30-day) stats first, then lifetime (l_) as fallback
+          globalWinRate: normalizeWinRateValue(row.d30_win_rate) ?? normalizeWinRateValue(row.l_win_rate),
+          globalRoiPct: normalizeRoiValue(row.d30_total_roi_pct) ?? normalizeRoiValue(row.l_total_roi_pct),
+          avgBetSizeUsd: pickNumber(row.d30_avg_trade_size_usd, row.l_avg_trade_size_usd, row.l_avg_pos_size_usd),
           d30_avg_trade_size_usd: pickNumber(row.d30_avg_trade_size_usd),
           l_avg_trade_size_usd: pickNumber(row.l_avg_trade_size_usd),
           l_avg_pos_size_usd: pickNumber(row.l_avg_pos_size_usd),
@@ -259,6 +282,7 @@ export async function GET(request: Request) {
     // Since these are already top performers from the leaderboard, their trades qualify as "fire"
     // Stats are used to enhance the display but aren't required to pass
     const fireTrades: any[] = [];
+    let rejectedSamples: any[] = [];
     
     // Build a map of trader PNL from leaderboard for ranking
     const traderPnlMap = new Map<string, number>();
@@ -300,6 +324,19 @@ export async function GET(request: Request) {
       
       if (!hasStats) {
         debugStats.tradersWithoutStats++;
+      }
+      
+      // Log first few rejected trades for debugging
+      if (!passesFilter && rejectedSamples.length < 3) {
+        rejectedSamples.push({
+          wallet: wallet.slice(0, 10),
+          winRate,
+          roiPct,
+          conviction,
+          traderPnl,
+          thresholds: { winRate: FIRE_WIN_RATE_THRESHOLD, roi: FIRE_ROI_THRESHOLD, conviction: FIRE_CONVICTION_MULTIPLIER_THRESHOLD },
+          rawStats: stats ? { globalWinRate: stats.globalWinRate, globalRoiPct: stats.globalRoiPct } : null,
+        });
       }
       
       if (passesFilter) {
@@ -361,13 +398,38 @@ export async function GET(request: Request) {
     });
 
     console.log(`[fire-feed] Returning ${fireTrades.length} filtered trades`);
-    console.log(`[fire-feed] Debug:`, JSON.stringify(debugStats, null, 2));
+    console.log(`[fire-feed] Debug stats:`, JSON.stringify(debugStats, null, 2));
+    if (rejectedSamples.length > 0) {
+      console.log(`[fire-feed] Sample rejected trades:`, JSON.stringify(rejectedSamples, null, 2));
+    }
+    if (fireTrades.length > 0) {
+      console.log(`[fire-feed] Sample passed trade:`, JSON.stringify({
+        wallet: fireTrades[0].wallet?.slice(0, 10),
+        reasons: fireTrades[0]._fireReasons,
+        winRate: fireTrades[0]._fireWinRate,
+        roi: fireTrades[0]._fireRoi,
+        conviction: fireTrades[0]._fireConviction,
+      }));
+    }
+
+    // Add rejected samples to debug for troubleshooting
+    const debugWithSamples = {
+      ...debugStats,
+      rejectedSamples: rejectedSamples.slice(0, 3),
+      samplePassedTrade: fireTrades.length > 0 ? {
+        wallet: fireTrades[0].wallet?.slice(0, 10),
+        reasons: fireTrades[0]._fireReasons,
+        winRate: fireTrades[0]._fireWinRate,
+        roi: fireTrades[0]._fireRoi,
+        conviction: fireTrades[0]._fireConviction,
+      } : null,
+    };
 
     return NextResponse.json({
       trades: fireTrades,
       traders: traderNames,
       stats: Object.fromEntries(statsMap),
-      debug: debugStats,
+      debug: debugWithSamples,
     });
   } catch (error: any) {
     console.error('[fire-feed] Error:', error);
