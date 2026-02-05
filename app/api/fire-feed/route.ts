@@ -131,7 +131,9 @@ export async function GET(request: Request) {
     passedByWinRate: 0,
     passedByRoi: 0,
     passedByConviction: 0,
+    passedByTopPnl: 0,
     tradersWithoutStats: 0,
+    topTraderPnlRange: { min: 0, max: 0 },
     errors: [] as string[],
   };
 
@@ -253,37 +255,68 @@ export async function GET(request: Request) {
     const allTrades = allTradesResults.flat();
     console.log(`[fire-feed] Fetched ${allTrades.length} trades total`);
 
-    // 4. Filter trades based on stats
+    // 4. Process trades - show all trades from top PNL traders
+    // Since these are already top performers from the leaderboard, their trades qualify as "fire"
+    // Stats are used to enhance the display but aren't required to pass
     const fireTrades: any[] = [];
+    
+    // Build a map of trader PNL from leaderboard for ranking
+    const traderPnlMap = new Map<string, number>();
+    let minPnl = Infinity, maxPnl = -Infinity;
+    topTraders.forEach((trader) => {
+      const pnl = trader.pnl || 0;
+      traderPnlMap.set(trader.wallet.toLowerCase(), pnl);
+      if (pnl < minPnl) minPnl = pnl;
+      if (pnl > maxPnl) maxPnl = pnl;
+    });
+    debugStats.topTraderPnlRange = { min: Math.round(minPnl), max: Math.round(maxPnl) };
+    console.log(`[fire-feed] Top trader PNL range: $${Math.round(minPnl)} to $${Math.round(maxPnl)}`);
     
     for (const trade of allTrades) {
       const wallet = trade._wallet?.toLowerCase();
       if (!wallet) continue;
       
-      const stats = statsMap.get(wallet);
-      if (!stats) {
-        debugStats.tradersWithoutStats++;
-        continue;
-      }
-
       debugStats.tradesChecked++;
+      
+      const stats = statsMap.get(wallet);
+      const traderPnl = traderPnlMap.get(wallet) || 0;
+      
+      // Calculate stats-based metrics if available
       const category = deriveCategoryFromTrade(trade);
-      const winRate = winRateForTradeType(stats, category);
-      const roiPct = roiForTradeType(stats, category);
-      const conviction = convictionMultiplierForTrade(trade, stats);
+      const winRate = stats ? winRateForTradeType(stats, category) : null;
+      const roiPct = stats ? roiForTradeType(stats, category) : null;
+      const conviction = stats ? convictionMultiplierForTrade(trade, stats) : null;
       
       const meetsWinRate = winRate !== null && winRate >= FIRE_WIN_RATE_THRESHOLD;
       const meetsRoi = roiPct !== null && roiPct >= FIRE_ROI_THRESHOLD;
       const meetsConviction = conviction !== null && conviction >= FIRE_CONVICTION_MULTIPLIER_THRESHOLD;
       
-      if (meetsWinRate || meetsRoi || meetsConviction) {
+      // Fire reasons: stats-based OR being a top PNL trader
+      const hasStats = stats !== null;
+      const isTopPnlTrader = traderPnl >= 10000; // $10k+ monthly PNL = top trader
+      
+      // Pass if ANY stats criteria met, OR if from a top PNL trader
+      const passesFilter = meetsWinRate || meetsRoi || meetsConviction || isTopPnlTrader;
+      
+      if (!hasStats) {
+        debugStats.tradersWithoutStats++;
+      }
+      
+      if (passesFilter) {
         debugStats.tradesPassed++;
         if (meetsWinRate) debugStats.passedByWinRate++;
         if (meetsRoi) debugStats.passedByRoi++;
         if (meetsConviction) debugStats.passedByConviction++;
+        if (isTopPnlTrader && !meetsWinRate && !meetsRoi && !meetsConviction) debugStats.passedByTopPnl++;
         
         let timestamp = typeof trade.timestamp === 'string' ? parseInt(trade.timestamp) : trade.timestamp;
         if (timestamp < 10000000000) timestamp = timestamp * 1000;
+        
+        const fireReasons: string[] = [];
+        if (meetsWinRate) fireReasons.push('win_rate');
+        if (meetsRoi) fireReasons.push('roi');
+        if (meetsConviction) fireReasons.push('conviction');
+        if (isTopPnlTrader && fireReasons.length === 0) fireReasons.push('top_pnl');
         
         fireTrades.push({
           id: trade.id || `${wallet}-${timestamp}`,
@@ -307,15 +340,12 @@ export async function GET(request: Request) {
           user: wallet,
           wallet: wallet,
           _followedWallet: wallet,
-          _fireReasons: [
-            ...(meetsWinRate ? ['win_rate'] : []),
-            ...(meetsRoi ? ['roi'] : []),
-            ...(meetsConviction ? ['conviction'] : []),
-          ],
-          _fireScore: (meetsWinRate ? 1 : 0) + (meetsRoi ? 1 : 0) + (meetsConviction ? 1 : 0),
+          _fireReasons: fireReasons,
+          _fireScore: fireReasons.length,
           _fireWinRate: winRate,
           _fireRoi: roiPct,
           _fireConviction: conviction,
+          _traderPnl: traderPnl,
           raw: trade,
         });
       }
