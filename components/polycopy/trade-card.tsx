@@ -896,15 +896,12 @@ export function TradeCard({
   const showScoreBadge =
     Boolean(cleanedLiveScore && looksLikeScore) &&
     (resolvedLiveStatus === "live" || resolvedLiveStatus === "final")
-  const showInfoBadge = Boolean(cleanedLiveScore && !looksLikeScore)
   const hideLiveStatusBadge = isCryptoMarket && statusBadgeVariant === "live"
 
   const showCombinedScoreBadge =
     showScoreBadge && (statusBadgeVariant === "live" || statusBadgeVariant === "ended")
-  // Use gameTimeInfo (e.g., "Q4 5:30") if available, otherwise show "Live" or "Ended"
-  const combinedScoreLabel = statusBadgeVariant === "ended" 
-    ? "Ended" 
-    : (gameTimeInfo && gameTimeInfo.trim()) || "Live"
+  // Always show "Live" or "Ended" - don't use gameTimeInfo as it causes flickering
+  const combinedScoreLabel = statusBadgeVariant === "ended" ? "Ended" : "Live"
   const combinedScoreBadgeClass = cn(
     badgeBaseClass,
     "relative h-auto min-h-[34px] flex-col gap-0 px-3 pt-1 pb-3 leading-none w-[200px] min-w-[200px]",
@@ -913,8 +910,6 @@ export function TradeCard({
   )
 
   // Show event time badge for non-live, non-resolved, non-ended markets
-  // Note: showInfoBadge displays odds for non-sports markets - we want to show BOTH
-  // the resolves time AND the odds info for non-game markets
   const showEventTimeBadge =
     statusBadgeVariant !== "live" &&
     statusBadgeVariant !== "resolved" &&
@@ -2910,9 +2905,25 @@ export function TradeCard({
           }),
         })
 
-        const payload = await response.json()
+        let payload: any
+        try {
+          payload = await response.json()
+        } catch (jsonError) {
+          const text = await response.text()
+          console.error("[Gemini Verdict] Failed to parse response as JSON:", jsonError)
+          console.error("[Gemini Verdict] Response text:", text.substring(0, 500))
+          throw new Error(`Invalid response from server: ${response.status} ${response.statusText}`)
+        }
+
         if (!response.ok) {
-          throw new Error(payload?.error || "Failed to get Gemini verdict")
+          const errorMsg = payload?.error || `Server error: ${response.status} ${response.statusText}`
+          console.error("[Gemini Verdict] API error:", {
+            status: response.status,
+            statusText: response.statusText,
+            error: payload?.error,
+            details: payload?.details,
+          })
+          throw new Error(errorMsg)
         }
 
         const rawText: string = payload?.text || ""
@@ -2940,7 +2951,13 @@ export function TradeCard({
         setAssessmentResult(parsed)
         setAssessmentMessages([...messagesForRequest, { role: "assistant", content: assistantText }])
       } catch (error: any) {
-        setAssessmentError(error?.message || "Failed to get Gemini verdict")
+        console.error("[Gemini Verdict] Error:", error)
+        const errorMessage = error?.message || "Failed to get Gemini verdict"
+        setAssessmentError(errorMessage)
+        // Log additional error details in development
+        if (process.env.NODE_ENV === 'development') {
+          console.error("[Gemini Verdict] Full error:", error)
+        }
       } finally {
         setAssessmentLoading(false)
       }
@@ -3148,18 +3165,7 @@ export function TradeCard({
                   )}
                 </div>
               ) : null}
-              {!showCombinedScoreBadge && showInfoBadge && (
-                <Badge
-                  variant="secondary"
-                  className={cn(
-                    badgeBaseClass,
-                    "bg-white text-slate-700 border-slate-200 w-[200px] min-w-[200px]"
-                  )}
-                >
-                  <CircleDot className="h-3.5 w-3.5 flex-shrink-0" />
-                  <span className="flex-1 min-w-0 truncate">{cleanedLiveScore}</span>
-                </Badge>
-              )}
+              {/* Info badge removed - never show percentages like "Over: 40% | Under: 60%" */}
             </div>
           </div>
         </div>
