@@ -1,0 +1,69 @@
+name: IndexNow Submission
+
+# Trigger after successful deployment to main
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  submit-to-indexnow:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Wait for deployment
+        run: |
+          echo "Waiting 2 minutes for Vercel deployment to complete..."
+          sleep 120
+      
+      - name: Fetch sitemap and submit to IndexNow
+        run: |
+          echo "Fetching sitemap from production..."
+          
+          # Fetch the sitemap
+          curl -s https://polycopy.app/sitemap.xml -o sitemap.xml
+          
+          # Extract URLs from sitemap (simplified XML parsing)
+          URLS=$(grep -oP '(?<=<loc>)[^<]+' sitemap.xml | head -n 100)
+          
+          # Count URLs
+          URL_COUNT=$(echo "$URLS" | wc -l)
+          echo "Found $URL_COUNT URLs in sitemap"
+          
+          # Create JSON array of URLs
+          URL_JSON=$(echo "$URLS" | jq -R . | jq -s .)
+          
+          # Submit to IndexNow
+          echo "Submitting to IndexNow API..."
+          
+          RESPONSE=$(curl -X POST "https://api.indexnow.org/indexnow" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"host\": \"polycopy.app\",
+              \"key\": \"c5d9bd483bb2acd8c9169d745b7f52bde527b2bae10880e9f788ce32b84092f1\",
+              \"keyLocation\": \"https://polycopy.app/c5d9bd483bb2acd8c9169d745b7f52bde527b2bae10880e9f788ce32b84092f1.txt\",
+              \"urlList\": $URL_JSON
+            }" \
+            -w "\nHTTP Status: %{http_code}" \
+            -s)
+          
+          echo "$RESPONSE"
+          
+          # Check if successful (200 or 202)
+          if echo "$RESPONSE" | grep -q "HTTP Status: 20[02]"; then
+            echo "✅ Successfully submitted $URL_COUNT URLs to IndexNow"
+            echo "Bing will prioritize crawling these URLs within hours"
+          else
+            echo "⚠️ IndexNow submission may have failed"
+            echo "Response: $RESPONSE"
+            exit 0  # Don't fail the workflow
+          fi
+      
+      - name: Summary
+        run: |
+          echo "IndexNow submission complete!"
+          echo "Your updated pages will be crawled by Bing shortly."
