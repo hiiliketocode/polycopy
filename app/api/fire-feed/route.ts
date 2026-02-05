@@ -181,19 +181,33 @@ export async function GET(request: Request) {
         trades: [], 
         traders: {},
         stats: {},
-        debug: process.env.NODE_ENV === 'development' ? {
+        debug: {
           tradersChecked: 0,
           tradesChecked: 0,
           tradesPassed: 0,
-        } : undefined,
+          summary: {
+            tradersChecked: 0,
+            tradersWithStats: 0,
+            totalTradesFetched: 0,
+            totalTradesAfterFilter: 0,
+            tradersWithTrades: 0,
+          },
+        },
       });
     }
 
     const wallets = topTraders.map(t => t.wallet.toLowerCase()).filter(Boolean);
     console.log(`[fire-feed] Processing ${wallets.length} wallets`);
+    if (wallets.length > 0) {
+      console.log(`[fire-feed] Sample wallets: ${wallets.slice(0, 3).join(', ')}`);
+    }
 
     // 2. Fetch stats for all traders from Supabase
     console.log('[fire-feed] Fetching trader stats from Supabase...');
+    console.log(`[fire-feed] Querying for ${wallets.length} wallets (first 3: ${wallets.slice(0, 3).join(', ')})`);
+    
+    // Use case-insensitive matching - convert wallets to lowercase for query
+    // But also try to match case-insensitively in Supabase
     const [globalsRes, profilesRes] = await Promise.all([
       supabase
         .from('trader_global_stats')
@@ -216,6 +230,30 @@ export async function GET(request: Request) {
     const profiles = profilesRes.error ? [] : profilesRes.data || [];
 
     console.log(`[fire-feed] Stats: ${globals.length} global, ${profiles.length} profile records`);
+    
+    if (globals.length === 0 && wallets.length > 0) {
+      console.warn(`[fire-feed] ⚠️  No global stats found for ${wallets.length} wallets!`);
+      console.warn(`[fire-feed] Sample wallet from leaderboard: ${wallets[0]}`);
+      if (globalsRes.error) {
+        console.warn(`[fire-feed] Global stats error:`, globalsRes.error);
+      }
+      // Try to check if any stats exist at all
+      const { count: totalStatsCount } = await supabase
+        .from('trader_global_stats')
+        .select('*', { count: 'exact', head: true });
+      console.warn(`[fire-feed] Total stats records in database: ${totalStatsCount ?? 'unknown'}`);
+      
+      // Check a sample wallet
+      if (wallets.length > 0) {
+        const { data: sampleStats } = await supabase
+          .from('trader_global_stats')
+          .select('wallet_address')
+          .limit(3);
+        if (sampleStats && sampleStats.length > 0) {
+          console.warn(`[fire-feed] Sample wallet addresses in database:`, sampleStats.map((s: any) => s.wallet_address));
+        }
+      }
+    }
 
     // Build stats map
     const statsMap = new Map<string, any>();
@@ -368,14 +406,20 @@ export async function GET(request: Request) {
       tradersWithTrades: tradesByWallet.size,
     };
     
-    if (tradesByWallet.size === 0) {
-      console.warn('[fire-feed] ⚠️  No trades found after filtering!');
-      console.warn(`[fire-feed] Checked ${wallets.length} traders, fetched ${totalTradesFetched} trades`);
+    if (totalTradesFetched === 0) {
+      console.warn('[fire-feed] ⚠️  No trades fetched from Polymarket API at all!');
+      console.warn(`[fire-feed] Checked ${wallets.length} traders`);
+      console.warn(`[fire-feed] Possible issues:`);
+      console.warn(`  - Polymarket API is down or rate limiting`);
+      console.warn(`  - All traders have no trades`);
+      console.warn(`  - API endpoint changed`);
+    } else if (tradesByWallet.size === 0) {
+      console.warn('[fire-feed] ⚠️  Trades fetched but all filtered out!');
+      console.warn(`[fire-feed] Fetched ${totalTradesFetched} trades, ${totalTradesAfterFilter} after 30-day/BUY filter`);
       console.warn(`[fire-feed] Possible issues:`);
       console.warn(`  - All trades are older than 30 days`);
       console.warn(`  - All trades are SELL (not BUY)`);
       console.warn(`  - Timestamp format mismatch`);
-      console.warn(`  - Polymarket API returning empty results`);
     }
 
     // 4. Filter trades based on FIRE criteria
