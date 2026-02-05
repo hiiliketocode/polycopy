@@ -10,7 +10,6 @@ import {
 
 // Default to a fast but sharper model; allow override via env
 const MODEL_NAME = process.env.GEMINI_TRADE_MODEL || 'gemini-1.5-flash-001'
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 
 type AssessmentRequest = {
   snapshot: TradeAssessmentSnapshot
@@ -77,8 +76,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // Read API key at runtime (not module load time) to ensure Vercel env vars are available
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY
+  
   if (!GEMINI_API_KEY) {
-    return NextResponse.json({ error: 'Missing GEMINI_API_KEY' }, { status: 500 })
+    console.error('[api/admin/gemini-trade-assessor] Missing GEMINI_API_KEY environment variable')
+    console.error('[api/admin/gemini-trade-assessor] Available env vars:', {
+      hasGeminiKey: !!process.env.GEMINI_API_KEY,
+      hasGeminiTradeModel: !!process.env.GEMINI_TRADE_MODEL,
+      nodeEnv: process.env.NODE_ENV,
+      vercelEnv: process.env.VERCEL_ENV,
+    })
+    return NextResponse.json({ 
+      error: 'Missing GEMINI_API_KEY environment variable. Please ensure it is set in Vercel environment variables.' 
+    }, { status: 500 })
   }
 
   let body: AssessmentRequest
@@ -125,7 +136,7 @@ export async function POST(request: Request) {
         maxOutputTokens: 420,
         temperature: 0.32,
       },
-      systemInstruction: { role: 'system', parts: [{ text: SYSTEM_INSTRUCTION }] },
+      systemInstruction: SYSTEM_INSTRUCTION,
     })
 
     const result = await model.generateContent({
@@ -141,9 +152,31 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error('[api/admin/gemini-trade-assessor] error', error)
-    const message = error instanceof Error ? error.message : 'Failed to get Gemini assessment'
+    console.error('[api/admin/gemini-trade-assessor] error details:', {
+      name: error instanceof Error ? error.name : 'Unknown',
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    })
+    
+    // Provide more detailed error messages
+    let errorMessage = 'Failed to get Gemini assessment'
+    if (error instanceof Error) {
+      errorMessage = error.message
+      // Check for common Gemini API errors
+      if (error.message.includes('API_KEY')) {
+        errorMessage = 'Invalid or missing Gemini API key. Please check your GEMINI_API_KEY environment variable.'
+      } else if (error.message.includes('429')) {
+        errorMessage = 'Gemini API rate limit exceeded. Please try again later.'
+      } else if (error.message.includes('quota')) {
+        errorMessage = 'Gemini API quota exceeded. Please check your API quota limits.'
+      }
+    }
+    
     return NextResponse.json(
-      { error: message },
+      { 
+        error: errorMessage,
+        details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : String(error)) : undefined
+      },
       { status: 500 }
     )
   }

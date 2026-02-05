@@ -1,10 +1,20 @@
 // supabase/functions/predict-trade/index.ts
 //
-// SIMPLIFIED PREDICT-TRADE EDGE FUNCTION
-// Last Updated: Jan 30, 2026
+// PREDICT-TRADE EDGE FUNCTION - V8 MODEL
+// Last Updated: Feb 5, 2026
 //
-// OBJECTIVE: Provide clear, actionable trade analysis with simplified verdict logic
-// and dynamic narrative explanations.
+// OBJECTIVE: Provide clear, actionable trade analysis using poly_predictor_v8 model
+// with enhanced features: D7/D30 win rates, ROI metrics, price brackets, experience levels.
+// 
+// V8 MODEL FEATURES (32 total):
+// - Trader skill: global_win_rate, D30_win_rate, D7_win_rate, niche_win_rate_history, bracket_win_rate, recent_win_rate
+// - ROI metrics: lifetime_roi_pct, D30_roi_pct, D7_roi_pct, niche_roi_pct
+// - Experience: total_lifetime_trades, trader_experience_bucket
+// - Conviction: conviction_z_score, trade_sequence, bet_size_vs_avg
+// - Behavioral: trader_tempo_seconds, is_chasing_price_up, is_averaging_down, stddev_bet_size, is_hedged
+// - Trade: final_niche, bet_structure, position_direction, entry_price, price_bracket, trade_size_log, total_exposure_log
+// - Market: volume_momentum_ratio, liquidity_impact_ratio
+// - Timing: minutes_to_start, hours_to_close, market_age_days
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -674,10 +684,10 @@ serve(async (req) => {
     });
     const entryPrice = price;
     
-    // Determine price bracket (simplified: LOW < 0.4, MID 0.4-0.6, HIGH > 0.6)
+    // Determine price bracket (matches training data: LOW < 0.35, MID 0.35-0.65, HIGH > 0.65)
     let priceBracket = 'MID';
-    if (entryPrice < 0.4) priceBracket = 'LOW';
-    else if (entryPrice > 0.6) priceBracket = 'HIGH';
+    if (entryPrice < 0.35) priceBracket = 'LOW';
+    else if (entryPrice > 0.65) priceBracket = 'HIGH';
 
     // Global stats with fallbacks
     const globalStats = globalStatsRes.data || {
@@ -829,32 +839,76 @@ serve(async (req) => {
     const marketAgeDays = marketStart ? Math.floor((nowMs - marketStartMs) / 86400000) : 0;
     const isHedged = hedgingInfo?.isHedging === true ? 1 : 0;
     
-    // BigQuery query with COALESCE for all inputs
+    // Calculate v8 model features
+    const bet_size_vs_avg = dna_avg > 0 ? tradeTotal / dna_avg : 1.0;
+    const trader_experience_bucket = dna_trades < 100 ? 'NOVICE' 
+      : dna_trades < 1000 ? 'INTERMEDIATE' 
+      : dna_trades < 10000 ? 'EXPERIENCED' 
+      : 'EXPERT';
+    
+    // D7/D30 win rates - use recent_win_rate as fallback until Supabase schema updated
+    const d7_win_rate = dna_recent_win_rate;
+    const d30_win_rate = (dna_recent_win_rate + dna_global_win_rate) / 2; // Blend as approximation
+    
+    // ROI features - use trader_historical_roi_pct if available
+    const lifetime_roi_pct = trader_historical_roi_pct || 0;
+    const d7_roi_pct = 0; // Will be populated when Supabase schema updated
+    const d30_roi_pct = 0;
+    
+    // BigQuery query with COALESCE for all inputs - V8 MODEL
     const query = `
-      SELECT * FROM ML.PREDICT(MODEL \`polycopy_v1.poly_predictor_v7_clean\`, 
+      SELECT * FROM ML.PREDICT(MODEL \`polycopy_v1.poly_predictor_v8\`, 
       (
         SELECT 
-          COALESCE('${positionDirection}', 'LONG') as position_direction,
-          COALESCE('${finalNiche}', 'OTHER') as final_niche,
-          COALESCE('${betStructure}', 'STANDARD') as bet_structure,
-          COALESCE(${entryPrice}, 0.5) as entry_price,
-          COALESCE(LOG(${tradeTotal} + 1), 0) as trade_size_log,
-          COALESCE(LOG(${exposure} + 1), 0) as total_exposure_log,
+          -- Trader skill features
+          COALESCE(${dna_global_win_rate}, 0.5) as global_win_rate,
+          COALESCE(${d30_win_rate}, 0.5) as D30_win_rate,
+          COALESCE(${d7_win_rate}, 0.5) as D7_win_rate,
+          COALESCE(${niche_win_rate}, ${dna_global_win_rate}, 0.5) as niche_win_rate_history,
+          COALESCE(${niche_win_rate}, ${dna_global_win_rate}, 0.5) as bracket_win_rate,
+          COALESCE(${niche_win_rate}, ${dna_global_win_rate}, 0.5) as niche_bracket_win_rate,
+          COALESCE(${dna_recent_win_rate}, 0.5) as recent_win_rate,
+          
+          -- ROI features (new in v8)
+          COALESCE(${lifetime_roi_pct}, 0) as lifetime_roi_pct,
+          COALESCE(${d30_roi_pct}, 0) as D30_roi_pct,
+          COALESCE(${d7_roi_pct}, 0) as D7_roi_pct,
+          COALESCE(${lifetime_roi_pct}, 0) as niche_roi_pct,
+          
+          -- Experience features
+          COALESCE(${dna_trades}, 0) as total_lifetime_trades,
+          '${trader_experience_bucket}' as trader_experience_bucket,
+          
+          -- Conviction features
+          COALESCE(${z_score}, 0) as conviction_z_score,
+          COALESCE(${trade_sequence}, 1) as trade_sequence,
+          COALESCE(${bet_size_vs_avg}, 1.0) as bet_size_vs_avg,
+          
+          -- Behavioral features
+          COALESCE(${tempo}, 300) as trader_tempo_seconds,
           COALESCE(${is_chasing}, 0) as is_chasing_price_up,
           COALESCE(${is_avg_down_num}, 0) as is_averaging_down,
-          COALESCE(${dna_recent_win_rate}, 0.5) as recent_win_rate,
+          10 as max_trades_per_day,
+          COALESCE(${dna_stddev}, 50) as stddev_bet_size,
+          COALESCE(${isHedged}, 0) as is_hedged,
+          
+          -- Trade features
+          COALESCE('${finalNiche}', 'OTHER') as final_niche,
+          COALESCE('${betStructure}', 'STANDARD') as bet_structure,
+          COALESCE('${positionDirection}', 'LONG') as position_direction,
+          COALESCE(${entryPrice}, 0.5) as entry_price,
+          '${priceBracket}' as price_bracket,
+          COALESCE(LOG(${tradeTotal} + 1), 0) as trade_size_log,
+          COALESCE(LOG(${exposure} + 1), 0) as total_exposure_log,
+          
+          -- Market features
           COALESCE(${volumeMomentumRatio}, 0) as volume_momentum_ratio,
           COALESCE(${liquidityImpactRatio}, 0) as liquidity_impact_ratio,
+          
+          -- Timing features
           COALESCE(${minutes_to_start}, 0) as minutes_to_start,
           COALESCE(${hoursToClose}, 24) as hours_to_close,
-          COALESCE(${marketAgeDays}, 0) as market_age_days,
-          COALESCE(${tempo}, 300) as trader_tempo_seconds,
-          COALESCE(${trade_sequence}, 1) as trade_sequence,
-          COALESCE(${isHedged}, 0) as is_hedged,
-          COALESCE(${z_score}, 0) as conviction_z_score,
-          COALESCE(${niche_win_rate}, ${dna_global_win_rate}) as niche_win_rate_history,
-          COALESCE(${dna_global_win_rate}, 0.5) as global_win_rate,
-          COALESCE(${dna_trades}, 0) as total_lifetime_trades
+          COALESCE(${marketAgeDays}, 0) as market_age_days
       ))
     `;
 

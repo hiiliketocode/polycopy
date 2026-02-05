@@ -20,13 +20,17 @@ interface PredictionStatsProps {
 }
 
 interface StatsData {
-  // Trade type stats (this trade type)
+  // Trade type stats (this trade type) - for selected time period
   profile_L_win_rate?: number
   profile_L_avg_pnl_per_trade_usd?: number
   profile_L_roi_pct?: number
   profile_current_win_streak?: number
-  profile_L_count?: number
-  global_trade_count?: number
+  profile_L_count?: number  // Count for selected time period
+  global_trade_count?: number  // Count for selected time period
+  
+  // Lifetime counts (for "All: X" display, always shows lifetime)
+  lifetime_profile_count?: number
+  lifetime_global_trade_count?: number
   
   // All trades stats
   global_L_win_rate?: number
@@ -501,11 +505,17 @@ export function PredictionStats({
           globalStats?.avg_bet_size_usdc,
         )
 
+        // FIX: Always use the selected period's count, NOT lifetime fallback
+        // This prevents the 7D > 30D display bug where 7D falls back to lifetime
         const globalTradeCount = pickNumber(
-          globalStats?.[`${prefix}_count`], globalStats?.[`${prefix.toUpperCase()}_count`],
+          globalStats?.[`${prefix}_count`], globalStats?.[`${prefix.toUpperCase()}_count`]
+        ) ?? 0  // Default to 0 if selected period has no data, don't fallback to lifetime
+        
+        // Keep lifetime count separately for "All: X" display
+        const lifetimeGlobalTradeCount = pickNumber(
           globalStats?.[`${lifetimePrefix}_count`], globalStats?.[`${lifetimePrefix.toUpperCase()}_count`],
           globalStats?.total_lifetime_trades,
-        )
+        ) ?? 0
 
         // Position size - sync script writes l_avg_pos_size_usd
         const globalAvgPosSizeUsd = pickNumber(
@@ -557,50 +567,67 @@ export function PredictionStats({
           const d30Count = pickNumber(p.d30_count, p.D30_count)
           const lCount = pickNumber(p.trade_count, p.l_count, p.L_count)
           
+          // Get resolved counts (for proper ROI calculation)
+          const d7ResolvedCount = pickNumber(p.d7_resolved_count, p.D7_resolved_count)
+          const d30ResolvedCount = pickNumber(p.d30_resolved_count, p.D30_resolved_count)
+          const lResolvedCount = pickNumber(p.l_resolved_count, p.L_resolved_count)
+          
           // Determine which period to use based on selected time period
+          // FIX: Trade count should ALWAYS match the selected period (no fallback!)
+          // Stats can fallback to lifetime, but counts should not - this prevents 7D > 30D bugs
           let usePrefix: string
           let tradeCount: number
+          let resolvedCount: number
           let windowLabel: string
+          let hasDataForPeriod: boolean
           
-          if (timePeriod === '7d' && d7Count !== null && d7Count !== undefined && d7Count >= MIN_TRADES_SELECTION) {
+          if (timePeriod === '7d') {
             usePrefix = 'd7'
-            tradeCount = d7Count
+            tradeCount = d7Count ?? 0  // Always use d7 count, even if 0
+            resolvedCount = d7ResolvedCount ?? 0
             windowLabel = '7d'
-          } else if (timePeriod === '30d' && d30Count !== null && d30Count !== undefined && d30Count >= MIN_TRADES_SELECTION) {
+            hasDataForPeriod = d7Count !== null && d7Count !== undefined && d7Count >= MIN_TRADES_SELECTION
+          } else if (timePeriod === '30d') {
             usePrefix = 'd30'
-            tradeCount = d30Count
+            tradeCount = d30Count ?? 0  // Always use d30 count, even if 0
+            resolvedCount = d30ResolvedCount ?? 0
             windowLabel = '30d'
-          } else if (timePeriod === 'all') {
-            usePrefix = 'l'
-            tradeCount = lCount ?? 0
-            windowLabel = 'lifetime'
+            hasDataForPeriod = d30Count !== null && d30Count !== undefined && d30Count >= MIN_TRADES_SELECTION
           } else {
-            // Fallback: if selected period has no data, try lifetime
+            // 'all' = lifetime
             usePrefix = 'l'
             tradeCount = lCount ?? 0
+            resolvedCount = lResolvedCount ?? 0
             windowLabel = 'lifetime'
+            hasDataForPeriod = lCount !== null && lCount !== undefined && lCount >= MIN_TRADES_SELECTION
           }
 
+          // FIX: Get ALL stats from the SAME time period (no mixing!)
+          // Only fall back to lifetime if the selected period doesn't exist AT ALL
           const winRate = pickNumber(
-            p[`${usePrefix}_win_rate`], p[`${usePrefix.toUpperCase()}_win_rate`],
-            p.win_rate, p.l_win_rate, p.L_win_rate
-          )
+            p[`${usePrefix}_win_rate`], p[`${usePrefix.toUpperCase()}_win_rate`]
+          ) ?? pickNumber(p.l_win_rate, p.L_win_rate, p.win_rate)
 
           const roiPct = pickNumber(
-            p[`${usePrefix}_total_roi_pct`], p[`${usePrefix.toUpperCase()}_total_roi_pct`],
-            p[`${usePrefix}_roi_pct`], p[`${usePrefix.toUpperCase()}_roi_pct`],
-            p.roi_pct, p.l_roi_pct, p.L_roi_pct, p.l_total_roi_pct, p.L_total_roi_pct
-          )
+            p[`${usePrefix}_total_roi_pct`], p[`${usePrefix.toUpperCase()}_total_roi_pct`]
+          ) ?? pickNumber(p.l_total_roi_pct, p.L_total_roi_pct, p.roi_pct)
 
           const avgPnlUsd = pickNumber(
-            p[`${usePrefix}_avg_pnl_trade_usd`], p[`${usePrefix.toUpperCase()}_avg_pnl_trade_usd`],
-            p.l_avg_pnl_trade_usd, p.avg_pnl_trade_usd, p.L_avg_pnl_trade_usd
-          )
+            p[`${usePrefix}_avg_pnl_trade_usd`], p[`${usePrefix.toUpperCase()}_avg_pnl_trade_usd`]
+          ) ?? pickNumber(p.l_avg_pnl_trade_usd, p.L_avg_pnl_trade_usd, p.avg_pnl_trade_usd)
 
           const avgTradeSizeUsd = pickNumber(
-            p[`${usePrefix}_avg_trade_size_usd`], p[`${usePrefix.toUpperCase()}_avg_trade_size_usd`],
-            p.l_avg_trade_size_usd, p.L_avg_trade_size_usd
-          )
+            p[`${usePrefix}_avg_trade_size_usd`], p[`${usePrefix.toUpperCase()}_avg_trade_size_usd`]
+          ) ?? pickNumber(p.l_avg_trade_size_usd, p.L_avg_trade_size_usd)
+
+          // Get total PnL and resolved invested (for proper aggregation)
+          const totalPnlUsd = pickNumber(
+            p[`${usePrefix}_total_pnl_usd`], p[`${usePrefix.toUpperCase()}_total_pnl_usd`]
+          ) ?? pickNumber(p.l_total_pnl_usd, p.L_total_pnl_usd)
+
+          const resolvedInvestedUsd = pickNumber(
+            p[`${usePrefix}_resolved_invested_usd`], p[`${usePrefix.toUpperCase()}_resolved_invested_usd`]
+          ) ?? pickNumber(p.l_resolved_invested_usd, p.L_resolved_invested_usd)
 
           return {
             niche: nicheVal,
@@ -611,7 +638,12 @@ export function PredictionStats({
             avg_pnl_usd: avgPnlUsd ?? 0,
             avg_trade_size_usd: avgTradeSizeUsd ?? null,
             trade_count: tradeCount,
+            resolved_count: resolvedCount,
+            // Store totals for proper aggregation (if available from updated BigQuery tables)
+            total_pnl_usd: totalPnlUsd ?? null,
+            resolved_invested_usd: resolvedInvestedUsd ?? null,
             window: windowLabel,
+            has_data_for_period: hasDataForPeriod,  // Track if this period actually has sufficient data
           }
         }
 
@@ -638,29 +670,76 @@ export function PredictionStats({
             return false
           }
 
+          // Helper to aggregate multiple profiles correctly
+          // FIX: Use total_pnl/total_invested for ROI instead of weight-averaging percentages
+          const aggregateProfiles = (profiles: any[]) => {
+            const agg = profiles.reduce((acc: any, p: any) => {
+              acc.trade_count += p.trade_count
+              acc.resolved_count += p.resolved_count ?? 0
+              acc.win_weighted += p.win_rate * p.trade_count
+              acc.pnl_weighted += p.avg_pnl_usd * (p.resolved_count ?? p.trade_count)
+              acc.trade_size_weighted += (p.avg_trade_size_usd ?? 0) * p.trade_count
+              acc.window30d = acc.window30d || p.window === '30d'
+              
+              // Sum totals if available (from updated BigQuery tables)
+              if (p.total_pnl_usd !== null && p.total_pnl_usd !== undefined) {
+                acc.total_pnl_usd += p.total_pnl_usd
+                acc.has_totals = true
+              }
+              if (p.resolved_invested_usd !== null && p.resolved_invested_usd !== undefined) {
+                acc.resolved_invested_usd += p.resolved_invested_usd
+                acc.has_totals = true
+              }
+              return acc
+            }, { 
+              trade_count: 0, 
+              resolved_count: 0,
+              win_weighted: 0, 
+              pnl_weighted: 0, 
+              trade_size_weighted: 0, 
+              total_pnl_usd: 0,
+              resolved_invested_usd: 0,
+              has_totals: false,
+              window30d: false 
+            })
+
+            // Calculate ROI properly: if we have totals, use them; otherwise estimate
+            // Note: ROI is stored as DECIMAL (0.15 = 15%), frontend multiplies by 100 for display
+            let roiPct: number
+            if (agg.has_totals && agg.resolved_invested_usd > 0) {
+              // FIX: Proper ROI = total_pnl / resolved_invested (decimal form)
+              roiPct = agg.total_pnl_usd / agg.resolved_invested_usd
+            } else {
+              // Fallback: estimate using avg PnL and avg trade size
+              // This is imperfect but better than weight-averaging percentages
+              const avgPnl = agg.trade_count > 0 ? agg.pnl_weighted / agg.trade_count : 0
+              const avgTradeSize = agg.trade_count > 0 && agg.trade_size_weighted > 0 
+                ? agg.trade_size_weighted / agg.trade_count 
+                : null
+              // avgPnl / avgTradeSize gives decimal ROI (0.15 = 15%)
+              roiPct = avgTradeSize && avgTradeSize > 0 ? avgPnl / avgTradeSize : 0
+            }
+
+            return {
+              trade_count: agg.trade_count,
+              resolved_count: agg.resolved_count,
+              win_rate: agg.trade_count > 0 ? agg.win_weighted / agg.trade_count : 0.5,
+              roi_pct: roiPct,
+              avg_pnl_usd: agg.trade_count > 0 ? agg.pnl_weighted / agg.trade_count : 0,
+              avg_trade_size_usd: agg.trade_count > 0 && agg.trade_size_weighted > 0 
+                ? agg.trade_size_weighted / agg.trade_count 
+                : null,
+              window: agg.window30d ? '30d' : 'lifetime',
+            }
+          }
+
           if (!assignIfValid(level1, 'Specific Profile', `${finalNicheKey}_${finalBetStructureKey}_${priceBracketKey}`)) {
             const level2Matches = normalizedProfiles.filter((p: any) =>
               p.niche === finalNicheKey && p.structure === finalBetStructureKey
             )
             if (level2Matches.length > 0) {
-              const agg = level2Matches.reduce((acc: any, p: any) => {
-                acc.trade_count += p.trade_count
-                acc.win_weighted += p.win_rate * p.trade_count
-                acc.roi_weighted += p.roi_pct * p.trade_count
-                acc.pnl_weighted += p.avg_pnl_usd * p.trade_count
-                acc.trade_size_weighted += (p.avg_trade_size_usd ?? 0) * p.trade_count
-                acc.window30d = acc.window30d || p.window === '30d'
-                return acc
-              }, { trade_count: 0, win_weighted: 0, roi_weighted: 0, pnl_weighted: 0, trade_size_weighted: 0, window30d: false })
-
-              if (assignIfValid({
-                trade_count: agg.trade_count,
-                win_rate: agg.trade_count > 0 ? agg.win_weighted / agg.trade_count : 0.5,
-                roi_pct: agg.trade_count > 0 ? agg.roi_weighted / agg.trade_count : 0,
-                avg_pnl_usd: agg.trade_count > 0 ? agg.pnl_weighted / agg.trade_count : 0,
-                avg_trade_size_usd: agg.trade_count > 0 && agg.trade_size_weighted > 0 ? agg.trade_size_weighted / agg.trade_count : null,
-                window: agg.window30d ? '30d' : 'lifetime',
-              }, 'Structure-Specific', `${finalNicheKey}_${finalBetStructureKey}`)) {
+              const aggregated = aggregateProfiles(level2Matches)
+              if (assignIfValid(aggregated, 'Structure-Specific', `${finalNicheKey}_${finalBetStructureKey}`)) {
                 // assigned
               }
             }
@@ -668,24 +747,8 @@ export function PredictionStats({
             if (!profileResult) {
               const level3Matches = normalizedProfiles.filter((p: any) => p.niche === finalNicheKey)
               if (level3Matches.length > 0) {
-                const agg = level3Matches.reduce((acc: any, p: any) => {
-                  acc.trade_count += p.trade_count
-                  acc.win_weighted += p.win_rate * p.trade_count
-                  acc.roi_weighted += p.roi_pct * p.trade_count
-                  acc.pnl_weighted += p.avg_pnl_usd * p.trade_count
-                  acc.trade_size_weighted += (p.avg_trade_size_usd ?? 0) * p.trade_count
-                  acc.window30d = acc.window30d || p.window === '30d'
-                  return acc
-                }, { trade_count: 0, win_weighted: 0, roi_weighted: 0, pnl_weighted: 0, trade_size_weighted: 0, window30d: false })
-
-                assignIfValid({
-                  trade_count: agg.trade_count,
-                  win_rate: agg.trade_count > 0 ? agg.win_weighted / agg.trade_count : 0.5,
-                  roi_pct: agg.trade_count > 0 ? agg.roi_weighted / agg.trade_count : 0,
-                  avg_pnl_usd: agg.trade_count > 0 ? agg.pnl_weighted / agg.trade_count : 0,
-                  avg_trade_size_usd: agg.trade_count > 0 && agg.trade_size_weighted > 0 ? agg.trade_size_weighted / agg.trade_count : null,
-                  window: agg.window30d ? '30d' : 'lifetime',
-                }, 'Niche-Specific', finalNicheKey)
+                const aggregated = aggregateProfiles(level3Matches)
+                assignIfValid(aggregated, 'Niche-Specific', finalNicheKey)
               }
             }
           }
@@ -734,6 +797,22 @@ export function PredictionStats({
         // For now, use current trade size as exposure
         const currentExposure = tradeTotal
 
+        // Calculate lifetime profile count from raw profile stats
+        const lifetimeProfileCount = normalizedProfiles.length > 0
+          ? normalizedProfiles
+              .filter((p: any) => p.niche === finalNicheKey)
+              .reduce((sum: number, p: any) => {
+                // Get lifetime count from raw profile data
+                const rawProfile = (profileStats || []).find((raw: any) => 
+                  normalizeKey(raw.final_niche) === p.niche &&
+                  normalizeKey(raw.bet_structure || raw.structure) === p.structure &&
+                  normalizeBracket(raw.price_bracket || raw.bracket) === p.bracket
+                )
+                const lCount = pickNumber(rawProfile?.l_count, rawProfile?.L_count, rawProfile?.trade_count)
+                return sum + (lCount ?? 0)
+              }, 0)
+          : 0
+
         const statsData: StatsData = {
           profile_L_win_rate: profileWinRate !== null ? profileWinRate : undefined,
           global_L_win_rate: globalWinRate !== null ? globalWinRate : undefined,
@@ -744,8 +823,11 @@ export function PredictionStats({
           global_L_roi_pct: globalRoiPct !== null ? globalRoiPct : undefined,
           profile_current_win_streak: 0, // Would need to query recent trades
           global_current_win_streak: 0,
-          profile_L_count: profileCount ?? 0,
-          global_trade_count: globalTradeCount ?? 0,
+          profile_L_count: profileCount ?? 0,  // Selected time period count
+          global_trade_count: globalTradeCount ?? 0,  // Selected time period count
+          // Lifetime counts for "All: X" display
+          lifetime_profile_count: lifetimeProfileCount,
+          lifetime_global_trade_count: lifetimeGlobalTradeCount,
           trade_profile: tradeProfile,
           data_source: dataSource,
           current_market_exposure: currentExposure,
@@ -835,7 +917,11 @@ export function PredictionStats({
     (stats.profile_L_count ?? 0) > 0 && 
     (stats.profile_L_count ?? 0) < LOW_SAMPLE_THRESHOLD
 
-  // Format helpers
+  // Format helpers - standardized decimal places:
+  // - Currency/PnL: 2 decimal places (+$39.29)
+  // - ROI/Percentage: 1 decimal place (+15.3%)
+  // - Win Rate: 1 decimal place (59.3%)
+  // - Multiplier: 2 decimal places (1.25x)
   const formatCurrency = (value: number | null | undefined) => {
     if (value === null || value === undefined || !Number.isFinite(value)) return 'N/A'
     const sign = value >= 0 ? '+' : '-'
@@ -845,7 +931,7 @@ export function PredictionStats({
   const formatPercent = (value: number | null | undefined) => {
     if (value === null || value === undefined || !Number.isFinite(value)) return 'N/A'
     const sign = value >= 0 ? '+' : '-'
-    return `${sign}${Math.abs(value).toFixed(2)}`
+    return `${sign}${Math.abs(value).toFixed(1)}`  // 1 decimal place for ROI
   }
 
   const formatInteger = (value: number | null | undefined) => {
@@ -906,8 +992,9 @@ export function PredictionStats({
         : null,
     })
   }
+  // Win rate display - 1 decimal place (59.3%)
   const safeWinRateDisplay = (value: number | null | undefined) =>
-    value === null || value === undefined ? 'N/A' : `${(value * 100).toFixed(2)}%`
+    value === null || value === undefined ? 'N/A' : `${(value * 100).toFixed(1)}%`
 
   if (!isAdmin) {
     return null
@@ -1023,7 +1110,7 @@ export function PredictionStats({
             <p className="text-sm md:text-base font-semibold text-slate-900 mb-0.5 tabular-nums">
               {formatInteger(profileCount)}
             </p>
-            <p className="text-[10px] text-slate-500 font-medium">(All: {formatInteger(globalTradeCount)})</p>
+            <p className="text-[10px] text-slate-500 font-medium">(All: {formatInteger(stats?.lifetime_global_trade_count ?? globalTradeCount)})</p>
           </div>
         )
 

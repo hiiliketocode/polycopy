@@ -441,12 +441,40 @@ def classify_market(market: Dict) -> Dict[str, Optional[str]]:
         # Culture, Media, etc.
         if 'culture' in tag_lower_list:
             market_subtype = 'CULTURE'
-        elif any(mt in tag_lower_list for mt in ['movie', 'film']):
+        elif any(mt in tag_lower_list for mt in ['movie', 'film', 'movies']):
             market_subtype = 'MOVIES'
         elif any(mt in tag_lower_list for mt in ['music', 'song']):
             market_subtype = 'MUSIC'
         else:
             market_subtype = 'ENTERTAINMENT'
+    elif market_type == 'ESPORTS':
+        # Esports subtypes based on game/title
+        if any(gt in tag_lower_list for gt in ['counter-strike', 'cs:', 'cs2', 'csgo']):
+            market_subtype = 'COUNTER_STRIKE'
+        elif any(gt in tag_lower_list for gt in ['league of legends', 'lol']):
+            market_subtype = 'LEAGUE_OF_LEGENDS'
+        elif any(gt in tag_lower_list for gt in ['dota', 'dota 2']):
+            market_subtype = 'DOTA'
+        elif any(gt in tag_lower_list for gt in ['valorant']):
+            market_subtype = 'VALORANT'
+        elif any(gt in tag_lower_list for gt in ['starcraft', 'starcraft 2']):
+            market_subtype = 'STARCRAFT'
+        elif any(gt in tag_lower_list for gt in ['honor of kings']):
+            market_subtype = 'HONOR_OF_KINGS'
+        elif any(gt in tag_lower_list for gt in ['mobile legends']):
+            market_subtype = 'MOBILE_LEGENDS'
+        elif any(gt in tag_lower_list for gt in ['rainbow six']):
+            market_subtype = 'RAINBOW_SIX'
+        else:
+            market_subtype = 'ESPORTS'
+    elif market_type == 'WEATHER':
+        # Weather subtypes
+        if 'temperature' in market_text or 'temperature' in tag_lower_list:
+            market_subtype = 'TEMPERATURE'
+        elif 'climate' in market_text or 'climate' in tag_lower_list:
+            market_subtype = 'CLIMATE'
+        else:
+            market_subtype = 'WEATHER'
     
     # Classify bet_structure from title
     bet_structure = None

@@ -30,11 +30,24 @@ def main():
     print('🔄 Syncing traders from Supabase to BigQuery')
     print('=' * 60)
     
-    # Fetch all wallet addresses from Supabase
+    # Fetch all wallet addresses from Supabase (handle pagination)
     print('\n📊 Fetching wallet addresses from Supabase...')
-    response = supabase.table('traders').select('wallet_address').not_.is_('wallet_address', 'null').execute()
+    response = supabase.table('traders').select('wallet_address', count='exact').not_.is_('wallet_address', 'null').execute()
     
-    traders = response.data if response.data else []
+    # Get all pages if needed
+    traders = []
+    total_count = response.count if response.count else len(response.data or [])
+    
+    if total_count > 1000:
+        # Fetch in batches
+        print(f"  📊 Fetching {total_count} traders in batches...")
+        for offset in range(0, total_count, 1000):
+            batch = supabase.table('traders').select('wallet_address').not_.is_('wallet_address', 'null').range(offset, min(offset + 999, total_count - 1)).execute()
+            traders.extend(batch.data or [])
+            if (offset // 1000 + 1) % 5 == 0:
+                print(f"     Fetched {len(traders)}/{total_count}...")
+    else:
+        traders = response.data or []
     
     if not traders:
         print('⚠️  No traders found in Supabase')

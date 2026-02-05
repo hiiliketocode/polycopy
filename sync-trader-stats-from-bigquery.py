@@ -51,12 +51,20 @@ def sync_global_stats(bq_client: bigquery.Client, supabase_client: Client) -> in
     """Read global stats from BigQuery and sync to Supabase."""
     print("Step 1: Reading global stats from BigQuery...", flush=True)
     
+    # Note: Query includes new columns from fixed BigQuery tables
+    # These columns enable proper ROI calculation:
+    # - *_resolved_count: number of resolved trades (for accurate win rate denominator)
+    # - *_resolved_invested_usd: invested amount for resolved trades only (for accurate ROI)
     query = f"""
     SELECT 
         wallet_address,
         L_count,
         D30_count,
         D7_count,
+        -- New: resolved counts for accurate calculations
+        COALESCE(L_resolved_count, 0) as L_resolved_count,
+        COALESCE(D30_resolved_count, 0) as D30_resolved_count,
+        COALESCE(D7_resolved_count, 0) as D7_resolved_count,
         L_win_rate,
         D30_win_rate,
         D7_win_rate,
@@ -72,6 +80,14 @@ def sync_global_stats(bq_client: bigquery.Client, supabase_client: Client) -> in
         L_avg_trade_size_usd,
         D30_avg_trade_size_usd,
         D7_avg_trade_size_usd,
+        -- New: resolved invested for proper ROI frontend aggregation
+        COALESCE(L_resolved_invested_usd, 0) as L_resolved_invested_usd,
+        COALESCE(D30_resolved_invested_usd, 0) as D30_resolved_invested_usd,
+        COALESCE(D7_resolved_invested_usd, 0) as D7_resolved_invested_usd,
+        -- Keep total invested for reference
+        COALESCE(L_total_invested_usd, 0) as L_total_invested_usd,
+        COALESCE(D30_total_invested_usd, 0) as D30_total_invested_usd,
+        COALESCE(D7_total_invested_usd, 0) as D7_total_invested_usd,
         L_avg_pos_size_usd,
         L_avg_trades_per_pos,
         current_win_streak
@@ -88,6 +104,10 @@ def sync_global_stats(bq_client: bigquery.Client, supabase_client: Client) -> in
                 'l_count': int(row['L_count']) if row['L_count'] is not None else 0,
                 'd30_count': int(row['D30_count']) if row['D30_count'] is not None else 0,
                 'd7_count': int(row['D7_count']) if row['D7_count'] is not None else 0,
+                # New: resolved counts
+                'l_resolved_count': int(row['L_resolved_count']) if row['L_resolved_count'] is not None else 0,
+                'd30_resolved_count': int(row['D30_resolved_count']) if row['D30_resolved_count'] is not None else 0,
+                'd7_resolved_count': int(row['D7_resolved_count']) if row['D7_resolved_count'] is not None else 0,
                 'l_win_rate': float(row['L_win_rate']) if row['L_win_rate'] is not None else None,
                 'd30_win_rate': float(row['D30_win_rate']) if row['D30_win_rate'] is not None else None,
                 'd7_win_rate': float(row['D7_win_rate']) if row['D7_win_rate'] is not None else None,
@@ -103,6 +123,14 @@ def sync_global_stats(bq_client: bigquery.Client, supabase_client: Client) -> in
                 'l_avg_trade_size_usd': float(row['L_avg_trade_size_usd']) if row['L_avg_trade_size_usd'] is not None else 0.0,
                 'd30_avg_trade_size_usd': float(row['D30_avg_trade_size_usd']) if row['D30_avg_trade_size_usd'] is not None else 0.0,
                 'd7_avg_trade_size_usd': float(row['D7_avg_trade_size_usd']) if row['D7_avg_trade_size_usd'] is not None else 0.0,
+                # New: resolved invested (for proper ROI aggregation in frontend)
+                'l_resolved_invested_usd': float(row['L_resolved_invested_usd']) if row['L_resolved_invested_usd'] is not None else 0.0,
+                'd30_resolved_invested_usd': float(row['D30_resolved_invested_usd']) if row['D30_resolved_invested_usd'] is not None else 0.0,
+                'd7_resolved_invested_usd': float(row['D7_resolved_invested_usd']) if row['D7_resolved_invested_usd'] is not None else 0.0,
+                # Total invested (for reference)
+                'l_total_invested_usd': float(row['L_total_invested_usd']) if row['L_total_invested_usd'] is not None else 0.0,
+                'd30_total_invested_usd': float(row['D30_total_invested_usd']) if row['D30_total_invested_usd'] is not None else 0.0,
+                'd7_total_invested_usd': float(row['D7_total_invested_usd']) if row['D7_total_invested_usd'] is not None else 0.0,
                 'l_avg_pos_size_usd': float(row['L_avg_pos_size_usd']) if row['L_avg_pos_size_usd'] is not None else 0.0,
                 'l_avg_trades_per_pos': float(row['L_avg_trades_per_pos']) if row['L_avg_trades_per_pos'] is not None else 0.0,
                 'current_win_streak': int(row['current_win_streak']) if row['current_win_streak'] is not None else 0,
@@ -145,6 +173,8 @@ def sync_profile_stats(bq_client: bigquery.Client, supabase_client: Client) -> i
     """Read profile stats from BigQuery and sync to Supabase."""
     print("\nStep 3: Reading profile stats from BigQuery...", flush=True)
     
+    # Note: Query includes new columns from fixed BigQuery tables
+    # These columns enable proper ROI calculation when aggregating profiles
     query = f"""
     SELECT 
         wallet_address,
@@ -154,6 +184,10 @@ def sync_profile_stats(bq_client: bigquery.Client, supabase_client: Client) -> i
         L_count,
         D30_count,
         D7_count,
+        -- New: resolved counts for accurate calculations
+        COALESCE(L_resolved_count, 0) as L_resolved_count,
+        COALESCE(D30_resolved_count, 0) as D30_resolved_count,
+        COALESCE(D7_resolved_count, 0) as D7_resolved_count,
         L_win_rate,
         D30_win_rate,
         D7_win_rate,
@@ -169,6 +203,10 @@ def sync_profile_stats(bq_client: bigquery.Client, supabase_client: Client) -> i
         L_avg_trade_size_usd,
         D30_avg_trade_size_usd,
         D7_avg_trade_size_usd,
+        -- New: resolved invested for proper ROI frontend aggregation
+        COALESCE(L_resolved_invested_usd, 0) as L_resolved_invested_usd,
+        COALESCE(D30_resolved_invested_usd, 0) as D30_resolved_invested_usd,
+        COALESCE(D7_resolved_invested_usd, 0) as D7_resolved_invested_usd,
         current_win_streak
     FROM `{PROFILE_STATS_TABLE}`
     """
@@ -186,6 +224,10 @@ def sync_profile_stats(bq_client: bigquery.Client, supabase_client: Client) -> i
                 'l_count': int(row['L_count']) if row['L_count'] is not None else 0,
                 'd30_count': int(row['D30_count']) if row['D30_count'] is not None else 0,
                 'd7_count': int(row['D7_count']) if row['D7_count'] is not None else 0,
+                # New: resolved counts
+                'l_resolved_count': int(row['L_resolved_count']) if row['L_resolved_count'] is not None else 0,
+                'd30_resolved_count': int(row['D30_resolved_count']) if row['D30_resolved_count'] is not None else 0,
+                'd7_resolved_count': int(row['D7_resolved_count']) if row['D7_resolved_count'] is not None else 0,
                 'l_win_rate': float(row['L_win_rate']) if row['L_win_rate'] is not None else None,
                 'd30_win_rate': float(row['D30_win_rate']) if row['D30_win_rate'] is not None else None,
                 'd7_win_rate': float(row['D7_win_rate']) if row['D7_win_rate'] is not None else None,
@@ -201,6 +243,10 @@ def sync_profile_stats(bq_client: bigquery.Client, supabase_client: Client) -> i
                 'l_avg_trade_size_usd': float(row['L_avg_trade_size_usd']) if row['L_avg_trade_size_usd'] is not None else 0.0,
                 'd30_avg_trade_size_usd': float(row['D30_avg_trade_size_usd']) if row['D30_avg_trade_size_usd'] is not None else 0.0,
                 'd7_avg_trade_size_usd': float(row['D7_avg_trade_size_usd']) if row['D7_avg_trade_size_usd'] is not None else 0.0,
+                # New: resolved invested (for proper ROI aggregation in frontend)
+                'l_resolved_invested_usd': float(row['L_resolved_invested_usd']) if row['L_resolved_invested_usd'] is not None else 0.0,
+                'd30_resolved_invested_usd': float(row['D30_resolved_invested_usd']) if row['D30_resolved_invested_usd'] is not None else 0.0,
+                'd7_resolved_invested_usd': float(row['D7_resolved_invested_usd']) if row['D7_resolved_invested_usd'] is not None else 0.0,
                 'current_win_streak': int(row['current_win_streak']) if row['current_win_streak'] is not None else 0,
                 'updated_at': datetime.utcnow().isoformat()
             })

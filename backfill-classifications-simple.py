@@ -27,6 +27,7 @@ def classify_market(market: dict) -> dict:
     title = (market.get('title') or '').lower()
     description = (market.get('description') or '').lower()
     tags = market.get('tags', [])
+    existing_market_type = market.get('market_type')  # Use existing if provided
     
     # Normalize tags - handle JSON string, list, or dict
     # BigQuery JSON columns come as strings, need to parse
@@ -63,10 +64,14 @@ def classify_market(market: dict) -> dict:
     market_text = ' '.join([title, description] + tag_texts)
     
     # Classify market_type - check both tags and title/description
-    market_type = None
+    # Use existing market_type if provided (for filling in missing subtypes)
+    market_type = existing_market_type
     
     # Check tags first (more reliable)
     tag_lower_list = [t.lower() for t in tag_texts]
+    
+    # Only classify market_type if not already set
+    if not market_type:
     
     # Esports tags (check BEFORE sports since esports is more specific)
     # Expanded based on audit findings
@@ -93,7 +98,7 @@ def classify_market(market: dict) -> dict:
     elif any(wt in tag_lower_list for wt in ['weather', 'climate', 'temperature']) or any(wt in market_text for wt in ['weather', 'climate', 'temperature']):
         market_type = 'WEATHER'
     
-    # Classify market_subtype
+    # Classify market_subtype (niche) - always classify if market_type exists
     market_subtype = None
     if market_type == 'SPORTS':
         if 'nba' in market_text or 'basketball' in market_text or 'nba' in tag_lower_list:
@@ -132,12 +137,40 @@ def classify_market(market: dict) -> dict:
         # Culture, Media, etc.
         if 'culture' in tag_lower_list:
             market_subtype = 'CULTURE'
-        elif any(mt in tag_lower_list for mt in ['movie', 'film']):
+        elif any(mt in tag_lower_list for mt in ['movie', 'film', 'movies']):
             market_subtype = 'MOVIES'
         elif any(mt in tag_lower_list for mt in ['music', 'song']):
             market_subtype = 'MUSIC'
         else:
             market_subtype = 'ENTERTAINMENT'
+    elif market_type == 'ESPORTS':
+        # Esports subtypes based on game/title
+        if any(gt in tag_lower_list for gt in ['counter-strike', 'cs:', 'cs2', 'csgo']):
+            market_subtype = 'COUNTER_STRIKE'
+        elif any(gt in tag_lower_list for gt in ['league of legends', 'lol']):
+            market_subtype = 'LEAGUE_OF_LEGENDS'
+        elif any(gt in tag_lower_list for gt in ['dota', 'dota 2']):
+            market_subtype = 'DOTA'
+        elif any(gt in tag_lower_list for gt in ['valorant']):
+            market_subtype = 'VALORANT'
+        elif any(gt in tag_lower_list for gt in ['starcraft', 'starcraft 2']):
+            market_subtype = 'STARCRAFT'
+        elif any(gt in tag_lower_list for gt in ['honor of kings']):
+            market_subtype = 'HONOR_OF_KINGS'
+        elif any(gt in tag_lower_list for gt in ['mobile legends']):
+            market_subtype = 'MOBILE_LEGENDS'
+        elif any(gt in tag_lower_list for gt in ['rainbow six']):
+            market_subtype = 'RAINBOW_SIX'
+        else:
+            market_subtype = 'ESPORTS'
+    elif market_type == 'WEATHER':
+        # Weather subtypes
+        if 'temperature' in market_text or 'temperature' in tag_lower_list:
+            market_subtype = 'TEMPERATURE'
+        elif 'climate' in market_text or 'climate' in tag_lower_list:
+            market_subtype = 'CLIMATE'
+        else:
+            market_subtype = 'WEATHER'
     
     # Classify bet_structure
     bet_structure = 'STANDARD'  # Default
@@ -174,6 +207,7 @@ def main():
     
     while True:
         # Fetch batch of markets needing classification
+        # Include markets missing market_type, market_subtype (niche), or bet_structure
         fetch_query = f"""
         SELECT 
             condition_id,
@@ -209,12 +243,24 @@ def main():
             classification = classify_market(market)
             
             update = {'condition_id': row.condition_id}
+            # Update market_type if missing
             if not row.market_type and classification.get('market_type'):
                 update['market_type'] = classification['market_type']
+            # Update market_subtype (niche) if missing - can be set even if market_type exists
             if not row.market_subtype and classification.get('market_subtype'):
                 update['market_subtype'] = classification['market_subtype']
+            # Update bet_structure if missing
             if not row.bet_structure and classification.get('bet_structure'):
                 update['bet_structure'] = classification['bet_structure']
+            
+            # Special case: If market_type exists but market_subtype is missing,
+            # re-classify to get the subtype (niche)
+            if row.market_type and not row.market_subtype:
+                # Re-classify to get subtype - pass existing market_type to ensure consistency
+                market['market_type'] = row.market_type
+                classification = classify_market(market)
+                if classification.get('market_subtype'):
+                    update['market_subtype'] = classification['market_subtype']
             
             if len(update) > 1:
                 updates.append(update)
