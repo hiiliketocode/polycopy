@@ -3033,6 +3033,7 @@ export function TradeCard({
               currentPrice={currentPrice}
               walletAddress={trader.address}
               tradeSize={size}
+              marketSubtype={marketSubtype}
               serverRecommendation={polySignalRecommendation}
               serverScore={polySignalScore}
             />

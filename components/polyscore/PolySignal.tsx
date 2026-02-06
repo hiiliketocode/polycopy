@@ -17,6 +17,8 @@ interface PolySignalProps {
   currentPrice?: number // Current market price (for detecting price movements)
   walletAddress?: string // Wallet to fetch stats for
   tradeSize?: number // Size of the trade in shares
+  // Niche from feed/DB - MUST match PredictionStats source for consistency
+  marketSubtype?: string // niche (market_subtype from DB)
   // Server-side pre-computed values (from fire feed) - if provided, skip client-side refetch
   serverRecommendation?: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC'
   serverScore?: number
@@ -195,7 +197,8 @@ function calculateSignal(
   entryPrice?: number,
   currentPrice?: number,
   traderStats?: TraderStats | null,
-  tradeSize?: number
+  tradeSize?: number,
+  marketSubtype?: string  // Pass through for consistent niche display
 ): SignalResult {
   const factors: ScoreFactor[] = []
   const redFlags: string[] = []
@@ -226,7 +229,8 @@ function calculateSignal(
   
   // Build comprehensive insights object - USE FETCHED TRADER STATS
   const insights: InsightData = {
-    niche: data.analysis?.niche_name ?? null,
+    // PRIORITY: Use marketSubtype prop (same source as PredictionStats) for consistent niche display
+    niche: marketSubtype?.toUpperCase() || (data.analysis?.niche_name ?? null),
     tradeProfile: stats?.trade_profile ?? null,
     
     // PRIORITY: Use fetched trader stats, fallback to PolyScoreResponse data
@@ -649,7 +653,7 @@ function calculateSignal(
 // COMPONENT
 // ============================================================================
 
-export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddress, tradeSize, serverRecommendation, serverScore }: PolySignalProps) {
+export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddress, tradeSize, marketSubtype, serverRecommendation, serverScore }: PolySignalProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [traderStats, setTraderStats] = useState<TraderStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
@@ -700,16 +704,28 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
         )
         
         // Try to find and AGGREGATE all matching niche profiles (same as PredictionStats)
-        const niche = data?.analysis?.niche_name?.toUpperCase()
+        // PRIORITY: Use marketSubtype prop (same source as PredictionStats) for consistency
+        // Fallback to AI model's niche_name only if prop not provided
+        const rawNiche = marketSubtype?.toUpperCase() || data?.analysis?.niche_name?.toUpperCase()
+        
+        // Normalize niche key same way as PredictionStats: trim, uppercase, replace spaces/hyphens with underscores
+        const normalizeKey = (value: string | null | undefined) => {
+          return (value || '')
+            .toString()
+            .trim()
+            .toUpperCase()
+            .replace(/[\s-]+/g, '_')
+            .replace(/__+/g, '_')
+        }
+        const niche = normalizeKey(rawNiche)
         let usedNiche: string | null = null
         
-        // Find ALL profiles matching the niche (not just first one)
+        // Find ALL profiles matching the niche EXACTLY (same as PredictionStats level 3)
+        // No loose matching - exact niche match only to prevent "NBA" matching "WNBA"
         const matchingProfiles = niche && profileStats.length > 0
           ? profileStats.filter((p: any) => {
-              const profileNiche = (p.final_niche || '').toUpperCase()
-              return profileNiche === niche || 
-                     profileNiche.includes(niche) || 
-                     niche.includes(profileNiche)
+              const profileNiche = normalizeKey(p.final_niche)
+              return profileNiche === niche
             })
           : []
         
@@ -789,13 +805,13 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
     }
     
     fetchStats()
-  }, [walletAddress, data?.analysis?.niche_name])
+  }, [walletAddress, marketSubtype, data?.analysis?.niche_name])
   
   const signal = useMemo(() => {
     if (!data) return null
     
     // Calculate signal from local data (includes price movement detection)
-    const calculatedSignal = calculateSignal(data, entryPrice, currentPrice, traderStats, tradeSize)
+    const calculatedSignal = calculateSignal(data, entryPrice, currentPrice, traderStats, tradeSize, marketSubtype)
     
     // If server provided a recommendation (from fire feed), use it as base
     // BUT still apply critical overrides like price crashes
