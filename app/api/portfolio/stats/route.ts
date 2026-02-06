@@ -649,8 +649,15 @@ async function calculatePortfolioStats(
       )
 
     // Update current price if we fetched a fresh one
+    // BUT: Don't override resolved market prices if they're already correct (0 or 1)
     const freshPrice = findOutcomePrice(marketMeta, position.outcome)
-    if (freshPrice !== null) {
+    const hasCorrectResolvedPrice = position.marketResolved && 
+      (position.currentPrice === 0 || position.currentPrice === 1)
+    
+    if (freshPrice !== null && !hasCorrectResolvedPrice) {
+      position.currentPrice = freshPrice
+    } else if (position.marketResolved && freshPrice !== null && !hasCorrectResolvedPrice) {
+      // For resolved markets without correct price, try to infer from fresh data
       position.currentPrice = freshPrice
     }
 
