@@ -588,18 +588,27 @@ export async function GET(request: NextRequest) {
         // Resolve with some time delay
         const resolutionTime = signal.timestamp + (2 * 60 * 60 * 1000);
         
-        const openBeforeResolve = Object.values(state.portfolios).reduce(
-          (sum, p) => sum + p.openPositions.filter(pos => pos.conditionId === tradeConditionId).length, 0
-        );
+        // Log detailed position info for debugging
+        const positionsToResolve: { strategy: string; pos: any }[] = [];
+        for (const [strategy, portfolio] of Object.entries(state.portfolios)) {
+          const matchingPositions = portfolio.openPositions.filter(pos => pos.conditionId === tradeConditionId);
+          matchingPositions.forEach(pos => positionsToResolve.push({ strategy, pos }));
+        }
         
-        if (openBeforeResolve > 0) {
-          state.logs.push(`[RESOLVING] ${openBeforeResolve} positions for ${tradeConditionId?.slice(0,12)}... Winner: ${resolution.winner}`);
+        if (positionsToResolve.length > 0 && resolvedCount < 10) {
+          state.logs.push(`[RESOLVING] ${positionsToResolve.length} positions for ${tradeConditionId?.slice(0,12)}... Winner: ${resolution.winner}`);
+          positionsToResolve.forEach(({ strategy, pos }) => {
+            const outcome = pos.outcome;
+            const willWin = outcome === resolution.winner;
+            const pnlEstimate = willWin ? (pos.size * 1 - pos.investedUsd) : (-pos.investedUsd);
+            state.logs.push(`  - ${strategy}: ${outcome} @ ${pos.entryPrice.toFixed(2)} | $${pos.investedUsd.toFixed(0)} | Will ${willWin ? 'WIN' : 'LOSE'} | Est P&L: $${pnlEstimate.toFixed(0)}`);
+          });
         }
         
         state = resolveMarket(state, tradeConditionId, resolution.winner, resolutionTime);
         
-        if (openBeforeResolve > 0) {
-          resolvedCount += openBeforeResolve;
+        if (positionsToResolve.length > 0) {
+          resolvedCount += positionsToResolve.length;
         }
       }
     }
@@ -608,6 +617,14 @@ export async function GET(request: NextRequest) {
     state = advanceTime(state, end.getTime());
     
     console.log(`[paper-trading] Processed ${processedCount} trades, entered ${enteredCount}, resolved ${resolvedCount}`);
+    
+    // Log final summary for each strategy
+    state.logs.push(`[SUMMARY] === Final Results ===`);
+    for (const [strategy, portfolio] of Object.entries(state.portfolios)) {
+      const metrics = getPerformanceMetrics(portfolio);
+      const pnlStr = portfolio.totalPnL >= 0 ? `+$${portfolio.totalPnL.toFixed(2)}` : `-$${Math.abs(portfolio.totalPnL).toFixed(2)}`;
+      state.logs.push(`[SUMMARY] ${STRATEGY_CONFIGS[strategy as StrategyType].name}: ${pnlStr} ROI | Open: ${portfolio.openPositions.length} | Closed: ${portfolio.closedPositions.length} (${portfolio.winningTrades}W/${portfolio.losingTrades}L)`);
+    }
     
     // Generate results
     const result = generateResults(state);
