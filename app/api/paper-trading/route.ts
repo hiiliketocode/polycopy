@@ -18,6 +18,13 @@ import {
   runMultiPeriodBacktest,
 } from '@/lib/paper-trading';
 import { getPolyScore, PolyScoreRequest } from '@/lib/polyscore/get-polyscore';
+import { 
+  fetchTradesFromBigQuery, 
+  fetchMarketResolutions, 
+  getTradeStats,
+  BigQueryTrade,
+  BigQueryMarket,
+} from '@/lib/bigquery/client';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -227,11 +234,19 @@ export async function GET(request: NextRequest) {
   const initialCapital = parseInt(searchParams.get('capital') || '1000');
   const slippagePct = parseFloat(searchParams.get('slippage') || '0.04');
   const cooldownHours = parseInt(searchParams.get('cooldown') || '3');
-  // Default to 45 days ago for backtesting (markets should be resolved)
-  const defaultStartDate = new Date();
-  defaultStartDate.setDate(defaultStartDate.getDate() - 45);
+  
+  // Offset parameter: how many days ago to START the backtest (default: 45 days for resolved markets)
+  const startOffsetDays = parseInt(searchParams.get('offset') || '45');
+  
+  // Calculate default date range based on offset
+  // For meaningful backtests, we need markets that have RESOLVED (typically 30+ days old)
+  const defaultEndDate = new Date();
+  defaultEndDate.setDate(defaultEndDate.getDate() - startOffsetDays);
+  const defaultStartDate = new Date(defaultEndDate);
+  defaultStartDate.setDate(defaultStartDate.getDate() - durationDays);
+  
   const startDate = searchParams.get('start') || defaultStartDate.toISOString().split('T')[0];
-  const endDate = searchParams.get('end') || undefined;
+  const endDate = searchParams.get('end') || defaultEndDate.toISOString().split('T')[0];
   const format = searchParams.get('format') || 'json'; // 'json' or 'text'
   
   // Multi-period backtesting
@@ -364,425 +379,445 @@ export async function GET(request: NextRequest) {
       strategies,
     });
     
-    // Fetch top traders from leaderboard stats
-    console.log(`[paper-trading] Fetching top traders for backtesting...`);
+    // =========================================================================
+    // FETCH HISTORICAL TRADES FROM BIGQUERY
+    // This is where ALL trades are stored - the source of truth for backtesting
+    // =========================================================================
+    console.log(`[paper-trading] Fetching historical trades from BigQuery...`);
+    console.log(`[paper-trading] Date range: ${start.toISOString()} to ${end.toISOString()}`);
     
-    // First try with filters, fallback to just getting any traders
-    let topTraders: { wallet_address: string }[] = [];
+    let allTrades: BigQueryTrade[] = [];
+    let marketResolutionData = new Map<string, BigQueryMarket>();
     
-    const { data: filteredTraders, error: filteredError } = await supabase
-      .from('trader_global_stats')
-      .select('wallet_address')
-      .gte('l_total_roi_pct', 5)   // At least 5% ROI (relaxed)
-      .order('l_total_roi_pct', { ascending: false })
-      .limit(30);
-    
-    if (filteredError) {
-      console.error('[paper-trading] Error fetching filtered traders:', filteredError);
-    }
-    
-    if (filteredTraders && filteredTraders.length > 0) {
-      topTraders = filteredTraders;
-    } else {
-      // Fallback: get any traders from the stats table
-      console.log('[paper-trading] No filtered traders, fetching any available...');
-      const { data: anyTraders, error: anyError } = await supabase
-        .from('trader_global_stats')
-        .select('wallet_address')
-        .limit(30);
+    try {
+      // First, get stats to understand the data volume
+      const stats = await getTradeStats(start, end);
+      console.log(`[paper-trading] BigQuery stats: ${stats.totalTrades} trades, ${stats.uniqueMarkets} markets, ${stats.uniqueTraders} traders`);
+      state.logs.push(`[BIGQUERY] Found ${stats.totalTrades} BUY trades in date range`);
+      state.logs.push(`[BIGQUERY] ${stats.uniqueMarkets} unique markets | ${stats.uniqueTraders} unique traders`);
       
-      if (anyError) {
-        console.error('[paper-trading] Error fetching any traders:', anyError);
-        return NextResponse.json({ 
-          error: 'Failed to fetch traders', 
-          details: anyError.message 
-        }, { status: 500 });
-      }
+      // Fetch trades from BigQuery (limited to 5000 for performance)
+      allTrades = await fetchTradesFromBigQuery(start, end, {
+        side: 'BUY',
+        limit: 5000,
+      });
       
-      topTraders = anyTraders || [];
+      console.log(`[paper-trading] Fetched ${allTrades.length} trades from BigQuery`);
+      state.logs.push(`[BACKTEST] Loaded ${allTrades.length} historical trades from BigQuery`);
+      
+      // Fetch market resolution data for these trades
+      const conditionIds = [...new Set(allTrades.map(t => t.condition_id).filter(Boolean))];
+      console.log(`[paper-trading] Fetching resolution data for ${conditionIds.length} unique markets...`);
+      
+      marketResolutionData = await fetchMarketResolutions(conditionIds);
+      
+      const resolvedCount = Array.from(marketResolutionData.values())
+        .filter(m => m.resolved_outcome || m.winning_side).length;
+      
+      console.log(`[paper-trading] Got resolution data for ${marketResolutionData.size} markets (${resolvedCount} resolved)`);
+      state.logs.push(`[RESOLUTION] ${resolvedCount} of ${marketResolutionData.size} markets have resolution data`);
+      
+    } catch (bigQueryError: any) {
+      console.error('[paper-trading] BigQuery error:', bigQueryError);
+      state.logs.push(`[ERROR] BigQuery query failed: ${bigQueryError.message}`);
+      
+      // Return error with helpful message
+      return NextResponse.json({ 
+        error: 'Failed to fetch historical trades from BigQuery', 
+        details: bigQueryError.message,
+        hint: 'Ensure GOOGLE_APPLICATION_CREDENTIALS_JSON is set or ADC is configured'
+      }, { status: 500 });
     }
     
-    // If still no traders, use hardcoded list of known active traders
-    if (topTraders.length === 0) {
-      console.log('[paper-trading] No traders in stats table, using known wallets...');
-      topTraders = [
-        { wallet_address: '0xea8f98624311923b566af3a11b85b53b2be862a9' },
-        { wallet_address: '0xf247584e41117bbbe4cc06e4d2c95741792a5216' },
-        { wallet_address: '0x38b408789fdb584782a5d521e794c69b150527e4' },
-        { wallet_address: '0x7e279561b5766f199a34f596da04d9c3783e178d' },
-      ];
-    }
-    
-    console.log(`[paper-trading] Using ${topTraders.length} traders for backtesting`);
-    
-    // Fetch recent trades from Polymarket API for each trader
-    const allTrades: any[] = [];
-    const fetchPromises = topTraders.map(async (trader) => {
-      try {
-        const response = await fetch(
-          `https://data-api.polymarket.com/trades?limit=50&user=${trader.wallet_address}`,
-          { 
-            cache: 'no-store',
-            headers: { 'Accept': 'application/json' }
-          }
-        );
-        
-        if (!response.ok) return [];
-        
-        const walletTrades = await response.json();
-        return walletTrades.map((trade: any) => ({
-          ...trade,
-          wallet_address: trader.wallet_address,
-          // Normalize timestamp
-          timestamp: trade.timestamp || trade.matchTime || trade.created_at,
-        }));
-      } catch (error) {
-        console.warn(`[paper-trading] Error fetching trades for ${trader.wallet_address}:`, error);
-        return [];
-      }
-    });
-    
-    const tradeResults = await Promise.all(fetchPromises);
-    tradeResults.forEach(trades => allTrades.push(...trades));
-    
-    // Helper to convert timestamp (could be Unix seconds or ISO string)
+    // =========================================================================
+    // HELPER: Convert timestamp to milliseconds
+    // =========================================================================
     const getTradeTimeMs = (t: any): number => {
       const ts = t.timestamp;
+      if (!ts) return 0;
       // If it's a number less than year 3000 in seconds, it's Unix seconds
       if (typeof ts === 'number' && ts < 32503680000) {
-        return ts * 1000; // Convert seconds to milliseconds
+        return ts * 1000;
       }
-      // Otherwise try to parse as date string or milliseconds
       return new Date(ts).getTime();
     };
     
-    // Filter to BUY trades within the date range and sort by timestamp
-    const trades = allTrades
-      .filter(t => {
-        const tradeTime = getTradeTimeMs(t);
-        return t.side === 'BUY' && tradeTime >= start.getTime() && tradeTime <= end.getTime();
-      })
-      .sort((a, b) => getTradeTimeMs(a) - getTradeTimeMs(b));
+    // Validate we have data
+    if (allTrades.length === 0) {
+      return NextResponse.json({ 
+        error: 'No trade data available', 
+        details: `No BUY trades found in date range ${start.toISOString()} to ${end.toISOString()}. Try an earlier date range.`
+      }, { status: 404 });
+    }
     
-    console.log(`[paper-trading] Found ${trades.length} BUY trades in date range (${allTrades.length} total fetched)`);
+    // Debug: show date range and diversity of trades
+    const firstTradeTime = new Date(getTradeTimeMs(allTrades[0]));
+    const lastTradeTime = new Date(getTradeTimeMs(allTrades[allTrades.length - 1]));
+    const uniqueMarkets = new Set(allTrades.map(t => t.condition_id).filter(Boolean));
+    const uniqueTraders = new Set(allTrades.map(t => t.wallet_address).filter(Boolean));
     
-    if (trades.length === 0) {
-      // If no trades in date range, use all recent BUY trades
-      console.log('[paper-trading] No trades in date range, using all BUY trades...');
+    state.logs.push(`[DATA] Trade date range: ${firstTradeTime.toISOString()} to ${lastTradeTime.toISOString()}`);
+    state.logs.push(`[DATA] Unique markets: ${uniqueMarkets.size} | Unique traders: ${uniqueTraders.size}`);
+    state.logs.push(`[DATA] Sample trade: ${(allTrades[0].title || '').slice(0, 40)}...`);
+    
+    // =========================================================================
+    // BUILD MARKET RESOLUTION MAP FROM BIGQUERY DATA
+    // We use resolved_outcome and winning_side from the markets table
+    // =========================================================================
+    const marketResolutions = new Map<string, { winner: 'YES' | 'NO' | string | null; closed: boolean; closeTime?: number }>();
+    
+    for (const [conditionId, marketData] of marketResolutionData) {
+      let winner: 'YES' | 'NO' | string | null = null;
+      const closed = marketData.closed === true || marketData.status === 'resolved';
       
-      const recentTrades = allTrades
-        .filter(t => t.side === 'BUY')
-        .sort((a, b) => getTradeTimeMs(a) - getTradeTimeMs(b));
+      // Try resolved_outcome first (most reliable)
+      const resolvedOutcome = marketData.resolved_outcome || marketData.winning_side;
       
-      if (recentTrades.length === 0) {
-        return NextResponse.json({ 
-          error: 'No trade data available', 
-          details: `Fetched ${allTrades.length} total trades but none were BUY trades in the date range. Try again later.`
-        }, { status: 404 });
+      if (resolvedOutcome) {
+        // Normalize standard outcomes to YES/NO
+        const normalizedOutcome = resolvedOutcome.toUpperCase().trim();
+        if (normalizedOutcome === 'YES' || normalizedOutcome === 'TRUE' || normalizedOutcome === 'UP') {
+          winner = 'YES';
+        } else if (normalizedOutcome === 'NO' || normalizedOutcome === 'FALSE' || normalizedOutcome === 'DOWN') {
+          winner = 'NO';
+        } else {
+          // Store actual outcome for non-standard markets (team names, etc.)
+          winner = resolvedOutcome;
+        }
       }
       
-      trades.push(...recentTrades);
-      console.log(`[paper-trading] Using ${recentTrades.length} recent BUY trades instead`);
-    }
-    
-    console.log(`[paper-trading] Loaded ${trades.length} trades for backtesting`);
-    state.logs.push(`[BACKTEST] Loaded ${trades?.length || 0} historical trades`);
-    
-    // Debug: show date range of trades
-    if (trades.length > 0) {
-      const firstTradeTime = new Date(getTradeTimeMs(trades[0]));
-      const lastTradeTime = new Date(getTradeTimeMs(trades[trades.length - 1]));
-      state.logs.push(`[DEBUG] Trade date range: ${firstTradeTime.toISOString()} to ${lastTradeTime.toISOString()}`);
-      state.logs.push(`[DEBUG] Sim date range: ${start.toISOString()} to ${end.toISOString()}`);
-      state.logs.push(`[DEBUG] First trade: ${(trades[0].title || '').slice(0, 50)}`);
-    }
-    
-    // Get market resolutions from Polymarket API
-    const conditionIds = [...new Set((trades || []).map(t => t.conditionId || t.condition_id).filter(Boolean))];
-    
-    let marketResolutions = new Map<string, { winner: 'YES' | 'NO' | null; closed: boolean }>();
-    
-    console.log(`[paper-trading] Fetching resolution data for ${conditionIds.length} markets...`);
-    
-    // Fetch market data from Polymarket API in batches
-    const batchSize = 20;
-    for (let i = 0; i < Math.min(conditionIds.length, 100); i += batchSize) {
-      const batchIds = conditionIds.slice(i, i + batchSize);
+      // Get close time for resolution timing
+      const closeTime = marketData.close_time || marketData.end_time;
+      const closeTimeMs = closeTime ? new Date(closeTime).getTime() : undefined;
       
-      const marketPromises = batchIds.map(async (conditionId) => {
-        try {
-          const response = await fetch(
-            `https://clob.polymarket.com/markets/${conditionId}`,
-            { 
-              cache: 'no-store',
-              headers: { 'Accept': 'application/json' }
-            }
-          );
-          
-          if (!response.ok) return null;
-          
-          const market = await response.json();
-          
-          // Determine winner from market data - STRICT OFFICIAL RESOLUTION ONLY
-          let winner: 'YES' | 'NO' | null = null;
-          let resolutionMethod: string | null = null;
-          const closed = market.closed === true || market.active === false;
-          
-          // Method 1: Check if market has explicit winner field
-          // Only trust if market.resolved is also true
-          if (market.winner && market.resolved === true) {
-            winner = market.winner.toUpperCase() as 'YES' | 'NO';
-            resolutionMethod = 'explicit_winner';
-          }
-          
-          // DISABLED Method 2: outcome_prices check
-          // This was causing HINDSIGHT BIAS - outcome_prices reflects CURRENT prices,
-          // not official resolution. A market trading at 99¢ is NOT the same as resolved.
-          
-          // Method 3: Check tokens array for winner field
-          // Only trust if the market is officially resolved
-          if (!winner && market.resolved === true && market.tokens && Array.isArray(market.tokens)) {
-            const yesToken = market.tokens.find((t: any) => 
-              t.outcome === 'Yes' || t.outcome === 'YES' || t.outcome?.toLowerCase() === 'yes'
-            );
-            const noToken = market.tokens.find((t: any) => 
-              t.outcome === 'No' || t.outcome === 'NO' || t.outcome?.toLowerCase() === 'no'
-            );
-            
-            if (yesToken?.winner === true) {
-              winner = 'YES';
-              resolutionMethod = 'token_winner';
-            } else if (noToken?.winner === true) {
-              winner = 'NO';
-              resolutionMethod = 'token_winner';
-            }
-          }
-          
-          // Method 4: Check resolved_price (1.0 = YES won, 0.0 = NO won) 
-          if (!winner && market.resolved === true) {
-            if (market.resolved_price === 1 || market.resolved_price === '1') {
-              winner = 'YES';
-              resolutionMethod = 'resolved_price';
-            } else if (market.resolved_price === 0 || market.resolved_price === '0') {
-              winner = 'NO';
-              resolutionMethod = 'resolved_price';
-            }
-          }
-          
-          // DISABLED: Simulated resolution based on current prices
-          // This created hindsight bias - we were using CURRENT prices to determine 
-          // winners for trades made at PAST prices, creating impossibly good results.
-          // 
-          // For accurate backtesting, we should only resolve markets that are:
-          // 1. Officially closed (market.closed === true)
-          // 2. Have explicit winner data (market.winner or token.winner)
-          //
-          // Without historical resolution data, backtest P&L will only reflect
-          // trades in markets that have actually resolved.
-          
-          return { conditionId, winner, closed, rawData: market, resolutionMethod };
-        } catch (error) {
-          return null;
-        }
-      });
-      
-      const results = await Promise.all(marketPromises);
-      let batchIdx = 0;
-      results.filter(Boolean).forEach(r => {
-        if (r) {
-          marketResolutions.set(r.conditionId, { winner: r.winner, closed: r.closed });
-          // Log markets that have resolution for debugging
-          if (r.winner && batchIdx < 5) {
-            const rawInfo = r.rawData ? {
-              resolved: r.rawData.resolved,
-              closed: r.rawData.closed,
-              active: r.rawData.active,
-              winner: r.rawData.winner,
-              resolved_price: r.rawData.resolved_price,
-            } : 'N/A';
-            console.log(`[paper-trading] RESOLVED Market ${r.conditionId.slice(0,12)}...: winner=${r.winner}, method=${r.resolutionMethod}, raw=`, rawInfo);
-          }
-          batchIdx++;
-        }
-      });
+      marketResolutions.set(conditionId, { winner, closed, closeTime: closeTimeMs });
     }
     
     const resolvedMarketsCount = Array.from(marketResolutions.values()).filter(m => m.winner !== null).length;
     const closedMarketsCount = Array.from(marketResolutions.values()).filter(m => m.closed).length;
-    console.log(`[paper-trading] Loaded ${marketResolutions.size} markets, ${resolvedMarketsCount} with resolution, ${closedMarketsCount} closed`);
-    state.logs.push(`[BACKTEST] Found ${resolvedMarketsCount} resolved markets out of ${marketResolutions.size} (${closedMarketsCount} officially closed)`);
-    if (resolvedMarketsCount === 0) {
-      state.logs.push(`[INFO] No officially resolved markets found. P&L will be $0 for open positions.`);
-      state.logs.push(`[INFO] For meaningful backtests, use historical data with resolved markets or wait for current markets to close.`);
-    }
     
-    // Log resolved markets for debugging
-    if (resolvedMarketsCount > 0) {
+    console.log(`[paper-trading] Markets: ${marketResolutions.size} total, ${resolvedMarketsCount} with resolution, ${closedMarketsCount} closed`);
+    state.logs.push(`[RESOLUTION] ${resolvedMarketsCount} of ${marketResolutions.size} markets have resolution data`);
+    
+    if (resolvedMarketsCount === 0) {
+      state.logs.push(`[WARNING] No resolved markets found in BigQuery for this date range!`);
+      state.logs.push(`[WARNING] This could mean: 1) Markets haven't resolved yet, 2) Resolution data not synced`);
+      state.logs.push(`[TIP] Try an older date range (60-90 days ago) where more markets have resolved.`);
+    } else {
+      // Log sample resolved markets
       const resolved = Array.from(marketResolutions.entries())
         .filter(([_, m]) => m.winner !== null)
         .slice(0, 5);
       resolved.forEach(([id, m]) => {
-        state.logs.push(`[DEBUG] Resolved: ${id.slice(0, 20)}... Winner: ${m.winner} (closed=${m.closed})`);
-      });
-    } else {
-      state.logs.push(`[WARNING] No resolved markets found - all trades are for markets still open.`);
-      state.logs.push(`[WARNING] P&L will be $0 until markets officially resolve.`);
-      // Log sample of market status
-      const sample = Array.from(marketResolutions.entries()).slice(0, 3);
-      sample.forEach(([id, m]) => {
-        state.logs.push(`[DEBUG] Market: ${id.slice(0,12)}... closed=${m.closed} winner=${m.winner || 'pending'}`);
+        state.logs.push(`[RESOLVED] ${id.slice(0, 16)}... Winner: ${m.winner}`);
       });
     }
     
-    // Process trades
+    // =========================================================================
+    // PROCESS TRADES CHRONOLOGICALLY WITH PROPER CASH MANAGEMENT
+    // =========================================================================
     let processedCount = 0;
+    let evaluatedCount = 0;
     let enteredCount = 0;
+    let skippedNoCash = 0;
+    let skippedDuplicate = 0;
+    let skippedLowScore = 0;
     let resolvedCount = 0;
-    let polyScoreSuccessCount = 0;
-    let polyScoreFallbackCount = 0;
     
-    // Rate limit PolyScore API calls (max 10 per backtest to avoid overload)
-    const MAX_POLYSCORE_CALLS = 10;
+    // Track which markets each strategy has already entered (prevent duplicates)
+    const enteredMarkets: Record<StrategyType, Set<string>> = {
+      PURE_VALUE_SCORE: new Set(),
+      WEIGHTED_VALUE_SCORE: new Set(),
+      SINGLES_ONLY_V1: new Set(),
+      SINGLES_ONLY_V2: new Set(),
+    };
     
-    for (const trade of (trades || [])) {
+    // Track resolution times for markets (use close time from BigQuery markets table)
+    const marketCloseTimes = new Map<string, number>();
+    for (const [conditionId, resolution] of marketResolutions) {
+      if (resolution.closeTime) {
+        marketCloseTimes.set(conditionId, resolution.closeTime);
+      }
+    }
+    
+    state.logs.push(`[SIMULATION] Starting chronological trade processing...`);
+    state.logs.push(`[SIMULATION] Processing ${allTrades.length} trades | ${marketResolutions.size} unique markets`);
+    
+    // Process each trade in chronological order
+    for (const trade of allTrades) {
       processedCount++;
+      const tradeConditionId = trade.condition_id;
+      const tradeTime = getTradeTimeMs(trade);
       
-      // Convert to signal
-      const signal = tradeToSignal(trade, null, null);
+      // =====================================================================
+      // STEP 1: Advance simulation time to this trade's timestamp
+      // This processes any cooldowns that have expired
+      // =====================================================================
+      state = advanceTime(state, tradeTime);
       
-      // Try to get real PolyScore (with rate limiting)
-      let scores: { valueScore: number; edge: number; polyscore: number; traderWinRate: number } | null = null;
-      
-      if (polyScoreSuccessCount < MAX_POLYSCORE_CALLS) {
-        const realScores = await getRealPolyScore(trade, state.logs);
-        if (realScores) {
-          scores = realScores;
-          polyScoreSuccessCount++;
+      // =====================================================================
+      // STEP 2: Resolve any markets that should have closed by now
+      // (We resolve based on market_close_time, not trade time)
+      // =====================================================================
+      for (const [conditionId, closeTime] of marketCloseTimes) {
+        if (closeTime <= tradeTime) {
+          const resolution = marketResolutions.get(conditionId);
+          if (resolution?.winner) {
+            // Check if we have positions in this market
+            let hasPositions = false;
+            for (const [_, portfolio] of Object.entries(state.portfolios)) {
+              if (portfolio.openPositions.some(p => p.conditionId === conditionId)) {
+                hasPositions = true;
+                break;
+              }
+            }
+            
+            if (hasPositions) {
+              // Determine actual winner by comparing to trade outcomes
+              let actualWinner: 'YES' | 'NO' = 'YES';
+              const resolvedOutcome = resolution.winner;
+              
+              // For standard YES/NO markets
+              if (resolvedOutcome === 'YES' || resolvedOutcome === 'NO') {
+                actualWinner = resolvedOutcome;
+              } else {
+                // For other markets (team names, etc.), check if any position's outcome matches
+                for (const [_, portfolio] of Object.entries(state.portfolios)) {
+                  for (const pos of portfolio.openPositions) {
+                    if (pos.conditionId === conditionId) {
+                      // If position outcome matches resolved outcome, that side "won"
+                      const posOutcome = pos.outcome?.toUpperCase().trim();
+                      const resOutcome = resolvedOutcome?.toUpperCase().trim();
+                      if (posOutcome === resOutcome) {
+                        actualWinner = 'YES'; // Position outcome matched = win
+                      } else {
+                        actualWinner = 'NO'; // Position outcome didn't match = lose
+                      }
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              state = resolveMarket(state, conditionId, actualWinner, closeTime);
+              resolvedCount++;
+              
+              if (resolvedCount <= 5) {
+                state.logs.push(`[RESOLVED] ${conditionId.slice(0, 12)}... at ${new Date(closeTime).toISOString().slice(0, 10)} | Winner: ${actualWinner}`);
+              }
+            }
+          }
+          // Remove from map so we don't process again
+          marketCloseTimes.delete(conditionId);
         }
       }
       
-      // Fallback to simulated scores if PolyScore unavailable
-      if (!scores) {
-        scores = simulateValueScore(trade);
-        polyScoreFallbackCount++;
-      }
+      // =====================================================================
+      // STEP 3: Calculate scores for this trade (simulate what algo would see)
+      // =====================================================================
+      const signal = tradeToSignal(trade, null, null);
+      const scores = simulateValueScore(trade);
       
       signal.valueScore = scores.valueScore;
       signal.aiEdge = scores.edge;
       signal.polyscore = scores.polyscore;
       signal.traderWinRate = scores.traderWinRate;
+      signal.timestamp = tradeTime;
       
-      // Log first 5 trades with full scoring details
-      if (processedCount <= 5) {
-        const scoreSource = polyScoreSuccessCount > polyScoreFallbackCount ? 'API' : 'SIM';
-        state.logs.push(`[TRADE ${processedCount}] ${(trade.title || '').slice(0, 35)}...`);
-        state.logs.push(`  Scores (${scoreSource}): Value=${signal.valueScore?.toFixed(1)} | Edge=${signal.aiEdge?.toFixed(1)}% | WinRate=${((signal.traderWinRate || 0) * 100).toFixed(0)}% | PolyScore=${signal.polyscore?.toFixed(1)}`);
-        
-        // Show which strategies would accept this trade
-        const strategyChecks: string[] = [];
-        
-        // Strategy 1: Pure Value Score (>= 60)
-        const s1Pass = (signal.valueScore || 0) >= 60;
-        strategyChecks.push(`S1:${s1Pass ? '✓' : '✗'}(v>60)`);
-        
-        // Strategy 2: Weighted (>= 55) - simplified check
-        const s2Pass = (signal.valueScore || 0) >= 55 && (signal.aiEdge || 0) >= 0;
-        strategyChecks.push(`S2:${s2Pass ? '✓' : '✗'}(weighted)`);
-        
-        // Strategy 3: Value >= 70 AND WinRate >= 52%
-        const s3ValueOk = (signal.valueScore || 0) >= 70;
-        const s3WinRateOk = (signal.traderWinRate || 0) >= 0.52;
-        const s3Pass = s3ValueOk && s3WinRateOk;
-        strategyChecks.push(`S3:${s3Pass ? '✓' : '✗'}(v${s3ValueOk ? '✓' : '✗'},wr${s3WinRateOk ? '✓' : '✗'})`);
-        
-        // Strategy 4: Value >= 65 AND Edge >= 3% AND WinRate >= 55%
-        const s4ValueOk = (signal.valueScore || 0) >= 65;
-        const s4EdgeOk = (signal.aiEdge || 0) >= 3;
-        const s4WinRateOk = (signal.traderWinRate || 0) >= 0.55;
-        const s4Pass = s4ValueOk && s4EdgeOk && s4WinRateOk;
-        strategyChecks.push(`S4:${s4Pass ? '✓' : '✗'}(v${s4ValueOk ? '✓' : '✗'},e${s4EdgeOk ? '✓' : '✗'},wr${s4WinRateOk ? '✓' : '✗'})`);
-        
-        state.logs.push(`  Strategy checks: ${strategyChecks.join(' | ')}`);
+      evaluatedCount++;
+      
+      // Log first few trades with details
+      if (processedCount <= 10) {
+        const title = (trade.title || '').slice(0, 35);
+        state.logs.push(`[EVAL #${processedCount}] ${title}... | V:${signal.valueScore?.toFixed(0)} E:${signal.aiEdge?.toFixed(1)}% WR:${((signal.traderWinRate||0)*100).toFixed(0)}%`);
       }
       
-      // Count open positions before (per strategy)
-      const openBefore: Record<string, number> = {};
-      for (const [strategy, portfolio] of Object.entries(state.portfolios)) {
-        openBefore[strategy] = portfolio.openPositions.length;
-      }
-      
-      // Process signal
-      state = processSignal(state, signal);
-      
-      // Count open positions after and track per-strategy entries
-      let totalNewEntries = 0;
-      for (const [strategy, portfolio] of Object.entries(state.portfolios)) {
-        const newEntries = portfolio.openPositions.length - (openBefore[strategy] || 0);
-        if (newEntries > 0) {
-          totalNewEntries += newEntries;
+      // =====================================================================
+      // STEP 4: For each strategy, check if we should enter this trade
+      // =====================================================================
+      for (const strategyType of state.config.strategies) {
+        const portfolio = state.portfolios[strategyType];
+        const config = STRATEGY_CONFIGS[strategyType];
+        
+        // Skip if already in this market
+        if (enteredMarkets[strategyType].has(tradeConditionId)) {
+          skippedDuplicate++;
+          continue;
         }
-      }
-      
-      if (totalNewEntries > 0) {
+        
+        // Skip if not enough cash
+        const minPosition = 10; // Minimum $10 position
+        if (portfolio.availableCash < minPosition) {
+          skippedNoCash++;
+          continue;
+        }
+        
+        // Check strategy entry criteria
+        const meetsValueThreshold = (signal.valueScore || 0) >= (config.minValueScore || 0);
+        const meetsEdgeThreshold = (signal.aiEdge || 0) >= (config.minAiEdge || 0);
+        const meetsWinRateThreshold = (signal.traderWinRate || 0) >= (config.minTraderWinRate || 0);
+        
+        // Additional strategy-specific logic
+        let shouldEnter = false;
+        
+        switch (strategyType) {
+          case 'PURE_VALUE_SCORE':
+            // Entry: valueScore >= 60
+            shouldEnter = meetsValueThreshold;
+            break;
+            
+          case 'WEIGHTED_VALUE_SCORE':
+            // Entry: weighted score >= 55
+            const weightedScore = (signal.valueScore || 0) * 0.30 +
+                                  (signal.polyscore || 0) * 0.25 +
+                                  ((signal.traderWinRate || 0) * 100) * 0.25 +
+                                  (signal.aiEdge || 0) * 2 * 0.20;
+            shouldEnter = weightedScore >= 55;
+            break;
+            
+          case 'SINGLES_ONLY_V1':
+            // Entry: valueScore >= 70 AND traderWinRate >= 52%
+            shouldEnter = meetsValueThreshold && meetsWinRateThreshold;
+            break;
+            
+          case 'SINGLES_ONLY_V2':
+            // Entry: valueScore >= 65 AND aiEdge >= 3% AND traderWinRate >= 55%
+            shouldEnter = meetsValueThreshold && meetsEdgeThreshold && meetsWinRateThreshold;
+            break;
+        }
+        
+        if (!shouldEnter) {
+          skippedLowScore++;
+          continue;
+        }
+        
+        // Calculate position size (edge-based: allocate based on confidence)
+        const edgeFactor = Math.min(Math.max((signal.aiEdge || 0) / 10, 0.5), 2.0);
+        const baseSize = Math.min(portfolio.availableCash * 0.10, 100); // 10% of cash, max $100
+        const positionSize = Math.min(baseSize * edgeFactor, portfolio.availableCash);
+        
+        if (positionSize < minPosition) {
+          skippedNoCash++;
+          continue;
+        }
+        
+        // Enter the trade!
+        const entryPrice = (trade.price || 0.5) * (1 + slippagePct); // Apply slippage
+        const shares = positionSize / entryPrice;
+        
+        const newPosition = {
+          id: `${strategyType}-${tradeConditionId}-${tradeTime}`,
+          conditionId: tradeConditionId,
+          marketTitle: trade.title || 'Unknown Market',
+          outcome: trade.outcome || signal.outcome || 'YES',
+          entryPrice: entryPrice,
+          size: shares,
+          investedUsd: positionSize,
+          entryTimestamp: tradeTime,
+          status: 'OPEN' as const,
+          valueScoreAtEntry: signal.valueScore,
+          aiEdgeAtEntry: signal.aiEdge,
+        };
+        
+        // Deduct from available cash and add to locked
+        portfolio.availableCash -= positionSize;
+        portfolio.lockedCapital += positionSize;
+        portfolio.openPositions.push(newPosition);
+        portfolio.totalTrades++;
+        
+        // Mark this market as entered
+        enteredMarkets[strategyType].add(tradeConditionId);
         enteredCount++;
-      }
-      
-      // Check for resolution (handle both conditionId and condition_id field names)
-      const tradeConditionId = trade.conditionId || trade.condition_id;
-      const resolution = marketResolutions.get(tradeConditionId);
-      
-      // Log resolution check for first few
-      if (processedCount <= 3) {
-        state.logs.push(`[DEBUG] Trade ${processedCount}: conditionId=${tradeConditionId?.slice(0,12)}... hasResolution=${!!resolution} winner=${resolution?.winner || 'N/A'}`);
-      }
-      
-      if (resolution?.winner) {
-        // Resolve with some time delay
-        const resolutionTime = signal.timestamp + (2 * 60 * 60 * 1000);
         
-        // Log detailed position info for debugging
-        const positionsToResolve: { strategy: string; pos: any }[] = [];
-        for (const [strategy, portfolio] of Object.entries(state.portfolios)) {
-          const matchingPositions = portfolio.openPositions.filter(pos => pos.conditionId === tradeConditionId);
-          matchingPositions.forEach(pos => positionsToResolve.push({ strategy, pos }));
-        }
-        
-        if (positionsToResolve.length > 0 && resolvedCount < 10) {
-          state.logs.push(`[RESOLVING] ${positionsToResolve.length} positions for ${tradeConditionId?.slice(0,12)}... Winner: ${resolution.winner}`);
-          positionsToResolve.forEach(({ strategy, pos }) => {
-            const outcome = pos.outcome;
-            const willWin = outcome === resolution.winner;
-            const pnlEstimate = willWin ? (pos.size * 1 - pos.investedUsd) : (-pos.investedUsd);
-            state.logs.push(`  - ${strategy}: ${outcome} @ ${pos.entryPrice.toFixed(2)} | $${pos.investedUsd.toFixed(0)} | Will ${willWin ? 'WIN' : 'LOSE'} | Est P&L: $${pnlEstimate.toFixed(0)}`);
-          });
-        }
-        
-        state = resolveMarket(state, tradeConditionId, resolution.winner, resolutionTime);
-        
-        if (positionsToResolve.length > 0) {
-          resolvedCount += positionsToResolve.length;
+        if (enteredCount <= 20) {
+          state.logs.push(`[ENTRY] ${config.name.slice(0, 6)}: ${(trade.title || '').slice(0, 25)}... $${positionSize.toFixed(0)} @ ${entryPrice.toFixed(2)}`);
         }
       }
     }
+    
+    // =========================================================================
+    // STEP 5: Resolve remaining open positions at end of simulation
+    // (For positions in markets that resolved, even if after sim end date)
+    // =========================================================================
+    state.logs.push(`[FINAL] Resolving remaining open positions...`);
+    let finalResolvedCount = 0;
+    
+    for (const [strategyType, portfolio] of Object.entries(state.portfolios)) {
+      const toResolve = [...portfolio.openPositions];
+      for (const position of toResolve) {
+        const resolution = marketResolutions.get(position.conditionId);
+        if (resolution?.winner) {
+          // Determine if this position won
+          const resolvedOutcome = resolution.winner;
+          let positionWon = false;
+          
+          if (resolvedOutcome === 'YES' || resolvedOutcome === 'NO') {
+            positionWon = position.outcome === resolvedOutcome;
+          } else {
+            // For non-standard outcomes, compare directly
+            positionWon = position.outcome?.toUpperCase().trim() === resolvedOutcome?.toUpperCase().trim();
+          }
+          
+          // Calculate P&L
+          const exitValue = positionWon ? position.size * 1 : 0;
+          const pnl = exitValue - position.investedUsd;
+          
+          // Update portfolio
+          portfolio.lockedCapital -= position.investedUsd;
+          portfolio.availableCash += exitValue;
+          portfolio.totalPnL += pnl;
+          
+          if (positionWon) {
+            portfolio.winningTrades++;
+          } else {
+            portfolio.losingTrades++;
+          }
+          
+          // Move to closed
+          const idx = portfolio.openPositions.findIndex(p => p.id === position.id);
+          if (idx !== -1) {
+            portfolio.openPositions.splice(idx, 1);
+            portfolio.closedPositions.push({
+              ...position,
+              status: positionWon ? 'WON' : 'LOST',
+              exitPrice: positionWon ? 1 : 0,
+              exitTimestamp: end.getTime(),
+              pnlUsd: pnl,
+              roiPercent: (pnl / position.investedUsd) * 100,
+            });
+          }
+          
+          finalResolvedCount++;
+        }
+      }
+    }
+    
+    state.logs.push(`[FINAL] Resolved ${finalResolvedCount} positions at end of simulation`);
     
     // Finalize
     state = advanceTime(state, end.getTime());
     
-    console.log(`[paper-trading] Processed ${processedCount} trades, entered ${enteredCount}, resolved ${resolvedCount}`);
-    console.log(`[paper-trading] PolyScore: ${polyScoreSuccessCount} real, ${polyScoreFallbackCount} simulated`);
+    const totalResolved = resolvedCount + finalResolvedCount;
+    console.log(`[paper-trading] Processed ${processedCount} trades, evaluated ${evaluatedCount}, entered ${enteredCount}, resolved ${totalResolved}`);
+    console.log(`[paper-trading] Skipped: ${skippedNoCash} no cash, ${skippedDuplicate} duplicate, ${skippedLowScore} low score`);
     
-    // Log scoring summary
-    state.logs.push(`[SCORING] Used ${polyScoreSuccessCount} real PolyScore API calls, ${polyScoreFallbackCount} simulated scores`);
-    if (polyScoreSuccessCount === 0) {
-      state.logs.push(`[INFO] PolyScore API unavailable - using V10-aligned simulated scores`);
-    }
+    // Log processing summary
+    state.logs.push(`[STATS] === Processing Summary ===`);
+    state.logs.push(`[STATS] Trades scanned: ${processedCount}`);
+    state.logs.push(`[STATS] Trades evaluated: ${evaluatedCount}`);
+    state.logs.push(`[STATS] Positions entered: ${enteredCount}`);
+    state.logs.push(`[STATS] Positions resolved: ${totalResolved}`);
+    state.logs.push(`[STATS] Skipped (no cash): ${skippedNoCash}`);
+    state.logs.push(`[STATS] Skipped (duplicate market): ${skippedDuplicate}`);
+    state.logs.push(`[STATS] Skipped (below threshold): ${skippedLowScore}`);
     
     // Log per-strategy entry summary
     state.logs.push(`[ENTRIES] === Strategy Entry Summary ===`);
     for (const [strategy, portfolio] of Object.entries(state.portfolios)) {
       const config = STRATEGY_CONFIGS[strategy as StrategyType];
       const totalPositions = portfolio.openPositions.length + portfolio.closedPositions.length;
-      state.logs.push(`[ENTRIES] ${config.name}: ${totalPositions} trades entered`);
+      const marketsEntered = enteredMarkets[strategy as StrategyType]?.size || 0;
+      state.logs.push(`[ENTRIES] ${config.name}: ${totalPositions} trades | ${marketsEntered} unique markets`);
       if (totalPositions === 0) {
         // Explain why no trades
         if (strategy === 'SINGLES_ONLY_V1') {
@@ -798,7 +833,8 @@ export async function GET(request: NextRequest) {
     for (const [strategy, portfolio] of Object.entries(state.portfolios)) {
       const metrics = getPerformanceMetrics(portfolio);
       const pnlStr = portfolio.totalPnL >= 0 ? `+$${portfolio.totalPnL.toFixed(2)}` : `-$${Math.abs(portfolio.totalPnL).toFixed(2)}`;
-      state.logs.push(`[SUMMARY] ${STRATEGY_CONFIGS[strategy as StrategyType].name}: ${pnlStr} ROI | Open: ${portfolio.openPositions.length} | Closed: ${portfolio.closedPositions.length} (${portfolio.winningTrades}W/${portfolio.losingTrades}L)`);
+      const roiPct = initialCapital > 0 ? ((portfolio.totalPnL / initialCapital) * 100).toFixed(1) : '0.0';
+      state.logs.push(`[SUMMARY] ${STRATEGY_CONFIGS[strategy as StrategyType].name}: ${pnlStr} (${roiPct}% ROI) | Open: ${portfolio.openPositions.length} | Closed: ${portfolio.closedPositions.length} (${portfolio.winningTrades}W/${portfolio.losingTrades}L)`);
     }
     
     // Generate results
@@ -828,9 +864,16 @@ export async function GET(request: NextRequest) {
       },
       summary: {
         tradesProcessed: processedCount,
+        tradesEvaluated: evaluatedCount,
         tradesEntered: enteredCount,
-        tradesResolved: resolvedCount,
-        marketsWithResolution: marketResolutions.size,
+        tradesResolved: resolvedCount + finalResolvedCount,
+        uniqueMarkets: uniqueMarkets.size,
+        resolvedMarkets: resolvedMarketsCount,
+        skipped: {
+          noCash: skippedNoCash,
+          duplicate: skippedDuplicate,
+          lowScore: skippedLowScore,
+        },
       },
       rankings: result.rankings.map((r, i) => ({
         rank: i + 1,
