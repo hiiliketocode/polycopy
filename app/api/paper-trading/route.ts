@@ -405,9 +405,13 @@ export async function GET(request: NextRequest) {
           let winner: 'YES' | 'NO' | null = null;
           const closed = market.closed === true || market.active === false;
           
-          // Check outcome_prices or end_date_iso for resolution
-          if (market.outcome_prices) {
-            // If one outcome is at 1.0 and other at 0.0, market is resolved
+          // Method 1: Check if market has explicit winner field
+          if (market.winner) {
+            winner = market.winner.toUpperCase() as 'YES' | 'NO';
+          }
+          
+          // Method 2: Check outcome_prices (price = 1.0 means that outcome won)
+          if (!winner && market.outcome_prices) {
             const prices = typeof market.outcome_prices === 'string' 
               ? JSON.parse(market.outcome_prices) 
               : market.outcome_prices;
@@ -419,24 +423,54 @@ export async function GET(request: NextRequest) {
             }
           }
           
-          // Check tokens for resolution (tokens[0] = Yes, tokens[1] = No)
+          // Method 3: Check tokens array for winner field
           if (!winner && market.tokens && Array.isArray(market.tokens)) {
-            const yesToken = market.tokens.find((t: any) => t.outcome === 'Yes' || t.outcome === 'YES');
-            const noToken = market.tokens.find((t: any) => t.outcome === 'No' || t.outcome === 'NO');
+            const yesToken = market.tokens.find((t: any) => 
+              t.outcome === 'Yes' || t.outcome === 'YES' || t.outcome?.toLowerCase() === 'yes'
+            );
+            const noToken = market.tokens.find((t: any) => 
+              t.outcome === 'No' || t.outcome === 'NO' || t.outcome?.toLowerCase() === 'no'
+            );
             
             if (yesToken?.winner === true) winner = 'YES';
             else if (noToken?.winner === true) winner = 'NO';
           }
           
-          return { conditionId, winner, closed };
+          // Method 4: Check resolved_price (1.0 = YES won, 0.0 = NO won) 
+          if (!winner && market.resolved === true) {
+            if (market.resolved_price === 1 || market.resolved_price === '1') {
+              winner = 'YES';
+            } else if (market.resolved_price === 0 || market.resolved_price === '0') {
+              winner = 'NO';
+            }
+          }
+          
+          return { conditionId, winner, closed, rawData: market };
         } catch (error) {
           return null;
         }
       });
       
       const results = await Promise.all(marketPromises);
+      let batchIdx = 0;
       results.filter(Boolean).forEach(r => {
-        if (r) marketResolutions.set(r.conditionId, { winner: r.winner, closed: r.closed });
+        if (r) {
+          marketResolutions.set(r.conditionId, { winner: r.winner, closed: r.closed });
+          // Log first few for debugging
+          if (batchIdx < 3 && i === 0) {
+            const rawInfo = r.rawData ? {
+              closed: r.rawData.closed,
+              active: r.rawData.active,
+              resolved: r.rawData.resolved,
+              winner: r.rawData.winner,
+              resolved_price: r.rawData.resolved_price,
+              hasTokens: !!r.rawData.tokens,
+              hasPrices: !!r.rawData.outcome_prices,
+            } : 'N/A';
+            console.log(`[paper-trading] Market ${r.conditionId.slice(0,12)}...: winner=${r.winner}, closed=${r.closed}, raw=`, rawInfo);
+          }
+          batchIdx++;
+        }
       });
     }
     
@@ -454,6 +488,11 @@ export async function GET(request: NextRequest) {
       });
     } else {
       state.logs.push(`[WARNING] No resolved markets found - trades are for markets still open. P&L will be $0 until markets resolve.`);
+      // Log sample of what we got from API
+      const sample = Array.from(marketResolutions.entries()).slice(0, 3);
+      sample.forEach(([id, m]) => {
+        state.logs.push(`[DEBUG] Market sample: ${id.slice(0,12)}... closed=${m.closed} winner=${m.winner}`);
+      });
     }
     
     // Process trades
@@ -494,11 +533,22 @@ export async function GET(request: NextRequest) {
       
       if (openAfter > openBefore) {
         enteredCount++;
+        // Log entry for debugging
+        if (enteredCount <= 5) {
+          const tradeTitle = (trade.title || trade.question || '').slice(0, 40);
+          state.logs.push(`[ENTERED #${enteredCount}] ${tradeTitle}... | Signal conditionId: ${signal.conditionId?.slice(0,12)}...`);
+        }
       }
       
       // Check for resolution (handle both conditionId and condition_id field names)
       const tradeConditionId = trade.conditionId || trade.condition_id;
       const resolution = marketResolutions.get(tradeConditionId);
+      
+      // Log resolution check for first few
+      if (processedCount <= 3) {
+        state.logs.push(`[DEBUG] Trade ${processedCount}: conditionId=${tradeConditionId?.slice(0,12)}... hasResolution=${!!resolution} winner=${resolution?.winner || 'N/A'}`);
+      }
+      
       if (resolution?.winner) {
         // Resolve with some time delay
         const resolutionTime = signal.timestamp + (2 * 60 * 60 * 1000);
@@ -506,6 +556,10 @@ export async function GET(request: NextRequest) {
         const openBeforeResolve = Object.values(state.portfolios).reduce(
           (sum, p) => sum + p.openPositions.filter(pos => pos.conditionId === tradeConditionId).length, 0
         );
+        
+        if (openBeforeResolve > 0) {
+          state.logs.push(`[RESOLVING] ${openBeforeResolve} positions for ${tradeConditionId?.slice(0,12)}... Winner: ${resolution.winner}`);
+        }
         
         state = resolveMarket(state, tradeConditionId, resolution.winner, resolutionTime);
         
