@@ -522,12 +522,19 @@ async function calculatePortfolioStats(
       }
     }
 
-    // Update current price if we have a newer one
+    // Update current price from this order
     // NOTE: user_exit_price is only for realized P&L (manually closed positions)
     // For unrealized P&L, we should use current_price, not user_exit_price
+    // IMPORTANT: Don't override correct resolved prices (0 or 1) with incorrect prices
     const orderCurrentPrice = toNullableNumber(order.current_price)
     if (orderCurrentPrice !== null) {
-      position.currentPrice = orderCurrentPrice
+      const positionHasCorrectResolvedPrice = position.marketResolved && 
+        (position.currentPrice === 0 || position.currentPrice === 1)
+      
+      // Only update if we don't already have a correct resolved price
+      if (!positionHasCorrectResolvedPrice) {
+        position.currentPrice = orderCurrentPrice
+      }
     }
 
     // Record the trade
