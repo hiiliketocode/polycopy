@@ -443,20 +443,36 @@ export async function GET(request: Request) {
       }
       
       // Calculate PolySignal score
-      // Use global stats for filtering - niche stats can be unreliable with small samples
+      // Use niche stats ONLY if they have enough trades to be reliable
       // This ensures consistency between server-side filter and client-side display
       const MIN_RELIABLE_TRADES = 10
       
-      // Check if we have reliable niche data
-      const nicheTradeCount = stats?.profiles?.reduce((sum: number, p: any) => {
-        const count = Number(p.d30_count ?? p.l_count ?? p.trade_count ?? 0)
-        return sum + (Number.isFinite(count) ? count : 0)
-      }, 0) ?? 0
+      // Find the matching niche profile (same logic as winRateForTradeType)
+      let matchingProfile: any = null
+      if (stats?.profiles?.length > 0 && category) {
+        const normalizedCategory = category.toLowerCase()
+        matchingProfile = stats.profiles.find((profile: any) => {
+          const niche = (profile.final_niche || '').toLowerCase()
+          if (!niche) return false
+          return niche === normalizedCategory || niche.includes(normalizedCategory) || normalizedCategory.includes(niche)
+        })
+      }
       
-      const useNicheStats = nicheTradeCount >= MIN_RELIABLE_TRADES
+      // Get trade count for matching niche
+      const nicheTradeCount = matchingProfile 
+        ? (Number(matchingProfile.d30_count ?? matchingProfile.l_count ?? matchingProfile.trade_count ?? 0) || 0)
+        : 0
+      
+      // Only use niche stats if we have enough data
+      const useNicheStats = matchingProfile && nicheTradeCount >= MIN_RELIABLE_TRADES
+      
+      // Get niche win rate if using niche stats
+      const nicheWinRate = useNicheStats && matchingProfile
+        ? (normalizeWinRateValue(matchingProfile.d30_win_rate) ?? normalizeWinRateValue(matchingProfile.l_win_rate))
+        : null
       
       const polySignalStats = {
-        profileWinRate: useNicheStats ? winRate : (stats?.globalWinRate ?? null),
+        profileWinRate: useNicheStats ? nicheWinRate : (stats?.globalWinRate ?? null),
         globalWinRate: stats?.globalWinRate ?? null,
         profileTrades: useNicheStats ? nicheTradeCount : (stats?.globalTrades ?? 20),
         globalTrades: stats?.globalTrades ?? 20,
