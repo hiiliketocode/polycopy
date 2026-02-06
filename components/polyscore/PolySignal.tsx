@@ -213,7 +213,7 @@ function calculateSignal(
   
   // Calculate trade value and conviction from fetched stats
   const tradeValue = (entryPrice && tradeSize) ? entryPrice * tradeSize : (stats?.exposure ?? 0)
-  const avgBetSize = traderStats?.avgBetSizeUsd ?? stats?.avg_bet_size ?? null
+  const avgBetSize = traderStats?.avgBetSizeUsd ?? null
   const calculatedConviction = (tradeValue > 0 && avgBetSize && avgBetSize > 0) 
     ? tradeValue / avgBetSize 
     : (stats?.conviction_multiplier ?? null)
