@@ -291,7 +291,7 @@ export async function GET(request: Request) {
     // NOTE: Column names must match actual database schema
     const [globalsRes, profilesRes] = await Promise.all([
       supabase.from('trader_global_stats')
-        .select('wallet_address, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct, l_avg_trade_size_usd, d30_avg_trade_size_usd, d7_avg_trade_size_usd, l_avg_pos_size_usd')
+        .select('wallet_address, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct, l_avg_trade_size_usd, d30_avg_trade_size_usd, d7_avg_trade_size_usd, l_avg_pos_size_usd, l_count, d30_count')
         .in('wallet_address', wallets),
       supabase.from('trader_profile_stats')
         .select('wallet_address, final_niche, structure, bracket, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct')
@@ -338,6 +338,7 @@ export async function GET(request: Request) {
           // Use d30 (30-day) stats first, then lifetime (l_) as fallback
           globalWinRate: normalizeWinRateValue(row.d30_win_rate) ?? normalizeWinRateValue(row.l_win_rate),
           globalRoiPct: normalizeRoiValue(row.d30_total_roi_pct) ?? normalizeRoiValue(row.l_total_roi_pct),
+          globalTrades: pickNumber(row.d30_count, row.l_count) ?? 0,
           avgBetSizeUsd: pickNumber(row.d30_avg_trade_size_usd, row.l_avg_trade_size_usd, row.l_avg_pos_size_usd),
           d30_avg_trade_size_usd: pickNumber(row.d30_avg_trade_size_usd),
           l_avg_trade_size_usd: pickNumber(row.l_avg_trade_size_usd),
@@ -442,11 +443,23 @@ export async function GET(request: Request) {
       }
       
       // Calculate PolySignal score
+      // Use global stats for filtering - niche stats can be unreliable with small samples
+      // This ensures consistency between server-side filter and client-side display
+      const MIN_RELIABLE_TRADES = 10
+      
+      // Check if we have reliable niche data
+      const nicheTradeCount = stats?.profiles?.reduce((sum: number, p: any) => {
+        const count = Number(p.d30_count ?? p.l_count ?? p.trade_count ?? 0)
+        return sum + (Number.isFinite(count) ? count : 0)
+      }, 0) ?? 0
+      
+      const useNicheStats = nicheTradeCount >= MIN_RELIABLE_TRADES
+      
       const polySignalStats = {
-        profileWinRate: winRate,
+        profileWinRate: useNicheStats ? winRate : (stats?.globalWinRate ?? null),
         globalWinRate: stats?.globalWinRate ?? null,
-        profileTrades: stats?.profiles?.length > 0 ? 10 : 0, // Estimate
-        globalTrades: 20, // Estimate for top traders
+        profileTrades: useNicheStats ? nicheTradeCount : (stats?.globalTrades ?? 20),
+        globalTrades: stats?.globalTrades ?? 20,
         avgBetSizeUsd: stats?.avgBetSizeUsd ?? null,
         isHot: false, // Would need more data
         isHedging: false, // Would need more data

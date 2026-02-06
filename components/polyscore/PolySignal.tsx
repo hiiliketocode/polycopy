@@ -696,6 +696,7 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
         // Try to find matching niche profile from PolyScore data
         const niche = data?.analysis?.niche_name?.toUpperCase()
         let profileStats_: any = null
+        let usedNiche: string | null = null
         
         if (niche && profileStats.length > 0) {
           profileStats_ = profileStats.find((p: any) => {
@@ -704,26 +705,37 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
                    profileNiche.includes(niche) || 
                    niche.includes(profileNiche)
           })
+          if (profileStats_) {
+            usedNiche = niche
+          }
         }
         
-        // Fallback to first profile if no niche match
-        if (!profileStats_ && profileStats.length > 0) {
-          profileStats_ = profileStats[0]
+        // Check if niche profile has enough trades to be reliable (min 10)
+        const nicheTradeCount = profileStats_ ? pickNumber(
+          profileStats_.d30_count, profileStats_.l_count, profileStats_.trade_count
+        ) ?? 0 : 0
+        
+        // If niche has too few trades (<10), fall back to global stats
+        // This prevents showing 0% win rate from tiny sample sizes
+        const MIN_RELIABLE_TRADES = 10
+        const useNicheStats = profileStats_ && nicheTradeCount >= MIN_RELIABLE_TRADES
+        
+        if (!useNicheStats) {
+          profileStats_ = null
+          usedNiche = null
         }
         
-        const profileWinRate = profileStats_ ? pickNumber(
+        const profileWinRate = useNicheStats && profileStats_ ? pickNumber(
           profileStats_.d30_win_rate, profileStats_.l_win_rate
         ) : globalWinRate
         
-        const profileRoiPct = profileStats_ ? pickNumber(
+        const profileRoiPct = useNicheStats && profileStats_ ? pickNumber(
           profileStats_.d30_total_roi_pct, profileStats_.l_total_roi_pct
         ) : globalRoiPct
         
-        const profileTrades = profileStats_ ? pickNumber(
-          profileStats_.d30_count, profileStats_.l_count, profileStats_.trade_count
-        ) ?? 0 : globalTrades
+        const profileTrades = useNicheStats && profileStats_ ? nicheTradeCount : globalTrades
         
-        const profileAvgPnl = profileStats_ ? pickNumber(
+        const profileAvgPnl = useNicheStats && profileStats_ ? pickNumber(
           profileStats_.d30_avg_pnl_trade_usd, profileStats_.l_avg_pnl_trade_usd
         ) : globalAvgPnl
         
