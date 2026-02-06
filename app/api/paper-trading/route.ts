@@ -523,30 +523,25 @@ export async function GET(request: NextRequest) {
           
           const market = await response.json();
           
-          // Determine winner from market data
+          // Determine winner from market data - STRICT OFFICIAL RESOLUTION ONLY
           let winner: 'YES' | 'NO' | null = null;
+          let resolutionMethod: string | null = null;
           const closed = market.closed === true || market.active === false;
           
           // Method 1: Check if market has explicit winner field
-          if (market.winner) {
+          // Only trust if market.resolved is also true
+          if (market.winner && market.resolved === true) {
             winner = market.winner.toUpperCase() as 'YES' | 'NO';
+            resolutionMethod = 'explicit_winner';
           }
           
-          // Method 2: Check outcome_prices (price = 1.0 means that outcome won)
-          if (!winner && market.outcome_prices) {
-            const prices = typeof market.outcome_prices === 'string' 
-              ? JSON.parse(market.outcome_prices) 
-              : market.outcome_prices;
-            
-            if (prices && (prices.Yes >= 0.99 || prices.YES >= 0.99 || prices[0] >= 0.99)) {
-              winner = 'YES';
-            } else if (prices && (prices.No >= 0.99 || prices.NO >= 0.99 || prices[1] >= 0.99)) {
-              winner = 'NO';
-            }
-          }
+          // DISABLED Method 2: outcome_prices check
+          // This was causing HINDSIGHT BIAS - outcome_prices reflects CURRENT prices,
+          // not official resolution. A market trading at 99¢ is NOT the same as resolved.
           
           // Method 3: Check tokens array for winner field
-          if (!winner && market.tokens && Array.isArray(market.tokens)) {
+          // Only trust if the market is officially resolved
+          if (!winner && market.resolved === true && market.tokens && Array.isArray(market.tokens)) {
             const yesToken = market.tokens.find((t: any) => 
               t.outcome === 'Yes' || t.outcome === 'YES' || t.outcome?.toLowerCase() === 'yes'
             );
@@ -554,16 +549,23 @@ export async function GET(request: NextRequest) {
               t.outcome === 'No' || t.outcome === 'NO' || t.outcome?.toLowerCase() === 'no'
             );
             
-            if (yesToken?.winner === true) winner = 'YES';
-            else if (noToken?.winner === true) winner = 'NO';
+            if (yesToken?.winner === true) {
+              winner = 'YES';
+              resolutionMethod = 'token_winner';
+            } else if (noToken?.winner === true) {
+              winner = 'NO';
+              resolutionMethod = 'token_winner';
+            }
           }
           
           // Method 4: Check resolved_price (1.0 = YES won, 0.0 = NO won) 
           if (!winner && market.resolved === true) {
             if (market.resolved_price === 1 || market.resolved_price === '1') {
               winner = 'YES';
+              resolutionMethod = 'resolved_price';
             } else if (market.resolved_price === 0 || market.resolved_price === '0') {
               winner = 'NO';
+              resolutionMethod = 'resolved_price';
             }
           }
           
@@ -578,7 +580,7 @@ export async function GET(request: NextRequest) {
           // Without historical resolution data, backtest P&L will only reflect
           // trades in markets that have actually resolved.
           
-          return { conditionId, winner, closed, rawData: market };
+          return { conditionId, winner, closed, rawData: market, resolutionMethod };
         } catch (error) {
           return null;
         }
@@ -589,18 +591,16 @@ export async function GET(request: NextRequest) {
       results.filter(Boolean).forEach(r => {
         if (r) {
           marketResolutions.set(r.conditionId, { winner: r.winner, closed: r.closed });
-          // Log first few for debugging
-          if (batchIdx < 3 && i === 0) {
+          // Log markets that have resolution for debugging
+          if (r.winner && batchIdx < 5) {
             const rawInfo = r.rawData ? {
+              resolved: r.rawData.resolved,
               closed: r.rawData.closed,
               active: r.rawData.active,
-              resolved: r.rawData.resolved,
               winner: r.rawData.winner,
               resolved_price: r.rawData.resolved_price,
-              hasTokens: !!r.rawData.tokens,
-              hasPrices: !!r.rawData.outcome_prices,
             } : 'N/A';
-            console.log(`[paper-trading] Market ${r.conditionId.slice(0,12)}...: winner=${r.winner}, closed=${r.closed}, raw=`, rawInfo);
+            console.log(`[paper-trading] RESOLVED Market ${r.conditionId.slice(0,12)}...: winner=${r.winner}, method=${r.resolutionMethod}, raw=`, rawInfo);
           }
           batchIdx++;
         }
