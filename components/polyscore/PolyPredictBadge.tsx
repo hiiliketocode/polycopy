@@ -191,15 +191,6 @@ function calculateValueScore(data: PolyScoreResponse): {
 export function PolyPredictBadge({ data, loading, niche }: PolyPredictBadgeProps) {
   const [isOpen, setIsOpen] = useState(false)
   
-  // Debug logging
-  console.log('[PolyPredictBadge] Render:', { 
-    loading, 
-    hasData: !!data, 
-    hasValuation: !!data?.valuation,
-    polyscore: data?.polyscore,
-    niche 
-  })
-  
   const valueAnalysis = useMemo(() => {
     if (!data) return null
     return calculateValueScore(data)
@@ -214,22 +205,8 @@ export function PolyPredictBadge({ data, loading, niche }: PolyPredictBadgeProps
     )
   }
   
-  if (!data) {
-    return (
-      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200">
-        <Gem className="w-3 h-3 text-slate-400" />
-        <span className="text-xs font-medium text-slate-400">Awaiting analysis...</span>
-      </div>
-    )
-  }
-  
-  if (!valueAnalysis || !data.valuation) {
-    return (
-      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200">
-        <Gem className="w-3 h-3 text-amber-500" />
-        <span className="text-xs font-medium text-amber-600">Valuation unavailable</span>
-      </div>
-    )
+  if (!data || !valueAnalysis || !data.valuation) {
+    return null
   }
   
   const { score, label, color, bgColor, borderColor, edge, signalScore, signals } = valueAnalysis
