@@ -701,16 +701,30 @@ async function calculatePortfolioStats(
     let realizedPnl = 0
     let usedPolymarketData = false
 
-    // Prefer Polymarket's official P&L for closed positions
+    // Calculate P&L using FIFO to determine remaining shares
+    // Then use Polymarket's official P&L for the realized portion if available
     if (position.hasPolymarketData && position.polymarketRealizedPnl !== null) {
-      // Use Polymarket's official realized P&L (includes transaction fees)
+      // Still do FIFO matching to calculate remaining shares correctly
+      for (const sell of position.sells) {
+        let remainingSellSize = sell.size
+        
+        while (remainingSellSize > 0 && remainingBuys.length > 0) {
+          const buy = remainingBuys[0]
+          const matchSize = Math.min(remainingSellSize, buy.size)
+          
+          remainingSellSize -= matchSize
+          buy.size -= matchSize
+          buy.cost -= (buy.cost / (buy.size + matchSize)) * matchSize
+          
+          if (buy.size <= 0.00001) {
+            remainingBuys.shift()
+          }
+        }
+      }
+      
+      // Use Polymarket's official P&L for the closed portion
       realizedPnl = position.polymarketRealizedPnl
       usedPolymarketData = true
-      
-      // If position is fully closed according to Polymarket, mark all buys as sold
-      if (position.polymarketRealizedPnl !== 0) {
-        remainingBuys = [] // All shares sold
-      }
     } else {
       // Fall back to FIFO calculation
       for (const sell of position.sells) {
