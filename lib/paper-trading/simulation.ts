@@ -309,12 +309,21 @@ export function tradeToSignal(
     betStructure = 'WINNER';
   }
   
+  // Normalize outcome to YES/NO (map Up/Down to YES/NO)
+  let rawOutcome = (trade.outcome || trade.option || 'YES').toUpperCase();
+  let normalizedOutcome: 'YES' | 'NO' = 'YES';
+  if (rawOutcome === 'YES' || rawOutcome === 'UP' || rawOutcome === 'TRUE') {
+    normalizedOutcome = 'YES';
+  } else if (rawOutcome === 'NO' || rawOutcome === 'DOWN' || rawOutcome === 'FALSE') {
+    normalizedOutcome = 'NO';
+  }
+  
   return {
     conditionId: trade.conditionId || trade.condition_id,
     tokenId: trade.tokenId || trade.token_id,
     marketSlug: trade.marketSlug || trade.slug || trade.market_slug,
     marketTitle: trade.title || trade.question || trade.market || 'Unknown Market',
-    outcome: (trade.outcome || trade.option || 'YES').toUpperCase() as 'YES' | 'NO',
+    outcome: normalizedOutcome,
     currentPrice: Number(trade.price) || 0.5,
     timestamp: typeof trade.timestamp === 'string' 
       ? parseInt(trade.timestamp) 

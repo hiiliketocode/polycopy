@@ -448,15 +448,18 @@ export async function GET(request: NextRequest) {
           // Method 5: SIMULATED RESOLUTION - For testing, assume high-probability markets will resolve as expected
           // If market price is strongly skewed (>85% one way), simulate resolution for backtesting purposes
           if (!winner && market.tokens && Array.isArray(market.tokens) && market.tokens.length >= 2) {
-            // Try to find YES/NO or Up/Down tokens
+            // Try to find YES/NO or Up/Down tokens (first token is typically YES/Up)
             const yesToken = market.tokens.find((t: any) => 
-              t.outcome === 'Yes' || t.outcome === 'YES' || t.outcome?.toLowerCase() === 'yes' || t.outcome === 'Up'
+              t.outcome === 'Yes' || t.outcome === 'YES' || t.outcome?.toLowerCase() === 'yes' || 
+              t.outcome === 'Up' || t.outcome === 'UP'
             );
             const noToken = market.tokens.find((t: any) => 
-              t.outcome === 'No' || t.outcome === 'NO' || t.outcome?.toLowerCase() === 'no' || t.outcome === 'Down'
+              t.outcome === 'No' || t.outcome === 'NO' || t.outcome?.toLowerCase() === 'no' || 
+              t.outcome === 'Down' || t.outcome === 'DOWN'
             );
             
             // Fallback: use first two tokens if standard ones not found
+            // Convention: token[0] is typically the "positive" outcome (Yes/Up)
             const token0 = yesToken || market.tokens[0];
             const token1 = noToken || market.tokens[1];
             
@@ -465,10 +468,11 @@ export async function GET(request: NextRequest) {
             
             // For backtesting, simulate resolution based on current prices
             // This is an approximation since we don't have actual resolved data
+            // YES/Up wins if its price is high, NO/Down wins if its price is high
             if (yesPrice >= 0.85) {
-              winner = 'YES';
+              winner = 'YES'; // Covers both YES and Up outcomes
             } else if (noPrice >= 0.85 || yesPrice <= 0.15) {
-              winner = 'NO';
+              winner = 'NO'; // Covers both NO and Down outcomes
             }
           }
           
