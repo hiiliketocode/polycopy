@@ -213,6 +213,7 @@ export async function GET(request: Request) {
     }
 
     // Refresh stale or missing prices for open markets (one fetch per market)
+    // Also refresh OLD markets (>7 days) that aren't marked as resolved - they likely are
     const now = Date.now()
     const refreshTargets = uniqueMarketIds.filter((marketId) => {
       const market = marketsMap.get(marketId)
@@ -222,10 +223,15 @@ export async function GET(request: Request) {
         market.status === 'resolved' ||
         Boolean(market.resolved_outcome || market.winning_side)
       if (isResolved) return false
-      const updatedAt = market.last_price_updated_at
-        ? new Date(market.last_price_updated_at).getTime()
+      
+      // Check if market is old (>7 days old based on last update)
+      const updatedAt = market.last_price_updated_at || market.updated_at
+        ? new Date(market.last_price_updated_at || market.updated_at).getTime()
         : 0
-      return !updatedAt || now - updatedAt > PRICE_STALE_MS
+      const marketAge = updatedAt ? (now - updatedAt) / (1000 * 60 * 60 * 24) : 999
+      
+      // Refresh if price is stale OR if market is old and might be resolved
+      return !updatedAt || now - updatedAt > PRICE_STALE_MS || marketAge > 7
     })
 
     if (refreshTargets.length > 0) {
