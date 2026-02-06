@@ -445,6 +445,28 @@ export async function GET(request: NextRequest) {
             }
           }
           
+          // Method 5: SIMULATED RESOLUTION - For testing, assume high-probability markets will resolve as expected
+          // If market price is strongly skewed (>85% one way), simulate resolution for backtesting purposes
+          if (!winner && market.tokens && Array.isArray(market.tokens) && market.tokens.length === 2) {
+            const yesToken = market.tokens.find((t: any) => 
+              t.outcome === 'Yes' || t.outcome === 'YES' || t.outcome?.toLowerCase() === 'yes' || t.outcome === 'Up'
+            );
+            const noToken = market.tokens.find((t: any) => 
+              t.outcome === 'No' || t.outcome === 'NO' || t.outcome?.toLowerCase() === 'no' || t.outcome === 'Down'
+            );
+            
+            const yesPrice = yesToken?.price || 0.5;
+            const noPrice = noToken?.price || 0.5;
+            
+            // For backtesting, simulate resolution based on current prices
+            // This is an approximation since we don't have actual resolved data
+            if (yesPrice >= 0.85) {
+              winner = 'YES';
+            } else if (noPrice >= 0.85 || yesPrice <= 0.15) {
+              winner = 'NO';
+            }
+          }
+          
           return { conditionId, winner, closed, rawData: market };
         } catch (error) {
           return null;
@@ -475,19 +497,27 @@ export async function GET(request: NextRequest) {
     }
     
     const resolvedMarketsCount = Array.from(marketResolutions.values()).filter(m => m.winner !== null).length;
-    console.log(`[paper-trading] Loaded ${marketResolutions.size} markets, ${resolvedMarketsCount} resolved`);
-    state.logs.push(`[BACKTEST] Found ${resolvedMarketsCount} resolved markets out of ${marketResolutions.size}`);
+    const closedMarketsCount = Array.from(marketResolutions.values()).filter(m => m.closed).length;
+    console.log(`[paper-trading] Loaded ${marketResolutions.size} markets, ${resolvedMarketsCount} with resolution, ${closedMarketsCount} closed`);
+    state.logs.push(`[BACKTEST] Found ${resolvedMarketsCount} resolved markets out of ${marketResolutions.size} (${closedMarketsCount} officially closed)`);
+    state.logs.push(`[INFO] Note: For recent trades, markets may not be officially resolved yet. Using probability-based simulation for markets with strong price signals (>85% confidence).`);
     
     // Log resolved markets for debugging
+    const simulatedCount = resolvedMarketsCount - closedMarketsCount;
+    if (simulatedCount > 0) {
+      state.logs.push(`[DEBUG] ${simulatedCount} markets have simulated resolution (high-probability prediction)`);
+    }
+    
     if (resolvedMarketsCount > 0) {
       const resolved = Array.from(marketResolutions.entries())
         .filter(([_, m]) => m.winner !== null)
         .slice(0, 5);
       resolved.forEach(([id, m]) => {
-        state.logs.push(`[DEBUG] Resolved: ${id.slice(0, 20)}... Winner: ${m.winner}`);
+        state.logs.push(`[DEBUG] Resolved: ${id.slice(0, 20)}... Winner: ${m.winner} (closed=${m.closed})`);
       });
     } else {
-      state.logs.push(`[WARNING] No resolved markets found - trades are for markets still open. P&L will be $0 until markets resolve.`);
+      state.logs.push(`[WARNING] No resolved markets found - all trades are for markets still open. P&L will be $0.`);
+      state.logs.push(`[TIP] For meaningful backtests, we need historical trade data with resolved markets.`);
       // Log sample of what we got from API
       const sample = Array.from(marketResolutions.entries()).slice(0, 3);
       sample.forEach(([id, m]) => {
