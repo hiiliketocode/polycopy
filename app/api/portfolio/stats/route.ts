@@ -204,14 +204,30 @@ const inferResolutionPrice = (position: Position, marketMeta?: MarketPrice) => {
     return targetOutcome === resolved ? 1 : 0
   }
   
-  // Fallback to marketMeta outcome_prices if available
+  // Try marketMeta's resolved/winning outcome
+  if (marketMeta?.resolvedOutcome || marketMeta?.winningSide) {
+    const targetOutcome = normalize(position.outcome)
+    const resolved = normalize(marketMeta.resolvedOutcome || marketMeta.winningSide)
+    if (resolved) {
+      return targetOutcome === resolved ? 1 : 0
+    }
+  }
+  
+  // Fallback to marketMeta outcome_prices if available (might be 0 or 1 for resolved)
   if (marketMeta?.outcomePrices && marketMeta?.outcomes) {
     const targetOutcome = normalize(position.outcome)
     const idx = marketMeta.outcomes.findIndex((o: string) => normalize(o) === targetOutcome)
     if (idx >= 0 && idx < marketMeta.outcomePrices.length) {
       const price = Number(marketMeta.outcomePrices[idx])
       if (Number.isFinite(price)) {
-        return price
+        // For resolved markets, prices should be 0 or 1
+        if (position.marketResolved && (price === 0 || price === 1)) {
+          return price
+        }
+        // For unresolved, accept any valid price
+        if (!position.marketResolved) {
+          return price
+        }
       }
     }
   }
@@ -549,6 +565,8 @@ async function calculatePortfolioStats(
   let totalUnrealizedPnl = 0
   let totalVolume = 0
   let openPositionsCount = 0
+  let resolvedPositionsMissingPrice = 0
+  let resolvedPositionsMissingPriceCost = 0
 
   for (const position of positionsMap.values()) {
     const marketMeta = priceMap.get(position.marketId)
@@ -615,6 +633,11 @@ async function calculatePortfolioStats(
       position.remainingSize = 0
       position.remainingCost = 0
       position.netSize = 0
+    } else if (position.remainingSize > 0 && position.marketResolved && resolutionPrice === null) {
+      // Warn about resolved markets missing price data
+      console.warn(`[Portfolio Stats] ⚠️ Resolved market ${position.marketId} missing resolution price - cannot calculate P&L for ${position.remainingSize} shares (cost: $${position.remainingCost.toFixed(2)})`)
+      resolvedPositionsMissingPrice++
+      resolvedPositionsMissingPriceCost += position.remainingCost
     }
 
     position.realizedPnl = realizedPnl
@@ -659,6 +682,8 @@ async function calculatePortfolioStats(
     totalPositions: positionsMap.size,
     openPositions: openPositionsCount,
     closedPositions: closedPositions.length,
+    resolvedPositionsMissingPrice: resolvedPositionsMissingPrice,
+    resolvedPositionsMissingPriceCost: resolvedPositionsMissingPriceCost.toFixed(2),
     totalVolume: totalVolume.toFixed(2),
     realizedPnl: totalRealizedPnl.toFixed(2),
     unrealizedPnl: totalUnrealizedPnl.toFixed(2),
@@ -669,6 +694,10 @@ async function calculatePortfolioStats(
   })
 
   console.log(`[Portfolio Stats] Calculated totals: realized=${totalRealizedPnl.toFixed(2)}, unrealized=${totalUnrealizedPnl.toFixed(2)}, total=${(totalRealizedPnl + totalUnrealizedPnl).toFixed(2)}`)
+  
+  if (resolvedPositionsMissingPrice > 0) {
+    console.warn(`⚠️ [Portfolio Stats] DATA QUALITY WARNING: ${resolvedPositionsMissingPrice} resolved positions missing price data, representing $${resolvedPositionsMissingPriceCost.toFixed(2)} in cost. P&L calculation is incomplete. Run: curl /api/cron/refresh-copy-pnl?mode=backfill`)
+  }
   
   // Save to cache
   const { error: saveError } = await supabase.rpc('upsert_user_portfolio_summary', {

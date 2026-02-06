@@ -120,11 +120,11 @@ export async function GET(request: Request) {
     const from = (page - 1) * limit
     const to = from + limit - 1
 
-    // Fetch a batch of open/unresolved copy orders
+    // Fetch a batch of copy orders (including resolved markets that need price data)
     let openOrdersQuery = supabase
       .from(ordersTable)
       .select('order_id, market_id, outcome')
-      .eq('market_resolved', false)
+      // Allow both resolved and unresolved markets - resolved markets need final prices (0 or 1)
       .is('user_exit_price', null)
       .not('market_id', 'is', null)
       .range(from, to)

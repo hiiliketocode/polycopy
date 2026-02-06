@@ -517,6 +517,7 @@ function ProfilePageContent() {
   const hasLoadedPortfolioStatsRef = useRef(false);
   const hasLoadedRealizedPnlRef = useRef(false);
   const hasLoadedTopTradersRef = useRef(false);
+  const fetchedMarketIdsRef = useRef<Set<string>>(new Set()); // Track fetched market metadata IDs
 
   // Clean up auth callback URL param (if present)
   useEffect(() => {
@@ -813,7 +814,7 @@ function ProfilePageContent() {
 
   useEffect(() => {
     let cancelled = false;
-    const idsToFetch = Array.from(
+    const allMarketIds = Array.from(
       new Set(
         [...quickTrades, ...copiedTrades]
           .map((trade) => {
@@ -824,42 +825,64 @@ function ProfilePageContent() {
           })
           .filter((id): id is string => Boolean(id))
       )
-    ).filter((id) => !marketMeta.has(id));
+    );
+
+    // Filter out IDs we've already fetched (using ref instead of marketMeta to avoid stale closures)
+    const idsToFetch = allMarketIds.filter((id) => !fetchedMarketIdsRef.current.has(id));
 
     if (idsToFetch.length === 0) return () => {
       cancelled = true;
     };
 
+    // Mark these IDs as being fetched
+    idsToFetch.forEach((id) => fetchedMarketIdsRef.current.add(id));
+
     const fetchMeta = async () => {
       const entries: Array<[string, { title: string | null; image: string | null; slug?: string | null }]> = [];
-      await Promise.allSettled(
-        idsToFetch.map(async (conditionId) => {
-          try {
-            const resp = await fetch(`/api/polymarket/market?conditionId=${encodeURIComponent(conditionId)}`, {
-              cache: 'no-store',
-            });
-            if (!resp.ok) return;
-            const data = await resp.json();
-            entries.push([
-              conditionId,
-              {
-                title: data?.question ?? null,
-                image: data?.icon ?? data?.image ?? null,
-                slug: data?.slug ?? null,
-              },
-            ]);
-          } catch {
-            /* ignore fetch errors */
-          }
-        })
-      );
+      
+      // Rate limit: fetch markets in batches to avoid 429 errors
+      const BATCH_SIZE = 5;
+      const DELAY_BETWEEN_BATCHES_MS = 200;
 
-      if (!cancelled && entries.length > 0) {
-        setMarketMeta((prev) => {
-          const next = new Map(prev);
-          entries.forEach(([id, meta]) => next.set(id, meta));
-          return next;
-        });
+      for (let i = 0; i < idsToFetch.length; i += BATCH_SIZE) {
+        if (cancelled) break;
+
+        const batch = idsToFetch.slice(i, i + BATCH_SIZE);
+        await Promise.allSettled(
+          batch.map(async (conditionId) => {
+            try {
+              const resp = await fetch(`/api/polymarket/market?conditionId=${encodeURIComponent(conditionId)}`, {
+                cache: 'no-store',
+              });
+              if (!resp.ok) return;
+              const data = await resp.json();
+              entries.push([
+                conditionId,
+                {
+                  title: data?.question ?? null,
+                  image: data?.icon ?? data?.image ?? null,
+                  slug: data?.slug ?? null,
+                },
+              ]);
+            } catch {
+              /* ignore fetch errors */
+            }
+          })
+        );
+
+        // Update UI with current batch results
+        if (!cancelled && entries.length > 0) {
+          setMarketMeta((prev) => {
+            const next = new Map(prev);
+            entries.forEach(([id, meta]) => next.set(id, meta));
+            return next;
+          });
+        }
+
+        // Delay between batches to respect rate limits
+        if (i + BATCH_SIZE < idsToFetch.length && !cancelled) {
+          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES_MS));
+        }
       }
     };
 
@@ -867,7 +890,7 @@ function ProfilePageContent() {
     return () => {
       cancelled = true;
     };
-  }, [quickTrades, copiedTrades, marketMeta]);
+  }, [quickTrades, copiedTrades]); // marketMeta intentionally not in deps - use ref instead to avoid stale closures
 
   const refreshPositions = useCallback(async (): Promise<PositionSummary[] | null> => {
     try {
