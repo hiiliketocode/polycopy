@@ -444,6 +444,18 @@ export async function GET(request: NextRequest) {
     console.log(`[paper-trading] Loaded ${marketResolutions.size} markets, ${resolvedMarketsCount} resolved`);
     state.logs.push(`[BACKTEST] Found ${resolvedMarketsCount} resolved markets out of ${marketResolutions.size}`);
     
+    // Log resolved markets for debugging
+    if (resolvedMarketsCount > 0) {
+      const resolved = Array.from(marketResolutions.entries())
+        .filter(([_, m]) => m.winner !== null)
+        .slice(0, 5);
+      resolved.forEach(([id, m]) => {
+        state.logs.push(`[DEBUG] Resolved: ${id.slice(0, 20)}... Winner: ${m.winner}`);
+      });
+    } else {
+      state.logs.push(`[WARNING] No resolved markets found - trades are for markets still open. P&L will be $0 until markets resolve.`);
+    }
+    
     // Process trades
     let processedCount = 0;
     let enteredCount = 0;

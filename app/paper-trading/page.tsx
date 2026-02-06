@@ -80,6 +80,21 @@ interface RecentTrade {
   roi: number;
 }
 
+interface OpenPosition {
+  id: string;
+  market: string;
+  marketSlug: string;
+  conditionId: string;
+  outcome: string;
+  status: string;
+  entryPrice: number;
+  invested: number;
+  valueScore: number;
+  aiEdge: number;
+  betStructure: string;
+  entryTime: string;
+}
+
 interface PortfolioData {
   strategyName: string;
   description: string;
@@ -105,6 +120,7 @@ interface PortfolioData {
   openPositions: number;
   closedPositions: number;
   recentTrades: RecentTrade[];
+  currentPositions?: OpenPosition[];
 }
 
 interface SimulationResult {
@@ -1135,11 +1151,73 @@ export default function PaperTradingPage() {
                         </div>
                       </Card>
                       
+                      {/* Open Positions */}
+                      {portfolio.currentPositions && portfolio.currentPositions.length > 0 && (
+                        <Card className="p-6 mb-6 border-amber-200 bg-amber-50/50">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                              <Clock className="w-5 h-5 text-amber-500" />
+                              Open Positions (Awaiting Resolution)
+                            </h3>
+                            <Badge variant="outline" className="border-amber-400 text-amber-700">
+                              {portfolio.currentPositions.length} open
+                            </Badge>
+                          </div>
+                          
+                          <p className="text-sm text-amber-700 mb-4">
+                            These trades are waiting for their markets to resolve. P&L will update once markets close.
+                          </p>
+                          
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Market</TableHead>
+                                  <TableHead>Side</TableHead>
+                                  <TableHead className="text-right">Entry</TableHead>
+                                  <TableHead className="text-right">Invested</TableHead>
+                                  <TableHead className="text-right">Score</TableHead>
+                                  <TableHead>Entry Time</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {portfolio.currentPositions.map((pos, idx) => (
+                                  <TableRow key={idx}>
+                                    <TableCell className="font-medium max-w-[250px] truncate">
+                                      {pos.market}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge variant={pos.outcome === 'YES' ? 'default' : 'secondary'}>
+                                        {pos.outcome}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono">
+                                      {(pos.entryPrice * 100).toFixed(0)}¢
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono">
+                                      ${pos.invested.toFixed(0)}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <span className="text-xs text-slate-500">
+                                        V:{pos.valueScore?.toFixed(0)} E:{pos.aiEdge}%
+                                      </span>
+                                    </TableCell>
+                                    <TableCell className="text-sm text-slate-500">
+                                      {new Date(pos.entryTime).toLocaleDateString()}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </Card>
+                      )}
+                      
                       {/* Trade History */}
                       <Card className="p-6">
                         <div className="flex items-center justify-between mb-4">
                           <h3 className="text-lg font-semibold text-slate-900">
-                            Recent Trades
+                            Closed Trades
                           </h3>
                           <Badge variant="outline">
                             {portfolio.closedPositions} closed
@@ -1148,7 +1226,7 @@ export default function PaperTradingPage() {
                         
                         {portfolio.recentTrades.length === 0 ? (
                           <p className="text-slate-500 text-center py-8">
-                            No trades recorded for this strategy
+                            No closed trades yet. Trades will appear here once their markets resolve.
                           </p>
                         ) : (
                           <div className="overflow-x-auto">
@@ -1244,6 +1322,41 @@ export default function PaperTradingPage() {
                   </ResponsiveContainer>
                 </div>
               </Card>
+              
+              {/* Debug Logs */}
+              {result.logs && result.logs.length > 0 && (
+                <Card className="p-6 mt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                      <Activity className="w-5 h-5 text-slate-500" />
+                      Simulation Logs
+                    </h3>
+                    <Badge variant="outline">
+                      {result.logs.length} entries
+                    </Badge>
+                  </div>
+                  <div className="bg-slate-900 rounded-lg p-4 overflow-x-auto max-h-64 overflow-y-auto">
+                    <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap">
+                      {result.logs.map((log, idx) => (
+                        <div 
+                          key={idx} 
+                          className={cn(
+                            "py-0.5",
+                            log.includes('WARNING') && 'text-amber-400',
+                            log.includes('ERROR') && 'text-red-400',
+                            log.includes('ENTERED') && 'text-green-400',
+                            log.includes('WON') && 'text-green-400 font-semibold',
+                            log.includes('LOST') && 'text-red-400',
+                            log.includes('SKIPPED') && 'text-slate-500'
+                          )}
+                        >
+                          {log}
+                        </div>
+                      ))}
+                    </pre>
+                  </div>
+                </Card>
+              )}
             </>
           )}
         </div>
