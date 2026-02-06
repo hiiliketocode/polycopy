@@ -602,12 +602,14 @@ async function calculatePortfolioStats(
   }
 
   // Fetch fresh prices for all positions
+  // Skip resolved markets - they already have correct prices (0 or 1) in the orders table
+  const unresolvedMarketIds = Array.from(positionsMap.values())
+    .filter(p => !p.marketResolved || (p.currentPrice !== 0 && p.currentPrice !== 1))
+    .map(p => p.marketId)
+    .filter(Boolean)
+  
   const allMarketIds = Array.from(
-    new Set(
-      Array.from(positionsMap.values())
-        .map(p => p.marketId)
-        .filter(Boolean)
-    )
+    new Set(unresolvedMarketIds)
   )
 
   console.log(`[Portfolio Stats] Fetching prices for ${allMarketIds.length} markets`)
