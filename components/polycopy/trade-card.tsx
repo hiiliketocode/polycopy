@@ -50,7 +50,7 @@ import {
   isSeasonLongMarketTitle,
 } from "@/lib/market-status"
 import { getTraderAvatarInitials } from "@/lib/trader-name"
-import { GetPolyScoreButton, PolyPredictBadge } from "@/components/polyscore"
+import { GetPolyScoreButton, PolyPredictBadge, PolySignal } from "@/components/polyscore"
 import { PolyScoreRequest, PolyScoreResponse, getPolyScore } from "@/lib/polyscore/get-polyscore"
 import { PredictionStats } from "@/components/polyscore/PredictionStats"
 import { supabase } from "@/lib/supabase"
@@ -131,6 +131,9 @@ interface TradeCardProps {
   fireWinRate?: number | null
   fireRoi?: number | null
   fireConviction?: number | null
+  // Server-side PolySignal scoring (from fire feed)
+  polySignalScore?: number
+  polySignalRecommendation?: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC'
   tags?: string[] | null
   marketSubtype?: string // niche (market_subtype from DB)
   betStructure?: string // bet_structure from DB
@@ -500,6 +503,8 @@ export function TradeCard({
   fireWinRate,
   fireRoi,
   fireConviction,
+  polySignalScore,
+  polySignalRecommendation,
   tags,
   marketSubtype,
   betStructure,
@@ -3018,13 +3023,19 @@ export function TradeCard({
           </div>
         </div>
 
-        {/* PolyPredict Value Score Badge - Admin Only */}
+        {/* PolySignal Badge - Admin Only */}
         {isAdmin && (
           <div className="mb-3">
-            <PolyPredictBadge
+            <PolySignal
               data={polyScoreData}
               loading={polyScoreLoading}
-              niche={category || undefined}
+              entryPrice={price}
+              currentPrice={currentPrice}
+              walletAddress={trader.address}
+              tradeSize={size}
+              marketSubtype={marketSubtype}
+              serverRecommendation={polySignalRecommendation}
+              serverScore={polySignalScore}
             />
           </div>
         )}

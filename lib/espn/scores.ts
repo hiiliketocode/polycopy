@@ -3,6 +3,57 @@ import type { FeedTrade } from '@/app/feed/page';
 import { extractDateFromTitle } from '@/lib/event-time';
 import { abbreviateTeamName } from '@/lib/utils/team-abbreviations';
 
+// Concurrency limiter for throttling parallel requests
+const MAX_CONCURRENT_ESPN_REQUESTS = 4;
+let activeRequests = 0;
+const requestQueue: Array<() => void> = [];
+
+async function withThrottle<T>(fn: () => Promise<T>): Promise<T> {
+  // Wait until we have capacity
+  if (activeRequests >= MAX_CONCURRENT_ESPN_REQUESTS) {
+    await new Promise<void>((resolve) => {
+      requestQueue.push(resolve);
+    });
+  }
+  
+  activeRequests++;
+  try {
+    return await fn();
+  } finally {
+    activeRequests--;
+    // Release next queued request
+    const next = requestQueue.shift();
+    if (next) next();
+  }
+}
+
+// Retry with exponential backoff
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 3,
+  baseDelayMs = 1000
+): Promise<Response> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      return response;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      if (attempt < maxRetries - 1) {
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        console.warn(`[ESPN] Fetch failed (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms:`, lastError.message);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  throw lastError || new Error('Fetch failed after retries');
+}
+
 interface ESPNGame {
   id: string;
   name: string;
@@ -839,40 +890,56 @@ export function getScoreDisplaySides(
   };
 }
 
-// Fetch ESPN scores for a specific sport key
+// Fetch ESPN scores for a specific sport key (with throttling and retry)
 async function fetchESPNScores(sportKey: string, dateKey?: string): Promise<ESPNGame[]> {
-  try {
-    const params = new URLSearchParams({ sport: sportKey });
-    if (dateKey) params.set('date', dateKey);
-    let response = await fetch(`/api/espn/scores?${params.toString()}`, {
-      cache: 'no-store',
-    });
-    
-    if (!response.ok && dateKey) {
-      response = await fetch(`/api/espn/scores?sport=${sportKey}`, {
-        cache: 'no-store',
-      });
-    }
+  return withThrottle(async () => {
+    try {
+      const params = new URLSearchParams({ sport: sportKey });
+      if (dateKey) params.set('date', dateKey);
+      
+      let response = await fetchWithRetry(
+        `/api/espn/scores?${params.toString()}`,
+        { cache: 'no-store' }
+      );
+      
+      if (!response.ok && dateKey) {
+        // Retry without date if initial request failed
+        response = await fetchWithRetry(
+          `/api/espn/scores?sport=${sportKey}`,
+          { cache: 'no-store' }
+        );
+      }
 
-    if (!response.ok) {
-      console.warn(`Failed to fetch ${sportKey.toUpperCase()} scores:`, response.status);
+      if (!response.ok) {
+        console.warn(`Failed to fetch ${sportKey.toUpperCase()} scores:`, response.status);
+        return [];
+      }
+      
+      const data = await response.json();
+      return data.games || [];
+    } catch (error) {
+      console.error(`Error fetching ${sportKey} scores:`, error);
       return [];
     }
-    
-    const data = await response.json();
-    return data.games || [];
-  } catch (error) {
-    console.error(`Error fetching ${sportKey} scores:`, error);
-    return [];
-  }
+  });
 }
 
 async function fetchESPNGroupScores(sport: SportGroup, dateKey?: string): Promise<ESPNGame[]> {
   const groupKeys = ESPN_SPORT_GROUPS[sport];
   if (!groupKeys || groupKeys.length === 0) return [];
 
-  const results = await Promise.all(groupKeys.map(key => fetchESPNScores(key, dateKey)));
-  return results.flat();
+  // For large groups (like soccer with 19 leagues), batch in smaller chunks
+  // to avoid overwhelming the throttle queue
+  const BATCH_SIZE = 6;
+  const allResults: ESPNGame[] = [];
+  
+  for (let i = 0; i < groupKeys.length; i += BATCH_SIZE) {
+    const batch = groupKeys.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.all(batch.map(key => fetchESPNScores(key, dateKey)));
+    allResults.push(...batchResults.flat());
+  }
+  
+  return allResults;
 }
 
 function findMatchingGame(

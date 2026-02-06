@@ -72,6 +72,9 @@ export interface FeedTrade {
   fireWinRate?: number | null;
   fireRoi?: number | null;
   fireConviction?: number | null;
+  // PolySignal scoring (server-side)
+  polySignalScore?: number;
+  polySignalRecommendation?: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC';
 }
 
 type PositionTradeSummary = {
@@ -594,14 +597,13 @@ const convictionMultiplierForTrade = (
   
   if (!avgBetSize || !Number.isFinite(avgBetSize) || avgBetSize <= 0) return null;
   
-  // Safety cap: don't let average be more than 5x current trade
-  // This prevents inflated averages from making conviction appear artificially low
-  const MAX_REASONABLE_MULTIPLIER = 5.0;
-  const cappedAvgBetSize = avgBetSize > tradeValue * MAX_REASONABLE_MULTIPLIER
-    ? tradeValue * MAX_REASONABLE_MULTIPLIER
-    : avgBetSize;
+  // NOTE: Previously we capped averages at 5x current trade size to prevent "artificially low"
+  // conviction scores. This was REMOVED because it destroyed data integrity - it made conviction
+  // inconsistent with avg_pnl and ROI calculations. A low conviction (e.g., 0.04x) is MEANINGFUL:
+  // it means the trader is making a small bet relative to their normal behavior.
+  // The fix for displaying very low values is in formatMultiplier() showing "<0.01x" etc.
   
-  return tradeValue / cappedAvgBetSize;
+  return tradeValue / avgBetSize;
 };
 
 const winRateForTradeType = (
@@ -2904,6 +2906,9 @@ export default function FeedPage() {
           fireWinRate: (trade as any)._fireWinRate !== undefined ? (trade as any)._fireWinRate : null,
           fireRoi: (trade as any)._fireRoi !== undefined ? (trade as any)._fireRoi : null,
           fireConviction: (trade as any)._fireConviction !== undefined ? (trade as any)._fireConviction : null,
+          // PolySignal scoring (server-side computed)
+          polySignalScore: (trade as any)._polySignalScore ?? undefined,
+          polySignalRecommendation: (trade as any)._polySignalRecommendation ?? undefined,
         };
         formattedTrade.market.marketCategoryType = resolveMarketCategoryType({
           marketKey: marketId || formattedTrade.market.slug || marketTitle,
@@ -4680,6 +4685,8 @@ export default function FeedPage() {
                           fireWinRate={trade.fireWinRate}
                           fireRoi={trade.fireRoi}
                           fireConviction={trade.fireConviction}
+                          polySignalScore={trade.polySignalScore}
+                          polySignalRecommendation={trade.polySignalRecommendation}
                           tags={Array.isArray(trade.market.tags) && trade.market.tags.length > 0 ? trade.market.tags : null}
                           marketSubtype={trade.market.marketSubtype}
                           betStructure={trade.market.betStructure}
