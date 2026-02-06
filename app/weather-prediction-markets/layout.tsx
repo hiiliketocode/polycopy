@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Weather Prediction Markets: Temperature, Hurricanes & Climate Trading 2026 | Polycopy',
+  title: 'Weather Prediction Markets | Climate Trading | Polycopy',
   description: 'Trade weather markets on Polymarket. Follow meteorology experts profiting from temperature records, hurricane forecasts, snowfall, extreme weather.',
   keywords: ['weather prediction markets', 'temperature markets', 'hurricane markets', 'weather trading', 'meteorology', 'weather traders', 'polymarket weather'],
   alternates: {

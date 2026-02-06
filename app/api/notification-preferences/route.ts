@@ -39,14 +39,10 @@ export async function GET(request: NextRequest) {
       console.error('🔐 Notification prefs auth error:', authError.message, authError)
     }
     
-    // SECURITY: Require valid user
+    // SECURITY: Require valid user - NO graceful degradation
     if (!user) {
-      console.error('❌ No authenticated user for notification prefs - cookies might not be set properly')
-      // Return default preferences instead of failing (graceful degradation)
-      return NextResponse.json({ 
-        email_notifications_enabled: true,
-        user_id: userId
-      }, { status: 200 })
+      console.error('❌ No authenticated user for notification prefs')
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
     // SECURITY: Verify the userId matches the authenticated user

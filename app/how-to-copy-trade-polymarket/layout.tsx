@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "How to Copy Trade on Polymarket - Complete Guide | Polycopy",
+  title: "How to Copy Trade on Polymarket | Guide | Polycopy",
   description: "Learn how to copy trade on Polymarket step-by-step. Find top traders, set up your feed, manage positions, execute trades. Beginner-friendly guide.",
   keywords: [
     'how to copy trade polymarket',
