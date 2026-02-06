@@ -307,9 +307,10 @@ interface PortfolioStatsResult {
 async function calculatePortfolioStats(
   supabase: ReturnType<typeof createService>,
   requestedUserId: string,
-  options?: { refreshPrices?: boolean }
+  options?: { refreshPrices?: boolean; debug?: boolean }
 ): Promise<PortfolioStatsResult> {
   const shouldRefreshPrices = options?.refreshPrices ?? false
+  const debug = options?.debug ?? false
   const ordersTable = await resolveOrdersTableName(supabase)
   console.log(`[Portfolio Stats] Using orders table: ${ordersTable} for user: ${requestedUserId.substring(0, 8)}`)
 
@@ -349,6 +350,16 @@ async function calculatePortfolioStats(
   const buyOrders = orders.filter(o => normalizeSide(o.side) === 'buy')
   const sellOrders = orders.filter(o => normalizeSide(o.side) === 'sell')
   console.log(`[Portfolio Stats] Order breakdown: ${buyOrders.length} BUY, ${sellOrders.length} SELL`)
+  
+  // DEBUG: Log all orders and their investment amounts
+  if (debug) {
+    const totalInvestment = orders.reduce((sum, o) => sum + toNumber(o.amount_invested), 0)
+    console.log(`[DEBUG] Total amount_invested across all ${orders.length} orders: $${totalInvestment.toFixed(2)}`)
+    console.log(`[DEBUG] First 10 orders:`)
+    orders.slice(0, 10).forEach((o, i) => {
+      console.log(`  ${i + 1}. ${o.order_id}: ${o.side} $${toNumber(o.amount_invested).toFixed(2)} @ ${o.price || o.price_when_copied} ${o.outcome}`)
+    })
+  }
   
   // Log most recent order timestamp
   if (orders.length > 0) {
@@ -435,6 +446,7 @@ async function calculatePortfolioStats(
 
   // Group orders by position (token_id, or fallback to market_id + outcome)
   const positionsMap = new Map<string, Position>()
+  const skippedOrders: Array<{ reason: string; order: any }> = []
 
   for (const order of orders) {
     const side = normalizeSide(order.side)
@@ -443,14 +455,42 @@ async function calculatePortfolioStats(
       : (toNullableNumber(order.price) ?? toNullableNumber(order.price_when_copied))
     const filledSize = resolveFilledSize(order)
     
-    if (!price || !filledSize || filledSize <= 0) continue
+    if (!price || !filledSize || filledSize <= 0) {
+      if (debug) {
+        skippedOrders.push({
+          reason: !price ? 'missing_price' : 'missing_or_zero_size',
+          order: {
+            order_id: order.order_id,
+            side: order.side,
+            price: order.price,
+            price_when_copied: order.price_when_copied,
+            filled_size: order.filled_size,
+            size: order.size,
+            amount_invested: order.amount_invested
+          }
+        })
+      }
+      continue
+    }
 
     // Create position key using market_id + outcome
     const marketId = order.market_id?.trim() || ''
     const outcome = normalize(order.outcome)
     const positionKey = `${marketId}::${outcome}`
 
-    if (!positionKey || positionKey === '::' || !marketId) continue
+    if (!positionKey || positionKey === '::' || !marketId) {
+      if (debug) {
+        skippedOrders.push({
+          reason: 'missing_market_or_outcome',
+          order: {
+            order_id: order.order_id,
+            market_id: order.market_id,
+            outcome: order.outcome
+          }
+        })
+      }
+      continue
+    }
 
     // Get or create position
     let position = positionsMap.get(positionKey)
@@ -528,6 +568,30 @@ async function calculatePortfolioStats(
       position.totalProceeds += price * filledSize
       position.netSize -= filledSize
     }
+  }
+
+  // DEBUG: Log skipped orders
+  if (debug && skippedOrders.length > 0) {
+    const skippedInvestment = skippedOrders.reduce((sum, s) => 
+      sum + toNumber(s.order.amount_invested), 0)
+    console.log(`[DEBUG] Skipped ${skippedOrders.length} orders totaling $${skippedInvestment.toFixed(2)}`)
+    const reasonCounts = skippedOrders.reduce((acc, s) => {
+      acc[s.reason] = (acc[s.reason] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
+    console.log(`[DEBUG] Skip reasons:`, reasonCounts)
+    console.log(`[DEBUG] First 5 skipped orders:`)
+    skippedOrders.slice(0, 5).forEach((s, i) => {
+      console.log(`  ${i + 1}. ${s.order.order_id}: ${s.reason}`)
+    })
+  }
+
+  // DEBUG: Log positions created
+  if (debug) {
+    console.log(`[DEBUG] Created ${positionsMap.size} positions from ${orders.length - skippedOrders.length} orders`)
+    const totalCostFromPositions = Array.from(positionsMap.values())
+      .reduce((sum, p) => sum + p.totalCost, 0)
+    console.log(`[DEBUG] Total cost from positions: $${totalCostFromPositions.toFixed(2)}`)
   }
 
   // Fetch fresh prices for all positions
@@ -764,6 +828,7 @@ export async function GET(request: Request) {
 
     const forceRefresh = searchParams.get('forceRefresh') === 'true'
     const clearCache = searchParams.get('clearCache') === 'true'
+    const debug = searchParams.get('debug') === 'true'
 
     const supabase = createService()
     
@@ -799,7 +864,7 @@ export async function GET(request: Request) {
       const startTime = Date.now()
       
       // Calculate with existing cached prices for fast response
-      const stats = await calculatePortfolioStats(supabase, requestedUserId, { refreshPrices: false })
+      const stats = await calculatePortfolioStats(supabase, requestedUserId, { refreshPrices: false, debug })
       
       // Trigger price refresh in background
       calculatePortfolioStats(supabase, requestedUserId, { refreshPrices: true }).catch((err) => {
