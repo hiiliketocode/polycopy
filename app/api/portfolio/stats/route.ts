@@ -589,10 +589,13 @@ async function calculatePortfolioStats(
     }
 
     // Store Polymarket's official P&L data if available
+    // IMPORTANT: Polymarket returns the TOTAL P&L for the entire position, not per order
+    // So we only take it from the first order and ignore duplicates
     if (order.polymarket_realized_pnl !== null && order.polymarket_realized_pnl !== undefined) {
       const polymarketPnl = toNullableNumber(order.polymarket_realized_pnl)
-      if (polymarketPnl !== null) {
-        position.polymarketRealizedPnl = (position.polymarketRealizedPnl || 0) + polymarketPnl
+      if (polymarketPnl !== null && !position.hasPolymarketData) {
+        // Only set it once (from the first order we encounter for this position)
+        position.polymarketRealizedPnl = polymarketPnl
         position.hasPolymarketData = true
       }
     }

@@ -75,6 +75,7 @@ async function syncClosedPositionsToDatabase() {
     // Match closed positions to orders
     let matchedCount = 0
     let unmatchedCount = 0
+    let unmatchedPositions: any[] = []
     let totalSyncedPnl = 0
 
     console.log('🔗 Matching positions to orders...')
@@ -95,6 +96,12 @@ async function syncClosedPositionsToDatabase() {
 
       if (matchingOrders.length === 0) {
         unmatchedCount++
+        unmatchedPositions.push({
+          conditionId,
+          outcome,
+          realizedPnl,
+          totalBought
+        })
         continue
       }
 
@@ -133,6 +140,19 @@ async function syncClosedPositionsToDatabase() {
     console.log(`   Matched & updated: ${matchedCount} orders`)
     console.log(`   Unmatched positions: ${unmatchedCount}`)
     console.log(`   Total synced P&L: $${totalSyncedPnl.toFixed(2)}`)
+
+    // Calculate P&L from unmatched positions
+    const unmatchedPnl = unmatchedPositions.reduce((sum, p) => sum + p.realizedPnl, 0)
+    console.log(`   Unmatched P&L: $${unmatchedPnl.toFixed(2)}`)
+    console.log(`\n   Total P&L (matched + unmatched): $${(totalSyncedPnl + unmatchedPnl).toFixed(2)}`)
+
+    // Show sample unmatched positions
+    if (unmatchedPositions.length > 0) {
+      console.log(`\n⚠️  Sample unmatched positions (first 10):`)
+      unmatchedPositions.slice(0, 10).forEach((pos, i) => {
+        console.log(`   ${i + 1}. ${pos.conditionId.substring(0, 10)}... ${pos.outcome}: $${pos.realizedPnl.toFixed(2)} (bought ${pos.totalBought})`)
+      })
+    }
 
     console.log(`\n💡 Next step: Update portfolio stats API to use polymarket_realized_pnl`)
 
