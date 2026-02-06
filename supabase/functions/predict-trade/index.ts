@@ -1,20 +1,23 @@
 // supabase/functions/predict-trade/index.ts
 //
-// PREDICT-TRADE EDGE FUNCTION - V10 MODEL
+// PREDICT-TRADE EDGE FUNCTION - V11 MODEL
 // Last Updated: Feb 5, 2026
 //
-// OBJECTIVE: Provide clear, actionable trade analysis using poly_predictor_v10 model
-// with high-value features from comprehensive analysis.
+// OBJECTIVE: Provide clear, actionable trade analysis using poly_predictor_v11 model
+// with comprehensive features including performance trends.
 // 
-// V10 MODEL FEATURES (27 total):
-// - Trader skill: global_win_rate, niche_win_rate_history, total_lifetime_trades
-// - Trader behavior: niche_experience_pct, trader_selectivity, price_vs_trader_avg
-// - Conviction: conviction_z_score, trade_sequence
-// - Behavioral: trader_tempo_seconds, is_chasing_price_up, is_averaging_down
-// - V10 NEW: trade_size_tier, trader_sells_ratio, is_hedging, is_in_best_niche, is_with_crowd, market_age_bucket
-// - Trade: final_niche, bet_structure, position_direction, entry_price, trade_size_log, total_exposure_log
-// - Market: volume_momentum_ratio, liquidity_impact_ratio
-// - Timing: minutes_to_start, hours_to_close, market_age_days
+// V11 MODEL FEATURES (41 total):
+// - Win Rates (4): global_win_rate, D30_win_rate, D7_win_rate, niche_win_rate_history
+// - ROI (3): lifetime_roi_pct, D30_roi_pct, D7_roi_pct
+// - TRENDS (5): win_rate_trend_short, win_rate_trend_long, roi_trend_short, roi_trend_long, performance_regime
+// - Experience (4): total_lifetime_trades, trader_experience_bucket, niche_experience_pct, is_in_best_niche
+// - Behavior (9): trader_selectivity, price_vs_trader_avg, conviction_z_score, trade_sequence,
+//                 total_exposure_log, trader_tempo_seconds, is_chasing_price_up, is_averaging_down, stddev_bet_size
+// - Behavioral V10 (3): is_hedging, trader_sells_ratio, is_with_crowd
+// - Trade Size (2): trade_size_tier, trade_size_log
+// - Trade Context (4): final_niche, bet_structure, position_direction, entry_price
+// - Market (4): volume_momentum_ratio, liquidity_impact_ratio, market_duration_days, market_age_bucket
+// - Timing (3): minutes_to_start, hours_to_close, market_age_days
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -753,6 +756,54 @@ serve(async (req) => {
       : dna_global_win_rate;
     const dna_trades = typeof globalStats.total_lifetime_trades === 'number' ? globalStats.total_lifetime_trades : 0;
     
+    // V11: Extract D7/D30 win rates and ROI from global stats (with fallbacks)
+    const d30_win_rate = typeof globalStats.d30_win_rate === 'number' && !isNaN(globalStats.d30_win_rate)
+      ? globalStats.d30_win_rate
+      : dna_global_win_rate;
+    const d7_win_rate = typeof globalStats.d7_win_rate === 'number' && !isNaN(globalStats.d7_win_rate)
+      ? globalStats.d7_win_rate
+      : d30_win_rate;
+    
+    // V11: Extract ROI metrics
+    const lifetime_roi_pct = typeof globalStats.l_total_roi_pct === 'number' && !isNaN(globalStats.l_total_roi_pct)
+      ? globalStats.l_total_roi_pct
+      : 0;
+    const d30_roi_pct = typeof globalStats.d30_total_roi_pct === 'number' && !isNaN(globalStats.d30_total_roi_pct)
+      ? globalStats.d30_total_roi_pct
+      : lifetime_roi_pct;
+    const d7_roi_pct = typeof globalStats.d7_total_roi_pct === 'number' && !isNaN(globalStats.d7_total_roi_pct)
+      ? globalStats.d7_total_roi_pct
+      : d30_roi_pct;
+    
+    // V11: Calculate performance TREND features (the key new insight!)
+    const win_rate_trend_short = d7_win_rate - d30_win_rate;  // Recent direction: D7 vs D30
+    const win_rate_trend_long = d30_win_rate - dna_global_win_rate;  // Medium vs historical
+    const roi_trend_short = d7_roi_pct - d30_roi_pct;  // ROI recent direction
+    const roi_trend_long = d30_roi_pct - lifetime_roi_pct;  // ROI medium vs historical
+    
+    // V11: Calculate performance regime (categorical)
+    let performance_regime = 'STABLE';
+    if (d7_win_rate > dna_global_win_rate * 1.20 && d7_win_rate > d30_win_rate) {
+      performance_regime = 'HOT_STREAK';
+    } else if (d7_win_rate > d30_win_rate && d30_win_rate > dna_global_win_rate) {
+      performance_regime = 'IMPROVING';
+    } else if (d7_win_rate < dna_global_win_rate * 0.80 && d7_win_rate < d30_win_rate) {
+      performance_regime = 'COLD_STREAK';
+    } else if (d7_win_rate < d30_win_rate && d30_win_rate < dna_global_win_rate) {
+      performance_regime = 'DECLINING';
+    }
+    
+    // V11: Trader experience bucket
+    let trader_experience_bucket = 'NOVICE';
+    if (dna_trades >= 10000) trader_experience_bucket = 'EXPERT';
+    else if (dna_trades >= 1000) trader_experience_bucket = 'EXPERIENCED';
+    else if (dna_trades >= 100) trader_experience_bucket = 'INTERMEDIATE';
+    
+    // V11: Market duration (approximate from start/end times if available)
+    const marketDurationDays = market.startTime && market.endTime
+      ? Math.max(1, Math.floor((market.endTime - market.startTime) / 86400))
+      : 30; // Default 30 days
+    
     // Use profile stats if available, otherwise fall back to global
     const niche_win_rate = profileResult.win_rate;
     const trader_historical_roi_pct = profileResult.roi_pct;
@@ -905,51 +956,70 @@ serve(async (req) => {
       : 0.5;
     const price_vs_trader_avg = (entryPrice - trader_avg_entry_price) / 0.2;
     
-    // BigQuery query with COALESCE for all inputs - V10 MODEL
+    // BigQuery query with COALESCE for all inputs - V11 MODEL
     const query = `
-      SELECT * FROM ML.PREDICT(MODEL \`polycopy_v1.poly_predictor_v10\`, 
+      SELECT * FROM ML.PREDICT(MODEL \`polycopy_v1.poly_predictor_v11\`, 
       (
         SELECT 
-          -- Trader skill features (core)
+          -- CATEGORY 1: Win Rates (4 features)
           COALESCE(${dna_global_win_rate}, 0.5) as global_win_rate,
+          COALESCE(${d30_win_rate}, ${dna_global_win_rate}, 0.5) as D30_win_rate,
+          COALESCE(${d7_win_rate}, ${d30_win_rate}, ${dna_global_win_rate}, 0.5) as D7_win_rate,
           COALESCE(${niche_win_rate}, ${dna_global_win_rate}, 0.5) as niche_win_rate_history,
-          COALESCE(${dna_trades}, 0) as total_lifetime_trades,
           
-          -- Trader behavior features (V9)
+          -- CATEGORY 2: ROI (3 features) - BROUGHT BACK in V11
+          COALESCE(${lifetime_roi_pct}, 0) as lifetime_roi_pct,
+          COALESCE(${d30_roi_pct}, ${lifetime_roi_pct}, 0) as D30_roi_pct,
+          COALESCE(${d7_roi_pct}, ${d30_roi_pct}, 0) as D7_roi_pct,
+          
+          -- CATEGORY 3: Performance TRENDS (5 features) - NEW in V11
+          COALESCE(${win_rate_trend_short}, 0) as win_rate_trend_short,
+          COALESCE(${win_rate_trend_long}, 0) as win_rate_trend_long,
+          COALESCE(${roi_trend_short}, 0) as roi_trend_short,
+          COALESCE(${roi_trend_long}, 0) as roi_trend_long,
+          '${performance_regime}' as performance_regime,
+          
+          -- CATEGORY 4: Experience (4 features)
+          COALESCE(${dna_trades}, 0) as total_lifetime_trades,
+          '${trader_experience_bucket}' as trader_experience_bucket,
           COALESCE(${niche_experience_pct}, 0) as niche_experience_pct,
+          COALESCE(${is_in_best_niche}, 0) as is_in_best_niche,
+          
+          -- CATEGORY 5: Trader behavior (2 features)
           COALESCE(${trader_selectivity}, 0.5) as trader_selectivity,
           COALESCE(${price_vs_trader_avg}, 0) as price_vs_trader_avg,
           
-          -- Conviction features
+          -- CATEGORY 6: Conviction (3 features)
           COALESCE(${z_score}, 0) as conviction_z_score,
           COALESCE(${trade_sequence}, 1) as trade_sequence,
+          COALESCE(LOG(${exposure} + 1), 0) as total_exposure_log,
           
-          -- Behavioral features
+          -- CATEGORY 7: Behavioral patterns (7 features)
           COALESCE(${tempo}, 300) as trader_tempo_seconds,
           COALESCE(${is_chasing}, 0) as is_chasing_price_up,
           COALESCE(${is_avg_down_num}, 0) as is_averaging_down,
-          
-          -- V10 NEW FEATURES
-          '${trade_size_tier}' as trade_size_tier,
-          COALESCE(${trader_sells_ratio}, 0) as trader_sells_ratio,
+          COALESCE(${dna_stddev}, 0) as stddev_bet_size,
           COALESCE(${is_hedging}, 0) as is_hedging,
-          COALESCE(${is_in_best_niche}, 0) as is_in_best_niche,
+          COALESCE(${trader_sells_ratio}, 0) as trader_sells_ratio,
           COALESCE(${is_with_crowd}, 0) as is_with_crowd,
-          '${market_age_bucket}' as market_age_bucket,
           
-          -- Trade features
+          -- CATEGORY 8: Trade size (2 features)
+          '${trade_size_tier}' as trade_size_tier,
+          COALESCE(LOG(${tradeTotal} + 1), 0) as trade_size_log,
+          
+          -- CATEGORY 9: Trade context (4 features)
           COALESCE('${finalNiche}', 'OTHER') as final_niche,
           COALESCE('${betStructure}', 'STANDARD') as bet_structure,
           COALESCE('${positionDirection}', 'LONG') as position_direction,
           COALESCE(${entryPrice}, 0.5) as entry_price,
-          COALESCE(LOG(${tradeTotal} + 1), 0) as trade_size_log,
-          COALESCE(LOG(${exposure} + 1), 0) as total_exposure_log,
           
-          -- Market features
+          -- CATEGORY 10: Market features (4 features)
           COALESCE(${volumeMomentumRatio}, 0) as volume_momentum_ratio,
           COALESCE(${liquidityImpactRatio}, 0) as liquidity_impact_ratio,
+          COALESCE(${marketDurationDays}, 30) as market_duration_days,
+          '${market_age_bucket}' as market_age_bucket,
           
-          -- Timing features
+          -- CATEGORY 11: Timing (3 features)
           COALESCE(${minutes_to_start}, 0) as minutes_to_start,
           COALESCE(${hoursToClose}, 24) as hours_to_close,
           COALESCE(${marketAgeDays}, 0) as market_age_days
@@ -1174,8 +1244,25 @@ serve(async (req) => {
           current_trade_size: parseFloat(tradeTotal.toFixed(2)),
           global_L_avg_pos_size_usd: dna_avg, // Using avg bet size as proxy for avg position size
           global_L_avg_trade_size_usd: dna_avg,
-          // V10 features for transparency
-          v10_features: {
+          // V11 features for transparency
+          v11_features: {
+            // Win rates at different time horizons
+            global_win_rate: parseFloat(dna_global_win_rate.toFixed(3)),
+            d30_win_rate: parseFloat(d30_win_rate.toFixed(3)),
+            d7_win_rate: parseFloat(d7_win_rate.toFixed(3)),
+            // ROI at different time horizons
+            lifetime_roi_pct: parseFloat(lifetime_roi_pct.toFixed(3)),
+            d30_roi_pct: parseFloat(d30_roi_pct.toFixed(3)),
+            d7_roi_pct: parseFloat(d7_roi_pct.toFixed(3)),
+            // TREND features (NEW in V11 - your idea!)
+            win_rate_trend_short: parseFloat(win_rate_trend_short.toFixed(4)),
+            win_rate_trend_long: parseFloat(win_rate_trend_long.toFixed(4)),
+            roi_trend_short: parseFloat(roi_trend_short.toFixed(4)),
+            roi_trend_long: parseFloat(roi_trend_long.toFixed(4)),
+            performance_regime: performance_regime,
+            // Experience
+            trader_experience_bucket: trader_experience_bucket,
+            // V10 features (kept)
             trade_size_tier: trade_size_tier,
             trader_sells_ratio: parseFloat(trader_sells_ratio.toFixed(3)),
             is_hedging: is_hedging === 1,
