@@ -265,6 +265,10 @@ interface Order {
   user_exit_price: number | null
   user_closed_at: string | null
   created_at: string | null
+  polymarket_realized_pnl: number | null
+  polymarket_avg_price: number | null
+  polymarket_total_bought: number | null
+  polymarket_synced_at: string | null
 }
 
 interface Position {
@@ -285,6 +289,8 @@ interface Position {
   remainingSize: number
   remainingCost: number
   closedByResolution: boolean
+  polymarketRealizedPnl: number | null // Polymarket's official P&L (includes fees)
+  hasPolymarketData: boolean // Whether this position has Polymarket-verified data
 }
 
 interface PortfolioStatsResult {
@@ -333,7 +339,11 @@ async function calculatePortfolioStats(
       resolved_outcome,
       user_exit_price,
       user_closed_at,
-      created_at
+      created_at,
+      polymarket_realized_pnl,
+      polymarket_avg_price,
+      polymarket_total_bought,
+      polymarket_synced_at
     `)
     .eq('copy_user_id', requestedUserId)
     .order('created_at', { ascending: true })
@@ -513,6 +523,8 @@ async function calculatePortfolioStats(
         remainingSize: 0,
         remainingCost: 0,
         closedByResolution: false,
+        polymarketRealizedPnl: null,
+        hasPolymarketData: false,
       }
       positionsMap.set(positionKey, position)
     } else {
@@ -574,6 +586,15 @@ async function calculatePortfolioStats(
       })
       position.totalProceeds += price * filledSize
       position.netSize -= filledSize
+    }
+
+    // Store Polymarket's official P&L data if available
+    if (order.polymarket_realized_pnl !== null && order.polymarket_realized_pnl !== undefined) {
+      const polymarketPnl = toNullableNumber(order.polymarket_realized_pnl)
+      if (polymarketPnl !== null) {
+        position.polymarketRealizedPnl = (position.polymarketRealizedPnl || 0) + polymarketPnl
+        position.hasPolymarketData = true
+      }
     }
   }
 
@@ -675,26 +696,41 @@ async function calculatePortfolioStats(
     }
 
     // FIFO matching: Match sells to buys chronologically
+    // HOWEVER: If we have Polymarket's official P&L data, use that instead (it includes fees)
     let remainingBuys = [...position.buys]
     let realizedPnl = 0
+    let usedPolymarketData = false
 
-    for (const sell of position.sells) {
-      let remainingSellSize = sell.size
+    // Prefer Polymarket's official P&L for closed positions
+    if (position.hasPolymarketData && position.polymarketRealizedPnl !== null) {
+      // Use Polymarket's official realized P&L (includes transaction fees)
+      realizedPnl = position.polymarketRealizedPnl
+      usedPolymarketData = true
       
-      while (remainingSellSize > 0 && remainingBuys.length > 0) {
-        const buy = remainingBuys[0]
-        const matchSize = Math.min(remainingSellSize, buy.size)
-        const matchCost = (buy.cost / buy.size) * matchSize
-        const matchProceeds = (sell.proceeds / sell.size) * matchSize
+      // If position is fully closed according to Polymarket, mark all buys as sold
+      if (position.polymarketRealizedPnl !== 0) {
+        remainingBuys = [] // All shares sold
+      }
+    } else {
+      // Fall back to FIFO calculation
+      for (const sell of position.sells) {
+        let remainingSellSize = sell.size
         
-        realizedPnl += matchProceeds - matchCost
-        
-        remainingSellSize -= matchSize
-        buy.size -= matchSize
-        buy.cost -= matchCost
-        
-        if (buy.size <= 0.00001) { // Account for floating point precision
-          remainingBuys.shift()
+        while (remainingSellSize > 0 && remainingBuys.length > 0) {
+          const buy = remainingBuys[0]
+          const matchSize = Math.min(remainingSellSize, buy.size)
+          const matchCost = (buy.cost / buy.size) * matchSize
+          const matchProceeds = (sell.proceeds / sell.size) * matchSize
+          
+          realizedPnl += matchProceeds - matchCost
+          
+          remainingSellSize -= matchSize
+          buy.size -= matchSize
+          buy.cost -= matchCost
+          
+          if (buy.size <= 0.00001) { // Account for floating point precision
+            remainingBuys.shift()
+          }
         }
       }
     }
@@ -724,7 +760,8 @@ async function calculatePortfolioStats(
     
     // Debug logging for resolved positions
     if (position.closedByResolution && realizedPnl !== 0) {
-      console.log(`[Portfolio Stats] Resolved position: ${position.marketId}::${position.outcome}, PnL: ${realizedPnl.toFixed(2)}, remainingSize: ${position.remainingSize}`)
+      const dataSource = usedPolymarketData ? '[Polymarket]' : '[Calculated]'
+      console.log(`[Portfolio Stats] ${dataSource} Resolved position: ${position.marketId}::${position.outcome}, PnL: ${realizedPnl.toFixed(2)}, remainingSize: ${position.remainingSize}`)
     }
 
     // Calculate unrealized P&L on remaining position
@@ -755,12 +792,20 @@ async function calculatePortfolioStats(
   const totalBuyTrades = orders.filter(o => normalizeSide(o.side) === 'buy').length
   const totalSellTrades = orders.filter(o => normalizeSide(o.side) === 'sell').length
 
+  // Count how many positions used Polymarket's official data
+  const positionsWithPolymarketData = Array.from(positionsMap.values()).filter(p => p.hasPolymarketData).length
+  const polymarketDataPnl = Array.from(positionsMap.values())
+    .filter(p => p.hasPolymarketData)
+    .reduce((sum, p) => sum + (p.polymarketRealizedPnl || 0), 0)
+
   console.log('🎯 Position-Based P&L Calculated:', {
     userId: requestedUserId.substring(0, 8),
-    method: 'FIFO Cost Basis (Polymarket-style)',
+    method: 'FIFO Cost Basis (with Polymarket data when available)',
     totalPositions: positionsMap.size,
     openPositions: openPositionsCount,
     closedPositions: closedPositions.length,
+    positionsWithPolymarketData: positionsWithPolymarketData,
+    polymarketDataPnl: polymarketDataPnl.toFixed(2),
     resolvedPositionsMissingPrice: resolvedPositionsMissingPrice,
     resolvedPositionsMissingPriceCost: resolvedPositionsMissingPriceCost.toFixed(2),
     totalVolume: totalVolume.toFixed(2),
