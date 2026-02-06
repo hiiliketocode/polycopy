@@ -30,7 +30,8 @@ interface TraderStats {
   profileRoiPct: number | null
   globalTrades: number
   profileTrades: number
-  avgBetSizeUsd: number | null
+  avgBetSizeUsd: number | null  // Global avg trade size
+  profileAvgTradeSize: number | null  // Profile-specific avg trade size for conviction
   profileAvgPnl: number | null
   globalAvgPnl: number | null
 }
@@ -215,10 +216,12 @@ function calculateSignal(
   const spotPrice = currentPrice ?? data.valuation?.spot_price ?? price
   
   // Calculate trade value and conviction from fetched stats
+  // Use profile-specific avg trade size for conviction (same as PredictionStats)
   const tradeValue = (entryPrice && tradeSize) ? entryPrice * tradeSize : (stats?.exposure ?? 0)
-  const avgBetSize = traderStats?.avgBetSizeUsd ?? null
-  const calculatedConviction = (tradeValue > 0 && avgBetSize && avgBetSize > 0) 
-    ? tradeValue / avgBetSize 
+  // Prefer profile-specific avg trade size, fallback to global
+  const avgSizeForConviction = traderStats?.profileAvgTradeSize ?? traderStats?.avgBetSizeUsd ?? null
+  const calculatedConviction = (tradeValue > 0 && avgSizeForConviction && avgSizeForConviction > 0) 
+    ? tradeValue / avgSizeForConviction 
     : (stats?.conviction_multiplier ?? null)
   
   // Build comprehensive insights object - USE FETCHED TRADER STATS
@@ -696,53 +699,62 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
           globalStats?.d30_avg_pnl_trade_usd, globalStats?.l_avg_pnl_trade_usd
         )
         
-        // Try to find matching niche profile from PolyScore data
+        // Try to find and AGGREGATE all matching niche profiles (same as PredictionStats)
         const niche = data?.analysis?.niche_name?.toUpperCase()
-        let profileStats_: any = null
         let usedNiche: string | null = null
         
-        if (niche && profileStats.length > 0) {
-          profileStats_ = profileStats.find((p: any) => {
-            const profileNiche = (p.final_niche || '').toUpperCase()
-            return profileNiche === niche || 
-                   profileNiche.includes(niche) || 
-                   niche.includes(profileNiche)
-          })
-          if (profileStats_) {
-            usedNiche = niche
+        // Find ALL profiles matching the niche (not just first one)
+        const matchingProfiles = niche && profileStats.length > 0
+          ? profileStats.filter((p: any) => {
+              const profileNiche = (p.final_niche || '').toUpperCase()
+              return profileNiche === niche || 
+                     profileNiche.includes(niche) || 
+                     niche.includes(profileNiche)
+            })
+          : []
+        
+        // Aggregate all matching profiles (same logic as PredictionStats)
+        let aggregatedStats: any = null
+        if (matchingProfiles.length > 0) {
+          const agg = matchingProfiles.reduce((acc: any, p: any) => {
+            const count = pickNumber(p.d30_count, p.l_count, p.trade_count) ?? 0
+            const winRate = pickNumber(p.d30_win_rate, p.l_win_rate) ?? 0.5
+            const roiPct = pickNumber(p.d30_total_roi_pct, p.l_total_roi_pct) ?? 0
+            const avgPnl = pickNumber(p.d30_avg_pnl_trade_usd, p.l_avg_pnl_trade_usd) ?? 0
+            const avgTradeSize = pickNumber(p.d30_avg_trade_size_usd, p.l_avg_trade_size_usd) ?? 0
+            
+            acc.totalTrades += count
+            acc.winWeighted += winRate * count
+            acc.roiWeighted += roiPct * count
+            acc.pnlWeighted += avgPnl * count
+            acc.sizeWeighted += avgTradeSize * count
+            return acc
+          }, { totalTrades: 0, winWeighted: 0, roiWeighted: 0, pnlWeighted: 0, sizeWeighted: 0 })
+          
+          if (agg.totalTrades > 0) {
+            aggregatedStats = {
+              tradeCount: agg.totalTrades,
+              winRate: agg.winWeighted / agg.totalTrades,
+              roiPct: agg.roiWeighted / agg.totalTrades,
+              avgPnl: agg.pnlWeighted / agg.totalTrades,
+              avgTradeSize: agg.sizeWeighted / agg.totalTrades,
+            }
+            usedNiche = niche ?? null
           }
         }
         
-        // Check if niche profile has enough trades to be reliable (min 10)
-        const nicheTradeCount = profileStats_ ? pickNumber(
-          profileStats_.d30_count, profileStats_.l_count, profileStats_.trade_count
-        ) ?? 0 : 0
-        
-        // If niche has too few trades (<10), fall back to global stats
-        // This prevents showing 0% win rate from tiny sample sizes
+        // Check if aggregated niche stats have enough trades to be reliable (min 10)
+        const nicheTradeCount = aggregatedStats?.tradeCount ?? 0
         const MIN_RELIABLE_TRADES = 10
-        const useNicheStats = profileStats_ && nicheTradeCount >= MIN_RELIABLE_TRADES
+        const useNicheStats = aggregatedStats && nicheTradeCount >= MIN_RELIABLE_TRADES
         
-        if (!useNicheStats) {
-          profileStats_ = null
-          usedNiche = null
-        }
+        const profileWinRate = useNicheStats ? aggregatedStats.winRate : globalWinRate
+        const profileRoiPct = useNicheStats ? aggregatedStats.roiPct : globalRoiPct
+        const profileTrades = useNicheStats ? nicheTradeCount : globalTrades
+        const profileAvgPnl = useNicheStats ? aggregatedStats.avgPnl : globalAvgPnl
+        const profileAvgTradeSize = useNicheStats ? aggregatedStats.avgTradeSize : null
         
-        const profileWinRate = useNicheStats && profileStats_ ? pickNumber(
-          profileStats_.d30_win_rate, profileStats_.l_win_rate
-        ) : globalWinRate
-        
-        const profileRoiPct = useNicheStats && profileStats_ ? pickNumber(
-          profileStats_.d30_total_roi_pct, profileStats_.l_total_roi_pct
-        ) : globalRoiPct
-        
-        const profileTrades = useNicheStats && profileStats_ ? nicheTradeCount : globalTrades
-        
-        const profileAvgPnl = useNicheStats && profileStats_ ? pickNumber(
-          profileStats_.d30_avg_pnl_trade_usd, profileStats_.l_avg_pnl_trade_usd
-        ) : globalAvgPnl
-        
-        console.log('[PolySignal] Fetched trader stats:', {
+        console.log('[PolySignal] Fetched trader stats (aggregated):', {
           wallet: walletAddress.slice(0, 10),
           globalWinRate,
           profileWinRate,
@@ -751,8 +763,10 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
           globalTrades,
           profileTrades,
           avgBetSizeUsd,
+          profileAvgTradeSize,
           niche,
-          hasProfile: !!profileStats_,
+          matchingProfilesCount: matchingProfiles.length,
+          useNicheStats,
         })
         
         setTraderStats({
@@ -763,6 +777,7 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
           globalTrades,
           profileTrades,
           avgBetSizeUsd,
+          profileAvgTradeSize,
           profileAvgPnl,
           globalAvgPnl,
         })

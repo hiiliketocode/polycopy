@@ -181,15 +181,26 @@ function winRateForTradeType(stats: any, category?: string): number | null {
   if (!stats) return null;
   if (category && stats.profiles?.length > 0) {
     const normalizedCategory = category.toLowerCase();
-    const matchingProfile = stats.profiles.find((profile: any) => {
+    // AGGREGATE all matching profiles (same logic as PolySignal/PredictionStats)
+    const matchingProfiles = stats.profiles.filter((profile: any) => {
       const niche = (profile.final_niche || '').toLowerCase();
       if (!niche) return false;
       return niche === normalizedCategory || niche.includes(normalizedCategory) || normalizedCategory.includes(niche);
     });
-    if (matchingProfile) {
-      // Use actual column names: d30_win_rate, l_win_rate
-      const profileWinRate = normalizeWinRateValue(matchingProfile?.d30_win_rate) ?? normalizeWinRateValue(matchingProfile?.l_win_rate);
-      if (profileWinRate !== null) return profileWinRate;
+    
+    if (matchingProfiles.length > 0) {
+      // Weighted average of win rates
+      let totalTrades = 0;
+      let winWeighted = 0;
+      for (const p of matchingProfiles) {
+        const count = Number(p.d30_count ?? p.l_count ?? p.trade_count ?? 0) || 0;
+        const winRate = normalizeWinRateValue(p.d30_win_rate) ?? normalizeWinRateValue(p.l_win_rate) ?? 0.5;
+        totalTrades += count;
+        winWeighted += winRate * count;
+      }
+      if (totalTrades > 0) {
+        return winWeighted / totalTrades;
+      }
     }
   }
   return normalizeWinRateValue(stats.globalWinRate);
@@ -447,36 +458,65 @@ export async function GET(request: Request) {
       // This ensures consistency between server-side filter and client-side display
       const MIN_RELIABLE_TRADES = 10
       
-      // Find the matching niche profile (same logic as winRateForTradeType)
-      let matchingProfile: any = null
-      if (stats?.profiles?.length > 0 && category) {
-        const normalizedCategory = category.toLowerCase()
-        matchingProfile = stats.profiles.find((profile: any) => {
-          const niche = (profile.final_niche || '').toLowerCase()
-          if (!niche) return false
-          return niche === normalizedCategory || niche.includes(normalizedCategory) || normalizedCategory.includes(niche)
-        })
+      // Helper to pick first valid number
+      const pickNumber = (...vals: any[]): number | null => {
+        for (const v of vals) {
+          if (v !== null && v !== undefined && !isNaN(v)) return Number(v)
+        }
+        return null
       }
       
-      // Get trade count for matching niche
-      const nicheTradeCount = matchingProfile 
-        ? (Number(matchingProfile.d30_count ?? matchingProfile.l_count ?? matchingProfile.trade_count ?? 0) || 0)
-        : 0
+      // AGGREGATE all matching niche profiles (same logic as PolySignal and PredictionStats)
+      const normalizedCategory = category?.toLowerCase() || ''
+      const matchingProfiles = (stats?.profiles?.length > 0 && normalizedCategory)
+        ? stats.profiles.filter((profile: any) => {
+            const niche = (profile.final_niche || '').toLowerCase()
+            if (!niche) return false
+            return niche === normalizedCategory || niche.includes(normalizedCategory) || normalizedCategory.includes(niche)
+          })
+        : []
+      
+      // Aggregate all matching profiles
+      let aggregatedStats: any = null
+      if (matchingProfiles.length > 0) {
+        const agg = matchingProfiles.reduce((acc: any, p: any) => {
+          const count = pickNumber(p.d30_count, p.l_count, p.trade_count) ?? 0
+          const winRate = normalizeWinRateValue(p.d30_win_rate) ?? normalizeWinRateValue(p.l_win_rate) ?? 0.5
+          const avgTradeSize = pickNumber(p.d30_avg_trade_size_usd, p.l_avg_trade_size_usd) ?? 0
+          
+          acc.totalTrades += count
+          acc.winWeighted += winRate * count
+          acc.sizeWeighted += avgTradeSize * count
+          return acc
+        }, { totalTrades: 0, winWeighted: 0, sizeWeighted: 0 })
+        
+        if (agg.totalTrades > 0) {
+          aggregatedStats = {
+            tradeCount: agg.totalTrades,
+            winRate: agg.winWeighted / agg.totalTrades,
+            avgTradeSize: agg.sizeWeighted / agg.totalTrades,
+          }
+        }
+      }
+      
+      // Get aggregated trade count for niche
+      const nicheTradeCount = aggregatedStats?.tradeCount ?? 0
       
       // Only use niche stats if we have enough data
-      const useNicheStats = matchingProfile && nicheTradeCount >= MIN_RELIABLE_TRADES
+      const useNicheStats = aggregatedStats && nicheTradeCount >= MIN_RELIABLE_TRADES
       
-      // Get niche win rate if using niche stats
-      const nicheWinRate = useNicheStats && matchingProfile
-        ? (normalizeWinRateValue(matchingProfile.d30_win_rate) ?? normalizeWinRateValue(matchingProfile.l_win_rate))
-        : null
+      // Get aggregated niche win rate
+      const nicheWinRate = useNicheStats ? aggregatedStats.winRate : null
+      
+      // Use aggregated profile avg trade size for conviction calculation
+      const profileAvgTradeSize = useNicheStats ? aggregatedStats.avgTradeSize : null
       
       const polySignalStats = {
         profileWinRate: useNicheStats ? nicheWinRate : (stats?.globalWinRate ?? null),
         globalWinRate: stats?.globalWinRate ?? null,
         profileTrades: useNicheStats ? nicheTradeCount : (stats?.globalTrades ?? 20),
         globalTrades: stats?.globalTrades ?? 20,
-        avgBetSizeUsd: stats?.avgBetSizeUsd ?? null,
+        avgBetSizeUsd: profileAvgTradeSize ?? stats?.avgBetSizeUsd ?? null,  // Prefer profile avg for conviction
         isHot: false, // Would need more data
         isHedging: false, // Would need more data
       };
