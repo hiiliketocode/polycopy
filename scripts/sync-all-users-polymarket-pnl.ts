@@ -101,7 +101,7 @@ async function syncUserPositions(userId: string, walletAddress: string) {
   // Get ONLY the orders that exist in Polycopy for this user
   const { data: orders } = await supabase
     .from('orders')
-    .select('order_id, market_id, outcome, side, amount_invested')
+    .select('order_id, market_id, outcome, side, size, filled_size, amount_invested')
     .eq('copy_user_id', userId)
 
   if (!orders || orders.length === 0) {
@@ -131,22 +131,14 @@ async function syncUserPositions(userId: string, walletAddress: string) {
       continue
     }
 
-    // Update ALL matching orders with Polymarket's P&L
-    const totalInvested = matchingOrders.reduce((sum, o) => 
-      sum + Number(o.amount_invested || 0), 0)
-
+    // Store Polymarket's FULL position P&L on ALL orders for this position
+    // The calculation code will only use it once per position (from first order)
+    // But storing it on all orders ensures we have it regardless of order sequence
     for (const order of matchingOrders) {
-      // Distribute P&L proportionally if multiple orders for same position
-      const proportion = totalInvested > 0 
-        ? Number(order.amount_invested || 0) / totalInvested 
-        : 1 / matchingOrders.length
-
-      const orderPnl = realizedPnl * proportion
-
       const { error } = await supabase
         .from('orders')
         .update({
-          polymarket_realized_pnl: orderPnl,
+          polymarket_realized_pnl: realizedPnl,  // FULL position P&L (not distributed)
           polymarket_avg_price: avgPrice,
           polymarket_total_bought: totalBought,
           polymarket_synced_at: new Date().toISOString()
