@@ -17,6 +17,7 @@ import {
   generateBacktestPeriods,
   runMultiPeriodBacktest,
 } from '@/lib/paper-trading';
+import { getPolyScore, PolyScoreRequest } from '@/lib/polyscore/get-polyscore';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -29,8 +30,76 @@ const supabase = createClient(supabaseUrl || '', supabaseServiceKey || '', {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-// Simulate value scores for backtesting
-function simulateValueScore(trade: any): { valueScore: number; edge: number; polyscore: number } {
+// Cache for PolyScore results to avoid duplicate API calls
+const polyScoreCache = new Map<string, any>();
+
+// Get real PolyScore for a trade (with caching)
+async function getRealPolyScore(trade: any, logs: string[]): Promise<{
+  valueScore: number;
+  edge: number;
+  polyscore: number;
+  traderWinRate: number;
+  aiProbability: number;
+} | null> {
+  const cacheKey = `${trade.conditionId}-${trade.user}-${trade.price}`;
+  
+  // Check cache first
+  if (polyScoreCache.has(cacheKey)) {
+    return polyScoreCache.get(cacheKey);
+  }
+  
+  try {
+    const request: PolyScoreRequest = {
+      original_trade: {
+        wallet_address: trade.user || trade.wallet || '',
+        condition_id: trade.conditionId || trade.condition_id || '',
+        side: 'BUY',
+        price: Number(trade.price) || 0.5,
+        shares_normalized: Number(trade.size) || 100,
+        timestamp: trade.timestamp ? new Date(
+          typeof trade.timestamp === 'number' 
+            ? (trade.timestamp < 10000000000 ? trade.timestamp * 1000 : trade.timestamp)
+            : trade.timestamp
+        ).toISOString() : new Date().toISOString(),
+      },
+      market_context: {
+        current_price: Number(trade.price) || 0.5,
+        current_timestamp: new Date().toISOString(),
+        market_title: trade.title || trade.question || null,
+        market_volume_total: null,
+        market_tags: null,
+      },
+      user_slippage: 0.04,
+    };
+    
+    const response = await getPolyScore(request);
+    
+    const result = {
+      valueScore: response.prediction?.score_0_100 || response.polyscore || 50,
+      edge: response.valuation?.real_edge_pct || response.prediction?.edge_percent || 0,
+      polyscore: response.polyscore || 50,
+      traderWinRate: response.analysis?.prediction_stats?.trader_win_rate || 0.5,
+      aiProbability: response.valuation?.ai_fair_value || 0.5,
+    };
+    
+    // Cache the result
+    polyScoreCache.set(cacheKey, result);
+    
+    return result;
+  } catch (error: any) {
+    // Log error but don't fail - return null to use fallback
+    logs.push(`[WARN] PolyScore API failed for trade: ${error.message?.slice(0, 50)}`);
+    return null;
+  }
+}
+
+// Fallback: Simulate value scores when PolyScore API is unavailable
+function simulateValueScore(trade: any): { 
+  valueScore: number; 
+  edge: number; 
+  polyscore: number;
+  traderWinRate: number;
+} {
   let valueScore = 50;
   let edge = 0;
   let polyscore = 50;
@@ -56,7 +125,7 @@ function simulateValueScore(trade: any): { valueScore: number; edge: number; pol
   }
   
   // Trade size = conviction
-  const tradeSize = Number(trade.shares_normalized) * price || 0;
+  const tradeSize = Number(trade.size) * price || 0;
   if (tradeSize > 1000) {
     valueScore += 15;
     polyscore += 15;
@@ -68,24 +137,25 @@ function simulateValueScore(trade: any): { valueScore: number; edge: number; pol
     polyscore += 5;
   }
   
-  // Bet structure adjustment
-  const title = (trade.title || trade.market_title || '').toLowerCase();
-  const isOverUnder = title.includes('over') || title.includes('under') || title.includes('total');
-  const isSpread = title.includes('spread') || title.includes('handicap');
-  
-  if (isOverUnder || isSpread) {
-    edge *= 0.7;
-    valueScore -= 5;
+  // Simulate trader win rate based on trade size
+  let traderWinRate = 0.50;
+  if (tradeSize > 500) {
+    traderWinRate = 0.55 + Math.random() * 0.10; // 55-65% for whales
+  } else if (tradeSize > 100) {
+    traderWinRate = 0.50 + Math.random() * 0.10; // 50-60% for medium
+  } else {
+    traderWinRate = 0.45 + Math.random() * 0.10; // 45-55% for small
   }
   
-  // Add some randomness to simulate real-world variation
-  valueScore += (Math.random() - 0.5) * 20;
-  polyscore += (Math.random() - 0.5) * 15;
+  // Add some randomness
+  valueScore += (Math.random() - 0.5) * 15;
+  polyscore += (Math.random() - 0.5) * 10;
   
   return {
     valueScore: Math.min(100, Math.max(0, valueScore)),
     edge,
     polyscore: Math.min(100, Math.max(0, polyscore)),
+    traderWinRate,
   };
 }
 
@@ -516,6 +586,11 @@ export async function GET(request: NextRequest) {
     let processedCount = 0;
     let enteredCount = 0;
     let resolvedCount = 0;
+    let polyScoreSuccessCount = 0;
+    let polyScoreFallbackCount = 0;
+    
+    // Rate limit PolyScore API calls (max 10 per backtest to avoid overload)
+    const MAX_POLYSCORE_CALLS = 10;
     
     for (const trade of (trades || [])) {
       processedCount++;
@@ -523,27 +598,32 @@ export async function GET(request: NextRequest) {
       // Convert to signal
       const signal = tradeToSignal(trade, null, null);
       
-      // Simulate value scores for backtesting
-      const simScores = simulateValueScore(trade);
-      signal.valueScore = simScores.valueScore;
-      signal.aiEdge = simScores.edge;
-      signal.polyscore = simScores.polyscore;
+      // Try to get real PolyScore (with rate limiting)
+      let scores: { valueScore: number; edge: number; polyscore: number; traderWinRate: number } | null = null;
       
-      // Simulate trader win rate based on trade characteristics
-      // In reality, we'd look up the trader's historical stats
-      // For backtesting, estimate based on position size (larger = more experienced)
-      const tradeSize = Number(trade.size) * Number(trade.price) || 0;
-      if (tradeSize > 500) {
-        signal.traderWinRate = 0.58 + Math.random() * 0.07; // 58-65% for whales
-      } else if (tradeSize > 100) {
-        signal.traderWinRate = 0.52 + Math.random() * 0.08; // 52-60% for medium
-      } else {
-        signal.traderWinRate = 0.45 + Math.random() * 0.10; // 45-55% for small
+      if (polyScoreSuccessCount < MAX_POLYSCORE_CALLS) {
+        const realScores = await getRealPolyScore(trade, state.logs);
+        if (realScores) {
+          scores = realScores;
+          polyScoreSuccessCount++;
+        }
       }
+      
+      // Fallback to simulated scores if PolyScore unavailable
+      if (!scores) {
+        scores = simulateValueScore(trade);
+        polyScoreFallbackCount++;
+      }
+      
+      signal.valueScore = scores.valueScore;
+      signal.aiEdge = scores.edge;
+      signal.polyscore = scores.polyscore;
+      signal.traderWinRate = scores.traderWinRate;
       
       // Log first few trades for debugging
       if (processedCount <= 3) {
-        state.logs.push(`[DEBUG] Trade ${processedCount}: ${(trade.title || '').slice(0, 40)}... | Value: ${signal.valueScore?.toFixed(1)} | Edge: ${signal.aiEdge}% | Time: ${new Date(signal.timestamp).toISOString()}`);
+        const scoreSource = polyScoreSuccessCount > polyScoreFallbackCount ? 'PolyScore' : 'Simulated';
+        state.logs.push(`[DEBUG] Trade ${processedCount} (${scoreSource}): ${(trade.title || '').slice(0, 35)}... | Value: ${signal.valueScore?.toFixed(1)} | Edge: ${signal.aiEdge?.toFixed(1)}% | WinRate: ${((signal.traderWinRate || 0) * 100).toFixed(0)}%`);
       }
       
       // Count open positions before
@@ -610,6 +690,13 @@ export async function GET(request: NextRequest) {
     state = advanceTime(state, end.getTime());
     
     console.log(`[paper-trading] Processed ${processedCount} trades, entered ${enteredCount}, resolved ${resolvedCount}`);
+    console.log(`[paper-trading] PolyScore: ${polyScoreSuccessCount} real, ${polyScoreFallbackCount} simulated`);
+    
+    // Log scoring summary
+    state.logs.push(`[SCORING] Used ${polyScoreSuccessCount} real PolyScore calls, ${polyScoreFallbackCount} simulated scores`);
+    if (polyScoreSuccessCount === 0) {
+      state.logs.push(`[INFO] PolyScore API unavailable - using simulated scores for all trades`);
+    }
     
     // Log final summary for each strategy
     state.logs.push(`[SUMMARY] === Final Results ===`);
