@@ -443,11 +443,11 @@ export async function GET(request: Request) {
                   ? market.isResolved
                   : undefined;
           
-          // Prioritize close_time (betting window closes) over end_time (final confirmation)
-          // Use cachedEndTime which now prioritizes close_time from markets table
+          // Use end_time (actual resolution date) for the "Resolves" badge
+          // end_time = when market resolves, close_time = when betting stops (may be earlier)
           let endDateIso = cachedEndTime 
             ? normalizeEndDate(cachedEndTime)
-            : normalizeEndDate(market.close_date_iso || market.close_date || market.closeDate || market.end_date_iso || market.end_date || market.endDate || null);
+            : normalizeEndDate(market.end_date_iso || market.end_date || market.endDate || market.close_date_iso || market.close_date || market.closeDate || null);
           let marketAvatarUrl = pickFirstString(market.icon, market.image, cachedMarketAvatar);
 
           if (!endDateIso || !marketAvatarUrl) {
@@ -672,12 +672,13 @@ export async function GET(request: Request) {
                   ? market.isResolved
                   : undefined;
 
-          // Prioritize close_time (betting window closes) over end_time
+          // Use end_time (actual resolution date) for the "Resolves" badge
+          // end_time = when market resolves, close_time = when betting stops (may be earlier)
           const endDateIso = cachedEndTime
             ? normalizeEndDate(cachedEndTime)
             : normalizeEndDate(
-                market.close_date_iso || market.close_date || market.closeDate || 
-                market.close_time || market.end_date_iso || market.end_date || market.endDate || null
+                market.end_date_iso || market.end_date || market.endDate || 
+                market.close_date_iso || market.close_date || market.closeDate || market.close_time || null
               );
           const resolvedEndDateIso = endDateIso;
           const event =
@@ -769,12 +770,13 @@ export async function GET(request: Request) {
                   ? match.isResolved
                   : undefined;
 
-          // Prioritize close_time (betting window closes) over end_time
+          // Use end_time (actual resolution date) for the "Resolves" badge
+          // end_time = when market resolves, close_time = when betting stops (may be earlier)
           const endDateIso = cachedEndTime
             ? normalizeEndDate(cachedEndTime)
             : normalizeEndDate(
-                match.close_date_iso || match.close_date || match.closeDate || 
-                match.close_time || match.end_date_iso || match.end_date || match.endDate || null
+                match.end_date_iso || match.end_date || match.endDate || 
+                match.close_date_iso || match.close_date || match.closeDate || match.close_time || null
               );
           const resolvedEndDateIso = endDateIso;
           const event =

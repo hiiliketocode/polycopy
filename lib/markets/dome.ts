@@ -81,12 +81,13 @@ export const pickMarketStartTime = (row: Record<string, any> | null | undefined)
 };
 
 export const pickMarketEndTime = (row: Record<string, any> | null | undefined) => {
-  // IMPORTANT: Use close_time (betting window closes) NOT end_time (final confirmation)
-  // - close_time: When betting/trading stops (what users care about for "Resolves" badge)
-  // - end_time: When final confirmation/resolution happens (usually later)
+  // Use end_time (actual resolution date) for the "Resolves" badge
+  // - end_time: When the market resolves (what the badge should show)
+  // - close_time: When betting/trading stops (may be earlier than resolution)
+  // For political markets like "X by March 31?", close_time may be Jan 31 but end_time is March 31
   // Supabase converts snake_case to camelCase, so check both
   if (!row) return null;
-  return row.close_time || row.closeTime || row.end_time || row.endTime || null;
+  return row.end_time || row.endTime || row.close_time || row.closeTime || null;
 };
 
 export const fetchDomeMarketsByConditionIds = async (

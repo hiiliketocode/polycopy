@@ -5,9 +5,8 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { supabase, ensureProfile } from '@/lib/supabase';
-import { getOrRefreshSession } from '@/lib/auth/session';
+import { useAuthState } from '@/lib/auth/useAuthState';
 import { resolveFeatureTier, tierHasPremiumAccess } from '@/lib/feature-tier';
-import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { Card } from '@/components/ui/card';
@@ -334,8 +333,17 @@ function ProfilePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  
+  // Use the robust auth state hook that properly handles token refresh
+  const { user, loading } = useAuthState({
+    requireAuth: true,
+    onAuthComplete: async (authUser) => {
+      if (authUser) {
+        await ensureProfile(authUser.id, authUser.email!);
+      }
+    },
+  });
+  
   const [isPremium, setIsPremium] = useState(false);
   const [followingCount, setFollowingCount] = useState(0);
   const [loadingStats, setLoadingStats] = useState(true);
@@ -506,110 +514,15 @@ function ProfilePageContent() {
   const hasLoadedQuickTradesRef = useRef(false);
   const hasLoadedPositionsRef = useRef(false);
 
-  // Check auth status on mount
+  // Clean up auth callback URL param (if present)
   useEffect(() => {
-    let isMounted = true;
-    const checkAuth = async () => {
-      setLoading(true);
-
-      // Timeout safeguard - ensure loading is cleared after 10 seconds
-      const timeoutId = setTimeout(() => {
-        if (isMounted) {
-          console.warn('Auth check timeout - clearing loading state');
-          setLoading(false);
-        }
-      }, 10000);
-
-      // Check if we're coming from auth callback - give cookies time to be set
-      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-      const isFromAuthCallback = urlParams?.has('_auth_callback');
-      
-      if (isFromAuthCallback && urlParams) {
-        // Remove the query param from URL
-        urlParams.delete('_auth_callback');
-        const newUrl = window.location.pathname + (urlParams.toString() ? `?${urlParams.toString()}` : '');
-        window.history.replaceState({}, '', newUrl);
-        // Wait a bit for cookies to be available
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-      
-      try {
-        const { session } = await getOrRefreshSession();
-
-        if (!isMounted) return;
-
-        // Validate session is actually valid
-        if (!session?.user) {
-          // Don't redirect if we're already on login page or in auth callback
-          const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
-          if (currentPath !== '/login' && !currentPath.startsWith('/auth/')) {
-            triggerLoggedOut('session_missing');
-            // Clear loading immediately before redirect
-            setLoading(false);
-            router.push('/login');
-          } else {
-            setLoading(false);
-          }
-          return;
-        }
-
-        // Only check expiration if we have an expires_at value
-        // Some sessions might not have this set
-        if (session.expires_at && session.expires_at * 1000 < Date.now() - 60000) {
-          // Session expired (with 1 minute buffer)
-          const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
-          if (currentPath !== '/login' && !currentPath.startsWith('/auth/')) {
-            triggerLoggedOut('session_missing');
-            setLoading(false);
-            router.push('/login');
-          } else {
-            setLoading(false);
-          }
-          return;
-        }
-
-        setUser(session.user);
-        await ensureProfile(session.user.id, session.user.email!);
-      } catch (err) {
-        if (!isMounted) return;
-        console.error('Auth error:', err);
-        const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
-        if (currentPath !== '/login' && !currentPath.startsWith('/auth/')) {
-          triggerLoggedOut('auth_error');
-          // Clear loading immediately before redirect
-          setLoading(false);
-          router.push('/login');
-        } else {
-          setLoading(false);
-        }
-      } finally {
-        if (isMounted) {
-          clearTimeout(timeoutId);
-          setLoading(false);
-        }
-      }
-    };
-
-    checkAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!isMounted) return;
-      if (!session?.user) {
-        const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
-        if (currentPath !== '/login' && !currentPath.startsWith('/auth/')) {
-          triggerLoggedOut('signed_out');
-          router.push('/login');
-        }
-      } else {
-        setUser(session.user);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (typeof window === 'undefined') return;
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('_auth_callback')) {
+      urlParams.delete('_auth_callback');
+      const newUrl = window.location.pathname + (urlParams.toString() ? `?${urlParams.toString()}` : '');
+      window.history.replaceState({}, '', newUrl);
+    }
   }, []);
 
   // Fetch user stats and wallet

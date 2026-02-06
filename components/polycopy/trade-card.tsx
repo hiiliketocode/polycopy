@@ -632,23 +632,53 @@ export function TradeCard({
   const copiedTraderId = isUuid(trader.id) ? trader.id! : null
 
   // Cache last valid score to prevent flickering when data momentarily disappears
-  const lastValidScoreRef = useRef<string | null>(null)
+  // or when different sources use different team abbreviations
+  const lastValidScoreRef = useRef<{ full: string; homeTeam: string; awayTeam: string; homeScore: string; awayScore: string } | null>(null)
   
   const cleanedLiveScore = useMemo(() => {
     if (!liveScore) {
       // Return cached score to prevent flickering
-      return lastValidScoreRef.current
+      return lastValidScoreRef.current?.full ?? null
     }
     // Remove leading non-alphanumeric, and strip any embedded time like " (Q4 5:30)" or " (Halftime)"
     let cleaned = liveScore.replace(/^[^A-Za-z0-9]+/, "").trim()
     // Remove parenthesized time/status suffix (e.g., "(Q4 5:30)", "(Halftime)", "(OT 2:15)")
     cleaned = cleaned.replace(/\s*\([^)]*\)\s*$/, "").trim()
-    const result = cleaned.length ? cleaned : null
-    // Update cache if we have a valid score
-    if (result && /\d+\s*-\s*\d+/.test(result)) {
-      lastValidScoreRef.current = result
+    if (!cleaned.length) return lastValidScoreRef.current?.full ?? null
+    
+    // Parse the score format: "TEAM1 123 - 456 TEAM2" or "TEAM1 123-456 TEAM2"
+    const scoreMatch = cleaned.match(/^([A-Za-z]+)\s*(\d+)\s*-\s*(\d+)\s*([A-Za-z]+)$/)
+    if (!scoreMatch) {
+      // Not a valid score format, return cached or current
+      return lastValidScoreRef.current?.full ?? cleaned
     }
-    return result
+    
+    const [, newHomeTeam, newHomeScore, newAwayScore, newAwayTeam] = scoreMatch
+    const cached = lastValidScoreRef.current
+    
+    // If we have a cached score, only update the numeric scores but keep the team names stable
+    if (cached) {
+      const updatedFull = `${cached.homeTeam} ${newHomeScore} - ${newAwayScore} ${cached.awayTeam}`
+      lastValidScoreRef.current = {
+        full: updatedFull,
+        homeTeam: cached.homeTeam,
+        awayTeam: cached.awayTeam,
+        homeScore: newHomeScore,
+        awayScore: newAwayScore,
+      }
+      return updatedFull
+    }
+    
+    // First valid score - cache everything including team names
+    const full = `${newHomeTeam} ${newHomeScore} - ${newAwayScore} ${newAwayTeam}`
+    lastValidScoreRef.current = {
+      full,
+      homeTeam: newHomeTeam,
+      awayTeam: newAwayTeam,
+      homeScore: newHomeScore,
+      awayScore: newAwayScore,
+    }
+    return full
   }, [liveScore])
 
   const looksLikeScore = Boolean(cleanedLiveScore && /\d+\s*-\s*\d+/.test(cleanedLiveScore))
@@ -3134,9 +3164,9 @@ export function TradeCard({
                   {espnLink ? (
                     <Badge asChild variant="secondary" className={combinedScoreBadgeClass}>
                       <a href={espnLink} target="_blank" rel="noopener noreferrer">
-                        <span className="flex items-center gap-1 min-w-0">
+                        <span className="flex items-center justify-center gap-1 w-full overflow-hidden">
                           <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
-                          <span className="flex-1 min-w-0 truncate">{cleanedLiveScore}</span>
+                          <span className="truncate whitespace-nowrap">{cleanedLiveScore}</span>
                         </span>
                         <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
                           {combinedScoreLabel}
@@ -3145,9 +3175,9 @@ export function TradeCard({
                     </Badge>
                   ) : (
                     <Badge variant="secondary" className={combinedScoreBadgeClass}>
-                      <span className="flex items-center gap-1 min-w-0">
+                      <span className="flex items-center justify-center gap-1 w-full overflow-hidden">
                         <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="flex-1 min-w-0 truncate">{cleanedLiveScore}</span>
+                        <span className="truncate whitespace-nowrap">{cleanedLiveScore}</span>
                       </span>
                       <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
                         {combinedScoreLabel}
@@ -3163,12 +3193,12 @@ export function TradeCard({
                       variant="secondary"
                       className={cn(
                         badgeBaseClass,
-                        "bg-indigo-50 text-indigo-700 border-indigo-200 w-[200px] min-w-[200px]",
+                        "bg-indigo-50 text-indigo-700 border-indigo-200 w-[200px] min-w-[200px] overflow-hidden",
                       )}
                     >
-                      <a href={espnLink} target="_blank" rel="noopener noreferrer">
+                      <a href={espnLink} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1 w-full">
                         <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="flex-1 min-w-0 truncate">{cleanedLiveScore}</span>
+                        <span className="truncate whitespace-nowrap">{cleanedLiveScore}</span>
                       </a>
                     </Badge>
                   ) : (
@@ -3176,11 +3206,11 @@ export function TradeCard({
                       variant="secondary"
                       className={cn(
                         badgeBaseClass,
-                        "bg-indigo-50 text-indigo-700 border-indigo-200 w-[200px] min-w-[200px]",
+                        "bg-indigo-50 text-indigo-700 border-indigo-200 w-[200px] min-w-[200px] overflow-hidden justify-center",
                       )}
                     >
                       <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
-                      <span className="flex-1 min-w-0 truncate">{cleanedLiveScore}</span>
+                      <span className="truncate whitespace-nowrap">{cleanedLiveScore}</span>
                     </Badge>
                   )}
                 </div>

@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase, ensureProfile } from '@/lib/supabase';
+import { useAuthState } from '@/lib/auth/useAuthState';
 import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
@@ -500,7 +501,10 @@ function DiscoverPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedCategory, setSelectedCategory] = useState('OVERALL');
-  const [user, setUser] = useState<User | null>(null);
+  // Use the robust auth state hook that properly handles token refresh
+  // Discover page is public, so requireAuth is false
+  const { user } = useAuthState({ requireAuth: false });
+  
   const [isPremium, setIsPremium] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
@@ -536,50 +540,39 @@ function DiscoverPageContent() {
     }
   }, [searchParams]);
 
-  // Check auth status
+  // Fetch profile info when user is authenticated
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user);
-        ensureProfile(session.user.id, session.user.email!);
-        
-        // Check premium status and wallet
-        Promise.all([
-          supabase
-            .from('profiles')
-            .select('is_premium, profile_image_url')
-            .eq('id', session.user.id)
-            .single(),
-          supabase
-            .from('turnkey_wallets')
-            .select('polymarket_account_address, eoa_address')
-            .eq('user_id', session.user.id)
-            .maybeSingle()
-        ]).then(([profileRes, walletRes]) => {
-          setIsPremium(profileRes.data?.is_premium || false);
-          setProfileImageUrl(profileRes.data?.profile_image_url || null);
-          setWalletAddress(
-            walletRes.data?.polymarket_account_address || 
-            walletRes.data?.eoa_address || 
-            null
-          );
-        });
-      } else {
-        setUser(null);
-      }
+    if (!user) {
+      setIsPremium(false);
+      setProfileImageUrl(null);
+      setWalletAddress(null);
+      return;
+    }
+    
+    ensureProfile(user.id, user.email!);
+    
+    // Check premium status and wallet
+    Promise.all([
+      supabase
+        .from('profiles')
+        .select('is_premium, profile_image_url')
+        .eq('id', user.id)
+        .single(),
+      supabase
+        .from('turnkey_wallets')
+        .select('polymarket_account_address, eoa_address')
+        .eq('user_id', user.id)
+        .maybeSingle()
+    ]).then(([profileRes, walletRes]) => {
+      setIsPremium(profileRes.data?.is_premium || false);
+      setProfileImageUrl(profileRes.data?.profile_image_url || null);
+      setWalletAddress(
+        walletRes.data?.polymarket_account_address || 
+        walletRes.data?.eoa_address || 
+        null
+      );
     });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setUser(session.user);
-        ensureProfile(session.user.id, session.user.email!);
-      } else {
-        setUser(null);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  }, [user]);
 
   // BATCH FETCH all follows
   useEffect(() => {

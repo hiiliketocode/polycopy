@@ -8,8 +8,8 @@ import OrdersTable from '@/components/orders/OrdersTable'
 import ClosePositionModal from '@/components/orders/ClosePositionModal'
 import { supabase } from '@/lib/supabase'
 import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from '@/lib/feature-tier'
+import { useAuthState } from '@/lib/auth/useAuthState'
 import { triggerLoggedOut } from '@/lib/auth/logout-events'
-import { getOrRefreshSession } from '@/lib/auth/session'
 import type { User } from '@supabase/supabase-js'
 import type { OrderRow, OrderStatus } from '@/lib/orders/types'
 import type { PositionSummary } from '@/lib/orders/position'
@@ -30,11 +30,13 @@ export function OrdersScreen({
   historyTableTitle,
 }: OrdersScreenProps) {
   const router = useRouter()
-  const [user, setUser] = useState<User | null>(null)
+  
+  // Use the robust auth state hook that properly handles token refresh
+  const { user, loading: loadingAuth } = useAuthState({ requireAuth: true })
+  
   const [userTier, setUserTier] = useState<FeatureTier>('anon')
   const [isPremium, setIsPremium] = useState(false)
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null)
-  const [loadingAuth, setLoadingAuth] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [orders, setOrders] = useState<OrderRow[]>([])
@@ -87,45 +89,6 @@ export function OrdersScreen({
     const failedCount = base.filter((order) => order.status === 'failed').length
     return showFailedOrders ? 0 : failedCount
   }, [orders, showFailedOrders])
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      setLoadingAuth(true)
-      try {
-        const { session } = await getOrRefreshSession()
-        if (!session?.user) {
-          triggerLoggedOut('session_missing')
-          router.push('/login')
-          return
-        }
-        setUser(session.user)
-      } catch (err) {
-        console.error('Auth error:', err)
-        triggerLoggedOut('auth_error')
-        router.push('/login')
-      } finally {
-        setLoadingAuth(false)
-      }
-    }
-
-    checkAuth()
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session?.user) {
-        triggerLoggedOut('signed_out')
-        router.push('/login')
-      } else {
-        setUser(prevUser => {
-          if (prevUser?.id === session.user.id) {
-            return prevUser
-          }
-          return session.user
-        })
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [router])
 
   // Fetch feature tier and wallet
   useEffect(() => {

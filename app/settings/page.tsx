@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -14,7 +14,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { supabase, ensureProfile } from '@/lib/supabase';
-import { getOrRefreshSession } from '@/lib/auth/session';
+import { useAuthState } from '@/lib/auth/useAuthState';
 import { resolveFeatureTier, tierHasPremiumAccess } from '@/lib/feature-tier';
 import { Navigation } from '@/components/polycopy/navigation';
 import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
@@ -32,11 +32,19 @@ const SLIPPAGE_PRESETS = [0, 1, 3, 5];
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const [isPremium, setIsPremium] = useState(false);
+
+  // Use the robust auth state hook that properly handles token refresh
+  const { user, loading } = useAuthState({
+    requireAuth: true,
+    onAuthComplete: async (authUser) => {
+      if (authUser) {
+        await ensureProfile(authUser.id, authUser.email!);
+      }
+    },
+  });
 
   const featureTier = resolveFeatureTier(Boolean(user), profile);
   const hasPremiumAccess = tierHasPremiumAccess(featureTier);
@@ -69,41 +77,6 @@ export default function SettingsPage() {
     triggerLoggedOut('signed_out');
     router.push('/login');
   };
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      setLoading(true);
-      try {
-        const { session } = await getOrRefreshSession();
-        if (!session?.user) {
-          triggerLoggedOut('session_missing');
-          router.push('/login');
-          return;
-        }
-        setUser(session.user);
-        await ensureProfile(session.user.id, session.user.email!);
-      } catch (err) {
-        console.error('Auth error:', err);
-        triggerLoggedOut('auth_error');
-        router.push('/login');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session?.user) {
-        triggerLoggedOut('signed_out');
-        router.push('/login');
-      } else {
-        setUser(session.user);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [router]);
 
   useEffect(() => {
     if (!user) {

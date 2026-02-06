@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { supabase, ensureProfile } from '@/lib/supabase';
 import { resolveFeatureTier, tierHasPremiumAccess } from '@/lib/feature-tier';
-import { triggerLoggedOut } from '@/lib/auth/logout-events';
+import { useAuthState } from '@/lib/auth/useAuthState';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { Card } from '@/components/ui/card';
@@ -277,8 +277,17 @@ const buildPositionKey = (marketId?: string | null, outcome?: string | null) => 
 function ProfilePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  
+  // Use the robust auth state hook that properly handles token refresh
+  const { user, loading } = useAuthState({
+    requireAuth: true,
+    onAuthComplete: async (authUser) => {
+      if (authUser) {
+        await ensureProfile(authUser.id, authUser.email!);
+      }
+    },
+  });
+  
   const [isPremium, setIsPremium] = useState(false);
   const [followingCount, setFollowingCount] = useState(0);
   const [loadingStats, setLoadingStats] = useState(true);
@@ -406,45 +415,6 @@ function ProfilePageContent() {
   const hasLoadedTradesRef = useRef(false);
   const hasLoadedQuickTradesRef = useRef(false);
   const hasLoadedPositionsRef = useRef(false);
-
-  // Check auth status on mount
-  useEffect(() => {
-    const checkAuth = async () => {
-      setLoading(true);
-
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (!session?.user) {
-          triggerLoggedOut('session_missing');
-          router.push('/login');
-          return;
-        }
-
-        setUser(session.user);
-        await ensureProfile(session.user.id, session.user.email!);
-      } catch (err) {
-        console.error('Auth error:', err);
-        triggerLoggedOut('auth_error');
-        router.push('/login');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!session?.user) {
-        triggerLoggedOut('signed_out');
-        router.push('/login');
-      } else {
-        setUser(session.user);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [router]);
 
   // Fetch user stats and wallet
   useEffect(() => {
