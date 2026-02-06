@@ -2110,7 +2110,8 @@ function ProfilePageContent() {
 
   const isDisplayableQuickTrade = (order: OrderRow) => {
     // Only show orders that have matched (partial) or fully filled.
-    return order.status === 'matched' || order.status === 'filled' || order.status === 'partial';
+    const status = order.status?.toLowerCase()
+    return status === 'matched' || status === 'filled' || status === 'partial';
   };
 
   const convertCopiedTradeToUnified = (trade: CopiedTrade): UnifiedTrade => {
