@@ -131,6 +131,9 @@ interface TradeCardProps {
   fireWinRate?: number | null
   fireRoi?: number | null
   fireConviction?: number | null
+  // Server-side PolySignal scoring (from fire feed)
+  polySignalScore?: number
+  polySignalRecommendation?: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC'
   tags?: string[] | null
   marketSubtype?: string // niche (market_subtype from DB)
   betStructure?: string // bet_structure from DB
@@ -500,6 +503,8 @@ export function TradeCard({
   fireWinRate,
   fireRoi,
   fireConviction,
+  polySignalScore,
+  polySignalRecommendation,
   tags,
   marketSubtype,
   betStructure,
@@ -3028,6 +3033,8 @@ export function TradeCard({
               currentPrice={currentPrice}
               walletAddress={trader.address}
               tradeSize={size}
+              serverRecommendation={polySignalRecommendation}
+              serverScore={polySignalScore}
             />
           </div>
         )}

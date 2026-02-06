@@ -17,6 +17,9 @@ interface PolySignalProps {
   currentPrice?: number // Current market price (for detecting price movements)
   walletAddress?: string // Wallet to fetch stats for
   tradeSize?: number // Size of the trade in shares
+  // Server-side pre-computed values (from fire feed) - if provided, skip client-side refetch
+  serverRecommendation?: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC'
+  serverScore?: number
 }
 
 // Stats fetched from trader API
@@ -643,7 +646,7 @@ function calculateSignal(
 // COMPONENT
 // ============================================================================
 
-export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddress, tradeSize }: PolySignalProps) {
+export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddress, tradeSize, serverRecommendation, serverScore }: PolySignalProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [traderStats, setTraderStats] = useState<TraderStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
@@ -775,8 +778,23 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
   
   const signal = useMemo(() => {
     if (!data) return null
-    return calculateSignal(data, entryPrice, currentPrice, traderStats, tradeSize)
-  }, [data, entryPrice, currentPrice, traderStats, tradeSize])
+    
+    // Calculate signal from local data
+    const calculatedSignal = calculateSignal(data, entryPrice, currentPrice, traderStats, tradeSize)
+    
+    // If server provided a recommendation (from fire feed), use it as the authoritative source
+    // This ensures consistency between what fire feed filtered and what we display
+    if (serverRecommendation && serverScore !== undefined) {
+      return {
+        ...calculatedSignal,
+        score: serverScore,
+        recommendation: serverRecommendation,
+        headline: calculatedSignal.headline, // Keep the headline from calculation for context
+      }
+    }
+    
+    return calculatedSignal
+  }, [data, entryPrice, currentPrice, traderStats, tradeSize, serverRecommendation, serverScore])
   
   // Loading state
   if (loading) {

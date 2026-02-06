@@ -4685,6 +4685,8 @@ export default function FeedPage() {
                           fireWinRate={trade.fireWinRate}
                           fireRoi={trade.fireRoi}
                           fireConviction={trade.fireConviction}
+                          polySignalScore={trade.polySignalScore}
+                          polySignalRecommendation={trade.polySignalRecommendation}
                           tags={Array.isArray(trade.market.tags) && trade.market.tags.length > 0 ? trade.market.tags : null}
                           marketSubtype={trade.market.marketSubtype}
                           betStructure={trade.market.betStructure}
