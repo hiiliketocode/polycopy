@@ -779,17 +779,43 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
   const signal = useMemo(() => {
     if (!data) return null
     
-    // Calculate signal from local data
+    // Calculate signal from local data (includes price movement detection)
     const calculatedSignal = calculateSignal(data, entryPrice, currentPrice, traderStats, tradeSize)
     
-    // If server provided a recommendation (from fire feed), use it as the authoritative source
-    // This ensures consistency between what fire feed filtered and what we display
+    // If server provided a recommendation (from fire feed), use it as base
+    // BUT still apply critical overrides like price crashes
     if (serverRecommendation && serverScore !== undefined) {
+      // Check for severe price movement that should override server recommendation
+      const hasSeverePriceCrash = calculatedSignal.priceMovement?.isExtreme && 
+                                   calculatedSignal.priceMovement?.direction === 'down'
+      const hasMajorPriceDrop = calculatedSignal.priceMovement?.isMajor && 
+                                 calculatedSignal.priceMovement?.direction === 'down'
+      
+      // If price crashed significantly, downgrade the recommendation
+      if (hasSeverePriceCrash) {
+        return {
+          ...calculatedSignal,
+          score: Math.min(serverScore, 40), // Cap score at 40 for extreme crash
+          recommendation: 'AVOID' as const,
+          headline: `Price crashed ${Math.abs(calculatedSignal.priceMovement!.percent).toFixed(0)}% - market moved against trade`,
+        }
+      }
+      
+      if (hasMajorPriceDrop && serverRecommendation !== 'AVOID' && serverRecommendation !== 'TOXIC') {
+        return {
+          ...calculatedSignal,
+          score: Math.min(serverScore, 55), // Cap score for major drop
+          recommendation: 'NEUTRAL' as const,
+          headline: `Price dropped ${Math.abs(calculatedSignal.priceMovement!.percent).toFixed(0)}% since entry - proceed with caution`,
+        }
+      }
+      
+      // No severe price movement - use server values
       return {
         ...calculatedSignal,
         score: serverScore,
         recommendation: serverRecommendation,
-        headline: calculatedSignal.headline, // Keep the headline from calculation for context
+        headline: calculatedSignal.headline,
       }
     }
     
