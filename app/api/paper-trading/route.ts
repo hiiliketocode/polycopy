@@ -705,18 +705,24 @@ export async function GET(request: NextRequest) {
         const entryPrice = (trade.price || 0.5) * (1 + slippagePct); // Apply slippage
         const shares = positionSize / entryPrice;
         
+        const rawPrice = trade.price || 0.5;
         const newPosition = {
           id: `${strategyType}-${tradeConditionId}-${tradeTime}`,
+          strategyType: strategyType,
           conditionId: tradeConditionId,
+          tokenId: trade.id || tradeConditionId,
+          marketSlug: trade.market_slug || '',
           marketTitle: trade.title || 'Unknown Market',
-          outcome: trade.outcome || signal.outcome || 'YES',
+          outcome: (trade.outcome || signal.outcome || 'YES') as 'YES' | 'NO',
           entryPrice: entryPrice,
+          rawPrice: rawPrice,
+          slippageApplied: slippagePct,
           size: shares,
           investedUsd: positionSize,
           entryTimestamp: tradeTime,
           status: 'OPEN' as const,
-          valueScoreAtEntry: signal.valueScore,
-          aiEdgeAtEntry: signal.aiEdge,
+          valueScore: signal.valueScore,
+          aiEdge: signal.aiEdge,
         };
         
         // Deduct from available cash and add to locked
