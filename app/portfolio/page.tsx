@@ -513,6 +513,10 @@ function ProfilePageContent() {
   const hasLoadedTradesRef = useRef(false);
   const hasLoadedQuickTradesRef = useRef(false);
   const hasLoadedPositionsRef = useRef(false);
+  const hasLoadedAutoCopyLogsRef = useRef(false);
+  const hasLoadedPortfolioStatsRef = useRef(false);
+  const hasLoadedRealizedPnlRef = useRef(false);
+  const hasLoadedTopTradersRef = useRef(false);
 
   // Clean up auth callback URL param (if present)
   useEffect(() => {
@@ -582,7 +586,7 @@ function ProfilePageContent() {
     };
 
     fetchStats();
-  }, [user]);
+  }, [user?.id]);
 
   // Sync tab from URL parameter
   useEffect(() => {
@@ -709,10 +713,11 @@ function ProfilePageContent() {
     };
 
     fetchCopiedTrades();
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || hasLoadedAutoCopyLogsRef.current) return;
+    hasLoadedAutoCopyLogsRef.current = true;
 
     const fetchAutoCopyLogs = async () => {
       try {
@@ -761,7 +766,7 @@ function ProfilePageContent() {
     };
 
     fetchAutoCopyLogs();
-  }, [user]);
+  }, [user?.id]);
 
   // Fetch quick trades (orders) from /api/orders
   useEffect(() => {
@@ -804,7 +809,7 @@ function ProfilePageContent() {
     };
 
     fetchQuickTrades();
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -884,32 +889,49 @@ function ProfilePageContent() {
     refreshPositions().catch(() => {
       /* best effort */
     });
-  }, [user, hasConnectedWallet, refreshPositions]);
+  }, [user?.id, hasConnectedWallet, refreshPositions]);
 
   // Fetch aggregated portfolio stats (realized + unrealized PnL)
   useEffect(() => {
-    if (!user) return;
+    if (!user || hasLoadedPortfolioStatsRef.current) return;
+    hasLoadedPortfolioStatsRef.current = true;
 
     const fetchPortfolioStats = async () => {
       setPortfolioStatsLoading(true);
       setPortfolioStatsError(null);
+      
+      // Create abort controller for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
       try {
-        // Always request fresh data on page load
-        // Use clearCache=true to force delete cache and recalculate from scratch
-        const response = await fetch(`/api/portfolio/stats?userId=${user.id}&forceRefresh=true&clearCache=true`, { cache: 'no-store' });
+        // Fetch cached data first for fast page load
+        // Only use forceRefresh if user explicitly requests it
+        console.log('[Portfolio] Fetching portfolio stats for user:', user.id);
+        const response = await fetch(`/api/portfolio/stats?userId=${user.id}`, { 
+          cache: 'no-store',
+          signal: controller.signal 
+        });
+        
+        clearTimeout(timeoutId);
+        console.log('[Portfolio] Response status:', response.status, response.statusText);
+        
         if (!response.ok) {
           const message = await response.text();
+          console.error('[Portfolio] Stats fetch failed:', message);
           throw new Error(message || 'Failed to fetch portfolio stats');
         }
 
         const contentType = response.headers.get('content-type') || '';
         if (!contentType.includes('application/json')) {
           const message = await response.text();
-          console.error('Portfolio stats returned non-JSON response:', message.slice(0, 200));
+          console.error('[Portfolio] Non-JSON response:', message.slice(0, 200));
           throw new Error('Invalid portfolio stats response');
         }
 
         const data = await response.json();
+        console.log('[Portfolio] Stats received:', data);
+        
         setPortfolioStats({
           totalPnl: data.totalPnl ?? 0,
           realizedPnl: data.realizedPnl ?? 0,
@@ -926,19 +948,40 @@ function ProfilePageContent() {
           losingPositions: data.losingPositions ?? 0,
         });
       } catch (err: any) {
-        console.error('Error fetching portfolio stats:', err);
-        setPortfolioStatsError(err?.message || 'Failed to load portfolio stats');
+        clearTimeout(timeoutId);
+        
+        // Provide more specific error messages
+        let errorMessage = 'Failed to load portfolio stats';
+        if (err?.name === 'AbortError') {
+          errorMessage = 'Request timed out. Please try again.';
+          console.error('[Portfolio] Request timed out after 30 seconds');
+        } else if (err?.message?.includes('Failed to fetch')) {
+          errorMessage = 'Network error. Please check your connection.';
+          console.error('[Portfolio] Network error - server may be down or unreachable');
+        } else {
+          errorMessage = err?.message || errorMessage;
+        }
+        
+        console.error('[Portfolio] Error fetching portfolio stats:', err);
+        console.error('[Portfolio] Error details:', {
+          message: err?.message,
+          stack: err?.stack,
+          name: err?.name,
+          type: err?.constructor?.name
+        });
+        setPortfolioStatsError(errorMessage);
       } finally {
         setPortfolioStatsLoading(false);
       }
     };
 
     fetchPortfolioStats();
-  }, [user]);
+  }, [user?.id]);
 
   // Fetch realized PnL daily series
   useEffect(() => {
-    if (!user) return;
+    if (!user || hasLoadedRealizedPnlRef.current) return;
+    hasLoadedRealizedPnlRef.current = true;
 
     let cancelled = false;
     const controller = new AbortController();
@@ -994,11 +1037,12 @@ function ProfilePageContent() {
       cancelled = true;
       controller.abort();
     };
-  }, [user]);
+  }, [user?.id]);
 
   // Fetch top traders stats (realized-only, FIFO position-based)
   useEffect(() => {
-    if (!user) return;
+    if (!user || hasLoadedTopTradersRef.current) return;
+    hasLoadedTopTradersRef.current = true;
 
     let cancelled = false;
     const controller = new AbortController();
@@ -1032,7 +1076,7 @@ function ProfilePageContent() {
       cancelled = true;
       controller.abort();
     };
-  }, [user]);
+  }, [user?.id]);
 
   // Fetch live market data (prices and scores)
   const fetchLiveMarketData = async (trades: CopiedTrade[], unifiedTrades: UnifiedTrade[] = []) => {

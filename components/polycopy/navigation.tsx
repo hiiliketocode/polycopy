@@ -166,7 +166,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
 
   // Resolve admin status so we can show admin links on desktop nav
   useEffect(() => {
-    if (!activeUser) {
+    if (!activeUser?.id) {
       setIsAdmin(false)
       return
     }
@@ -196,11 +196,11 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
     return () => {
       mounted = false
     }
-  }, [activeUser])
+  }, [activeUser?.id])
 
   // Resolve premium status to prevent upsell flashes for premium users
   useEffect(() => {
-    if (!activeUser) {
+    if (!activeUser?.id) {
       setPremiumStatus(null)
       return
     }
@@ -263,11 +263,11 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
     return () => {
       mounted = false
     }
-  }, [activeUser, isPremium, premiumCacheKey])
+  }, [activeUser?.id, isPremium, premiumCacheKey])
 
   // Fetch wallet balance for premium users with connected wallets
   useEffect(() => {
-    if (!hasPremiumAccess || !walletAddress || !activeUser) return
+    if (!hasPremiumAccess || !walletAddress || !activeUser?.id) return
 
     const fetchBalance = async () => {
       try {
@@ -277,7 +277,8 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
 
         if (response.ok) {
           const data = await response.json()
-          console.log('Wallet data received:', data)
+          // Reduced logging to prevent console spam
+          // console.log('Wallet data received:', data)
 
           setCashBalance(data.cashBalance || 0)
           setPortfolioValue(data.portfolioValue || 0)
@@ -301,7 +302,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
     // Backend caches for 60s, so this gives some buffer
     const interval = setInterval(() => fetchBalance(), 120000)
     return () => clearInterval(interval)
-  }, [hasPremiumAccess, walletAddress, activeUser, initialBalanceLoad])
+  }, [hasPremiumAccess, walletAddress, activeUser?.id, initialBalanceLoad])
 
   return (
     <>

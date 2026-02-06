@@ -764,12 +764,19 @@ export async function GET(request: Request) {
       cachedSummary.calculation_version === CALCULATION_VERSION &&
       !forceRefresh // Don't use cache if forcing refresh
 
-    // If forceRefresh is true, always recalculate synchronously to return fresh data
+    // If forceRefresh is true, recalculate but don't wait for price refresh
     if (forceRefresh) {
       console.log(`🔄 Force refresh requested - calculating fresh portfolio stats for user ${requestedUserId.substring(0, 8)}`)
       const startTime = Date.now()
-      // Pass refreshPrices=true to ensure we get fresh market prices
-      const stats = await calculatePortfolioStats(supabase, requestedUserId, { refreshPrices: true })
+      
+      // Calculate with existing cached prices for fast response
+      const stats = await calculatePortfolioStats(supabase, requestedUserId, { refreshPrices: false })
+      
+      // Trigger price refresh in background
+      calculatePortfolioStats(supabase, requestedUserId, { refreshPrices: true }).catch((err) => {
+        console.warn('[portfolio/stats] background price refresh failed', err)
+      })
+      
       const duration = Date.now() - startTime
       console.log(`✅ Portfolio stats calculation completed in ${duration}ms`)
       return NextResponse.json({
@@ -808,10 +815,17 @@ export async function GET(request: Request) {
       })
     }
 
-    // Cache miss, stale, or wrong version - calculate fresh stats synchronously
+    // Cache miss, stale, or wrong version - calculate fresh stats
+    // Use existing cached prices for fast response, then refresh in background
     console.log(`🔄 Calculating fresh portfolio stats (cache ${cachedSummary ? (cacheAge >= PORTFOLIO_CACHE_STALE_AFTER_MS ? 'stale' : 'wrong version') : 'missing'})`)
     
-    const stats = await calculatePortfolioStats(supabase, requestedUserId, { refreshPrices: true })
+    // Calculate with existing cached prices for fast response
+    const stats = await calculatePortfolioStats(supabase, requestedUserId, { refreshPrices: false })
+    
+    // Trigger price refresh in background for next time
+    calculatePortfolioStats(supabase, requestedUserId, { refreshPrices: true }).catch((err) => {
+      console.warn('[portfolio/stats] background price refresh failed', err)
+    })
     
     return NextResponse.json({
       ...stats,
