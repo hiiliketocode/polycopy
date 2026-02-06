@@ -20,6 +20,121 @@ const FIRE_WIN_RATE_THRESHOLD = 0.55;
 const FIRE_ROI_THRESHOLD = 0.15;
 const FIRE_CONVICTION_MULTIPLIER_THRESHOLD = 2.5;
 
+// PolySignal scoring thresholds for BUY/STRONG_BUY
+const POLYSIGNAL_BUY_THRESHOLD = 60;
+const POLYSIGNAL_STRONG_BUY_THRESHOLD = 75;
+
+type PolySignalRecommendation = 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC';
+
+/**
+ * Calculate PolySignal score for a trade
+ * Simplified version of the client-side scoring for server-side filtering
+ * 
+ * Weights: Edge (50%) + Conviction (25%) + Skill (15%) + Context (10%)
+ */
+function calculatePolySignalScore(
+  trade: any,
+  stats: any,
+  aiWinProb?: number
+): { score: number; recommendation: PolySignalRecommendation; factors: any } {
+  const price = Number(trade.price || 0);
+  const size = Number(trade.size || trade.shares_normalized || 0);
+  const tradeValue = price * size;
+  
+  // Use AI win prob if provided, otherwise estimate from price (conservative)
+  const winProb = aiWinProb ?? price; // If no AI prob, assume fair market
+  
+  // Extract stats
+  const nicheWinRate = stats?.profileWinRate ?? stats?.globalWinRate ?? 0.5;
+  const totalTrades = stats?.profileTrades ?? stats?.globalTrades ?? 0;
+  const avgBetSize = stats?.avgBetSizeUsd ?? tradeValue;
+  const convictionMult = avgBetSize > 0 ? tradeValue / avgBetSize : 1;
+  const isHot = stats?.isHot ?? false;
+  const isHedging = stats?.isHedging ?? false;
+  
+  // ============================================================================
+  // FACTOR 1: EDGE (50% weight)
+  // ============================================================================
+  const rawEdge = (winProb - price) * 100;
+  const edgeContribution = Math.max(-25, Math.min(25, rawEdge * (25 / 15)));
+  
+  // ============================================================================
+  // FACTOR 2: CONVICTION (25% weight)
+  // ============================================================================
+  let convictionContribution = 0;
+  if (convictionMult >= 2.5) {
+    convictionContribution = 20;
+  } else if (convictionMult >= 2) {
+    convictionContribution = 15;
+  } else if (convictionMult >= 1.5) {
+    convictionContribution = 10;
+  } else if (convictionMult >= 1.2) {
+    convictionContribution = 5;
+  } else if (convictionMult < 0.5) {
+    convictionContribution = -12;
+  } else if (convictionMult < 0.7) {
+    convictionContribution = -6;
+  }
+  
+  // ============================================================================
+  // FACTOR 3: SKILL (15% weight)
+  // ============================================================================
+  const skillDelta = (nicheWinRate - 0.50) * 100;
+  let skillContribution = Math.max(-10, Math.min(15, skillDelta * 1.5));
+  if (totalTrades < 5) {
+    skillContribution = Math.min(skillContribution, 0); // Cap unproven traders
+  }
+  
+  // ============================================================================
+  // FACTOR 4: CONTEXT (10% weight)
+  // ============================================================================
+  let contextContribution = 0;
+  if (isHot) contextContribution += 5;
+  if (isHedging) contextContribution -= 15;
+  if (totalTrades >= 30) contextContribution += 3;
+  if (totalTrades < 5) contextContribution -= 5;
+  contextContribution = Math.max(-10, Math.min(10, contextContribution));
+  
+  // ============================================================================
+  // FINAL SCORE
+  // ============================================================================
+  const totalContribution = edgeContribution + convictionContribution + skillContribution + contextContribution;
+  const finalScore = Math.max(0, Math.min(100, 50 + totalContribution));
+  
+  // Determine recommendation
+  let recommendation: PolySignalRecommendation;
+  
+  // Hard overrides
+  if (isHedging && rawEdge < 0) {
+    recommendation = 'TOXIC';
+  } else if (rawEdge < -15) {
+    recommendation = 'TOXIC';
+  } else if (nicheWinRate < 0.40 && totalTrades >= 15) {
+    recommendation = 'TOXIC';
+  } else if (finalScore >= POLYSIGNAL_STRONG_BUY_THRESHOLD) {
+    recommendation = 'STRONG_BUY';
+  } else if (finalScore >= POLYSIGNAL_BUY_THRESHOLD) {
+    recommendation = 'BUY';
+  } else if (finalScore >= 45) {
+    recommendation = 'NEUTRAL';
+  } else if (finalScore >= 30) {
+    recommendation = 'AVOID';
+  } else {
+    recommendation = 'TOXIC';
+  }
+  
+  return {
+    score: Math.round(finalScore),
+    recommendation,
+    factors: {
+      edge: { value: edgeContribution, rawEdge },
+      conviction: { value: convictionContribution, multiplier: convictionMult },
+      skill: { value: skillContribution, winRate: nicheWinRate, trades: totalTrades },
+      context: { value: contextContribution, isHot, isHedging },
+    },
+  };
+}
+
 function normalizeWinRateValue(raw: unknown): number | null {
   if (raw === null || raw === undefined) return null;
   const value = Number(raw);
@@ -278,9 +393,7 @@ export async function GET(request: Request) {
     const allTrades = allTradesResults.flat();
     console.log(`[fire-feed] Fetched ${allTrades.length} trades total`);
 
-    // 4. Process trades - show all trades from top PNL traders
-    // Since these are already top performers from the leaderboard, their trades qualify as "fire"
-    // Stats are used to enhance the display but aren't required to pass
+    // 4. Process trades - apply PolySignal scoring and only return BUY or STRONG_BUY
     const fireTrades: any[] = [];
     let rejectedSamples: any[] = [];
     
@@ -296,6 +409,14 @@ export async function GET(request: Request) {
     debugStats.topTraderPnlRange = { min: Math.round(minPnl), max: Math.round(maxPnl) };
     console.log(`[fire-feed] Top trader PNL range: $${Math.round(minPnl)} to $${Math.round(maxPnl)}`);
     
+    // Add PolySignal stats to debug
+    (debugStats as any).polySignalPassed = 0;
+    (debugStats as any).polySignalStrongBuy = 0;
+    (debugStats as any).polySignalBuy = 0;
+    (debugStats as any).polySignalNeutral = 0;
+    (debugStats as any).polySignalAvoid = 0;
+    (debugStats as any).polySignalToxic = 0;
+    
     for (const trade of allTrades) {
       const wallet = trade._wallet?.toLowerCase();
       if (!wallet) continue;
@@ -305,55 +426,73 @@ export async function GET(request: Request) {
       const stats = statsMap.get(wallet);
       const traderPnl = traderPnlMap.get(wallet) || 0;
       
-      // Calculate stats-based metrics if available
+      // Calculate stats-based metrics for fire indicators
       const category = deriveCategoryFromTrade(trade);
       const winRate = stats ? winRateForTradeType(stats, category) : null;
       const roiPct = stats ? roiForTradeType(stats, category) : null;
       const conviction = stats ? convictionMultiplierForTrade(trade, stats) : null;
       
+      // Fire indicator thresholds (for showing 🔥 on specific metrics)
       const meetsWinRate = winRate !== null && winRate >= FIRE_WIN_RATE_THRESHOLD;
       const meetsRoi = roiPct !== null && roiPct >= FIRE_ROI_THRESHOLD;
       const meetsConviction = conviction !== null && conviction >= FIRE_CONVICTION_MULTIPLIER_THRESHOLD;
       
-      // Fire reasons: stats-based OR being a top PNL trader
-      const hasStats = stats !== null;
-      const isTopPnlTrader = traderPnl >= 10000; // $10k+ monthly PNL = top trader
-      
-      // Pass if ANY stats criteria met, OR if from a top PNL trader
-      const passesFilter = meetsWinRate || meetsRoi || meetsConviction || isTopPnlTrader;
-      
-      if (!hasStats) {
+      if (!stats) {
         debugStats.tradersWithoutStats++;
       }
       
+      // Calculate PolySignal score
+      const polySignalStats = {
+        profileWinRate: winRate,
+        globalWinRate: stats?.globalWinRate ?? null,
+        profileTrades: stats?.profiles?.length > 0 ? 10 : 0, // Estimate
+        globalTrades: 20, // Estimate for top traders
+        avgBetSizeUsd: stats?.avgBetSizeUsd ?? null,
+        isHot: false, // Would need more data
+        isHedging: false, // Would need more data
+      };
+      
+      const polySignal = calculatePolySignalScore(trade, polySignalStats);
+      
+      // Track recommendation distribution
+      if (polySignal.recommendation === 'STRONG_BUY') (debugStats as any).polySignalStrongBuy++;
+      else if (polySignal.recommendation === 'BUY') (debugStats as any).polySignalBuy++;
+      else if (polySignal.recommendation === 'NEUTRAL') (debugStats as any).polySignalNeutral++;
+      else if (polySignal.recommendation === 'AVOID') (debugStats as any).polySignalAvoid++;
+      else if (polySignal.recommendation === 'TOXIC') (debugStats as any).polySignalToxic++;
+      
+      // Only pass trades that are BUY or STRONG_BUY
+      const passesPolySignal = polySignal.recommendation === 'BUY' || polySignal.recommendation === 'STRONG_BUY';
+      
       // Log first few rejected trades for debugging
-      if (!passesFilter && rejectedSamples.length < 3) {
+      if (!passesPolySignal && rejectedSamples.length < 3) {
         rejectedSamples.push({
           wallet: wallet.slice(0, 10),
+          polySignalScore: polySignal.score,
+          polySignalRec: polySignal.recommendation,
+          factors: polySignal.factors,
           winRate,
           roiPct,
           conviction,
           traderPnl,
-          thresholds: { winRate: FIRE_WIN_RATE_THRESHOLD, roi: FIRE_ROI_THRESHOLD, conviction: FIRE_CONVICTION_MULTIPLIER_THRESHOLD },
-          rawStats: stats ? { globalWinRate: stats.globalWinRate, globalRoiPct: stats.globalRoiPct } : null,
         });
       }
       
-      if (passesFilter) {
+      if (passesPolySignal) {
         debugStats.tradesPassed++;
+        (debugStats as any).polySignalPassed++;
         if (meetsWinRate) debugStats.passedByWinRate++;
         if (meetsRoi) debugStats.passedByRoi++;
         if (meetsConviction) debugStats.passedByConviction++;
-        if (isTopPnlTrader && !meetsWinRate && !meetsRoi && !meetsConviction) debugStats.passedByTopPnl++;
         
         let timestamp = typeof trade.timestamp === 'string' ? parseInt(trade.timestamp) : trade.timestamp;
         if (timestamp < 10000000000) timestamp = timestamp * 1000;
         
+        // Fire reasons for display (which metrics are exceptional)
         const fireReasons: string[] = [];
         if (meetsWinRate) fireReasons.push('win_rate');
         if (meetsRoi) fireReasons.push('roi');
         if (meetsConviction) fireReasons.push('conviction');
-        if (isTopPnlTrader && fireReasons.length === 0) fireReasons.push('top_pnl');
         
         fireTrades.push({
           id: trade.id || `${wallet}-${timestamp}`,
@@ -378,12 +517,17 @@ export async function GET(request: Request) {
           user: wallet,
           wallet: wallet,
           _followedWallet: wallet,
+          // Fire indicators (which metrics are exceptional)
           _fireReasons: fireReasons,
           _fireScore: fireReasons.length,
           _fireWinRate: winRate,
           _fireRoi: roiPct,
           _fireConviction: conviction,
           _traderPnl: traderPnl,
+          // PolySignal scoring
+          _polySignalScore: polySignal.score,
+          _polySignalRecommendation: polySignal.recommendation,
+          _polySignalFactors: polySignal.factors,
           raw: trade,
         });
       }
@@ -398,7 +542,8 @@ export async function GET(request: Request) {
       traderNames[trader.wallet.toLowerCase()] = trader.displayName;
     });
 
-    console.log(`[fire-feed] Returning ${fireTrades.length} filtered trades`);
+    console.log(`[fire-feed] Returning ${fireTrades.length} filtered trades (BUY/STRONG_BUY only)`);
+    console.log(`[fire-feed] PolySignal distribution: ${(debugStats as any).polySignalStrongBuy} STRONG_BUY, ${(debugStats as any).polySignalBuy} BUY, ${(debugStats as any).polySignalNeutral} NEUTRAL, ${(debugStats as any).polySignalAvoid} AVOID, ${(debugStats as any).polySignalToxic} TOXIC`);
     console.log(`[fire-feed] Debug stats:`, JSON.stringify(debugStats, null, 2));
     if (rejectedSamples.length > 0) {
       console.log(`[fire-feed] Sample rejected trades:`, JSON.stringify(rejectedSamples, null, 2));
@@ -406,7 +551,9 @@ export async function GET(request: Request) {
     if (fireTrades.length > 0) {
       console.log(`[fire-feed] Sample passed trade:`, JSON.stringify({
         wallet: fireTrades[0].wallet?.slice(0, 10),
-        reasons: fireTrades[0]._fireReasons,
+        polySignalScore: fireTrades[0]._polySignalScore,
+        polySignalRec: fireTrades[0]._polySignalRecommendation,
+        fireReasons: fireTrades[0]._fireReasons,
         winRate: fireTrades[0]._fireWinRate,
         roi: fireTrades[0]._fireRoi,
         conviction: fireTrades[0]._fireConviction,
@@ -419,7 +566,9 @@ export async function GET(request: Request) {
       rejectedSamples: rejectedSamples.slice(0, 3),
       samplePassedTrade: fireTrades.length > 0 ? {
         wallet: fireTrades[0].wallet?.slice(0, 10),
-        reasons: fireTrades[0]._fireReasons,
+        polySignalScore: fireTrades[0]._polySignalScore,
+        polySignalRec: fireTrades[0]._polySignalRecommendation,
+        fireReasons: fireTrades[0]._fireReasons,
         winRate: fireTrades[0]._fireWinRate,
         roi: fireTrades[0]._fireRoi,
         conviction: fireTrades[0]._fireConviction,

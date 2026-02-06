@@ -72,6 +72,9 @@ export interface FeedTrade {
   fireWinRate?: number | null;
   fireRoi?: number | null;
   fireConviction?: number | null;
+  // PolySignal scoring (server-side)
+  polySignalScore?: number;
+  polySignalRecommendation?: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC';
 }
 
 type PositionTradeSummary = {
@@ -2903,6 +2906,9 @@ export default function FeedPage() {
           fireWinRate: (trade as any)._fireWinRate !== undefined ? (trade as any)._fireWinRate : null,
           fireRoi: (trade as any)._fireRoi !== undefined ? (trade as any)._fireRoi : null,
           fireConviction: (trade as any)._fireConviction !== undefined ? (trade as any)._fireConviction : null,
+          // PolySignal scoring (server-side computed)
+          polySignalScore: (trade as any)._polySignalScore ?? undefined,
+          polySignalRecommendation: (trade as any)._polySignalRecommendation ?? undefined,
         };
         formattedTrade.market.marketCategoryType = resolveMarketCategoryType({
           marketKey: marketId || formattedTrade.market.slug || marketTitle,
