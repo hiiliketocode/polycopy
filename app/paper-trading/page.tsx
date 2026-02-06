@@ -211,8 +211,8 @@ export default function PaperTradingPage() {
   const [simMode, setSimMode] = useState<SimMode>('backtest');
   const [durationDays, setDurationDays] = useState('4');
   const [initialCapital, setInitialCapital] = useState('1000');
-  // How many days ago to END the backtest (45+ recommended for resolved markets)
-  const [startOffset, setStartOffset] = useState('45');
+  // How many days ago to END the backtest (use recent dates as Polymarket API has limited history)
+  const [startOffset, setStartOffset] = useState('7');
   
   // Check admin access on mount
   useEffect(() => {
@@ -623,11 +623,11 @@ export default function PaperTradingPage() {
                       <SelectValue placeholder="Period" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="3">3 days ago</SelectItem>
+                      <SelectItem value="7">7 days ago</SelectItem>
+                      <SelectItem value="14">14 days ago</SelectItem>
+                      <SelectItem value="21">21 days ago</SelectItem>
                       <SelectItem value="30">30 days ago</SelectItem>
-                      <SelectItem value="45">45 days ago</SelectItem>
-                      <SelectItem value="60">60 days ago</SelectItem>
-                      <SelectItem value="90">90 days ago</SelectItem>
-                      <SelectItem value="120">120 days ago</SelectItem>
                     </SelectContent>
                   </Select>
                 )}
@@ -650,8 +650,8 @@ export default function PaperTradingPage() {
               <div className="mt-3 pt-3 border-t border-slate-200">
                 {simMode === 'backtest' && (
                   <p className="text-sm text-slate-600">
-                    <span className="font-medium text-slate-900">Single Backtest:</span> Run one {durationDays}-day period ending {startOffset} days ago (when markets have resolved). 
-                    <span className="text-slate-500 ml-1">Uses real historical trades from top traders. P&L is calculated from actual market resolutions.</span>
+                    <span className="font-medium text-slate-900">Single Backtest:</span> Run one {durationDays}-day period ending {startOffset} days ago. 
+                    <span className="text-slate-500 ml-1">Uses recent trades from top traders. Some markets may still be open (unresolved P&L shown as $0).</span>
                   </p>
                 )}
                 {simMode === 'multiperiod' && (

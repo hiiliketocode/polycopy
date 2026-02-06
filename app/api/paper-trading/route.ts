@@ -229,8 +229,8 @@ export async function GET(request: NextRequest) {
   const slippagePct = parseFloat(searchParams.get('slippage') || '0.04');
   const cooldownHours = parseInt(searchParams.get('cooldown') || '3');
   
-  // Offset parameter: how many days ago to START the backtest (default: 45 days for resolved markets)
-  const startOffsetDays = parseInt(searchParams.get('offset') || '45');
+  // Offset parameter: how many days ago to START the backtest (default: 7 days - Polymarket API has limited history)
+  const startOffsetDays = parseInt(searchParams.get('offset') || '7');
   
   // Calculate default date range based on offset
   // For meaningful backtests, we need markets that have RESOLVED (typically 30+ days old)
