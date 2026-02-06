@@ -213,7 +213,7 @@ export async function GET(request: Request) {
     }
 
     // Refresh stale or missing prices for open markets (one fetch per market)
-    // Also refresh OLD markets (>7 days) that aren't marked as resolved - they likely are
+    // Only refresh if price data is actually stale (>1 hour) to avoid rate limits
     const now = Date.now()
     const refreshTargets = uniqueMarketIds.filter((marketId) => {
       const market = marketsMap.get(marketId)
@@ -224,15 +224,16 @@ export async function GET(request: Request) {
         Boolean(market.resolved_outcome || market.winning_side)
       if (isResolved) return false
       
-      // Check if market is old (>7 days old based on last update)
+      // Only refresh if price data is genuinely stale (>1 hour old)
       const updatedAt = market.last_price_updated_at || market.updated_at
         ? new Date(market.last_price_updated_at || market.updated_at).getTime()
         : 0
-      const marketAge = updatedAt ? (now - updatedAt) / (1000 * 60 * 60 * 24) : 999
       
-      // Refresh if price is stale OR if market is old and might be resolved
-      return !updatedAt || now - updatedAt > PRICE_STALE_MS || marketAge > 7
+      // Only refresh if missing update time OR genuinely stale
+      return !updatedAt || now - updatedAt > PRICE_STALE_MS
     })
+    
+    console.log(`[portfolio/trades] Checking ${uniqueMarketIds.length} markets, refreshing ${refreshTargets.length} stale markets`)
 
     if (refreshTargets.length > 0) {
       await Promise.all(

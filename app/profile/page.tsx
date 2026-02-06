@@ -711,9 +711,12 @@ function ProfilePageContent() {
     fetchQuickTrades();
   }, [user]);
 
+  // Track which market IDs we've already fetched to prevent redundant API calls
+  const fetchedMarketIdsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     let cancelled = false;
-    const idsToFetch = Array.from(
+    const allMarketIds = Array.from(
       new Set(
         [...quickTrades, ...copiedTrades]
           .map((trade) => {
@@ -724,11 +727,17 @@ function ProfilePageContent() {
           })
           .filter((id): id is string => Boolean(id))
       )
-    ).filter((id) => !marketMeta.has(id));
+    );
+    
+    // Filter out IDs we've already fetched (using ref instead of marketMeta to avoid stale closures)
+    const idsToFetch = allMarketIds.filter((id) => !fetchedMarketIdsRef.current.has(id));
 
     if (idsToFetch.length === 0) return () => {
       cancelled = true;
     };
+
+    // Mark these IDs as being fetched
+    idsToFetch.forEach((id) => fetchedMarketIdsRef.current.add(id));
 
     const fetchMeta = async () => {
       const entries: Array<[string, { title: string | null; image: string | null; slug?: string | null }]> = [];
@@ -783,7 +792,7 @@ function ProfilePageContent() {
     return () => {
       cancelled = true;
     };
-  }, [quickTrades, copiedTrades, marketMeta]);
+  }, [quickTrades, copiedTrades]); // marketMeta intentionally not in deps - use ref instead to avoid stale closures
 
   const refreshPositions = useCallback(async (): Promise<PositionSummary[] | null> => {
     try {

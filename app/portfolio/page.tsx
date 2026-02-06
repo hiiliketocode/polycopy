@@ -116,7 +116,7 @@ interface CategoryDistribution {
 type ProfileTab = 'trades' | 'performance';
 
 const MIN_OPEN_POSITION_SIZE = 1e-4;
-const ENABLE_LIVE_PRICE_REFRESH = false;
+const ENABLE_LIVE_PRICE_REFRESH = true;
 
 interface PortfolioStats {
   totalPnl: number;
@@ -1143,6 +1143,45 @@ function ProfilePageContent() {
     console.log(`💾 Stored live data for ${newLiveData.size} markets`);
     setLiveMarketData(newLiveData);
 
+    // Update database with resolved market status and current prices
+    if (newLiveData.size > 0 && user) {
+      const priceUpdates: Array<{ marketId: string; outcome: string; price: number; resolved?: boolean }> = [];
+      
+      for (const [key, data] of newLiveData.entries()) {
+        const parts = key.split(':');
+        if (parts.length === 2) {
+          const [marketId, outcome] = parts;
+          priceUpdates.push({
+            marketId,
+            outcome,
+            price: data.price,
+            resolved: data.closed || false,
+          });
+          
+          // Debug: Log resolved markets
+          if (data.closed) {
+            console.log(`[Portfolio] Marking market as resolved in DB: ${marketId} (${outcome})`);
+          }
+        }
+      }
+
+      if (priceUpdates.length > 0) {
+        console.log(`[Portfolio] Updating ${priceUpdates.length} markets in database (${priceUpdates.filter(u => u.resolved).length} resolved)`);
+        fetch('/api/portfolio/refresh-prices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ updates: priceUpdates }),
+        })
+          .then(res => res.json())
+          .then(data => {
+            console.log(`[Portfolio] Database update complete: ${data.updated} trades updated`);
+          })
+          .catch((err) => {
+            console.warn('[Portfolio] Failed to update prices in database:', err);
+          });
+      }
+    }
+
     // Apply live prices to open trades so PnL is mark-to-market
     if (newLiveData.size > 0) {
       setCopiedTradesBase((prev) => {
@@ -1591,7 +1630,7 @@ function ProfilePageContent() {
     if (tradeFilter === 'all') return true;
     if (tradeFilter === 'open') return !trade.user_closed_at && !trade.market_resolved;
     if (tradeFilter === 'closed') return Boolean(trade.user_closed_at);
-    if (tradeFilter === 'resolved') return Boolean(trade.market_resolved);
+    if (tradeFilter === 'resolved') return trade.market_resolved;
     return true;
   });
 

@@ -109,7 +109,10 @@ export function useAuthState(options: UseAuthStateOptions = {}): UseAuthStateRet
       async (event: AuthChangeEvent, session: Session | null) => {
         if (!isMountedRef.current) return
 
-        console.log('[useAuthState] Auth state change:', event, session?.user?.id ? 'has user' : 'no user')
+        // Only log significant auth events to reduce console spam
+        if (event !== 'INITIAL_SESSION') {
+          console.log('[useAuthState] Auth state change:', event, session?.user?.id ? 'has user' : 'no user')
+        }
 
         switch (event) {
           case 'SIGNED_IN':
@@ -137,7 +140,8 @@ export function useAuthState(options: UseAuthStateOptions = {}): UseAuthStateRet
           case 'INITIAL_SESSION':
             // Initial load - session might be null if user never logged in
             // Don't treat this as a logout, just update state
-            if (session?.user) {
+            // IMPORTANT: Only process this ONCE during mount, don't re-trigger
+            if (session?.user && !hadValidSessionRef.current) {
               setUser(session.user)
               hadValidSessionRef.current = true
             }
@@ -187,7 +191,8 @@ export function useAuthState(options: UseAuthStateOptions = {}): UseAuthStateRet
       isMountedRef.current = false
       subscription.unsubscribe()
     }
-  }, [requireAuth, router, onAuthComplete])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requireAuth, router]) // Removed onAuthComplete from deps to prevent re-subscription
 
   return { user, loading, refreshSession }
 }
