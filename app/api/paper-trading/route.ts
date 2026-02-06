@@ -18,13 +18,7 @@ import {
   runMultiPeriodBacktest,
 } from '@/lib/paper-trading';
 import { getPolyScore, PolyScoreRequest } from '@/lib/polyscore/get-polyscore';
-import { 
-  fetchTradesFromBigQuery, 
-  fetchMarketResolutions, 
-  getTradeStats,
-  BigQueryTrade,
-  BigQueryMarket,
-} from '@/lib/bigquery/client';
+// BigQuery imports removed - using Polymarket API instead for reliability
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -380,60 +374,88 @@ export async function GET(request: NextRequest) {
     });
     
     // =========================================================================
-    // FETCH HISTORICAL TRADES FROM BIGQUERY
-    // This is where ALL trades are stored - the source of truth for backtesting
+    // FETCH HISTORICAL TRADES FROM POLYMARKET API
+    // Using Polymarket's public data API for reliable access
     // =========================================================================
-    console.log(`[paper-trading] Fetching historical trades from BigQuery...`);
+    console.log(`[paper-trading] Fetching historical trades from Polymarket API...`);
     console.log(`[paper-trading] Date range: ${start.toISOString()} to ${end.toISOString()}`);
     
-    let allTrades: BigQueryTrade[] = [];
-    let marketResolutionData = new Map<string, BigQueryMarket>();
+    // Fetch top traders from Supabase leaderboard stats
+    let topTraders: { wallet_address: string }[] = [];
     
     try {
-      // First, get stats to understand the data volume
-      const stats = await getTradeStats(start, end);
-      console.log(`[paper-trading] BigQuery stats: ${stats.totalTrades} trades, ${stats.uniqueMarkets} markets, ${stats.uniqueTraders} traders`);
-      state.logs.push(`[BIGQUERY] Found ${stats.totalTrades} BUY trades in date range`);
-      state.logs.push(`[BIGQUERY] ${stats.uniqueMarkets} unique markets | ${stats.uniqueTraders} unique traders`);
+      const { data: filteredTraders, error: filteredError } = await supabase
+        .from('trader_global_stats')
+        .select('wallet_address')
+        .gte('l_total_roi_pct', 5)
+        .order('l_total_roi_pct', { ascending: false })
+        .limit(30);
       
-      // Fetch trades from BigQuery (limited to 5000 for performance)
-      allTrades = await fetchTradesFromBigQuery(start, end, {
-        side: 'BUY',
-        limit: 5000,
-      });
-      
-      console.log(`[paper-trading] Fetched ${allTrades.length} trades from BigQuery`);
-      state.logs.push(`[BACKTEST] Loaded ${allTrades.length} historical trades from BigQuery`);
-      
-      // Fetch market resolution data for these trades
-      const conditionIds = [...new Set(allTrades.map(t => t.condition_id).filter(Boolean))];
-      console.log(`[paper-trading] Fetching resolution data for ${conditionIds.length} unique markets...`);
-      
-      marketResolutionData = await fetchMarketResolutions(conditionIds);
-      
-      const resolvedCount = Array.from(marketResolutionData.values())
-        .filter(m => m.resolved_outcome || m.winning_side).length;
-      
-      console.log(`[paper-trading] Got resolution data for ${marketResolutionData.size} markets (${resolvedCount} resolved)`);
-      state.logs.push(`[RESOLUTION] ${resolvedCount} of ${marketResolutionData.size} markets have resolution data`);
-      
-    } catch (bigQueryError: any) {
-      console.error('[paper-trading] BigQuery error:', bigQueryError);
-      state.logs.push(`[ERROR] BigQuery query failed: ${bigQueryError.message}`);
-      
-      // Return error with helpful message
-      return NextResponse.json({ 
-        error: 'Failed to fetch historical trades from BigQuery', 
-        details: bigQueryError.message,
-        hint: 'Ensure GOOGLE_APPLICATION_CREDENTIALS_JSON is set or ADC is configured'
-      }, { status: 500 });
+      if (!filteredError && filteredTraders && filteredTraders.length > 0) {
+        topTraders = filteredTraders;
+      } else {
+        // Fallback: get any traders
+        const { data: anyTraders } = await supabase
+          .from('trader_global_stats')
+          .select('wallet_address')
+          .limit(30);
+        topTraders = anyTraders || [];
+      }
+    } catch (e) {
+      console.warn('[paper-trading] Could not fetch traders from Supabase, using defaults');
     }
+    
+    // If still no traders, use known active wallets
+    if (topTraders.length === 0) {
+      topTraders = [
+        { wallet_address: '0xea8f98624311923b566af3a11b85b53b2be862a9' },
+        { wallet_address: '0xf247584e41117bbbe4cc06e4d2c95741792a5216' },
+        { wallet_address: '0x38b408789fdb584782a5d521e794c69b150527e4' },
+        { wallet_address: '0x7e279561b5766f199a34f596da04d9c3783e178d' },
+      ];
+    }
+    
+    console.log(`[paper-trading] Using ${topTraders.length} traders for backtesting`);
+    state.logs.push(`[DATA] Fetching trades from ${topTraders.length} top traders`);
+    
+    // Fetch trades from Polymarket API for each trader
+    const allTrades: any[] = [];
+    const fetchPromises = topTraders.map(async (trader) => {
+      try {
+        const response = await fetch(
+          `https://data-api.polymarket.com/trades?limit=100&user=${trader.wallet_address}`,
+          { 
+            cache: 'no-store',
+            headers: { 'Accept': 'application/json' }
+          }
+        );
+        
+        if (!response.ok) return [];
+        
+        const walletTrades = await response.json();
+        return walletTrades.map((trade: any) => ({
+          ...trade,
+          wallet_address: trader.wallet_address,
+          condition_id: trade.conditionId || trade.condition_id,
+          market_slug: trade.market_slug || trade.slug || '',
+        }));
+      } catch (error) {
+        console.warn(`[paper-trading] Error fetching trades for ${trader.wallet_address}:`, error);
+        return [];
+      }
+    });
+    
+    const tradeResults = await Promise.all(fetchPromises);
+    tradeResults.forEach(trades => allTrades.push(...trades));
+    
+    console.log(`[paper-trading] Fetched ${allTrades.length} total trades from Polymarket API`);
+    state.logs.push(`[DATA] Loaded ${allTrades.length} trades from Polymarket API`);
     
     // =========================================================================
     // HELPER: Convert timestamp to milliseconds
     // =========================================================================
     const getTradeTimeMs = (t: any): number => {
-      const ts = t.timestamp;
+      const ts = t.timestamp || t.matchTime || t.created_at;
       if (!ts) return 0;
       // If it's a number less than year 3000 in seconds, it's Unix seconds
       if (typeof ts === 'number' && ts < 32503680000) {
@@ -442,11 +464,28 @@ export async function GET(request: NextRequest) {
       return new Date(ts).getTime();
     };
     
+    // Filter to BUY trades within date range and sort chronologically
+    const filteredTrades = allTrades
+      .filter((t: any) => {
+        const tradeTime = getTradeTimeMs(t);
+        const isBuy = t.side === 'BUY' || t.side === 'buy';
+        const inRange = tradeTime >= start.getTime() && tradeTime <= end.getTime();
+        return isBuy && inRange;
+      })
+      .sort((a: any, b: any) => getTradeTimeMs(a) - getTradeTimeMs(b));
+    
+    // Replace allTrades with filtered version for processing
+    allTrades.length = 0;
+    allTrades.push(...filteredTrades);
+    
+    console.log(`[paper-trading] After filtering: ${allTrades.length} BUY trades in date range`);
+    state.logs.push(`[DATA] Filtered to ${allTrades.length} BUY trades in date range`);
+    
     // Validate we have data
     if (allTrades.length === 0) {
       return NextResponse.json({ 
         error: 'No trade data available', 
-        details: `No BUY trades found in date range ${start.toISOString()} to ${end.toISOString()}. Try an earlier date range.`
+        details: `No BUY trades found in date range ${start.toISOString()} to ${end.toISOString()}. The Polymarket API returns recent trades - try a more recent date range.`
       }, { status: 404 });
     }
     
@@ -461,36 +500,57 @@ export async function GET(request: NextRequest) {
     state.logs.push(`[DATA] Sample trade: ${(allTrades[0].title || '').slice(0, 40)}...`);
     
     // =========================================================================
-    // BUILD MARKET RESOLUTION MAP FROM BIGQUERY DATA
-    // We use resolved_outcome and winning_side from the markets table
+    // BUILD MARKET RESOLUTION MAP FROM POLYMARKET CLOB API
+    // Fetch resolution data for unique condition IDs
     // =========================================================================
     const marketResolutions = new Map<string, { winner: 'YES' | 'NO' | string | null; closed: boolean; closeTime?: number }>();
+    const conditionIds = [...new Set(allTrades.map((t: any) => t.condition_id || t.conditionId).filter(Boolean))];
     
-    for (const [conditionId, marketData] of marketResolutionData) {
-      let winner: 'YES' | 'NO' | string | null = null;
-      const closed = marketData.closed === true || marketData.status === 'resolved';
+    console.log(`[paper-trading] Fetching resolution data for ${conditionIds.length} unique markets...`);
+    state.logs.push(`[RESOLUTION] Checking ${conditionIds.length} unique markets for resolution data`);
+    
+    // Batch fetch market data from Polymarket CLOB API (in chunks of 50)
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < conditionIds.length; i += BATCH_SIZE) {
+      const batch = conditionIds.slice(i, i + BATCH_SIZE);
       
-      // Try resolved_outcome first (most reliable)
-      const resolvedOutcome = marketData.resolved_outcome || marketData.winning_side;
-      
-      if (resolvedOutcome) {
-        // Normalize standard outcomes to YES/NO
-        const normalizedOutcome = resolvedOutcome.toUpperCase().trim();
-        if (normalizedOutcome === 'YES' || normalizedOutcome === 'TRUE' || normalizedOutcome === 'UP') {
-          winner = 'YES';
-        } else if (normalizedOutcome === 'NO' || normalizedOutcome === 'FALSE' || normalizedOutcome === 'DOWN') {
-          winner = 'NO';
-        } else {
-          // Store actual outcome for non-standard markets (team names, etc.)
-          winner = resolvedOutcome;
+      const marketPromises = batch.map(async (conditionId: string) => {
+        try {
+          const response = await fetch(
+            `https://clob.polymarket.com/markets/${conditionId}`,
+            { cache: 'no-store', headers: { 'Accept': 'application/json' } }
+          );
+          
+          if (!response.ok) return null;
+          
+          const market = await response.json();
+          let winner: 'YES' | 'NO' | string | null = null;
+          const closed = market.closed === true || market.active === false;
+          
+          // Check for resolution in tokens
+          if (market.tokens && Array.isArray(market.tokens)) {
+            for (const token of market.tokens) {
+              if (token.winner === true) {
+                winner = token.outcome === 'Yes' ? 'YES' : token.outcome === 'No' ? 'NO' : token.outcome;
+                break;
+              }
+            }
+          }
+          
+          const closeTime = market.end_date_iso ? new Date(market.end_date_iso).getTime() : undefined;
+          
+          return { conditionId, winner, closed, closeTime };
+        } catch (e) {
+          return null;
         }
-      }
+      });
       
-      // Get close time for resolution timing
-      const closeTime = marketData.close_time || marketData.end_time;
-      const closeTimeMs = closeTime ? new Date(closeTime).getTime() : undefined;
-      
-      marketResolutions.set(conditionId, { winner, closed, closeTime: closeTimeMs });
+      const results = await Promise.all(marketPromises);
+      results.forEach(r => {
+        if (r) {
+          marketResolutions.set(r.conditionId, { winner: r.winner, closed: r.closed, closeTime: r.closeTime });
+        }
+      });
     }
     
     const resolvedMarketsCount = Array.from(marketResolutions.values()).filter(m => m.winner !== null).length;
@@ -500,14 +560,13 @@ export async function GET(request: NextRequest) {
     state.logs.push(`[RESOLUTION] ${resolvedMarketsCount} of ${marketResolutions.size} markets have resolution data`);
     
     if (resolvedMarketsCount === 0) {
-      state.logs.push(`[WARNING] No resolved markets found in BigQuery for this date range!`);
-      state.logs.push(`[WARNING] This could mean: 1) Markets haven't resolved yet, 2) Resolution data not synced`);
-      state.logs.push(`[TIP] Try an older date range (60-90 days ago) where more markets have resolved.`);
+      state.logs.push(`[WARNING] No resolved markets found for this date range`);
+      state.logs.push(`[TIP] Try an older date range (60-90 days ago) where more markets have resolved`);
     } else {
       // Log sample resolved markets
       const resolved = Array.from(marketResolutions.entries())
         .filter(([_, m]) => m.winner !== null)
-        .slice(0, 5);
+        .slice(0, 3);
       resolved.forEach(([id, m]) => {
         state.logs.push(`[RESOLVED] ${id.slice(0, 16)}... Winner: ${m.winner}`);
       });
