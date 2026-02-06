@@ -445,36 +445,16 @@ export async function GET(request: NextRequest) {
             }
           }
           
-          // Method 5: SIMULATED RESOLUTION - For testing, assume high-probability markets will resolve as expected
-          // If market price is strongly skewed (>85% one way), simulate resolution for backtesting purposes
-          if (!winner && market.tokens && Array.isArray(market.tokens) && market.tokens.length >= 2) {
-            // Try to find YES/NO or Up/Down tokens (first token is typically YES/Up)
-            const yesToken = market.tokens.find((t: any) => 
-              t.outcome === 'Yes' || t.outcome === 'YES' || t.outcome?.toLowerCase() === 'yes' || 
-              t.outcome === 'Up' || t.outcome === 'UP'
-            );
-            const noToken = market.tokens.find((t: any) => 
-              t.outcome === 'No' || t.outcome === 'NO' || t.outcome?.toLowerCase() === 'no' || 
-              t.outcome === 'Down' || t.outcome === 'DOWN'
-            );
-            
-            // Fallback: use first two tokens if standard ones not found
-            // Convention: token[0] is typically the "positive" outcome (Yes/Up)
-            const token0 = yesToken || market.tokens[0];
-            const token1 = noToken || market.tokens[1];
-            
-            const yesPrice = token0?.price || 0.5;
-            const noPrice = token1?.price || 0.5;
-            
-            // For backtesting, simulate resolution based on current prices
-            // This is an approximation since we don't have actual resolved data
-            // YES/Up wins if its price is high, NO/Down wins if its price is high
-            if (yesPrice >= 0.85) {
-              winner = 'YES'; // Covers both YES and Up outcomes
-            } else if (noPrice >= 0.85 || yesPrice <= 0.15) {
-              winner = 'NO'; // Covers both NO and Down outcomes
-            }
-          }
+          // DISABLED: Simulated resolution based on current prices
+          // This created hindsight bias - we were using CURRENT prices to determine 
+          // winners for trades made at PAST prices, creating impossibly good results.
+          // 
+          // For accurate backtesting, we should only resolve markets that are:
+          // 1. Officially closed (market.closed === true)
+          // 2. Have explicit winner data (market.winner or token.winner)
+          //
+          // Without historical resolution data, backtest P&L will only reflect
+          // trades in markets that have actually resolved.
           
           return { conditionId, winner, closed, rawData: market };
         } catch (error) {
@@ -509,14 +489,12 @@ export async function GET(request: NextRequest) {
     const closedMarketsCount = Array.from(marketResolutions.values()).filter(m => m.closed).length;
     console.log(`[paper-trading] Loaded ${marketResolutions.size} markets, ${resolvedMarketsCount} with resolution, ${closedMarketsCount} closed`);
     state.logs.push(`[BACKTEST] Found ${resolvedMarketsCount} resolved markets out of ${marketResolutions.size} (${closedMarketsCount} officially closed)`);
-    state.logs.push(`[INFO] Note: For recent trades, markets may not be officially resolved yet. Using probability-based simulation for markets with strong price signals (>85% confidence).`);
-    
-    // Log resolved markets for debugging
-    const simulatedCount = resolvedMarketsCount - closedMarketsCount;
-    if (simulatedCount > 0) {
-      state.logs.push(`[DEBUG] ${simulatedCount} markets have simulated resolution (high-probability prediction)`);
+    if (resolvedMarketsCount === 0) {
+      state.logs.push(`[INFO] No officially resolved markets found. P&L will be $0 for open positions.`);
+      state.logs.push(`[INFO] For meaningful backtests, use historical data with resolved markets or wait for current markets to close.`);
     }
     
+    // Log resolved markets for debugging
     if (resolvedMarketsCount > 0) {
       const resolved = Array.from(marketResolutions.entries())
         .filter(([_, m]) => m.winner !== null)
@@ -525,12 +503,12 @@ export async function GET(request: NextRequest) {
         state.logs.push(`[DEBUG] Resolved: ${id.slice(0, 20)}... Winner: ${m.winner} (closed=${m.closed})`);
       });
     } else {
-      state.logs.push(`[WARNING] No resolved markets found - all trades are for markets still open. P&L will be $0.`);
-      state.logs.push(`[TIP] For meaningful backtests, we need historical trade data with resolved markets.`);
-      // Log sample of what we got from API
+      state.logs.push(`[WARNING] No resolved markets found - all trades are for markets still open.`);
+      state.logs.push(`[WARNING] P&L will be $0 until markets officially resolve.`);
+      // Log sample of market status
       const sample = Array.from(marketResolutions.entries()).slice(0, 3);
       sample.forEach(([id, m]) => {
-        state.logs.push(`[DEBUG] Market sample: ${id.slice(0,12)}... closed=${m.closed} winner=${m.winner}`);
+        state.logs.push(`[DEBUG] Market: ${id.slice(0,12)}... closed=${m.closed} winner=${m.winner || 'pending'}`);
       });
     }
     
@@ -545,12 +523,23 @@ export async function GET(request: NextRequest) {
       // Convert to signal
       const signal = tradeToSignal(trade, null, null);
       
-      // Simulate value scores - make them more likely to trigger entries
+      // Simulate value scores for backtesting
       const simScores = simulateValueScore(trade);
-      // Boost scores for backtesting to ensure some trades enter
-      signal.valueScore = Math.min(100, simScores.valueScore + 15);
-      signal.aiEdge = Math.max(simScores.edge, 3);
-      signal.polyscore = Math.min(100, simScores.polyscore + 10);
+      signal.valueScore = simScores.valueScore;
+      signal.aiEdge = simScores.edge;
+      signal.polyscore = simScores.polyscore;
+      
+      // Simulate trader win rate based on trade characteristics
+      // In reality, we'd look up the trader's historical stats
+      // For backtesting, estimate based on position size (larger = more experienced)
+      const tradeSize = Number(trade.size) * Number(trade.price) || 0;
+      if (tradeSize > 500) {
+        signal.traderWinRate = 0.58 + Math.random() * 0.07; // 58-65% for whales
+      } else if (tradeSize > 100) {
+        signal.traderWinRate = 0.52 + Math.random() * 0.08; // 52-60% for medium
+      } else {
+        signal.traderWinRate = 0.45 + Math.random() * 0.10; // 45-55% for small
+      }
       
       // Log first few trades for debugging
       if (processedCount <= 3) {
