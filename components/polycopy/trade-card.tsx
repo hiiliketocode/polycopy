@@ -50,7 +50,7 @@ import {
   isSeasonLongMarketTitle,
 } from "@/lib/market-status"
 import { getTraderAvatarInitials } from "@/lib/trader-name"
-import { GetPolyScoreButton, PolyPredictBadge } from "@/components/polyscore"
+import { GetPolyScoreButton, PolyPredictBadge, CopySignal, AIConfidenceBadge, PolySignal } from "@/components/polyscore"
 import { PolyScoreRequest, PolyScoreResponse, getPolyScore } from "@/lib/polyscore/get-polyscore"
 import { PredictionStats } from "@/components/polyscore/PredictionStats"
 import { supabase } from "@/lib/supabase"
@@ -3018,13 +3018,14 @@ export function TradeCard({
           </div>
         </div>
 
-        {/* PolyPredict Value Score Badge - Admin Only */}
+        {/* PolySignal Badge - Admin Only */}
         {isAdmin && (
           <div className="mb-3">
-            <PolyPredictBadge
+            <PolySignal
               data={polyScoreData}
               loading={polyScoreLoading}
-              niche={category || undefined}
+              entryPrice={price}
+              currentPrice={currentPrice}
             />
           </div>
         )}
