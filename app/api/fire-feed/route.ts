@@ -490,8 +490,13 @@ export async function GET(request: Request) {
       else if (polySignal.recommendation === 'AVOID') (debugStats as any).polySignalAvoid++;
       else if (polySignal.recommendation === 'TOXIC') (debugStats as any).polySignalToxic++;
       
-      // Only pass trades that are BUY or STRONG_BUY
-      const passesPolySignal = polySignal.recommendation === 'BUY' || polySignal.recommendation === 'STRONG_BUY';
+      // Pass trades that are BUY or STRONG_BUY
+      // Also pass NEUTRAL trades from top PnL traders (they're already vetted by leaderboard)
+      const isTopPnlTrader = traderPnl >= 10000; // $10k+ monthly PnL
+      const passesPolySignal = 
+        polySignal.recommendation === 'BUY' || 
+        polySignal.recommendation === 'STRONG_BUY' ||
+        (polySignal.recommendation === 'NEUTRAL' && isTopPnlTrader); // Allow neutral from top traders
       
       // Log first few rejected trades for debugging
       if (!passesPolySignal && rejectedSamples.length < 3) {
