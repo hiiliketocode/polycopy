@@ -447,7 +447,8 @@ export async function GET(request: NextRequest) {
           
           // Method 5: SIMULATED RESOLUTION - For testing, assume high-probability markets will resolve as expected
           // If market price is strongly skewed (>85% one way), simulate resolution for backtesting purposes
-          if (!winner && market.tokens && Array.isArray(market.tokens) && market.tokens.length === 2) {
+          if (!winner && market.tokens && Array.isArray(market.tokens) && market.tokens.length >= 2) {
+            // Try to find YES/NO or Up/Down tokens
             const yesToken = market.tokens.find((t: any) => 
               t.outcome === 'Yes' || t.outcome === 'YES' || t.outcome?.toLowerCase() === 'yes' || t.outcome === 'Up'
             );
@@ -455,8 +456,12 @@ export async function GET(request: NextRequest) {
               t.outcome === 'No' || t.outcome === 'NO' || t.outcome?.toLowerCase() === 'no' || t.outcome === 'Down'
             );
             
-            const yesPrice = yesToken?.price || 0.5;
-            const noPrice = noToken?.price || 0.5;
+            // Fallback: use first two tokens if standard ones not found
+            const token0 = yesToken || market.tokens[0];
+            const token1 = noToken || market.tokens[1];
+            
+            const yesPrice = token0?.price || 0.5;
+            const noPrice = token1?.price || 0.5;
             
             // For backtesting, simulate resolution based on current prices
             // This is an approximation since we don't have actual resolved data
