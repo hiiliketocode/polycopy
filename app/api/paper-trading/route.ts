@@ -33,6 +33,46 @@ const supabase = createClient(supabaseUrl || '', supabaseServiceKey || '', {
 // Cache for PolyScore results to avoid duplicate API calls
 const polyScoreCache = new Map<string, any>();
 
+// Calculate V10 Value Score - MUST match PolyPredictBadge.tsx exactly
+function calculateV10ValueScore(response: any): number {
+  const { valuation, analysis, drawer } = response;
+  const v10 = (analysis?.prediction_stats as any)?.v10_features;
+  
+  // Edge component (0-50 points)
+  const edgePct = valuation?.real_edge_pct ?? 0;
+  const edgeScore = Math.min(50, Math.max(0, 25 + (edgePct * 2.5)));
+  
+  // Signal component (0-50 points)
+  let signalTotal = 25; // Start at neutral
+  
+  if (v10) {
+    // V10 features available
+    if (v10.is_in_best_niche) signalTotal += 10;
+    if (v10.trade_size_tier === 'WHALE') signalTotal += 8;
+    else if (v10.trade_size_tier === 'LARGE') signalTotal += 5;
+    if (v10.is_with_crowd === true) signalTotal += 7;
+    else if (v10.is_with_crowd === false) signalTotal -= 3;
+    if (v10.trader_sells_ratio !== undefined) {
+      if (v10.trader_sells_ratio < 0.1) signalTotal += 5;
+      else if (v10.trader_sells_ratio > 0.4) signalTotal -= 5;
+    }
+    if (v10.market_age_bucket === 'WEEK_1' || v10.market_age_bucket === 'MONTH_1') signalTotal += 5;
+    else if (v10.market_age_bucket === 'OLDER') signalTotal -= 5;
+    if (v10.is_hedging) signalTotal -= 8;
+  } else if (drawer) {
+    // Fallback: derive from drawer data
+    if (drawer.conviction?.is_outlier || drawer.conviction?.z_score > 1.5) signalTotal += 8;
+    if (drawer.tactical?.is_hedged) signalTotal -= 8;
+    if (drawer.competency?.niche_win_rate > 60) signalTotal += 10;
+    else if (drawer.competency?.niche_win_rate > 50) signalTotal += 5;
+    else if (drawer.competency?.niche_win_rate < 45) signalTotal -= 5;
+    if (drawer.momentum?.is_hot) signalTotal += 7;
+  }
+  
+  const signalScore = Math.min(50, Math.max(0, signalTotal));
+  return Math.round(edgeScore + signalScore);
+}
+
 // Get real PolyScore for a trade (with caching)
 async function getRealPolyScore(trade: any, logs: string[]): Promise<{
   valueScore: number;
@@ -74,13 +114,28 @@ async function getRealPolyScore(trade: any, logs: string[]): Promise<{
     
     const response = await getPolyScore(request);
     
+    // Calculate V10 value score (same formula as PolyPredictBadge)
+    const valueScore = calculateV10ValueScore(response);
+    
+    // Extract trader win rate from multiple possible locations
+    const traderWinRate = 
+      response.analysis?.prediction_stats?.trader_win_rate ||
+      response.drawer?.competency?.global_win_rate ||
+      response.drawer?.competency?.niche_win_rate ||
+      0.5; // Default to 50% if not found
+    
     const result = {
-      valueScore: response.prediction?.score_0_100 || response.polyscore || 50,
+      valueScore,
       edge: response.valuation?.real_edge_pct || response.prediction?.edge_percent || 0,
       polyscore: response.polyscore || 50,
-      traderWinRate: response.analysis?.prediction_stats?.trader_win_rate || 0.5,
+      traderWinRate: traderWinRate / 100, // Normalize to 0-1 if it's a percentage
       aiProbability: response.valuation?.ai_fair_value || 0.5,
     };
+    
+    // Normalize traderWinRate if it came as percentage (e.g., 55 instead of 0.55)
+    if (result.traderWinRate > 1) {
+      result.traderWinRate = result.traderWinRate / 100;
+    }
     
     // Cache the result
     polyScoreCache.set(cacheKey, result);
@@ -93,68 +148,65 @@ async function getRealPolyScore(trade: any, logs: string[]): Promise<{
   }
 }
 
-// Fallback: Simulate value scores when PolyScore API is unavailable
+// Fallback: Simulate V10-aligned value scores when PolyScore API is unavailable
 function simulateValueScore(trade: any): { 
   valueScore: number; 
   edge: number; 
   polyscore: number;
   traderWinRate: number;
 } {
-  let valueScore = 50;
-  let edge = 0;
-  let polyscore = 50;
-  
   const price = Number(trade.price) || 0.5;
-  
-  // Price-based edge estimation
-  if (price > 0.75) {
-    edge = -3;
-    valueScore -= 10;
-  } else if (price > 0.55) {
-    edge = 2;
-    valueScore += 5;
-  } else if (price > 0.45) {
-    edge = 5;
-    valueScore += 10;
-  } else if (price > 0.25) {
-    edge = 8;
-    valueScore += 15;
-  } else {
-    edge = 3;
-    valueScore += 5;
-  }
-  
-  // Trade size = conviction
   const tradeSize = Number(trade.size) * price || 0;
-  if (tradeSize > 1000) {
-    valueScore += 15;
-    polyscore += 15;
+  
+  // Simulate edge based on price (buying cheap = positive edge expectation)
+  let edge = 0;
+  if (price < 0.20) edge = 8 + Math.random() * 4;      // 8-12% edge for very cheap
+  else if (price < 0.35) edge = 4 + Math.random() * 4; // 4-8% edge
+  else if (price < 0.50) edge = 1 + Math.random() * 3; // 1-4% edge
+  else if (price < 0.65) edge = -2 + Math.random() * 4; // -2% to 2%
+  else if (price < 0.80) edge = -5 + Math.random() * 3; // -5% to -2%
+  else edge = -8 + Math.random() * 3;                   // -8% to -5%
+  
+  // V10 Value Score = Edge Score (0-50) + Signal Score (0-50)
+  // Edge Score = 25 + (edge * 2.5)
+  const edgeScore = Math.min(50, Math.max(0, 25 + (edge * 2.5)));
+  
+  // Signal Score (simulate based on trade characteristics)
+  let signalScore = 25; // Start neutral
+  
+  // Trade size tier
+  if (tradeSize > 5000) signalScore += 8;      // WHALE
+  else if (tradeSize > 1000) signalScore += 5; // LARGE
+  else if (tradeSize > 500) signalScore += 2;  // MEDIUM
+  
+  // Add some randomness for other V10 signals we can't observe
+  signalScore += (Math.random() - 0.5) * 10; // -5 to +5 random
+  
+  signalScore = Math.min(50, Math.max(0, signalScore));
+  const valueScore = Math.round(edgeScore + signalScore);
+  
+  // Polyscore (opportunity score)
+  let polyscore = 50 + (edge * 2); // Base on edge
+  polyscore += (Math.random() - 0.5) * 20;
+  polyscore = Math.min(100, Math.max(0, polyscore));
+  
+  // Simulate trader win rate
+  // Whales tend to be better traders
+  let traderWinRate: number;
+  if (tradeSize > 5000) {
+    traderWinRate = 0.58 + Math.random() * 0.10; // 58-68% for whales
+  } else if (tradeSize > 1000) {
+    traderWinRate = 0.54 + Math.random() * 0.10; // 54-64% for large
   } else if (tradeSize > 500) {
-    valueScore += 10;
-    polyscore += 10;
-  } else if (tradeSize > 100) {
-    valueScore += 5;
-    polyscore += 5;
-  }
-  
-  // Simulate trader win rate based on trade size
-  let traderWinRate = 0.50;
-  if (tradeSize > 500) {
-    traderWinRate = 0.55 + Math.random() * 0.10; // 55-65% for whales
-  } else if (tradeSize > 100) {
-    traderWinRate = 0.50 + Math.random() * 0.10; // 50-60% for medium
+    traderWinRate = 0.52 + Math.random() * 0.08; // 52-60% for medium
   } else {
-    traderWinRate = 0.45 + Math.random() * 0.10; // 45-55% for small
+    traderWinRate = 0.48 + Math.random() * 0.08; // 48-56% for small
   }
-  
-  // Add some randomness
-  valueScore += (Math.random() - 0.5) * 15;
-  polyscore += (Math.random() - 0.5) * 10;
   
   return {
-    valueScore: Math.min(100, Math.max(0, valueScore)),
+    valueScore,
     edge,
-    polyscore: Math.min(100, Math.max(0, polyscore)),
+    polyscore,
     traderWinRate,
   };
 }
@@ -620,32 +672,59 @@ export async function GET(request: NextRequest) {
       signal.polyscore = scores.polyscore;
       signal.traderWinRate = scores.traderWinRate;
       
-      // Log first few trades for debugging
-      if (processedCount <= 3) {
-        const scoreSource = polyScoreSuccessCount > polyScoreFallbackCount ? 'PolyScore' : 'Simulated';
-        state.logs.push(`[DEBUG] Trade ${processedCount} (${scoreSource}): ${(trade.title || '').slice(0, 35)}... | Value: ${signal.valueScore?.toFixed(1)} | Edge: ${signal.aiEdge?.toFixed(1)}% | WinRate: ${((signal.traderWinRate || 0) * 100).toFixed(0)}%`);
+      // Log first 5 trades with full scoring details
+      if (processedCount <= 5) {
+        const scoreSource = polyScoreSuccessCount > polyScoreFallbackCount ? 'API' : 'SIM';
+        state.logs.push(`[TRADE ${processedCount}] ${(trade.title || '').slice(0, 35)}...`);
+        state.logs.push(`  Scores (${scoreSource}): Value=${signal.valueScore?.toFixed(1)} | Edge=${signal.aiEdge?.toFixed(1)}% | WinRate=${((signal.traderWinRate || 0) * 100).toFixed(0)}% | PolyScore=${signal.polyscore?.toFixed(1)}`);
+        
+        // Show which strategies would accept this trade
+        const strategyChecks: string[] = [];
+        
+        // Strategy 1: Pure Value Score (>= 60)
+        const s1Pass = (signal.valueScore || 0) >= 60;
+        strategyChecks.push(`S1:${s1Pass ? '✓' : '✗'}(v>60)`);
+        
+        // Strategy 2: Weighted (>= 55) - simplified check
+        const s2Pass = (signal.valueScore || 0) >= 55 && (signal.aiEdge || 0) >= 0;
+        strategyChecks.push(`S2:${s2Pass ? '✓' : '✗'}(weighted)`);
+        
+        // Strategy 3: Value >= 70 AND WinRate >= 52%
+        const s3ValueOk = (signal.valueScore || 0) >= 70;
+        const s3WinRateOk = (signal.traderWinRate || 0) >= 0.52;
+        const s3Pass = s3ValueOk && s3WinRateOk;
+        strategyChecks.push(`S3:${s3Pass ? '✓' : '✗'}(v${s3ValueOk ? '✓' : '✗'},wr${s3WinRateOk ? '✓' : '✗'})`);
+        
+        // Strategy 4: Value >= 65 AND Edge >= 3% AND WinRate >= 55%
+        const s4ValueOk = (signal.valueScore || 0) >= 65;
+        const s4EdgeOk = (signal.aiEdge || 0) >= 3;
+        const s4WinRateOk = (signal.traderWinRate || 0) >= 0.55;
+        const s4Pass = s4ValueOk && s4EdgeOk && s4WinRateOk;
+        strategyChecks.push(`S4:${s4Pass ? '✓' : '✗'}(v${s4ValueOk ? '✓' : '✗'},e${s4EdgeOk ? '✓' : '✗'},wr${s4WinRateOk ? '✓' : '✗'})`);
+        
+        state.logs.push(`  Strategy checks: ${strategyChecks.join(' | ')}`);
       }
       
-      // Count open positions before
-      const openBefore = Object.values(state.portfolios).reduce(
-        (sum, p) => sum + p.openPositions.length, 0
-      );
+      // Count open positions before (per strategy)
+      const openBefore: Record<string, number> = {};
+      for (const [strategy, portfolio] of Object.entries(state.portfolios)) {
+        openBefore[strategy] = portfolio.openPositions.length;
+      }
       
       // Process signal
       state = processSignal(state, signal);
       
-      // Count open positions after
-      const openAfter = Object.values(state.portfolios).reduce(
-        (sum, p) => sum + p.openPositions.length, 0
-      );
-      
-      if (openAfter > openBefore) {
-        enteredCount++;
-        // Log entry for debugging
-        if (enteredCount <= 5) {
-          const tradeTitle = (trade.title || trade.question || '').slice(0, 40);
-          state.logs.push(`[ENTERED #${enteredCount}] ${tradeTitle}... | Signal conditionId: ${signal.conditionId?.slice(0,12)}...`);
+      // Count open positions after and track per-strategy entries
+      let totalNewEntries = 0;
+      for (const [strategy, portfolio] of Object.entries(state.portfolios)) {
+        const newEntries = portfolio.openPositions.length - (openBefore[strategy] || 0);
+        if (newEntries > 0) {
+          totalNewEntries += newEntries;
         }
+      }
+      
+      if (totalNewEntries > 0) {
+        enteredCount++;
       }
       
       // Check for resolution (handle both conditionId and condition_id field names)
@@ -693,9 +772,25 @@ export async function GET(request: NextRequest) {
     console.log(`[paper-trading] PolyScore: ${polyScoreSuccessCount} real, ${polyScoreFallbackCount} simulated`);
     
     // Log scoring summary
-    state.logs.push(`[SCORING] Used ${polyScoreSuccessCount} real PolyScore calls, ${polyScoreFallbackCount} simulated scores`);
+    state.logs.push(`[SCORING] Used ${polyScoreSuccessCount} real PolyScore API calls, ${polyScoreFallbackCount} simulated scores`);
     if (polyScoreSuccessCount === 0) {
-      state.logs.push(`[INFO] PolyScore API unavailable - using simulated scores for all trades`);
+      state.logs.push(`[INFO] PolyScore API unavailable - using V10-aligned simulated scores`);
+    }
+    
+    // Log per-strategy entry summary
+    state.logs.push(`[ENTRIES] === Strategy Entry Summary ===`);
+    for (const [strategy, portfolio] of Object.entries(state.portfolios)) {
+      const config = STRATEGY_CONFIGS[strategy as StrategyType];
+      const totalPositions = portfolio.openPositions.length + portfolio.closedPositions.length;
+      state.logs.push(`[ENTRIES] ${config.name}: ${totalPositions} trades entered`);
+      if (totalPositions === 0) {
+        // Explain why no trades
+        if (strategy === 'SINGLES_ONLY_V1') {
+          state.logs.push(`  → Requires: valueScore >= 70 AND traderWinRate >= 52%`);
+        } else if (strategy === 'SINGLES_ONLY_V2') {
+          state.logs.push(`  → Requires: valueScore >= 65 AND aiEdge >= 3% AND traderWinRate >= 55%`);
+        }
+      }
     }
     
     // Log final summary for each strategy
