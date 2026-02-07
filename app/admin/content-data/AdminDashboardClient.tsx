@@ -734,6 +734,57 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
                         </div>
                       </div>
                       
+                      {/* Activity Status & Last Trade */}
+                      <div className="mt-3 pt-3 border-t border-[#374151] flex items-center gap-4 font-mono text-sm">
+                        <div>
+                          <span className="text-gray-400 text-xs">Activity: </span>
+                          <span className={`font-bold ${
+                            trader.active_status === 'ACTIVE' ? 'text-green-400' :
+                            trader.active_status === 'RECENT' ? 'text-yellow-400' :
+                            'text-red-400'
+                          }`}>
+                            {trader.active_status === 'ACTIVE' ? '🟢 ACTIVE' :
+                             trader.active_status === 'RECENT' ? '🟡 RECENT' :
+                             '🔴 INACTIVE'}
+                          </span>
+                        </div>
+                        {trader.days_since_last_trade !== null && (
+                          <div className="text-gray-400 text-xs">
+                            Last trade: {trader.days_since_last_trade === 0 ? 'today' : `${trader.days_since_last_trade}d ago`}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Recent Winning Trades */}
+                      {trader.recent_wins && trader.recent_wins.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-[#374151]">
+                          <div className="text-gray-400 text-xs mb-2">🏆 Recent Wins (Top 3 by ROI):</div>
+                          <div className="space-y-1">
+                            {trader.recent_wins.map((win, i) => (
+                              <div key={i} className="font-mono text-xs">
+                                <span className="text-white">{win.market_title.substring(0, 50)}{win.market_title.length > 50 ? '...' : ''}</span>
+                                {' | '}
+                                <span className="text-gray-400">Entry: ${win.entry_price.toFixed(2)}</span>
+                                {' | '}
+                                <span className="text-blue-400">{win.outcome}</span>
+                                {' | '}
+                                <span className="text-green-400 font-bold">{win.roi_formatted}</span>
+                                {' | '}
+                                <span className="text-gray-500">{win.trade_date_formatted}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Narrative Hook */}
+                      {trader.narrative_hook && (
+                        <div className="mt-3 pt-3 border-t border-[#374151]">
+                          <div className="text-gray-400 text-xs mb-1">💬 Story Angle:</div>
+                          <div className="text-gray-200 text-sm italic">"{trader.narrative_hook}"</div>
+                        </div>
+                      )}
+                      
                       {/* Category Breakdown */}
                       {trader.categories.length > 1 && (
                         <div className="mt-3 pt-3 border-t border-[#374151]">
@@ -950,6 +1001,101 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
               </div>
             </div>
           </Section>
+
+          {/* 8. NEW: Top Current Markets */}
+          {sectionA.topCurrentMarkets && sectionA.topCurrentMarkets.length > 0 && (
+            <Section title="🔥 TOP CURRENT MARKETS (Highest Volume + Top Trader Positions)">
+              <p className="text-sm text-gray-400 mb-4">
+                💡 What are people betting on right now? Which top traders have positions?
+              </p>
+              <div className="space-y-4">
+                {sectionA.topCurrentMarkets.map((market) => (
+                  <div key={market.market_id} className="border border-[#374151] rounded-lg p-4">
+                    <div className="font-bold text-white mb-2">{market.market_title}</div>
+                    <div className="font-mono text-sm space-y-1 mb-3">
+                      <div>24h Volume: <span className="text-[#FDB022]">{market.volume_24h_formatted}</span></div>
+                      <div>Total Volume: <span className="text-gray-400">{market.total_volume_formatted}</span></div>
+                      <div>Category: <span className="text-blue-400">{market.category}</span></div>
+                    </div>
+                    {market.top_traders_positioned.length > 0 && (
+                      <div>
+                        <div className="text-gray-400 text-xs mb-2">Top Traders Positioned:</div>
+                        <div className="space-y-1">
+                          {market.top_traders_positioned.map((trader) => (
+                            <div key={trader.trader_wallet} className="font-mono text-sm">
+                              <button
+                                onClick={() => handleTraderClick(trader.trader_wallet)}
+                                className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors"
+                              >
+                                {trader.trader_username}
+                              </button>{' '}
+                              — <span className={trader.position_side === 'YES' ? 'text-green-400' : 'text-red-400'}>{trader.position_side}</span>
+                              {trader.position_size > 0 && <span className="text-gray-500"> (${trader.position_size.toFixed(0)})</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* 9. NEW: Story of the Week */}
+          {sectionA.storyOfTheWeek && (
+            <Section title="📰 STORY OF THE WEEK">
+              <p className="text-sm text-gray-400 mb-4">
+                💡 Pre-identified story angles for immediate content creation
+              </p>
+              <div className="space-y-4">
+                {sectionA.storyOfTheWeek.biggest_mover && (
+                  <div className="border border-[#374151] rounded-lg p-4">
+                    <div className="text-[#FDB022] font-bold mb-2">🚀 Biggest Mover</div>
+                    <div className="font-mono text-sm">
+                      <button
+                        onClick={() => handleTraderClick(sectionA.storyOfTheWeek.biggest_mover!.trader_wallet)}
+                        className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors font-bold"
+                      >
+                        {sectionA.storyOfTheWeek.biggest_mover.trader_username}
+                      </button>{' '}
+                      <span className="text-green-400">{sectionA.storyOfTheWeek.biggest_mover.rank_change_formatted}</span>
+                    </div>
+                    <div className="text-gray-300 text-sm mt-2">{sectionA.storyOfTheWeek.biggest_mover.story}</div>
+                  </div>
+                )}
+                
+                {sectionA.storyOfTheWeek.new_entrant_watch && (
+                  <div className="border border-[#374151] rounded-lg p-4">
+                    <div className="text-[#FDB022] font-bold mb-2">👀 New Entrant to Watch</div>
+                    <div className="font-mono text-sm">
+                      <button
+                        onClick={() => handleTraderClick(sectionA.storyOfTheWeek.new_entrant_watch!.trader_wallet)}
+                        className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors font-bold"
+                      >
+                        {sectionA.storyOfTheWeek.new_entrant_watch.trader_username}
+                      </button>{' '}
+                      <span className="text-gray-400">#{sectionA.storyOfTheWeek.new_entrant_watch.current_rank}</span>{' '}
+                      <span className="text-green-400">+{sectionA.storyOfTheWeek.new_entrant_watch.roi.toFixed(1)}%</span>
+                    </div>
+                    <div className="text-gray-300 text-sm mt-2">{sectionA.storyOfTheWeek.new_entrant_watch.story}</div>
+                  </div>
+                )}
+                
+                {sectionA.storyOfTheWeek.unusual_pattern && (
+                  <div className="border border-[#374151] rounded-lg p-4">
+                    <div className="text-[#FDB022] font-bold mb-2">🔍 Unusual Pattern</div>
+                    <div className="text-gray-300 text-sm">{sectionA.storyOfTheWeek.unusual_pattern.description}</div>
+                    {sectionA.storyOfTheWeek.unusual_pattern.traders_involved.length > 0 && (
+                      <div className="mt-2 font-mono text-xs text-gray-400">
+                        Traders: {sectionA.storyOfTheWeek.unusual_pattern.traders_involved.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
           
         </div>
 
