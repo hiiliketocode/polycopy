@@ -490,6 +490,8 @@ async function enrichWithLastTradeData(traders: FormattedTrader[], apiErrors: st
   const batchSize = 5
   const delayMs = 200
   
+  console.log(`🔄 Starting enrichment for ${traders.length} traders...`)
+  
   for (let i = 0; i < traders.length; i += batchSize) {
     const batch = traders.slice(i, i + batchSize)
     
@@ -498,40 +500,52 @@ async function enrichWithLastTradeData(traders: FormattedTrader[], apiErrors: st
         try {
           const response = await fetch(
             `https://data-api.polymarket.com/trades?user=${trader.wallet}&limit=1`,
-            { signal: AbortSignal.timeout(5000) }
+            { signal: AbortSignal.timeout(8000) } // Increased timeout from 5s to 8s
           )
           
-          if (response.ok) {
-            const trades = await response.json()
-            if (Array.isArray(trades) && trades.length > 0) {
-              const lastTrade = trades[0]
-              const lastTradeDate = lastTrade.timestamp || lastTrade.created_at
+          if (!response.ok) {
+            console.warn(`❌ API returned ${response.status} for ${trader.wallet.slice(0, 10)}...`)
+            return { wallet: trader.wallet, status: 'error' }
+          }
+          
+          const trades = await response.json()
+          if (Array.isArray(trades) && trades.length > 0) {
+            const lastTrade = trades[0]
+            const lastTradeDate = lastTrade.timestamp || lastTrade.created_at
+            
+            if (lastTradeDate) {
+              trader.last_trade_date = lastTradeDate
+              trader.days_since_last_trade = daysSince(lastTradeDate)
               
-              if (lastTradeDate) {
-                trader.last_trade_date = lastTradeDate
-                trader.days_since_last_trade = daysSince(lastTradeDate)
-                
-                // Calculate active status
-                const daysSinceLastTrade = trader.days_since_last_trade || 999
-                if (daysSinceLastTrade < 7) {
-                  trader.active_status = 'ACTIVE'
-                } else if (daysSinceLastTrade < 30) {
-                  trader.active_status = 'RECENT'
-                } else {
-                  trader.active_status = 'INACTIVE'
-                }
-                
-                return { wallet: trader.wallet, status: 'success' }
+              // Calculate active status
+              const daysSinceLastTrade = trader.days_since_last_trade || 999
+              if (daysSinceLastTrade < 7) {
+                trader.active_status = 'ACTIVE'
+              } else if (daysSinceLastTrade < 30) {
+                trader.active_status = 'RECENT'
+              } else {
+                trader.active_status = 'INACTIVE'
               }
+              
+              console.log(`✅ Enriched ${trader.displayName}: ${trader.active_status} (${daysSinceLastTrade} days ago)`)
+              return { wallet: trader.wallet, status: 'success' }
+            } else {
+              console.warn(`⚠️ No timestamp found for ${trader.wallet.slice(0, 10)}...`)
             }
+          } else {
+            console.warn(`⚠️ No trades returned for ${trader.wallet.slice(0, 10)}...`)
           }
           return { wallet: trader.wallet, status: 'no_data' }
-        } catch (err) {
-          console.warn(`Failed to fetch last trade for ${trader.wallet.slice(0, 10)}...`, err)
+        } catch (err: any) {
+          console.error(`❌ Failed to fetch last trade for ${trader.wallet.slice(0, 10)}...:`, err?.message || err)
           return { wallet: trader.wallet, status: 'error' }
         }
       })
     )
+    
+    // Log batch results
+    const successCount = results.filter(r => r.status === 'fulfilled' && r.value.status === 'success').length
+    console.log(`📊 Batch ${Math.floor(i / batchSize) + 1}: ${successCount}/${batch.length} successful`)
     
     // Add delay between batches to avoid rate limiting
     if (i + batchSize < traders.length) {
@@ -543,7 +557,9 @@ async function enrichWithLastTradeData(traders: FormattedTrader[], apiErrors: st
   console.log(`✅ Enriched ${enrichedCount}/${traders.length} traders with last trade data`)
   
   if (enrichedCount < traders.length) {
-    apiErrors.push(`Could not fetch last trade data for ${traders.length - enrichedCount} traders`)
+    const message = `Could not fetch last trade data for ${traders.length - enrichedCount} traders`
+    console.warn(`⚠️ ${message}`)
+    apiErrors.push(message)
   }
 }
 
@@ -558,15 +574,25 @@ async function fetchRecentWinningTrades(wallet: string): Promise<Array<{
   trade_date_formatted: string
 }>> {
   try {
+    console.log(`🔍 Fetching winning trades for ${wallet.slice(0, 10)}...`)
+    
     const response = await fetch(
       `https://data-api.polymarket.com/trades?user=${wallet}&limit=100`,
-      { signal: AbortSignal.timeout(8000) }
+      { signal: AbortSignal.timeout(10000) } // Increased timeout from 8s to 10s
     )
     
-    if (!response.ok) return []
+    if (!response.ok) {
+      console.warn(`❌ API returned ${response.status} for ${wallet.slice(0, 10)}...`)
+      return []
+    }
     
     const trades = await response.json()
-    if (!Array.isArray(trades)) return []
+    if (!Array.isArray(trades)) {
+      console.warn(`❌ Unexpected response format for ${wallet.slice(0, 10)}...`)
+      return []
+    }
+    
+    console.log(`📊 Got ${trades.length} trades for ${wallet.slice(0, 10)}...`)
     
     // Filter to trades where:
     // 1. Market is resolved
@@ -601,9 +627,10 @@ async function fetchRecentWinningTrades(wallet: string): Promise<Array<{
       .sort((a, b) => b.roi - a.roi) // Sort by ROI descending
       .slice(0, 3) // Top 3
     
+    console.log(`✅ Found ${winningTrades.length} winning trades for ${wallet.slice(0, 10)}...`)
     return winningTrades
-  } catch (err) {
-    console.warn(`Failed to fetch winning trades for ${wallet.slice(0, 10)}...`, err)
+  } catch (err: any) {
+    console.error(`❌ Failed to fetch winning trades for ${wallet.slice(0, 10)}...:`, err?.message || err)
     return []
   }
 }
@@ -983,7 +1010,7 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
           let wowVolumeChange: number | null = null
           let wowVolumeChangeFormatted = '--'
           let wowRankChange: number | null = null
-          let wowRankChangeFormatted = '--'
+          let wowRankChangeFormatted = 'New to leaderboard'
           
           if (currentData && lastWeekData) {
             // P&L change
@@ -1005,6 +1032,12 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
             } else {
               wowRankChangeFormatted = 'No change'
             }
+            
+            console.log(`📊 WoW for ${traderUsername}: PnL ${wowPnlChangeFormatted}, Rank ${wowRankChangeFormatted}`)
+          } else if (currentData && !lastWeekData) {
+            console.log(`🆕 ${traderUsername} is new to leaderboard`)
+          } else {
+            console.warn(`⚠️ Missing leaderboard data for ${wallet.slice(0, 10)}...`)
           }
           
           // Generate shareable quote for social media
@@ -1085,6 +1118,13 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
           winningTradesResults.forEach((result, index) => {
             if (result.status === 'fulfilled') {
               batch[index].recent_wins = result.value
+              if (result.value.length > 0) {
+                console.log(`✅ Found ${result.value.length} winning trades for ${batch[index].trader_username}`)
+              } else {
+                console.log(`⚠️ No winning trades found for ${batch[index].trader_username}`)
+              }
+            } else if (result.status === 'rejected') {
+              console.error(`❌ Failed to fetch wins for ${batch[index].trader_username}:`, result.reason)
             }
           })
           
@@ -1096,6 +1136,11 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
         
         const enrichedWithWins = traderAnalytics.filter(t => t.recent_wins.length > 0).length
         console.log(`✅ Enriched ${enrichedWithWins}/${traderAnalytics.length} traders with winning trades`)
+        
+        if (enrichedWithWins === 0) {
+          console.warn('⚠️ WARNING: No winning trades found for any trader!')
+          apiErrors.push('Could not fetch winning trades for any traders')
+        }
       } else {
         console.warn('⚠️ Failed to fetch trader analytics:', error)
       }
@@ -1113,7 +1158,9 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
 
   // FEATURE 4: Fetch top current markets with trader positions
   const traderWallets = topTraders.map(t => t.wallet)
+  console.log(`🔄 Fetching top current markets for ${traderWallets.length} traders...`)
   const topCurrentMarkets = await fetchTopCurrentMarkets(traderWallets, apiErrors)
+  console.log(`✅ Got ${topCurrentMarkets.length} top current markets`)
 
   // NEW: Calculate position changes and new entrants
   let positionChanges: SectionAData['positionChanges'] = []
@@ -1257,6 +1304,69 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
       volume_formatted: t.volume_formatted
     }))
 
+  // FEATURE 5: Calculate Story of the Week
+  console.log('🔄 Generating Story of the Week...')
+  let storyOfTheWeek: SectionAData['storyOfTheWeek'] = {
+    biggest_mover: null,
+    new_entrant_watch: null,
+    unusual_pattern: null
+  }
+  
+  try {
+    // Find biggest mover (largest rank improvement)
+    const movers = positionChanges
+      .filter(pc => pc.position_change < 0) // Negative = moved up
+      .sort((a, b) => a.position_change - b.position_change) // Most negative first
+    
+    if (movers.length > 0) {
+      const biggestMover = movers[0]
+      const trader = topTraders.find(t => t.wallet === biggestMover.trader_wallet)
+      storyOfTheWeek.biggest_mover = {
+        trader_username: biggestMover.trader_username,
+        trader_wallet: biggestMover.trader_wallet,
+        rank_change: Math.abs(biggestMover.position_change),
+        rank_change_formatted: biggestMover.change_formatted,
+        story: `${biggestMover.trader_username} jumped ${Math.abs(biggestMover.position_change)} spots in the leaderboard to rank #${biggestMover.current_rank}${trader ? ` with ${trader.roi_formatted} ROI` : ''}.`
+      }
+      console.log(`✅ Biggest mover: ${biggestMover.trader_username}`)
+    }
+    
+    // Find best new entrant (high ROI, wasn't in previous week)
+    const qualifiedNewEntrants = newEntrants.filter(ne => ne.roi > 10) // At least 10% ROI
+    if (qualifiedNewEntrants.length > 0) {
+      const bestNewEntrant = qualifiedNewEntrants.sort((a, b) => b.roi - a.roi)[0]
+      storyOfTheWeek.new_entrant_watch = {
+        trader_username: bestNewEntrant.trader_username,
+        trader_wallet: bestNewEntrant.trader_wallet,
+        current_rank: bestNewEntrant.current_rank,
+        roi: bestNewEntrant.roi,
+        story: `${bestNewEntrant.trader_username} entered the leaderboard at rank #${bestNewEntrant.current_rank} with an impressive ${bestNewEntrant.roi_formatted} ROI.`
+      }
+      console.log(`✅ Best new entrant: ${bestNewEntrant.trader_username}`)
+    }
+    
+    // Find unusual patterns - multiple traders in same market
+    if (topCurrentMarkets.length > 0) {
+      const marketWithMostTraders = topCurrentMarkets.sort((a, b) => 
+        b.top_traders_positioned.length - a.top_traders_positioned.length
+      )[0]
+      
+      if (marketWithMostTraders.top_traders_positioned.length >= 3) {
+        const traderNames = marketWithMostTraders.top_traders_positioned
+          .slice(0, 3)
+          .map(t => t.trader_username)
+        
+        storyOfTheWeek.unusual_pattern = {
+          description: `${marketWithMostTraders.top_traders_positioned.length} top traders are positioned in the same market: "${truncate(marketWithMostTraders.market_title, 60)}"`,
+          traders_involved: traderNames
+        }
+        console.log(`✅ Unusual pattern: ${marketWithMostTraders.top_traders_positioned.length} traders in same market`)
+      }
+    }
+  } catch (err) {
+    console.error('❌ Error generating Story of the Week:', err)
+  }
+
   return {
     topTraders,
     categoryLeaderboards,
@@ -1270,11 +1380,7 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
       highVolumeConsistent
     },
     topCurrentMarkets,
-    storyOfTheWeek: {
-      biggest_mover: null,
-      new_entrant_watch: null,
-      unusual_pattern: null
-    },
+    storyOfTheWeek,
     topByPnl,
     topByRoi,
     topByVolume,
