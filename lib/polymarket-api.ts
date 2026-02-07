@@ -26,6 +26,7 @@ export interface LeaderboardTrader {
   rank: number;
   roi: number; // Calculated as (pnl / volume) * 100
   marketsTraded: number;
+  profileImage?: string | null;
 }
 
 // Category mapping (same as discover page)
@@ -111,7 +112,8 @@ export async function fetchLeaderboard(options: {
         volume: Math.round(volume * 100) / 100,
         rank: parseInt(trader.rank) || 0,
         roi: Math.round(roi * 100) / 100,
-        marketsTraded: marketsTraded
+        marketsTraded: marketsTraded,
+        profileImage: trader.profileImage || null
       };
     });
 
@@ -124,8 +126,8 @@ export async function fetchLeaderboard(options: {
 }
 
 // Fetch all category leaderboards in parallel
-export async function fetchAllCategoryLeaderboards(limit: number = 10): Promise<Record<string, LeaderboardTrader[]>> {
-  const cacheKey = `all_categories_${limit}`;
+export async function fetchAllCategoryLeaderboards(limit: number = 10, timePeriod: 'day' | 'week' | 'month' | 'all' = 'month'): Promise<Record<string, LeaderboardTrader[]>> {
+  const cacheKey = `all_categories_${limit}_${timePeriod}`;
   const cached = getCached(cacheKey);
   if (cached) {
     console.log('📦 Cache hit for all category leaderboards');
@@ -137,7 +139,7 @@ export async function fetchAllCategoryLeaderboards(limit: number = 10): Promise<
   console.log('🔄 Fetching all category leaderboards in parallel...');
   
   const results = await Promise.allSettled(
-    categories.map(category => fetchLeaderboard({ limit, category, orderBy: 'PNL' }))
+    categories.map(category => fetchLeaderboard({ limit, category, orderBy: 'PNL', timePeriod }))
   );
 
   const leaderboards: Record<string, LeaderboardTrader[]> = {};

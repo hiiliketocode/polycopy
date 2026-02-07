@@ -55,6 +55,38 @@ function formatROI(roi: number | null): string {
   return `${sign}${roi.toFixed(1)}%`
 }
 
+// Helper to generate shareable quote for social media
+function generateShareableQuote(trader: {
+  username: string
+  winRate: number | null
+  totalResolved: number
+  primaryCategory: string
+  tradesPerDay: number | null
+  roi: number
+}): string {
+  const parts: string[] = []
+  
+  parts.push(`📊 ${trader.username}`)
+  
+  if (trader.roi > 0) {
+    parts.push(`- ${trader.roi > 0 ? '+' : ''}${trader.roi.toFixed(1)}% ROI`)
+  }
+  
+  if (trader.winRate !== null && trader.totalResolved >= 10) {
+    parts.push(`- ${trader.winRate.toFixed(0)}% win rate (${trader.totalResolved} resolved)`)
+  }
+  
+  if (trader.primaryCategory && trader.primaryCategory !== 'Unknown') {
+    parts.push(`- Specializes in ${trader.primaryCategory}`)
+  }
+  
+  if (trader.tradesPerDay !== null && trader.tradesPerDay > 0.5) {
+    parts.push(`- ${trader.tradesPerDay.toFixed(1)} trades/day`)
+  }
+  
+  return parts.join('\n')
+}
+
 // Helper to categorize markets (same logic as trader-details API)
 function categorizeMarket(title: string): string {
   const lowerTitle = title.toLowerCase()
@@ -88,6 +120,7 @@ export interface FormattedTrader {
   roi_formatted: string
   rank: number
   marketsTraded: number
+  profileImage?: string | null // Profile image URL from Polymarket
 }
 
 export interface SectionAData {
@@ -129,6 +162,9 @@ export interface SectionAData {
     wow_status: 'heating_up' | 'cooling_down' | 'stable' | 'new'
     last_week_roi: number | null
     prev_week_roi: number | null
+    // NEW: Social media content helpers
+    profile_url: string // polycopy.app/trader/[wallet]
+    shareable_quote: string // Pre-formatted quote for social media
   }>
   // NEW: Social Media Content Insights
   positionChanges: Array<{
@@ -181,6 +217,11 @@ export interface SectionAData {
       volume_formatted: string
     }>
   }
+  // NEW: Top performers by different metrics
+  topByPnl: FormattedTrader[] // Top 5 by absolute P&L
+  topByRoi: FormattedTrader[] // Top 5 by ROI%
+  topByVolume: FormattedTrader[] // Top 5 whales by volume
+  topByTradeCount: FormattedTrader[] // Top 5 most active traders
   // Errors
   apiErrors: string[]
 }
@@ -306,7 +347,8 @@ function formatTrader(trader: LeaderboardTrader): FormattedTrader {
     roi: trader.roi,
     roi_formatted: formatPercent(trader.roi),
     rank: trader.rank,
-    marketsTraded: trader.marketsTraded
+    marketsTraded: trader.marketsTraded,
+    profileImage: (trader as any).profileImage || null // Include profile image
   }
 }
 
@@ -315,10 +357,11 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
   
   console.log('🔄 Fetching Polymarket data using leaderboard API...')
   
-  // Fetch overall leaderboard and all category leaderboards in parallel
+  // IMPORTANT: Use 'all' time period to match trader profile pages
+  // This ensures consistency between admin dashboard and public-facing trader profiles
   const [overallResult, categoriesResult] = await Promise.allSettled([
-    fetchLeaderboard({ limit: 30, orderBy: 'PNL', category: 'overall' }),
-    fetchAllCategoryLeaderboards(10)
+    fetchLeaderboard({ limit: 30, orderBy: 'PNL', category: 'overall', timePeriod: 'all' }),
+    fetchAllCategoryLeaderboards(10, 'all')
   ])
 
   // Process overall leaderboard
@@ -498,6 +541,16 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
           // Find trader username
           const traderUsername = trades[0]?.trader_username || `${wallet.slice(0, 6)}...${wallet.slice(-4)}`
           
+          // Generate shareable quote for social media
+          const shareableQuote = generateShareableQuote({
+            username: traderUsername,
+            winRate,
+            totalResolved: resolvedTrades.length,
+            primaryCategory,
+            tradesPerDay,
+            roi: topTraders.find(t => t.wallet === wallet)?.roi || 0
+          })
+          
           return {
             trader_wallet: wallet,
             trader_username: traderUsername,
@@ -519,7 +572,9 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
             wow_roi_change_formatted: wowRoiChange !== null ? formatROI(wowRoiChange) : '--',
             wow_status: wowStatus,
             last_week_roi: lastWeekRoi,
-            prev_week_roi: prevWeekRoi
+            prev_week_roi: prevWeekRoi,
+            profile_url: `https://polycopy.app/trader/${wallet}`,
+            shareable_quote: shareableQuote
           }
         })
         
@@ -532,6 +587,12 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
     console.error('❌ Error fetching trader analytics:', err)
     apiErrors.push('Failed to generate trader analytics')
   }
+
+  // NEW: Top performers by different metrics
+  const topByPnl = [...topTraders].sort((a, b) => b.pnl - a.pnl).slice(0, 5)
+  const topByRoi = [...topTraders].sort((a, b) => b.roi - a.roi).slice(0, 5)
+  const topByVolume = [...topTraders].sort((a, b) => b.volume - a.volume).slice(0, 5)
+  const topByTradeCount = [...topTraders].sort((a, b) => b.marketsTraded - a.marketsTraded).slice(0, 5)
 
   // NEW: Calculate position changes and new entrants
   let positionChanges: SectionAData['positionChanges'] = []
@@ -624,6 +685,10 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
       highRoiLowVolume,
       highVolumeConsistent
     },
+    topByPnl,
+    topByRoi,
+    topByVolume,
+    topByTradeCount,
     apiErrors
   }
 }

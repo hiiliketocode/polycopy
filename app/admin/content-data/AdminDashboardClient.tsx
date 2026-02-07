@@ -506,13 +506,13 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
         
         <div className="bg-[#FDB022] p-4 rounded-t-lg -mb-4">
           <h2 className="text-2xl font-bold text-black">📈 SECTION A: POLYMARKET TRADER DATA</h2>
-          <p className="text-black/70 text-sm">Real-time leaderboard from Polymarket (same as Discover page)</p>
+          <p className="text-black/70 text-sm">Real-time leaderboard from Polymarket (all-time stats, same as trader profiles)</p>
         </div>
         
         <div className="space-y-6 border-2 border-[#FDB022]/30 rounded-b-lg p-4 md:p-6">
           
           {/* 1. Top 30 Traders (Overall Leaderboard) with Sort Options */}
-          <Section title="🏆 TOP 30 TRADERS (OVERALL LEADERBOARD) - Last 30 Days">
+          <Section title="🏆 TOP 30 TRADERS (OVERALL LEADERBOARD) - All-Time Stats">
             {/* Sort Buttons */}
             <div className="flex gap-2 mb-4">
               <span className="text-gray-400 text-sm mr-2">Sort by:</span>
@@ -547,7 +547,7 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
 
           {/* 2. Category Leaderboards */}
           {Object.keys(sectionA.categoryLeaderboards).length > 0 && (
-            <Section title="📊 CATEGORY LEADERBOARDS (TOP 10 BY ROI) - Last 30 Days">
+            <Section title="📊 CATEGORY LEADERBOARDS (TOP 10 BY ROI) - All-Time Stats">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {Object.entries(sectionA.categoryLeaderboards).map(([category, traders]) => (
                   <div key={category} className="border border-[#374151] rounded-lg p-4">
@@ -676,6 +676,15 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
                           </div>
                         </div>
                       )}
+                      
+                      {/* Social Media Quick Links */}
+                      <div className="mt-3 pt-3 border-t border-[#374151]">
+                        <div className="text-gray-400 text-xs mb-2">📱 Social Media Content:</div>
+                        <pre className="text-xs bg-black/30 p-2 rounded whitespace-pre-wrap font-mono">
+                          {trader.shareable_quote}
+                          {'\n\n'}📈 Track them: {trader.profile_url}
+                        </pre>
+                      </div>
                     </div>
                   )
                 })}
@@ -785,6 +794,91 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
               </div>
             </Section>
           )}
+
+          {/* 7. NEW: Top Performers by Metric */}
+          <Section title="🎯 TOP PERFORMERS BY METRIC">
+            <p className="text-sm text-gray-400 mb-4">
+              💡 Different ways to rank traders - useful for diverse content angles
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Top by P&L */}
+              <div className="border border-[#374151] rounded-lg p-4">
+                <h4 className="text-[#FDB022] font-bold mb-3">💰 TOP 5 BY P&L (Absolute Profits)</h4>
+                <div className="space-y-1">
+                  {sectionA.topByPnl.map((trader, i) => (
+                    <div key={trader.wallet} className="font-mono text-sm">
+                      {i + 1}.{' '}
+                      <button
+                        onClick={() => handleTraderClick(trader.wallet)}
+                        className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors"
+                      >
+                        {trader.displayName}
+                      </button>{' '}
+                      — <span className="text-green-400 font-bold">{trader.pnl_formatted}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Top by ROI */}
+              <div className="border border-[#374151] rounded-lg p-4">
+                <h4 className="text-[#FDB022] font-bold mb-3">📊 TOP 5 BY ROI% (Best Returns)</h4>
+                <div className="space-y-1">
+                  {sectionA.topByRoi.map((trader, i) => (
+                    <div key={trader.wallet} className="font-mono text-sm">
+                      {i + 1}.{' '}
+                      <button
+                        onClick={() => handleTraderClick(trader.wallet)}
+                        className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors"
+                      >
+                        {trader.displayName}
+                      </button>{' '}
+                      — <span className="text-green-400 font-bold">{trader.roi_formatted}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Top by Volume */}
+              <div className="border border-[#374151] rounded-lg p-4">
+                <h4 className="text-[#FDB022] font-bold mb-3">🐋 TOP 5 WHALES (By Volume)</h4>
+                <div className="space-y-1">
+                  {sectionA.topByVolume.map((trader, i) => (
+                    <div key={trader.wallet} className="font-mono text-sm">
+                      {i + 1}.{' '}
+                      <button
+                        onClick={() => handleTraderClick(trader.wallet)}
+                        className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors"
+                      >
+                        {trader.displayName}
+                      </button>{' '}
+                      — <span className="text-[#FDB022] font-bold">{trader.volume_formatted}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Top by Trade Count */}
+              <div className="border border-[#374151] rounded-lg p-4">
+                <h4 className="text-[#FDB022] font-bold mb-3">⚡ TOP 5 MOST ACTIVE (By Trades)</h4>
+                <div className="space-y-1">
+                  {sectionA.topByTradeCount.map((trader, i) => (
+                    <div key={trader.wallet} className="font-mono text-sm">
+                      {i + 1}.{' '}
+                      <button
+                        onClick={() => handleTraderClick(trader.wallet)}
+                        className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors"
+                      >
+                        {trader.displayName}
+                      </button>{' '}
+                      — <span className="text-blue-400 font-bold">{trader.marketsTraded} trades</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </Section>
           
         </div>
 
@@ -1211,14 +1305,6 @@ function TraderModal({
             <p className="text-red-400 mb-4">❌ {error}</p>
             <p className="text-gray-500 text-sm mb-4">This trader may not have been copied on Polycopy yet.</p>
             <div className="flex gap-3 justify-center">
-              <a
-                href={`https://polymarket.com/profile/${wallet}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2 bg-[#FDB022] hover:bg-[#F59E0B] text-black font-bold rounded-lg"
-              >
-                View on Polymarket →
-              </a>
               <button
                 onClick={onClose}
                 className="px-4 py-2 bg-[#374151] hover:bg-[#4b5563] text-white rounded-lg"
@@ -1244,14 +1330,6 @@ function TraderModal({
                 </button>
               </div>
               <div className="flex gap-3 mt-3">
-                <a
-                  href={`https://polymarket.com/profile/${wallet}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-[#FDB022] hover:underline"
-                >
-                  View on Polymarket →
-                </a>
                 <a
                   href={`/trader/${wallet}`}
                   target="_blank"
@@ -1420,7 +1498,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
   lines.push('')
   
   // 1. Top 30 Traders (Overall Leaderboard) - Show all 3 sort variants
-  lines.push('🏆 TOP 30 TRADERS (OVERALL LEADERBOARD) - Last 30 Days')
+  lines.push('🏆 TOP 30 TRADERS (OVERALL LEADERBOARD) - All-Time Stats')
   lines.push('───────────────────────────────────────────────')
   
   if (sectionA.topTraders.length === 0) {
@@ -1464,7 +1542,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
   // 2. Category Leaderboards
   const categoryCount = Object.keys(sectionA.categoryLeaderboards).length
   if (categoryCount > 0) {
-    lines.push('📊 CATEGORY LEADERBOARDS (TOP 10 BY ROI) - Last 30 Days')
+    lines.push('📊 CATEGORY LEADERBOARDS (TOP 10 BY ROI) - All-Time Stats')
     lines.push('───────────────────────────────────────────────')
     lines.push('')
     
@@ -1514,6 +1592,11 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
         const catBreakdown = trader.categories.map(c => `${c.category}: ${c.percentage}%`).join(', ')
         lines.push(`  Categories: ${catBreakdown}`)
       }
+      
+      // Add shareable quote
+      lines.push(`  📱 Social Media Quote:`)
+      lines.push(`  ${trader.shareable_quote.split('\n').join('\n  ')}`)
+      lines.push(`  📈 Track: ${trader.profile_url}`)
       
       lines.push('')
     })
@@ -1568,6 +1651,45 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     lines.push('')
     lines.push('')
   }
+  
+  // 7. Top Performers by Metric
+  lines.push('🎯 TOP PERFORMERS BY METRIC')
+  lines.push('───────────────────────────────────────────────')
+  lines.push('')
+  
+  if (sectionA.topByPnl.length > 0) {
+    lines.push('💰 TOP 5 BY P&L (Absolute Profits)')
+    sectionA.topByPnl.forEach((trader, i) => {
+      lines.push(`${i + 1}. ${trader.displayName} — ${trader.pnl_formatted}`)
+    })
+    lines.push('')
+  }
+  
+  if (sectionA.topByRoi.length > 0) {
+    lines.push('📊 TOP 5 BY ROI% (Best Returns)')
+    sectionA.topByRoi.forEach((trader, i) => {
+      lines.push(`${i + 1}. ${trader.displayName} — ${trader.roi_formatted}`)
+    })
+    lines.push('')
+  }
+  
+  if (sectionA.topByVolume.length > 0) {
+    lines.push('🐋 TOP 5 WHALES (By Volume)')
+    sectionA.topByVolume.forEach((trader, i) => {
+      lines.push(`${i + 1}. ${trader.displayName} — ${trader.volume_formatted}`)
+    })
+    lines.push('')
+  }
+  
+  if (sectionA.topByTradeCount.length > 0) {
+    lines.push('⚡ TOP 5 MOST ACTIVE (By Trades)')
+    sectionA.topByTradeCount.forEach((trader, i) => {
+      lines.push(`${i + 1}. ${trader.displayName} — ${trader.marketsTraded} trades`)
+    })
+    lines.push('')
+  }
+  
+  lines.push('')
   
   // ═══════════════════════════════════════════════
   // SECTION B: POLYCOPY PLATFORM DATA
@@ -1789,7 +1911,6 @@ function buildTraderContent(details: TraderDetails): string {
   lines.push('🔗 QUICK LINKS')
   lines.push('───────────────────────────────────────────────')
   lines.push(`Polycopy Profile: polycopy.app/trader/${lifetimeStats.trader_wallet}`)
-  lines.push(`Polymarket Profile: polymarket.com/profile/${lifetimeStats.trader_wallet}`)
   lines.push('')
   lines.push('═══════════════════════════════════════════════')
   
