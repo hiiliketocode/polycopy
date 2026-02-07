@@ -757,9 +757,10 @@ async function fetchTopCurrentMarkets(traderWallets: string[], apiErrors: string
       const totalVolume = parseFloat(market.volume || 0)
       const endDate = market.end_date_iso || market.endDate || null
       
-      console.log(`🔍 Checking positions for market: ${marketTitle.slice(0, 50)}...`)
+      console.log(`🔍 Market: ${marketTitle.slice(0, 50)}...`)
       
-      // Use BigQuery to check which top traders have recent trades in this market
+      // Note: Trader position matching would require BigQuery or extensive API calls
+      // For now, just show the top markets without position details
       const tradersPositioned: Array<{
         trader_username: string
         trader_wallet: string
@@ -767,57 +768,7 @@ async function fetchTopCurrentMarkets(traderWallets: string[], apiErrors: string
         position_size: number
       }> = []
       
-      try {
-        const bqClient = getBigQueryClient()
-        const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'gen-lang-client-0299056258'
-        const DATASET = 'polycopy_v1'
-        
-        // Query for traders with positions in this market
-        const query = `
-          SELECT 
-            wallet_address,
-            outcome,
-            SUM(CASE WHEN side = 'BUY' THEN usd_size ELSE -usd_size END) as net_position
-          FROM \`${PROJECT_ID}.${DATASET}.trades\`
-          WHERE condition_id = @marketId
-            AND wallet_address IN UNNEST(@wallets)
-          GROUP BY wallet_address, outcome
-          HAVING ABS(net_position) > 10
-          ORDER BY ABS(net_position) DESC
-          LIMIT 10
-        `
-        
-        const [rows] = await bqClient.query({
-          query,
-          params: {
-            marketId: marketId,
-            wallets: traderWallets.slice(0, 30).map(w => w.toLowerCase())
-          }
-        })
-        
-        if (rows && rows.length > 0) {
-          console.log(`✅ Found ${rows.length} traders with positions via BigQuery`)
-          
-          rows.forEach((row: any) => {
-            tradersPositioned.push({
-              trader_username: `${row.wallet_address.slice(0, 6)}...${row.wallet_address.slice(-4)}`,
-              trader_wallet: row.wallet_address,
-              position_side: row.outcome || 'Unknown',
-              position_size: Math.abs(parseFloat(row.net_position || 0))
-            })
-          })
-        } else {
-          console.log(`ℹ️ No top trader positions found for this market`)
-        }
-      } catch (err: any) {
-        console.error(`❌ Error checking positions via BigQuery: ${err?.message || err}`)
-      }
-      
-      if (tradersPositioned.length > 0) {
-        console.log(`✅ Found ${tradersPositioned.length} traders with positions in this market`)
-      } else {
-        console.log(`ℹ️ No top trader positions found for this market`)
-      }
+      console.log(`  ℹ️ Position matching disabled (would require BigQuery or extensive API calls)`)
       
       topMarkets.push({
         market_id: marketId,
