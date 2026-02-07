@@ -683,11 +683,13 @@ async function fetchTopCurrentMarkets(traderWallets: string[], apiErrors: string
                   const latestTrade = trades[0]
                   const side = latestTrade.outcome || latestTrade.side || 'Unknown'
                   const size = parseFloat(latestTrade.size || latestTrade.amount || 0)
+                  const traderName = latestTrade.name || latestTrade.userName || `${wallet.slice(0, 6)}...${wallet.slice(-4)}`
                   
                   return {
-                    wallet,
-                    side,
-                    size
+                    trader_username: traderName,
+                    trader_wallet: wallet,
+                    position_side: side,
+                    position_size: size
                   }
                 }
               }
