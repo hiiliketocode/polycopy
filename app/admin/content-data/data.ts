@@ -8,6 +8,7 @@ import {
   LeaderboardTrader
 } from '@/lib/polymarket-api'
 import { resolveOrdersTableName } from '@/lib/orders/table'
+import { getBigQueryClient } from '@/lib/bigquery/client'
 
 // Create service role client for admin queries
 function createServiceClient() {
@@ -145,9 +146,20 @@ function generateNarrativeHook(trader: {
 }
 
 // Helper to calculate days since date
-function daysSince(dateString: string | null): number | null {
+function daysSince(dateString: string | number | null): number | null {
   if (!dateString) return null
-  const date = new Date(dateString)
+  
+  // Handle both Unix timestamps (seconds or milliseconds) and ISO date strings
+  let date: Date
+  if (typeof dateString === 'number') {
+    // If it's a number, check if it's in seconds or milliseconds
+    // Timestamps after year 2000 in seconds are > 946684800
+    // Timestamps in milliseconds are > 946684800000
+    date = new Date(dateString < 10000000000 ? dateString * 1000 : dateString)
+  } else {
+    date = new Date(dateString)
+  }
+  
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   return Math.floor(diffMs / (1000 * 60 * 60 * 24))
@@ -563,7 +575,7 @@ async function enrichWithLastTradeData(traders: FormattedTrader[], apiErrors: st
   }
 }
 
-// FEATURE 3: Helper to fetch recent winning trades for a trader
+// FEATURE 3: Helper to fetch recent winning trades for a trader using BigQuery
 async function fetchRecentWinningTrades(wallet: string): Promise<Array<{
   market_title: string
   entry_price: number
@@ -574,61 +586,85 @@ async function fetchRecentWinningTrades(wallet: string): Promise<Array<{
   trade_date_formatted: string
 }>> {
   try {
-    console.log(`🔍 Fetching winning trades for ${wallet.slice(0, 10)}...`)
+    console.log(`🔍 Fetching winning trades from BigQuery for ${wallet.slice(0, 10)}...`)
     
-    const response = await fetch(
-      `https://data-api.polymarket.com/trades?user=${wallet}&limit=100`,
-      { signal: AbortSignal.timeout(10000) } // Increased timeout from 8s to 10s
-    )
+    const bqClient = getBigQueryClient()
+    const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'gen-lang-client-0299056258'
+    const DATASET = 'polycopy_v1'
     
-    if (!response.ok) {
-      console.warn(`❌ API returned ${response.status} for ${wallet.slice(0, 10)}...`)
+    // Query for resolved markets where trader made profit
+    const query = `
+      WITH trader_trades AS (
+        SELECT 
+          t.condition_id,
+          t.wallet_address,
+          t.side,
+          t.outcome,
+          t.price,
+          t.size,
+          t.usd_size,
+          t.timestamp,
+          m.title,
+          m.resolved_outcome,
+          m.winning_side
+        FROM \`${PROJECT_ID}.${DATASET}.trades\` t
+        INNER JOIN \`${PROJECT_ID}.${DATASET}.markets\` m 
+          ON t.condition_id = m.condition_id
+        WHERE t.wallet_address = @wallet
+          AND m.closed = TRUE
+          AND m.resolved_outcome IS NOT NULL
+      ),
+      winning_trades AS (
+        SELECT
+          title as market_title,
+          usd_size as entry_price,
+          outcome,
+          timestamp,
+          -- Calculate if this was a winning trade
+          CASE 
+            WHEN (side = 'BUY' AND outcome = resolved_outcome) THEN usd_size * (1 / price - 1)
+            WHEN (side = 'SELL' AND outcome != resolved_outcome) THEN usd_size * (price / (1 - price) - 1)
+            ELSE 0
+          END as profit,
+          usd_size as cost
+        FROM trader_trades
+      )
+      SELECT 
+        market_title,
+        entry_price,
+        outcome,
+        profit,
+        cost,
+        (profit / NULLIF(cost, 0)) * 100 as roi,
+        timestamp as trade_date
+      FROM winning_trades
+      WHERE profit > 0
+      ORDER BY roi DESC
+      LIMIT 3
+    `
+    
+    const [rows] = await bqClient.query({
+      query,
+      params: { wallet: wallet.toLowerCase() }
+    })
+    
+    if (!rows || rows.length === 0) {
+      console.log(`📊 No winning trades found in BigQuery for ${wallet.slice(0, 10)}...`)
       return []
     }
     
-    const trades = await response.json()
-    if (!Array.isArray(trades)) {
-      console.warn(`❌ Unexpected response format for ${wallet.slice(0, 10)}...`)
-      return []
-    }
+    console.log(`✅ Found ${rows.length} winning trades for ${wallet.slice(0, 10)}...`)
     
-    console.log(`📊 Got ${trades.length} trades for ${wallet.slice(0, 10)}...`)
+    return rows.map((row: any) => ({
+      market_title: row.market_title || 'Unknown Market',
+      entry_price: parseFloat(row.entry_price || 0),
+      outcome: row.outcome || 'Unknown',
+      roi: parseFloat(row.roi || 0),
+      roi_formatted: formatROI(parseFloat(row.roi || 0)),
+      trade_date: row.trade_date || '',
+      trade_date_formatted: formatDate(row.trade_date || '')
+    }))
     
-    // Filter to trades where:
-    // 1. Market is resolved
-    // 2. They made money (positive P&L)
-    // 3. Has enough data to calculate ROI
-    const winningTrades = trades
-      .filter(trade => {
-        // Check if trade has P&L data or outcome
-        const hasOutcome = trade.outcome || trade.side
-        const hasPnl = trade.pnl !== null && trade.pnl !== undefined && trade.pnl > 0
-        
-        return hasOutcome && hasPnl
-      })
-      .map(trade => {
-        const pnl = parseFloat(trade.pnl || 0)
-        const size = parseFloat(trade.size || trade.amount || 1)
-        const price = parseFloat(trade.price || 0)
-        const cost = size * price
-        const roi = cost > 0 ? (pnl / cost) * 100 : 0
-        
-        return {
-          market_title: trade.market?.question || trade.market_title || 'Unknown Market',
-          entry_price: price,
-          outcome: trade.outcome || trade.side || 'Unknown',
-          roi: roi,
-          roi_formatted: formatROI(roi),
-          trade_date: trade.timestamp || trade.created_at || '',
-          trade_date_formatted: formatDate(trade.timestamp || trade.created_at || '')
-        }
-      })
-      .filter(trade => trade.roi > 0) // Only winning trades
-      .sort((a, b) => b.roi - a.roi) // Sort by ROI descending
-      .slice(0, 3) // Top 3
-    
-    console.log(`✅ Found ${winningTrades.length} winning trades for ${wallet.slice(0, 10)}...`)
-    return winningTrades
   } catch (err: any) {
     console.error(`❌ Failed to fetch winning trades for ${wallet.slice(0, 10)}...:`, err?.message || err)
     return []
@@ -656,24 +692,46 @@ async function fetchTopCurrentMarkets(traderWallets: string[], apiErrors: string
   try {
     console.log('🔄 Fetching top current markets from Polymarket...')
     
-    // Fetch top markets by 24h volume
+    // Fetch top ACTIVE markets by 24h volume (closed=false filters out resolved markets)
     const response = await fetch(
-      'https://gamma-api.polymarket.com/markets?limit=20&order=volume24hr',
+      'https://gamma-api.polymarket.com/markets?limit=50&closed=false&order=volume24hr',
       { signal: AbortSignal.timeout(10000) }
     )
     
     if (!response.ok) {
-      apiErrors.push('Failed to fetch top markets')
+      const message = 'Failed to fetch top markets'
+      console.error(`❌ ${message}: ${response.status}`)
+      apiErrors.push(message)
       return []
     }
     
     const markets = await response.json()
-    if (!Array.isArray(markets)) return []
+    if (!Array.isArray(markets)) {
+      console.error('❌ Markets response is not an array')
+      return []
+    }
+    
+    console.log(`📊 Fetched ${markets.length} active markets, filtering for top 10 by volume...`)
     
     const topMarkets = []
     
-    // For each market, check if any top traders have positions
-    for (const market of markets.slice(0, 10)) {
+    // Get top 10 markets by 24h volume
+    const sortedMarkets = markets
+      .filter(m => {
+        const vol24h = parseFloat(m.volume24hr || m.volume_24h || 0)
+        return vol24h > 0
+      })
+      .sort((a, b) => {
+        const volA = parseFloat(a.volume24hr || a.volume_24h || 0)
+        const volB = parseFloat(b.volume24hr || b.volume_24h || 0)
+        return volB - volA
+      })
+      .slice(0, 10)
+    
+    console.log(`📈 Processing top ${sortedMarkets.length} markets...`)
+    
+    // For each market, check if any top traders have positions using Supabase
+    for (const market of sortedMarkets) {
       const marketId = market.condition_id || market.id
       const marketTitle = market.question || market.title || 'Unknown Market'
       const marketSlug = market.slug || ''
@@ -682,7 +740,9 @@ async function fetchTopCurrentMarkets(traderWallets: string[], apiErrors: string
       const totalVolume = parseFloat(market.volume || 0)
       const endDate = market.end_date_iso || market.endDate || null
       
-      // Check which top traders have positions in this market
+      console.log(`🔍 Checking positions for market: ${marketTitle.slice(0, 50)}...`)
+      
+      // Use BigQuery to check which top traders have recent trades in this market
       const tradersPositioned: Array<{
         trader_username: string
         trader_wallet: string
@@ -690,73 +750,73 @@ async function fetchTopCurrentMarkets(traderWallets: string[], apiErrors: string
         position_size: number
       }> = []
       
-      // Batch check traders for this market
-      const batchSize = 5
-      for (let i = 0; i < Math.min(traderWallets.length, 30); i += batchSize) {
-        const batch = traderWallets.slice(i, i + batchSize)
+      try {
+        const bqClient = getBigQueryClient()
+        const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'gen-lang-client-0299056258'
+        const DATASET = 'polycopy_v1'
         
-        const results = await Promise.allSettled(
-          batch.map(async (wallet) => {
-            try {
-              const tradesResponse = await fetch(
-                `https://data-api.polymarket.com/trades?user=${wallet}&market=${marketId}&limit=10`,
-                { signal: AbortSignal.timeout(5000) }
-              )
-              
-              if (tradesResponse.ok) {
-                const trades = await tradesResponse.json()
-                if (Array.isArray(trades) && trades.length > 0) {
-                  // Get most recent position
-                  const latestTrade = trades[0]
-                  const side = latestTrade.outcome || latestTrade.side || 'Unknown'
-                  const size = parseFloat(latestTrade.size || latestTrade.amount || 0)
-                  const traderName = latestTrade.name || latestTrade.userName || `${wallet.slice(0, 6)}...${wallet.slice(-4)}`
-                  
-                  return {
-                    trader_username: traderName,
-                    trader_wallet: wallet,
-                    position_side: side,
-                    position_size: size
-                  }
-                }
-              }
-              return null
-            } catch {
-              return null
-            }
-          })
-        )
+        // Query for traders with positions in this market
+        const query = `
+          SELECT 
+            wallet_address,
+            outcome,
+            SUM(CASE WHEN side = 'BUY' THEN usd_size ELSE -usd_size END) as net_position
+          FROM \`${PROJECT_ID}.${DATASET}.trades\`
+          WHERE condition_id = @marketId
+            AND wallet_address IN UNNEST(@wallets)
+          GROUP BY wallet_address, outcome
+          HAVING ABS(net_position) > 10
+          ORDER BY ABS(net_position) DESC
+          LIMIT 10
+        `
         
-        results.forEach((result) => {
-          if (result.status === 'fulfilled' && result.value) {
-            tradersPositioned.push(result.value)
+        const [rows] = await bqClient.query({
+          query,
+          params: {
+            marketId: marketId,
+            wallets: traderWallets.slice(0, 30).map(w => w.toLowerCase())
           }
         })
         
-        // Add delay between batches
-        if (i + batchSize < Math.min(traderWallets.length, 30)) {
-          await new Promise(resolve => setTimeout(resolve, 200))
+        if (rows && rows.length > 0) {
+          console.log(`✅ Found ${rows.length} traders with positions via BigQuery`)
+          
+          rows.forEach((row: any) => {
+            tradersPositioned.push({
+              trader_username: `${row.wallet_address.slice(0, 6)}...${row.wallet_address.slice(-4)}`,
+              trader_wallet: row.wallet_address,
+              position_side: row.outcome || 'Unknown',
+              position_size: Math.abs(parseFloat(row.net_position || 0))
+            })
+          })
+        } else {
+          console.log(`ℹ️ No top trader positions found for this market`)
         }
+      } catch (err: any) {
+        console.error(`❌ Error checking positions via BigQuery: ${err?.message || err}`)
       }
       
-      // Only include markets where at least one top trader has a position
       if (tradersPositioned.length > 0) {
-        topMarkets.push({
-          market_id: marketId,
-          market_title: marketTitle,
-          market_slug: marketSlug,
-          category,
-          volume_24h: volume24h,
-          volume_24h_formatted: formatCurrency(volume24h),
-          total_volume: totalVolume,
-          total_volume_formatted: formatCurrency(totalVolume),
-          end_date: endDate,
-          top_traders_positioned: tradersPositioned
-        })
+        console.log(`✅ Found ${tradersPositioned.length} traders with positions in this market`)
+      } else {
+        console.log(`ℹ️ No top trader positions found for this market`)
       }
+      
+      topMarkets.push({
+        market_id: marketId,
+        market_title: marketTitle,
+        market_slug: marketSlug,
+        category,
+        volume_24h: volume24h,
+        volume_24h_formatted: formatCurrency(volume24h),
+        total_volume: totalVolume,
+        total_volume_formatted: formatCurrency(totalVolume),
+        end_date: endDate,
+        top_traders_positioned: tradersPositioned
+      })
     }
     
-    console.log(`✅ Found ${topMarkets.length} markets with top trader positions`)
+    console.log(`✅ Processed ${topMarkets.length} top current markets`)
     return topMarkets
   } catch (err) {
     console.error('❌ Failed to fetch top current markets:', err)
