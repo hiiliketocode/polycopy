@@ -530,7 +530,7 @@ async function enrichWithLastTradeData(traders: FormattedTrader[], apiErrors: st
               trader.days_since_last_trade = daysSince(lastTradeDate)
               
               // Calculate active status
-              const daysSinceLastTrade = trader.days_since_last_trade || 999
+              const daysSinceLastTrade = trader.days_since_last_trade ?? 999
               if (daysSinceLastTrade < 7) {
                 trader.active_status = 'ACTIVE'
               } else if (daysSinceLastTrade < 30) {
@@ -576,7 +576,7 @@ async function enrichWithLastTradeData(traders: FormattedTrader[], apiErrors: st
 }
 
 // FEATURE 3: Helper to fetch recent winning trades for a trader using BigQuery
-async function fetchRecentWinningTrades(wallet: string): Promise<Array<{
+async function fetchRecentWinningTrades(wallet: string, apiErrors: string[]): Promise<Array<{
   market_title: string
   entry_price: number
   outcome: string
@@ -588,85 +588,95 @@ async function fetchRecentWinningTrades(wallet: string): Promise<Array<{
   try {
     console.log(`🔍 Fetching winning trades from BigQuery for ${wallet.slice(0, 10)}...`)
     
-    const bqClient = getBigQueryClient()
-    const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'gen-lang-client-0299056258'
-    const DATASET = 'polycopy_v1'
-    
-    // Query for resolved markets where trader made profit
-    const query = `
-      WITH trader_trades AS (
+    try {
+      const bqClient = getBigQueryClient()
+      const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'gen-lang-client-0299056258'
+      const DATASET = 'polycopy_v1'
+      
+      console.log(`  📊 BigQuery setup: PROJECT=${PROJECT_ID}, DATASET=${DATASET}`)
+      
+      // Query for resolved markets where trader made profit
+      const query = `
+        WITH trader_trades AS (
+          SELECT 
+            t.condition_id,
+            t.wallet_address,
+            t.side,
+            t.outcome,
+            t.price,
+            t.size,
+            t.usd_size,
+            t.timestamp,
+            m.title,
+            m.resolved_outcome,
+            m.winning_side
+          FROM \`${PROJECT_ID}.${DATASET}.trades\` t
+          INNER JOIN \`${PROJECT_ID}.${DATASET}.markets\` m 
+            ON t.condition_id = m.condition_id
+          WHERE t.wallet_address = @wallet
+            AND m.closed = TRUE
+            AND m.resolved_outcome IS NOT NULL
+        ),
+        winning_trades AS (
+          SELECT
+            title as market_title,
+            usd_size as entry_price,
+            outcome,
+            timestamp,
+            -- Calculate if this was a winning trade
+            CASE 
+              WHEN (side = 'BUY' AND outcome = resolved_outcome) THEN usd_size * (1 / price - 1)
+              WHEN (side = 'SELL' AND outcome != resolved_outcome) THEN usd_size * (price / (1 - price) - 1)
+              ELSE 0
+            END as profit,
+            usd_size as cost
+          FROM trader_trades
+        )
         SELECT 
-          t.condition_id,
-          t.wallet_address,
-          t.side,
-          t.outcome,
-          t.price,
-          t.size,
-          t.usd_size,
-          t.timestamp,
-          m.title,
-          m.resolved_outcome,
-          m.winning_side
-        FROM \`${PROJECT_ID}.${DATASET}.trades\` t
-        INNER JOIN \`${PROJECT_ID}.${DATASET}.markets\` m 
-          ON t.condition_id = m.condition_id
-        WHERE t.wallet_address = @wallet
-          AND m.closed = TRUE
-          AND m.resolved_outcome IS NOT NULL
-      ),
-      winning_trades AS (
-        SELECT
-          title as market_title,
-          usd_size as entry_price,
+          market_title,
+          entry_price,
           outcome,
-          timestamp,
-          -- Calculate if this was a winning trade
-          CASE 
-            WHEN (side = 'BUY' AND outcome = resolved_outcome) THEN usd_size * (1 / price - 1)
-            WHEN (side = 'SELL' AND outcome != resolved_outcome) THEN usd_size * (price / (1 - price) - 1)
-            ELSE 0
-          END as profit,
-          usd_size as cost
-        FROM trader_trades
-      )
-      SELECT 
-        market_title,
-        entry_price,
-        outcome,
-        profit,
-        cost,
-        (profit / NULLIF(cost, 0)) * 100 as roi,
-        timestamp as trade_date
-      FROM winning_trades
-      WHERE profit > 0
-      ORDER BY roi DESC
-      LIMIT 3
-    `
-    
-    const [rows] = await bqClient.query({
-      query,
-      params: { wallet: wallet.toLowerCase() }
-    })
-    
-    if (!rows || rows.length === 0) {
-      console.log(`📊 No winning trades found in BigQuery for ${wallet.slice(0, 10)}...`)
-      return []
+          profit,
+          cost,
+          (profit / NULLIF(cost, 0)) * 100 as roi,
+          timestamp as trade_date
+        FROM winning_trades
+        WHERE profit > 0
+        ORDER BY roi DESC
+        LIMIT 3
+      `
+      
+      console.log(`  🔍 Running BigQuery query for ${wallet.slice(0, 10)}...`)
+      const [rows] = await bqClient.query({
+        query,
+        params: { wallet: wallet.toLowerCase() }
+      })
+      
+      if (!rows || rows.length === 0) {
+        console.log(`  📊 No winning trades found in BigQuery for ${wallet.slice(0, 10)}...`)
+        return []
+      }
+      
+      console.log(`  ✅ Found ${rows.length} winning trades for ${wallet.slice(0, 10)}...`)
+      
+      return rows.map((row: any) => ({
+        market_title: row.market_title || 'Unknown Market',
+        entry_price: parseFloat(row.entry_price || 0),
+        outcome: row.outcome || 'Unknown',
+        roi: parseFloat(row.roi || 0),
+        roi_formatted: formatROI(parseFloat(row.roi || 0)),
+        trade_date: row.trade_date || '',
+        trade_date_formatted: formatDate(row.trade_date || '')
+      }))
+    } catch (bqError: any) {
+      console.error(`  ❌ BigQuery error for ${wallet.slice(0, 10)}:`, bqError?.message || bqError)
+      throw bqError
     }
     
-    console.log(`✅ Found ${rows.length} winning trades for ${wallet.slice(0, 10)}...`)
-    
-    return rows.map((row: any) => ({
-      market_title: row.market_title || 'Unknown Market',
-      entry_price: parseFloat(row.entry_price || 0),
-      outcome: row.outcome || 'Unknown',
-      roi: parseFloat(row.roi || 0),
-      roi_formatted: formatROI(parseFloat(row.roi || 0)),
-      trade_date: row.trade_date || '',
-      trade_date_formatted: formatDate(row.trade_date || '')
-    }))
-    
   } catch (err: any) {
-    console.error(`❌ Failed to fetch winning trades for ${wallet.slice(0, 10)}...:`, err?.message || err)
+    const message = `Failed to fetch winning trades via BigQuery`
+    console.error(`❌ ${message} for ${wallet.slice(0, 6)}...:`, err?.message || err)
+    apiErrors.push(message)
     return []
   }
 }
@@ -1167,24 +1177,27 @@ export async function fetchPolymarketData(): Promise<SectionAData> {
         console.log('🔄 Fetching recent winning trades for top traders...')
         const batchSize = 3
         const delayMs = 300
+        let totalWinningTradesFound = 0
         
         for (let i = 0; i < traderAnalytics.length; i += batchSize) {
           const batch = traderAnalytics.slice(i, i + batchSize)
           
           const winningTradesResults = await Promise.allSettled(
-            batch.map(trader => fetchRecentWinningTrades(trader.trader_wallet))
+            batch.map(trader => fetchRecentWinningTrades(trader.trader_wallet, apiErrors))
           )
           
           winningTradesResults.forEach((result, index) => {
             if (result.status === 'fulfilled') {
               batch[index].recent_wins = result.value
               if (result.value.length > 0) {
+                totalWinningTradesFound++
                 console.log(`✅ Found ${result.value.length} winning trades for ${batch[index].trader_username}`)
               } else {
                 console.log(`⚠️ No winning trades found for ${batch[index].trader_username}`)
               }
             } else if (result.status === 'rejected') {
               console.error(`❌ Failed to fetch wins for ${batch[index].trader_username}:`, result.reason)
+              apiErrors.push(`Failed to fetch winning trades for ${batch[index].trader_username}`)
             }
           })
           
