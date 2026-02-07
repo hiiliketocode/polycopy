@@ -656,7 +656,12 @@ async function fetchTopCurrentMarkets(traderWallets: string[], apiErrors: string
       const endDate = market.end_date_iso || market.endDate || null
       
       // Check which top traders have positions in this market
-      const tradersPositioned = []
+      const tradersPositioned: Array<{
+        trader_username: string
+        trader_wallet: string
+        position_side: string
+        position_size: number
+      }> = []
       
       // Batch check traders for this market
       const batchSize = 5
