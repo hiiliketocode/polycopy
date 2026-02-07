@@ -613,7 +613,7 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
                       >
                         {trader.displayName}
                       </button>{' '}
-                      <span className="text-gray-500">({trader.wallet.slice(0, 6)}...{trader.wallet.slice(-4)})</span>{' '}
+                      <span className="text-gray-500">({trader.wallet})</span>{' '}
                       — P&L: <span className={trader.pnl >= 0 ? 'text-green-400' : 'text-red-400'}>{trader.pnl_formatted}</span>{' '}
                       | ROI: <span className={trader.roi >= 0 ? 'text-green-400' : 'text-red-400'}>{trader.roi_formatted}</span>{' '}
                       | Volume: <span className="text-[#FDB022]">{trader.volume_formatted}</span>{' '}
@@ -839,7 +839,7 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
                     >
                       {trader.trader_username}
                     </button>{' '}
-                    <span className="text-gray-500">({trader.trader_wallet.slice(0, 6)}...{trader.trader_wallet.slice(-4)})</span>{' '}
+                    <span className="text-gray-500">({trader.trader_wallet})</span>{' '}
                     — Rank #{trader.current_rank} | ROI: <span className="text-green-400">{trader.roi_formatted}</span>{' '}
                     | P&L: <span className="text-[#FDB022]">{trader.pnl_formatted}</span>
                   </div>
@@ -871,6 +871,7 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
                           >
                             {trader.trader_username}
                           </button>{' '}
+                          <span className="text-gray-500">({trader.trader_wallet})</span>{' '}
                           — ROI: <span className="text-green-400">{trader.roi_formatted}</span>{' '}
                           | Vol: <span className="text-gray-400">{trader.volume_formatted}</span>
                         </div>
@@ -894,6 +895,7 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
                           >
                             {trader.trader_username}
                           </button>{' '}
+                          <span className="text-gray-500">({trader.trader_wallet})</span>{' '}
                           — ROI: <span className="text-green-400">{trader.roi_formatted}</span>{' '}
                           | Vol: <span className="text-[#FDB022]">{trader.volume_formatted}</span>
                         </div>
@@ -947,6 +949,7 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
                       >
                         {trader.displayName}
                       </button>{' '}
+                      <span className="text-gray-500">({trader.wallet})</span>{' '}
                       — <span className="text-green-400 font-bold">{trader.pnl_formatted}</span>
                     </div>
                   ))}
@@ -966,6 +969,7 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
                       >
                         {trader.displayName}
                       </button>{' '}
+                      <span className="text-gray-500">({trader.wallet})</span>{' '}
                       — <span className="text-green-400 font-bold">{trader.roi_formatted}</span>
                     </div>
                   ))}
@@ -985,6 +989,7 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
                       >
                         {trader.displayName}
                       </button>{' '}
+                      <span className="text-gray-500">({trader.wallet})</span>{' '}
                       — <span className="text-[#FDB022] font-bold">{trader.volume_formatted}</span>
                     </div>
                   ))}
@@ -1004,6 +1009,7 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
                       >
                         {trader.displayName}
                       </button>{' '}
+                      <span className="text-gray-500">({trader.wallet})</span>{' '}
                       — <span className="text-blue-400 font-bold">{trader.marketsTraded} trades</span>
                     </div>
                   ))}
@@ -1739,7 +1745,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     lines.push('')
     const byROI = [...traders].sort((a, b) => b.roi - a.roi)
     byROI.forEach((trader, i) => {
-      const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
+      const wallet = trader.wallet || 'Unknown'
       const activityStatus = trader.active_status === 'ACTIVE' ? '🟢' : trader.active_status === 'RECENT' ? '🟡' : trader.active_status === 'INACTIVE' ? '🔴' : ''
       const lastTrade = trader.days_since_last_trade !== null ? ` [Last: ${trader.days_since_last_trade}d ago]` : ''
       lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted} | Trades: ${trader.marketsTraded} ${activityStatus}${lastTrade}`)
@@ -1751,7 +1757,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     lines.push('')
     const byPNL = [...traders].sort((a, b) => b.pnl - a.pnl)
     byPNL.forEach((trader, i) => {
-      const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
+      const wallet = trader.wallet || 'Unknown'
       const activityStatus = trader.active_status === 'ACTIVE' ? '🟢' : trader.active_status === 'RECENT' ? '🟡' : trader.active_status === 'INACTIVE' ? '🔴' : ''
       const lastTrade = trader.days_since_last_trade !== null ? ` [Last: ${trader.days_since_last_trade}d ago]` : ''
       lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted} | Trades: ${trader.marketsTraded} ${activityStatus}${lastTrade}`)
@@ -1763,7 +1769,7 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     lines.push('')
     const byVolume = [...traders].sort((a, b) => b.volume - a.volume)
     byVolume.forEach((trader, i) => {
-      const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
+      const wallet = trader.wallet || 'Unknown'
       const activityStatus = trader.active_status === 'ACTIVE' ? '🟢' : trader.active_status === 'RECENT' ? '🟡' : trader.active_status === 'INACTIVE' ? '🔴' : ''
       const lastTrade = trader.days_since_last_trade !== null ? ` [Last: ${trader.days_since_last_trade}d ago]` : ''
       lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted} | Trades: ${trader.marketsTraded} ${activityStatus}${lastTrade}`)
