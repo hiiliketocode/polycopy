@@ -724,12 +724,7 @@ async function fetchTopCurrentMarkets(traderWallets: string[], apiErrors: string
           total_volume: totalVolume,
           total_volume_formatted: formatCurrency(totalVolume),
           end_date: endDate,
-          top_traders_positioned: tradersPositioned.map(t => ({
-            trader_username: `${t.wallet.slice(0, 6)}...${t.wallet.slice(-4)}`,
-            trader_wallet: t.wallet,
-            position_side: t.side,
-            position_size: t.size
-          }))
+          top_traders_positioned: tradersPositioned
         })
       }
     }
