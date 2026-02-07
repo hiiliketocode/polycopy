@@ -8,7 +8,6 @@ import {
   LeaderboardTrader
 } from '@/lib/polymarket-api'
 import { resolveOrdersTableName } from '@/lib/orders/table'
-import { getBigQueryClient } from '@/lib/bigquery/client'
 
 // Create service role client for admin queries
 function createServiceClient() {
@@ -575,7 +574,8 @@ async function enrichWithLastTradeData(traders: FormattedTrader[], apiErrors: st
   }
 }
 
-// FEATURE 3: Helper to fetch recent winning trades for a trader using BigQuery
+// FEATURE 3: Helper to fetch recent winning trades for a trader using Polymarket trades API
+// This matches the implementation from trader profiles
 async function fetchRecentWinningTrades(wallet: string, apiErrors: string[]): Promise<Array<{
   market_title: string
   entry_price: number
@@ -586,95 +586,102 @@ async function fetchRecentWinningTrades(wallet: string, apiErrors: string[]): Pr
   trade_date_formatted: string
 }>> {
   try {
-    console.log(`🔍 Fetching winning trades from BigQuery for ${wallet.slice(0, 10)}...`)
+    console.log(`🔍 Fetching trades from Polymarket API for ${wallet.slice(0, 10)}...`)
     
-    try {
-      const bqClient = getBigQueryClient()
-      const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'gen-lang-client-0299056258'
-      const DATASET = 'polycopy_v1'
-      
-      console.log(`  📊 BigQuery setup: PROJECT=${PROJECT_ID}, DATASET=${DATASET}`)
-      
-      // Query for resolved markets where trader made profit
-      const query = `
-        WITH trader_trades AS (
-          SELECT 
-            t.condition_id,
-            t.wallet_address,
-            t.side,
-            t.outcome,
-            t.price,
-            t.size,
-            t.usd_size,
-            t.timestamp,
-            m.title,
-            m.resolved_outcome,
-            m.winning_side
-          FROM \`${PROJECT_ID}.${DATASET}.trades\` t
-          INNER JOIN \`${PROJECT_ID}.${DATASET}.markets\` m 
-            ON t.condition_id = m.condition_id
-          WHERE t.wallet_address = @wallet
-            AND m.closed = TRUE
-            AND m.resolved_outcome IS NOT NULL
-        ),
-        winning_trades AS (
-          SELECT
-            title as market_title,
-            usd_size as entry_price,
-            outcome,
-            timestamp,
-            -- Calculate if this was a winning trade
-            CASE 
-              WHEN (side = 'BUY' AND outcome = resolved_outcome) THEN usd_size * (1 / price - 1)
-              WHEN (side = 'SELL' AND outcome != resolved_outcome) THEN usd_size * (price / (1 - price) - 1)
-              ELSE 0
-            END as profit,
-            usd_size as cost
-          FROM trader_trades
-        )
-        SELECT 
-          market_title,
-          entry_price,
-          outcome,
-          profit,
-          cost,
-          (profit / NULLIF(cost, 0)) * 100 as roi,
-          timestamp as trade_date
-        FROM winning_trades
-        WHERE profit > 0
-        ORDER BY roi DESC
-        LIMIT 3
-      `
-      
-      console.log(`  🔍 Running BigQuery query for ${wallet.slice(0, 10)}...`)
-      const [rows] = await bqClient.query({
-        query,
-        params: { wallet: wallet.toLowerCase() }
-      })
-      
-      if (!rows || rows.length === 0) {
-        console.log(`  📊 No winning trades found in BigQuery for ${wallet.slice(0, 10)}...`)
-        return []
-      }
-      
-      console.log(`  ✅ Found ${rows.length} winning trades for ${wallet.slice(0, 10)}...`)
-      
-      return rows.map((row: any) => ({
-        market_title: row.market_title || 'Unknown Market',
-        entry_price: parseFloat(row.entry_price || 0),
-        outcome: row.outcome || 'Unknown',
-        roi: parseFloat(row.roi || 0),
-        roi_formatted: formatROI(parseFloat(row.roi || 0)),
-        trade_date: row.trade_date || '',
-        trade_date_formatted: formatDate(row.trade_date || '')
-      }))
-    } catch (bqError: any) {
-      console.error(`  ❌ BigQuery error for ${wallet.slice(0, 10)}:`, bqError?.message || bqError)
-      throw bqError
+    // Fetch trades from Polymarket API (same as trader profiles use)
+    const response = await fetch(
+      `https://data-api.polymarket.com/trades?user=${wallet}&limit=500`,
+      { signal: AbortSignal.timeout(10000) }
+    )
+    
+    if (!response.ok) {
+      console.warn(`  ❌ API returned ${response.status} for ${wallet.slice(0, 10)}...`)
+      return []
     }
     
+    const trades = await response.json()
+    if (!Array.isArray(trades) || trades.length === 0) {
+      console.log(`  📊 No trades found for ${wallet.slice(0, 10)}...`)
+      return []
+    }
+    
+    console.log(`  📊 Got ${trades.length} trades, calculating positions...`)
+    
+    // Group trades by market+outcome to calculate positions
+    const positionMap = new Map<string, {
+      market: string
+      outcome: string
+      buyNotional: number
+      sellNotional: number
+      totalBought: number
+      size: number
+      lastTimestamp: number
+    }>()
+    
+    for (const trade of trades) {
+      if (!trade.price || !trade.size) continue
+      const key = `${trade.conditionId || trade.market}-${trade.outcome || 'outcome'}`
+      const existing = positionMap.get(key) ?? {
+        market: trade.market || 'Unknown Market',
+        outcome: trade.outcome || 'Unknown',
+        buyNotional: 0,
+        sellNotional: 0,
+        totalBought: 0,
+        size: 0,
+        lastTimestamp: trade.timestamp || Date.now()
+      }
+      
+      existing.lastTimestamp = Math.max(existing.lastTimestamp, trade.timestamp || 0)
+      
+      if (trade.side === 'BUY') {
+        existing.totalBought += trade.size
+        existing.buyNotional += trade.size * trade.price
+        existing.size += trade.size
+      } else {
+        existing.sellNotional += trade.size * trade.price
+        existing.size -= trade.size
+      }
+      
+      positionMap.set(key, existing)
+    }
+    
+    // Calculate P&L for each position and find winners
+    const closedWinners = Array.from(positionMap.values())
+      .map(position => {
+        const invested = position.buyNotional
+        const amountWon = position.sellNotional
+        const pnl = amountWon - invested
+        const roi = invested > 0 ? (pnl / invested) * 100 : 0
+        const isClosed = Math.abs(position.size) < 0.01 // Position is closed if size ~= 0
+        
+        return {
+          market_title: position.market,
+          outcome: position.outcome,
+          entry_price: invested,
+          pnl,
+          roi,
+          isClosed,
+          trade_date: position.lastTimestamp
+        }
+      })
+      .filter(position => position.isClosed && position.entry_price > 0 && position.pnl > 0)
+      .sort((a, b) => b.roi - a.roi) // Sort by ROI descending
+      .slice(0, 3) // Top 3
+    
+    console.log(`  ✅ Found ${closedWinners.length} winning trades for ${wallet.slice(0, 10)}...`)
+    
+    return closedWinners.map(trade => ({
+      market_title: trade.market_title,
+      entry_price: trade.entry_price,
+      outcome: trade.outcome,
+      roi: trade.roi,
+      roi_formatted: formatROI(trade.roi),
+      trade_date: typeof trade.trade_date === 'number' ? new Date(trade.trade_date * 1000).toISOString() : '',
+      trade_date_formatted: formatDate(typeof trade.trade_date === 'number' ? new Date(trade.trade_date * 1000).toISOString() : '')
+    }))
+    
   } catch (err: any) {
-    const message = `Failed to fetch winning trades via BigQuery`
+    const message = `Failed to fetch winning trades via Polymarket API`
     console.error(`❌ ${message} for ${wallet.slice(0, 6)}...:`, err?.message || err)
     apiErrors.push(message)
     return []
