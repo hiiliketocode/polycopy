@@ -16,6 +16,10 @@ interface FormattedTrader {
   roi_formatted: string
   rank: number
   marketsTraded: number
+  profileImage?: string | null
+  last_trade_date?: string | null
+  days_since_last_trade?: number | null
+  active_status?: 'ACTIVE' | 'RECENT' | 'INACTIVE'
 }
 
 // Section A: Polymarket API Data
@@ -44,22 +48,46 @@ interface SectionAData {
     trades_per_day: number | null
     trades_per_day_formatted: string
     first_trade_date: string | null
+    last_trade_date: string | null
+    days_since_last_trade: number | null
+    active_status: 'ACTIVE' | 'RECENT' | 'INACTIVE'
     total_trades: number
     wow_roi_change: number | null
     wow_roi_change_formatted: string
+    wow_pnl_change: number | null
+    wow_pnl_change_formatted: string
+    wow_volume_change: number | null
+    wow_volume_change_formatted: string
+    wow_rank_change: number | null
+    wow_rank_change_formatted: string
     wow_status: 'heating_up' | 'cooling_down' | 'stable' | 'new'
     last_week_roi: number | null
     prev_week_roi: number | null
+    recent_wins: Array<{
+      market_title: string
+      entry_price: number
+      outcome: string
+      roi: number
+      roi_formatted: string
+      trade_date: string
+      trade_date_formatted: string
+    }>
     profile_url: string
     shareable_quote: string
+    narrative_hook: string
   }>
   positionChanges: Array<{
     trader_username: string
     trader_wallet: string
     current_rank: number
     previous_rank: number | null
+    rank_7d_ago: number | null
+    rank_30d_ago: number | null
     position_change: number
+    position_change_7d: number | null
+    position_change_30d: number | null
     change_formatted: string
+    trajectory: 'surging' | 'climbing' | 'stable' | 'falling' | 'new'
     is_new_entry: boolean
   }>
   newEntrants: Array<{
@@ -102,6 +130,43 @@ interface SectionAData {
       volume: number
       volume_formatted: string
     }>
+  }
+  topCurrentMarkets: Array<{
+    market_id: string
+    market_title: string
+    market_slug: string
+    category: string
+    volume_24h: number
+    volume_24h_formatted: string
+    total_volume: number
+    total_volume_formatted: string
+    end_date: string | null
+    top_traders_positioned: Array<{
+      trader_username: string
+      trader_wallet: string
+      position_side: string
+      position_size: number
+    }>
+  }>
+  storyOfTheWeek: {
+    biggest_mover: {
+      trader_username: string
+      trader_wallet: string
+      rank_change: number
+      rank_change_formatted: string
+      story: string
+    } | null
+    new_entrant_watch: {
+      trader_username: string
+      trader_wallet: string
+      current_rank: number
+      roi: number
+      story: string
+    } | null
+    unusual_pattern: {
+      description: string
+      traders_involved: string[]
+    } | null
   }
   topByPnl: FormattedTrader[]
   topByRoi: FormattedTrader[]
