@@ -596,22 +596,32 @@ export default function AdminDashboardClient({ data, onRefresh }: AdminDashboard
               <ErrorMessage message="Polymarket leaderboard data unavailable" />
             ) : (
               <div className="space-y-1 max-h-[500px] overflow-y-auto">
-                {sortedTraders.map((trader, i) => (
-                  <div key={trader.wallet || i} className="font-mono text-sm">
-                    {i + 1}.{' '}
-                    <button
-                      onClick={() => handleTraderClick(trader.wallet)}
-                      className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors"
-                    >
-                      {trader.displayName}
-                    </button>{' '}
-                    <span className="text-gray-500">({trader.wallet.slice(0, 6)}...{trader.wallet.slice(-4)})</span>{' '}
-                    — P&L: <span className={trader.pnl >= 0 ? 'text-green-400' : 'text-red-400'}>{trader.pnl_formatted}</span>{' '}
-                    | ROI: <span className={trader.roi >= 0 ? 'text-green-400' : 'text-red-400'}>{trader.roi_formatted}</span>{' '}
-                    | Volume: <span className="text-[#FDB022]">{trader.volume_formatted}</span>{' '}
-                    | Trades: <span className="text-blue-400">{trader.marketsTraded}</span>
-                  </div>
-                ))}
+                {sortedTraders.map((trader, i) => {
+                  const activityIndicator = trader.active_status === 'ACTIVE' ? '🟢' : 
+                                           trader.active_status === 'RECENT' ? '🟡' : 
+                                           trader.active_status === 'INACTIVE' ? '🔴' : ''
+                  const lastTradeText = trader.days_since_last_trade !== null 
+                    ? ` [Last: ${trader.days_since_last_trade}d]` 
+                    : ''
+                  
+                  return (
+                    <div key={trader.wallet || i} className="font-mono text-sm">
+                      {i + 1}.{' '}
+                      <button
+                        onClick={() => handleTraderClick(trader.wallet)}
+                        className="text-white hover:text-[#FDB022] hover:underline cursor-pointer transition-colors"
+                      >
+                        {trader.displayName}
+                      </button>{' '}
+                      <span className="text-gray-500">({trader.wallet.slice(0, 6)}...{trader.wallet.slice(-4)})</span>{' '}
+                      — P&L: <span className={trader.pnl >= 0 ? 'text-green-400' : 'text-red-400'}>{trader.pnl_formatted}</span>{' '}
+                      | ROI: <span className={trader.roi >= 0 ? 'text-green-400' : 'text-red-400'}>{trader.roi_formatted}</span>{' '}
+                      | Volume: <span className="text-[#FDB022]">{trader.volume_formatted}</span>{' '}
+                      | Trades: <span className="text-blue-400">{trader.marketsTraded}</span>
+                      {activityIndicator && <span className="ml-2">{activityIndicator}{lastTradeText}</span>}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </Section>
@@ -1730,7 +1740,9 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     const byROI = [...traders].sort((a, b) => b.roi - a.roi)
     byROI.forEach((trader, i) => {
       const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
-      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted} | Trades: ${trader.marketsTraded}`)
+      const activityStatus = trader.active_status === 'ACTIVE' ? '🟢' : trader.active_status === 'RECENT' ? '🟡' : trader.active_status === 'INACTIVE' ? '🔴' : ''
+      const lastTrade = trader.days_since_last_trade !== null ? ` [Last: ${trader.days_since_last_trade}d ago]` : ''
+      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted} | Trades: ${trader.marketsTraded} ${activityStatus}${lastTrade}`)
     })
     
     // Sort by P&L
@@ -1740,7 +1752,9 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     const byPNL = [...traders].sort((a, b) => b.pnl - a.pnl)
     byPNL.forEach((trader, i) => {
       const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
-      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted} | Trades: ${trader.marketsTraded}`)
+      const activityStatus = trader.active_status === 'ACTIVE' ? '🟢' : trader.active_status === 'RECENT' ? '🟡' : trader.active_status === 'INACTIVE' ? '🔴' : ''
+      const lastTrade = trader.days_since_last_trade !== null ? ` [Last: ${trader.days_since_last_trade}d ago]` : ''
+      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted} | Trades: ${trader.marketsTraded} ${activityStatus}${lastTrade}`)
     })
     
     // Sort by Volume
@@ -1750,7 +1764,9 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
     const byVolume = [...traders].sort((a, b) => b.volume - a.volume)
     byVolume.forEach((trader, i) => {
       const wallet = trader.wallet ? `${trader.wallet.slice(0, 6)}...${trader.wallet.slice(-4)}` : 'Unknown'
-      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted} | Trades: ${trader.marketsTraded}`)
+      const activityStatus = trader.active_status === 'ACTIVE' ? '🟢' : trader.active_status === 'RECENT' ? '🟡' : trader.active_status === 'INACTIVE' ? '🔴' : ''
+      const lastTrade = trader.days_since_last_trade !== null ? ` [Last: ${trader.days_since_last_trade}d ago]` : ''
+      lines.push(`${i + 1}. ${trader.displayName} (${wallet}) — P&L: ${trader.pnl_formatted} | ROI: ${trader.roi_formatted} | Volume: ${trader.volume_formatted} | Trades: ${trader.marketsTraded} ${activityStatus}${lastTrade}`)
     })
   }
   lines.push('')
@@ -1798,8 +1814,24 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
                        trader.wow_status === 'cooling_down' ? '❄️ COOLING DOWN' :
                        trader.wow_status === 'new' ? '🆕 NEW' : '➡️ STABLE'
       
+      const activityLabel = trader.active_status === 'ACTIVE' ? '🟢 ACTIVE' :
+                           trader.active_status === 'RECENT' ? '🟡 RECENT' : '🔴 INACTIVE'
+      
       lines.push(`${trader.trader_username} (${trader.trader_wallet})`)
-      lines.push(`  Status: ${wowLabel} | WoW Change: ${trader.wow_roi_change_formatted}`)
+      lines.push(`  Activity: ${activityLabel}${trader.days_since_last_trade !== null ? ` (Last trade: ${trader.days_since_last_trade}d ago)` : ''}`)
+      lines.push(`  Status: ${wowLabel} | WoW ROI: ${trader.wow_roi_change_formatted}`)
+      
+      // WoW deltas
+      if (trader.wow_pnl_change_formatted || trader.wow_volume_change_formatted || trader.wow_rank_change_formatted) {
+        const wowParts = []
+        if (trader.wow_pnl_change_formatted) wowParts.push(`P&L: ${trader.wow_pnl_change_formatted}`)
+        if (trader.wow_volume_change_formatted) wowParts.push(`Vol: ${trader.wow_volume_change_formatted}`)
+        if (trader.wow_rank_change_formatted) wowParts.push(`Rank: ${trader.wow_rank_change_formatted}`)
+        if (wowParts.length > 0) {
+          lines.push(`  WoW Changes: ${wowParts.join(' | ')}`)
+        }
+      }
+      
       lines.push(`  Win Rate: ${trader.win_rate_formatted} (${trader.wins}W / ${trader.losses}L, ${trader.total_resolved} resolved)`)
       lines.push(`  Specialization: ${trader.primary_category} (${trader.categories[0]?.percentage}% of trades)`)
       lines.push(`  Avg Position: ${trader.avg_position_formatted} | Total Invested: $${(trader.total_invested / 1000).toFixed(1)}K`)
@@ -1808,6 +1840,19 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
       if (trader.categories.length > 1) {
         const catBreakdown = trader.categories.map(c => `${c.category}: ${c.percentage}%`).join(', ')
         lines.push(`  Categories: ${catBreakdown}`)
+      }
+      
+      // Recent winning trades
+      if (trader.recent_wins && trader.recent_wins.length > 0) {
+        lines.push(`  🏆 Recent Wins:`)
+        trader.recent_wins.forEach((win, i) => {
+          lines.push(`    ${i + 1}. "${win.market_title}" | Entry: $${win.entry_price.toFixed(2)} | ${win.outcome} | ${win.roi_formatted} | ${win.trade_date_formatted}`)
+        })
+      }
+      
+      // Narrative hook
+      if (trader.narrative_hook) {
+        lines.push(`  💬 Story: "${trader.narrative_hook}"`)
       }
       
       // Add shareable quote
@@ -1907,6 +1952,60 @@ function buildAllContent(data: DashboardData, sortedTraders: FormattedTrader[]):
   }
   
   lines.push('')
+  
+  // 8. Top Current Markets
+  if (sectionA.topCurrentMarkets && sectionA.topCurrentMarkets.length > 0) {
+    lines.push('🔥 TOP CURRENT MARKETS (Highest Volume + Trader Positions)')
+    lines.push('───────────────────────────────────────────────')
+    sectionA.topCurrentMarkets.forEach((market, i) => {
+      lines.push(`${i + 1}. ${market.market_title}`)
+      lines.push(`   24h Volume: ${market.volume_24h_formatted} | Total: ${market.total_volume_formatted} | Category: ${market.category}`)
+      if (market.top_traders_positioned.length > 0) {
+        lines.push(`   Top Traders Positioned:`)
+        market.top_traders_positioned.forEach((trader) => {
+          lines.push(`     - ${trader.trader_username} | ${trader.position_side}${trader.position_size > 0 ? ` ($${trader.position_size.toFixed(0)})` : ''}`)
+        })
+      }
+      lines.push('')
+    })
+    lines.push('')
+  }
+  
+  // 9. Story of the Week
+  if (sectionA.storyOfTheWeek) {
+    lines.push('📰 STORY OF THE WEEK')
+    lines.push('───────────────────────────────────────────────')
+    
+    if (sectionA.storyOfTheWeek.biggest_mover) {
+      lines.push('')
+      lines.push('🚀 BIGGEST MOVER:')
+      const mover = sectionA.storyOfTheWeek.biggest_mover
+      lines.push(`${mover.trader_username} (${mover.trader_wallet})`)
+      lines.push(`${mover.rank_change_formatted}`)
+      lines.push(`Story: ${mover.story}`)
+    }
+    
+    if (sectionA.storyOfTheWeek.new_entrant_watch) {
+      lines.push('')
+      lines.push('👀 NEW ENTRANT TO WATCH:')
+      const entrant = sectionA.storyOfTheWeek.new_entrant_watch
+      lines.push(`${entrant.trader_username} (${entrant.trader_wallet})`)
+      lines.push(`Rank #${entrant.current_rank} | +${entrant.roi.toFixed(1)}% ROI`)
+      lines.push(`Story: ${entrant.story}`)
+    }
+    
+    if (sectionA.storyOfTheWeek.unusual_pattern) {
+      lines.push('')
+      lines.push('🔍 UNUSUAL PATTERN:')
+      lines.push(sectionA.storyOfTheWeek.unusual_pattern.description)
+      if (sectionA.storyOfTheWeek.unusual_pattern.traders_involved.length > 0) {
+        lines.push(`Traders: ${sectionA.storyOfTheWeek.unusual_pattern.traders_involved.join(', ')}`)
+      }
+    }
+    
+    lines.push('')
+    lines.push('')
+  }
   
   // ═══════════════════════════════════════════════
   // SECTION B: POLYCOPY PLATFORM DATA
