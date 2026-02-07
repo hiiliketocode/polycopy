@@ -50,6 +50,8 @@ interface SectionAData {
     wow_status: 'heating_up' | 'cooling_down' | 'stable' | 'new'
     last_week_roi: number | null
     prev_week_roi: number | null
+    profile_url: string
+    shareable_quote: string
   }>
   positionChanges: Array<{
     trader_username: string
@@ -101,6 +103,10 @@ interface SectionAData {
       volume_formatted: string
     }>
   }
+  topByPnl: FormattedTrader[]
+  topByRoi: FormattedTrader[]
+  topByVolume: FormattedTrader[]
+  topByTradeCount: FormattedTrader[]
   apiErrors: string[]
 }
 
