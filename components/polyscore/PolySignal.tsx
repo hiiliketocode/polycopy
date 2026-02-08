@@ -807,7 +807,54 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
     fetchStats()
   }, [walletAddress, marketSubtype, data?.analysis?.niche_name])
   
+  // Build minimal signal from server-only data (fire feed) when no client PolyScore data
+  const serverOnlySignal = useMemo((): SignalResult | null => {
+    if (data || serverRecommendation == null || serverScore === undefined) return null
+    const rec = serverRecommendation as Recommendation
+    const config = RECOMMENDATION_CONFIG[rec]
+    const emptyInsights: InsightData = {
+      niche: marketSubtype?.toUpperCase() ?? null,
+      tradeProfile: null,
+      profileTrades: 0,
+      globalTrades: 0,
+      profileWinRate: null,
+      globalWinRate: null,
+      profileRoiPct: null,
+      globalRoiPct: null,
+      profileAvgPnl: null,
+      globalAvgPnl: null,
+      convictionMultiplier: null,
+      positionConviction: null,
+      tradeConviction: null,
+      exposureUsd: null,
+      zScore: 0,
+      isOutlier: false,
+      isHot: false,
+      currentStreak: 0,
+      recentWinRate: null,
+      isHedging: false,
+      isChasing: false,
+      isAveragingDown: false,
+      timing: null,
+      minutesToStart: null,
+      aiWinProb: 0.5,
+      aiEdgePct: 0,
+    }
+    return {
+      score: serverScore,
+      recommendation: rec,
+      headline: config ? `${config.label} (fire feed)` : 'Server signal',
+      factors: [],
+      redFlags: [],
+      greenFlags: [],
+      priceMovement: null,
+      insights: emptyInsights,
+    }
+  }, [data, serverRecommendation, serverScore, marketSubtype])
+
   const signal = useMemo(() => {
+    // Server-only path: fire feed sent score + recommendation, no client fetch yet
+    if (serverOnlySignal) return serverOnlySignal
     if (!data) return null
     
     // Calculate signal from local data (includes price movement detection)
@@ -851,7 +898,7 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
     }
     
     return calculatedSignal
-  }, [data, entryPrice, currentPrice, traderStats, tradeSize, serverRecommendation, serverScore])
+  }, [serverOnlySignal, data, entryPrice, currentPrice, traderStats, tradeSize, serverRecommendation, serverScore])
   
   // Loading state
   if (loading) {
@@ -863,8 +910,8 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
     )
   }
   
-  // No data state
-  if (!data || !signal) {
+  // No signal at all (no server data and no client data)
+  if (!signal) {
     return (
       <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 border border-slate-200">
         <Brain className="w-5 h-5 text-slate-400" />
