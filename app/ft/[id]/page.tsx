@@ -58,12 +58,16 @@ interface WalletData {
   last_sync_time: { value: string } | null;
   hours_remaining: number;
   test_status: 'ACTIVE' | 'ENDED' | 'SCHEDULED';
-  model_threshold: number;
+  model_threshold: number | null;
   price_min: number;
   price_max: number;
   min_edge: number;
+  min_conviction?: number | null;
+  min_trader_resolved_count?: number | null;
   use_model: boolean;
   is_active: boolean;
+  hypothesis?: string | null;
+  thesis_tier?: string | null;
 }
 
 interface Stats {
@@ -704,25 +708,63 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
         </CardContent>
       </Card>
 
-      {/* Strategy Parameters */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        {wallet.use_model && (
+      {/* What We're Testing - Hypothesis or strategy summary */}
+      <Card className="mb-6 border-amber-200 bg-amber-50/50">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Target className="h-4 w-4 text-amber-600" />
+            What This Strategy Tests
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-slate-700">
+            {wallet.hypothesis
+              ? wallet.hypothesis
+              : wallet.thesis_tier
+                ? `Part of thesis tier: ${wallet.thesis_tier.replace(/_/g, ' ')}. ${wallet.description}`
+                : wallet.description}
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Strategy Config - Actual filters from wallet */}
+      <div className="mb-6">
+        <h3 className="text-sm font-semibold text-muted-foreground mb-3">Entry Filters (active config)</h3>
+        <div className="flex flex-wrap gap-2">
+          {wallet.use_model ? (
+            <Badge variant="outline">
+              <Target className="h-3 w-3 mr-1" />
+              {wallet.model_threshold != null && wallet.model_threshold > 0
+                ? `ML model ≥${(wallet.model_threshold * 100).toFixed(0)}%`
+                : 'ML model required'}
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-muted-foreground">
+              No ML filter
+            </Badge>
+          )}
           <Badge variant="outline">
-            <Target className="h-3 w-3 mr-1" />
-            Model ≥{((wallet.model_threshold || 0) * 100).toFixed(0)}%
+            Price: {(wallet.price_min ?? 0) * 100}¢ – {(wallet.price_max ?? 1) * 100}¢
           </Badge>
-        )}
-        <Badge variant="outline">
-          Price: {((wallet.price_min || 0) * 100).toFixed(0)}¢ - {((wallet.price_max || 1) * 100).toFixed(0)}¢
-        </Badge>
-        {(wallet.min_edge || 0) > 0 && (
-          <Badge variant="outline">
-            Edge ≥{((wallet.min_edge || 0) * 100).toFixed(0)}%
+          {(wallet.min_edge ?? 0) > 0 && (
+            <Badge variant="outline">
+              Edge ≥{(wallet.min_edge! * 100).toFixed(0)}%
+            </Badge>
+          )}
+          {(wallet.min_conviction ?? 0) > 0 && (
+            <Badge variant="outline">
+              Conviction ≥{wallet.min_conviction}x
+            </Badge>
+          )}
+          {(wallet.min_trader_resolved_count ?? 0) > 0 && (
+            <Badge variant="outline">
+              Min {wallet.min_trader_resolved_count}+ trades
+            </Badge>
+          )}
+          <Badge variant={wallet.is_active ? 'default' : 'secondary'}>
+            {wallet.is_active ? 'Active' : 'Paused'}
           </Badge>
-        )}
-        <Badge variant={wallet.is_active ? 'default' : 'secondary'}>
-          {wallet.is_active ? 'Active' : 'Paused'}
-        </Badge>
+        </div>
       </div>
 
       {/* Strategy Description Panel */}

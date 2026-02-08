@@ -72,9 +72,10 @@ export interface FeedTrade {
   fireWinRate?: number | null;
   fireRoi?: number | null;
   fireConviction?: number | null;
-  // PolySignal scoring (server-side)
+  // PolySignal scoring (server-side, FT-learnings based)
   polySignalScore?: number;
   polySignalRecommendation?: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC';
+  polySignalIndicators?: Record<string, { value: unknown; label: string; status: string }>;
 }
 
 type PositionTradeSummary = {
@@ -2814,9 +2815,10 @@ export default function FeedPage() {
           fireWinRate: (trade as any)._fireWinRate !== undefined ? (trade as any)._fireWinRate : null,
           fireRoi: (trade as any)._fireRoi !== undefined ? (trade as any)._fireRoi : null,
           fireConviction: (trade as any)._fireConviction !== undefined ? (trade as any)._fireConviction : null,
-          // PolySignal scoring (server-side computed)
+          // PolySignal scoring (server-side, FT-learnings based)
           polySignalScore: (trade as any)._polySignalScore ?? undefined,
           polySignalRecommendation: (trade as any)._polySignalRecommendation ?? undefined,
+          polySignalIndicators: (trade as any)._polySignalIndicators ?? undefined,
         };
         formattedTrade.market.marketCategoryType = resolveMarketCategoryType({
           marketKey: marketId || formattedTrade.market.slug || marketTitle,
@@ -4595,6 +4597,7 @@ export default function FeedPage() {
                           fireConviction={trade.fireConviction}
                           polySignalScore={trade.polySignalScore}
                           polySignalRecommendation={trade.polySignalRecommendation}
+                          polySignalIndicators={trade.polySignalIndicators}
                           tags={Array.isArray(trade.market.tags) && trade.market.tags.length > 0 ? trade.market.tags : null}
                           marketSubtype={trade.market.marketSubtype}
                           betStructure={trade.market.betStructure}

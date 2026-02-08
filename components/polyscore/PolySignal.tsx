@@ -19,9 +19,10 @@ interface PolySignalProps {
   tradeSize?: number // Size of the trade in shares
   // Niche from feed/DB - MUST match PredictionStats source for consistency
   marketSubtype?: string // niche (market_subtype from DB)
-  // Server-side pre-computed values (from fire feed) - if provided, skip client-side refetch
+  // Server-side pre-computed values (from fire feed, FT-learnings based) - if provided, use these
   serverRecommendation?: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC'
   serverScore?: number
+  serverIndicators?: Record<string, { value: unknown; label: string; status: string }>
 }
 
 // Stats fetched from trader API
@@ -164,6 +165,72 @@ const RECOMMENDATION_CONFIG: Record<Recommendation, {
     borderColor: 'border-red-300',
     textColor: 'text-red-700',
   },
+}
+
+// ============================================================================
+// FT-LEARNINGS HELPERS (server indicators from fire feed)
+// ============================================================================
+
+function buildFtHeadline(rec: Recommendation, indicators: Record<string, { value: unknown; label: string; status: string }>): string {
+  const c = indicators.conviction
+  const wr = indicators.traderWr
+  const eb = indicators.entryBand
+  const mt = indicators.marketType
+  if (rec === 'STRONG_BUY' || rec === 'BUY') {
+    if (c?.status === 'strong' && eb?.status === 'sweet_spot') return `${c?.label} conviction in 20-40¢ sweet spot`
+    if (wr?.status === 'sweet_spot') return `Trader ${wr?.label} WR (55-65% band)`
+    if (mt?.status === 'ok' && c?.status !== 'weak') return 'Non-crypto market, favorable signals'
+  }
+  if (rec === 'AVOID' || rec === 'TOXIC') {
+    if (mt?.status === 'caution') return 'Crypto short-term – historically poor PnL'
+    if (eb?.status === 'avoid') return 'Entry <20¢ – longshot band'
+    if (wr?.status === 'avoid') return `Trader ${wr?.label} WR – below threshold`
+  }
+  return RECOMMENDATION_CONFIG[rec].label
+}
+
+function ftIndicatorsToFactors(indicators: Record<string, { value: unknown; label: string; status: string }>): ScoreFactor[] {
+  const iconMap = { Zap: Zap, Target: Target, TrendingUp: TrendingUp, Brain: Brain, BarChart3: BarChart3 }
+  const statusToDetail: Record<string, string> = {
+    strong: '3x+ conviction – FT profitable band',
+    good: 'Above-average signal',
+    sweet_spot: 'FT sweet spot (20-40¢ or 55-65% WR)',
+    ok: 'Non-crypto – less PnL drag',
+    weak: '<1x – FT losing band',
+    avoid: 'FT avoid band',
+    caution: 'Crypto short-term – historically -91% PnL drag',
+    negative: 'Negative edge',
+    neutral: 'Neutral',
+  }
+  const items: { key: string; name: string; icon: keyof typeof iconMap }[] = [
+    { key: 'conviction', name: 'Conviction', icon: 'Zap' },
+    { key: 'traderWr', name: 'Trader WR', icon: 'Target' },
+    { key: 'entryBand', name: 'Entry Band', icon: 'TrendingUp' },
+    { key: 'marketType', name: 'Market Type', icon: 'Brain' },
+    { key: 'edge', name: 'Edge', icon: 'BarChart3' },
+  ]
+  return items
+    .filter(({ key }) => indicators[key])
+    .map(({ key, name, icon }) => {
+      const ind = indicators[key]
+      const sentiment = ind.status === 'strong' || ind.status === 'sweet_spot' || ind.status === 'good' || ind.status === 'ok'
+        ? 'positive' as const
+        : ind.status === 'weak' || ind.status === 'avoid' || ind.status === 'caution' || ind.status === 'negative'
+        ? 'negative' as const
+        : 'neutral' as const
+      const Icon = iconMap[icon] || BarChart3
+      const detail = statusToDetail[ind.status] || `${name}: ${ind.label}`
+      return {
+        name,
+        icon: Icon,
+        value: 0,
+        maxValue: 25,
+        weight: '',
+        label: ind.label,
+        detail,
+        sentiment,
+      }
+    })
 }
 
 // ============================================================================
@@ -653,7 +720,7 @@ function calculateSignal(
 // COMPONENT
 // ============================================================================
 
-export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddress, tradeSize, marketSubtype, serverRecommendation, serverScore }: PolySignalProps) {
+export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddress, tradeSize, marketSubtype, serverRecommendation, serverScore, serverIndicators }: PolySignalProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [traderStats, setTraderStats] = useState<TraderStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
@@ -808,25 +875,40 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
   }, [walletAddress, marketSubtype, data?.analysis?.niche_name])
   
   const signal = useMemo(() => {
+    // Server-only mode: use FT-learnings-based server data (no polyScore fetch needed)
+    if (serverRecommendation && serverScore !== undefined) {
+      const headline = serverIndicators
+        ? buildFtHeadline(serverRecommendation, serverIndicators)
+        : RECOMMENDATION_CONFIG[serverRecommendation].label
+      return {
+        score: serverScore,
+        recommendation: serverRecommendation,
+        headline,
+        factors: serverIndicators ? ftIndicatorsToFactors(serverIndicators) : [],
+        redFlags: [] as string[],
+        greenFlags: [] as string[],
+        priceMovement: null as PriceMovement | null,
+        insights: null as InsightData | null,
+        useServerIndicators: !!serverIndicators,
+      }
+    }
+    
     if (!data) return null
     
     // Calculate signal from local data (includes price movement detection)
     const calculatedSignal = calculateSignal(data, entryPrice, currentPrice, traderStats, tradeSize, marketSubtype)
     
-    // If server provided a recommendation (from fire feed), use it as base
-    // BUT still apply critical overrides like price crashes
+    // If server provided values, apply critical overrides (price crashes) then use server score/rec
     if (serverRecommendation && serverScore !== undefined) {
-      // Check for severe price movement that should override server recommendation
       const hasSeverePriceCrash = calculatedSignal.priceMovement?.isExtreme && 
                                    calculatedSignal.priceMovement?.direction === 'down'
       const hasMajorPriceDrop = calculatedSignal.priceMovement?.isMajor && 
                                  calculatedSignal.priceMovement?.direction === 'down'
       
-      // If price crashed significantly, downgrade the recommendation
       if (hasSeverePriceCrash) {
         return {
           ...calculatedSignal,
-          score: Math.min(serverScore, 40), // Cap score at 40 for extreme crash
+          score: Math.min(serverScore, 40),
           recommendation: 'AVOID' as const,
           headline: `Price crashed ${Math.abs(calculatedSignal.priceMovement!.percent).toFixed(0)}% - market moved against trade`,
         }
@@ -835,23 +917,23 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
       if (hasMajorPriceDrop && serverRecommendation !== 'AVOID' && serverRecommendation !== 'TOXIC') {
         return {
           ...calculatedSignal,
-          score: Math.min(serverScore, 55), // Cap score for major drop
+          score: Math.min(serverScore, 55),
           recommendation: 'NEUTRAL' as const,
           headline: `Price dropped ${Math.abs(calculatedSignal.priceMovement!.percent).toFixed(0)}% since entry - proceed with caution`,
         }
       }
       
-      // No severe price movement - use server values
       return {
         ...calculatedSignal,
         score: serverScore,
         recommendation: serverRecommendation,
         headline: calculatedSignal.headline,
+        ...(serverIndicators && { factors: ftIndicatorsToFactors(serverIndicators), useServerIndicators: true }),
       }
     }
     
     return calculatedSignal
-  }, [data, entryPrice, currentPrice, traderStats, tradeSize, serverRecommendation, serverScore])
+  }, [data, entryPrice, currentPrice, traderStats, tradeSize, serverRecommendation, serverScore, serverIndicators])
   
   // Loading state
   if (loading) {
@@ -863,8 +945,8 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
     )
   }
   
-  // No data state
-  if (!data || !signal) {
+  // No data state (need either server data or polyScore data)
+  if (!signal) {
     return (
       <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 border border-slate-200">
         <Brain className="w-5 h-5 text-slate-400" />
@@ -874,7 +956,7 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
   }
   
   const config = RECOMMENDATION_CONFIG[signal.recommendation]
-  const { insights, priceMovement } = signal
+  const { insights, priceMovement } = signal as SignalResult & { insights?: InsightData | null }
   
   return (
     <TooltipProvider>
@@ -967,11 +1049,11 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
               </div>
             )}
             
-            {/* Score Factors */}
+            {/* Score Factors / FT Indicators */}
             <div className="px-4 py-3 border-b border-slate-100">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                  Score Breakdown
+                  {(signal as { useServerIndicators?: boolean }).useServerIndicators ? 'FT Indicators' : 'Score Breakdown'}
                 </span>
                 <span className="text-sm font-bold text-slate-900">{signal.score}/100</span>
               </div>
@@ -1013,7 +1095,8 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
               </div>
             </div>
             
-            {/* Trader Insights Grid */}
+            {/* Trader Insights Grid (only when we have full polyScore data) */}
+            {insights && (
             <div className="px-4 py-3 border-b border-slate-100">
               <div className="flex items-center gap-2 mb-3">
                 <BarChart3 className="w-4 h-4 text-slate-500" />
@@ -1132,6 +1215,7 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
                 </div>
               </div>
             </div>
+            )}
             
             {/* Flags */}
             {(signal.greenFlags.length > 0 || signal.redFlags.length > 0) && (
@@ -1168,7 +1252,9 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
             {/* Footer */}
             <div className="px-4 py-2 bg-slate-50">
               <p className="text-[10px] text-slate-400 text-center">
-                PolySignal v2 • Edge (50%) + Conviction (25%) + Skill (15%) + Context (10%)
+                {(signal as { useServerIndicators?: boolean }).useServerIndicators
+                  ? 'PolySignal FT • Conviction + Trader WR + Entry Band + Market Type (FT-learnings Feb 2026)'
+                  : 'PolySignal v2 • Edge (50%) + Conviction (25%) + Skill (15%) + Context (10%)'}
               </p>
             </div>
           </div>

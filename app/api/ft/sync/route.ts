@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
 import { fetchPolymarketLeaderboard } from '@/lib/polymarket-leaderboard';
+import { isTraderExcluded } from '@/lib/ft-excluded-traders';
 import { getPolyScore } from '@/lib/polyscore/get-polyscore';
 
 const TOP_TRADERS_LIMIT = 100; // Polymarket API max is 100
@@ -286,7 +287,11 @@ export async function POST(request: Request) {
       }
     }
     
-    const topTraders = Array.from(traderMap.values());
+    let topTraders = Array.from(traderMap.values());
+    topTraders = topTraders.filter((t) => !isTraderExcluded(t.wallet));
+    if (topTraders.length < Array.from(traderMap.values()).length) {
+      console.log(`[ft/sync] Excluded ${Array.from(traderMap.values()).length - topTraders.length} traders (FT_EXCLUDED_TRADERS)`);
+    }
     
     // Set of trader addresses that are explicitly targeted by any wallet (relax min trade count for these)
     const targetTraderAddresses = new Set<string>();

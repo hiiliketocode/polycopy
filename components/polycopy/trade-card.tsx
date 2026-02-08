@@ -131,9 +131,10 @@ interface TradeCardProps {
   fireWinRate?: number | null
   fireRoi?: number | null
   fireConviction?: number | null
-  // Server-side PolySignal scoring (from fire feed)
+  // Server-side PolySignal scoring (from fire feed, FT-learnings based)
   polySignalScore?: number
   polySignalRecommendation?: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC'
+  polySignalIndicators?: Record<string, { value: unknown; label: string; status: string }>
   tags?: string[] | null
   marketSubtype?: string // niche (market_subtype from DB)
   betStructure?: string // bet_structure from DB
@@ -505,6 +506,7 @@ export function TradeCard({
   fireConviction,
   polySignalScore,
   polySignalRecommendation,
+  polySignalIndicators,
   tags,
   marketSubtype,
   betStructure,
@@ -3053,12 +3055,12 @@ export function TradeCard({
           </div>
         </div>
 
-        {/* PolySignal Badge - Admin Only */}
-        {isAdmin && (
+        {/* PolySignal Badge - Premium/Admin (FT-learnings based recommendation) */}
+        {(isAdmin || isPremium) && (polySignalScore != null || polySignalRecommendation) && (
           <div className="mb-3">
             <PolySignal
-              data={polyScoreData}
-              loading={polyScoreLoading}
+              data={isAdmin ? polyScoreData : null}
+              loading={isAdmin ? polyScoreLoading : false}
               entryPrice={price}
               currentPrice={currentPrice}
               walletAddress={trader.address}
@@ -3066,6 +3068,7 @@ export function TradeCard({
               marketSubtype={marketSubtype}
               serverRecommendation={polySignalRecommendation}
               serverScore={polySignalScore}
+              serverIndicators={polySignalIndicators}
             />
           </div>
         )}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { fetchPolymarketLeaderboard } from '@/lib/polymarket-leaderboard';
+import { isTraderExcluded } from '@/lib/ft-excluded-traders';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -20,117 +21,124 @@ const FIRE_WIN_RATE_THRESHOLD = 0.55;
 const FIRE_ROI_THRESHOLD = 0.15;
 const FIRE_CONVICTION_MULTIPLIER_THRESHOLD = 2.5;
 
-// PolySignal scoring thresholds for BUY/STRONG_BUY
+// PolySignal scoring thresholds (FT-learnings based)
 const POLYSIGNAL_BUY_THRESHOLD = 60;
 const POLYSIGNAL_STRONG_BUY_THRESHOLD = 75;
 
 type PolySignalRecommendation = 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC';
 
 /**
- * Calculate PolySignal score for a trade
- * Simplified version of the client-side scoring for server-side filtering
- * 
- * Weights: Edge (50%) + Conviction (25%) + Skill (15%) + Context (10%)
+ * Detect if market is short-term crypto (historically -91% of PnL drag)
+ */
+function isCryptoShortTerm(title?: string): boolean {
+  if (!title || typeof title !== 'string') return false;
+  const t = title.toLowerCase();
+  const hasCrypto = /bitcoin|btc|ethereum|eth|solana|sol\b|crypto/.test(t);
+  const isShortTerm = /up or down|today|tomorrow|next (hour|day)|february \d|march \d/i.test(t) || /\d{1,2}(am|pm)/i.test(t);
+  return hasCrypto && isShortTerm;
+}
+
+/**
+ * FT-Learnings-Based Recommendation Score
+ * Based on Feb 2026 forward test analysis:
+ * - Conviction 3x+ was profitable; <1x lost
+ * - Trader WR 55-60% had 82% actual WR (sweet spot)
+ * - Entry 20-40¢ was sweet spot; <20¢ toxic
+ * - Crypto short-term destroyed performance
+ * Weights: Conviction (30%) + Trader WR band (25%) + Entry price band (25%) + Market type (15%) + Edge (5%)
  */
 function calculatePolySignalScore(
   trade: any,
   stats: any,
   aiWinProb?: number
-): { score: number; recommendation: PolySignalRecommendation; factors: any } {
+): { score: number; recommendation: PolySignalRecommendation; factors: any; indicators: any } {
   const price = Number(trade.price || 0);
   const size = Number(trade.size || trade.shares_normalized || 0);
   const tradeValue = price * size;
-  
-  // Use AI win prob if provided, otherwise estimate from price (conservative)
-  const winProb = aiWinProb ?? price; // If no AI prob, assume fair market
-  
-  // Extract stats
+  const title = trade.title || trade.question || trade.market || '';
+
+  const winProb = aiWinProb ?? price;
   const nicheWinRate = stats?.profileWinRate ?? stats?.globalWinRate ?? 0.5;
   const totalTrades = stats?.profileTrades ?? stats?.globalTrades ?? 0;
   const avgBetSize = stats?.avgBetSizeUsd ?? tradeValue;
   const convictionMult = avgBetSize > 0 ? tradeValue / avgBetSize : 1;
-  const isHot = stats?.isHot ?? false;
   const isHedging = stats?.isHedging ?? false;
-  
-  // ============================================================================
-  // FACTOR 1: EDGE (50% weight)
-  // ============================================================================
   const rawEdge = (winProb - price) * 100;
-  const edgeContribution = Math.max(-25, Math.min(25, rawEdge * (25 / 15)));
-  
-  // ============================================================================
-  // FACTOR 2: CONVICTION (25% weight)
-  // ============================================================================
-  let convictionContribution = 0;
-  if (convictionMult >= 2.5) {
-    convictionContribution = 20;
-  } else if (convictionMult >= 2) {
-    convictionContribution = 15;
-  } else if (convictionMult >= 1.5) {
-    convictionContribution = 10;
-  } else if (convictionMult >= 1.2) {
-    convictionContribution = 5;
-  } else if (convictionMult < 0.5) {
-    convictionContribution = -12;
-  } else if (convictionMult < 0.7) {
-    convictionContribution = -6;
-  }
-  
-  // ============================================================================
-  // FACTOR 3: SKILL (15% weight)
-  // ============================================================================
-  const skillDelta = (nicheWinRate - 0.50) * 100;
-  let skillContribution = Math.max(-10, Math.min(15, skillDelta * 1.5));
-  if (totalTrades < 5) {
-    skillContribution = Math.min(skillContribution, 0); // Cap unproven traders
-  }
-  
-  // ============================================================================
-  // FACTOR 4: CONTEXT (10% weight)
-  // ============================================================================
-  let contextContribution = 0;
-  if (isHot) contextContribution += 5;
-  if (isHedging) contextContribution -= 15;
-  if (totalTrades >= 30) contextContribution += 3;
-  if (totalTrades < 5) contextContribution -= 5;
-  contextContribution = Math.max(-10, Math.min(10, contextContribution));
-  
-  // ============================================================================
-  // FINAL SCORE
-  // ============================================================================
-  const totalContribution = edgeContribution + convictionContribution + skillContribution + contextContribution;
-  const finalScore = Math.max(0, Math.min(100, 50 + totalContribution));
-  
-  // Determine recommendation
+
+  // Entry price band (FT: 20-40¢ sweet spot, <20¢ toxic)
+  const inSweetSpot = price >= 0.20 && price < 0.40;
+  const isLongshot = price < 0.20;
+  const isMidRange = price >= 0.40 && price < 0.60;
+  const isFavorite = price >= 0.60;
+
+  // Conviction (FT: 3x+ profitable, <1x lost)
+  const convictionStrong = convictionMult >= 3;
+  const convictionGood = convictionMult >= 2;
+  const convictionWeak = convictionMult < 1;
+
+  // Trader WR band (FT: 55-60% had 82% actual WR)
+  const wrSweetSpot = nicheWinRate >= 0.55 && nicheWinRate < 0.65;
+  const wrGood = nicheWinRate >= 0.50 && nicheWinRate < 0.70;
+  const wrBad = nicheWinRate < 0.45 && totalTrades >= 15;
+
+  // Market type (FT: crypto short-term -91% of PnL drag)
+  const isCrypto = isCryptoShortTerm(title);
+
+  // Score contributions (0-100 scale)
+  let convictionContrib = 0;
+  if (convictionStrong) convictionContrib = 25;
+  else if (convictionGood) convictionContrib = 15;
+  else if (convictionWeak) convictionContrib = -15;
+
+  let priceBandContrib = 0;
+  if (inSweetSpot) priceBandContrib = 25;
+  else if (isLongshot) priceBandContrib = -20;
+  else if (isMidRange) priceBandContrib = -5;
+  else if (isFavorite) priceBandContrib = 5;
+
+  let wrContrib = 0;
+  if (wrSweetSpot) wrContrib = 20;
+  else if (wrGood) wrContrib = 10;
+  else if (wrBad) wrContrib = -20;
+
+  let marketContrib = 0;
+  if (isCrypto) marketContrib = -20;
+  else marketContrib = 5;
+
+  let edgeContrib = Math.max(-5, Math.min(5, rawEdge / 3));
+
+  const totalContrib = convictionContrib + priceBandContrib + wrContrib + marketContrib + edgeContrib;
+  const finalScore = Math.max(0, Math.min(100, 50 + totalContrib));
+
+  // Recommendation
   let recommendation: PolySignalRecommendation;
-  
-  // Hard overrides
-  if (isHedging && rawEdge < 0) {
-    recommendation = 'TOXIC';
-  } else if (rawEdge < -15) {
-    recommendation = 'TOXIC';
-  } else if (nicheWinRate < 0.40 && totalTrades >= 15) {
-    recommendation = 'TOXIC';
-  } else if (finalScore >= POLYSIGNAL_STRONG_BUY_THRESHOLD) {
-    recommendation = 'STRONG_BUY';
-  } else if (finalScore >= POLYSIGNAL_BUY_THRESHOLD) {
-    recommendation = 'BUY';
-  } else if (finalScore >= 45) {
-    recommendation = 'NEUTRAL';
-  } else if (finalScore >= 30) {
-    recommendation = 'AVOID';
-  } else {
-    recommendation = 'TOXIC';
-  }
-  
+  if (isHedging && rawEdge < 0) recommendation = 'TOXIC';
+  else if (wrBad) recommendation = 'TOXIC';
+  else if (isCrypto && convictionMult < 2) recommendation = 'AVOID';
+  else if (isLongshot && nicheWinRate < 0.50) recommendation = 'TOXIC';
+  else if (rawEdge < -15) recommendation = 'TOXIC';
+  else if (finalScore >= POLYSIGNAL_STRONG_BUY_THRESHOLD) recommendation = 'STRONG_BUY';
+  else if (finalScore >= POLYSIGNAL_BUY_THRESHOLD) recommendation = 'BUY';
+  else if (finalScore >= 45) recommendation = 'NEUTRAL';
+  else if (finalScore >= 30) recommendation = 'AVOID';
+  else recommendation = 'TOXIC';
+
   return {
     score: Math.round(finalScore),
     recommendation,
     factors: {
-      edge: { value: edgeContribution, rawEdge },
-      conviction: { value: convictionContribution, multiplier: convictionMult },
-      skill: { value: skillContribution, winRate: nicheWinRate, trades: totalTrades },
-      context: { value: contextContribution, isHot, isHedging },
+      conviction: { value: convictionContrib, multiplier: convictionMult, band: convictionStrong ? '3x+' : convictionGood ? '2x+' : convictionWeak ? '<1x' : '1-2x' },
+      priceBand: { value: priceBandContrib, inSweetSpot, isLongshot, entryPrice: price },
+      traderWr: { value: wrContrib, winRate: nicheWinRate, trades: totalTrades, inSweetSpot: wrSweetSpot },
+      marketType: { value: marketContrib, isCryptoShortTerm: isCrypto },
+      edge: { value: edgeContrib, rawEdge },
+    },
+    indicators: {
+      conviction: { value: convictionMult, label: `${convictionMult.toFixed(1)}x`, status: convictionStrong ? 'strong' : convictionGood ? 'good' : convictionWeak ? 'weak' : 'neutral' },
+      traderWr: { value: nicheWinRate, label: `${(nicheWinRate * 100).toFixed(0)}%`, status: wrSweetSpot ? 'sweet_spot' : wrGood ? 'good' : wrBad ? 'avoid' : 'neutral' },
+      entryBand: { value: price, label: `${(price * 100).toFixed(0)}¢`, status: inSweetSpot ? 'sweet_spot' : isLongshot ? 'avoid' : 'neutral' },
+      marketType: { value: isCrypto ? 'crypto_short' : 'other', label: isCrypto ? 'Crypto short-term' : 'Non-crypto', status: isCrypto ? 'caution' : 'ok' },
+      edge: { value: rawEdge, label: `${rawEdge >= 0 ? '+' : ''}${rawEdge.toFixed(1)}%`, status: rawEdge >= 10 ? 'strong' : rawEdge >= 5 ? 'good' : rawEdge < 0 ? 'negative' : 'neutral' },
     },
   };
 }
@@ -295,7 +303,13 @@ export async function GET(request: Request) {
       });
     }
 
-    const wallets = topTraders.map(t => t.wallet.toLowerCase()).filter(Boolean);
+    const wallets = topTraders
+      .filter((t) => !isTraderExcluded(t.wallet))
+      .map((t) => t.wallet.toLowerCase())
+      .filter(Boolean);
+    if (wallets.length < topTraders.length) {
+      console.log(`[fire-feed] Excluded ${topTraders.length - wallets.length} traders (FT_EXCLUDED_TRADERS)`);
+    }
     console.log(`[fire-feed] Processing ${wallets.length} wallets`);
 
     // 2. Fetch stats (but don't fail if none found)
@@ -598,10 +612,11 @@ export async function GET(request: Request) {
           _fireRoi: roiPct,
           _fireConviction: conviction,
           _traderPnl: traderPnl,
-          // PolySignal scoring
+          // PolySignal scoring (FT-learnings based)
           _polySignalScore: polySignal.score,
           _polySignalRecommendation: polySignal.recommendation,
           _polySignalFactors: polySignal.factors,
+          _polySignalIndicators: polySignal.indicators,
           raw: trade,
         });
       }

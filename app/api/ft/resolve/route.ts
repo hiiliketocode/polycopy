@@ -226,7 +226,7 @@ export async function POST(request: Request) {
     
     console.log(`[ft/resolve] Resolved ${resolved} orders (${won} won, ${lost} lost)`);
     
-    // 5. Update wallet stats
+    // 5. Update wallet stats for wallets with open orders (resolved this run)
     const walletIds = [...new Set(openOrders.map(o => o.wallet_id))];
     
     for (const walletId of walletIds) {
@@ -272,6 +272,42 @@ export async function POST(request: Request) {
           updated_at: now.toISOString()
         })
         .eq('wallet_id', walletId);
+    }
+    
+    // 6. Full reconciliation: recompute total_pnl for ALL ft_wallets from ft_orders
+    // Fixes PnL drift between wallet.total_pnl and sum of order PnL (doc Section 4)
+    // Run hourly to avoid excessive DB load
+    const runReconciliation = now.getMinutes() === 0;
+    let reconciled = 0;
+    if (runReconciliation) {
+      const { data: allWallets } = await supabase.from('ft_wallets').select('wallet_id, starting_balance');
+      for (const w of allWallets || []) {
+        const { data: ords } = await supabase
+          .from('ft_orders')
+          .select('outcome, pnl, size')
+          .eq('wallet_id', w.wallet_id);
+        const orders = ords || [];
+        const totalTrades = orders.length;
+        const openPositions = orders.filter((o: { outcome: string }) => o.outcome === 'OPEN').length;
+        const totalPnl = orders
+          .filter((o: { outcome: string }) => o.outcome !== 'OPEN')
+          .reduce((s: number, o: { pnl?: number }) => s + (o.pnl || 0), 0);
+        const startingBalance = Number(w.starting_balance) || 1000;
+        await supabase
+          .from('ft_wallets')
+          .update({
+            total_trades: totalTrades,
+            open_positions: openPositions,
+            total_pnl: totalPnl,
+            current_balance: startingBalance + totalPnl,
+            updated_at: now.toISOString(),
+          })
+          .eq('wallet_id', w.wallet_id);
+        reconciled++;
+      }
+      if (reconciled > 0) {
+        console.log(`[ft/resolve] Reconciled ${reconciled} wallet stats`);
+      }
     }
     
     return NextResponse.json({
