@@ -391,6 +391,12 @@ export async function GET(request: Request) {
     debugStats.tradersWithStats = statsMap.size;
     console.log(`[fire-feed] Stats available for ${statsMap.size} wallets`);
 
+    // PNL map from leaderboard for _traderPnl on each trade
+    const traderPnlMap = new Map<string, number>();
+    topTraders.forEach((t) => {
+      traderPnlMap.set((t.wallet || '').toLowerCase(), t.pnl ?? 0);
+    });
+
     // 4. Process trades - apply PolySignal scoring and only return BUY or STRONG_BUY (new scoring system only)
     const fireTrades: any[] = [];
     let rejectedSamples: any[] = [];
@@ -410,6 +416,7 @@ export async function GET(request: Request) {
       debugStats.tradesChecked++;
       
       const stats = statsMap.get(wallet);
+      const traderPnl = traderPnlMap.get(wallet) ?? 0;
 
       // Calculate stats-based metrics for fire indicators (display only)
       const category = deriveCategoryFromTrade(trade);
