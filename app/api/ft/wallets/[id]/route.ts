@@ -94,14 +94,15 @@ export async function GET(request: Request, { params }: RouteParams) {
         }
       }
       
-      // Fetch fresh prices for markets without cached prices (up to 30 at a time)
-      const marketsNeedingPrices = openConditionIds.filter(id => !marketsWithPrices.has(id)).slice(0, 30);
-      
-      if (marketsNeedingPrices.length > 0) {
-        console.log(`[ft/wallet/${walletId}] Fetching fresh prices for ${marketsNeedingPrices.length} markets`);
-        
+      // Fetch fresh prices for markets without cached prices (batches of 30, up to 150 for single-wallet view)
+      const allNeedingPrices = openConditionIds.filter(id => !marketsWithPrices.has(id));
+      const PRICE_BATCH_SIZE = 30;
+      const MAX_PRICE_FETCHES = 150;
+
+      if (allNeedingPrices.length > 0) {
+        console.log(`[ft/wallet/${walletId}] Fetching fresh prices for ${Math.min(allNeedingPrices.length, MAX_PRICE_FETCHES)} markets`);
         const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        
+
         const parseOutcomes = (outcomes: unknown): string[] | null => {
           if (Array.isArray(outcomes)) return outcomes.map(o => typeof o === 'string' ? o : (o as { LABEL?: string; label?: string })?.LABEL ?? (o as { label?: string })?.label ?? String(o ?? ''));
           return null;
@@ -110,8 +111,10 @@ export async function GET(request: Request, { params }: RouteParams) {
           if (Array.isArray(prices)) return prices.map(p => { const n = typeof p === 'string' ? parseFloat(p) : Number(p); return Number.isFinite(n) ? n : 0; });
           return null;
         };
-        
-        await Promise.all(marketsNeedingPrices.map(async (conditionId) => {
+
+        for (let offset = 0; offset < Math.min(allNeedingPrices.length, MAX_PRICE_FETCHES); offset += PRICE_BATCH_SIZE) {
+          const batch = allNeedingPrices.slice(offset, offset + PRICE_BATCH_SIZE);
+          await Promise.all(batch.map(async (conditionId) => {
           try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 5000);
@@ -174,6 +177,7 @@ export async function GET(request: Request, { params }: RouteParams) {
             console.warn(`[ft/wallet/${walletId}] Failed to fetch price for ${conditionId}:`, err);
           }
         }));
+        }
       }
     }
     
@@ -367,15 +371,31 @@ export async function GET(request: Request, { params }: RouteParams) {
     }
     
     const hours_remaining = Math.max(0, (endDate.getTime() - now.getTime()) / (1000 * 60 * 60));
-    
-    // Cash available = starting balance + realized P&L - open exposure
-    const cashAvailable = Math.max(0, (wallet.starting_balance || 1000) + stats.realized_pnl - stats.open_exposure);
-    
+
+    // Starting balance: use DB value; self-heal if cash would be negative (mirrors migration 20260325)
+    let effectiveStartingBalance = Number(wallet.starting_balance) || 1000;
+    const rawCash = effectiveStartingBalance + stats.realized_pnl - stats.open_exposure;
+    if (rawCash < 0) {
+      const addAmount = Math.ceil(Math.abs(rawCash)) + 10;
+      effectiveStartingBalance += addAmount;
+      await supabase
+        .from('ft_wallets')
+        .update({
+          starting_balance: effectiveStartingBalance,
+          updated_at: now.toISOString(),
+        })
+        .eq('wallet_id', walletId);
+    }
+
+    // Cash available = starting balance + realized P&L - open exposure (clamped to 0)
+    const cashAvailable = Math.max(0, effectiveStartingBalance + stats.realized_pnl - stats.open_exposure);
+
     return NextResponse.json({
       success: true,
       wallet: {
         ...wallet,
-        current_balance: (wallet.starting_balance || 1000) + stats.realized_pnl + stats.unrealized_pnl,
+        starting_balance: effectiveStartingBalance,
+        current_balance: effectiveStartingBalance + stats.realized_pnl + stats.unrealized_pnl,
         cash_available: cashAvailable,
         trades_seen: wallet.trades_seen || 0,
         trades_skipped: wallet.trades_skipped || 0,

@@ -305,7 +305,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
   const fetchWalletData = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const res = await fetch(`/api/ft/wallets/${id}`);
+      const res = await fetch(`/api/ft/wallets/${id}`, { cache: 'no-store' });
       const data = await res.json();
       
       if (data.success) {
@@ -336,8 +336,8 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
     const autoSync = async () => {
       try {
         // Sync new trades and check resolutions
-        await fetch('/api/ft/sync', { method: 'POST' });
-        await fetch('/api/ft/resolve', { method: 'POST' });
+        await fetch('/api/ft/sync', { method: 'POST', cache: 'no-store' });
+        await fetch('/api/ft/resolve', { method: 'POST', cache: 'no-store' });
         // Enrich orders with ML scores (processes a batch each time)
         await fetch('/api/ft/enrich-ml', { 
           method: 'POST', 

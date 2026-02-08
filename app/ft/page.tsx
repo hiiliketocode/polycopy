@@ -216,7 +216,7 @@ export default function ForwardTestWalletsPage() {
   const fetchWallets = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const res = await fetch('/api/ft/wallets');
+      const res = await fetch('/api/ft/wallets', { cache: 'no-store' });
       const data = await res.json();
       
       if (data.success) {
@@ -236,7 +236,7 @@ export default function ForwardTestWalletsPage() {
   const syncNewTrades = async () => {
     try {
       setSyncing(true);
-      const res = await fetch('/api/ft/sync', { method: 'POST' });
+      const res = await fetch('/api/ft/sync', { method: 'POST', cache: 'no-store' });
       const data = await res.json();
       
       if (data.success) {
@@ -254,7 +254,7 @@ export default function ForwardTestWalletsPage() {
   const resolvePositions = async () => {
     try {
       setResolving(true);
-      const res = await fetch('/api/ft/resolve', { method: 'POST' });
+      const res = await fetch('/api/ft/resolve', { method: 'POST', cache: 'no-store' });
       const data = await res.json();
       
       if (data.success) {
@@ -278,9 +278,9 @@ export default function ForwardTestWalletsPage() {
       
       try {
         // Sync new trades
-        await fetch('/api/ft/sync', { method: 'POST' });
+        await fetch('/api/ft/sync', { method: 'POST', cache: 'no-store' });
         // Check resolutions
-        await fetch('/api/ft/resolve', { method: 'POST' });
+        await fetch('/api/ft/resolve', { method: 'POST', cache: 'no-store' });
         // Enrich orders with ML scores
         await fetch('/api/ft/enrich-ml', { 
           method: 'POST', 

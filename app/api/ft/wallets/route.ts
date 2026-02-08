@@ -120,42 +120,51 @@ export async function GET() {
             .in('condition_id', conditionIds);
           
           const priceMap = new Map<string, { outcomes: string[] | null; outcomePrices: number[] | null }>();
-          
-          // Use cached prices whenever available (stale is better than nothing for PnL display)
+          const STALE_PRICE_MS = 2 * 60 * 1000; // 2 minutes - refresh prices older than this
+          const now = Date.now();
+
+          // Use cached prices only when fresh (within 2 min); otherwise treat as needing refresh
           if (markets) {
             for (const market of markets) {
-              const outcomes = market.outcome_prices?.outcomes ?? 
+              const outcomes = market.outcome_prices?.outcomes ??
                               market.outcome_prices?.labels ?? null;
-              const outcomePrices = market.outcome_prices?.outcomePrices ?? 
+              const outcomePrices = market.outcome_prices?.outcomePrices ??
                                    market.outcome_prices?.prices ?? null;
-              
-              if (outcomes && outcomePrices) {
+              const lastUpdated = market.last_price_updated_at
+                ? new Date(market.last_price_updated_at).getTime()
+                : 0;
+              const isStale = now - lastUpdated > STALE_PRICE_MS;
+
+              if (outcomes && outcomePrices && !isStale) {
                 priceMap.set(market.condition_id, { outcomes, outcomePrices });
               }
             }
           }
-          
-          // Fetch fresh prices for markets without cached prices (up to 25 per wallet)
-          const marketsNeedingPrices = conditionIds.filter(id => !priceMap.has(id)).slice(0, 25);
-          if (marketsNeedingPrices.length > 0) {
-            const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-            
-            const parseOutcomes = (outcomes: unknown): string[] | null => {
-              if (Array.isArray(outcomes)) return outcomes.map(o => typeof o === 'string' ? o : (o as { LABEL?: string; label?: string })?.LABEL ?? (o as { label?: string })?.label ?? String(o ?? ''));
-              return null;
-            };
-            const parsePrices = (prices: unknown): number[] | null => {
-              if (Array.isArray(prices)) return prices.map(p => { const n = typeof p === 'string' ? parseFloat(p) : Number(p); return Number.isFinite(n) ? n : 0; });
-              return null;
-            };
-            
-            await Promise.all(marketsNeedingPrices.map(async (conditionId) => {
+
+          // Fetch fresh prices for markets without prices or with stale prices (batches of 25, up to 100 per wallet)
+          const allNeedingPrices = conditionIds.filter(id => !priceMap.has(id));
+          const PRICE_BATCH_SIZE = 25;
+          const MAX_PRICE_FETCHES = 100;
+          const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+          const parseOutcomes = (outcomes: unknown): string[] | null => {
+            if (Array.isArray(outcomes)) return outcomes.map(o => typeof o === 'string' ? o : (o as { LABEL?: string; label?: string })?.LABEL ?? (o as { label?: string })?.label ?? String(o ?? ''));
+            return null;
+          };
+          const parsePrices = (prices: unknown): number[] | null => {
+            if (Array.isArray(prices)) return prices.map(p => { const n = typeof p === 'string' ? parseFloat(p) : Number(p); return Number.isFinite(n) ? n : 0; });
+            return null;
+          };
+
+          for (let offset = 0; offset < Math.min(allNeedingPrices.length, MAX_PRICE_FETCHES); offset += PRICE_BATCH_SIZE) {
+            const batch = allNeedingPrices.slice(offset, offset + PRICE_BATCH_SIZE);
+            await Promise.all(batch.map(async (conditionId) => {
               try {
                 const controller = new AbortController();
                 const timeout = setTimeout(() => controller.abort(), 4000);
                 const res = await fetch(
                   `${baseUrl}/api/polymarket/price?conditionId=${conditionId}`,
-                  { signal: controller.signal }
+                  { cache: 'no-store', signal: controller.signal }
                 );
                 clearTimeout(timeout);
                 
@@ -209,7 +218,7 @@ export async function GET() {
               }
             }));
           }
-          
+
           // Helper to extract label from outcome (string or object like {LABEL: "X"})
           const outcomeLabel = (o: unknown): string => {
             if (typeof o === 'string') return o;
@@ -266,16 +275,31 @@ export async function GET() {
       }
       
       const hours_remaining = Math.max(0, (endDate.getTime() - now.getTime()) / (1000 * 60 * 60));
-      
-      // Cash available = starting balance + realized P&L - open exposure
-      // Clamp to 0 minimum - we never allow negative cash (migration 20260325 fixes root cause)
-      const cashAvailable = Math.max(0, (wallet.starting_balance || 1000) + stats.realized_pnl - stats.open_exposure);
-      
+
+      // Starting balance: use DB value; self-heal if cash would be negative (mirrors migration 20260325)
+      let effectiveStartingBalance = Number(wallet.starting_balance) || 1000;
+      const rawCash = effectiveStartingBalance + stats.realized_pnl - stats.open_exposure;
+      if (rawCash < 0) {
+        const addAmount = Math.ceil(Math.abs(rawCash)) + 10;
+        effectiveStartingBalance += addAmount;
+        await supabase
+          .from('ft_wallets')
+          .update({
+            starting_balance: effectiveStartingBalance,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('wallet_id', wallet.wallet_id);
+      }
+
+      // Cash available = starting balance + realized P&L - open exposure (clamped to 0)
+      const cashAvailable = Math.max(0, effectiveStartingBalance + stats.realized_pnl - stats.open_exposure);
+
       return {
         ...wallet,
+        starting_balance: effectiveStartingBalance,
         ...stats,
         total_pnl: stats.realized_pnl + stats.unrealized_pnl,
-        current_balance: (wallet.starting_balance || 1000) + stats.realized_pnl + stats.unrealized_pnl,
+        current_balance: effectiveStartingBalance + stats.realized_pnl + stats.unrealized_pnl,
         cash_available: cashAvailable,
         trades_seen: wallet.trades_seen || 0,
         trades_skipped: wallet.trades_skipped || 0,
