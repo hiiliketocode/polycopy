@@ -78,23 +78,36 @@ export async function GET() {
     }
     
     const walletIds = wallets.map((w: { wallet_id: string }) => w.wallet_id);
-    
-    // Fetch all orders for all wallets (explicit limit to avoid PostgREST default 1000 cap)
-    const { data: allOrders, error: ordersError } = await supabase
-      .from('ft_orders')
-      .select('wallet_id, outcome, pnl, size, condition_id, entry_price, token_label, resolved_time')
-      .in('wallet_id', walletIds)
-      .limit(50000);
-    
-    // Group orders by wallet
-    const ordersByWallet = new Map<string, typeof allOrders>();
-    if (!ordersError && allOrders) {
-      for (const o of allOrders) {
-        const wid = o.wallet_id as string;
-        if (!ordersByWallet.has(wid)) ordersByWallet.set(wid, []);
-        ordersByWallet.get(wid)!.push(o);
+
+    // Fetch orders PER WALLET to avoid PostgREST 1000-row cap on bulk queries.
+    // A single .in(wallet_id, [...]) + .range() returns globally-ordered rows, so wallets
+    // with recent orders get truncated. Per-wallet fetch guarantees each wallet gets its full set.
+    type OrderRow = { wallet_id: string; outcome: string; pnl?: number; size?: number; condition_id?: string; entry_price?: number; token_label?: string; resolved_time?: string };
+    const PAGE_SIZE = 1000;
+    const MAX_ORDERS_PER_WALLET = 10000;
+    const ordersByWallet = new Map<string, OrderRow[]>();
+
+    for (const walletId of walletIds) {
+      const walletOrders: OrderRow[] = [];
+      let offset = 0;
+      while (true) {
+        const { data: page, error } = await supabase
+          .from('ft_orders')
+          .select('wallet_id, outcome, pnl, size, condition_id, entry_price, token_label, resolved_time')
+          .eq('wallet_id', walletId)
+          .order('order_time', { ascending: true })
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (error) break;
+        if (!page || page.length === 0) break;
+        walletOrders.push(...page);
+        if (page.length < PAGE_SIZE) break;
+        offset += PAGE_SIZE;
+        if (walletOrders.length >= MAX_ORDERS_PER_WALLET) break;
       }
+      ordersByWallet.set(walletId, walletOrders);
     }
+
+    const allOrders = Array.from(ordersByWallet.values()).flat();
     
     // Collect unique condition_ids from open orders across ALL wallets (dedupe for batched price fetch)
     const allConditionIds = [...new Set(

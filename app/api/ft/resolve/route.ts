@@ -4,14 +4,20 @@ import { requireAdminOrCron } from '@/lib/ft-auth';
 
 /**
  * POST /api/ft/resolve
- * 
+ *
  * Checks for resolved markets and updates FT order outcomes.
  * Admin only (or cron with CRON_SECRET).
- * 
+ *
+ * Resolution logic (price-based):
+ * - Our outcome's price >= 0.99 ($1) → WON
+ * - Our outcome's price <= 0.01 (1¢) → LOST
+ * - Otherwise → keep OPEN (pending)
+ * Does not require market.closed; uses prices as source of truth.
+ *
  * Flow:
  * 1. Get all OPEN FT orders
- * 2. Check their markets in our database for resolution
- * 3. Update outcomes and PnL for resolved orders
+ * 2. Fetch markets from Polymarket API
+ * 3. Resolve orders where prices show clear outcome ($1 vs 1¢)
  * 4. Update wallet stats
  */
 export async function POST(request: Request) {
@@ -24,13 +30,28 @@ export async function POST(request: Request) {
     
     console.log('[ft/resolve] Starting resolution check at', now.toISOString());
     
-    // 1. Get all OPEN FT orders (explicit limit to avoid PostgREST default 1000 cap)
-    const { data: openOrders, error: ordersError } = await supabase
-      .from('ft_orders')
-      .select('*')
-      .eq('outcome', 'OPEN')
-      .limit(10000);
-    
+    // 1. Get all OPEN FT orders (paginated - PostgREST often caps at 1000/request)
+    const PAGE_SIZE = 1000;
+    const openOrders: Record<string, unknown>[] = [];
+    let offset = 0;
+    let ordersError: { message: string } | null = null;
+    while (true) {
+      const { data: page, error } = await supabase
+        .from('ft_orders')
+        .select('*')
+        .eq('outcome', 'OPEN')
+        .order('order_time', { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) {
+        ordersError = error;
+        break;
+      }
+      if (!page || page.length === 0) break;
+      openOrders.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
+
     if (ordersError) {
       console.error('[ft/resolve] Error fetching orders:', ordersError);
       return NextResponse.json(
@@ -38,8 +59,8 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
-    
-    if (!openOrders || openOrders.length === 0) {
+
+    if (openOrders.length === 0) {
       return NextResponse.json({
         success: true,
         message: 'No open orders to check',
@@ -52,149 +73,131 @@ export async function POST(request: Request) {
     // 2. Get unique condition_ids
     const conditionIds = [...new Set(openOrders.map(o => o.condition_id).filter(Boolean))];
     
-    // 3. Fetch resolution status directly from Polymarket API
-    // Process in batches to avoid URL length limits
-    const resolutionMap = new Map<string, string | null>();
+    // Helper: extract label from outcome (string or object like {LABEL:"Yes"})
+    const outcomeLabel = (o: unknown): string => {
+      if (typeof o === 'string') return o.trim().toUpperCase();
+      if (o && typeof o === 'object') {
+        const obj = o as { LABEL?: string; label?: string };
+        return (obj.LABEL || obj.label || '').trim().toUpperCase();
+      }
+      return '';
+    };
+
+    // Helper: normalize for comparison (handles Yes/YES, No/NO, etc.)
+    const normalize = (s: string | null | undefined) => (s || '').trim().toUpperCase();
+
+    // Helper: do labels match? (case-insensitive, trimmed)
+    const labelsMatch = (a: string, b: string) => normalize(a) === normalize(b);
+
+    // 3. Fetch markets from Polymarket API - use price-based resolution ($1 and 1¢ thresholds)
+    // Resolve when: our outcome's price >= 0.99 (WON) or <= 0.01 (LOST). Keep pending otherwise.
+    const resolutionMap = new Map<string, { winningLabel: string; outcomes: string[]; prices: number[] }>();
     const BATCH_SIZE = 20;
-    
-    console.log(`[ft/resolve] Checking ${conditionIds.length} unique condition IDs in ${Math.ceil(conditionIds.length / BATCH_SIZE)} batches`);
-    
+
+    const WIN_THRESHOLD = 0.99;   // $1 or 100¢ - outcome has won
+    const LOSE_THRESHOLD = 0.01;  // 1¢ or below - outcome has lost
+
+    console.log(`[ft/resolve] Checking ${conditionIds.length} unique condition IDs (price-based: ≥${WIN_THRESHOLD}=WON, ≤${LOSE_THRESHOLD}=LOST)`);
+
     for (let i = 0; i < conditionIds.length; i += BATCH_SIZE) {
       const batch = conditionIds.slice(i, i + BATCH_SIZE);
       try {
-        // API expects repeated params: ?condition_ids=x&condition_ids=y
         const params = batch.map(id => `condition_ids=${id}`).join('&');
         const url = `https://gamma-api.polymarket.com/markets?${params}`;
         const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
-        
+
         if (response.ok) {
           const markets = await response.json();
-          console.log(`[ft/resolve] Batch ${Math.floor(i/BATCH_SIZE)+1}: Got ${markets.length} markets`);
-          
           for (const market of markets) {
             const cid = market.conditionId || market.condition_id;
-            const isClosed = market.closed === true || market.resolved === true;
-            if (!isClosed) {
-              continue;
-            }
-            
-            // Parse outcomes and prices to determine winner
+            if (!cid) continue;
+
             let outcomes: (string | { LABEL?: string; label?: string })[] = [];
             let prices: number[] = [];
-            
             try {
-              outcomes = (typeof market.outcomes === 'string' 
-                ? JSON.parse(market.outcomes) 
-                : market.outcomes || []) as (string | { LABEL?: string; label?: string })[];
-              const rawPrices = typeof market.outcomePrices === 'string'
-                ? JSON.parse(market.outcomePrices)
-                : market.outcomePrices || [];
-              prices = rawPrices.map((p: any) => parseFloat(p));
+              outcomes = (typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes || []) as (string | { LABEL?: string; label?: string })[];
+              const rawPrices = typeof market.outcomePrices === 'string' ? JSON.parse(market.outcomePrices) : market.outcomePrices || [];
+              prices = rawPrices.map((p: unknown) => parseFloat(String(p)));
             } catch {
               continue;
             }
-            
-            // Winner has price close to 1, loser has price close to 0
-            // Find the outcome with highest price
-            if (outcomes.length > 0 && prices.length > 0) {
-              const maxPriceIdx = prices.indexOf(Math.max(...prices));
-              const maxPrice = prices[maxPriceIdx];
-              
-              console.log(`[ft/resolve] Closed market: outcomes=${JSON.stringify(outcomes)}, prices=${JSON.stringify(prices)}, maxPrice=${maxPrice}`);
-              
-              // Only count as resolved if one outcome clearly won (price > 0.9)
-              if (maxPrice > 0.9) {
-                // Extract the actual label - outcomes can be objects or strings
-                let winnerRaw = outcomes[maxPriceIdx];
-                let winner: string;
-                
-                // Handle different outcome formats from Polymarket API
-                if (typeof winnerRaw === 'object' && winnerRaw !== null) {
-                  // It's an object like {ID: "...", LABEL: "UP"}
-                  const obj = winnerRaw as { LABEL?: string; label?: string };
-                  winner = (obj.LABEL || obj.label || String(winnerRaw)).toUpperCase();
-                } else if (typeof winnerRaw === 'string') {
-                  // Could be a JSON string like '{"ID":"...","LABEL":"UP"}' or plain "Up"
-                  try {
-                    const parsed = JSON.parse(winnerRaw);
-                    winner = (parsed.LABEL || parsed.label || winnerRaw).toUpperCase();
-                  } catch {
-                    // Plain string like "Up" or "Yes"
-                    winner = winnerRaw.toUpperCase();
-                  }
-                } else {
-                  winner = String(winnerRaw).toUpperCase();
-                }
-                
-                if (cid) {
-                  resolutionMap.set(cid, winner);
-                  console.log(`[ft/resolve] ✓ Market ${cid.slice(0,10)}... resolved: ${winner}`);
-                }
-              } else {
-                console.log(`[ft/resolve] ✗ Market ${cid?.slice(0,10)}... closed but maxPrice ${maxPrice} < 0.9`);
-              }
-            } else {
-              console.log(`[ft/resolve] ✗ Market ${cid?.slice(0,10)}... missing outcomes/prices`);
-            }
+            if (outcomes.length === 0 || prices.length === 0) continue;
+
+            // Handle prices in cents (0-100) vs 0-1
+            const maxRaw = Math.max(...prices);
+            if (maxRaw > 1) prices = prices.map(p => p / 100);
+
+            const maxPrice = Math.max(...prices);
+            const minPrice = Math.min(...prices);
+            const maxPriceIdx = prices.indexOf(maxPrice);
+
+            // Resolve only when prices show clear outcome: winner at $1, loser at 1¢ or below
+            // Keep pending if prices haven't settled (e.g. 0.95/0.05 is still settling)
+            const hasClearWinner = maxPrice >= WIN_THRESHOLD;
+            const hasClearLoser = minPrice <= LOSE_THRESHOLD;
+            if (!hasClearWinner || !hasClearLoser) continue;
+
+            const winningLabel = outcomeLabel(outcomes[maxPriceIdx]);
+            const outcomeLabels = outcomes.map(outcomeLabel);
+            resolutionMap.set(cid, { winningLabel, outcomes: outcomeLabels, prices });
+            console.log(`[ft/resolve] ✓ ${cid.slice(0,10)}... prices=${prices.map(p => p.toFixed(2)).join(',')} → winner=${winningLabel}`);
           }
         }
       } catch (err) {
         console.error(`[ft/resolve] Error fetching batch:`, err);
       }
     }
+
+    console.log(`[ft/resolve] Found ${resolutionMap.size} markets with clear price resolution`);
     
-    console.log(`[ft/resolve] Found ${resolutionMap.size} resolved markets`);
-    
-    // 4. Update resolved orders
+    // 4. Update resolved orders - use our outcome's price for WON/LOST
     let resolved = 0;
     let won = 0;
     let lost = 0;
     const errors: string[] = [];
-    
+
     for (const order of openOrders) {
       if (!order.condition_id) continue;
-      
-      const winningLabel = resolutionMap.get(order.condition_id);
-      if (winningLabel === undefined) {
-        // Market not resolved yet
-        continue;
+
+      const marketData = resolutionMap.get(order.condition_id);
+      if (!marketData) continue; // Market not yet resolved (prices not at $1/1¢)
+
+      const { winningLabel, outcomes: outcomeLabels, prices } = marketData;
+
+      // Find our outcome's index by matching token_label (case-insensitive)
+      let ourIdx = outcomeLabels.findIndex((l) => labelsMatch(l, order.token_label || 'YES'));
+      if (ourIdx < 0 && outcomeLabels.length === 2) {
+        // Binary fallback: map Yes/No to common orderings
+        const tok = normalize(order.token_label || 'YES');
+        const yesIdx = outcomeLabels.findIndex((l) => normalize(l) === 'YES' || normalize(l) === 'Y');
+        const noIdx = outcomeLabels.findIndex((l) => normalize(l) === 'NO' || normalize(l) === 'N');
+        if (tok === 'YES' && yesIdx >= 0) ourIdx = yesIdx;
+        else if (tok === 'NO' && noIdx >= 0) ourIdx = noIdx;
+        else if (tok === 'YES' && yesIdx < 0) ourIdx = 0; // Assume first is Yes
+        else if (tok === 'NO' && noIdx < 0) ourIdx = 1;   // Assume second is No
       }
-      
-      // Determine outcome
-      // For BUY: we win if token_label matches winning_label
-      // For SELL: we win if token_label does NOT match winning_label
-      const tokenLabel = (order.token_label || 'YES').toUpperCase();
-      const side = (order.side || 'BUY').toUpperCase();
-      
+      if (ourIdx < 0) continue; // Can't match our outcome, skip (keep pending)
+
+      const ourPrice = prices[ourIdx] ?? -1;
+
+      // Price-based: our outcome at $1 → WON, at 1¢ or below → LOST
       let outcome: 'WON' | 'LOST';
+      if (ourPrice >= WIN_THRESHOLD) outcome = 'WON';
+      else if (ourPrice <= LOSE_THRESHOLD) outcome = 'LOST';
+      else continue; // Price in between, keep pending
+
+      const side = (order.side || 'BUY').toUpperCase();
+
       let pnl: number;
-      
-      if (winningLabel === null) {
-        // Market voided - return stake
-        outcome = 'WON';
-        pnl = 0;
-      } else if (side === 'BUY') {
-        // BUY: we bought token_label, we win if it matches winning_label
-        // size = dollars invested, entry_price = price per share. shares = size/entry_price.
-        // Payout when win = shares * $1 = size/entry_price. Profit = size/entry_price - size.
-        if (tokenLabel === winningLabel) {
-          outcome = 'WON';
-          pnl = order.entry_price > 0
-            ? order.size * (1 - order.entry_price) / order.entry_price
-            : 0;
+      if (side === 'BUY') {
+        if (outcome === 'WON') {
+          pnl = order.entry_price > 0 ? order.size * (1 - order.entry_price) / order.entry_price : 0;
         } else {
-          outcome = 'LOST';
           pnl = -order.size;
         }
       } else {
-        // SELL: we sold token_label, we win if it does NOT match winning_label
-        if (tokenLabel !== winningLabel) {
-          outcome = 'WON';
-          pnl = order.size * order.entry_price; // Profit from selling
-        } else {
-          outcome = 'LOST';
-          pnl = -order.size * (1 - order.entry_price);
-        }
+        if (outcome === 'WON') pnl = order.size * order.entry_price;
+        else pnl = -order.size * (1 - order.entry_price);
       }
       
       // Update the order
@@ -223,14 +226,23 @@ export async function POST(request: Request) {
     const walletIds = [...new Set(openOrders.map(o => o.wallet_id))];
     
     for (const walletId of walletIds) {
-      // Get updated stats (all orders for this wallet)
-      const { data: orders } = await supabase
-        .from('ft_orders')
-        .select('outcome, pnl, size')
-        .eq('wallet_id', walletId)
-        .limit(10000);
-      
-      if (!orders) continue;
+      // Get updated stats (all orders for this wallet, paginated)
+      const orders: { outcome: string; pnl?: number; size?: number }[] = [];
+      let ordOffset = 0;
+      while (true) {
+        const { data: ordPage, error: ordErr } = await supabase
+          .from('ft_orders')
+          .select('outcome, pnl, size')
+          .eq('wallet_id', walletId)
+          .order('order_id', { ascending: true })
+          .range(ordOffset, ordOffset + PAGE_SIZE - 1);
+        if (ordErr || !ordPage) break;
+        if (ordPage.length === 0) break;
+        orders.push(...ordPage);
+        if (ordPage.length < PAGE_SIZE) break;
+        ordOffset += PAGE_SIZE;
+      }
+      if (orders.length === 0) continue;
       
       const totalTrades = orders.length;
       const openPositions = orders.filter(o => o.outcome === 'OPEN').length;

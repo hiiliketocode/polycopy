@@ -38,19 +38,28 @@ export async function GET(request: Request, { params }: RouteParams) {
       );
     }
     
-    // 2. Get all orders for this wallet (explicit limit to avoid truncation)
-    const { data: orders, error: ordersError } = await supabase
-      .from('ft_orders')
-      .select('*')
-      .eq('wallet_id', walletId)
-      .order('order_time', { ascending: false })
-      .limit(10000);
-    
-    if (ordersError) {
-      console.error('[ft/wallets/id] Error fetching orders:', ordersError);
+    // 2. Get all orders for this wallet (paginated - PostgREST often caps at 1000/request)
+    const PAGE_SIZE = 1000;
+    const allOrders: Record<string, unknown>[] = [];
+    let offset = 0;
+    let ordersError: { message: string } | null = null;
+    while (true) {
+      const { data: page, error } = await supabase
+        .from('ft_orders')
+        .select('*')
+        .eq('wallet_id', walletId)
+        .order('order_time', { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) {
+        ordersError = error;
+        console.error('[ft/wallets/id] Error fetching orders:', error);
+        break;
+      }
+      if (!page || page.length === 0) break;
+      allOrders.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
     }
-    
-    const allOrders = orders || [];
     
     // 2b. Look up trader display names from traders table
     const uniqueTraderAddresses = [...new Set(
