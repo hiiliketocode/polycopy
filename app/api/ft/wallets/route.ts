@@ -233,7 +233,7 @@ export async function GET() {
     }
     
     // Build stats for each wallet using shared priceMap
-    const walletsWithStats = await Promise.all(wallets.map(async (wallet: { wallet_id: string; start_date: string; end_date: string; starting_balance?: number }) => {
+    const walletsWithStats = await Promise.all(wallets.map(async (wallet: { wallet_id: string; start_date: string; end_date: string; starting_balance?: number; trades_seen?: number; trades_skipped?: number; last_sync_time?: string | null }) => {
       const orders = ordersByWallet.get(wallet.wallet_id) || [];
       const openOrders = orders.filter((o: { outcome: string }) => o.outcome === 'OPEN');
       const totalSize = orders.reduce((sum: number, o: { size?: number }) => sum + (Number(o.size) || 0), 0);

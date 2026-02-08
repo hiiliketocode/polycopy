@@ -428,7 +428,7 @@ export async function POST(request: Request) {
     
     const { data: markets, error: marketsError } = await supabase
       .from('markets')
-      .select('condition_id, end_time, closed, resolved_outcome, winning_side, title, slug, outcome_prices, outcomes, tags, start_time')
+      .select('condition_id, end_time, closed, resolved_outcome, winning_side, title, slug, outcome_prices, outcomes, tags, start_time, game_start_time')
       .in('condition_id', conditionIds);
     
     type MarketInfo = {
