@@ -327,6 +327,15 @@ export async function GET(request: Request) {
       });
     }
 
+    // Top traders from leaderboard (for wallet list + PNL map)
+    const topTraders = await fetchPolymarketLeaderboard({
+      timePeriod: 'month',
+      orderBy: 'PNL',
+      limit: FIRE_TOP_TRADERS_LIMIT,
+      category: 'overall',
+    });
+    debugStats.tradersChecked = topTraders.length;
+
     const wallets = topTraders
       .filter((t) => !isTraderExcluded(t.wallet))
       .map((t) => t.wallet.toLowerCase())
