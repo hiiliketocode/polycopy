@@ -29,9 +29,27 @@ export async function POST(request: Request) {
             max_total_exposure_usd,
         } = body;
 
-        if (!ft_wallet_id || !wallet_address) {
+        if (!ft_wallet_id) {
             return NextResponse.json(
-                { error: 'ft_wallet_id and wallet_address are required' },
+                { error: 'ft_wallet_id is required' },
+                { status: 400 }
+            );
+        }
+        let resolvedWallet = (wallet_address || '').trim();
+        if (!resolvedWallet || !resolvedWallet.startsWith('0x')) {
+            const { data: tw } = await supabase
+                .from('turnkey_wallets')
+                .select('polymarket_account_address, eoa_address')
+                .eq('user_id', userId)
+                .not('polymarket_account_address', 'is', null)
+                .limit(1)
+                .maybeSingle();
+            const fallback = (tw as any)?.polymarket_account_address || (tw as any)?.eoa_address;
+            if (fallback) resolvedWallet = fallback;
+        }
+        if (!resolvedWallet || !resolvedWallet.startsWith('0x') || resolvedWallet.length < 40) {
+            return NextResponse.json(
+                { error: 'Polymarket wallet required. Connect a wallet in Portfolio, or pass wallet_address.' },
                 { status: 400 }
             );
         }
@@ -171,9 +189,19 @@ export async function GET(request: Request) {
             );
         }
 
+        const { data: tw } = await supabase
+            .from('turnkey_wallets')
+            .select('polymarket_account_address, eoa_address')
+            .eq('user_id', userId)
+            .or('polymarket_account_address.not.is.null,eoa_address.not.is.null')
+            .limit(1)
+            .maybeSingle();
+        const myWallet = (tw as any)?.polymarket_account_address || (tw as any)?.eoa_address || null;
+
         return NextResponse.json({
             success: true,
             strategies: strategies || [],
+            my_polymarket_wallet: myWallet ? String(myWallet) : null,
         });
     } catch (error: any) {
         console.error('[LT Strategies] Error:', error);

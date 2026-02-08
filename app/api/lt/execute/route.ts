@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
-import { getActiveStrategies, executeTrade, type EnrichedTrade } from '@/lib/live-trading/executor';
+import { getActiveStrategies, executeTrade } from '@/lib/live-trading/executor';
 import { fetchPolymarketLeaderboard } from '@/lib/polymarket-leaderboard';
 import {
     evaluateTrade,
@@ -10,6 +10,7 @@ import {
     type PolymarketTrade,
     type FTWallet,
     type MarketInfo,
+    type EnrichedTrade,
     parseExtendedFilters,
 } from '@/lib/ft-sync/shared-logic';
 

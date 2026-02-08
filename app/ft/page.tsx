@@ -125,6 +125,7 @@ export default function ForwardTestWalletsPage() {
   const [activeTab, setActiveTab] = useState<'performance' | 'compare'>('performance');
   const [compareSortField, setCompareSortField] = useState<CompareSortField>('pnl');
   const [compareSortDir, setCompareSortDir] = useState<SortDir>('desc');
+  const [ltStrategyFtIds, setLtStrategyFtIds] = useState<Set<string>>(new Set());
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -235,6 +236,20 @@ export default function ForwardTestWalletsPage() {
       if (!silent) setError('Failed to fetch wallets');
     } finally {
       if (!silent) setLoading(false);
+    }
+  }, []);
+
+  const fetchLtStrategies = useCallback(async () => {
+    try {
+      const res = await fetch('/api/lt/strategies', { cache: 'no-store' });
+      const data = await res.json();
+      if (res.ok && data.strategies?.length) {
+        setLtStrategyFtIds(new Set((data.strategies as { ft_wallet_id: string }[]).map((s) => s.ft_wallet_id)));
+      } else {
+        setLtStrategyFtIds(new Set());
+      }
+    } catch {
+      setLtStrategyFtIds(new Set());
     }
   }, []);
 
@@ -599,6 +614,7 @@ export default function ForwardTestWalletsPage() {
                   <SortHeader field="max_drawdown" label="Max DD" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
                   <SortHeader field="sharpe" label="Sharpe" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
                   <SortHeader field="cash" label="Cash" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
+                  <th className="px-3 py-3 font-medium text-muted-foreground whitespace-nowrap text-left">Live</th>
                   <th className="px-3 py-3 text-right font-medium text-muted-foreground">Actions</th>
                 </tr>
               </thead>
@@ -834,6 +850,19 @@ export default function ForwardTestWalletsPage() {
                       </td>
                       <td className="px-3 py-3 text-xs text-muted-foreground max-w-[120px] truncate" title={[targetStr, catsStr].filter(Boolean).join(' | ') || undefined}>
                         {[targetStr, catsStr].filter(Boolean).join(' • ') || '-'}
+                      </td>
+                      <td className="px-3 py-3">
+                        {ltStrategyFtIds.has(wallet.wallet_id) ? (
+                          <Link href={`/lt/LT_${wallet.wallet_id}`}>
+                            <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer">
+                              Live
+                            </Badge>
+                          </Link>
+                        ) : (
+                          <Link href={`/lt?createFrom=${wallet.wallet_id}`}>
+                            <span className="text-xs text-[#FDB022] hover:underline cursor-pointer">Create Live</span>
+                          </Link>
+                        )}
                       </td>
                       <td className="px-3 py-3 text-right">
                         <Link href={`/ft/${wallet.wallet_id}`}>
