@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -93,6 +94,19 @@ export default function LiveTradingPage() {
     loadStrategies();
     loadFtWallets();
   }, []);
+
+  useEffect(() => {
+    if (createFromFtId && ftWallets.some((w) => w.wallet_id === createFromFtId) && !createWalletId) {
+      setCreateWalletId(createFromFtId);
+    }
+  }, [createFromFtId, ftWallets, createWalletId]);
+
+  useEffect(() => {
+    if (myPolymarketWallet && !hasPrefilledWallet.current) {
+      hasPrefilledWallet.current = true;
+      setCreateWalletAddress(myPolymarketWallet);
+    }
+  }, [myPolymarketWallet]);
 
   const handlePause = async (strategyId: string) => {
     try {
