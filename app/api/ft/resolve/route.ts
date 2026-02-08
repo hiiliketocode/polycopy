@@ -24,11 +24,12 @@ export async function POST(request: Request) {
     
     console.log('[ft/resolve] Starting resolution check at', now.toISOString());
     
-    // 1. Get all OPEN FT orders
+    // 1. Get all OPEN FT orders (explicit limit to avoid PostgREST default 1000 cap)
     const { data: openOrders, error: ordersError } = await supabase
       .from('ft_orders')
       .select('*')
-      .eq('outcome', 'OPEN');
+      .eq('outcome', 'OPEN')
+      .limit(10000);
     
     if (ordersError) {
       console.error('[ft/resolve] Error fetching orders:', ordersError);
@@ -222,11 +223,12 @@ export async function POST(request: Request) {
     const walletIds = [...new Set(openOrders.map(o => o.wallet_id))];
     
     for (const walletId of walletIds) {
-      // Get updated stats
+      // Get updated stats (all orders for this wallet)
       const { data: orders } = await supabase
         .from('ft_orders')
         .select('outcome, pnl, size')
-        .eq('wallet_id', walletId);
+        .eq('wallet_id', walletId)
+        .limit(10000);
       
       if (!orders) continue;
       

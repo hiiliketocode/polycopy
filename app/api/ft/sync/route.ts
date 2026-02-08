@@ -531,7 +531,8 @@ export async function POST(request: Request) {
       const { data: walletOrders } = await supabase
         .from('ft_orders')
         .select('outcome, size, pnl')
-        .eq('wallet_id', wallet.wallet_id);
+        .eq('wallet_id', wallet.wallet_id)
+        .limit(10000);
       const openExposure = (walletOrders || [])
         .filter(o => o.outcome === 'OPEN')
         .reduce((sum, o) => sum + (Number(o.size) || 0), 0);

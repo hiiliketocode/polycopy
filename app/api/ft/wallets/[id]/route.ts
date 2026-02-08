@@ -38,12 +38,13 @@ export async function GET(request: Request, { params }: RouteParams) {
       );
     }
     
-    // 2. Get all orders for this wallet
+    // 2. Get all orders for this wallet (explicit limit to avoid truncation)
     const { data: orders, error: ordersError } = await supabase
       .from('ft_orders')
       .select('*')
       .eq('wallet_id', walletId)
-      .order('order_time', { ascending: false });
+      .order('order_time', { ascending: false })
+      .limit(10000);
     
     if (ordersError) {
       console.error('[ft/wallets/id] Error fetching orders:', ordersError);

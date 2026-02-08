@@ -79,11 +79,12 @@ export async function GET() {
     
     const walletIds = wallets.map((w: { wallet_id: string }) => w.wallet_id);
     
-    // Fetch all orders for all wallets in one query
+    // Fetch all orders for all wallets (explicit limit to avoid PostgREST default 1000 cap)
     const { data: allOrders, error: ordersError } = await supabase
       .from('ft_orders')
       .select('wallet_id, outcome, pnl, size, condition_id, entry_price, token_label, resolved_time')
-      .in('wallet_id', walletIds);
+      .in('wallet_id', walletIds)
+      .limit(50000);
     
     // Group orders by wallet
     const ordersByWallet = new Map<string, typeof allOrders>();

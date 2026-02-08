@@ -62,7 +62,8 @@ export async function GET(request: Request) {
       const { data: orders } = await supabase
         .from('ft_orders')
         .select('outcome, pnl, size')
-        .eq('wallet_id', walletId);
+        .eq('wallet_id', walletId)
+        .limit(10000);
 
       const resolved = (orders || []).filter((o) => o.outcome === 'WON' || o.outcome === 'LOST');
       const openOrders = (orders || []).filter((o) => o.outcome === 'OPEN');
