@@ -830,9 +830,10 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                       const minutes = pos.minutes_to_resolution ?? 0;
                       const eventEnded = minutes < 0;
                       const price = pos.current_price;
-                      // When event ended but market not resolved, P&L is unknown (final will be 0¢ or 100¢).
-                      // Last price still counts for display; Value and P&L show "Pending".
-                      const showPendingPnl = eventEnded && price != null && price > 0.05 && price < 0.95;
+                      // When event ended but market not resolved, use last price for mark-to-market.
+                      // Show estimated Value/P&L (not "Pending") so user sees current estimate.
+                      const awaitingResolution = eventEnded && price != null && price > 0.05 && price < 0.95;
+                      const displayPnl = pos.unrealized_pnl ?? (currentValue != null ? currentValue - pos.size : null);
 
                       return (
                         <TableRow key={pos.order_id}>
@@ -895,11 +896,11 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                             {price != null && typeof price === 'number' ? (
                               <span 
                                 className={
-                                  showPendingPnl 
+                                  awaitingResolution 
                                     ? 'text-amber-600' 
                                     : price > (pos.entry_price || 0) ? 'text-green-600' : price < (pos.entry_price || 0) ? 'text-red-600' : ''
                                 }
-                                title={showPendingPnl ? 'Last price; final resolution (0¢ or 100¢) pending' : undefined}
+                                title={awaitingResolution ? 'Last price; awaiting Polymarket resolution' : undefined}
                               >
                                 {(price * 100).toFixed(0)}¢
                               </span>
@@ -911,19 +912,20 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                             {formatCurrency(pos.size)}
                           </TableCell>
                           <TableCell className="text-right font-mono text-xs">
-                            {showPendingPnl ? (
-                              <span className="text-amber-600" title="Awaiting Polymarket resolution">Pending</span>
-                            ) : currentValue !== null ? (
-                              <span className={currentValue > pos.size ? 'text-green-600' : currentValue < pos.size ? 'text-red-600' : ''}>
-                                {formatCurrency(currentValue)}
+                            {currentValue !== null ? (
+                              <span 
+                                className={currentValue > pos.size ? 'text-green-600' : currentValue < pos.size ? 'text-red-600' : awaitingResolution ? 'text-amber-600' : ''}
+                                title={awaitingResolution ? 'Est. from last price; awaiting resolution' : undefined}
+                              >
+                                {awaitingResolution ? '~' : ''}{formatCurrency(currentValue)}
                               </span>
                             ) : '-'}
                           </TableCell>
-                          <TableCell className={`text-right font-mono text-xs font-semibold ${showPendingPnl ? 'text-amber-600' : pos.unrealized_pnl !== null ? (pos.unrealized_pnl >= 0 ? 'text-green-600' : 'text-red-600') : ''}`}>
-                            {showPendingPnl ? (
-                              <span title="Awaiting Polymarket resolution">Pending</span>
-                            ) : pos.unrealized_pnl !== null ? (
-                              formatPnl(pos.unrealized_pnl)
+                          <TableCell className={`text-right font-mono text-xs font-semibold ${displayPnl !== null ? (displayPnl >= 0 ? 'text-green-600' : 'text-red-600') : ''}`}>
+                            {displayPnl !== null ? (
+                              <span title={awaitingResolution ? 'Est. from last price; awaiting resolution' : undefined}>
+                                {awaitingResolution ? '~' : ''}{formatPnl(displayPnl)}
+                              </span>
                             ) : '-'}
                           </TableCell>
                           <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">

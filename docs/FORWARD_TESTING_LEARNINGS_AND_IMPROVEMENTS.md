@@ -118,7 +118,7 @@ The trade feed recommendation engine has been **fully replaced** with an FT-lear
 
 - **Correct config display:** Badges now show actual wallet config (ML %, price range, edge, conviction).
 - **“What This Strategy Tests”** card: Prominent hypothesis/description for each strategy.
-- **PnL alignment:** Documented that “Pending” positions (event ended, not resolved) are still included in unrealized PnL; optional exclusion for consistency.
+- **Value/P&L display:** Positions awaiting resolution now show mark-to-market Value and P&L with "~" prefix instead of "Pending".
 
 ---
 

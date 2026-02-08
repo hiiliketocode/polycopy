@@ -3055,8 +3055,8 @@ export function TradeCard({
           </div>
         </div>
 
-        {/* PolySignal Badge - Premium/Admin (FT-learnings based recommendation) */}
-        {(isAdmin || isPremium) && (polySignalScore != null || polySignalRecommendation) && (
+        {/* PolySignal Badge - Admin only (FT-learnings based recommendation) */}
+        {isAdmin && (polySignalScore != null || polySignalRecommendation) && (
           <div className="mb-3">
             <PolySignal
               data={isAdmin ? polyScoreData : null}
