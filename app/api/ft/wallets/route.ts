@@ -264,7 +264,7 @@ export async function GET() {
       };
       
       for (const order of openOrders) {
-        const market = priceMap.get(order.condition_id);
+        const market = priceMap.get(order.condition_id ?? '');
         if (!market || !market.outcomes || !market.outcomePrices) continue;
         const tokenLabel = (order.token_label || 'YES').toLowerCase().trim();
         let idx = market.outcomes.findIndex((o: unknown) => outcomeLabel(o)?.toLowerCase().trim() === tokenLabel);
