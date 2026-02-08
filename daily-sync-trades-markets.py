@@ -1024,6 +1024,7 @@ def main():
         print()
     
     # Step 5: Load to BigQuery
+    trades_success = True  # no trades to load counts as success for checkpoint
     if all_trades:
         print("Step 5: Loading trades to BigQuery...", flush=True)
         trades_success = load_trades_to_bigquery(bq_client, all_trades)
@@ -1058,10 +1059,14 @@ def main():
             print("  ❌ Events load failed", flush=True)
         print()
     
-    # Update checkpoint
+    # Update checkpoint only when trades were successfully loaded (or there were no trades).
+    # If we had trades but load failed, do NOT advance checkpoint so next run re-fetches and retries.
     end_time = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
     duration = (end_time - start_time).total_seconds()
-    update_checkpoint(bq_client, end_time, duration, len(all_trades), len(markets_mapped), len(events), len(wallets))
+    if trades_success:
+        update_checkpoint(bq_client, end_time, duration, len(all_trades), len(markets_mapped), len(events), len(wallets))
+    else:
+        print("⚠️  Checkpoint NOT updated (trades load failed) - next run will re-fetch same window", flush=True)
     
     # Step 8: Sync trader stats to Supabase (if trades were loaded)
     if all_trades:

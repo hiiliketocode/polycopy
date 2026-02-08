@@ -246,6 +246,29 @@ export default function BottomNav() {
             </Link>
           )}
 
+          {/* Live Trading - Only show for admin users */}
+          {isAdmin && (
+            <Link 
+              href="/lt" 
+              className="flex-1 flex flex-col items-center justify-center gap-1"
+              style={navItemStyle}
+            >
+              <div style={iconContainerStyle} className="flex items-center justify-center">
+                <svg 
+                  className={`h-6 w-6 ${isActive('/lt') ? 'text-[#0F0F0F]' : 'text-slate-400'}`}
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <span className={`text-xs ${isActive('/lt') ? 'text-[#0F0F0F] font-semibold' : 'text-slate-500'}`}>
+                Live
+              </span>
+            </Link>
+          )}
+
           {/* Admin - Only show for admin users */}
           {isAdmin && (
             <Link 

@@ -3344,7 +3344,7 @@ export default function TraderProfilePage({
                   Wallet Connection Required
                 </h3>
                 <p className="text-sm text-slate-600 mb-4">
-                  To use auto-copy trading, you need to connect your Polymarket wallet first. This allows us to execute trades on your behalf.
+                  To copy trades, you need to connect your Polymarket wallet first. This allows us to execute trades on your behalf.
                 </p>
                 <div className="flex gap-3">
                   <button
