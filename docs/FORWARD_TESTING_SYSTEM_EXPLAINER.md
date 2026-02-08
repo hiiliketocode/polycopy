@@ -1,7 +1,7 @@
 # Forward Testing & Copy Trading System — Full Explainer
 
 **Last updated:** February 2026  
-**Purpose:** Comprehensive documentation of the FT (Forward Testing) setup, strategy design, trade recommendation engine, auto copy, improvements made, and plans for building winning strategies.
+**Purpose:** Comprehensive documentation of the FT (Forward Testing) setup, strategy design, trade recommendation engine, Live Trading (LT), improvements made, and plans for building winning strategies.
 
 ---
 
@@ -11,7 +11,7 @@
 2. [Forward Testing Architecture](#2-forward-testing-architecture)
 3. [Strategy Design](#3-strategy-design)
 4. [Trade Recommendation Engine (PolyScore)](#4-trade-recommendation-engine-polyscore)
-5. [Auto Copy Setup](#5-auto-copy-setup)
+5. [Live Trading (LT)](#5-live-trading-lt)
 6. [Improvements We've Made](#6-improvements-weve-made)
 7. [Current Findings & Win Rate Audit](#7-current-findings--win-rate-audit)
 8. [Plans for Next Steps](#8-plans-for-next-steps)
@@ -26,9 +26,9 @@ PolyCopy has two main value streams for helping users profit from prediction mar
 |-----------|---------|-----------|
 | **Forward Testing (FT)** | Paper-trade strategies with virtual money to discover what works | Virtual — records trades in `ft_orders`, no real money |
 | **Trade Recommendation (PolyScore)** | Show users which trades to copy and why | In-app display on trade cards; user decides |
-| **Auto Copy** | Automatically execute real trades when followed traders trade | Real — places orders on Polymarket via user's connected wallet |
+| **Live Trading (LT)** | Execute real trades that mirror FT strategies | Real — places orders on Polymarket via configured wallet |
 
-FT is the **lab**; PolyScore and Auto Copy are the **product**. FT validates strategy logic before we recommend or auto-execute.
+FT is the **lab**; PolyScore and Live Trading are the **product**. FT validates strategy logic before we recommend or execute live.
 
 ---
 

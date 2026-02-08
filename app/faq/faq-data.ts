@@ -495,7 +495,7 @@ Polycopy's database only contains your public wallet address (e.g., 0x1234...) a
 While we can execute trades on your behalf (that's the feature!), there are multiple safeguards preventing unauthorized activity:
 
 **1. Explicit Authorization Required**
-Trades only execute when you explicitly click "Quick Copy" or enable auto-copy for specific traders. We don't have blanket permission to trade whenever we want.
+Trades only execute when you explicitly click "Quick Copy" for a trade. We don't have blanket permission to trade whenever we want.
 
 **2. Blockchain Transparency**
 Every trade is publicly visible on the Polygon blockchain. If we made unauthorized trades, they would be immediately visible and traceable back to us.

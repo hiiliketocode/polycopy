@@ -31,8 +31,9 @@ export async function POST(request: Request) {
     console.log('[ft/resolve] Starting resolution check at', now.toISOString());
     
     // 1. Get all OPEN FT orders (paginated - PostgREST often caps at 1000/request)
+    type FTOpenOrder = { condition_id?: string; token_label?: string; side?: string; entry_price?: number; size?: number; order_id: string; wallet_id: string };
     const PAGE_SIZE = 1000;
-    const openOrders: Record<string, unknown>[] = [];
+    const openOrders: FTOpenOrder[] = [];
     let offset = 0;
     let ordersError: { message: string } | null = null;
     while (true) {
@@ -47,7 +48,7 @@ export async function POST(request: Request) {
         break;
       }
       if (!page || page.length === 0) break;
-      openOrders.push(...page);
+      openOrders.push(...(page as FTOpenOrder[]));
       if (page.length < PAGE_SIZE) break;
       offset += PAGE_SIZE;
     }
@@ -157,9 +158,10 @@ export async function POST(request: Request) {
     const errors: string[] = [];
 
     for (const order of openOrders) {
-      if (!order.condition_id) continue;
+      const cid = order.condition_id as string | undefined;
+      if (!cid) continue;
 
-      const marketData = resolutionMap.get(order.condition_id);
+      const marketData = resolutionMap.get(cid);
       if (!marketData) continue; // Market not yet resolved (prices not at $1/1¢)
 
       const { winningLabel, outcomes: outcomeLabels, prices } = marketData;
@@ -187,17 +189,19 @@ export async function POST(request: Request) {
       else continue; // Price in between, keep pending
 
       const side = (order.side || 'BUY').toUpperCase();
+      const ep = order.entry_price ?? 0;
+      const sz = order.size ?? 0;
 
       let pnl: number;
       if (side === 'BUY') {
         if (outcome === 'WON') {
-          pnl = order.entry_price > 0 ? order.size * (1 - order.entry_price) / order.entry_price : 0;
+          pnl = ep > 0 ? sz * (1 - ep) / ep : 0;
         } else {
-          pnl = -order.size;
+          pnl = -sz;
         }
       } else {
-        if (outcome === 'WON') pnl = order.size * order.entry_price;
-        else pnl = -order.size * (1 - order.entry_price);
+        if (outcome === 'WON') pnl = sz * ep;
+        else pnl = -sz * (1 - ep);
       }
       
       // Update the order

@@ -39,10 +39,10 @@ export async function GET(request: Request, { params }: RouteParams) {
     }
     
     // 2. Get all orders for this wallet (paginated - PostgREST often caps at 1000/request)
+    type FTOrder = { outcome?: string; pnl?: number; condition_id?: string; trader_address?: string; [k: string]: unknown };
     const PAGE_SIZE = 1000;
-    const allOrders: Record<string, unknown>[] = [];
+    const allOrders: FTOrder[] = [];
     let offset = 0;
-    let ordersError: { message: string } | null = null;
     while (true) {
       const { data: page, error } = await supabase
         .from('ft_orders')
@@ -51,19 +51,18 @@ export async function GET(request: Request, { params }: RouteParams) {
         .order('order_time', { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
       if (error) {
-        ordersError = error;
         console.error('[ft/wallets/id] Error fetching orders:', error);
         break;
       }
       if (!page || page.length === 0) break;
-      allOrders.push(...page);
+      allOrders.push(...(page as FTOrder[]));
       if (page.length < PAGE_SIZE) break;
       offset += PAGE_SIZE;
     }
     
     // 2b. Look up trader display names from traders table
     const uniqueTraderAddresses = [...new Set(
-      allOrders.map((o: { trader_address?: string }) => o.trader_address).filter(Boolean)
+      allOrders.map(o => o.trader_address).filter(Boolean)
     )] as string[];
     const traderNameMap = new Map<string, string>();
     if (uniqueTraderAddresses.length > 0) {
@@ -89,7 +88,7 @@ export async function GET(request: Request, { params }: RouteParams) {
     const realizedPnl = resolvedOrders.reduce((sum, o) => sum + (o.pnl || 0), 0);
     
     // 4. Fetch current prices for open positions from markets table AND refresh from Polymarket
-    const openConditionIds = [...new Set(openOrders.map(o => o.condition_id).filter(Boolean))];
+    const openConditionIds = [...new Set(openOrders.map(o => o.condition_id).filter((id): id is string => !!id))];
     
     const priceMap = new Map<string, { currentPrice: number | null; outcomes: string[] | null; outcomePrices: number[] | null }>();
     
@@ -259,7 +258,7 @@ export async function GET(request: Request, { params }: RouteParams) {
     let priceMissingCount = 0;
     
     const open_positions = openOrders.map(o => {
-      const currentPrice = findOutcomePrice(o.condition_id, o.token_label || 'YES');
+      const currentPrice = findOutcomePrice(o.condition_id ?? '', (o.token_label as string) || 'YES');
       
       if (currentPrice !== null) {
         priceFoundCount++;

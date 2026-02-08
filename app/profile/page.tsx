@@ -244,15 +244,6 @@ function getCopiedTradeTimestamp(trade: CopiedTrade) {
   return parsed;
 }
 
-function mergeCopiedTrades(base: CopiedTrade[], extras: CopiedTrade[]) {
-  const map = new Map<string, CopiedTrade>();
-  base.forEach((trade) => map.set(trade.id, trade));
-  extras.forEach((trade) => map.set(trade.id, trade));
-  const merged = Array.from(map.values());
-  merged.sort((a, b) => getCopiedTradeTimestamp(b) - getCopiedTradeTimestamp(a));
-  return merged;
-}
-
 type OrderIdentifier = {
   column: 'copied_trade_id' | 'order_id';
   value: string;
@@ -301,10 +292,9 @@ function ProfilePageContent() {
   
   // Copied trades state
   const [copiedTradesBase, setCopiedTradesBase] = useState<CopiedTrade[]>([]);
-  const [autoCopyExtras, setAutoCopyExtras] = useState<CopiedTrade[]>([]);
   const copiedTrades = useMemo(
-    () => mergeCopiedTrades(copiedTradesBase, autoCopyExtras),
-    [copiedTradesBase, autoCopyExtras]
+    () => [...copiedTradesBase].sort((a, b) => getCopiedTradeTimestamp(b) - getCopiedTradeTimestamp(a)),
+    [copiedTradesBase]
   );
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(true);
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null);
@@ -614,58 +604,6 @@ function ProfilePageContent() {
     };
 
     fetchCopiedTrades();
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-
-    const fetchAutoCopyLogs = async () => {
-      try {
-        const response = await fetch('/api/auto-copy/logs', { cache: 'no-store' });
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload?.error || 'Failed to load auto copy logs');
-        }
-
-        const normalized = (payload?.logs || []).map((log: any) => {
-          const executedAt = log.executed_at || log.created_at || new Date().toISOString();
-          const normalizedTrade: CopiedTrade = {
-            id: log.id,
-            trader_wallet: log.trader_wallet,
-            trader_username: log.trader_username ?? null,
-            trader_profile_image_url: log.trader_profile_image_url ?? null,
-            market_id: log.market_id ?? '',
-            market_title: log.market_title ?? 'Auto copy trade',
-            market_slug: log.market_slug ?? null,
-            market_avatar_url: log.market_avatar_url ?? null,
-            outcome: log.outcome ?? 'Outcome',
-            price_when_copied: Number(log.price ?? log.amount_usd ?? 0) || 0,
-            entry_size: log.size ?? null,
-            amount_invested: log.amount_usd ?? null,
-            copied_at: executedAt,
-            trader_still_has_position: true,
-            trader_closed_at: null,
-            current_price: log.price ?? null,
-            market_resolved: false,
-            market_resolved_at: null,
-            roi: null,
-            pnl_usd: null,
-            user_closed_at: null,
-            user_exit_price: null,
-            resolved_outcome: null,
-            trade_method: 'auto'
-          };
-          (normalizedTrade as any).created_at = log.created_at ?? executedAt;
-          return normalizedTrade;
-        });
-
-        setAutoCopyExtras(normalized);
-      } catch (err) {
-        console.error('Error loading auto copy logs:', err);
-      }
-    };
-
-    fetchAutoCopyLogs();
   }, [user]);
 
   // Fetch quick trades (orders) from /api/orders
