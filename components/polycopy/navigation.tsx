@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Compass, User, LogOut, Settings, Home, Crown, Activity } from "lucide-react"
+import { Compass, User, LogOut, Settings, Home, Crown, Activity, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,

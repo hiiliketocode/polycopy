@@ -874,6 +874,51 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
     fetchStats()
   }, [walletAddress, marketSubtype, data?.analysis?.niche_name])
   
+  // Build minimal signal from server-only data (fire feed) when no client PolyScore data
+  const serverOnlySignal = useMemo((): SignalResult | null => {
+    if (data || serverRecommendation == null || serverScore === undefined) return null
+    const rec = serverRecommendation as Recommendation
+    const config = RECOMMENDATION_CONFIG[rec]
+    const emptyInsights: InsightData = {
+      niche: marketSubtype?.toUpperCase() ?? null,
+      tradeProfile: null,
+      profileTrades: 0,
+      globalTrades: 0,
+      profileWinRate: null,
+      globalWinRate: null,
+      profileRoiPct: null,
+      globalRoiPct: null,
+      profileAvgPnl: null,
+      globalAvgPnl: null,
+      convictionMultiplier: null,
+      positionConviction: null,
+      tradeConviction: null,
+      exposureUsd: null,
+      zScore: 0,
+      isOutlier: false,
+      isHot: false,
+      currentStreak: 0,
+      recentWinRate: null,
+      isHedging: false,
+      isChasing: false,
+      isAveragingDown: false,
+      timing: null,
+      minutesToStart: null,
+      aiWinProb: 0.5,
+      aiEdgePct: 0,
+    }
+    return {
+      score: serverScore,
+      recommendation: rec,
+      headline: config ? `${config.label} (fire feed)` : 'Server signal',
+      factors: [],
+      redFlags: [],
+      greenFlags: [],
+      priceMovement: null,
+      insights: emptyInsights,
+    }
+  }, [data, serverRecommendation, serverScore, marketSubtype])
+
   const signal = useMemo(() => {
     // Server-only mode: use FT-learnings-based server data (no polyScore fetch needed)
     if (serverRecommendation && serverScore !== undefined) {
