@@ -77,185 +77,199 @@ export async function GET() {
       });
     }
     
-    // Get stats for each wallet
-    const walletsWithStats = await Promise.all(wallets.map(async (wallet) => {
-      // Get order stats including condition_id, entry_price, token_label for unrealized calc
-      const { data: orders, error: ordersError } = await supabase
-        .from('ft_orders')
-        .select('outcome, pnl, size, condition_id, entry_price, token_label')
-        .eq('wallet_id', wallet.wallet_id);
+    const walletIds = wallets.map((w: { wallet_id: string }) => w.wallet_id);
+    
+    // Fetch all orders for all wallets in one query
+    const { data: allOrders, error: ordersError } = await supabase
+      .from('ft_orders')
+      .select('wallet_id, outcome, pnl, size, condition_id, entry_price, token_label, resolved_time')
+      .in('wallet_id', walletIds);
+    
+    // Group orders by wallet
+    const ordersByWallet = new Map<string, typeof allOrders>();
+    if (!ordersError && allOrders) {
+      for (const o of allOrders) {
+        const wid = o.wallet_id as string;
+        if (!ordersByWallet.has(wid)) ordersByWallet.set(wid, []);
+        ordersByWallet.get(wid)!.push(o);
+      }
+    }
+    
+    // Collect unique condition_ids from open orders across ALL wallets (dedupe for batched price fetch)
+    const allConditionIds = [...new Set(
+      (allOrders || [])
+        .filter((o: { outcome: string }) => o.outcome === 'OPEN')
+        .map((o: { condition_id?: string }) => o.condition_id)
+        .filter(Boolean)
+    )] as string[];
+    
+    // Shared price map: fetch once per unique condition_id, reuse across wallets
+    const priceMap = new Map<string, { outcomes: string[] | null; outcomePrices: number[] | null }>();
+    const STALE_PRICE_MS = 2 * 60 * 1000;
+    const PRICE_BATCH_SIZE = 25;
+    const MAX_PRICE_FETCHES = 200; // Higher limit since we're now fetching for all wallets combined
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const nowMs = Date.now();
+    
+    if (allConditionIds.length > 0) {
+      const { data: markets } = await supabase
+        .from('markets')
+        .select('condition_id, outcome_prices, last_price_updated_at')
+        .in('condition_id', allConditionIds);
       
-      let stats = {
-        total_trades: 0,
-        open_positions: 0,
-        won: 0,
-        lost: 0,
-        realized_pnl: 0,
-        unrealized_pnl: 0,
-        open_exposure: 0,
-        avg_trade_size: 0
+      if (markets) {
+        for (const market of markets) {
+          const outcomes = market.outcome_prices?.outcomes ?? market.outcome_prices?.labels ?? null;
+          const outcomePrices = market.outcome_prices?.outcomePrices ?? market.outcome_prices?.prices ?? null;
+          const lastUpdated = market.last_price_updated_at ? new Date(market.last_price_updated_at).getTime() : 0;
+          const isStale = nowMs - lastUpdated > STALE_PRICE_MS;
+          if (outcomes && outcomePrices && !isStale) {
+            priceMap.set(market.condition_id, { outcomes, outcomePrices });
+          }
+        }
+      }
+      
+      const parseOutcomes = (outcomes: unknown): string[] | null => {
+        if (Array.isArray(outcomes)) return outcomes.map(o => typeof o === 'string' ? o : (o as { LABEL?: string; label?: string })?.LABEL ?? (o as { label?: string })?.label ?? String(o ?? ''));
+        return null;
+      };
+      const parsePrices = (prices: unknown): number[] | null => {
+        if (Array.isArray(prices)) return prices.map(p => { const n = typeof p === 'string' ? parseFloat(p) : Number(p); return Number.isFinite(n) ? n : 0; });
+        return null;
       };
       
-      if (!ordersError && orders) {
-        const openOrders = orders.filter(o => o.outcome === 'OPEN');
-        const totalSize = orders.reduce((sum, o) => sum + (Number(o.size) || 0), 0);
-        
-        stats.total_trades = orders.length;
-        stats.open_positions = openOrders.length;
-        stats.won = orders.filter(o => o.outcome === 'WON').length;
-        stats.lost = orders.filter(o => o.outcome === 'LOST').length;
-        stats.realized_pnl = orders
-          .filter(o => o.outcome !== 'OPEN')
-          .reduce((sum, o) => sum + (o.pnl || 0), 0);
-        stats.open_exposure = openOrders.reduce((sum, o) => sum + (o.size || 0), 0);
-        stats.avg_trade_size = orders.length > 0 ? totalSize / orders.length : 0;
-        
-        // Fetch current prices for open positions
-        if (openOrders.length > 0) {
-          const conditionIds = [...new Set(openOrders.map(o => o.condition_id).filter(Boolean))];
-          
-          const { data: markets } = await supabase
-            .from('markets')
-            .select('condition_id, outcome_prices, last_price_updated_at')
-            .in('condition_id', conditionIds);
-          
-          const priceMap = new Map<string, { outcomes: string[] | null; outcomePrices: number[] | null }>();
-          const STALE_PRICE_MS = 2 * 60 * 1000; // 2 minutes - refresh prices older than this
-          const now = Date.now();
-
-          // Use cached prices only when fresh (within 2 min); otherwise treat as needing refresh
-          if (markets) {
-            for (const market of markets) {
-              const outcomes = market.outcome_prices?.outcomes ??
-                              market.outcome_prices?.labels ?? null;
-              const outcomePrices = market.outcome_prices?.outcomePrices ??
-                                   market.outcome_prices?.prices ?? null;
-              const lastUpdated = market.last_price_updated_at
-                ? new Date(market.last_price_updated_at).getTime()
-                : 0;
-              const isStale = now - lastUpdated > STALE_PRICE_MS;
-
-              if (outcomes && outcomePrices && !isStale) {
-                priceMap.set(market.condition_id, { outcomes, outcomePrices });
+      const allNeedingPrices = allConditionIds.filter(id => !priceMap.has(id));
+      for (let offset = 0; offset < Math.min(allNeedingPrices.length, MAX_PRICE_FETCHES); offset += PRICE_BATCH_SIZE) {
+        const batch = allNeedingPrices.slice(offset, offset + PRICE_BATCH_SIZE);
+        await Promise.all(batch.map(async (conditionId) => {
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000);
+            const res = await fetch(`${baseUrl}/api/polymarket/price?conditionId=${conditionId}`, { cache: 'no-store', signal: controller.signal });
+            clearTimeout(timeout);
+            if (res.ok) {
+              const json = await res.json();
+              const outcomes = json?.market?.outcomes ?? json?.market?.labels;
+              const outcomePrices = json?.market?.outcomePrices ?? json?.market?.prices;
+              const parsedOutcomes = parseOutcomes(outcomes);
+              const parsedPrices = parsePrices(outcomePrices);
+              if (parsedOutcomes && parsedPrices) {
+                supabase.from('markets').upsert({
+                  condition_id: conditionId,
+                  outcome_prices: { outcomes: parsedOutcomes, outcomePrices: parsedPrices },
+                  last_price_updated_at: new Date().toISOString(),
+                }, { onConflict: 'condition_id' }).then(() => {});
+                priceMap.set(conditionId, { outcomes: parsedOutcomes, outcomePrices: parsedPrices });
+                return;
               }
             }
-          }
-
-          // Fetch fresh prices for markets without prices or with stale prices (batches of 25, up to 100 per wallet)
-          const allNeedingPrices = conditionIds.filter(id => !priceMap.has(id));
-          const PRICE_BATCH_SIZE = 25;
-          const MAX_PRICE_FETCHES = 100;
-          const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-
-          const parseOutcomes = (outcomes: unknown): string[] | null => {
-            if (Array.isArray(outcomes)) return outcomes.map(o => typeof o === 'string' ? o : (o as { LABEL?: string; label?: string })?.LABEL ?? (o as { label?: string })?.label ?? String(o ?? ''));
-            return null;
-          };
-          const parsePrices = (prices: unknown): number[] | null => {
-            if (Array.isArray(prices)) return prices.map(p => { const n = typeof p === 'string' ? parseFloat(p) : Number(p); return Number.isFinite(n) ? n : 0; });
-            return null;
-          };
-
-          for (let offset = 0; offset < Math.min(allNeedingPrices.length, MAX_PRICE_FETCHES); offset += PRICE_BATCH_SIZE) {
-            const batch = allNeedingPrices.slice(offset, offset + PRICE_BATCH_SIZE);
-            await Promise.all(batch.map(async (conditionId) => {
-              try {
-                const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 4000);
-                const res = await fetch(
-                  `${baseUrl}/api/polymarket/price?conditionId=${conditionId}`,
-                  { cache: 'no-store', signal: controller.signal }
-                );
-                clearTimeout(timeout);
-                
-                if (res.ok) {
-                  const json = await res.json();
-                  const outcomes = json?.market?.outcomes ?? json?.market?.labels;
-                  const outcomePrices = json?.market?.outcomePrices ?? json?.market?.prices;
-                  const parsedOutcomes = parseOutcomes(outcomes);
-                  const parsedPrices = parsePrices(outcomePrices);
-                  if (parsedOutcomes && parsedPrices) {
-                    supabase.from('markets').upsert({
-                      condition_id: conditionId,
-                      outcome_prices: { outcomes: parsedOutcomes, outcomePrices: parsedPrices },
-                      last_price_updated_at: new Date().toISOString(),
-                    }, { onConflict: 'condition_id' }).then(() => {});
-                    priceMap.set(conditionId, { outcomes: parsedOutcomes, outcomePrices: parsedPrices });
-                    return;
-                  }
+            const gammaController = new AbortController();
+            const gammaTimeout = setTimeout(() => gammaController.abort(), 3000);
+            const gammaRes = await fetch(`https://gamma-api.polymarket.com/markets?condition_id=${conditionId}`, { cache: 'no-store', signal: gammaController.signal });
+            clearTimeout(gammaTimeout);
+            if (gammaRes.ok) {
+              const gammaData = await gammaRes.json();
+              const m = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null;
+              if (m) {
+                let outcomes = m.outcomes ?? m.labels;
+                let prices = m.outcomePrices ?? m.prices;
+                if (typeof outcomes === 'string') { try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; } }
+                if (typeof prices === 'string') { try { prices = JSON.parse(prices); } catch { prices = null; } }
+                const parsedOutcomes = parseOutcomes(outcomes);
+                const parsedPrices = parsePrices(prices);
+                if (parsedOutcomes && parsedPrices) {
+                  supabase.from('markets').upsert({
+                    condition_id: conditionId,
+                    outcome_prices: { outcomes: parsedOutcomes, outcomePrices: parsedPrices },
+                    last_price_updated_at: new Date().toISOString(),
+                  }, { onConflict: 'condition_id' }).then(() => {});
+                  priceMap.set(conditionId, { outcomes: parsedOutcomes, outcomePrices: parsedPrices });
                 }
-                
-                // Fallback: Gamma API by condition_id when price API fails
-                const gammaController = new AbortController();
-                const gammaTimeout = setTimeout(() => gammaController.abort(), 3000);
-                const gammaRes = await fetch(
-                  `https://gamma-api.polymarket.com/markets?condition_id=${conditionId}`,
-                  { cache: 'no-store', signal: gammaController.signal }
-                );
-                clearTimeout(gammaTimeout);
-                if (gammaRes.ok) {
-                  const gammaData = await gammaRes.json();
-                  const m = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null;
-                  if (m) {
-                    let outcomes = m.outcomes ?? m.labels;
-                    let prices = m.outcomePrices ?? m.prices;
-                    if (typeof outcomes === 'string') { try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; } }
-                    if (typeof prices === 'string') { try { prices = JSON.parse(prices); } catch { prices = null; } }
-                    const parsedOutcomes = parseOutcomes(outcomes);
-                    const parsedPrices = parsePrices(prices);
-                    if (parsedOutcomes && parsedPrices) {
-                      supabase.from('markets').upsert({
-                        condition_id: conditionId,
-                        outcome_prices: { outcomes: parsedOutcomes, outcomePrices: parsedPrices },
-                        last_price_updated_at: new Date().toISOString(),
-                      }, { onConflict: 'condition_id' }).then(() => {});
-                      priceMap.set(conditionId, { outcomes: parsedOutcomes, outcomePrices: parsedPrices });
-                    }
-                  }
-                }
-              } catch {
-                // Ignore errors
               }
-            }));
+            }
+          } catch {
+            // Ignore errors
           }
+        }));
+      }
+    }
+    
+    const outcomeLabel = (o: unknown): string => {
+      if (typeof o === 'string') return o;
+      if (o && typeof o === 'object' && 'LABEL' in o) return String((o as { LABEL?: string }).LABEL ?? '');
+      if (o && typeof o === 'object' && 'label' in o) return String((o as { label?: string }).label ?? '');
+      return String(o ?? '');
+    };
 
-          // Helper to extract label from outcome (string or object like {LABEL: "X"})
-          const outcomeLabel = (o: unknown): string => {
-            if (typeof o === 'string') return o;
-            if (o && typeof o === 'object' && 'LABEL' in o) return String((o as { LABEL?: string }).LABEL ?? '');
-            if (o && typeof o === 'object' && 'label' in o) return String((o as { label?: string }).label ?? '');
-            return String(o ?? '');
-          };
-          // Calculate unrealized P&L
-          for (const order of openOrders) {
-            const market = priceMap.get(order.condition_id);
-            if (!market || !market.outcomes || !market.outcomePrices) continue;
-            
-            const tokenLabel = (order.token_label || 'YES').toLowerCase().trim();
-            let idx = market.outcomes.findIndex(o => outcomeLabel(o)?.toLowerCase().trim() === tokenLabel);
-            
-            // Fallback: For binary markets, YES is often index 0, NO is index 1
-            if (idx < 0 && market.outcomes.length === 2) {
-              const outcomesLower = market.outcomes.map(o => outcomeLabel(o)?.toLowerCase().trim());
-              if (tokenLabel === 'yes') {
-                idx = outcomesLower.indexOf('yes');
-                if (idx < 0) idx = 0;
-              } else if (tokenLabel === 'no') {
-                idx = outcomesLower.indexOf('no');
-                if (idx < 0) idx = 1;
-              }
-            }
-            
-            if (idx >= 0 && market.outcomePrices[idx] !== undefined && market.outcomePrices[idx] !== null) {
-              // Prices might be strings from the API
-              const rawPrice = market.outcomePrices[idx];
-              const currentPrice = typeof rawPrice === 'string' ? parseFloat(rawPrice) : Number(rawPrice);
-              if (Number.isFinite(currentPrice) && order.entry_price && order.size) {
-                const shares = order.size / order.entry_price;
-                const currentValue = shares * currentPrice;
-                stats.unrealized_pnl += currentValue - order.size;
-              }
-            }
+    /** Compute max drawdown (USD and %) and Sharpe ratio from resolved orders */
+    function computeRiskMetrics(
+      resolvedOrders: { pnl?: number; resolved_time?: string }[],
+      startingBalance: number
+    ): { max_drawdown_usd: number; max_drawdown_pct: number; sharpe_ratio: number | null } {
+      const withTime = resolvedOrders.filter(o => o.resolved_time && o.pnl != null);
+      const sorted = [...withTime].sort(
+        (a, b) => new Date(a.resolved_time!).getTime() - new Date(b.resolved_time!).getTime()
+      );
+      let peak = startingBalance;
+      let equity = startingBalance;
+      let maxDrawdownUsd = 0;
+      for (const o of sorted) {
+        equity += o.pnl!;
+        if (equity > peak) peak = equity;
+        const drawdown = peak - equity;
+        if (drawdown > maxDrawdownUsd) maxDrawdownUsd = drawdown;
+      }
+      const maxDrawdownPct = peak > 0 ? (maxDrawdownUsd / peak) * 100 : 0;
+
+      const pnls = resolvedOrders.map(o => o.pnl).filter((p): p is number => typeof p === 'number' && Number.isFinite(p));
+      let sharpeRatio: number | null = null;
+      if (pnls.length >= 2) {
+        const mean = pnls.reduce((s, p) => s + p, 0) / pnls.length;
+        const variance = pnls.reduce((s, p) => s + (p - mean) ** 2, 0) / (pnls.length - 1);
+        const std = Math.sqrt(variance);
+        if (std > 0) sharpeRatio = mean / std;
+      }
+      return { max_drawdown_usd: maxDrawdownUsd, max_drawdown_pct: maxDrawdownPct, sharpe_ratio: sharpeRatio };
+    }
+    
+    // Build stats for each wallet using shared priceMap
+    const walletsWithStats = await Promise.all(wallets.map(async (wallet: { wallet_id: string; start_date: string; end_date: string; starting_balance?: number }) => {
+      const orders = ordersByWallet.get(wallet.wallet_id) || [];
+      const openOrders = orders.filter((o: { outcome: string }) => o.outcome === 'OPEN');
+      const totalSize = orders.reduce((sum: number, o: { size?: number }) => sum + (Number(o.size) || 0), 0);
+      
+      let stats = {
+        total_trades: orders.length,
+        open_positions: openOrders.length,
+        won: orders.filter((o: { outcome: string }) => o.outcome === 'WON').length,
+        lost: orders.filter((o: { outcome: string }) => o.outcome === 'LOST').length,
+        realized_pnl: orders.filter((o: { outcome: string }) => o.outcome !== 'OPEN').reduce((sum: number, o: { pnl?: number }) => sum + (o.pnl || 0), 0),
+        unrealized_pnl: 0,
+        open_exposure: openOrders.reduce((sum: number, o: { size?: number }) => sum + (o.size || 0), 0),
+        avg_trade_size: orders.length > 0 ? totalSize / orders.length : 0
+      };
+      
+      for (const order of openOrders) {
+        const market = priceMap.get(order.condition_id);
+        if (!market || !market.outcomes || !market.outcomePrices) continue;
+        const tokenLabel = (order.token_label || 'YES').toLowerCase().trim();
+        let idx = market.outcomes.findIndex((o: unknown) => outcomeLabel(o)?.toLowerCase().trim() === tokenLabel);
+        if (idx < 0 && market.outcomes.length === 2) {
+          const outcomesLower = market.outcomes.map((o: unknown) => outcomeLabel(o)?.toLowerCase().trim());
+          if (tokenLabel === 'yes') {
+            idx = outcomesLower.indexOf('yes');
+            if (idx < 0) idx = 0;
+          } else if (tokenLabel === 'no') {
+            idx = outcomesLower.indexOf('no');
+            if (idx < 0) idx = 1;
+          }
+        }
+        if (idx >= 0 && market.outcomePrices[idx] != null && order.entry_price && order.size) {
+          const rawPrice = market.outcomePrices[idx];
+          const currentPrice = typeof rawPrice === 'string' ? parseFloat(rawPrice) : Number(rawPrice);
+          if (Number.isFinite(currentPrice)) {
+            const shares = order.size / order.entry_price;
+            stats.unrealized_pnl += shares * currentPrice - order.size;
           }
         }
       }
@@ -294,6 +308,12 @@ export async function GET() {
       // Cash available = starting balance + realized P&L - open exposure (clamped to 0)
       const cashAvailable = Math.max(0, effectiveStartingBalance + stats.realized_pnl - stats.open_exposure);
 
+      const resolved = orders.filter((o: { outcome: string }) => o.outcome === 'WON' || o.outcome === 'LOST');
+      const { max_drawdown_usd, max_drawdown_pct, sharpe_ratio } = computeRiskMetrics(
+        resolved,
+        effectiveStartingBalance
+      );
+
       return {
         ...wallet,
         starting_balance: effectiveStartingBalance,
@@ -305,6 +325,9 @@ export async function GET() {
         trades_skipped: wallet.trades_skipped || 0,
         test_status,
         hours_remaining,
+        max_drawdown_usd,
+        max_drawdown_pct,
+        sharpe_ratio,
         start_date: { value: wallet.start_date },
         end_date: { value: wallet.end_date },
         last_sync_time: wallet.last_sync_time ? { value: wallet.last_sync_time } : null

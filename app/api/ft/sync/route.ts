@@ -7,6 +7,7 @@ import { getPolyScore } from '@/lib/polyscore/get-polyscore';
 const TOP_TRADERS_LIMIT = 100; // Polymarket API max is 100
 const TRADES_PAGE_SIZE = 50;   // Per page from Polymarket API
 const MAX_PAGES_PER_TRADER = 4; // Max 200 trades per trader per sync
+const FT_SLIPPAGE_PCT = 0.003; // 0.3% - from empirical analysis of real copy trades
 
 type PolymarketTrade = {
   id?: string;
@@ -36,6 +37,7 @@ type ExtendedFilters = {
   target_trader?: string;         // Specific trader address to copy (lowercase)
   target_traders?: string[];      // List of trader addresses (e.g. top niche traders from trader_profile_stats)
   target_trader_name?: string;    // Display name for the trader
+  trade_live_only?: boolean;      // Only take trades when current time >= market game_start_time (or start_time)
 };
 
 type FTWallet = {
@@ -440,6 +442,7 @@ export async function POST(request: Request) {
       tags?: string[] | unknown;
       end_time?: string;
       start_time?: string;
+      game_start_time?: string | null;
     };
     
     const marketMap = new Map<string, MarketInfo>();
@@ -460,7 +463,8 @@ export async function POST(request: Request) {
           outcomes: market.outcomes,
           tags: market.tags,
           end_time: market.end_time,
-          start_time: market.start_time
+          start_time: market.start_time,
+          game_start_time: market.game_start_time ?? null
         });
       }
     }
@@ -488,6 +492,7 @@ export async function POST(request: Request) {
                 const prices = m.outcomePrices.map((p: any) => parseFloat(p));
                 resolved = resolved || (prices.some((p: number) => p > 0.9) ?? false);
               }
+              const gameStart = m.gameStartTime || m.game_start_time || m.startDate || m.start_date;
               marketMap.set(cid, {
                 endTime,
                 closed,
@@ -498,7 +503,8 @@ export async function POST(request: Request) {
                 outcomes: m.outcomes || ['Yes', 'No'],
                 tags: m.tags || [],
                 end_time: m.endDate || m.end_date,
-                start_time: m.startDate || m.start_date
+                start_time: m.startDate || m.start_date,
+                game_start_time: gameStart ?? null
               });
             }
           }
@@ -512,7 +518,9 @@ export async function POST(request: Request) {
     
     // 6. Process trades and insert into FT wallets
     const results: Record<string, { inserted: number; skipped: number; evaluated: number; reasons: Record<string, number> }> = {};
-    
+    // Cache ML score by source_trade_id to avoid N getPolyScore calls when same trade qualifies for multiple use_model wallets
+    const mlScoreCache = new Map<string, number | null>();
+
     for (const wallet of activeWallets) {
       results[wallet.wallet_id] = { inserted: 0, skipped: 0, evaluated: 0, reasons: {} };
       const reasons = results[wallet.wallet_id].reasons;
@@ -623,10 +631,29 @@ export async function POST(request: Request) {
           results[wallet.wallet_id].skipped++;
           continue;
         }
-        
+
+        // trade_live_only: only take trades when current time >= game/event start
+        if (extFilters.trade_live_only) {
+          const gameStartIso = market.game_start_time || market.start_time;
+          if (!gameStartIso) {
+            await recordSeen(sourceTradeId, 'skipped', 'no_game_start_time');
+            reasons['no_game_start_time'] = (reasons['no_game_start_time'] || 0) + 1;
+            results[wallet.wallet_id].skipped++;
+            continue;
+          }
+          const gameStart = new Date(gameStartIso);
+          if (now < gameStart) {
+            await recordSeen(sourceTradeId, 'skipped', 'pre_game');
+            reasons['pre_game'] = (reasons['pre_game'] || 0) + 1;
+            results[wallet.wallet_id].skipped++;
+            continue;
+          }
+        }
+
         const price = Number(trade.price || 0);
+        const priceWithSlippage = Math.min(0.9999, price * (1 + FT_SLIPPAGE_PCT));
         const traderWinRate = trade.traderWinRate;
-        const edge = traderWinRate - price;
+        const edge = traderWinRate - priceWithSlippage; // Edge at our execution price (after slippage)
         
         if (price < wallet.price_min || price > wallet.price_max) {
           await recordSeen(sourceTradeId, 'skipped', 'price_out_of_range');
@@ -737,22 +764,26 @@ export async function POST(request: Request) {
         let preInsertMlProbability: number | null = null;
         if (wallet.use_model && wallet.model_threshold != null) {
           try {
-            let outcomes = market.outcomes || ['Yes', 'No'];
-            let outcomePrices = market.outcome_prices;
-            if (typeof outcomes === 'string') {
-              try { outcomes = JSON.parse(outcomes); } catch { outcomes = ['Yes', 'No']; }
-            }
-            if (typeof outcomePrices === 'string') {
-              try { outcomePrices = JSON.parse(outcomePrices); } catch { outcomePrices = [0.5, 0.5]; }
-            }
-            const outcomesArr = Array.isArray(outcomes) ? outcomes : ['Yes', 'No'];
-            const pricesArr = Array.isArray(outcomePrices) ? outcomePrices.map((p: unknown) => Number(p) || 0.5) : [0.5, 0.5];
-            const tokenIdx = outcomesArr.findIndex((o: string) => (o || '').toLowerCase() === (trade.outcome || 'YES').toLowerCase());
-            const currentPrice = pricesArr[tokenIdx >= 0 ? tokenIdx : 0] ?? 0.5;
-            const shares = price > 0 ? effectiveBetSize / price : 0;
+            // Reuse cached ML score if same trade was already scored for another use_model wallet
+            if (mlScoreCache.has(sourceTradeId)) {
+              preInsertMlProbability = mlScoreCache.get(sourceTradeId) ?? null;
+            } else {
+              let outcomes = market.outcomes || ['Yes', 'No'];
+              let outcomePrices = market.outcome_prices;
+              if (typeof outcomes === 'string') {
+                try { outcomes = JSON.parse(outcomes); } catch { outcomes = ['Yes', 'No']; }
+              }
+              if (typeof outcomePrices === 'string') {
+                try { outcomePrices = JSON.parse(outcomePrices); } catch { outcomePrices = [0.5, 0.5]; }
+              }
+              const outcomesArr = Array.isArray(outcomes) ? outcomes : ['Yes', 'No'];
+              const pricesArr = Array.isArray(outcomePrices) ? outcomePrices.map((p: unknown) => Number(p) || 0.5) : [0.5, 0.5];
+              const tokenIdx = outcomesArr.findIndex((o: string) => (o || '').toLowerCase() === (trade.outcome || 'YES').toLowerCase());
+              const currentPrice = pricesArr[tokenIdx >= 0 ? tokenIdx : 0] ?? 0.5;
+              const shares = price > 0 ? effectiveBetSize / price : 0;
 
-            const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-            const polyScoreResponse = await getPolyScore({
+              const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+              const polyScoreResponse = await getPolyScore({
               original_trade: {
                 wallet_address: trade.traderWallet,
                 condition_id: trade.conditionId || '',
@@ -770,7 +801,7 @@ export async function POST(request: Request) {
                 market_start_time_unix: market.start_time ? Math.floor(new Date(market.start_time).getTime() / 1000) : null,
                 token_label: trade.outcome || 'YES'
               },
-              user_slippage: 0.02
+              user_slippage: 0.3
             }, serviceRoleKey);
 
             if (polyScoreResponse.success) {
@@ -781,6 +812,12 @@ export async function POST(request: Request) {
               } else if (polyScoreResponse.analysis?.prediction_stats?.ai_fair_value) {
                 preInsertMlProbability = polyScoreResponse.analysis.prediction_stats.ai_fair_value;
               }
+              // Normalize: API may return 0-100 (percent) instead of 0-1
+              if (preInsertMlProbability != null && preInsertMlProbability > 1) {
+                preInsertMlProbability = preInsertMlProbability / 100;
+              }
+            }
+            mlScoreCache.set(sourceTradeId, preInsertMlProbability);
             }
             if (preInsertMlProbability == null || preInsertMlProbability < wallet.model_threshold) {
               await recordSeen(sourceTradeId, 'skipped', preInsertMlProbability == null ? 'ml_unavailable' : 'low_ml_score');
@@ -807,7 +844,7 @@ export async function POST(request: Request) {
           token_label: trade.outcome || 'YES',
           source_trade_id: sourceTradeId,
           trader_address: trade.traderWallet,
-          entry_price: price,
+          entry_price: priceWithSlippage,
           size: effectiveBetSize,
           market_end_time: market.endTime?.toISOString() || null,
           trader_win_rate: traderWinRate,

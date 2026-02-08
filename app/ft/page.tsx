@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-type SortField = 'name' | 'started' | 'balance' | 'pnl' | 'pnl_pct' | 'taken' | 'pct_made' | 'avg_trade_size' | 'open' | 'won' | 'lost' | 'win_rate' | 'cash' | 'realized' | 'unrealized';
+type SortField = 'name' | 'started' | 'balance' | 'pnl' | 'pnl_pct' | 'taken' | 'pct_made' | 'avg_trade_size' | 'open' | 'won' | 'lost' | 'win_rate' | 'cash' | 'realized' | 'unrealized' | 'max_drawdown' | 'sharpe';
 type CompareSortField = 'name' | 'pnl' | 'started' | 'use_model' | 'model_threshold' | 'price_min' | 'price_max' | 'min_edge' | 'allocation' | 'bet_size' | 'min_bet' | 'max_bet' | 'kelly' | 'min_trades' | 'min_conviction';
 type SortDir = 'asc' | 'desc';
 
@@ -56,6 +56,9 @@ interface FTWallet {
   won: number;
   lost: number;
   win_rate: number | null;
+  max_drawdown_usd?: number;
+  max_drawdown_pct?: number;
+  sharpe_ratio?: number | null;
   open_exposure: number;
   avg_trade_size: number;
   avg_entry_price: number | null;
@@ -167,6 +170,8 @@ export default function ForwardTestWalletsPage() {
         case 'cash': aVal = a.cash_available; bVal = b.cash_available; break;
         case 'realized': aVal = a.realized_pnl; bVal = b.realized_pnl; break;
         case 'unrealized': aVal = a.unrealized_pnl; bVal = b.unrealized_pnl; break;
+        case 'max_drawdown': aVal = a.max_drawdown_pct ?? 0; bVal = b.max_drawdown_pct ?? 0; break;
+        case 'sharpe': aVal = a.sharpe_ratio ?? -Infinity; bVal = b.sharpe_ratio ?? -Infinity; break;
       }
 
       if (typeof aVal === 'string' && typeof bVal === 'string') {
@@ -591,6 +596,8 @@ export default function ForwardTestWalletsPage() {
                   <SortHeader field="won" label="Won" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
                   <SortHeader field="lost" label="Lost" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
                   <SortHeader field="win_rate" label="WR%" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
+                  <SortHeader field="max_drawdown" label="Max DD" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
+                  <SortHeader field="sharpe" label="Sharpe" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
                   <SortHeader field="cash" label="Cash" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
                   <th className="px-3 py-3 text-right font-medium text-muted-foreground">Actions</th>
                 </tr>
@@ -701,6 +708,18 @@ export default function ForwardTestWalletsPage() {
                       {/* Win Rate */}
                       <td className="px-3 py-3 text-right">
                         {(wallet.won + wallet.lost) > 0 ? `${winRate.toFixed(0)}%` : '-'}
+                      </td>
+
+                      {/* Max Drawdown */}
+                      <td className="px-3 py-3 text-right text-muted-foreground" title={wallet.max_drawdown_usd != null ? `$${wallet.max_drawdown_usd.toFixed(2)}` : undefined}>
+                        {wallet.max_drawdown_pct != null && (wallet.won + wallet.lost) >= 1
+                          ? `${wallet.max_drawdown_pct.toFixed(1)}%`
+                          : '-'}
+                      </td>
+
+                      {/* Sharpe Ratio */}
+                      <td className="px-3 py-3 text-right text-muted-foreground">
+                        {wallet.sharpe_ratio != null ? wallet.sharpe_ratio.toFixed(2) : '-'}
                       </td>
 
                       {/* Cash */}

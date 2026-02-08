@@ -51,6 +51,25 @@ export async function GET(request: Request, { params }: RouteParams) {
     
     const allOrders = orders || [];
     
+    // 2b. Look up trader display names from traders table
+    const uniqueTraderAddresses = [...new Set(
+      allOrders.map((o: { trader_address?: string }) => o.trader_address).filter(Boolean)
+    )] as string[];
+    const traderNameMap = new Map<string, string>();
+    if (uniqueTraderAddresses.length > 0) {
+      const { data: traderRows } = await supabase
+        .from('traders')
+        .select('wallet_address, display_name, username')
+        .in('wallet_address', uniqueTraderAddresses.map((w: string) => w.toLowerCase()));
+      for (const t of traderRows || []) {
+        const addr = (t.wallet_address || '').toLowerCase();
+        const name = t.display_name;
+        if (addr && name) traderNameMap.set(addr, name);
+      }
+    }
+    const getTraderName = (addr?: string | null) =>
+      addr ? (traderNameMap.get(addr.toLowerCase()) ?? null) : null;
+    
     // 3. Calculate basic stats (unrealized will be added after price fetch)
     const openOrders = allOrders.filter(o => o.outcome === 'OPEN');
     const resolvedOrders = allOrders.filter(o => o.outcome !== 'OPEN');
@@ -258,11 +277,37 @@ export async function GET(request: Request, { params }: RouteParams) {
         unrealized_pnl: unrealizedPnl,
         minutes_to_resolution: o.market_end_time 
           ? Math.round((new Date(o.market_end_time).getTime() - Date.now()) / (1000 * 60))
-          : null
+          : null,
+        trader_name: getTraderName(o.trader_address),
+        order_time: o.order_time ? { value: typeof o.order_time === 'string' ? o.order_time : new Date(o.order_time).toISOString() } : null
       };
     });
     
     console.log(`[ft/wallet/${walletId}] Price lookup results: found=${priceFoundCount}, missing=${priceMissingCount}, unrealized_pnl=${totalUnrealizedPnl.toFixed(2)}`);
+
+    const startingBalance = Number(wallet.starting_balance) || 1000;
+    const resolvedWithTime = resolvedOrders.filter(o => o.resolved_time);
+    const sortedResolved = [...resolvedWithTime].sort(
+      (a, b) => new Date(a.resolved_time!).getTime() - new Date(b.resolved_time!).getTime()
+    );
+    let peak = startingBalance;
+    let equity = startingBalance;
+    let maxDrawdownUsd = 0;
+    for (const o of sortedResolved) {
+      equity += o.pnl || 0;
+      if (equity > peak) peak = equity;
+      const drawdown = peak - equity;
+      if (drawdown > maxDrawdownUsd) maxDrawdownUsd = drawdown;
+    }
+    const maxDrawdownPct = peak > 0 ? (maxDrawdownUsd / peak) * 100 : 0;
+    const pnls = resolvedOrders.map(o => o.pnl).filter((p): p is number => typeof p === 'number' && Number.isFinite(p));
+    let sharpeRatio: number | null = null;
+    if (pnls.length >= 2) {
+      const mean = pnls.reduce((s, p) => s + p, 0) / pnls.length;
+      const variance = pnls.reduce((s, p) => s + (p - mean) ** 2, 0) / (pnls.length - 1);
+      const std = Math.sqrt(variance);
+      if (std > 0) sharpeRatio = mean / std;
+    }
 
     // Build full stats object now that we have unrealized P&L
     const stats = {
@@ -287,11 +332,20 @@ export async function GET(request: Request, { params }: RouteParams) {
         ? lostOrders.reduce((sum, o) => sum + (o.pnl || 0), 0) / lostOrders.length
         : null,
       last_trade: allOrders.length > 0 ? { value: allOrders[0].order_time } : null,
-      first_trade: allOrders.length > 0 ? { value: allOrders[allOrders.length - 1].order_time } : null
+      first_trade: allOrders.length > 0 ? { value: allOrders[allOrders.length - 1].order_time } : null,
+      max_drawdown_usd: maxDrawdownUsd,
+      max_drawdown_pct: maxDrawdownPct,
+      sharpe_ratio: sharpeRatio
     };
 
-    // 6. Recent resolved trades
-    const recent_trades = resolvedOrders.slice(0, 50);
+    // 6. Recent resolved trades (include trader_name, order_time, trader_address)
+    const recent_trades = resolvedOrders.slice(0, 50).map((o: { order_time?: string; resolved_time?: string; trader_address?: string; [k: string]: unknown }) => ({
+      ...o,
+      trader_address: o.trader_address,
+      trader_name: getTraderName(o.trader_address),
+      order_time: o.order_time ? { value: typeof o.order_time === 'string' ? o.order_time : new Date(o.order_time).toISOString() } : null,
+      resolved_time: o.resolved_time ? { value: typeof o.resolved_time === 'string' ? o.resolved_time : new Date(o.resolved_time).toISOString() } : null
+    }));
     
     // 6. Daily PnL history
     const dailyPnlMap = new Map<string, { trades: number; won: number; lost: number; pnl: number }>();

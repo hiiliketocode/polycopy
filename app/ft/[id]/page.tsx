@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, use } from 'react';
+import { useState, useEffect, useCallback, useMemo, use } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -21,8 +21,20 @@ import {
   Settings,
   Calendar,
   Info,
-  AlertCircle
+  AlertCircle,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Legend,
+} from 'recharts';
 
 interface WalletData {
   wallet_id: string;
@@ -69,6 +81,9 @@ interface Stats {
   avg_loss: number | null;
   last_trade: { value: string } | null;
   first_trade: { value: string } | null;
+  max_drawdown_usd?: number;
+  max_drawdown_pct?: number;
+  sharpe_ratio?: number | null;
 }
 
 interface Position {
@@ -81,13 +96,14 @@ interface Position {
   side: string;
   token_label: string;
   trader_address: string;
+  trader_name?: string | null;
   trader_win_rate: number | null;
   model_probability: number | null;
   edge_pct: number | null;
   conviction: number | null;
   unrealized_pnl: number | null;
   market_end_time: { value: string };
-  order_time: { value: string };
+  order_time: { value: string } | null;
   minutes_to_resolution: number;
 }
 
@@ -102,10 +118,12 @@ interface Trade {
   winning_label: string;
   outcome: string;
   pnl: number;
+  trader_address?: string;
+  trader_name?: string | null;
   trader_win_rate: number | null;
   model_probability: number | null;
   edge_pct: number | null;
-  order_time: { value: string };
+  order_time: { value: string } | null;
   resolved_time: { value: string };
 }
 
@@ -117,6 +135,16 @@ interface DailyPnl {
   win_rate: number;
   daily_pnl: number;
   cumulative_pnl: number;
+}
+
+interface PerformanceSnapshot {
+  snapshot_at: string;
+  cash: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  total_pnl: number;
+  return_pct: number;
+  starting_balance: number;
 }
 
 interface CategoryPerf {
@@ -297,9 +325,14 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
   const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
   const [dailyPnl, setDailyPnl] = useState<DailyPnl[]>([]);
   const [categoryPerf, setCategoryPerf] = useState<CategoryPerf[]>([]);
+  const [snapshots, setSnapshots] = useState<PerformanceSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('positions');
+  const [positionsSortField, setPositionsSortField] = useState<string>('order_time');
+  const [positionsSortDir, setPositionsSortDir] = useState<'asc' | 'desc'>('desc');
+  const [tradesSortField, setTradesSortField] = useState<string>('order_time');
+  const [tradesSortDir, setTradesSortDir] = useState<'asc' | 'desc'>('desc');
   const [autoSyncActive, setAutoSyncActive] = useState(true);
 
   const fetchWalletData = useCallback(async (silent = false) => {
@@ -315,6 +348,19 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
         setRecentTrades(data.recent_trades || []);
         setDailyPnl(data.daily_pnl || []);
         setCategoryPerf(data.performance_by_category || []);
+
+        // Fetch hourly snapshots for charts
+        const start = data.wallet?.start_date?.value || data.wallet?.start_date;
+        const params = new URLSearchParams({ wallet_id: id });
+        if (start) params.set('from', new Date(start).toISOString());
+        params.set('to', new Date().toISOString());
+        const snapRes = await fetch(`/api/ft/snapshots?${params}`, { cache: 'no-store' });
+        const snapData = await snapRes.json();
+        if (snapData.success && snapData.snapshots) {
+          setSnapshots(snapData.snapshots);
+        } else {
+          setSnapshots([]);
+        }
       } else if (!silent) {
         setError(data.error || 'Failed to fetch wallet');
       }
@@ -369,13 +415,72 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
     return value >= 0 ? `+${formatted}` : `-${formatted}`;
   };
 
+  const PosSortHeader = ({ field, label, align = 'left' }: { field: string; label: string; align?: 'left' | 'right' }) => (
+    <TableHead className={`cursor-pointer hover:bg-muted/50 select-none ${align === 'right' ? 'text-right' : ''}`} onClick={() => {
+      if (positionsSortField === field) setPositionsSortDir(d => d === 'asc' ? 'desc' : 'asc');
+      else { setPositionsSortField(field); setPositionsSortDir('desc'); }
+    }}>
+      <span className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
+        {label}
+        {positionsSortField === field ? (positionsSortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : null}
+      </span>
+    </TableHead>
+  );
+  const TradeSortHeader = ({ field, label, align = 'left' }: { field: string; label: string; align?: 'left' | 'right' }) => (
+    <TableHead className={`cursor-pointer hover:bg-muted/50 select-none ${align === 'right' ? 'text-right' : ''}`} onClick={() => {
+      if (tradesSortField === field) setTradesSortDir(d => d === 'asc' ? 'desc' : 'asc');
+      else { setTradesSortField(field); setTradesSortDir('desc'); }
+    }}>
+      <span className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
+        {label}
+        {tradesSortField === field ? (tradesSortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : null}
+      </span>
+    </TableHead>
+  );
+
+  const sortedPositions = useMemo(() => {
+    return [...openPositions].sort((a, b) => {
+      const mult = positionsSortDir === 'asc' ? 1 : -1;
+      let cmp = 0;
+      switch (positionsSortField) {
+        case 'market': cmp = (a.market_title || '').localeCompare(b.market_title || ''); break;
+        case 'trader': cmp = ((a.trader_name || a.trader_address || '')).localeCompare((b.trader_name || b.trader_address || '')); break;
+        case 'order_time': cmp = new Date((a.order_time?.value || 0)).getTime() - new Date((b.order_time?.value || 0)).getTime(); break;
+        case 'entry': cmp = (a.entry_price || 0) - (b.entry_price || 0); break;
+        case 'size': cmp = (a.size || 0) - (b.size || 0); break;
+        case 'pnl': cmp = (a.unrealized_pnl ?? 0) - (b.unrealized_pnl ?? 0); break;
+        case 'wr': cmp = (a.trader_win_rate ?? 0) - (b.trader_win_rate ?? 0); break;
+        default: break;
+      }
+      return mult * cmp;
+    });
+  }, [openPositions, positionsSortField, positionsSortDir]);
+
+  const sortedTrades = useMemo(() => {
+    return [...recentTrades].sort((a, b) => {
+      const mult = tradesSortDir === 'asc' ? 1 : -1;
+      let cmp = 0;
+      switch (tradesSortField) {
+        case 'market': cmp = (a.market_title || '').localeCompare(b.market_title || ''); break;
+        case 'trader': cmp = ((a.trader_name || a.trader_address || '')).localeCompare((b.trader_name || b.trader_address || '')); break;
+        case 'order_time': cmp = new Date((a.order_time?.value || 0)).getTime() - new Date((b.order_time?.value || 0)).getTime(); break;
+        case 'resolved_time': cmp = new Date((a.resolved_time?.value || 0)).getTime() - new Date((b.resolved_time?.value || 0)).getTime(); break;
+        case 'entry': cmp = (a.entry_price || 0) - (b.entry_price || 0); break;
+        case 'size': cmp = (a.size || 0) - (b.size || 0); break;
+        case 'pnl': cmp = (a.pnl || 0) - (b.pnl || 0); break;
+        case 'outcome': cmp = (a.outcome || '').localeCompare(b.outcome || ''); break;
+        default: break;
+      }
+      return mult * cmp;
+    });
+  }, [recentTrades, tradesSortField, tradesSortDir]);
+
   const formatTime = (timestamp: { value: string } | null) => {
     if (!timestamp) return '-';
     return new Date(timestamp.value).toLocaleString();
   };
 
   const formatTimeAgo = (minutes: number) => {
-    // Event end time has passed, but Polymarket resolution can lag. Clarify we're awaiting resolution.
     if (minutes < 0) return 'Awaiting resolution';
     if (minutes < 60) return `${Math.round(minutes)}m`;
     const hours = Math.floor(minutes / 60);
@@ -464,7 +569,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
       </div>
 
       {/* Portfolio Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-4 mb-6">
         <Card>
           <CardContent className="pt-6">
             <div className="text-3xl font-bold">{formatCurrency(wallet.current_balance)}</div>
@@ -529,6 +634,32 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
               <span className="text-red-600">{stats.lost} L</span>
             </div>
             <p className="text-xs text-muted-foreground mt-1">Win Rate</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-3xl font-bold text-amber-600">
+              {stats.max_drawdown_pct != null && stats.won + stats.lost >= 1
+                ? `${stats.max_drawdown_pct.toFixed(1)}%`
+                : '-'}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {stats.max_drawdown_usd != null && stats.won + stats.lost >= 1
+                ? formatPnl(-stats.max_drawdown_usd)
+                : ''}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1" title="Largest peak-to-trough decline in equity">Max Drawdown</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-3xl font-bold">
+              {stats.sharpe_ratio != null ? stats.sharpe_ratio.toFixed(2) : '-'}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              Per-trade
+            </div>
+            <p className="text-xs text-muted-foreground mt-1" title="Mean PnL / Std PnL across resolved trades">Sharpe Ratio</p>
           </CardContent>
         </Card>
       </div>
@@ -635,21 +766,22 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Market</TableHead>
-                      <TableHead>Trader</TableHead>
-                      <TableHead className="text-right">WR</TableHead>
+                      <PosSortHeader field="market" label="Market" />
+                      <PosSortHeader field="trader" label="Trader" />
+                      <PosSortHeader field="wr" label="WR" align="right" />
+                      <PosSortHeader field="entry" label="Entry" align="right" />
                       <TableHead className="text-right">ML</TableHead>
                       <TableHead className="text-right">Conv</TableHead>
-                      <TableHead className="text-right">Entry</TableHead>
                       <TableHead className="text-right">Current</TableHead>
-                      <TableHead className="text-right">Cost</TableHead>
+                      <PosSortHeader field="size" label="Cost" align="right" />
                       <TableHead className="text-right">Value</TableHead>
-                      <TableHead className="text-right">P&L</TableHead>
-                      <TableHead className="text-right">Time</TableHead>
+                      <PosSortHeader field="pnl" label="P&L" align="right" />
+                      <PosSortHeader field="order_time" label="Ordered" align="right" />
+                      <TableHead className="text-right">Resolves</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {openPositions.map((pos) => {
+                    {sortedPositions.map((pos) => {
                       // Calculate current value: shares * current_price
                       const shares = pos.entry_price > 0 ? pos.size / pos.entry_price : 0;
                       const currentValue = pos.current_price !== null ? shares * pos.current_price : null;
@@ -664,7 +796,20 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                         <TableRow key={pos.order_id}>
                           <TableCell>
                             <div className="max-w-xs">
-                              <div className="font-medium truncate">{pos.market_title}</div>
+                              <div className="font-medium truncate">
+                                {pos.market_slug ? (
+                                  <a
+                                    href={`https://polymarket.com/market/${pos.market_slug}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:underline"
+                                  >
+                                    {pos.market_title}
+                                  </a>
+                                ) : (
+                                  pos.market_title
+                                )}
+                              </div>
                               <div className="text-xs text-muted-foreground">
                                 Betting: {pos.token_label}
                               </div>
@@ -675,9 +820,9 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                               href={`https://polymarket.com/profile/${pos.trader_address}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="font-mono text-xs text-blue-600 hover:underline"
+                              className="text-blue-600 hover:underline"
                             >
-                              {pos.trader_address?.slice(0, 6)}...{pos.trader_address?.slice(-4)}
+                              {pos.trader_name || (pos.trader_address ? `${pos.trader_address.slice(0, 6)}...${pos.trader_address.slice(-4)}` : '-')}
                             </a>
                           </TableCell>
                           <TableCell className="text-right">
@@ -686,6 +831,9 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                                 {(pos.trader_win_rate * 100).toFixed(0)}%
                               </span>
                             ) : <span className="text-muted-foreground text-xs">-</span>}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs">
+                            {((pos.entry_price || 0) * 100).toFixed(0)}¢
                           </TableCell>
                           <TableCell className="text-right">
                             {pos.model_probability != null && typeof pos.model_probability === 'number' ? (
@@ -700,9 +848,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                                 {pos.conviction.toFixed(1)}x
                               </span>
                             ) : <span className="text-muted-foreground text-xs">-</span>}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-xs">
-                            {((pos.entry_price || 0) * 100).toFixed(0)}¢
                           </TableCell>
                           <TableCell className="text-right font-mono text-xs">
                             {price != null && typeof price === 'number' ? (
@@ -739,7 +884,10 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                               formatPnl(pos.unrealized_pnl)
                             ) : '-'}
                           </TableCell>
-                          <TableCell className="text-right text-xs">
+                          <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
+                            {formatTime(pos.order_time)}
+                          </TableCell>
+                          <TableCell className="text-right text-xs text-muted-foreground">
                             {formatTimeAgo(minutes)}
                           </TableCell>
                         </TableRow>
@@ -771,22 +919,37 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Market</TableHead>
+                      <TradeSortHeader field="market" label="Market" />
+                      <TradeSortHeader field="trader" label="Trader" />
                       <TableHead>Bet</TableHead>
                       <TableHead>Winner</TableHead>
-                      <TableHead className="text-right">Entry</TableHead>
-                      <TableHead className="text-right">Size</TableHead>
-                      <TableHead className="text-center">Result</TableHead>
-                      <TableHead className="text-right">P&L</TableHead>
-                      <TableHead className="text-right">Resolved</TableHead>
+                      <TradeSortHeader field="entry" label="Entry" align="right" />
+                      <TradeSortHeader field="size" label="Size" align="right" />
+                      <TradeSortHeader field="outcome" label="Result" align="right" />
+                      <TradeSortHeader field="pnl" label="P&L" align="right" />
+                      <TradeSortHeader field="order_time" label="Ordered" align="right" />
+                      <TradeSortHeader field="resolved_time" label="Resolved" align="right" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentTrades.map((trade) => (
+                    {sortedTrades.map((trade) => (
                       <TableRow key={trade.order_id}>
                         <TableCell>
                           <div className="max-w-xs">
-                            <div className="font-medium truncate">{trade.market_title}</div>
+                            <div className="font-medium truncate">
+                              {trade.market_slug ? (
+                                <a
+                                  href={`https://polymarket.com/market/${trade.market_slug}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:underline"
+                                >
+                                  {trade.market_title}
+                                </a>
+                              ) : (
+                                trade.market_title
+                              )}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell className="font-mono text-sm">
@@ -809,7 +972,10 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                         <TableCell className={`text-right font-semibold ${trade.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {formatPnl(trade.pnl)}
                         </TableCell>
-                        <TableCell className="text-right text-xs text-muted-foreground">
+                        <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
+                          {formatTime(trade.order_time)}
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
                           {formatTime(trade.resolved_time)}
                         </TableCell>
                       </TableRow>
@@ -823,6 +989,102 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
 
         {/* Performance Tab */}
         <TabsContent value="performance">
+          {/* Hourly performance charts */}
+          {(() => {
+            const chartData = snapshots.length > 0
+              ? snapshots.map((s) => ({
+                  time: new Date(s.snapshot_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                  fullTime: s.snapshot_at,
+                  returnPct: Number(s.return_pct),
+                  cash: Number(s.cash),
+                  totalPnl: Number(s.total_pnl),
+                  cumulatedReturn: Number(s.return_pct),
+                }))
+              : dailyPnl.length > 0
+                ? dailyPnl.map((d, i) => {
+                    const date = new Date(d.date.value);
+                    const start = wallet?.starting_balance ?? 1000;
+                    const retPct = start > 0 ? (d.cumulative_pnl / start) * 100 : 0;
+                    return {
+                      time: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+                      fullTime: d.date.value,
+                      returnPct: retPct,
+                      cash: start + d.cumulative_pnl,
+                      totalPnl: d.cumulative_pnl,
+                      cumulatedReturn: retPct,
+                    };
+                  })
+                : [];
+
+            return chartData.length > 0 ? (
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5" />
+                    Performance Over Time
+                  </CardTitle>
+                  <CardDescription>
+                    {snapshots.length > 0 ? 'Hourly snapshots' : 'Daily (hourly snapshots appear after cron runs)'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[320px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis
+                          dataKey="time"
+                          tick={{ fontSize: 11 }}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          yAxisId="left"
+                          tick={{ fontSize: 11 }}
+                          tickFormatter={(v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`}
+                        />
+                        <YAxis
+                          yAxisId="right"
+                          orientation="right"
+                          tick={{ fontSize: 11 }}
+                          tickFormatter={(v) => `$${v.toFixed(0)}`}
+                        />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8 }}
+                          labelFormatter={(_, payload) => payload[0]?.payload?.fullTime}
+                          formatter={(value: number, name: string) => [
+                            name === 'returnPct' || name === 'cumulatedReturn' ? `${value >= 0 ? '+' : ''}${value.toFixed(2)}%` : `$${value.toFixed(2)}`,
+                            name === 'returnPct' ? 'PnL %' : name === 'cash' ? 'Cash' : name === 'cumulatedReturn' ? 'Cumulated return %' : name,
+                          ]}
+                        />
+                        <Legend />
+                        <Line
+                          yAxisId="left"
+                          type="monotone"
+                          dataKey="returnPct"
+                          name="PnL % / Cumulated return"
+                          stroke="hsl(142 76% 36%)"
+                          strokeWidth={2}
+                          dot={false}
+                          connectNulls
+                        />
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey="cash"
+                          name="Cash"
+                          stroke="hsl(221 83% 53%)"
+                          strokeWidth={2}
+                          dot={false}
+                          connectNulls
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null;
+          })()}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Daily P&L */}
             <Card>

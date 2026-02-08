@@ -153,7 +153,7 @@ export async function POST(request: Request) {
             market_start_time_unix: market.start_time ? new Date(market.start_time).getTime() / 1000 : null,
             token_label: order.token_label
           },
-          user_slippage: 0.02
+          user_slippage: 0.3
         }, serviceRoleKey);
         
         // Extract probability from response - check multiple locations
@@ -175,6 +175,10 @@ export async function POST(request: Request) {
           else if (polyScoreResponse.analysis?.prediction_stats?.ai_fair_value) {
             mlProbability = polyScoreResponse.analysis.prediction_stats.ai_fair_value;
             edgePct = (polyScoreResponse.analysis.prediction_stats.model_roi_pct || 0) / 100;
+          }
+          // Normalize: API may return 0-100 (percent) instead of 0-1
+          if (mlProbability != null && mlProbability > 1) {
+            mlProbability = mlProbability / 100;
           }
         }
         
