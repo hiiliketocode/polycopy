@@ -338,6 +338,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
   const [tradesSortField, setTradesSortField] = useState<string>('order_time');
   const [tradesSortDir, setTradesSortDir] = useState<'asc' | 'desc'>('desc');
   const [autoSyncActive, setAutoSyncActive] = useState(true);
+  const [hasLiveStrategy, setHasLiveStrategy] = useState<boolean | null>(null);
 
   const fetchWalletData = useCallback(async (silent = false) => {
     try {
@@ -545,6 +546,20 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
           <p className="text-muted-foreground mt-1">{wallet.description}</p>
         </div>
         <div className="flex items-center gap-2">
+          {hasLiveStrategy === true && (
+            <Link href={`/lt/LT_${id}`}>
+              <Button variant="outline" size="sm" className="border-emerald-500/50 text-emerald-600 hover:bg-emerald-500/10">
+                View Live strategy
+              </Button>
+            </Link>
+          )}
+          {hasLiveStrategy === false && (
+            <Link href={`/lt?createFrom=${id}`}>
+              <Button size="sm" className="bg-[#FDB022] text-slate-900 hover:bg-[#FDB022]/90">
+                Create Live from this FT
+              </Button>
+            </Link>
+          )}
           <div className="flex items-center gap-2 mr-4">
             <div className={`w-2 h-2 rounded-full ${autoSyncActive ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
             <span className="text-xs text-muted-foreground">
