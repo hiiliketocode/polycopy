@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
+import { POST as resolvePost } from '@/app/api/ft/resolve/route';
+import { POST as enrichPost } from '@/app/api/ft/enrich-ml/route';
 
 /**
  * Cron: GET /api/cron/ft-resolve
  * Runs every 10 minutes to resolve FT orders when markets close.
  * Also triggers ML enrichment for orders missing model scores.
  * Requires CRON_SECRET when set.
+ * Calls resolve/enrich logic directly (no internal HTTP) to avoid auth issues.
  */
 export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
@@ -16,19 +19,16 @@ export async function GET(request: Request) {
   }
 
   try {
-    const base =
-      process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-
-    const headers: Record<string, string> = {};
-    if (cronSecret) {
-      headers['Authorization'] = `Bearer ${cronSecret}`;
-    }
+    const headers: Record<string, string> = cronSecret
+      ? { Authorization: `Bearer ${cronSecret}` }
+      : {};
 
     // 1. Resolve FT orders
-    const resolveUrl = `${base}/api/ft/resolve`;
-    const resolveRes = await fetch(resolveUrl, { method: 'POST', headers, cache: 'no-store' });
+    const resolveReq = new Request('https://internal/api/ft/resolve', {
+      method: 'POST',
+      headers,
+    });
+    const resolveRes = await resolvePost(resolveReq);
     const data = await resolveRes.json().catch(() => ({}));
     if (!resolveRes.ok) {
       console.error('[cron/ft-resolve] Resolve failed:', data?.error || resolveRes.statusText);
@@ -39,13 +39,12 @@ export async function GET(request: Request) {
     }
 
     // 2. Enrich orders with ML scores (catches any that failed at sync time)
-    const enrichUrl = `${base}/api/ft/enrich-ml`;
-    const enrichRes = await fetch(enrichUrl, {
+    const enrichReq = new Request('https://internal/api/ft/enrich-ml', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify({ limit: 30 }),
-      cache: 'no-store'
     });
+    const enrichRes = await enrichPost(enrichReq);
     const enrichData = await enrichRes.json().catch(() => ({}));
 
     return NextResponse.json({

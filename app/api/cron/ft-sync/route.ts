@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
+import { POST as syncPost } from '@/app/api/ft/sync/route';
 
 /**
  * Cron: GET /api/cron/ft-sync
  * Runs every 5 minutes to capture new Polymarket trades into FT wallets.
  * Sync runs independently of the FT page being open.
  * Requires CRON_SECRET when set.
+ * Calls sync logic directly (no internal HTTP) to avoid auth issues.
  */
 export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
@@ -16,18 +18,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    const base =
-      process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-
-    const headers: Record<string, string> = {};
-    if (cronSecret) {
-      headers['Authorization'] = `Bearer ${cronSecret}`;
-    }
-
-    const syncUrl = `${base}/api/ft/sync`;
-    const syncRes = await fetch(syncUrl, { method: 'POST', headers, cache: 'no-store' });
+    const synthRequest = new Request('https://internal/api/ft/sync', {
+      method: 'POST',
+      headers: cronSecret ? { Authorization: `Bearer ${cronSecret}` } : undefined,
+    });
+    const syncRes = await syncPost(synthRequest);
     const data = await syncRes.json().catch(() => ({}));
 
     if (!syncRes.ok) {

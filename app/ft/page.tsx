@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-type SortField = 'name' | 'trader' | 'started' | 'balance' | 'pnl' | 'pnl_pct' | 'taken' | 'pct_made' | 'avg_trade_size' | 'open' | 'won' | 'lost' | 'win_rate' | 'cash' | 'realized' | 'unrealized';
+type SortField = 'name' | 'started' | 'balance' | 'pnl' | 'pnl_pct' | 'taken' | 'pct_made' | 'avg_trade_size' | 'open' | 'won' | 'lost' | 'win_rate' | 'cash' | 'realized' | 'unrealized';
 type CompareSortField = 'name' | 'pnl' | 'started' | 'use_model' | 'model_threshold' | 'price_min' | 'price_max' | 'min_edge' | 'allocation' | 'bet_size' | 'min_bet' | 'max_bet' | 'kelly' | 'min_trades' | 'min_conviction';
 type SortDir = 'asc' | 'desc';
 
@@ -93,17 +93,6 @@ function getExtendedFilters(wallet: FTWallet): ExtendedFilters {
   }
 }
 
-// Helper to get trader name or abbreviate address
-function getTraderDisplay(wallet: FTWallet): string | null {
-  const filters = getExtendedFilters(wallet);
-  if (filters.target_trader_name) return filters.target_trader_name;
-  if (filters.target_trader) {
-    const addr = filters.target_trader;
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-  }
-  return null;
-}
-
 interface Totals {
   total_balance: number;
   total_cash_available: number;
@@ -158,7 +147,6 @@ export default function ForwardTestWalletsPage() {
 
       switch (sortField) {
         case 'name': aVal = a.display_name; bVal = b.display_name; break;
-        case 'trader': aVal = getTraderDisplay(a) || ''; bVal = getTraderDisplay(b) || ''; break;
         case 'started': aVal = new Date(a.start_date?.value || 0).getTime(); bVal = new Date(b.start_date?.value || 0).getTime(); break;
         case 'balance': aVal = a.current_balance; bVal = b.current_balance; break;
         case 'pnl': aVal = a.total_pnl; bVal = b.total_pnl; break;
@@ -589,7 +577,6 @@ export default function ForwardTestWalletsPage() {
               <thead className="bg-muted/50 border-b">
                 <tr>
                   <SortHeader field="name" label="Strategy" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                  <SortHeader field="trader" label="Trader" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                   <SortHeader field="started" label="Started" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                   <th className="px-3 py-3 font-medium text-muted-foreground whitespace-nowrap text-left min-w-[70px]">Running</th>
                   <SortHeader field="balance" label="Balance" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
@@ -637,20 +624,6 @@ export default function ForwardTestWalletsPage() {
                             </div>
                           </div>
                         </div>
-                      </td>
-
-                      {/* Trader */}
-                      <td className="px-3 py-3">
-                        {(() => {
-                          const traderDisplay = getTraderDisplay(wallet);
-                          return traderDisplay ? (
-                            <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded" title={getExtendedFilters(wallet).target_trader || ''}>
-                              {traderDisplay}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          );
-                        })()}
                       </td>
 
                       {/* Started */}
