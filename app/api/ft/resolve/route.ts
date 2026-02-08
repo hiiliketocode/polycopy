@@ -12,7 +12,7 @@ import { requireAdminOrCron } from '@/lib/ft-auth';
  * - Our outcome's price >= 0.99 ($1) → WON
  * - Our outcome's price <= 0.01 (1¢) → LOST
  * - Otherwise → keep OPEN (pending)
- * Does not require market.closed; uses prices as source of truth.
+ * Requires both: (1) prices at $1/1¢ and (2) market.closed=true.
  *
  * Flow:
  * 1. Get all OPEN FT orders
@@ -132,11 +132,12 @@ export async function POST(request: Request) {
             const minPrice = Math.min(...prices);
             const maxPriceIdx = prices.indexOf(maxPrice);
 
-            // Resolve only when prices show clear outcome: winner at $1, loser at 1¢ or below
-            // Keep pending if prices haven't settled (e.g. 0.95/0.05 is still settling)
+            // Resolve only when: (1) prices show clear outcome AND (2) Polymarket has closed the market.
+            // Require market.closed to avoid resolving live markets that briefly show 0.99/0.01.
             const hasClearWinner = maxPrice >= WIN_THRESHOLD;
             const hasClearLoser = minPrice <= LOSE_THRESHOLD;
-            if (!hasClearWinner || !hasClearLoser) continue;
+            const marketClosed = market.closed === true;
+            if (!hasClearWinner || !hasClearLoser || !marketClosed) continue;
 
             const winningLabel = outcomeLabel(outcomes[maxPriceIdx]);
             const outcomeLabels = outcomes.map(outcomeLabel);

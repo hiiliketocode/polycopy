@@ -827,12 +827,13 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                       // Calculate current value: shares * current_price
                       const shares = pos.entry_price > 0 ? pos.size / pos.entry_price : 0;
                       const currentValue = pos.current_price !== null ? shares * pos.current_price : null;
-                      const minutes = pos.minutes_to_resolution ?? 0;
-                      const eventEnded = minutes < 0;
                       const price = pos.current_price;
-                      // When event ended but market not resolved, use last price for mark-to-market.
-                      // Show estimated Value/P&L (not "Pending") so user sees current estimate.
-                      const awaitingResolution = eventEnded && price != null && price > 0.05 && price < 0.95;
+                      // Use API resolves_label when available (Gamma status); else fall back to minutes
+                      const resolvesLabel = (pos as { resolves_label?: string }).resolves_label;
+                      const minutes = pos.minutes_to_resolution ?? 0;
+                      const eventEnded = resolvesLabel === 'Awaiting resolution' || (resolvesLabel == null && minutes < 0);
+                      // When event ended or Live, use last price for mark-to-market; show ~ for estimated Value/P&L
+                      const awaitingResolution = (resolvesLabel === 'Awaiting resolution' || resolvesLabel === 'Live') && price != null && price > 0.05 && price < 0.95;
                       const displayPnl = pos.unrealized_pnl ?? (currentValue != null ? currentValue - pos.size : null);
 
                       return (
@@ -932,7 +933,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                             {formatTime(pos.order_time)}
                           </TableCell>
                           <TableCell className="text-right text-xs text-muted-foreground">
-                            {formatTimeAgo(minutes)}
+                            {resolvesLabel ?? formatTimeAgo(minutes)}
                           </TableCell>
                         </TableRow>
                       );

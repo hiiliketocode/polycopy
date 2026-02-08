@@ -209,6 +209,78 @@ export async function GET(request: Request, { params }: RouteParams) {
       }
     }
     
+    // Fetch market status from Gamma for ALL open positions (closed, completed_time, game_start_time)
+    const statusMap = new Map<string, { closed: boolean; completedTime: string | null; gameStartTime: string | null; endTime: string | null }>();
+    const STATUS_BATCH = 30;
+    for (let i = 0; i < openConditionIds.length; i += STATUS_BATCH) {
+        const batch = openConditionIds.slice(i, i + STATUS_BATCH);
+        try {
+          const params = batch.map(id => `condition_ids=${id}`).join('&');
+          const gammaRes = await fetch(`https://gamma-api.polymarket.com/markets?${params}`, { cache: 'no-store' });
+          if (gammaRes.ok) {
+            const arr = await gammaRes.json();
+            for (const m of Array.isArray(arr) ? arr : []) {
+              const cid = m.conditionId || m.condition_id;
+              if (!cid) continue;
+              const gameStart = m.gameStartTime || m.game_start_time || m.startDate || m.start_date;
+              const endTime = m.endDate || m.end_date || m.endTime;
+              const completedTime = m.completedTime || m.completed_time || null;
+              statusMap.set(cid, {
+                closed: m.closed === true,
+                completedTime: completedTime ? (typeof completedTime === 'string' ? completedTime : new Date(completedTime).toISOString()) : null,
+                gameStartTime: gameStart ? (typeof gameStart === 'string' ? gameStart : new Date(gameStart).toISOString()) : null,
+                endTime: endTime ? (typeof endTime === 'string' ? endTime : new Date(endTime).toISOString()) : null
+              });
+            }
+          }
+        } catch (err) {
+          console.warn(`[ft/wallet/${walletId}] Gamma status fetch failed:`, err);
+        }
+      }
+    
+    // Helper to compute "Resolves" label from market status (distinguish Live vs Awaiting resolution)
+    const computeResolvesLabel = (
+        conditionId: string,
+        marketEndTime: string | null | undefined,
+        currentPrice: number | null
+      ): string => {
+        const status = statusMap.get(conditionId ?? '');
+        const now = Date.now();
+        const gameStart = status?.gameStartTime ? new Date(status.gameStartTime).getTime() : null;
+        const completed = status?.completedTime ? new Date(status.completedTime).getTime() : null;
+        const endTime = status?.endTime ? new Date(status.endTime).getTime() : (marketEndTime ? new Date(marketEndTime).getTime() : null);
+        const priceSettled = currentPrice != null && (currentPrice >= 0.99 || currentPrice <= 0.01);
+        
+        // Sports: game_start_time exists → use completed_time and game_start for live/ended
+        if (gameStart != null) {
+          if (completed != null) {
+            return priceSettled ? 'Resolved' : 'Awaiting resolution';
+          }
+          if (now >= gameStart) {
+            return 'Live';
+          }
+          const mins = Math.round((gameStart - now) / 60000);
+          if (mins < 60) return `${mins}m`;
+          const h = Math.floor(mins / 60);
+          const m = Math.round(mins % 60);
+          return m > 0 ? `${h}h ${m}m` : `${h}h`;
+        }
+        
+        // Non-sports: use end_time
+        if (endTime == null) return '-';
+        const minsToEnd = Math.round((endTime - now) / 60000);
+        if (minsToEnd < 0) {
+          return status?.closed && !priceSettled ? 'Awaiting resolution' : priceSettled ? 'Resolved' : 'Awaiting resolution';
+        }
+        if (minsToEnd < 60) return `${minsToEnd}m`;
+        const hours = Math.floor(minsToEnd / 60);
+        const mins = Math.round(minsToEnd % 60);
+        if (minsToEnd < 1440) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+        const days = Math.floor(minsToEnd / 1440);
+        const h = Math.floor((minsToEnd % 1440) / 60);
+        return h > 0 ? `${days}d ${h}h` : `${days}d`;
+      };
+    
     // Helper to extract label from outcome (string or object like {LABEL: "X"})
     const outcomeLabel = (o: unknown): string => {
       if (typeof o === 'string') return o;
@@ -287,6 +359,7 @@ export async function GET(request: Request, { params }: RouteParams) {
         minutes_to_resolution: o.market_end_time 
           ? Math.round((new Date(o.market_end_time).getTime() - Date.now()) / (1000 * 60))
           : null,
+        resolves_label: computeResolvesLabel(o.condition_id ?? '', o.market_end_time, currentPrice),
         trader_name: getTraderName(o.trader_address),
         order_time: o.order_time ? { value: typeof o.order_time === 'string' ? o.order_time : new Date(o.order_time).toISOString() } : null
       };
