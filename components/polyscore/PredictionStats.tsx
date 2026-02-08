@@ -747,7 +747,11 @@ export function PredictionStats({
               resolved_count: agg.resolved_count,
               win_rate: agg.trade_count > 0 ? agg.win_weighted / agg.trade_count : 0.5,
               roi_pct: roiPct,
+<<<<<<< HEAD
               avg_pnl_usd: avgPnlUsd,
+=======
+              avg_pnl_usd: agg.trade_count > 0 ? agg.pnl_weighted / agg.trade_count : 0,
+>>>>>>> origin/roi-fix-deployment
               avg_trade_size_usd: agg.trade_count > 0 && agg.trade_size_weighted > 0 
                 ? agg.trade_size_weighted / agg.trade_count 
                 : null,
