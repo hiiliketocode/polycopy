@@ -2,11 +2,31 @@ import { NextResponse } from 'next/server';
 import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdmin } from '@/lib/ft-auth';
 
+const ML_MIX_WALLET_IDS = [
+  'FT_ML_SHARP_SHOOTER', 'FT_ML_UNDERDOG', 'FT_ML_FAVORITES', 'FT_ML_HIGH_CONV',
+  'FT_ML_EDGE', 'FT_ML_MIDRANGE', 'FT_ML_STRICT', 'FT_ML_LOOSE',
+  'FT_ML_CONTRARIAN', 'FT_ML_HEAVY_FAV',
+];
+
+const ML_MIX_WALLETS = [
+  { wallet_id: 'FT_ML_SHARP_SHOOTER', config_id: 'ML_SHARP_SHOOTER', display_name: 'ML: Sharp Shooter', description: 'ML 55% + 1.5x conviction, elite sniper', model_threshold: 0.55, price_min: 0, price_max: 1, min_edge: 0, use_model: true, allocation_method: 'KELLY', kelly_fraction: 0.4, min_bet: 15, max_bet: 75, min_trader_resolved_count: 30 },
+  { wallet_id: 'FT_ML_UNDERDOG', config_id: 'ML_UNDERDOG', display_name: 'ML: Underdog Hunter', description: 'ML 55% + underdogs 0-50¢, 5% edge', model_threshold: 0.55, price_min: 0, price_max: 0.5, min_edge: 0.05, use_model: true, allocation_method: 'KELLY', kelly_fraction: 0.3, min_bet: 0.5, max_bet: 8, min_trader_resolved_count: 30 },
+  { wallet_id: 'FT_ML_FAVORITES', config_id: 'ML_FAVORITES', display_name: 'ML: Favorite Grinder', description: 'ML 55% + favorites 60-90¢, 3% edge', model_threshold: 0.55, price_min: 0.6, price_max: 0.9, min_edge: 0.03, use_model: true, allocation_method: 'KELLY', kelly_fraction: 0.25, min_bet: 0.5, max_bet: 8, min_trader_resolved_count: 30 },
+  { wallet_id: 'FT_ML_HIGH_CONV', config_id: 'ML_HIGH_CONV', display_name: 'ML: High Conviction', description: 'ML 55% + 2x conviction, double confirmation', model_threshold: 0.55, price_min: 0, price_max: 1, min_edge: 0, use_model: true, allocation_method: 'FIXED', kelly_fraction: 0.25, min_bet: 0.5, max_bet: 5, min_trader_resolved_count: 30 },
+  { wallet_id: 'FT_ML_EDGE', config_id: 'ML_EDGE', display_name: 'ML: Model + Edge', description: 'ML 55% + 5% min edge, quantitative combo', model_threshold: 0.55, price_min: 0, price_max: 1, min_edge: 0.05, use_model: true, allocation_method: 'KELLY', kelly_fraction: 0.35, min_bet: 1, max_bet: 15, min_trader_resolved_count: 30 },
+  { wallet_id: 'FT_ML_MIDRANGE', config_id: 'ML_MIDRANGE', display_name: 'ML: Mid-Range', description: 'ML 55% + 25-75¢ only, avoid extremes', model_threshold: 0.55, price_min: 0.25, price_max: 0.75, min_edge: 0.05, use_model: true, allocation_method: 'KELLY', kelly_fraction: 0.3, min_bet: 0.5, max_bet: 10, min_trader_resolved_count: 30 },
+  { wallet_id: 'FT_ML_STRICT', config_id: 'ML_STRICT', display_name: 'ML: Strict (65%)', description: 'ML 65% only, highest confidence trades', model_threshold: 0.65, price_min: 0, price_max: 1, min_edge: 0, use_model: true, allocation_method: 'KELLY', kelly_fraction: 0.35, min_bet: 1, max_bet: 20, min_trader_resolved_count: 10 },
+  { wallet_id: 'FT_ML_LOOSE', config_id: 'ML_LOOSE', display_name: 'ML: Loose (50%)', description: 'ML 50% only, more trades, lower bar', model_threshold: 0.5, price_min: 0, price_max: 1, min_edge: 0, use_model: true, allocation_method: 'KELLY', kelly_fraction: 0.25, min_bet: 0.5, max_bet: 8, min_trader_resolved_count: 10 },
+  { wallet_id: 'FT_ML_CONTRARIAN', config_id: 'ML_CONTRARIAN', display_name: 'ML: Contrarian', description: 'ML 55% + 10-40¢ contrarian, 5% edge', model_threshold: 0.55, price_min: 0.1, price_max: 0.4, min_edge: 0.05, use_model: true, allocation_method: 'KELLY', kelly_fraction: 0.3, min_bet: 0.5, max_bet: 12, min_trader_resolved_count: 30 },
+  { wallet_id: 'FT_ML_HEAVY_FAV', config_id: 'ML_HEAVY_FAV', display_name: 'ML: Heavy Favorites', description: 'ML 55% + 75-95¢ near-certain, 2% edge', model_threshold: 0.55, price_min: 0.75, price_max: 0.95, min_edge: 0.02, use_model: true, allocation_method: 'KELLY', kelly_fraction: 0.25, min_bet: 0.5, max_bet: 10, min_trader_resolved_count: 30 },
+];
+
 /**
  * GET /api/ft/wallets
  * 
  * Returns all FT wallets with their current status and stats.
  * Admin only.
+ * Auto-inserts the 10 ML mix strategies if missing (self-healing for prod).
  */
 export async function GET() {
   const authError = await requireAdmin();
@@ -14,6 +34,26 @@ export async function GET() {
 
   try {
     const supabase = createAdminServiceClient();
+
+    // Ensure 10 ML mix strategies exist (self-healing when migration wasn't run)
+    const { data: existing } = await supabase.from('ft_wallets').select('wallet_id').in('wallet_id', ML_MIX_WALLET_IDS);
+    const existingIds = new Set((existing || []).map((r: { wallet_id: string }) => r.wallet_id));
+    const toInsert = ML_MIX_WALLETS.filter(w => !existingIds.has(w.wallet_id));
+    if (toInsert.length > 0) {
+      const rows = toInsert.map(w => ({
+        ...w,
+        starting_balance: 1000,
+        current_balance: 1000,
+        bet_size: 1.2,
+        is_active: true,
+      }));
+      const { error: insertErr } = await supabase.from('ft_wallets').upsert(rows, { onConflict: 'wallet_id' });
+      if (insertErr) {
+        console.warn('[ft/wallets] Could not auto-insert ML mix strategies:', insertErr.message);
+      } else {
+        console.log(`[ft/wallets] Auto-inserted ${toInsert.length} ML mix strategies`);
+      }
+    }
     
     // Get all wallets
     const { data: wallets, error: walletsError } = await supabase

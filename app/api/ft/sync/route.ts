@@ -422,7 +422,7 @@ export async function POST(request: Request) {
     }
     
     // 5. Get market info from our database to check if markets are still open
-    const conditionIds = [...new Set(allTrades.map(t => t.conditionId).filter(Boolean))];
+    const conditionIds = [...new Set(allTrades.map(t => t.conditionId).filter((id): id is string => Boolean(id)))];
     
     const { data: markets, error: marketsError } = await supabase
       .from('markets')

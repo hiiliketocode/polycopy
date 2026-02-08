@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Compass, User, LogOut, Settings, Home, Crown, BarChart3, Activity } from "lucide-react"
+import { Compass, User, LogOut, Settings, Home, Crown, Activity } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -349,16 +349,6 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
             {isAdmin && (
               <>
                 <Link
-                  href="/paper-trading"
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    isActive("/paper-trading")
-                      ? "text-slate-900 bg-slate-100"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                  }`}
-                >
-                  Paper Trading
-                </Link>
-                <Link
                   href="/admin/auto-copy"
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                     isActive("/admin/auto-copy")
@@ -386,7 +376,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                   }`}
                 >
-                  FT Wallets
+                  FT
                 </Link>
               </>
             )}
@@ -570,13 +560,13 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
             {isAdmin && (
               <>
                 <Link
-                  href="/paper-trading"
+                  href="/ft"
                   className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors min-w-[64px] ${
-                    isActive("/paper-trading") ? "bg-slate-100 text-[#FDB022]" : "text-slate-600 hover:bg-slate-50"
+                    isActive("/ft") ? "bg-slate-100 text-[#FDB022]" : "text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  <BarChart3 className={`w-5 h-5 ${isActive("/paper-trading") ? "stroke-[2.5]" : "stroke-2"}`} />
-                  <span className={`text-[10px] ${isActive("/paper-trading") ? "font-semibold" : "font-medium"}`}>Paper</span>
+                  <Activity className={`w-5 h-5 ${isActive("/ft") ? "stroke-[2.5]" : "stroke-2"}`} />
+                  <span className={`text-[10px] ${isActive("/ft") ? "font-semibold" : "font-medium"}`}>FT</span>
                 </Link>
                 <Link
                   href="/admin/auto-copy"

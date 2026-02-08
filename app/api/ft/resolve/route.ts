@@ -78,13 +78,13 @@ export async function POST(request: Request) {
             }
             
             // Parse outcomes and prices to determine winner
-            let outcomes: string[] = [];
+            let outcomes: (string | { LABEL?: string; label?: string })[] = [];
             let prices: number[] = [];
             
             try {
-              outcomes = typeof market.outcomes === 'string' 
+              outcomes = (typeof market.outcomes === 'string' 
                 ? JSON.parse(market.outcomes) 
-                : market.outcomes || [];
+                : market.outcomes || []) as (string | { LABEL?: string; label?: string })[];
               const rawPrices = typeof market.outcomePrices === 'string'
                 ? JSON.parse(market.outcomePrices)
                 : market.outcomePrices || [];
@@ -110,7 +110,8 @@ export async function POST(request: Request) {
                 // Handle different outcome formats from Polymarket API
                 if (typeof winnerRaw === 'object' && winnerRaw !== null) {
                   // It's an object like {ID: "...", LABEL: "UP"}
-                  winner = (winnerRaw.LABEL || winnerRaw.label || String(winnerRaw)).toUpperCase();
+                  const obj = winnerRaw as { LABEL?: string; label?: string };
+                  winner = (obj.LABEL || obj.label || String(winnerRaw)).toUpperCase();
                 } else if (typeof winnerRaw === 'string') {
                   // Could be a JSON string like '{"ID":"...","LABEL":"UP"}' or plain "Up"
                   try {

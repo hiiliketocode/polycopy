@@ -345,10 +345,16 @@ export default function ForwardTestWalletsPage() {
     const ms = Math.max(0, now - start);
     if (ms < 60000) return '<1m';
     if (ms < 3600000) return `${Math.floor(ms / 60000)}m`;
-    if (ms < 86400000) return `${Math.floor(ms / 3600000)}h`;
+    const hours = Math.floor(ms / 3600000);
+    const mins = Math.floor((ms % 3600000) / 60000);
+    if (ms < 86400000) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
     const d = Math.floor(ms / 86400000);
     const h = Math.floor((ms % 86400000) / 3600000);
-    return h > 0 ? `${d}d ${h}h` : `${d}d`;
+    const m = Math.floor((ms % 3600000) / 60000);
+    if (h > 0 && m > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${d}d ${h}h`;
+    if (m > 0) return `${d}d ${m}m`;
+    return `${d}d`;
   };
 
   // Sort header component
@@ -368,7 +374,7 @@ export default function ForwardTestWalletsPage() {
     align?: 'left' | 'right';
   }) => (
     <th 
-      className={`px-3 py-3 font-medium text-muted-foreground cursor-pointer hover:bg-muted/80 transition-colors select-none ${align === 'right' ? 'text-right' : 'text-left'}`}
+      className={`px-3 py-3 font-medium text-muted-foreground cursor-pointer hover:bg-muted/80 transition-colors select-none whitespace-nowrap ${align === 'right' ? 'text-right' : 'text-left'}`}
       onClick={() => onSort(field)}
     >
       <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
@@ -473,7 +479,7 @@ export default function ForwardTestWalletsPage() {
             <CheckCircle2 className={`mr-2 h-4 w-4 ${resolving ? 'animate-pulse' : ''}`} />
             {resolving ? 'Resolving...' : 'Check Resolutions'}
           </Button>
-          <Button onClick={fetchWallets} disabled={loading}>
+          <Button onClick={() => fetchWallets()} disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -585,7 +591,7 @@ export default function ForwardTestWalletsPage() {
                   <SortHeader field="name" label="Strategy" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                   <SortHeader field="trader" label="Trader" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                   <SortHeader field="started" label="Started" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                  <th className="px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">Running</th>
+                  <th className="px-3 py-3 font-medium text-muted-foreground whitespace-nowrap text-left min-w-[70px]">Running</th>
                   <SortHeader field="balance" label="Balance" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
                   <SortHeader field="pnl" label="P&L" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
                   <SortHeader field="pnl_pct" label="Return" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right" />
@@ -763,6 +769,8 @@ export default function ForwardTestWalletsPage() {
                 <tr>
                   <CompareSortHeader field="name" label="Strategy" sortField={compareSortField} sortDir={compareSortDir} onSort={handleCompareSort} />
                   <CompareSortHeader field="pnl" label="P&L" sortField={compareSortField} sortDir={compareSortDir} onSort={handleCompareSort} align="right" />
+                  <CompareSortHeader field="started" label="Started" sortField={compareSortField} sortDir={compareSortDir} onSort={handleCompareSort} />
+                  <th className="px-3 py-3 font-medium text-muted-foreground whitespace-nowrap text-left min-w-[70px]">Running</th>
                   <CompareSortHeader field="use_model" label="Model" sortField={compareSortField} sortDir={compareSortDir} onSort={handleCompareSort} align="right" />
                   <CompareSortHeader field="model_threshold" label="Model Min" sortField={compareSortField} sortDir={compareSortDir} onSort={handleCompareSort} align="right" />
                   <CompareSortHeader field="price_min" label="Price Min" sortField={compareSortField} sortDir={compareSortDir} onSort={handleCompareSort} align="right" />
@@ -802,7 +810,7 @@ export default function ForwardTestWalletsPage() {
                       <td className="px-3 py-3 text-muted-foreground whitespace-nowrap">
                         {formatTimeRunning(wallet.start_date, wallet.test_status)}
                       </td>
-                      <td className="px-3 py-3 text-right">{wallet.use_model ? 'Yes' : 'No'}</td>
+                      <td className="px-3 py-3 text-right whitespace-nowrap">{wallet.use_model ? 'Yes' : 'No'}</td>
                       <td className="px-3 py-3 text-right text-muted-foreground">
                         {wallet.model_threshold != null ? `${(wallet.model_threshold * 100).toFixed(0)}%` : '-'}
                       </td>

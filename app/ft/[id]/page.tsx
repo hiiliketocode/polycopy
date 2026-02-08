@@ -377,9 +377,13 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
   const formatTimeAgo = (minutes: number) => {
     // Event end time has passed, but Polymarket resolution can lag. Clarify we're awaiting resolution.
     if (minutes < 0) return 'Awaiting resolution';
-    if (minutes < 60) return `${minutes}m`;
-    if (minutes < 1440) return `${Math.floor(minutes / 60)}h`;
-    return `${Math.floor(minutes / 1440)}d`;
+    if (minutes < 60) return `${Math.round(minutes)}m`;
+    const hours = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    if (minutes < 1440) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+    const days = Math.floor(minutes / 1440);
+    const h = Math.floor((minutes % 1440) / 60);
+    return h > 0 ? `${days}d ${h}h` : `${days}d`;
   };
 
   if (loading) {
@@ -452,7 +456,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
               Settings
             </Button>
           </Link>
-          <Button onClick={fetchWalletData} disabled={loading}>
+          <Button onClick={() => fetchWalletData()} disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
