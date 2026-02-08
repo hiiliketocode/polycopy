@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -45,14 +44,18 @@ function formatUsd(n: number): string {
 }
 
 export default function LiveTradingPage() {
+  const searchParams = useSearchParams();
+  const createFromFtId = useMemo(() => searchParams.get('createFrom') || searchParams.get('ft') || '', [searchParams]);
   const [strategies, setStrategies] = useState<LTStrategy[]>([]);
   const [ftWallets, setFtWallets] = useState<FTWalletOption[]>([]);
+  const [myPolymarketWallet, setMyPolymarketWallet] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createWalletId, setCreateWalletId] = useState<string>('');
   const [createCapital, setCreateCapital] = useState<string>('1000');
   const [createWalletAddress, setCreateWalletAddress] = useState<string>('');
+  const hasPrefilledWallet = useRef(false);
 
   const loadStrategies = async () => {
     setLoading(true);
@@ -62,6 +65,7 @@ export default function LiveTradingPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load strategies');
       setStrategies(data.strategies || []);
+      if (data.my_polymarket_wallet != null) setMyPolymarketWallet(data.my_polymarket_wallet);
     } catch (e: any) {
       setError(e.message || 'Failed to load');
     } finally {
@@ -89,19 +93,6 @@ export default function LiveTradingPage() {
     loadStrategies();
     loadFtWallets();
   }, []);
-
-  useEffect(() => {
-    if (createFromFtId && ftWallets.some((w) => w.wallet_id === createFromFtId) && !createWalletId) {
-      setCreateWalletId(createFromFtId);
-    }
-  }, [createFromFtId, ftWallets, createWalletId]);
-
-  useEffect(() => {
-    if (myPolymarketWallet && !hasPrefilledWallet.current) {
-      hasPrefilledWallet.current = true;
-      setCreateWalletAddress(myPolymarketWallet);
-    }
-  }, [myPolymarketWallet]);
 
   const handlePause = async (strategyId: string) => {
     try {
