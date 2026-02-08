@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createAdminServiceClient } from '@/lib/admin';
-import { getAuthenticatedUserId } from '@/lib/auth/secure-auth';
+import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin';
+import { requireAdmin } from '@/lib/ft-auth';
 import { pauseStrategy } from '@/lib/live-trading/risk-manager';
 
 type RouteParams = {
@@ -9,13 +9,13 @@ type RouteParams = {
 
 /**
  * POST /api/lt/strategies/[id]/pause
- * Pause a strategy
+ * Pause a strategy (admin only)
  */
 export async function POST(request: Request, { params }: RouteParams) {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const authError = await requireAdmin();
+    if (authError) return authError;
+    const adminUser = await getAdminSessionUser();
+    const userId = adminUser!.id;
 
     try {
         const { id: strategyId } = await params;

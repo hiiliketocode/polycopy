@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server';
-import { createAdminServiceClient } from '@/lib/admin';
-import { getAuthenticatedUserId } from '@/lib/auth/secure-auth';
+import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin';
+import { requireAdmin } from '@/lib/ft-auth';
 import { initializeRiskState } from '@/lib/live-trading/risk-manager';
 
 /**
  * POST /api/lt/strategies
- * Create a new live trading strategy
+ * Create a new live trading strategy (admin only)
  */
 export async function POST(request: Request) {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const authError = await requireAdmin();
+    if (authError) return authError;
+    const adminUser = await getAdminSessionUser();
+    const userId = adminUser!.id;
 
     try {
         const supabase = createAdminServiceClient();
@@ -137,13 +137,13 @@ export async function POST(request: Request) {
 
 /**
  * GET /api/lt/strategies
- * List user's live trading strategies
+ * List admin's live trading strategies (admin only)
  */
 export async function GET(request: Request) {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const authError = await requireAdmin();
+    if (authError) return authError;
+    const adminUser = await getAdminSessionUser();
+    const userId = adminUser!.id;
 
     try {
         const supabase = createAdminServiceClient();
