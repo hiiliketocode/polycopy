@@ -50,6 +50,17 @@ const nextConfig: NextConfig = {
         destination: '/polymarket-trading-strategies',
         permanent: true,
       },
+      // Old Auto Copy Simulator → Live Trading
+      {
+        source: '/admin/auto-copy',
+        destination: '/lt',
+        permanent: true,
+      },
+      {
+        source: '/admin/auto-copy/:path*',
+        destination: '/lt',
+        permanent: true,
+      },
     ];
   },
   
