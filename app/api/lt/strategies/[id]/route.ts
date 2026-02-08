@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createAdminServiceClient } from '@/lib/admin';
-import { getAuthenticatedUserId } from '@/lib/auth/secure-auth';
+import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin';
+import { requireAdmin } from '@/lib/ft-auth';
 import { pauseStrategy, resumeStrategy } from '@/lib/live-trading/risk-manager';
 
 type RouteParams = {
@@ -9,13 +9,13 @@ type RouteParams = {
 
 /**
  * GET /api/lt/strategies/[id]
- * Get a specific strategy
+ * Get a specific strategy (admin only)
  */
 export async function GET(request: Request, { params }: RouteParams) {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const authError = await requireAdmin();
+    if (authError) return authError;
+    const adminUser = await getAdminSessionUser();
+    const userId = adminUser!.id;
 
     try {
         const { id: strategyId } = await params;
@@ -54,13 +54,13 @@ export async function GET(request: Request, { params }: RouteParams) {
 
 /**
  * PATCH /api/lt/strategies/[id]
- * Update a strategy
+ * Update a strategy (admin only)
  */
 export async function PATCH(request: Request, { params }: RouteParams) {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const authError = await requireAdmin();
+    if (authError) return authError;
+    const adminUser = await getAdminSessionUser();
+    const userId = adminUser!.id;
 
     try {
         const { id: strategyId } = await params;
