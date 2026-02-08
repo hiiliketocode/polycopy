@@ -635,11 +635,63 @@ export async function GET(request: Request) {
           });
         }
       } else {
-        console.log(`[Price API] CLOB returned ${response.status}`);
+        console.log(`[Price API] CLOB returned ${response.status}, trying Gamma by condition_id`);
       }
     }
 
-    // Try 2: Gamma API by slug (fallback for older markets)
+    // Try 2: Gamma API by condition_id (fallback when CLOB fails)
+    if (conditionId && conditionId.startsWith('0x')) {
+      try {
+        const gammaRes = await fetch(
+          `https://gamma-api.polymarket.com/markets?condition_id=${conditionId}`,
+          { cache: 'no-store' }
+        );
+        if (gammaRes.ok) {
+          const gammaData = await gammaRes.json();
+          const gammaMarket = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null;
+          if (gammaMarket) {
+            let prices = gammaMarket.outcomePrices;
+            let outcomes = gammaMarket.outcomes;
+            if (typeof prices === 'string') { try { prices = JSON.parse(prices); } catch { prices = null; } }
+            if (typeof outcomes === 'string') { try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; } }
+            if (outcomes && Array.isArray(outcomes) && prices && Array.isArray(prices)) {
+              const endDateIso = cachedEndTime
+                ? normalizeEndDate(cachedEndTime)
+                : normalizeEndDate(gammaMarket.end_date_iso || gammaMarket.end_date || gammaMarket.endDate || null);
+              const event = Array.isArray(gammaMarket?.events) && gammaMarket.events.length > 0 ? gammaMarket.events[0] : null;
+              const marketAvatarUrl = pickFirstString(
+                gammaMarket.icon,
+                gammaMarket.image,
+                event?.icon,
+                event?.image,
+                cachedMarketAvatar
+              );
+              return NextResponse.json({
+                success: true,
+                market: {
+                  question: gammaMarket.question,
+                  conditionId: gammaMarket.conditionId || conditionId,
+                  slug: gammaMarket.slug,
+                  eventSlug: gammaMarket.event_slug || event?.slug,
+                  closed: gammaMarket.closed,
+                  resolved: gammaMarket.resolved,
+                  outcomePrices: prices,
+                  outcomes: outcomes,
+                  endDateIso,
+                  marketAvatarUrl,
+                  cryptoSymbol,
+                  cryptoPriceUsd,
+                }
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Price API] Gamma by condition_id fallback failed:', err);
+      }
+    }
+
+    // Try 3: Gamma API by slug (fallback for older markets)
     if (slug && !slug.startsWith('0x')) {
       console.log(`[Price API] Gamma search by slug: ${slug}`);
       const response = await fetch(
@@ -724,7 +776,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // Try 3: Gamma API title search in open markets
+    // Try 4: Gamma API title search in open markets
     if (title) {
       console.log(`[Price API] Gamma title search: ${title.substring(0, 30)}...`);
       const response = await fetch(

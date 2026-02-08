@@ -1,7 +1,10 @@
 // supabase/functions/predict-trade/index.ts
 //
 // PREDICT-TRADE EDGE FUNCTION - V11 MODEL
-// Last Updated: Feb 5, 2026
+// Last Updated: Feb 6, 2026
+//
+// MODEL: poly_predictor_v11 (BigQuery: polycopy_v1.poly_predictor_v11)
+// To use a newer model, update BQ_MODEL_NAME and redeploy.
 //
 // OBJECTIVE: Provide clear, actionable trade analysis using poly_predictor_v11 model
 // with comprehensive features including performance trends.
@@ -20,6 +23,8 @@
 // - Timing (3): minutes_to_start, hours_to_close, market_age_days
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+
+const BQ_MODEL_NAME = "polycopy_v1.poly_predictor_v11";  // Update when retraining (e.g. v12)
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { BigQuery } from "npm:@google-cloud/bigquery@^7.0.0"
 
@@ -958,7 +963,7 @@ serve(async (req) => {
     
     // BigQuery query with COALESCE for all inputs - V11 MODEL
     const query = `
-      SELECT * FROM ML.PREDICT(MODEL \`polycopy_v1.poly_predictor_v11\`, 
+      SELECT * FROM ML.PREDICT(MODEL \`${BQ_MODEL_NAME}\`, 
       (
         SELECT 
           -- CATEGORY 1: Win Rates (4 features)

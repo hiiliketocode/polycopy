@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Compass, User, LogOut, Settings, Home, Crown, BarChart3 } from "lucide-react"
+import { Compass, User, LogOut, Settings, Home, Crown, BarChart3, Activity } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -377,6 +377,16 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                   }`}
                 >
                   Admin
+                </Link>
+                <Link
+                  href="/ft"
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    isActive("/ft")
+                      ? "text-slate-900 bg-slate-100"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                  }`}
+                >
+                  FT Wallets
                 </Link>
               </>
             )}

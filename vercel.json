@@ -23,6 +23,18 @@
     {
       "path": "/api/cron/sync-polymarket-pnl",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/rotate-pnl-winners",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/ft-resolve",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/ft-sync",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
