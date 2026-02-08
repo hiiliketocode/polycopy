@@ -58,10 +58,10 @@ export async function GET(request: Request) {
       const walletId = wallet.wallet_id;
       const startingBalance = Number(wallet.starting_balance) || 1000;
 
-      // Get orders for realized + exposure
+      // Get orders for realized + exposure + unrealized (need condition_id, token_label, entry_price, size for open)
       const { data: orders } = await supabase
         .from('ft_orders')
-        .select('outcome, pnl, size')
+        .select('outcome, pnl, size, condition_id, token_label, entry_price')
         .eq('wallet_id', walletId)
         .limit(10000);
 
@@ -70,8 +70,50 @@ export async function GET(request: Request) {
 
       const realizedPnl = resolved.reduce((s, o) => s + (o.pnl || 0), 0);
       const openExposure = openOrders.reduce((s, o) => s + (o.size || 0), 0);
-      const totalPnl = Number(wallet.total_pnl) ?? realizedPnl; // Use DB total (includes unrealized from resolve)
-      const unrealizedPnl = totalPnl - realizedPnl;
+
+      // Compute unrealized PnL from open positions (wallet.total_pnl only has realized)
+      let unrealizedPnl = 0;
+      if (openOrders.length > 0) {
+        const conditionIds = [...new Set(openOrders.map((o: { condition_id?: string }) => o.condition_id).filter(Boolean))];
+        const { data: markets } = await supabase
+          .from('markets')
+          .select('condition_id, outcome_prices, outcomes')
+          .in('condition_id', conditionIds);
+        const priceByCondition = new Map<string, { outcomes: string[]; prices: number[] }>();
+        for (const m of markets || []) {
+          const op = m.outcome_prices as { outcomes?: string[]; outcomePrices?: number[]; labels?: string[]; prices?: number[] } | number[] | null;
+          const mOutcomes = (m as { outcomes?: string[] | string }).outcomes;
+          const toStrArr = (x: unknown): string[] => {
+            if (Array.isArray(x)) return x.map(String);
+            if (typeof x === 'string') { try { const j = JSON.parse(x); return Array.isArray(j) ? j.map(String) : []; } catch { return []; } }
+            return [];
+          };
+          let outcomes: string[] = [];
+          let prices: number[] = [];
+          if (op && typeof op === 'object' && !Array.isArray(op)) {
+            outcomes = toStrArr(op.outcomes ?? op.labels ?? mOutcomes);
+            prices = (op.outcomePrices ?? op.prices ?? []).map((p: unknown) => Number(p) || 0);
+          } else if (Array.isArray(op) && op.length > 0) {
+            prices = op.map((p: unknown) => Number(p) || 0);
+            outcomes = toStrArr(mOutcomes).length ? toStrArr(mOutcomes) : (prices.length === 2 ? ['Yes', 'No'] : prices.map((_, i) => `Outcome ${i}`));
+          }
+          if (outcomes?.length && prices?.length) priceByCondition.set(m.condition_id, { outcomes, prices });
+        }
+        const outcomeLabel = (o: unknown) => (typeof o === 'string' ? o : (o as { LABEL?: string; label?: string })?.LABEL ?? (o as { label?: string })?.label ?? '') || '';
+        for (const o of openOrders) {
+          const market = priceByCondition.get(o.condition_id || '');
+          if (!market || !o.entry_price || !o.size) continue;
+          const tokenLabel = (o.token_label || 'YES').toLowerCase().trim();
+          let idx = market.outcomes.findIndex((out: string) => outcomeLabel(out).toLowerCase().trim() === tokenLabel);
+          if (idx < 0 && market.outcomes.length === 2) idx = tokenLabel === 'yes' ? 0 : 1;
+          if (idx >= 0 && market.prices[idx] != null) {
+            const currentPrice = market.prices[idx];
+            const shares = o.size / o.entry_price;
+            unrealizedPnl += shares * currentPrice - o.size;
+          }
+        }
+      }
+      const totalPnl = realizedPnl + unrealizedPnl;
       const cash = Math.max(0, startingBalance + realizedPnl - openExposure);
       const returnPct = startingBalance > 0
         ? Number(((totalPnl / startingBalance) * 100).toFixed(2))

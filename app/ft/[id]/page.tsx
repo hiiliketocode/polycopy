@@ -1096,7 +1096,9 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
               </CardHeader>
               <CardContent>
                 {dailyPnl.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">No daily data yet</p>
+                  <p className="text-muted-foreground text-center py-8">
+                    No daily data yet. Daily performance will appear here once trades resolve.
+                  </p>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -1144,7 +1146,9 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
               </CardHeader>
               <CardContent>
                 {categoryPerf.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">No category data yet</p>
+                  <p className="text-muted-foreground text-center py-8">
+                    No category data yet. Performance by category will appear once trades resolve.
+                  </p>
                 ) : (
                   <Table>
                     <TableHeader>
