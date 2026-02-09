@@ -89,9 +89,9 @@ export function calculatePolySignalScore(
   else if (wrGood) wrContrib = 10;
   else if (wrBad) wrContrib = -20;
 
+  // Market type: de-emphasized per feedback – keep crypto penalty for toxic/avoid, zero otherwise
   let marketContrib = 0;
-  if (isCrypto) marketContrib = -20;
-  else marketContrib = 5;
+  if (isCrypto) marketContrib = -10;
 
   // ML edge: quite strong weight (±15) – AI win prob vs entry price
   const edgeContrib = Math.max(-15, Math.min(15, rawEdge * 0.75));
@@ -125,8 +125,8 @@ export function calculatePolySignalScore(
       conviction: { value: convictionMult, label: `${convictionMult.toFixed(1)}x`, status: convictionStrong ? 'strong' : convictionGood ? 'good' : convictionWeak ? 'weak' : 'neutral' },
       traderWr: { value: nicheWinRate, label: `${(nicheWinRate * 100).toFixed(0)}%`, status: wrSweetSpot ? 'sweet_spot' : wrGood ? 'good' : wrBad ? 'avoid' : 'neutral' },
       entryBand: { value: price, label: `${(price * 100).toFixed(0)}¢`, status: inSweetSpot ? 'sweet_spot' : isLongshot ? 'avoid' : 'neutral' },
-      marketType: { value: isCrypto ? 'crypto_short' : 'other', label: isCrypto ? 'Crypto short-term' : 'Non-crypto', status: isCrypto ? 'caution' : 'ok' },
       edge: { value: rawEdge, label: `${rawEdge >= 0 ? '+' : ''}${rawEdge.toFixed(1)}%`, status: rawEdge >= 10 ? 'strong' : rawEdge >= 5 ? 'good' : rawEdge < 0 ? 'negative' : 'neutral' },
+      experience: { value: totalTrades, label: String(totalTrades), status: totalTrades >= 50 ? 'strong' : totalTrades >= 20 ? 'good' : totalTrades >= 10 ? 'neutral' : 'weak' },
     },
   };
 }

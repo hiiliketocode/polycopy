@@ -1079,13 +1079,10 @@ export function PredictionStats({
       <div className="mb-2">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2 flex-wrap">
-            <span>Trader Insights</span>
+            <span>Trader insights</span>
             <div className="inline-flex flex-wrap gap-1">
               <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
-                Niche: {(resolvedNiche || stats.trade_profile?.split('_')?.[0] || 'other')?.toString().toLowerCase() || 'other'}
-              </span>
-              <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
-                Bet: {(resolvedBetStructure || stats.trade_profile?.split('_')?.[1])?.toString().toLowerCase() ?? 'standard'}
+                Market type bet type: {[resolvedNiche || stats.trade_profile?.split('_')?.[0] || 'other', resolvedBetStructure || stats.trade_profile?.split('_')?.[1] ?? 'standard'].filter(Boolean).map(s => s?.toString().toLowerCase()).join(' / ')}
               </span>
               <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
                 Price: {(priceBracket || stats.trade_profile?.split('_')?.[2])?.toString().toLowerCase() ?? 'even'}
