@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { TrendingUp, TrendingDown, Target, BarChart3, Zap, Trophy } from "lucide-react"
+import { TrendingUp, TrendingDown, Target, BarChart3, Trophy } from "lucide-react"
 import { ResponsiveContainer, AreaChart, Area } from "recharts"
 
 export type CardTheme = "cream" | "dark" | "profit" | "fire"
@@ -22,6 +22,8 @@ interface TraderCardProps {
   timePeriod: '1D' | '7D' | '30D' | '3M' | '6M' | 'ALL'
   timePeriodLabel: string
   theme?: CardTheme
+  rank?: number | null
+  rankTotal?: number | null
 }
 
 const themeStyles = {
@@ -111,10 +113,11 @@ export function TraderCard({
   roi,
   winRate,
   volume,
-  trades,
   dailyPnlData,
   timePeriodLabel,
   theme = "cream",
+  rank,
+  rankTotal,
 }: TraderCardProps) {
   const isProfit = totalPnL >= 0
   const styles = themeStyles[theme]
@@ -262,9 +265,9 @@ export function TraderCard({
             <div className="grid grid-cols-2 gap-3 mb-4">
               <StatBox
                 icon={<TrendingUp className="w-4 h-4" />}
-                label="ROI"
-                value={`${isProfit ? "+" : ""}${roi.toFixed(1)}%`}
-                highlight={roi >= 0}
+                label="Total P&L"
+                value={`${isProfit ? "+" : "-"}$${formatCurrency(Math.abs(totalPnL))}`}
+                highlight={totalPnL >= 0}
                 styles={styles}
                 theme={theme}
               />
@@ -277,9 +280,10 @@ export function TraderCard({
                 theme={theme}
               />
               <StatBox
-                icon={<Zap className="w-4 h-4" />}
-                label="Trades"
-                value={trades.toString()}
+                icon={<Trophy className="w-4 h-4" />}
+                label="P&L Rank"
+                value={rank && rankTotal ? `#${rank.toLocaleString()} / ${rankTotal.toLocaleString()}` : 'N/A'}
+                highlight={rank !== null && rank !== undefined && rank <= 100}
                 styles={styles}
                 theme={theme}
               />
