@@ -792,11 +792,11 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
         <TabsList className="mb-4">
           <TabsTrigger value="positions" className="flex items-center gap-2">
             <Briefcase className="h-4 w-4" />
-            Open Positions ({stats.open_positions})
+            Open Trades ({stats.open_positions})
           </TabsTrigger>
           <TabsTrigger value="trades" className="flex items-center gap-2">
             <ListOrdered className="h-4 w-4" />
-            Recent Trades
+            Resolved Trades ({stats.won + stats.lost})
           </TabsTrigger>
           <TabsTrigger value="performance" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
@@ -804,21 +804,21 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
           </TabsTrigger>
         </TabsList>
 
-        {/* Open Positions Tab */}
+        {/* Open Trades Tab */}
         <TabsContent value="positions">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Briefcase className="h-5 w-5" />
-                Open Positions
+                Open Trades
               </CardTitle>
               <CardDescription>
-                Active positions waiting for market resolution
+                Active trades waiting for market resolution
               </CardDescription>
             </CardHeader>
             <CardContent>
               {openPositions.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No open positions</p>
+                <p className="text-muted-foreground text-center py-8">No open trades</p>
               ) : (
                 <Table>
                   <TableHeader>
@@ -960,16 +960,20 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
           </Card>
         </TabsContent>
 
-        {/* Recent Trades Tab */}
+        {/* Resolved Trades Tab */}
         <TabsContent value="trades">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <ListOrdered className="h-5 w-5" />
-                Recent Trades
+                Resolved Trades
               </CardTitle>
               <CardDescription>
-                Last 50 resolved trades
+                {stats ? (
+                  <>All {stats.won + stats.lost} resolved trades. Sum below matches Realized P&L above.</>
+                ) : (
+                  'All resolved trades'
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1022,7 +1026,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                           {(trade.entry_price * 100).toFixed(1)}¢
                         </TableCell>
                         <TableCell className="text-right">
-                          {formatCurrency(trade.size)}
+                          {trade.size != null && Number.isFinite(trade.size) ? formatCurrency(trade.size) : '–'}
                         </TableCell>
                         <TableCell className="text-center">
                           <Badge variant={trade.outcome === 'WON' ? 'default' : 'destructive'}>
@@ -1042,6 +1046,11 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                     ))}
                   </TableBody>
                 </Table>
+              )}
+              {recentTrades.length > 0 && stats && (
+                <p className="text-xs text-muted-foreground mt-3">
+                  Sum of all {recentTrades.length} resolved trades: {formatPnl(recentTrades.reduce((s, t) => s + (Number(t.pnl) || 0), 0))}
+                </p>
               )}
             </CardContent>
           </Card>

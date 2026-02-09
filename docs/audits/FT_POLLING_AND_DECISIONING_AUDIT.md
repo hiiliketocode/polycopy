@@ -10,7 +10,7 @@
 
 | Area | Status | Notes |
 |------|--------|-------|
-| **Polling** | ⚠️ Gap | Sync runs when FT page open (30s) + resolve cron (10 min). No sync cron yet. |
+| **Polling** | ✅ | Sync cron every 2 min (`vercel.json`) + FT page (30s) + resolve cron every 10 min. |
 | **Strategy rules** | ⚠️ Gaps | `trader_pool` unused. `use_model` + `model_threshold` now gate on **model_probability** (ML score at sync time). |
 | **Trade capture** | ✅ Fixed | `ft_seen_trades` wired. All evaluated trades (taken + skipped) recorded with `source_trade_id`. Counts from DB. |
 | **ft_seen_trades** | ✅ Wired | Sync inserts every evaluated trade. Dedup by `(wallet_id, source_trade_id)`. |
@@ -34,17 +34,18 @@
 
 ┌─────────────────────────────────────────────────────────────────┐
 │ Vercel Cron                                                      │
+│   → */2 * * * *  → /api/cron/ft-sync (captures new trades)      │
 │   → */10 * * * * → /api/cron/ft-resolve (resolves WON/LOST)     │
-│   → No sync cron — new trades only captured when page is open   │
+│   → 0 * * * *    → /api/cron/ft-snapshot (hourly snapshots)     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **Findings:**
-- **Sync has no cron** — If no one has the FT page open, new trades are never captured.
-- **Resolve has cron** — Every 10 minutes; Won/Lost updates even when page is closed.
-- **Enrich-ML** — Runs only when page triggers it; batch limit 5–10 per run.
+- **Sync has cron** — Every 2 minutes (`/api/cron/ft-sync`); new trades are captured even when the FT page is closed.
+- **Resolve has cron** — Every 10 minutes; WON/LOST updates when page is closed.
+- **Enrich-ML** — Runs when page triggers it (and can be triggered by cron elsewhere); batch limit per run.
 
-**Recommendation:** Add cron for sync (e.g. every 2–5 minutes) so strategies run without the page open.
+See **docs/audits/FT_POLLING_CONFIRMATION.md** for confirmation that every test gets the same trade feed and market data.
 
 ---
 
@@ -140,8 +141,8 @@ See `docs/FORWARD_TESTING_ANALYSIS_GUIDE.md` for comparison prompts and strategy
 
 ### High Priority
 
-1. **Add FT sync cron** — Run `/api/ft/sync` every 2–5 minutes so strategies run when the page is closed.
-2. **Wire ft_seen_trades** — On each evaluation, insert into `ft_seen_trades` with `outcome` and `skip_reason` so skipped trades can be audited and monitored.
+1. ~~**Add FT sync cron**~~ — **Done.** Sync runs every 2 minutes via `/api/cron/ft-sync`.
+2. ~~**Wire ft_seen_trades**~~ — **Done.** Sync inserts into `ft_seen_trades` with `outcome` and `skip_reason`.
 
 ### Medium Priority
 

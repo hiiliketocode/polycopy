@@ -420,8 +420,8 @@ export async function GET(request: Request, { params }: RouteParams) {
       sharpe_ratio: sharpeRatio
     };
 
-    // 6. Recent resolved trades (include trader_name, order_time, trader_address)
-    const recent_trades = resolvedOrders.slice(0, 50).map((o) => ({
+    // 6. All resolved trades (no API needed; data already in DB)
+    const recent_trades = resolvedOrders.map((o) => ({
       ...o,
       trader_address: o.trader_address,
       trader_name: getTraderName(o.trader_address),

@@ -106,7 +106,7 @@ We run three families of strategies in parallel:
 
 - **T1:** Single factor (baseline, pure WR, pure edge, pure conviction, pure ML, high experience)
 - **T2:** Price bands (contrarian 10–40¢, midrange 25–75¢, favorites 60–90¢)
-- **T3:** Market specialization (Politics, Crypto, etc.) — uses `target_traders` from niche leaderboards
+- **T3:** Market specialization (Politics, Crypto, etc.) — uses top 30 traders per niche from `trader_profile_stats` (`target_traders`) plus `market_categories` for title match.
 - **T4:** Compound (ML + edge, ML + conviction, etc.)
 - **T5:** Anti-strategies (max_trader_win_rate, max_edge) — test opposites to validate
 
