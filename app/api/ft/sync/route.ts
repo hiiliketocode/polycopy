@@ -50,7 +50,7 @@ type FTWallet = {
   use_model: boolean;
   bet_size: number;
   bet_allocation_weight: number;  // Legacy multiplier for FIXED method
-  allocation_method: 'FIXED' | 'KELLY' | 'EDGE_SCALED' | 'TIERED' | 'CONFIDENCE' | 'CONVICTION';
+    allocation_method: 'FIXED' | 'KELLY' | 'EDGE_SCALED' | 'TIERED' | 'CONFIDENCE' | 'CONVICTION' | 'ML_SCALED';
   kelly_fraction: number;
   min_bet: number;
   max_bet: number;
@@ -96,7 +96,8 @@ function calculateBetSize(
   entryPrice: number,
   edge: number,
   conviction: number,  // Trader's conviction = trade_value / avg_trade_size
-  effectiveBankroll?: number  // startingBalance + realizedPnl - openExposure (avoids stale current_balance)
+  effectiveBankroll?: number,  // startingBalance + realizedPnl - openExposure (avoids stale current_balance)
+  modelProbability?: number | null  // ML score 0-1; used by ML_SCALED allocation
 ): number {
   const method = wallet.allocation_method || 'FIXED';
   const minBet = wallet.min_bet || 0.50;
@@ -161,15 +162,21 @@ function calculateBetSize(
     
     case 'CONFIDENCE': {
       // Multi-factor confidence score using edge, win rate, AND conviction
-      // score = weighted combination of edge, trader WR, and conviction
       const baseBet = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
-      const edgeScore = Math.min(edge / 0.20, 1); // Normalize edge (cap at 20%)
-      const wrScore = Math.min((traderWinRate - 0.50) / 0.30, 1); // Normalize WR above 50%
-      const convictionScore = Math.min((conviction - 0.5) / 2.5, 1); // Normalize conviction (0.5 to 3 → 0 to 1)
-      
-      // Weighted: 40% edge + 30% conviction + 30% win rate
+      const edgeScore = Math.min(edge / 0.20, 1);
+      const wrScore = Math.min((traderWinRate - 0.50) / 0.30, 1);
+      const convictionScore = Math.min((conviction - 0.5) / 2.5, 1);
       const confidenceScore = (edgeScore * 0.4) + (convictionScore * 0.3) + (wrScore * 0.3);
-      betSize = baseBet * (0.5 + confidenceScore * 1.5); // 0.5x to 2x based on score
+      betSize = baseBet * (0.5 + confidenceScore * 1.5);
+      break;
+    }
+    
+    case 'ML_SCALED': {
+      // Scale bet by ML confidence: 55% → ~1.1x, 65% → ~1.3x, 70% → ~1.4x (cap 0.5x–2x)
+      const baseBet = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
+      const ml = modelProbability ?? 0.55;
+      const mlMult = Math.min(Math.max(0.5 + (ml - 0.5), 0.5), 2.0); // 0.5x to 2x
+      betSize = baseBet * mlMult;
       break;
     }
     
@@ -742,35 +749,10 @@ export async function POST(request: Request) {
           continue;
         }
         
-        const effectiveBankroll = Math.max(0, startingBalance + realizedPnl - runningOpenExposure);
-        const effectiveBetSize = calculateBetSize(wallet, traderWinRate, price, edge, trade.conviction, effectiveBankroll);
-        const cashAvailable = effectiveBankroll;
-        if (cashAvailable < effectiveBetSize || cashAvailable <= 0) {
-          await recordSeen(sourceTradeId, 'skipped', 'insufficient_cash');
-          reasons['insufficient_cash'] = (reasons['insufficient_cash'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        
-        const { data: existing } = await supabase
-          .from('ft_orders')
-          .select('order_id')
-          .eq('wallet_id', wallet.wallet_id)
-          .eq('source_trade_id', sourceTradeId)
-          .limit(1);
-        
-        if (existing && existing.length > 0) {
-          await recordSeen(sourceTradeId, 'skipped', 'duplicate');
-          reasons['duplicate'] = (reasons['duplicate'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        
-        // P0-1: For use_model=true, compute ML score BEFORE insert; skip if below threshold
+        // P0-1: For use_model=true, compute ML score BEFORE bet sizing (needed for ML_SCALED allocation)
         let preInsertMlProbability: number | null = null;
         if (wallet.use_model && wallet.model_threshold != null) {
           try {
-            // Reuse cached ML score if same trade was already scored for another use_model wallet
             if (mlScoreCache.has(sourceTradeId)) {
               preInsertMlProbability = mlScoreCache.get(sourceTradeId) ?? null;
             } else {
@@ -786,7 +768,7 @@ export async function POST(request: Request) {
               const pricesArr = Array.isArray(outcomePrices) ? outcomePrices.map((p: unknown) => Number(p) || 0.5) : [0.5, 0.5];
               const tokenIdx = outcomesArr.findIndex((o: string) => (o || '').toLowerCase() === (trade.outcome || 'YES').toLowerCase());
               const currentPrice = pricesArr[tokenIdx >= 0 ? tokenIdx : 0] ?? 0.5;
-              const shares = price > 0 ? effectiveBetSize / price : 0;
+              const sharesForMl = price > 0 ? (wallet.bet_size || 1.2) / price : 0;
 
               const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
               const polyScoreResponse = await getPolyScore({
@@ -795,7 +777,7 @@ export async function POST(request: Request) {
                 condition_id: trade.conditionId || '',
                 side: (trade.side || 'BUY') as 'BUY' | 'SELL',
                 price,
-                shares_normalized: shares,
+                shares_normalized: sharesForMl,
                 timestamp: tradeTime.toISOString()
               },
               market_context: {
@@ -838,6 +820,32 @@ export async function POST(request: Request) {
             results[wallet.wallet_id].skipped++;
             continue;
           }
+        }
+        
+        const effectiveBankroll = Math.max(0, startingBalance + realizedPnl - runningOpenExposure);
+        const effectiveBetSize = calculateBetSize(
+          wallet, traderWinRate, price, edge, trade.conviction, effectiveBankroll, preInsertMlProbability
+        );
+        const cashAvailable = effectiveBankroll;
+        if (cashAvailable < effectiveBetSize || cashAvailable <= 0) {
+          await recordSeen(sourceTradeId, 'skipped', 'insufficient_cash');
+          reasons['insufficient_cash'] = (reasons['insufficient_cash'] || 0) + 1;
+          results[wallet.wallet_id].skipped++;
+          continue;
+        }
+        
+        const { data: existing } = await supabase
+          .from('ft_orders')
+          .select('order_id')
+          .eq('wallet_id', wallet.wallet_id)
+          .eq('source_trade_id', sourceTradeId)
+          .limit(1);
+        
+        if (existing && existing.length > 0) {
+          await recordSeen(sourceTradeId, 'skipped', 'duplicate');
+          reasons['duplicate'] = (reasons['duplicate'] || 0) + 1;
+          results[wallet.wallet_id].skipped++;
+          continue;
         }
         
         const ftOrder = {

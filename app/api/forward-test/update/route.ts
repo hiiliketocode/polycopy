@@ -31,6 +31,14 @@ const CONFIGS = [
   { config_id: 'ML_SWEEP_60', model_threshold: 0.60, price_min: 0.0, price_max: 1.0, min_edge: 0.0, use_model: true },
   { config_id: 'ML_SWEEP_65', model_threshold: 0.65, price_min: 0.0, price_max: 1.0, min_edge: 0.0, use_model: true },
   { config_id: 'ML_SWEEP_70', model_threshold: 0.70, price_min: 0.0, price_max: 1.0, min_edge: 0.0, use_model: true },
+  // ML context strategies (best band + context; BigQuery has no market_categories/live filters)
+  { config_id: 'ML_CTX_SWEET_SPOT', model_threshold: 0.60, price_min: 0.20, price_max: 0.40, min_edge: 0.05, use_model: true },
+  { config_id: 'ML_CTX_NO_CRYPTO', model_threshold: 0.60, price_min: 0.0, price_max: 1.0, min_edge: 0.05, use_model: true },
+  { config_id: 'ML_CTX_SPORTS', model_threshold: 0.60, price_min: 0.20, price_max: 0.70, min_edge: 0.05, use_model: true },
+  { config_id: 'ML_CTX_POLITICS', model_threshold: 0.60, price_min: 0.0, price_max: 1.0, min_edge: 0.05, use_model: true },
+  { config_id: 'ML_CTX_ML_SCALED', model_threshold: 0.60, price_min: 0.20, price_max: 0.40, min_edge: 0.05, use_model: true },
+  { config_id: 'ML_CTX_65_NO_CRYPTO', model_threshold: 0.65, price_min: 0.0, price_max: 1.0, min_edge: 0.05, use_model: true },
+  { config_id: 'ML_CTX_FAVORITES', model_threshold: 0.60, price_min: 0.55, price_max: 0.85, min_edge: 0.05, use_model: true },
 ];
 
 export async function POST() {

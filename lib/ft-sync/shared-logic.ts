@@ -47,7 +47,7 @@ export type FTWallet = {
     use_model: boolean;
     bet_size: number;
     bet_allocation_weight: number;
-    allocation_method: 'FIXED' | 'KELLY' | 'EDGE_SCALED' | 'TIERED' | 'CONFIDENCE' | 'CONVICTION';
+    allocation_method: 'FIXED' | 'KELLY' | 'EDGE_SCALED' | 'TIERED' | 'CONFIDENCE' | 'CONVICTION' | 'ML_SCALED';
     kelly_fraction: number;
     min_bet: number;
     max_bet: number;
@@ -131,7 +131,8 @@ export function calculateBetSize(
     entryPrice: number,
     edge: number,
     conviction: number,
-    effectiveBankroll?: number
+    effectiveBankroll?: number,
+    modelProbability?: number | null
 ): number {
     const method = wallet.allocation_method || 'FIXED';
     const minBet = wallet.min_bet || 0.50;
@@ -175,6 +176,13 @@ export function calculateBetSize(
             const baseBet = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
             const convictionMultiplier = Math.min(Math.max(conviction, 0.5), 3.0);
             betSize = baseBet * convictionMultiplier;
+            break;
+        }
+        case 'ML_SCALED': {
+            const baseBet = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
+            const ml = modelProbability ?? 0.55;
+            const mlMult = Math.min(Math.max(0.5 + (ml - 0.5), 0.5), 2.0);
+            betSize = baseBet * mlMult;
             break;
         }
         case 'CONFIDENCE': {
