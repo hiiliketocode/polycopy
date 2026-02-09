@@ -19,6 +19,11 @@ interface PolySignalProps {
   tradeSize?: number // Size of the trade in shares
   // Niche from feed/DB - MUST match PredictionStats source for consistency
   marketSubtype?: string // niche (market_subtype from DB)
+  /** Market question/title – used when fetching from /api/polysignal */
+  marketTitle?: string
+  /** Condition ID + outcome – used for ML fetch in /api/polysignal */
+  conditionId?: string
+  outcome?: string
   // Server-side pre-computed values (from fire feed, FT-learnings based) - if provided, use these
   serverRecommendation?: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC'
   serverScore?: number
@@ -720,11 +725,46 @@ function calculateSignal(
 // COMPONENT
 // ============================================================================
 
-export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddress, tradeSize, marketSubtype, serverRecommendation, serverScore, serverIndicators }: PolySignalProps) {
+export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddress, tradeSize, marketSubtype, marketTitle, conditionId, outcome, serverRecommendation, serverScore, serverIndicators }: PolySignalProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [traderStats, setTraderStats] = useState<TraderStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
-  
+  const [fetchedSignal, setFetchedSignal] = useState<{ score: number; recommendation: Recommendation; indicators: Record<string, { value: unknown; label: string; status: string }> } | null>(null)
+  const [fetchedSignalLoading, setFetchedSignalLoading] = useState(false)
+
+  // Fetch from /api/polysignal when no server data and no polyScore data – so badge shows on every trade
+  useEffect(() => {
+    if (serverRecommendation != null && serverScore != null) return // Use server data
+    if (data) return // Use polyScore data
+    if (!walletAddress || !entryPrice || entryPrice <= 0) return
+
+    const params = new URLSearchParams({
+      wallet: walletAddress.toLowerCase(),
+      price: String(entryPrice),
+      size: String(tradeSize ?? 0),
+      title: marketTitle ?? '',
+      category: marketSubtype ?? '',
+    })
+    if (conditionId) params.set('conditionId', conditionId)
+    if (outcome) params.set('outcome', outcome)
+    setFetchedSignalLoading(true)
+    fetch(`/api/polysignal?${params}`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((res) => {
+        if (res?.score != null && res?.recommendation) {
+          setFetchedSignal({
+            score: res.score,
+            recommendation: res.recommendation,
+            indicators: res.indicators ?? {},
+          })
+        } else {
+          setFetchedSignal(null)
+        }
+      })
+      .catch(() => setFetchedSignal(null))
+      .finally(() => setFetchedSignalLoading(false))
+  }, [walletAddress, entryPrice, tradeSize, marketTitle, marketSubtype, conditionId, outcome, serverRecommendation, serverScore, data])
+
   // Fetch trader stats when we have a wallet address
   useEffect(() => {
     if (!walletAddress) return
@@ -874,51 +914,6 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
     fetchStats()
   }, [walletAddress, marketSubtype, data?.analysis?.niche_name])
   
-  // Build minimal signal from server-only data (fire feed) when no client PolyScore data
-  const serverOnlySignal = useMemo((): SignalResult | null => {
-    if (data || serverRecommendation == null || serverScore === undefined) return null
-    const rec = serverRecommendation as Recommendation
-    const config = RECOMMENDATION_CONFIG[rec]
-    const emptyInsights: InsightData = {
-      niche: marketSubtype?.toUpperCase() ?? null,
-      tradeProfile: null,
-      profileTrades: 0,
-      globalTrades: 0,
-      profileWinRate: null,
-      globalWinRate: null,
-      profileRoiPct: null,
-      globalRoiPct: null,
-      profileAvgPnl: null,
-      globalAvgPnl: null,
-      convictionMultiplier: null,
-      positionConviction: null,
-      tradeConviction: null,
-      exposureUsd: null,
-      zScore: 0,
-      isOutlier: false,
-      isHot: false,
-      currentStreak: 0,
-      recentWinRate: null,
-      isHedging: false,
-      isChasing: false,
-      isAveragingDown: false,
-      timing: null,
-      minutesToStart: null,
-      aiWinProb: 0.5,
-      aiEdgePct: 0,
-    }
-    return {
-      score: serverScore,
-      recommendation: rec,
-      headline: config ? `${config.label} (fire feed)` : 'Server signal',
-      factors: [],
-      redFlags: [],
-      greenFlags: [],
-      priceMovement: null,
-      insights: emptyInsights,
-    }
-  }, [data, serverRecommendation, serverScore, marketSubtype])
-
   const signal = useMemo(() => {
     // Server-only mode: use FT-learnings-based server data (no polyScore fetch needed)
     if (serverRecommendation && serverScore !== undefined) {
@@ -937,7 +932,25 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
         useServerIndicators: !!serverIndicators,
       }
     }
-    
+
+    // Fetched from /api/polysignal when no server data (e.g. All feed trades)
+    if (fetchedSignal) {
+      const headline = Object.keys(fetchedSignal.indicators).length > 0
+        ? buildFtHeadline(fetchedSignal.recommendation, fetchedSignal.indicators)
+        : RECOMMENDATION_CONFIG[fetchedSignal.recommendation].label
+      return {
+        score: fetchedSignal.score,
+        recommendation: fetchedSignal.recommendation,
+        headline,
+        factors: ftIndicatorsToFactors(fetchedSignal.indicators),
+        redFlags: [] as string[],
+        greenFlags: [] as string[],
+        priceMovement: null as PriceMovement | null,
+        insights: null as InsightData | null,
+        useServerIndicators: true,
+      }
+    }
+
     if (!data) return null
     
     // Calculate signal from local data (includes price movement detection)
@@ -978,10 +991,10 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
     }
     
     return calculatedSignal
-  }, [data, entryPrice, currentPrice, traderStats, tradeSize, serverRecommendation, serverScore, serverIndicators])
+  }, [data, entryPrice, currentPrice, traderStats, tradeSize, serverRecommendation, serverScore, serverIndicators, fetchedSignal])
   
-  // Loading state
-  if (loading) {
+  // Loading state (polyScore or polysignal API)
+  if (loading || (fetchedSignalLoading && !signal)) {
     return (
       <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 border border-slate-200">
         <div className="w-5 h-5 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
