@@ -50,8 +50,7 @@ import {
   isSeasonLongMarketTitle,
 } from "@/lib/market-status"
 import { getTraderAvatarInitials } from "@/lib/trader-name"
-import { GetPolyScoreButton, PolyPredictBadge, CopySignal, AIConfidenceBadge, PolySignal } from "@/components/polyscore"
-
+import { GetPolyScoreButton, PolyPredictBadge, PolySignal } from "@/components/polyscore"
 import { PolyScoreRequest, PolyScoreResponse, getPolyScore } from "@/lib/polyscore/get-polyscore"
 import { PredictionStats } from "@/components/polyscore/PredictionStats"
 import { supabase } from "@/lib/supabase"
@@ -3056,17 +3055,20 @@ export function TradeCard({
           </div>
         </div>
 
-        {/* PolySignal Badge - Admin only (FT-learnings based recommendation) */}
-        {isAdmin && (polySignalScore != null || polySignalRecommendation) && (
+        {/* PolySignal Badge - Admin only, FT-learnings + ML based (server data or fetch from /api/polysignal) */}
+        {isAdmin && (
           <div className="mb-3">
             <PolySignal
-              data={isAdmin ? polyScoreData : null}
-              loading={isAdmin ? polyScoreLoading : false}
+              data={polyScoreData}
+              loading={polyScoreLoading}
               entryPrice={price}
               currentPrice={currentPrice}
               walletAddress={trader.address}
               tradeSize={size}
               marketSubtype={marketSubtype}
+              marketTitle={market}
+              conditionId={conditionId}
+              outcome={trade.outcome ?? position}
               serverRecommendation={polySignalRecommendation}
               serverScore={polySignalScore}
               serverIndicators={polySignalIndicators}

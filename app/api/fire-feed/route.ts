@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { fetchPolymarketLeaderboard } from '@/lib/polymarket-leaderboard';
 import { isTraderExcluded } from '@/lib/ft-excluded-traders';
+import { calculatePolySignalScore } from '@/lib/polysignal/calculate';
+import { verifyAdminAuth } from '@/lib/auth/verify-admin';
+import { getPolyScore } from '@/lib/polyscore/get-polyscore';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -15,134 +18,11 @@ const supabase = createClient(supabaseUrl || '', serviceKey || '', {
 });
 
 // Thresholds
-const FIRE_TOP_TRADERS_LIMIT = 500; // Used only for trader display names
-const FIRE_GLOBAL_TRADES_PAGE_SIZE = 200;
-const FIRE_GLOBAL_TRADES_PAGES = 6; // Fetch up to 1200 recent trades from any trader
+const FIRE_TOP_TRADERS_LIMIT = 100;
+const FIRE_TRADES_PER_TRADER = 15;
 const FIRE_WIN_RATE_THRESHOLD = 0.55;
 const FIRE_ROI_THRESHOLD = 0.15;
 const FIRE_CONVICTION_MULTIPLIER_THRESHOLD = 2.5;
-
-// PolySignal scoring thresholds (FT-learnings based)
-const POLYSIGNAL_BUY_THRESHOLD = 60;
-const POLYSIGNAL_STRONG_BUY_THRESHOLD = 75;
-
-type PolySignalRecommendation = 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'AVOID' | 'TOXIC';
-
-/**
- * Detect if market is short-term crypto (historically -91% of PnL drag)
- */
-function isCryptoShortTerm(title?: string): boolean {
-  if (!title || typeof title !== 'string') return false;
-  const t = title.toLowerCase();
-  const hasCrypto = /bitcoin|btc|ethereum|eth|solana|sol\b|crypto/.test(t);
-  const isShortTerm = /up or down|today|tomorrow|next (hour|day)|february \d|march \d/i.test(t) || /\d{1,2}(am|pm)/i.test(t);
-  return hasCrypto && isShortTerm;
-}
-
-/**
- * FT-Learnings-Based Recommendation Score
- * Based on Feb 2026 forward test analysis:
- * - Conviction 3x+ was profitable; <1x lost
- * - Trader WR 55-60% had 82% actual WR (sweet spot)
- * - Entry 20-40¢ was sweet spot; <20¢ toxic
- * - Crypto short-term destroyed performance
- * Weights: Conviction (30%) + Trader WR band (25%) + Entry price band (25%) + Market type (15%) + Edge (5%)
- */
-function calculatePolySignalScore(
-  trade: any,
-  stats: any,
-  aiWinProb?: number
-): { score: number; recommendation: PolySignalRecommendation; factors: any; indicators: any } {
-  const price = Number(trade.price || 0);
-  const size = Number(trade.size || trade.shares_normalized || 0);
-  const tradeValue = price * size;
-  const title = trade.title || trade.question || trade.market || '';
-
-  const winProb = aiWinProb ?? price;
-  const nicheWinRate = stats?.profileWinRate ?? stats?.globalWinRate ?? 0.5;
-  const totalTrades = stats?.profileTrades ?? stats?.globalTrades ?? 0;
-  const avgBetSize = stats?.avgBetSizeUsd ?? tradeValue;
-  const convictionMult = avgBetSize > 0 ? tradeValue / avgBetSize : 1;
-  const isHedging = stats?.isHedging ?? false;
-  const rawEdge = (winProb - price) * 100;
-
-  // Entry price band (FT: 20-40¢ sweet spot, <20¢ toxic)
-  const inSweetSpot = price >= 0.20 && price < 0.40;
-  const isLongshot = price < 0.20;
-  const isMidRange = price >= 0.40 && price < 0.60;
-  const isFavorite = price >= 0.60;
-
-  // Conviction (FT: 3x+ profitable, <1x lost)
-  const convictionStrong = convictionMult >= 3;
-  const convictionGood = convictionMult >= 2;
-  const convictionWeak = convictionMult < 1;
-
-  // Trader WR band (FT: 55-60% had 82% actual WR)
-  const wrSweetSpot = nicheWinRate >= 0.55 && nicheWinRate < 0.65;
-  const wrGood = nicheWinRate >= 0.50 && nicheWinRate < 0.70;
-  const wrBad = nicheWinRate < 0.45 && totalTrades >= 15;
-
-  // Market type (FT: crypto short-term -91% of PnL drag)
-  const isCrypto = isCryptoShortTerm(title);
-
-  // Score contributions (0-100 scale)
-  let convictionContrib = 0;
-  if (convictionStrong) convictionContrib = 25;
-  else if (convictionGood) convictionContrib = 15;
-  else if (convictionWeak) convictionContrib = -15;
-
-  let priceBandContrib = 0;
-  if (inSweetSpot) priceBandContrib = 25;
-  else if (isLongshot) priceBandContrib = -20;
-  else if (isMidRange) priceBandContrib = -5;
-  else if (isFavorite) priceBandContrib = 5;
-
-  let wrContrib = 0;
-  if (wrSweetSpot) wrContrib = 20;
-  else if (wrGood) wrContrib = 10;
-  else if (wrBad) wrContrib = -20;
-
-  let marketContrib = 0;
-  if (isCrypto) marketContrib = -20;
-  else marketContrib = 5;
-
-  let edgeContrib = Math.max(-5, Math.min(5, rawEdge / 3));
-
-  const totalContrib = convictionContrib + priceBandContrib + wrContrib + marketContrib + edgeContrib;
-  const finalScore = Math.max(0, Math.min(100, 50 + totalContrib));
-
-  // Recommendation
-  let recommendation: PolySignalRecommendation;
-  if (isHedging && rawEdge < 0) recommendation = 'TOXIC';
-  else if (wrBad) recommendation = 'TOXIC';
-  else if (isCrypto && convictionMult < 2) recommendation = 'AVOID';
-  else if (isLongshot && nicheWinRate < 0.50) recommendation = 'TOXIC';
-  else if (rawEdge < -15) recommendation = 'TOXIC';
-  else if (finalScore >= POLYSIGNAL_STRONG_BUY_THRESHOLD) recommendation = 'STRONG_BUY';
-  else if (finalScore >= POLYSIGNAL_BUY_THRESHOLD) recommendation = 'BUY';
-  else if (finalScore >= 45) recommendation = 'NEUTRAL';
-  else if (finalScore >= 30) recommendation = 'AVOID';
-  else recommendation = 'TOXIC';
-
-  return {
-    score: Math.round(finalScore),
-    recommendation,
-    factors: {
-      conviction: { value: convictionContrib, multiplier: convictionMult, band: convictionStrong ? '3x+' : convictionGood ? '2x+' : convictionWeak ? '<1x' : '1-2x' },
-      priceBand: { value: priceBandContrib, inSweetSpot, isLongshot, entryPrice: price },
-      traderWr: { value: wrContrib, winRate: nicheWinRate, trades: totalTrades, inSweetSpot: wrSweetSpot },
-      marketType: { value: marketContrib, isCryptoShortTerm: isCrypto },
-      edge: { value: edgeContrib, rawEdge },
-    },
-    indicators: {
-      conviction: { value: convictionMult, label: `${convictionMult.toFixed(1)}x`, status: convictionStrong ? 'strong' : convictionGood ? 'good' : convictionWeak ? 'weak' : 'neutral' },
-      traderWr: { value: nicheWinRate, label: `${(nicheWinRate * 100).toFixed(0)}%`, status: wrSweetSpot ? 'sweet_spot' : wrGood ? 'good' : wrBad ? 'avoid' : 'neutral' },
-      entryBand: { value: price, label: `${(price * 100).toFixed(0)}¢`, status: inSweetSpot ? 'sweet_spot' : isLongshot ? 'avoid' : 'neutral' },
-      marketType: { value: isCrypto ? 'crypto_short' : 'other', label: isCrypto ? 'Crypto short-term' : 'Non-crypto', status: isCrypto ? 'caution' : 'ok' },
-      edge: { value: rawEdge, label: `${rawEdge >= 0 ? '+' : ''}${rawEdge.toFixed(1)}%`, status: rawEdge >= 10 ? 'strong' : rawEdge >= 5 ? 'good' : rawEdge < 0 ? 'negative' : 'neutral' },
-    },
-  };
-}
 
 function normalizeWinRateValue(raw: unknown): number | null {
   if (raw === null || raw === undefined) return null;
@@ -234,6 +114,52 @@ function roiForTradeType(stats: any, category?: string): number | null {
   return null;
 }
 
+async function fetchAiWinProbForTrade(
+  trade: any,
+  wallet: string,
+  serviceKey: string
+): Promise<number | null> {
+  const conditionId = trade.conditionId || trade.condition_id;
+  if (!conditionId || !conditionId.startsWith('0x')) return null;
+  const price = Number(trade.price ?? 0);
+  const size = Number(trade.size ?? trade.shares_normalized ?? 0);
+  const outcome = trade.outcome || 'YES';
+  const title = trade.title || trade.question || trade.market || '';
+
+  try {
+    const marketRes = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, { cache: 'no-store' });
+    if (!marketRes.ok) return null;
+    const market = await marketRes.json();
+    const tokens = Array.isArray(market?.tokens) ? market.tokens : [];
+    const tokenIdx = tokens.findIndex((t: any) => (t?.outcome || '').toLowerCase() === (outcome || 'yes').toLowerCase());
+    const currentPrice = tokenIdx >= 0 && tokens[tokenIdx]?.price != null ? Number(tokens[tokenIdx].price) : price;
+
+    const polyRes = await getPolyScore({
+      original_trade: {
+        wallet_address: wallet,
+        condition_id: conditionId,
+        side: 'BUY',
+        price,
+        shares_normalized: size,
+        timestamp: new Date().toISOString(),
+      },
+      market_context: {
+        current_price: currentPrice,
+        current_timestamp: new Date().toISOString(),
+        market_title: title || null,
+      },
+      user_slippage: 0.05,
+    }, serviceKey);
+
+    if (!polyRes?.success) return null;
+    let prob = polyRes.valuation?.ai_fair_value ?? polyRes.prediction?.probability ?? polyRes.analysis?.prediction_stats?.ai_fair_value ?? null;
+    if (prob != null && prob > 1) prob = prob / 100;
+    return prob != null && Number.isFinite(prob) ? prob : null;
+  } catch {
+    return null;
+  }
+}
+
 function convictionMultiplierForTrade(trade: any, stats: any): number | null {
   const size = Number(trade.size ?? trade.shares_normalized ?? trade.amount ?? 0);
   const price = Number(trade.price ?? 0);
@@ -278,63 +204,39 @@ export async function GET(request: Request) {
   };
 
   try {
+    const authResult = await verifyAdminAuth();
+    if (!authResult.isAdmin) {
+      return NextResponse.json(
+        { error: authResult.error || 'Admin access required' },
+        { status: 401 }
+      );
+    }
+
     if (!supabaseUrl || !serviceKey) {
       throw new Error('Supabase configuration missing');
     }
 
-    console.log('[fire-feed] Starting (global trades, PolySignal-only, any trader)...');
+    console.log('[fire-feed] Starting...');
 
-    const thirtyDaysAgoMs = Date.now() - (30 * 24 * 60 * 60 * 1000);
-
-    // 1. Fetch recent trades from global Polymarket API (no user filter = any trader)
-    const allTrades: any[] = [];
-    for (let page = 0; page < FIRE_GLOBAL_TRADES_PAGES; page++) {
-      const offset = page * FIRE_GLOBAL_TRADES_PAGE_SIZE;
-      try {
-        const response = await fetch(
-          `https://data-api.polymarket.com/trades?limit=${FIRE_GLOBAL_TRADES_PAGE_SIZE}&offset=${offset}`,
-          { cache: 'no-store', headers: { 'User-Agent': 'Polycopy Fire Feed' } }
-        );
-        if (!response.ok) break;
-        const batch = await response.json();
-        if (!Array.isArray(batch) || batch.length === 0) break;
-        for (const t of batch) {
-          if ((t.side || '').toUpperCase() !== 'BUY') continue;
-          let ts = typeof t.timestamp === 'string' ? parseInt(t.timestamp, 10) : t.timestamp;
-          if (!Number.isFinite(ts)) continue;
-          if (ts < 10000000000) ts = ts * 1000;
-          if (ts < thirtyDaysAgoMs) continue;
-          const wallet = (t.user || t.wallet || t.proxyWallet || '').toLowerCase();
-          if (!wallet) continue;
-          allTrades.push({ ...t, _wallet: wallet });
-        }
-        debugStats.totalTradesFetched += batch.length;
-        if (batch.length < FIRE_GLOBAL_TRADES_PAGE_SIZE) break;
-      } catch (err: any) {
-        debugStats.errors.push(`Global trades page ${page}: ${err.message}`);
-        break;
-      }
-    }
-    debugStats.totalTradesAfterTimeFilter = allTrades.length;
-    console.log(`[fire-feed] Fetched ${allTrades.length} BUY trades (last 30d) from global API`);
-
-    if (allTrades.length === 0) {
-      return NextResponse.json({
-        trades: [],
-        traders: {},
-        stats: {},
-        debug: debugStats,
-      });
-    }
-
-    // Top traders from leaderboard (for wallet list + PNL map)
+    // 1. Get top traders from leaderboard
     const topTraders = await fetchPolymarketLeaderboard({
       timePeriod: 'month',
       orderBy: 'PNL',
       limit: FIRE_TOP_TRADERS_LIMIT,
       category: 'overall',
     });
+
     debugStats.tradersChecked = topTraders.length;
+    console.log(`[fire-feed] Found ${topTraders.length} top traders`);
+
+    if (topTraders.length === 0) {
+      return NextResponse.json({ 
+        trades: [], 
+        traders: {},
+        stats: {},
+        debug: debugStats,
+      });
+    }
 
     const wallets = topTraders
       .filter((t) => !isTraderExcluded(t.wallet))
@@ -345,38 +247,55 @@ export async function GET(request: Request) {
     }
     console.log(`[fire-feed] Processing ${wallets.length} wallets`);
 
-    // 3. Fetch stats for those wallets (batch; Supabase IN has practical limits)
-    const BATCH = 200;
-    const globals: any[] = [];
-    const profiles: any[] = [];
-    for (let i = 0; i < wallets.length; i += BATCH) {
-      const chunk = wallets.slice(i, i + BATCH);
-      const [gRes, pRes] = await Promise.all([
-        supabase.from('trader_global_stats')
-          .select('wallet_address, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct, l_avg_trade_size_usd, d30_avg_trade_size_usd, d7_avg_trade_size_usd, l_avg_pos_size_usd, l_count, d30_count')
-          .in('wallet_address', chunk),
-        supabase.from('trader_profile_stats')
-          .select('wallet_address, final_niche, structure, bracket, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct')
-          .in('wallet_address', chunk),
-      ]);
-      if (!gRes.error && gRes.data) globals.push(...gRes.data);
-      if (!pRes.error && pRes.data) profiles.push(...pRes.data);
+    // 2. Fetch stats (but don't fail if none found)
+    // NOTE: Column names must match actual database schema
+    const [globalsRes, profilesRes] = await Promise.all([
+      supabase.from('trader_global_stats')
+        .select('wallet_address, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct, l_avg_trade_size_usd, d30_avg_trade_size_usd, d7_avg_trade_size_usd, l_avg_pos_size_usd, l_count, d30_count')
+        .in('wallet_address', wallets),
+      supabase.from('trader_profile_stats')
+        .select('wallet_address, final_niche, structure, bracket, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct')
+        .in('wallet_address', wallets),
+    ]);
+
+    // Log query results and any errors
+    if (globalsRes.error) {
+      console.error('[fire-feed] Global stats query error:', globalsRes.error);
+      debugStats.errors.push(`Global stats query error: ${globalsRes.error.message}`);
+    }
+    if (profilesRes.error) {
+      console.error('[fire-feed] Profile stats query error:', profilesRes.error);
+      debugStats.errors.push(`Profile stats query error: ${profilesRes.error.message}`);
+    }
+    
+    const globals = globalsRes.error ? [] : globalsRes.data || [];
+    const profiles = profilesRes.error ? [] : profilesRes.data || [];
+    console.log(`[fire-feed] Stats: ${globals.length} global, ${profiles.length} profile records`);
+    console.log(`[fire-feed] Sample wallets queried: ${wallets.slice(0, 3).join(', ')}`);
+    
+    // Log first global stat record to verify data structure
+    if (globals.length > 0) {
+      console.log(`[fire-feed] First global stat record:`, JSON.stringify(globals[0]));
     }
 
+    // Build stats map
     const statsMap = new Map<string, any>();
     const profilesByWallet = new Map<string, any[]>();
+    
     profiles.forEach((row: any) => {
-      const w = (row.wallet_address || '').toLowerCase();
-      if (w) {
-        const list = profilesByWallet.get(w) ?? [];
+      const wallet = (row.wallet_address || '').toLowerCase();
+      if (wallet) {
+        const list = profilesByWallet.get(wallet) ?? [];
         list.push(row);
-        profilesByWallet.set(w, list);
+        profilesByWallet.set(wallet, list);
       }
     });
+
     globals.forEach((row: any) => {
-      const w = (row.wallet_address || '').toLowerCase();
-      if (w) {
-        statsMap.set(w, {
+      const wallet = (row.wallet_address || '').toLowerCase();
+      if (wallet) {
+        statsMap.set(wallet, {
+          // Use d30 (30-day) stats first, then lifetime (l_) as fallback
           globalWinRate: normalizeWinRateValue(row.d30_win_rate) ?? normalizeWinRateValue(row.l_win_rate),
           globalRoiPct: normalizeRoiValue(row.d30_total_roi_pct) ?? normalizeRoiValue(row.l_total_roi_pct),
           globalTrades: pickNumber(row.d30_count, row.l_count) ?? 0,
@@ -384,23 +303,73 @@ export async function GET(request: Request) {
           d30_avg_trade_size_usd: pickNumber(row.d30_avg_trade_size_usd),
           l_avg_trade_size_usd: pickNumber(row.l_avg_trade_size_usd),
           l_avg_pos_size_usd: pickNumber(row.l_avg_pos_size_usd),
-          profiles: profilesByWallet.get(w) || [],
+          profiles: profilesByWallet.get(wallet) || [],
         });
       }
     });
-    debugStats.tradersWithStats = statsMap.size;
-    console.log(`[fire-feed] Stats available for ${statsMap.size} wallets`);
 
-    // PNL map from leaderboard for _traderPnl on each trade
-    const traderPnlMap = new Map<string, number>();
-    topTraders.forEach((t) => {
-      traderPnlMap.set((t.wallet || '').toLowerCase(), t.pnl ?? 0);
+    debugStats.tradersWithStats = statsMap.size;
+    console.log(`[fire-feed] Stats available for ${statsMap.size} traders`);
+
+    // 3. Fetch trades from Polymarket API (same as regular feed)
+    const thirtyDaysAgoMs = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    
+    const tradePromises = wallets.map(async (wallet) => {
+      try {
+        const response = await fetch(
+          `https://data-api.polymarket.com/trades?limit=${FIRE_TRADES_PER_TRADER}&user=${wallet}`,
+          { cache: 'no-store' }
+        );
+        
+        if (!response.ok) {
+          debugStats.errors.push(`Failed to fetch trades for ${wallet.slice(0, 10)}: ${response.status}`);
+          return [];
+        }
+        
+        const trades = await response.json();
+        if (!Array.isArray(trades)) {
+          debugStats.errors.push(`Non-array response for ${wallet.slice(0, 10)}`);
+          return [];
+        }
+        
+        debugStats.totalTradesFetched += trades.length;
+        
+        // Filter to BUY trades from last 30 days
+        const filtered = trades.filter((trade: any) => {
+          if (trade.side !== 'BUY') return false;
+          let timestamp = typeof trade.timestamp === 'string' ? parseInt(trade.timestamp) : trade.timestamp;
+          if (timestamp < 10000000000) timestamp = timestamp * 1000;
+          return timestamp >= thirtyDaysAgoMs;
+        });
+        
+        debugStats.totalTradesAfterTimeFilter += filtered.length;
+        return filtered.map((trade: any) => ({ ...trade, _wallet: wallet }));
+      } catch (error: any) {
+        debugStats.errors.push(`Error for ${wallet.slice(0, 10)}: ${error.message}`);
+        return [];
+      }
     });
 
-    // 4. Process trades - apply PolySignal scoring and only return BUY or STRONG_BUY (new scoring system only)
+    const allTradesResults = await Promise.all(tradePromises);
+    const allTrades = allTradesResults.flat();
+    console.log(`[fire-feed] Fetched ${allTrades.length} trades total`);
+
+    // 4. Process trades - apply PolySignal scoring and only return BUY or STRONG_BUY
     const fireTrades: any[] = [];
     let rejectedSamples: any[] = [];
-
+    
+    // Build a map of trader PNL from leaderboard for ranking
+    const traderPnlMap = new Map<string, number>();
+    let minPnl = Infinity, maxPnl = -Infinity;
+    topTraders.forEach((trader) => {
+      const pnl = trader.pnl || 0;
+      traderPnlMap.set(trader.wallet.toLowerCase(), pnl);
+      if (pnl < minPnl) minPnl = pnl;
+      if (pnl > maxPnl) maxPnl = pnl;
+    });
+    debugStats.topTraderPnlRange = { min: Math.round(minPnl), max: Math.round(maxPnl) };
+    console.log(`[fire-feed] Top trader PNL range: $${Math.round(minPnl)} to $${Math.round(maxPnl)}`);
+    
     // Add PolySignal stats to debug
     (debugStats as any).polySignalPassed = 0;
     (debugStats as any).polySignalStrongBuy = 0;
@@ -416,9 +385,9 @@ export async function GET(request: Request) {
       debugStats.tradesChecked++;
       
       const stats = statsMap.get(wallet);
-      const traderPnl = traderPnlMap.get(wallet) ?? 0;
-
-      // Calculate stats-based metrics for fire indicators (display only)
+      const traderPnl = traderPnlMap.get(wallet) || 0;
+      
+      // Calculate stats-based metrics for fire indicators
       const category = deriveCategoryFromTrade(trade);
       const winRate = stats ? winRateForTradeType(stats, category) : null;
       const roiPct = stats ? roiForTradeType(stats, category) : null;
@@ -500,8 +469,15 @@ export async function GET(request: Request) {
         isHot: false, // Would need more data
         isHedging: false, // Would need more data
       };
-      
-      const polySignal = calculatePolySignalScore(trade, polySignalStats);
+
+      let aiWinProb: number | null = null;
+      try {
+        aiWinProb = await fetchAiWinProbForTrade(trade, wallet, serviceKey || '');
+      } catch {
+        // Fall back to price if ML fetch fails
+      }
+
+      const polySignal = calculatePolySignalScore(trade, polySignalStats, aiWinProb ?? undefined);
       
       // Track recommendation distribution
       if (polySignal.recommendation === 'STRONG_BUY') (debugStats as any).polySignalStrongBuy++;
@@ -510,10 +486,15 @@ export async function GET(request: Request) {
       else if (polySignal.recommendation === 'AVOID') (debugStats as any).polySignalAvoid++;
       else if (polySignal.recommendation === 'TOXIC') (debugStats as any).polySignalToxic++;
       
-      // Only pass trades that qualify under the new (PolySignal) scoring system: BUY or STRONG_BUY
-      const passesPolySignal =
-        polySignal.recommendation === 'BUY' || polySignal.recommendation === 'STRONG_BUY';
-
+      // Pass trades that are BUY or STRONG_BUY
+      // Also pass NEUTRAL trades from top PnL traders (they're already vetted by leaderboard)
+      const isTopPnlTrader = traderPnl >= 10000; // $10k+ monthly PnL
+      const passesPolySignal = 
+        polySignal.recommendation === 'BUY' || 
+        polySignal.recommendation === 'STRONG_BUY' ||
+        (polySignal.recommendation === 'NEUTRAL' && isTopPnlTrader); // Allow neutral from top traders
+      
+      // Log first few rejected trades for debugging
       if (!passesPolySignal && rejectedSamples.length < 3) {
         rejectedSamples.push({
           wallet: wallet.slice(0, 10),
@@ -523,6 +504,7 @@ export async function GET(request: Request) {
           winRate,
           roiPct,
           conviction,
+          traderPnl,
         });
       }
       
@@ -582,22 +564,13 @@ export async function GET(request: Request) {
       }
     }
 
+    // Sort by timestamp
     fireTrades.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
 
-    // Build trader names: leaderboard for known traders, else truncated wallet (any trader)
+    // Build trader names
     const traderNames: Record<string, string> = {};
-    const leaderboard = await fetchPolymarketLeaderboard({
-      timePeriod: 'month',
-      orderBy: 'PNL',
-      limit: FIRE_TOP_TRADERS_LIMIT,
-      category: 'overall',
-    });
-    leaderboard.forEach((t) => {
-      traderNames[t.wallet.toLowerCase()] = t.displayName;
-    });
-    const uniqueWalletsInFeed = [...new Set(fireTrades.map((t: any) => (t.wallet || t.user || t._followedWallet || '').toLowerCase()).filter(Boolean))];
-    uniqueWalletsInFeed.forEach((w) => {
-      if (!traderNames[w]) traderNames[w] = `${w.slice(0, 6)}...${w.slice(-4)}`;
+    topTraders.forEach((trader) => {
+      traderNames[trader.wallet.toLowerCase()] = trader.displayName;
     });
 
     console.log(`[fire-feed] Returning ${fireTrades.length} filtered trades (BUY/STRONG_BUY only)`);
