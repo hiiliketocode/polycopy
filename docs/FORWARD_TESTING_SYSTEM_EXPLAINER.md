@@ -69,7 +69,32 @@ ft_wallets stats updated (total_pnl, win_rate, etc.)
 | **Vercel cron ft-resolve** | Every 10 min | Checks Polymarket for resolved markets, updates WON/LOST + PnL, runs enrich-ml |
 | **Manual buttons** | On click | Sync New Trades, Check Resolutions, Refresh |
 
-### 2.4 PnL Sources
+### 2.4 Why isn’t my strategy taking trades?
+
+Strategies only take trades when **every** filter passes. Common reasons a strategy (e.g. **ML: Mid-Range**) takes no new trades for a while:
+
+| Reason | Meaning |
+|--------|--------|
+| **price_out_of_range** | Entry price outside this strategy’s band (e.g. Mid-Range is 25–75¢). Most leaderboard activity may be in longshots or heavy favorites. |
+| **low_ml_score** / **ml_unavailable** | For `use_model` strategies: ML score &lt; threshold (e.g. 55%) or PolyScore API failed/timeout. |
+| **insufficient_edge** | Trader win rate − price &lt; min_edge (e.g. 5%). |
+| **low_win_rate** | Trader’s WR below the strategy’s floor (for non–use_model strategies). |
+| **insufficient_cash** | Virtual cash would go negative after this bet; sync skips. |
+| **market_resolved** / **after_market_end** | Market already closed or past end time. |
+| **duplicate** / **already seen** | This exact trade was already evaluated for this wallet. |
+
+**Check your wallet:** Call the sync-diagnose API with the wallet id to see **skip reasons in the last 24 hours**:
+
+```bash
+curl -X POST https://your-app.vercel.app/api/ft/sync-diagnose \
+  -H "Content-Type: application/json" \
+  -d '{"wallet_id": "FT_ML_MIDRANGE"}' \
+  -H "Authorization: Bearer YOUR_CRON_OR_ADMIN_SECRET"
+```
+
+Response includes `skip_reasons_last_24h`: e.g. `{"low_ml_score": 45, "price_out_of_range": 12, ...}` so you can see the main blockers.
+
+### 2.5 PnL Sources
 
 - **Open positions:** Real-time prices from `markets` + Polymarket API when viewing wallet.
 - **Resolved positions:** PnL set by resolve cron when Polymarket reports market closed. Formula: BUY WON = `size * (1 - entry_price) / entry_price - size`; BUY LOST = `-size`.

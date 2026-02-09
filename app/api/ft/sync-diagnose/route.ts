@@ -32,25 +32,50 @@ export async function POST(request: Request) {
   if (authError) return authError;
 
   const now = new Date();
+  let walletId = 'FT_ML_SHARP_SHOOTER';
+  try {
+    const body = await request.json().catch(() => ({}));
+    if (body?.wallet_id && typeof body.wallet_id === 'string') walletId = body.wallet_id.trim();
+  } catch {
+    // keep default
+  }
+
   const diagnostic: Record<string, unknown> = {
     run_at: now.toISOString(),
+    wallet_id: walletId,
     steps: {} as Record<string, number | string>,
   };
 
   try {
     const supabase = createAdminServiceClient();
 
-    // 1. Get ML Sharp Shooter wallet
+    // 0. Skip reasons for this wallet in last 24h (why trades weren't taken)
+    const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: skippedRows } = await supabase
+      .from('ft_seen_trades')
+      .select('skip_reason')
+      .eq('wallet_id', walletId)
+      .eq('outcome', 'skipped')
+      .gte('seen_at', since24h);
+    const skipReasonsLast24h: Record<string, number> = {};
+    for (const row of skippedRows || []) {
+      const r = (row as { skip_reason?: string | null }).skip_reason ?? 'null';
+      skipReasonsLast24h[r] = (skipReasonsLast24h[r] || 0) + 1;
+    }
+    diagnostic.skip_reasons_last_24h = skipReasonsLast24h;
+    diagnostic.skipped_total_last_24h = (skippedRows || []).length;
+
+    // 1. Get wallet
     const { data: mlWallet, error: wErr } = await supabase
       .from('ft_wallets')
       .select('*')
-      .eq('wallet_id', 'FT_ML_SHARP_SHOOTER')
+      .eq('wallet_id', walletId)
       .single();
 
     if (wErr || !mlWallet) {
       return NextResponse.json({
-        success: false,
-        error: 'FT_ML_SHARP_SHOOTER not found',
+        success: true,
+        error: `${walletId} not found`,
         diagnostic,
       });
     }
@@ -168,12 +193,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, diagnostic });
     }
 
-    // 6. Load alreadySeenIds for ML Sharp Shooter
+    // 6. Load alreadySeenIds for this wallet
     const candidateIds = afterTimeFilter.map((t) => getSourceTradeId(t));
     const { data: seen } = await supabase
       .from('ft_seen_trades')
       .select('source_trade_id')
-      .eq('wallet_id', 'FT_ML_SHARP_SHOOTER')
+      .eq('wallet_id', walletId)
       .in('source_trade_id', candidateIds);
     const alreadySeenIds = new Set((seen || []).map((r) => r.source_trade_id));
 
@@ -208,7 +233,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // 8. Apply ML Sharp Shooter filters (price, conviction, market status)
+    // 8. Apply wallet filters (price, conviction, market status)
     const reasons: Record<string, number> = {};
     let passedFilters = 0;
 

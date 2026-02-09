@@ -25,7 +25,7 @@ So: **every test that is active and in its test window is included on every sync
 
 ## 2. Trades: one shared pool, every test evaluated
 
-- **Trader pool (shared):** Leaderboard (month PNL, month VOL, week PNL, day VOL; up to 100 each) plus any `target_trader` / `target_traders` from wallet configs. Merged into one set of traders for the run.
+- **Trader pool (shared):** Leaderboard (month PNL, month VOL, week PNL, day VOL) with **2 pages per view** (top 100 + next 100 → up to 200 per view, 4 views → up to 800 slots) merged by wallet, plus any `target_trader` / `target_traders` from wallet configs. So the unique set is typically **several hundred** traders, not just “top 100”.
 - **Trades (shared):** For each trader, the sync fetches BUY trades from Polymarket Data API (`data-api.polymarket.com/trades?user=...`) with pagination:
   - Up to **4 pages × 50** = **200 trades per trader** per run.
   - Only trades **newer than** the oldest `last_sync_time` across all active wallets (so we don’t re-process old trades).
@@ -52,7 +52,7 @@ So: **every test that is active and in its test window is included on every sync
 | Cron schedule | `vercel.json`: `"/api/cron/ft-sync"` → `*/2 * * * *` |
 | Sync entry | `app/api/cron/ft-sync/route.ts` → `app/api/ft/sync/route.ts` |
 | Active wallets | `app/api/ft/sync/route.ts`: `ft_wallets` where `is_active = true`, then filter by `start_date` / `end_date` |
-| Trader pool | Same file: leaderboard + `target_trader` / `target_traders` per wallet |
+| Trader pool | Same file: 4 leaderboard views × 2 pages (100 each) + `target_trader` / `target_traders` per wallet |
 | Trades per trader | Same file: `fetch(... data-api.polymarket.com/trades ...)` in a loop, up to `MAX_PAGES_PER_TRADER` (4) |
 | Market fetch | Same file: `markets` table `.in('condition_id', conditionIds)` then Gamma API for `missingConditionIds` |
 | Per-wallet loop | Same file: `for (const wallet of activeWallets)` then `for (const trade of allTrades)` with wallet-specific filters |
