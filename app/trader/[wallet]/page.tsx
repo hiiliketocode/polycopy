@@ -2222,7 +2222,7 @@ export default function TraderProfilePage({
                 </a>
                 <button
                   onClick={() => setIsShareModalOpen(true)}
-                  className="inline-flex h-7 items-center gap-1.5 px-2.5 justify-center rounded-md border border-slate-200 text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
+                  className="inline-flex h-7 items-center gap-1.5 px-2.5 justify-center rounded-md bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-slate-900 font-semibold shadow-sm transition-colors"
                   aria-label="Share Player Card"
                 >
                   <Share2 className="h-3.5 w-3.5" />
