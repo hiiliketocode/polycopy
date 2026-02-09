@@ -3068,7 +3068,7 @@ export function TradeCard({
               marketSubtype={marketSubtype}
               marketTitle={market}
               conditionId={conditionId}
-              outcome={trade.outcome ?? position}
+              outcome={position}
               serverRecommendation={polySignalRecommendation}
               serverScore={polySignalScore}
               serverIndicators={polySignalIndicators}
