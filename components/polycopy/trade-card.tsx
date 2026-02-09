@@ -50,7 +50,8 @@ import {
   isSeasonLongMarketTitle,
 } from "@/lib/market-status"
 import { getTraderAvatarInitials } from "@/lib/trader-name"
-import { GetPolyScoreButton, PolyPredictBadge, PolySignal } from "@/components/polyscore"
+import { GetPolyScoreButton, PolyPredictBadge, CopySignal, AIConfidenceBadge, PolySignal } from "@/components/polyscore"
+
 import { PolyScoreRequest, PolyScoreResponse, getPolyScore } from "@/lib/polyscore/get-polyscore"
 import { PredictionStats } from "@/components/polyscore/PredictionStats"
 import { supabase } from "@/lib/supabase"
