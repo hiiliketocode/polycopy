@@ -180,14 +180,12 @@ function buildFtHeadline(rec: Recommendation, indicators: Record<string, { value
   const c = indicators.conviction
   const wr = indicators.traderWr
   const eb = indicators.entryBand
-  const mt = indicators.marketType
   if (rec === 'STRONG_BUY' || rec === 'BUY') {
-    if (c?.status === 'strong' && eb?.status === 'sweet_spot') return `${c?.label} conviction in 20-40¢ sweet spot`
-    if (wr?.status === 'sweet_spot') return `Trader ${wr?.label} WR (55-65% band)`
-    if (mt?.status === 'ok' && c?.status !== 'weak') return 'Non-crypto market, favorable signals'
+    if (c?.status === 'strong' && eb?.status === 'sweet_spot') return `${c?.label} conviction in 20–40¢ sweet spot`
+    if (wr?.status === 'sweet_spot') return `Trader ${wr?.label} WR (55–65% band)`
+    if (c?.status !== 'weak') return 'Favorable signals'
   }
   if (rec === 'AVOID' || rec === 'TOXIC') {
-    if (mt?.status === 'caution') return 'Crypto short-term – historically poor PnL'
     if (eb?.status === 'avoid') return 'Entry <20¢ – longshot band'
     if (wr?.status === 'avoid') return `Trader ${wr?.label} WR – below threshold`
   }
@@ -195,27 +193,27 @@ function buildFtHeadline(rec: Recommendation, indicators: Record<string, { value
 }
 
 function ftIndicatorsToFactors(indicators: Record<string, { value: unknown; label: string; status: string }>): ScoreFactor[] {
-  const iconMap = { Zap: Zap, Target: Target, TrendingUp: TrendingUp, Brain: Brain, BarChart3: BarChart3 }
+  const iconMap = { Zap: Zap, Target: Target, TrendingUp: TrendingUp, Activity: Activity, BarChart3: BarChart3 }
   const statusToDetail: Record<string, string> = {
-    strong: '3x+ conviction – FT profitable band',
+    strong: '3x+ conviction – profitable band',
     good: 'Above-average signal',
-    sweet_spot: 'FT sweet spot (20-40¢ or 55-65% WR)',
-    ok: 'Non-crypto – less PnL drag',
-    weak: '<1x – FT losing band',
-    avoid: 'FT avoid band',
-    caution: 'Crypto short-term – historically -91% PnL drag',
+    sweet_spot: 'Sweet spot (20–40¢ or 55–65% WR)',
+    ok: 'OK',
+    weak: '<1x – losing band',
+    avoid: 'Avoid band',
+    caution: 'Caution',
     negative: 'Negative edge',
     neutral: 'Neutral',
   }
   const items: { key: string; name: string; icon: keyof typeof iconMap }[] = [
     { key: 'conviction', name: 'Conviction', icon: 'Zap' },
     { key: 'traderWr', name: 'Trader WR', icon: 'Target' },
-    { key: 'entryBand', name: 'Entry Band', icon: 'TrendingUp' },
-    { key: 'marketType', name: 'Market Type', icon: 'Brain' },
+    { key: 'entryBand', name: 'Entry band', icon: 'TrendingUp' },
     { key: 'edge', name: 'Edge', icon: 'BarChart3' },
+    { key: 'experience', name: 'Experience', icon: 'Activity' },
   ]
   return items
-    .filter(({ key }) => indicators[key])
+    .filter(({ key }) => indicators[key] != null)
     .map(({ key, name, icon }) => {
       const ind = indicators[key]
       const sentiment = ind.status === 'strong' || ind.status === 'sweet_spot' || ind.status === 'good' || ind.status === 'ok'
@@ -224,7 +222,7 @@ function ftIndicatorsToFactors(indicators: Record<string, { value: unknown; labe
         ? 'negative' as const
         : 'neutral' as const
       const Icon = iconMap[icon] || BarChart3
-      const detail = statusToDetail[ind.status] || `${name}: ${ind.label}`
+      const detail = statusToDetail[ind.status] ?? (key === 'experience' ? `Total trades in this type` : `${name}: ${ind.label}`)
       return {
         name,
         icon: Icon,
@@ -1019,20 +1017,18 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
   return (
     <TooltipProvider>
       <div className="w-full">
-        {/* Main Badge */}
+        {/* Compact badge – small pill, not full row */}
         <button
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            "w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all",
-            "hover:shadow-md active:scale-[0.99] cursor-pointer",
+            "inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-all",
+            "hover:shadow-sm active:scale-[0.98] cursor-pointer",
             config.bgColor,
             config.borderColor
           )}
         >
-          {/* Score Circle */}
           <div className={cn(
-            "flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center",
-            "font-bold text-lg text-white shadow-sm",
+            "flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white",
             signal.recommendation === 'STRONG_BUY' && "bg-emerald-500",
             signal.recommendation === 'BUY' && "bg-green-500",
             signal.recommendation === 'NEUTRAL' && "bg-slate-500",
@@ -1041,39 +1037,10 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
           )}>
             {signal.score}
           </div>
-          
-          {/* Recommendation + Headline */}
-          <div className="flex-1 text-left min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className={cn("text-sm font-bold uppercase tracking-wide", config.textColor)}>
-                {config.label}
-              </span>
-              {signal.greenFlags.length > 0 && (
-                <span className="text-xs text-emerald-600 font-medium">✓{signal.greenFlags.length}</span>
-              )}
-              {signal.redFlags.length > 0 && (
-                <span className="text-xs text-red-600 font-medium">⚠{signal.redFlags.length}</span>
-              )}
-              {priceMovement && (
-                <span className={cn(
-                  "text-xs font-medium px-1.5 py-0.5 rounded",
-                  priceMovement.direction === 'down' 
-                    ? "bg-red-100 text-red-700" 
-                    : "bg-emerald-100 text-emerald-700"
-                )}>
-                  {priceMovement.direction === 'up' ? '↑' : '↓'}{Math.abs(priceMovement.percent).toFixed(0)}%
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">
-              {signal.headline}
-            </p>
-          </div>
-          
-          {/* Expand */}
-          <div className={cn("flex-shrink-0", config.textColor)}>
-            {isOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </div>
+          <span className={cn("text-xs font-semibold", config.textColor)}>
+            {config.label}
+          </span>
+          {isOpen ? <ChevronUp className="w-3.5 h-3.5 shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 shrink-0" />}
         </button>
         
         {/* Expanded Drawer */}
@@ -1107,46 +1074,33 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
               </div>
             )}
             
-            {/* Score Factors / FT Indicators */}
+            {/* Indicators – hierarchical, for this trade type */}
             <div className="px-4 py-3 border-b border-slate-100">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                  {(signal as { useServerIndicators?: boolean }).useServerIndicators ? 'FT Indicators' : 'Score Breakdown'}
-                </span>
-                <span className="text-sm font-bold text-slate-900">{signal.score}/100</span>
+                <span className="text-xs font-medium text-slate-600">indicators</span>
+                <span className="text-sm font-semibold text-slate-800">{signal.score}/100</span>
               </div>
-              
-              <div className="space-y-3">
+              <p className="text-[11px] text-slate-500 mb-3">Stats for this trade type (not general)</p>
+              <div className="space-y-2">
                 {signal.factors.map((factor) => {
                   const Icon = factor.icon
                   return (
-                    <div key={factor.name} className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Icon className="w-3.5 h-3.5 text-slate-500" />
-                          <span className="text-xs font-semibold text-slate-700">{factor.name}</span>
-                          <span className="text-[10px] text-slate-400">({factor.weight})</span>
-                        </div>
-                        <div className="flex items-center gap-2">
+                    <div key={factor.name} className="flex items-start gap-2 py-1.5 border-b border-slate-50 last:border-0">
+                      <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-xs font-medium text-slate-700">{factor.name}</span>
                           <span className={cn(
-                            "text-xs font-medium",
+                            "text-xs font-medium shrink-0",
                             factor.sentiment === 'positive' && "text-emerald-600",
                             factor.sentiment === 'negative' && "text-red-600",
                             factor.sentiment === 'neutral' && "text-slate-600"
                           )}>
                             {factor.label}
                           </span>
-                          <span className={cn(
-                            "text-xs font-bold w-8 text-right",
-                            factor.value > 0 && "text-emerald-600",
-                            factor.value < 0 && "text-red-600",
-                            factor.value === 0 && "text-slate-500"
-                          )}>
-                            {factor.value > 0 ? '+' : ''}{factor.value.toFixed(0)}
-                          </span>
                         </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{factor.detail}</p>
                       </div>
-                      <p className="text-[11px] text-slate-500 pl-5">{factor.detail}</p>
                     </div>
                   )
                 })}
@@ -1310,9 +1264,7 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
             {/* Footer */}
             <div className="px-4 py-2 bg-slate-50">
               <p className="text-[10px] text-slate-400 text-center">
-                {(signal as { useServerIndicators?: boolean }).useServerIndicators
-                  ? 'PolySignal FT • Conviction + Trader WR + Entry Band + Market Type (FT-learnings Feb 2026)'
-                  : 'PolySignal v2 • Edge (50%) + Conviction (25%) + Skill (15%) + Context (10%)'}
+                PolySignal • conviction, trader WR, entry band, edge, experience (learnings Feb 2026)
               </p>
             </div>
           </div>
