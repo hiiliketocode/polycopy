@@ -24,7 +24,6 @@ export interface TraderCardData {
   timePeriod: TimePeriod
   timePeriodLabel: string
   rank?: number | null
-  rankTotal?: number | null
 }
 
 interface RealizedPnlResponse {
@@ -90,7 +89,6 @@ export function useTraderCardData(walletAddress: string, timePeriod: TimePeriod)
                               timePeriod === '6M' ? '6M' : 'ALL'
         
         const periodRank = realizedPnl.rankings?.[timePeriodKey]?.rank
-        const periodRankTotal = realizedPnl.rankings?.[timePeriodKey]?.total
 
         // Format member since date (first trade date)
         let memberSince: string | undefined
@@ -124,7 +122,6 @@ export function useTraderCardData(walletAddress: string, timePeriod: TimePeriod)
           timePeriod,
           timePeriodLabel,
           rank: periodRank,
-          rankTotal: periodRankTotal,
         })
       } catch (err) {
         console.error('Error fetching trader card data:', err)

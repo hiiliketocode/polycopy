@@ -23,7 +23,6 @@ interface TraderCardProps {
   timePeriodLabel: string
   theme?: CardTheme
   rank?: number | null
-  rankTotal?: number | null
 }
 
 const themeStyles = {
@@ -117,7 +116,6 @@ export function TraderCard({
   timePeriodLabel,
   theme = "cream",
   rank,
-  rankTotal,
 }: TraderCardProps) {
   const isProfit = totalPnL >= 0
   const styles = themeStyles[theme]
@@ -282,7 +280,7 @@ export function TraderCard({
               <StatBox
                 icon={<Trophy className="w-4 h-4" />}
                 label="P&L Rank"
-                value={rank && rankTotal ? `#${rank.toLocaleString()} / ${rankTotal.toLocaleString()}` : 'N/A'}
+                value={rank ? `#${rank.toLocaleString()}` : 'N/A'}
                 highlight={rank !== null && rank !== undefined && rank <= 100}
                 styles={styles}
                 theme={theme}
