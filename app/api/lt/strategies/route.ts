@@ -84,14 +84,14 @@ export async function POST(request: Request) {
             );
         }
 
-        // Create strategy
+        // Create strategy (use resolved wallet: from body or connected Turnkey account)
         const { data: strategy, error: strategyError } = await supabase
             .from('lt_strategies')
             .insert({
                 strategy_id: strategyId,
                 ft_wallet_id,
                 user_id: userId,
-                wallet_address: wallet_address.toLowerCase(),
+                wallet_address: resolvedWallet.toLowerCase(),
                 starting_capital: starting_capital || 1000.00,
                 display_name: display_name || `${ftWallet.display_name} (Live)`,
                 description: description || null,
