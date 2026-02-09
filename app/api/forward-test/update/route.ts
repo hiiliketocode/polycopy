@@ -25,6 +25,12 @@ const CONFIGS = [
   // FT learnings strategies (Feb 2026)
   { config_id: 'LEARNINGS_SWEET_SPOT', model_threshold: 0.55, price_min: 0.20, price_max: 0.40, min_edge: 0.05, use_model: true },
   { config_id: 'LEARNINGS_ML_60', model_threshold: 0.60, price_min: 0.0, price_max: 1.0, min_edge: 0.05, use_model: true },
+  // ML threshold sweep (pure unfiltered ML - find sweet spot)
+  { config_id: 'ML_SWEEP_50', model_threshold: 0.50, price_min: 0.0, price_max: 1.0, min_edge: 0.0, use_model: true },
+  { config_id: 'ML_SWEEP_55', model_threshold: 0.55, price_min: 0.0, price_max: 1.0, min_edge: 0.0, use_model: true },
+  { config_id: 'ML_SWEEP_60', model_threshold: 0.60, price_min: 0.0, price_max: 1.0, min_edge: 0.0, use_model: true },
+  { config_id: 'ML_SWEEP_65', model_threshold: 0.65, price_min: 0.0, price_max: 1.0, min_edge: 0.0, use_model: true },
+  { config_id: 'ML_SWEEP_70', model_threshold: 0.70, price_min: 0.0, price_max: 1.0, min_edge: 0.0, use_model: true },
 ];
 
 export async function POST() {
