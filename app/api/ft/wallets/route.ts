@@ -6,6 +6,8 @@ const ML_MIX_WALLET_IDS = [
   'FT_ML_SHARP_SHOOTER', 'FT_ML_UNDERDOG', 'FT_ML_FAVORITES', 'FT_ML_HIGH_CONV',
   'FT_ML_EDGE', 'FT_ML_MIDRANGE', 'FT_ML_STRICT', 'FT_ML_LOOSE',
   'FT_ML_CONTRARIAN', 'FT_ML_HEAVY_FAV',
+  // ML threshold sweep (pure unfiltered ML - find sweet spot)
+  'FT_ML_SWEEP_50', 'FT_ML_SWEEP_55', 'FT_ML_SWEEP_60', 'FT_ML_SWEEP_65', 'FT_ML_SWEEP_70',
 ];
 
 const ML_MIX_WALLETS = [
@@ -19,6 +21,12 @@ const ML_MIX_WALLETS = [
   { wallet_id: 'FT_ML_LOOSE', config_id: 'ML_LOOSE', display_name: 'ML: Loose (50%)', description: 'ML 50% only, more trades, lower bar', model_threshold: 0.5, price_min: 0, price_max: 1, min_edge: 0, use_model: true, allocation_method: 'KELLY', kelly_fraction: 0.25, min_bet: 0.5, max_bet: 8, min_trader_resolved_count: 10 },
   { wallet_id: 'FT_ML_CONTRARIAN', config_id: 'ML_CONTRARIAN', display_name: 'ML: Contrarian', description: 'ML 55% + 10-40¢ contrarian, 5% edge', model_threshold: 0.55, price_min: 0.1, price_max: 0.4, min_edge: 0.05, use_model: true, allocation_method: 'KELLY', kelly_fraction: 0.3, min_bet: 0.5, max_bet: 12, min_trader_resolved_count: 30 },
   { wallet_id: 'FT_ML_HEAVY_FAV', config_id: 'ML_HEAVY_FAV', display_name: 'ML: Heavy Favorites', description: 'ML 55% + 75-95¢ near-certain, 2% edge', model_threshold: 0.55, price_min: 0.75, price_max: 0.95, min_edge: 0.02, use_model: true, allocation_method: 'KELLY', kelly_fraction: 0.25, min_bet: 0.5, max_bet: 10, min_trader_resolved_count: 30 },
+  // ML threshold sweep (pure unfiltered ML - find sweet spot; conviction-based sizing)
+  { wallet_id: 'FT_ML_SWEEP_50', config_id: 'ML_SWEEP_50', display_name: 'ML Sweep: 50%', description: 'Pure ML 50%+, full price range. Conviction-based sizing.', model_threshold: 0.50, price_min: 0, price_max: 1, min_edge: 0, use_model: true, allocation_method: 'CONVICTION', kelly_fraction: 0.25, min_bet: 0.5, max_bet: 15, min_trader_resolved_count: 10, min_conviction: 0, thesis_tier: 'ML_SWEEP', hypothesis: 'Does a loose ML 50% threshold add or destroy value vs higher gates? Baseline for sweep comparison.' },
+  { wallet_id: 'FT_ML_SWEEP_55', config_id: 'ML_SWEEP_55', display_name: 'ML Sweep: 55%', description: 'Pure ML 55%+, full price range. Conviction-based sizing.', model_threshold: 0.55, price_min: 0, price_max: 1, min_edge: 0, use_model: true, allocation_method: 'CONVICTION', kelly_fraction: 0.25, min_bet: 0.5, max_bet: 15, min_trader_resolved_count: 10, min_conviction: 0, thesis_tier: 'ML_SWEEP', hypothesis: 'FT data: 55-60% ML band had 34.9% WR (worst). Is 55% floor too loose? Compare vs 60/65/70.' },
+  { wallet_id: 'FT_ML_SWEEP_60', config_id: 'ML_SWEEP_60', display_name: 'ML Sweep: 60%', description: 'Pure ML 60%+, full price range. Conviction-based sizing.', model_threshold: 0.60, price_min: 0, price_max: 1, min_edge: 0, use_model: true, allocation_method: 'CONVICTION', kelly_fraction: 0.25, min_bet: 0.5, max_bet: 15, min_trader_resolved_count: 10, min_conviction: 0, thesis_tier: 'ML_SWEEP', hypothesis: 'FT data: 60-65% ML band had 73.5% WR. Is 60% the inflection point where ML adds real value?' },
+  { wallet_id: 'FT_ML_SWEEP_65', config_id: 'ML_SWEEP_65', display_name: 'ML Sweep: 65%', description: 'Pure ML 65%+, full price range. Conviction-based sizing.', model_threshold: 0.65, price_min: 0, price_max: 1, min_edge: 0, use_model: true, allocation_method: 'CONVICTION', kelly_fraction: 0.25, min_bet: 0.5, max_bet: 15, min_trader_resolved_count: 10, min_conviction: 0, thesis_tier: 'ML_SWEEP', hypothesis: 'Fewer trades but higher model confidence. Does 65% improve precision vs 60%?' },
+  { wallet_id: 'FT_ML_SWEEP_70', config_id: 'ML_SWEEP_70', display_name: 'ML Sweep: 70%', description: 'Pure ML 70%+, full price range. Conviction-based sizing.', model_threshold: 0.70, price_min: 0, price_max: 1, min_edge: 0, use_model: true, allocation_method: 'CONVICTION', kelly_fraction: 0.25, min_bet: 0.5, max_bet: 15, min_trader_resolved_count: 10, min_conviction: 0, thesis_tier: 'ML_SWEEP', hypothesis: 'Highest confidence trades only. Does extreme selectivity improve Sharpe or starve the strategy?' },
 ];
 
 /**
