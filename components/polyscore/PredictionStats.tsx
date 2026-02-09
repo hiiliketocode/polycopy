@@ -1082,7 +1082,7 @@ export function PredictionStats({
             <span>Trader insights</span>
             <div className="inline-flex flex-wrap gap-1">
               <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
-                Market type bet type: {[resolvedNiche || stats.trade_profile?.split('_')?.[0] || 'other', resolvedBetStructure || stats.trade_profile?.split('_')?.[1] ?? 'standard'].filter(Boolean).map(s => s?.toString().toLowerCase()).join(' / ')}
+                Market type bet type: {[resolvedNiche || stats.trade_profile?.split('_')?.[0] || 'other', (resolvedBetStructure || stats.trade_profile?.split('_')?.[1]) ?? 'standard'].filter(Boolean).map(s => s?.toString().toLowerCase()).join(' / ')}
               </span>
               <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
                 Price: {(priceBracket || stats.trade_profile?.split('_')?.[2])?.toString().toLowerCase() ?? 'even'}
