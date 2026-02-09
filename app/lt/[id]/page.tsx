@@ -152,16 +152,42 @@ export default function LTStrategyDetailPage() {
   }
 
   if (error && !strategy) {
+    const isNotFound = error.toLowerCase().includes('not found');
+    const ftWalletId = id.startsWith('LT_') ? id.slice(3) : null;
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 p-4 md:p-8">
-        <div className="max-w-2xl mx-auto">
-          <p className="text-red-600">{error}</p>
-          <Link href="/lt">
-            <Button variant="outline" className="mt-4 border-slate-300 text-slate-700">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Live Trading
-            </Button>
-          </Link>
+        <div className="max-w-2xl mx-auto space-y-4">
+          <p className="text-red-600 font-medium">{error}</p>
+          {isNotFound && (
+            <p className="text-slate-600 text-sm">
+              This live strategy may not exist yet in this environment, or it may belong to a different account.
+              {ftWalletId && (
+                <> You can create it from the Forward Test page by opening the <strong>Live</strong> tab and choosing the matching FT wallet, or use the link below.</>
+              )}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Link href="/lt">
+              <Button variant="outline" className="border-slate-300 text-slate-700">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to Live Trading
+              </Button>
+            </Link>
+            {ftWalletId && (
+              <>
+                <Link href={`/lt?createFrom=${encodeURIComponent(ftWalletId)}`}>
+                  <Button className="bg-[#FDB022] text-slate-900 hover:bg-[#FDB022]/90">
+                    Create this live strategy
+                  </Button>
+                </Link>
+                <Link href="/ft">
+                  <Button variant="outline" className="border-slate-300 text-slate-700">
+                    Forward Test (Live tab)
+                  </Button>
+                </Link>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
