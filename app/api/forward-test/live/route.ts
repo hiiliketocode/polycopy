@@ -8,12 +8,20 @@ const bigquery = new BigQuery({
   projectId: PROJECT_ID,
 });
 
-// Config definitions
+// Config definitions - aligned with ft_wallets strategies + FT learnings
 const CONFIGS = [
   { config_id: 'MODEL_50', price_min: 0.0, price_max: 1.0, min_edge: 0.0, min_wr: 0.50, min_trades: 50 },
   { config_id: 'UNDERDOG_M50_E5', price_min: 0.0, price_max: 0.50, min_edge: 0.05, min_wr: 0.50, min_trades: 50 },
   { config_id: 'BALANCED_MODEL50', price_min: 0.30, price_max: 0.70, min_edge: 0.0, min_wr: 0.50, min_trades: 50 },
   { config_id: 'FAVORITES_95ct', price_min: 0.95, price_max: 1.0, min_edge: -999, min_wr: 0.0, min_trades: 0 },
+  { config_id: 'MODEL_ONLY', price_min: 0.0, price_max: 1.0, min_edge: 0.0, min_wr: 0.0, min_trades: 10 },
+  { config_id: 'HIGH_CONVICTION', price_min: 0.0, price_max: 0.50, min_edge: 0.0, min_wr: 0.95, min_trades: 30 },
+  { config_id: 'UNDERDOG_HUNTER', price_min: 0.0, price_max: 0.50, min_edge: 0.05, min_wr: 0.50, min_trades: 30 },
+  { config_id: 'FAVORITE_GRINDER', price_min: 0.50, price_max: 0.90, min_edge: 0.03, min_wr: 0.60, min_trades: 30 },
+  { config_id: 'MODEL_BALANCED', price_min: 0.0, price_max: 1.0, min_edge: 0.05, min_wr: 0.55, min_trades: 30 },
+  { config_id: 'SHARP_SHOOTER', price_min: 0.10, price_max: 0.70, min_edge: 0.10, min_wr: 0.65, min_trades: 50 },
+  { config_id: 'LEARNINGS_SWEET_SPOT', price_min: 0.20, price_max: 0.40, min_edge: 0.05, min_wr: 0.55, min_trades: 30 },
+  { config_id: 'LEARNINGS_ML_60', price_min: 0.0, price_max: 1.0, min_edge: 0.05, min_wr: 0.55, min_trades: 30 },
 ];
 
 export async function GET() {

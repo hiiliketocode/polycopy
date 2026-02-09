@@ -8,40 +8,23 @@ const bigquery = new BigQuery({
   projectId: PROJECT_ID,
 });
 
-// Forward test configurations
+// Forward test configurations - aligned with ft_wallets strategies + FT learnings
 const CONFIGS = [
-  {
-    config_id: 'MODEL_50',
-    model_threshold: 0.50,
-    price_min: 0.0,
-    price_max: 1.0,
-    min_edge: 0.0,
-    use_model: true,
-  },
-  {
-    config_id: 'UNDERDOG_M50_E5',
-    model_threshold: 0.50,
-    price_min: 0.0,
-    price_max: 0.50,
-    min_edge: 0.05,
-    use_model: true,
-  },
-  {
-    config_id: 'BALANCED_MODEL50',
-    model_threshold: 0.50,
-    price_min: 0.30,
-    price_max: 0.70,
-    min_edge: 0.0,
-    use_model: true,
-  },
-  {
-    config_id: 'FAVORITES_95ct',
-    model_threshold: 0.0,
-    price_min: 0.95,
-    price_max: 1.0,
-    min_edge: 0.0,
-    use_model: false, // No model filter - just price
-  },
+  // Original BigQuery configs
+  { config_id: 'MODEL_50', model_threshold: 0.50, price_min: 0.0, price_max: 1.0, min_edge: 0.0, use_model: true },
+  { config_id: 'UNDERDOG_M50_E5', model_threshold: 0.50, price_min: 0.0, price_max: 0.50, min_edge: 0.05, use_model: true },
+  { config_id: 'BALANCED_MODEL50', model_threshold: 0.50, price_min: 0.30, price_max: 0.70, min_edge: 0.0, use_model: true },
+  { config_id: 'FAVORITES_95ct', model_threshold: 0.0, price_min: 0.95, price_max: 1.0, min_edge: 0.0, use_model: false },
+  // FT core strategies (from ft_wallets)
+  { config_id: 'MODEL_ONLY', model_threshold: 0.55, price_min: 0.0, price_max: 1.0, min_edge: 0.0, use_model: true },
+  { config_id: 'HIGH_CONVICTION', model_threshold: 0.0, price_min: 0.0, price_max: 0.50, min_edge: 0.0, use_model: false },
+  { config_id: 'UNDERDOG_HUNTER', model_threshold: 0.50, price_min: 0.0, price_max: 0.50, min_edge: 0.05, use_model: true },
+  { config_id: 'FAVORITE_GRINDER', model_threshold: 0.0, price_min: 0.50, price_max: 0.90, min_edge: 0.03, use_model: false },
+  { config_id: 'MODEL_BALANCED', model_threshold: 0.50, price_min: 0.0, price_max: 1.0, min_edge: 0.05, use_model: true },
+  { config_id: 'SHARP_SHOOTER', model_threshold: 0.55, price_min: 0.10, price_max: 0.70, min_edge: 0.10, use_model: true },
+  // FT learnings strategies (Feb 2026)
+  { config_id: 'LEARNINGS_SWEET_SPOT', model_threshold: 0.55, price_min: 0.20, price_max: 0.40, min_edge: 0.05, use_model: true },
+  { config_id: 'LEARNINGS_ML_60', model_threshold: 0.60, price_min: 0.0, price_max: 1.0, min_edge: 0.05, use_model: true },
 ];
 
 export async function POST() {
