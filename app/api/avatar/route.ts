@@ -28,8 +28,6 @@ export const { GET } = toFacehashHandler({
   colors: ['#FBBF24'],
   // Default to not showing initials (let the face be the focus)
   showInitial: false,
-  // Use subtle 3D intensity for clean look
-  intensity3d: 'subtle',
   // Use solid variant for consistency
   variant: 'solid',
 })
