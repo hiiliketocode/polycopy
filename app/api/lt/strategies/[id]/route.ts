@@ -21,7 +21,7 @@ export async function GET(request: Request, { params }: RouteParams) {
         const { id: strategyId } = await params;
         const supabase = createAdminServiceClient();
 
-        const { data: strategy, error } = await supabase
+        let { data: strategy, error } = await supabase
             .from('lt_strategies')
             .select(`
                 *,
@@ -32,17 +32,36 @@ export async function GET(request: Request, { params }: RouteParams) {
             .eq('user_id', userId)
             .single();
 
+        // Fallback: lookup by ft_wallet_id when id is LT_<ft_wallet_id> (same strategy, ensures page loads)
+        if ((error || !strategy) && strategyId.startsWith('LT_')) {
+            const ftWalletId = strategyId.slice(3);
+            const fallback = await supabase
+                .from('lt_strategies')
+                .select(`
+                    *,
+                    lt_risk_rules (*),
+                    lt_risk_state (*)
+                `)
+                .eq('ft_wallet_id', ftWalletId)
+                .eq('user_id', userId)
+                .maybeSingle();
+            if (fallback.data) {
+                strategy = fallback.data;
+                error = null;
+            }
+        }
+
         if (error || !strategy) {
             return NextResponse.json(
                 { error: 'Strategy not found' },
-                { status: 404 }
+                { status: 404, headers: { 'Cache-Control': 'no-store, max-age=0' } }
             );
         }
 
-        return NextResponse.json({
-            success: true,
-            strategy,
-        });
+        return NextResponse.json(
+            { success: true, strategy },
+            { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+        );
     } catch (error: any) {
         console.error('[LT Strategy] Error:', error);
         return NextResponse.json(
