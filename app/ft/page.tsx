@@ -79,6 +79,7 @@ interface FTWallet {
   min_trader_resolved_count?: number;
   min_conviction?: number;
   market_categories?: string[] | null;
+  wr_source?: string | null;  // 'GLOBAL' | 'PROFILE' - Profile = niche/structure/bracket WR
   start_date: { value: string };
   end_date: { value: string };
   last_sync_time: { value: string } | null;
@@ -791,6 +792,7 @@ export default function ForwardTestWalletsPage() {
                   <CompareSortHeader field="kelly" label="Kelly %" sortField={compareSortField} sortDir={compareSortDir} onSort={handleCompareSort} align="right" />
                   <CompareSortHeader field="min_trades" label="Min Trades" sortField={compareSortField} sortDir={compareSortDir} onSort={handleCompareSort} align="right" />
                   <CompareSortHeader field="min_conviction" label="Min Conv" sortField={compareSortField} sortDir={compareSortDir} onSort={handleCompareSort} align="right" />
+                  <th className="px-3 py-3 font-medium text-muted-foreground whitespace-nowrap">Profile vs Global</th>
                   <th className="px-3 py-3 font-medium text-muted-foreground">Target / Categories</th>
                   <th className="px-3 py-3 text-right font-medium text-muted-foreground">Actions</th>
                 </tr>
@@ -847,6 +849,13 @@ export default function ForwardTestWalletsPage() {
                       </td>
                       <td className="px-3 py-3 text-right text-muted-foreground">
                         {wallet.min_conviction != null && wallet.min_conviction > 0 ? `${wallet.min_conviction}x` : '-'}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {wallet.wr_source === 'PROFILE' ? (
+                          <Badge variant="secondary" className="text-xs">Profile</Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">Global</span>
+                        )}
                       </td>
                       <td className="px-3 py-3 text-xs text-muted-foreground max-w-[120px] truncate" title={[targetStr, catsStr].filter(Boolean).join(' | ') || undefined}>
                         {[targetStr, catsStr].filter(Boolean).join(' • ') || '-'}

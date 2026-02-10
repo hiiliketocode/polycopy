@@ -38,7 +38,7 @@ type ExtendedFilters = {
   target_trader?: string;         // Specific trader address to copy (lowercase)
   target_traders?: string[];      // List of trader addresses (e.g. top niche traders from trader_profile_stats)
   target_trader_name?: string;    // Display name for the trader
-  trade_live_only?: boolean;      // Only take trades when current time >= market game_start_time (or start_time)
+  trade_live_only?: boolean;      // Only take trades when current time >= market game_start_time (sports events only; no fallback to start_time)
 };
 
 type FTWallet = {
@@ -50,7 +50,7 @@ type FTWallet = {
   use_model: boolean;
   bet_size: number;
   bet_allocation_weight: number;  // Legacy multiplier for FIXED method
-    allocation_method: 'FIXED' | 'KELLY' | 'EDGE_SCALED' | 'TIERED' | 'CONFIDENCE' | 'CONVICTION' | 'ML_SCALED';
+    allocation_method: 'FIXED' | 'KELLY' | 'EDGE_SCALED' | 'TIERED' | 'CONFIDENCE' | 'CONVICTION' | 'ML_SCALED' | 'WHALE';
   kelly_fraction: number;
   min_bet: number;
   max_bet: number;
@@ -64,6 +64,7 @@ type FTWallet = {
   min_conviction: number;  // Minimum conviction multiplier filter (0 = no filter)
   detailed_description?: string;  // JSON string with extended filters
   market_categories?: string[] | null;  // Column from migration (fallback when not in detailed_description)
+  wr_source?: string | null;  // 'GLOBAL' | 'PROFILE' - Profile = use trader_profile_stats (niche/structure/bracket)
 };
 
 /**
@@ -85,6 +86,42 @@ function parseExtendedFilters(wallet: FTWallet): ExtendedFilters {
   } catch {
     return {};
   }
+}
+
+/** Derive price bracket for profile stats: LOW < 0.30, MID 0.30-0.70, HIGH > 0.70 */
+function priceToBracket(price: number): 'LOW' | 'MID' | 'HIGH' {
+  if (price < 0.30) return 'LOW';
+  if (price <= 0.70) return 'MID';
+  return 'HIGH';
+}
+
+/** Get profile WR and trade count for a trade; fallback to global stats if no match */
+function getProfileWinRate(
+  profiles: Array<{ final_niche: string; structure: string; bracket: string; winRate: number; tradeCount: number }>,
+  niche: string,
+  structure: string,
+  bracket: string,
+  globalFallback: { winRate: number; tradeCount: number }
+): { winRate: number; tradeCount: number } {
+  if (!profiles.length || !niche) return globalFallback;
+  const n = niche.toLowerCase();
+  const s = structure.toUpperCase() || 'STANDARD';
+  const b = bracket.toUpperCase() || 'MID';
+  // 1. Exact match (niche, structure, bracket)
+  let matches = profiles.filter(p => p.final_niche === n && p.structure === s && p.bracket === b);
+  if (matches.length === 0) {
+    // 2. Match (niche, structure) - aggregate brackets
+    matches = profiles.filter(p => p.final_niche === n && p.structure === s);
+  }
+  if (matches.length === 0) {
+    // 3. Match niche only - aggregate structure+bracket
+    matches = profiles.filter(p => p.final_niche === n || n.includes(p.final_niche) || p.final_niche.includes(n));
+  }
+  if (matches.length === 0) return globalFallback;
+  const totalTrades = matches.reduce((sum, p) => sum + p.tradeCount, 0);
+  if (totalTrades === 0) return globalFallback;
+  const winWeighted = matches.reduce((sum, p) => sum + p.winRate * p.tradeCount, 0);
+  return { winRate: winWeighted / totalTrades, tradeCount: totalTrades };
 }
 
 /**
@@ -177,6 +214,19 @@ function calculateBetSize(
       const ml = modelProbability ?? 0.55;
       const mlMult = Math.min(Math.max(0.5 + (ml - 0.5), 0.5), 2.0); // 0.5x to 2x
       betSize = baseBet * mlMult;
+      break;
+    }
+
+    case 'WHALE': {
+      // Multi-signal: ML + conviction + WR + edge. Whale trades = high conviction + high WR + high ML.
+      const baseBet = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
+      const ml = modelProbability ?? 0.55;
+      const mlScore = Math.min(Math.max((ml - 0.5) / 0.5, 0), 1);
+      const wrScore = Math.min(Math.max((traderWinRate - 0.50) / 0.30, 0), 1);
+      const convScore = Math.min(Math.max((conviction - 0.5) / 2.5, 0), 1);
+      const edgeScore = Math.min(edge / 0.20, 1);
+      const composite = 0.35 * mlScore + 0.30 * convScore + 0.25 * wrScore + 0.10 * edgeScore;
+      betSize = baseBet * (0.5 + composite); // 0.5x to 2x
       break;
     }
     
@@ -320,16 +370,23 @@ export async function POST(request: Request) {
     const traderWallets = topTraders.map(t => t.wallet.toLowerCase());
     
     // 3. Get trader stats from our database (win rate, trade count, avg trade size)
-    const { data: traderStats, error: statsError } = await supabase
-      .from('trader_global_stats')
-      .select('wallet_address, l_win_rate, d30_win_rate, l_count, d30_count, l_avg_trade_size_usd, d30_avg_trade_size_usd')
-      .in('wallet_address', traderWallets);
+    const hasProfileWallets = activeWallets.some((w: FTWallet) => w.wr_source === 'PROFILE');
+    
+    const [statsRes, profileStatsRes] = await Promise.all([
+      supabase.from('trader_global_stats')
+        .select('wallet_address, l_win_rate, d30_win_rate, l_count, d30_count, l_avg_trade_size_usd, d30_avg_trade_size_usd')
+        .in('wallet_address', traderWallets),
+      hasProfileWallets
+        ? supabase.from('trader_profile_stats')
+            .select('wallet_address, final_niche, structure, bracket, l_win_rate, d30_win_rate, d30_count, l_count')
+            .in('wallet_address', traderWallets)
+        : Promise.resolve({ data: [] as any[], error: null })
+    ]);
     
     interface TraderStats { winRate: number; tradeCount: number; avgTradeSize: number }
     const statsMap = new Map<string, TraderStats>();
-    if (!statsError && traderStats) {
-      for (const stat of traderStats) {
-        // Use 30-day stats first, then lifetime as fallback
+    if (!statsRes.error && statsRes.data) {
+      for (const stat of statsRes.data) {
         const winRate = stat.d30_win_rate ?? stat.l_win_rate ?? 0.5;
         const tradeCount = stat.d30_count ?? stat.l_count ?? 0;
         const avgTradeSize = stat.d30_avg_trade_size_usd ?? stat.l_avg_trade_size_usd ?? 0;
@@ -339,6 +396,26 @@ export async function POST(request: Request) {
           avgTradeSize: typeof avgTradeSize === 'number' ? avgTradeSize : parseFloat(avgTradeSize) || 0
         });
       }
+    }
+    
+    const profilesByWallet = new Map<string, Array<{ final_niche: string; structure: string; bracket: string; winRate: number; tradeCount: number }>>();
+    if (hasProfileWallets && !profileStatsRes.error && profileStatsRes.data) {
+      for (const row of profileStatsRes.data) {
+        const w = (row.wallet_address || '').toLowerCase();
+        if (!w) continue;
+        const wr = row.d30_win_rate ?? row.l_win_rate ?? 0.5;
+        const tc = row.d30_count ?? row.l_count ?? 0;
+        const list = profilesByWallet.get(w) ?? [];
+        list.push({
+          final_niche: (row.final_niche || 'OTHER').toLowerCase(),
+          structure: (row.structure || 'STANDARD').toUpperCase(),
+          bracket: (row.bracket || 'MID').toUpperCase(),
+          winRate: typeof wr === 'number' ? wr : parseFloat(wr) || 0.5,
+          tradeCount: typeof tc === 'number' ? tc : parseInt(tc) || 0
+        });
+        profilesByWallet.set(w, list);
+      }
+      console.log(`[ft/sync] Got profile stats for ${profilesByWallet.size} traders (${profileStatsRes.data.length} profile rows)`);
     }
     
     console.log(`[ft/sync] Got stats for ${statsMap.size} traders`);
@@ -440,7 +517,7 @@ export async function POST(request: Request) {
     
     const { data: markets, error: marketsError } = await supabase
       .from('markets')
-      .select('condition_id, end_time, closed, resolved_outcome, winning_side, title, slug, outcome_prices, outcomes, tags, start_time, game_start_time')
+      .select('condition_id, end_time, closed, resolved_outcome, winning_side, title, slug, outcome_prices, outcomes, tags, start_time, game_start_time, market_subtype, bet_structure')
       .in('condition_id', conditionIds);
     
     type MarketInfo = {
@@ -455,6 +532,8 @@ export async function POST(request: Request) {
       end_time?: string;
       start_time?: string;
       game_start_time?: string | null;
+      market_subtype?: string | null;
+      bet_structure?: string | null;
     };
     
     const marketMap = new Map<string, MarketInfo>();
@@ -476,7 +555,9 @@ export async function POST(request: Request) {
           tags: market.tags,
           end_time: market.end_time,
           start_time: market.start_time,
-          game_start_time: market.game_start_time ?? null
+          game_start_time: market.game_start_time ?? null,
+          market_subtype: market.market_subtype ?? null,
+          bet_structure: market.bet_structure ?? null
         });
       }
     }
@@ -504,7 +585,9 @@ export async function POST(request: Request) {
                 const prices = m.outcomePrices.map((p: any) => parseFloat(p));
                 resolved = resolved || (prices.some((p: number) => p > 0.9) ?? false);
               }
-              const gameStart = m.gameStartTime || m.game_start_time || m.startDate || m.start_date;
+              // game_start_time = actual event/game start (sports only). Do NOT use startDate/start_date
+              // — that's market listing time; politics/crypto would wrongly get "live" status.
+              const gameStartTime = m.gameStartTime || m.game_start_time || null;
               marketMap.set(cid, {
                 endTime,
                 closed,
@@ -516,7 +599,7 @@ export async function POST(request: Request) {
                 tags: m.tags || [],
                 end_time: m.endDate || m.end_date,
                 start_time: m.startDate || m.start_date,
-                game_start_time: gameStart ?? null
+                game_start_time: gameStartTime ?? null
               });
             }
           }
@@ -610,6 +693,13 @@ export async function POST(request: Request) {
         // Target trader filter - record skipped if not from allowed traders
         const targetTrader = extFilters.target_trader;
         const targetTraders = extFilters.target_traders;
+        // TRADER_* wallets: fail closed — must have target_trader; otherwise skip all trades
+        if (wallet.wallet_id.startsWith('TRADER_') && !targetTrader && (!targetTraders || targetTraders.length === 0)) {
+          await recordSeen(sourceTradeId, 'skipped', 'not_target_trader');
+          reasons['not_target_trader'] = (reasons['not_target_trader'] || 0) + 1;
+          results[wallet.wallet_id].skipped++;
+          continue;
+        }
         if (targetTrader || (targetTraders && targetTraders.length > 0)) {
           const traderWallet = (trade.traderWallet || '').toLowerCase();
           const allowed = targetTrader
@@ -645,9 +735,11 @@ export async function POST(request: Request) {
           continue;
         }
 
-        // trade_live_only: only take trades when current time >= game/event start
+        // trade_live_only: only take trades when current time >= actual game/event start.
+        // Use ONLY game_start_time (sports events). Do NOT fall back to start_time — that's market
+        // listing time; politics/crypto markets would incorrectly pass.
         if (extFilters.trade_live_only) {
-          const gameStartIso = market.game_start_time || market.start_time;
+          const gameStartIso = market.game_start_time ?? null;
           if (!gameStartIso) {
             await recordSeen(sourceTradeId, 'skipped', 'no_game_start_time');
             reasons['no_game_start_time'] = (reasons['no_game_start_time'] || 0) + 1;
@@ -665,7 +757,18 @@ export async function POST(request: Request) {
 
         const price = Number(trade.price || 0);
         const priceWithSlippage = Math.min(0.9999, price * (1 + FT_SLIPPAGE_PCT));
-        const traderWinRate = trade.traderWinRate;
+        const globalStats = statsMap.get((trade.traderWallet || '').toLowerCase()) ?? { winRate: 0.5, tradeCount: 0, avgTradeSize: 0 };
+        let traderWinRate = trade.traderWinRate;
+        let traderTradeCount = trade.traderTradeCount;
+        if (wallet.wr_source === 'PROFILE' && profilesByWallet.size > 0) {
+          const niche = (market.market_subtype || '').trim() || 'OTHER';
+          const structure = (market.bet_structure || 'STANDARD').toUpperCase();
+          const bracket = priceToBracket(price);
+          const profiles = profilesByWallet.get((trade.traderWallet || '').toLowerCase()) ?? [];
+          const profileRes = getProfileWinRate(profiles, niche, structure, bracket, { winRate: globalStats.winRate, tradeCount: globalStats.tradeCount });
+          traderWinRate = profileRes.winRate;
+          traderTradeCount = profileRes.tradeCount;
+        }
         const edge = traderWinRate - priceWithSlippage; // Edge at our execution price (after slippage)
         
         if (price < wallet.price_min || price > wallet.price_max) {
@@ -686,7 +789,7 @@ export async function POST(request: Request) {
           results[wallet.wallet_id].skipped++;
           continue;
         }
-        if (trade.traderTradeCount < (wallet.min_trader_resolved_count || 30)) {
+        if (traderTradeCount < (wallet.min_trader_resolved_count || 30)) {
           await recordSeen(sourceTradeId, 'skipped', 'low_trade_count');
           reasons['low_trade_count'] = (reasons['low_trade_count'] || 0) + 1;
           results[wallet.wallet_id].skipped++;
@@ -723,9 +826,12 @@ export async function POST(request: Request) {
           ? extFilters.market_categories
           : (wallet.market_categories?.length ? wallet.market_categories : null);
         if (marketCats && marketCats.length > 0) {
-          const titleLower = (trade.title || '').toLowerCase();
+          const titleLower = ((trade.title || market.title || '').toString()).toLowerCase();
+          const tagsArr = Array.isArray(market.tags) ? market.tags : (typeof market.tags === 'object' && market.tags !== null ? Object.values(market.tags) : []);
+          const tagsStr = tagsArr.map((t: unknown) => String(t || '')).join(' ').toLowerCase();
+          const searchable = `${titleLower} ${tagsStr}`;
           const matchesCategory = marketCats.some(cat =>
-            titleLower.includes((cat || '').toLowerCase())
+            searchable.includes((cat || '').toLowerCase())
           );
           if (!matchesCategory) {
             await recordSeen(sourceTradeId, 'skipped', 'wrong_category');

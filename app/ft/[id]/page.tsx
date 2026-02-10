@@ -68,6 +68,7 @@ interface WalletData {
   is_active: boolean;
   hypothesis?: string | null;
   thesis_tier?: string | null;
+  wr_source?: string | null;  // 'GLOBAL' | 'PROFILE'
 }
 
 interface Stats {
@@ -109,6 +110,13 @@ interface Position {
   market_end_time: { value: string };
   order_time: { value: string } | null;
   minutes_to_resolution: number;
+}
+
+/** Format price as cents; show "<1¢" for sub-1¢ prices (can never be zero) */
+function formatPriceCents(p: number | null | undefined, decimals = 0): string {
+  const n = p ?? 0;
+  if (n < 0.01) return '<1¢';
+  return `${(n * 100).toFixed(decimals)}¢`;
 }
 
 interface Trade {
@@ -338,7 +346,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
   const [tradesSortField, setTradesSortField] = useState<string>('order_time');
   const [tradesSortDir, setTradesSortDir] = useState<'asc' | 'desc'>('desc');
   const [autoSyncActive, setAutoSyncActive] = useState(true);
-  const [hasLiveStrategy, setHasLiveStrategy] = useState<boolean | null>(null);
 
   const fetchWalletData = useCallback(async (silent = false) => {
     try {
@@ -546,20 +553,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
           <p className="text-muted-foreground mt-1">{wallet.description}</p>
         </div>
         <div className="flex items-center gap-2">
-          {hasLiveStrategy === true && (
-            <Link href={`/lt/LT_${id}`}>
-              <Button variant="outline" size="sm" className="border-emerald-500/50 text-emerald-600 hover:bg-emerald-500/10">
-                View Live strategy
-              </Button>
-            </Link>
-          )}
-          {hasLiveStrategy === false && (
-            <Link href={`/lt?createFrom=${id}`}>
-              <Button size="sm" className="bg-[#FDB022] text-slate-900 hover:bg-[#FDB022]/90">
-                Create Live from this FT
-              </Button>
-            </Link>
-          )}
           <div className="flex items-center gap-2 mr-4">
             <div className={`w-2 h-2 rounded-full ${autoSyncActive ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
             <span className="text-xs text-muted-foreground">
@@ -776,6 +769,11 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
               Min {wallet.min_trader_resolved_count}+ trades
             </Badge>
           )}
+          {wallet.wr_source === 'PROFILE' && (
+            <Badge variant="outline" className="border-amber-500/50 text-amber-600">
+              Profile WR (niche/structure/bracket)
+            </Badge>
+          )}
           <Badge variant={wallet.is_active ? 'default' : 'secondary'}>
             {wallet.is_active ? 'Active' : 'Paused'}
           </Badge>
@@ -892,7 +890,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                             ) : <span className="text-muted-foreground text-xs">-</span>}
                           </TableCell>
                           <TableCell className="text-right font-mono text-xs">
-                            {((pos.entry_price || 0) * 100).toFixed(0)}¢
+                            {formatPriceCents(pos.entry_price)}
                           </TableCell>
                           <TableCell className="text-right">
                             {pos.model_probability != null && typeof pos.model_probability === 'number' ? (
@@ -918,7 +916,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                                 }
                                 title={awaitingResolution ? 'Last price; awaiting Polymarket resolution' : undefined}
                               >
-                                {(price * 100).toFixed(0)}¢
+                                {formatPriceCents(price)}
                               </span>
                             ) : (
                               <span className="text-muted-foreground">-</span>
@@ -1019,7 +1017,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                           {trade.winning_label}
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          {(trade.entry_price * 100).toFixed(1)}¢
+                          {formatPriceCents(trade.entry_price, 1)}
                         </TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(trade.size)}
