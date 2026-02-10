@@ -95,7 +95,7 @@ export async function POST(request: Request) {
                 starting_capital: starting_capital || 1000.00,
                 display_name: display_name || `${ftWallet.display_name} (Live)`,
                 description: description || null,
-                slippage_tolerance_pct: slippage_tolerance_pct || 0.5,
+                slippage_tolerance_pct: slippage_tolerance_pct ?? 3,
                 order_type: order_type || 'GTC',
                 max_position_size_usd: max_position_size_usd || null,
                 max_total_exposure_usd: max_total_exposure_usd || null,

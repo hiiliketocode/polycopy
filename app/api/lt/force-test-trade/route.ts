@@ -251,6 +251,7 @@ export async function POST(request: Request) {
                     outcome: 'OPEN',
                     ft_entry_price: Number(lastFtOrder.entry_price) || limitPrice,
                     ft_size: ftSizeUsd,
+                    is_force_test: true,
                 })
                 .select('lt_order_id')
                 .single();

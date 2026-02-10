@@ -6,9 +6,10 @@ import { useParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Save, Wallet, ListOrdered, BarChart3, RefreshCw, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Save, Wallet, ListOrdered, BarChart3, RefreshCw, AlertTriangle, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface LTStrategyDetail {
   strategy_id: string;
@@ -19,6 +20,7 @@ interface LTStrategyDetail {
   is_paused: boolean;
   launched_at: string | null;
   starting_capital: number;
+  slippage_tolerance_pct: number | null;
   wallet_address: string;
   last_sync_time: string | null;
   health_status: string;
@@ -28,6 +30,8 @@ interface LTStrategyDetail {
 
 interface LTOrder {
   lt_order_id: string;
+  order_id?: string | null;
+  polymarket_order_id?: string | null;
   market_title: string | null;
   market_slug: string | null;
   token_label: string | null;
@@ -49,6 +53,7 @@ interface LTOrder {
   performance_diff_pct: number | null;
   order_placed_at: string;
   resolved_at: string | null;
+  is_force_test?: boolean;
 }
 
 interface OrderStats {
@@ -88,10 +93,12 @@ export default function LTStrategyDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [startingCapital, setStartingCapital] = useState('');
+  const [slippagePct, setSlippagePct] = useState('3');
   const [isActive, setIsActive] = useState(false);
   const [activeTab, setActiveTab] = useState<'pending' | 'open' | 'closed' | 'failed' | 'settings'>('pending');
   const [sortField, setSortField] = useState<OrderSortField>('time');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [clobStatus, setClobStatus] = useState<{ orderId: string; marketTitle: string; loading: boolean; data?: any; error?: string } | null>(null);
 
   const fetchStrategy = useCallback(async () => {
     if (!id) return;
@@ -104,6 +111,7 @@ export default function LTStrategyDetailPage() {
       setStrategy(data.strategy);
       setDisplayName(data.strategy.display_name || '');
       setStartingCapital(String(data.strategy.starting_capital ?? ''));
+      setSlippagePct(String(data.strategy.slippage_tolerance_pct ?? 3));
       setIsActive(!!data.strategy.is_active);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load');
@@ -146,6 +154,7 @@ export default function LTStrategyDetailPage() {
         body: JSON.stringify({
           display_name: displayName || undefined,
           starting_capital: startingCapital ? parseFloat(startingCapital) : undefined,
+          slippage_tolerance_pct: slippagePct ? parseFloat(slippagePct) : undefined,
           is_active: isActive,
         }),
       });
@@ -168,6 +177,23 @@ export default function LTStrategyDetailPage() {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
   };
+
+  const handleCheckClobStatus = useCallback(async (o: LTOrder) => {
+    const orderId = o.polymarket_order_id || o.order_id;
+    if (!orderId) return;
+    setClobStatus({ orderId, marketTitle: o.market_title || 'Order', loading: true });
+    try {
+      const res = await fetch(`/api/polymarket/orders/${encodeURIComponent(orderId)}/clob-status`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) {
+        setClobStatus(prev => prev ? { ...prev, loading: false, error: data.error || data.details || res.statusText } : null);
+        return;
+      }
+      setClobStatus(prev => prev ? { ...prev, loading: false, data } : null);
+    } catch (e) {
+      setClobStatus(prev => prev ? { ...prev, loading: false, error: e instanceof Error ? e.message : 'Failed to fetch' } : null);
+    }
+  }, []);
 
   const sortOrders = useCallback((orders: LTOrder[]) => {
     return [...orders].sort((a, b) => {
@@ -235,10 +261,17 @@ export default function LTStrategyDetailPage() {
     ? (((risk?.current_equity ?? strategy.starting_capital) - strategy.starting_capital) / strategy.starting_capital) * 100
     : 0;
 
-  const OrderRow = ({ o, showOutcome }: { o: LTOrder; showOutcome: boolean }) => (
+  const OrderRow = ({ o, showOutcome, showSource, showCheckStatus, onCheckStatus }: { o: LTOrder; showOutcome: boolean; showSource?: boolean; showCheckStatus?: boolean; onCheckStatus?: (o: LTOrder) => void }) => (
     <TableRow>
       <TableCell className="font-medium max-w-[220px] truncate" title={o.market_title || ''}>{o.market_title || o.market_slug || '-'}</TableCell>
       <TableCell>{o.token_label || '-'}</TableCell>
+      {showSource && (
+        <TableCell>
+          <Badge variant={o.is_force_test ? 'secondary' : 'default'} className={o.is_force_test ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}>
+            {o.is_force_test ? 'Forced' : 'Automatic'}
+          </Badge>
+        </TableCell>
+      )}
       <TableCell className="text-right">{o.executed_size != null ? formatUsd(Number(o.executed_size)) : o.signal_size_usd != null ? formatUsd(Number(o.signal_size_usd)) : '-'}</TableCell>
       <TableCell className="text-right">{formatPrice(o.executed_price ?? o.signal_price)}</TableCell>
       <TableCell className="text-right text-muted-foreground">{o.slippage_pct != null ? `${(Number(o.slippage_pct) * 100).toFixed(2)}%` : '-'}</TableCell>
@@ -247,6 +280,13 @@ export default function LTStrategyDetailPage() {
         <TableCell className={`text-right font-medium ${o.pnl != null && Number(o.pnl) >= 0 ? 'text-green-600' : o.pnl != null ? 'text-red-600' : ''}`}>
           {o.outcome === 'WON' ? 'Won' : o.outcome === 'LOST' ? 'Lost' : o.outcome || '-'}
           {o.pnl != null && ` (${formatUsd(Number(o.pnl))})`}
+        </TableCell>
+      )}
+      {showCheckStatus && (o.polymarket_order_id || o.order_id) && (
+        <TableCell>
+          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => onCheckStatus?.(o)}>
+            <ExternalLink className="h-3 w-3 mr-1" /> Check status
+          </Button>
         </TableCell>
       )}
       <TableCell className="text-muted-foreground text-xs">{formatTime(o.order_placed_at)}</TableCell>
@@ -339,12 +379,14 @@ export default function LTStrategyDetailPage() {
                     <TableHeader><TableRow>
                       <SortTH field="market" label="Market" />
                       <TableHead>Outcome</TableHead>
+                      <TableHead>Source</TableHead>
                       <SortTH field="size" label="Size" align="right" />
                       <SortTH field="price" label="Price" align="right" />
                       <SortTH field="slippage" label="Slippage" align="right" />
+                      <TableHead>CLOB</TableHead>
                       <SortTH field="time" label="Placed" />
                     </TableRow></TableHeader>
-                    <TableBody>{sortedPending.map((o) => <OrderRow key={o.lt_order_id} o={o} showOutcome={false} />)}</TableBody>
+                    <TableBody>{sortedPending.map((o) => <OrderRow key={o.lt_order_id} o={o} showOutcome={false} showSource showCheckStatus onCheckStatus={handleCheckClobStatus} />)}</TableBody>
                   </Table>
                 </div>
               )}
@@ -367,13 +409,15 @@ export default function LTStrategyDetailPage() {
                     <TableHeader><TableRow>
                       <SortTH field="market" label="Market" />
                       <TableHead>Outcome</TableHead>
+                      <TableHead>Source</TableHead>
                       <SortTH field="size" label="Size" align="right" />
                       <SortTH field="price" label="Price" align="right" />
                       <SortTH field="slippage" label="Slippage" align="right" />
                       <SortTH field="fill_rate" label="Fill" align="right" />
+                      <TableHead>CLOB</TableHead>
                       <SortTH field="time" label="Placed" />
                     </TableRow></TableHeader>
-                    <TableBody>{sortedOpen.map((o) => <OrderRow key={o.lt_order_id} o={o} showOutcome={false} />)}</TableBody>
+                    <TableBody>{sortedOpen.map((o) => <OrderRow key={o.lt_order_id} o={o} showOutcome={false} showSource showCheckStatus onCheckStatus={handleCheckClobStatus} />)}</TableBody>
                   </Table>
                 </div>
               )}
@@ -396,14 +440,16 @@ export default function LTStrategyDetailPage() {
                     <TableHeader><TableRow>
                       <SortTH field="market" label="Market" />
                       <TableHead>Outcome</TableHead>
+                      <TableHead>Source</TableHead>
                       <SortTH field="size" label="Size" align="right" />
                       <SortTH field="price" label="Price" align="right" />
                       <SortTH field="slippage" label="Slippage" align="right" />
                       <SortTH field="fill_rate" label="Fill" align="right" />
                       <SortTH field="pnl" label="Result" align="right" />
+                      <TableHead>CLOB</TableHead>
                       <SortTH field="time" label="Placed" />
                     </TableRow></TableHeader>
-                    <TableBody>{sortedClosed.map((o) => <OrderRow key={o.lt_order_id} o={o} showOutcome={true} />)}</TableBody>
+                    <TableBody>{sortedClosed.map((o) => <OrderRow key={o.lt_order_id} o={o} showOutcome={true} showSource showCheckStatus onCheckStatus={handleCheckClobStatus} />)}</TableBody>
                   </Table>
                 </div>
               )}
@@ -428,10 +474,12 @@ export default function LTStrategyDetailPage() {
                     <TableHeader><TableRow>
                       <TableHead>Market</TableHead>
                       <TableHead>Outcome</TableHead>
+                      <TableHead>Source</TableHead>
                       <TableHead className="text-right">Signal Size</TableHead>
                       <TableHead className="text-right">Signal Price</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Reason</TableHead>
+                      <TableHead>CLOB</TableHead>
                       <TableHead>Placed</TableHead>
                     </TableRow></TableHeader>
                     <TableBody>
@@ -439,10 +487,22 @@ export default function LTStrategyDetailPage() {
                         <TableRow key={o.lt_order_id}>
                           <TableCell className="font-medium max-w-[220px] truncate" title={o.market_title || ''}>{o.market_title || '-'}</TableCell>
                           <TableCell>{o.token_label || '-'}</TableCell>
+                          <TableCell>
+                            <Badge variant={o.is_force_test ? 'secondary' : 'default'} className={o.is_force_test ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}>
+                              {o.is_force_test ? 'Forced' : 'Automatic'}
+                            </Badge>
+                          </TableCell>
                           <TableCell className="text-right">{o.signal_size_usd != null ? formatUsd(Number(o.signal_size_usd)) : '-'}</TableCell>
                           <TableCell className="text-right">{formatPrice(o.signal_price)}</TableCell>
                           <TableCell className="text-red-600">{o.status}</TableCell>
                           <TableCell className="text-muted-foreground text-xs max-w-[200px] truncate" title={o.rejection_reason || ''}>{o.rejection_reason || '-'}</TableCell>
+                          <TableCell>
+                            {(o.polymarket_order_id || o.order_id) && (
+                              <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => handleCheckClobStatus(o)}>
+                                <ExternalLink className="h-3 w-3 mr-1" /> Check status
+                              </Button>
+                            )}
+                          </TableCell>
                           <TableCell className="text-muted-foreground text-xs">{formatTime(o.order_placed_at)}</TableCell>
                         </TableRow>
                       ))}
@@ -472,6 +532,12 @@ export default function LTStrategyDetailPage() {
                 <input type="number" value={startingCapital} onChange={(e) => setStartingCapital(e.target.value)}
                   className="w-full border border-input bg-background rounded-md px-3 py-2 text-sm w-32" min={0} step={100} />
               </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Slippage tolerance (%)</label>
+                <input type="number" value={slippagePct} onChange={(e) => setSlippagePct(e.target.value)}
+                  className="w-full border border-input bg-background rounded-md px-3 py-2 text-sm w-24" min={0} max={100} step={0.5} />
+                <p className="text-xs text-muted-foreground mt-0.5">Default 3%. Higher values can improve fill rate.</p>
+              </div>
               <div className="flex items-center gap-2">
                 <input type="checkbox" id="is_active" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="rounded border-input" />
                 <label htmlFor="is_active" className="text-sm">Strategy active (execution will run when not paused)</label>
@@ -494,6 +560,44 @@ export default function LTStrategyDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* CLOB status dialog */}
+      <Dialog open={!!clobStatus} onOpenChange={(open) => !open && setClobStatus(null)}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Polymarket CLOB status</DialogTitle>
+            {clobStatus && <p className="text-sm text-muted-foreground truncate" title={clobStatus.marketTitle}>{clobStatus.marketTitle}</p>}
+          </DialogHeader>
+          {clobStatus && (
+            <div className="space-y-3 text-sm">
+              {clobStatus.loading && <p className="text-muted-foreground">Loading…</p>}
+              {clobStatus.error && <p className="text-red-600">{clobStatus.error}</p>}
+              {!clobStatus.loading && clobStatus.data && (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <span className="text-muted-foreground">Status</span>
+                    <span className="font-medium">{String(clobStatus.data.status ?? clobStatus.data.raw?.status ?? '—').toUpperCase()}</span>
+                    <span className="text-muted-foreground">Size matched</span>
+                    <span>{clobStatus.data.size_matched ?? clobStatus.data.filledSize ?? clobStatus.data.raw?.size_matched ?? '—'}</span>
+                    <span className="text-muted-foreground">Filled size</span>
+                    <span>{clobStatus.data.filledSize ?? clobStatus.data.raw?.size_matched ?? '—'}</span>
+                    <span className="text-muted-foreground">Remaining</span>
+                    <span>{clobStatus.data.remainingSize ?? clobStatus.data.raw?.remaining_size ?? '—'}</span>
+                  </div>
+                  {clobStatus.data.raw && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-muted-foreground">Raw JSON from CLOB</summary>
+                      <pre className="mt-2 p-2 bg-muted rounded text-xs overflow-x-auto max-h-48 overflow-y-auto">
+                        {JSON.stringify(clobStatus.data.raw, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

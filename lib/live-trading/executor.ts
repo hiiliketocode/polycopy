@@ -151,9 +151,12 @@ export async function executeTrade(
         };
     }
 
-    // Calculate order size
+    // Calculate order size and limit price with slippage (BUY: allow paying up to price * (1 + slippage))
     const sizeContracts = betSize / price;
+    const slippagePct = Number(strategy.slippage_tolerance_pct ?? 3) || 3;
+    const priceWithSlippageForLimit = Math.min(0.9999, price * (1 + slippagePct / 100));
     const roundedPrice = roundDownToStep(price, 0.01);
+    const roundedPriceWithSlippage = roundDownToStep(priceWithSlippageForLimit, 0.01);
     const roundedSize = roundDownToStep(sizeContracts, 0.01);
 
     const orderType = (strategy.order_type || 'GTC') as 'GTC' | 'FOK' | 'FAK' | 'IOC';
@@ -164,7 +167,7 @@ export async function executeTrade(
         supabase,
         userId: strategy.user_id,
         tokenId,
-        price: roundedPrice,
+        price: roundedPriceWithSlippage,
         size: roundedSize,
         side: 'BUY',
         orderType,
@@ -187,7 +190,7 @@ export async function executeTrade(
 
     const orderId = result.orderId ?? '';
     const executionLatency = Date.now() - signalTime;
-    const executedPrice = roundedPrice;
+    const executedPrice = roundedPriceWithSlippage; // limit price we sent to CLOB
     const executedSize = roundedSize;
     const slippage = price > 0 ? (executedPrice - price) / price : 0;
 
@@ -244,6 +247,7 @@ export async function executeTrade(
             outcome: 'OPEN',
             ft_entry_price: priceWithSlippage,
             ft_size: betSize,
+            is_force_test: false,
         })
         .select('lt_order_id')
         .single();

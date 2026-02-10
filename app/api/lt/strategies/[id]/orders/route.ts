@@ -35,6 +35,7 @@ export async function GET(request: Request, { params }: RouteParams) {
                 lt_order_id,
                 ft_order_id,
                 order_id,
+                polymarket_order_id,
                 source_trade_id,
                 trader_address,
                 condition_id,
@@ -64,7 +65,8 @@ export async function GET(request: Request, { params }: RouteParams) {
                 first_fill_at,
                 fully_filled_at,
                 resolved_at,
-                created_at
+                created_at,
+                is_force_test
             `)
             .eq('strategy_id', strategyId)
             .order('order_placed_at', { ascending: false })
