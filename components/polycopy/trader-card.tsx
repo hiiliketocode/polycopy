@@ -113,6 +113,7 @@ export function TraderCard({
   roi,
   winRate,
   volume,
+  avgReturn,
   dailyPnlData,
   timePeriodLabel,
   theme = "cream",
@@ -130,6 +131,18 @@ export function TraderCard({
       return `${(value / 1000).toFixed(1)}K`
     }
     return value.toFixed(2)
+  }
+
+  const formatAverageDaily = (value: number) => {
+    const absValue = Math.abs(value)
+    const sign = value >= 0 ? "+" : "-"
+    if (absValue >= 1000000) {
+      return `${sign}$${(absValue / 1000000).toFixed(2)}M`
+    }
+    if (absValue >= 1000) {
+      return `${sign}$${(absValue / 1000).toFixed(2)}K`
+    }
+    return `${sign}$${absValue.toFixed(2)}`
   }
 
   const formatVolume = (value: number) => {
@@ -259,10 +272,10 @@ export function TraderCard({
             {/* Stats Grid */}
             <div className="grid grid-cols-2 gap-3 mb-4">
               <StatBox
-                icon={<TrendingUp className="w-4 h-4" />}
-                label="Total P&L"
-                value={`${isProfit ? "+" : "-"}$${formatCurrency(Math.abs(totalPnL))}`}
-                highlight={totalPnL >= 0}
+                icon={<BarChart3 className="w-4 h-4" />}
+                label="Average per day"
+                value={formatAverageDaily(avgReturn)}
+                highlight={avgReturn >= 0}
                 styles={styles}
                 theme={theme}
               />
