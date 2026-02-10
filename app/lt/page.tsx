@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Activity, Plus, Pause, Play, Settings, ArrowRight, Wallet, AlertCircle } from 'lucide-react';
+import { Activity, Plus, Pause, Play, ArrowRight, Wallet, AlertCircle, Zap } from 'lucide-react';
 
 interface RiskState {
   current_equity: number;
@@ -58,6 +58,8 @@ export default function LiveTradingPage() {
   const [createWalletAddress, setCreateWalletAddress] = useState<string>('');
   const [useConnectedAccount, setUseConnectedAccount] = useState(true);
   const hasPrefilledWallet = useRef(false);
+  const [forceTestRunning, setForceTestRunning] = useState(false);
+  const [forceTestResult, setForceTestResult] = useState<{ ok: boolean; summary?: string; results?: any[] } | null>(null);
 
   const loadStrategies = async () => {
     setLoading(true);
@@ -165,6 +167,26 @@ export default function LiveTradingPage() {
       setError(e.message);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const runForceTestTrade = async () => {
+    setForceTestRunning(true);
+    setForceTestResult(null);
+    setError(null);
+    try {
+      const res = await fetch('/api/lt/force-test-trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Force test failed');
+      setForceTestResult({ ok: data.ok, summary: data.summary, results: data.results });
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setForceTestRunning(false);
     }
   };
 
@@ -358,6 +380,43 @@ export default function LiveTradingPage() {
                   );
                 })}
               </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Force test trade — one-click replay of last FT trade per strategy */}
+        <Card className="mt-6 border border-amber-200 bg-amber-50/50">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2 text-slate-800">
+              <Zap className="h-4 w-4 text-amber-600" />
+              Force test trade
+            </CardTitle>
+            <CardDescription className="text-slate-600">
+              Replay the last Forward Test trade for each active LT strategy as a real order (capped at $5). Use this to verify execution without waiting for cron.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button
+              onClick={runForceTestTrade}
+              disabled={forceTestRunning || strategies.length === 0}
+              variant="outline"
+              className="border-amber-500 text-amber-700 hover:bg-amber-100"
+            >
+              {forceTestRunning ? 'Running…' : 'Run force test trade'}
+            </Button>
+            {forceTestResult && (
+              <div className="text-sm rounded-lg bg-white border border-slate-200 p-3 text-slate-700">
+                <p className="font-medium text-slate-800">{forceTestResult.summary ?? (forceTestResult.ok ? 'Done' : 'Failed')}</p>
+                {forceTestResult.results?.length ? (
+                  <ul className="mt-2 space-y-1 text-xs">
+                    {forceTestResult.results.map((r: any, i: number) => (
+                      <li key={i}>
+                        {r.strategy_id}: {r.ok ? (r.market ? `✓ ${r.market}` : '✓') : (r.error || 'failed')}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
             )}
           </CardContent>
         </Card>
