@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
 import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client';
+import { placeOrderCore } from '@/lib/polymarket/place-order-core';
 import { roundDownToStep } from '@/lib/polymarket/sizing';
 
 /**
@@ -42,22 +44,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: 'No LT strategies found' }, { status: 404 });
     }
 
-    // 2. Get CLOB client — use user session if available, else use strategy's user_id
-    const clobUserId = userId || strategies[0]?.user_id;
-    if (!clobUserId) {
-        return NextResponse.json({ ok: false, error: 'Cannot determine user ID for CLOB auth' }, { status: 400 });
-    }
-    let client: any;
-    let signatureType: any;
-    try {
-        const authed = await getAuthedClobClientForUserAnyWallet(clobUserId);
-        client = authed.client;
-        signatureType = authed.signatureType;
-    } catch (err: any) {
-        return NextResponse.json({ ok: false, error: `CLOB auth failed: ${err.message}` }, { status: 500 });
-    }
-
-    // 3. Process each strategy
+    // Process each strategy (placeOrderCore handles Evomi + CLOB + order_events_log)
     const results: any[] = [];
 
     for (const strategy of strategies) {
@@ -172,28 +159,36 @@ export async function POST(request: Request) {
 
             steps.push(`Placing order: BUY ${sizeContracts} contracts @ $${limitPrice} (~$${(sizeContracts * limitPrice).toFixed(2)})`);
 
-            // Place the order
-            const order = await client.createOrder(
-                {
-                    tokenID: tokenId,
-                    price: limitPrice,
-                    size: sizeContracts,
-                    side: 'BUY' as any,
-                },
-                { signatureType } as any
-            );
-            steps.push('Order signed ✓');
+            const requestId = `lt_force_${strategy.strategy_id}_${Date.now()}`;
+            const result = await placeOrderCore({
+                supabase,
+                userId: strategy.user_id,
+                tokenId,
+                price: limitPrice,
+                size: sizeContracts,
+                side: 'BUY',
+                orderType: 'GTC',
+                requestId,
+                orderIntentId: randomUUID(),
+                useAnyWallet: true,
+                conditionId,
+                outcome: lastFtOrder.token_label || null,
+            });
 
-            const rawResult = await client.postOrder(order, 'GTC' as any, false);
-            steps.push(`Order posted ✓`);
-
-            const orderId = rawResult?.orderID || rawResult?.order_id || null;
-            if (!orderId) {
-                steps.push(`CLOB response: ${JSON.stringify(rawResult)}`);
-                results.push({ strategy_id: strategy.strategy_id, ok: false, error: 'No orderID returned', steps, clob_response: rawResult });
+            if (!result.success) {
+                const errMsg = 'message' in result.evaluation ? result.evaluation.message : 'Unknown error';
+                steps.push(`Order failed: ${errMsg}`);
+                results.push({ strategy_id: strategy.strategy_id, ft_wallet_id: ftWalletId, ok: false, error: errMsg, steps });
                 continue;
             }
-            steps.push(`Order ID: ${orderId}`);
+
+            const orderId = result.orderId ?? null;
+            if (!orderId) {
+                steps.push('No order ID in result');
+                results.push({ strategy_id: strategy.strategy_id, ok: false, error: 'No orderID returned', steps });
+                continue;
+            }
+            steps.push(`Order posted ✓ — Order ID: ${orderId}`);
 
             // Record in lt_orders
             const { data: ltOrder, error: ltError } = await supabase
@@ -233,62 +228,41 @@ export async function POST(request: Request) {
                 steps.push(`lt_orders recorded: ${ltOrderId} ✓`);
             }
 
-            // Stamp the orders table
-            const { data: existingOrder } = await supabase
-                .from('orders')
-                .select('order_id')
-                .or(`order_id.eq.${orderId},polymarket_order_id.eq.${orderId}`)
-                .limit(1)
-                .maybeSingle();
-
-            if (existingOrder) {
-                await supabase
-                    .from('orders')
-                    .update({
-                        lt_strategy_id: strategy.strategy_id,
-                        lt_order_id: ltOrderId,
-                        signal_price: currentPrice,
-                        signal_size_usd: ftSizeUsd,
-                    })
-                    .eq('order_id', existingOrder.order_id);
-                steps.push('Orders table stamped ✓');
+            // Upsert orders row so Orders UI shows Auto badge
+            const now = new Date().toISOString();
+            const { error: ordersErr } = await supabase.from('orders').upsert(
+                {
+                    order_id: orderId,
+                    trader_id: strategy.wallet_address,
+                    market_id: conditionId,
+                    outcome: lastFtOrder.token_label || 'Yes',
+                    side: 'buy',
+                    order_type: 'GTC',
+                    price: limitPrice,
+                    size: sizeContracts,
+                    filled_size: 0,
+                    remaining_size: sizeContracts,
+                    status: 'open',
+                    created_at: now,
+                    updated_at: now,
+                    lt_strategy_id: strategy.strategy_id,
+                    lt_order_id: ltOrderId,
+                    signal_price: currentPrice,
+                    signal_size_usd: ftSizeUsd,
+                },
+                { onConflict: 'order_id' }
+            );
+            if (ordersErr) {
+                steps.push(`WARNING: orders upsert: ${ordersErr.message}`);
             } else {
-                // Insert a record so it shows on the Orders page with the Auto badge
-                const { error: insertErr } = await supabase
-                    .from('orders')
-                    .insert({
-                        order_id: orderId,
-                        trader_id: strategy.wallet_address,
-                        market_id: conditionId,
-                        outcome: lastFtOrder.token_label || 'Yes',
-                        side: 'BUY',
-                        order_type: 'GTC',
-                        price: limitPrice,
-                        size: sizeContracts,
-                        filled_size: 0,
-                        remaining_size: sizeContracts,
-                        status: 'open',
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString(),
-                        lt_strategy_id: strategy.strategy_id,
-                        lt_order_id: ltOrderId,
-                        signal_price: currentPrice,
-                        signal_size_usd: ftSizeUsd,
-                    })
-                    .select('order_id')
-                    .single();
-
-                if (insertErr) {
-                    steps.push(`WARNING: orders insert: ${insertErr.message}`);
-                } else {
-                    steps.push('Orders table inserted with Auto badge ✓');
-                }
+                steps.push('Orders table stamped ✓');
             }
 
             // Cancel if requested
             if (cancelAfter && orderId) {
                 try {
-                    await client.cancelOrder(orderId);
+                    const { client } = await getAuthedClobClientForUserAnyWallet(strategy.user_id);
+                    await client.cancelOrders([orderId]);
                     steps.push('Order cancelled ✓');
                     if (ltOrderId) {
                         await supabase.from('lt_orders').update({ status: 'CANCELLED', outcome: 'CANCELLED' }).eq('lt_order_id', ltOrderId);

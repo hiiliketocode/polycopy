@@ -3,11 +3,10 @@ import { randomUUID } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
-import type { ClobClient } from '@polymarket/clob-client'
 import { POST_ORDER } from '@polymarket/clob-client/dist/endpoints.js'
-import { interpretClobOrderResult } from '@/lib/polymarket/order-response'
+import { placeOrderCore } from '@/lib/polymarket/place-order-core'
 import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
-import { refreshEvomiProxyAgent, requireEvomiProxyAgent } from '@/lib/evomi/proxy'
+import { requireEvomiProxyAgent } from '@/lib/evomi/proxy'
 import { getBodySnippet } from '@/lib/polymarket/order-route-helpers'
 import { sanitizeError } from '@/lib/http/sanitize-error'
 import { logError, logInfo, makeRequestId, sanitizeForLogging } from '@/lib/logging/logger'
@@ -182,70 +181,6 @@ async function fetchMarketTickSize(clobBaseUrl: string, tokenId: string) {
   return null
 }
 
-type OrderEvaluation = ReturnType<typeof interpretClobOrderResult>
-
-async function postOrderWithCloudflareMitigation(params: {
-  client: ClobClient
-  order: any
-  orderType: string
-  sanitize: (value: unknown) => unknown
-  proxyUrl: string | null
-}): Promise<{
-  evaluation: OrderEvaluation
-  safeRawResult: unknown
-  attempts: number
-  proxyUrl: string | null
-}> {
-  let attempts = 0
-  let lastEvaluation: OrderEvaluation | null = null
-  let lastSafeRawResult: unknown = null
-  let proxyUrl = params.proxyUrl ?? null
-
-  while (attempts < 2) {
-    attempts++
-
-    let rawResult: unknown
-    try {
-      rawResult = await params.client.postOrder(params.order, params.orderType as any, false)
-    } catch (error: any) {
-      const message = typeof error?.message === 'string' ? error.message : null
-      const code = typeof error?.code === 'string' ? error.code : null
-      const responseData = error?.response?.data
-      rawResult =
-        responseData && typeof responseData === 'object'
-          ? responseData
-          : {
-              error: message || 'Network error placing order',
-              code,
-            }
-    }
-
-    const safeRawResult = params.sanitize(rawResult) ?? rawResult
-    const evaluation = interpretClobOrderResult(safeRawResult)
-
-    if (evaluation.success || evaluation.errorType !== 'blocked_by_cloudflare') {
-      return { evaluation, safeRawResult, attempts, proxyUrl }
-    }
-
-    lastEvaluation = evaluation
-    lastSafeRawResult = safeRawResult
-
-    console.warn('[POLY-ORDER-PLACE] Blocked by Cloudflare, rotating Evomi proxy and retrying...', {
-      attempts,
-      rayId: evaluation.rayId,
-    })
-
-    proxyUrl = (await refreshEvomiProxyAgent('cloudflare_blocked_order')) ?? proxyUrl
-  }
-
-  if (!lastEvaluation) {
-    throw new Error('Polymarket order evaluation missing after retries')
-  }
-
-  return { evaluation: lastEvaluation, safeRawResult: lastSafeRawResult, attempts, proxyUrl }
-}
-
-
 /**
  * SECURITY: Service Role Usage - ORDER PLACEMENT LOGGING
  * 
@@ -283,7 +218,6 @@ function createServiceRoleClient() {
   )
 }
 
-const ORDER_EVENTS_TABLE = 'order_events_log'
 const MAX_ERROR_MESSAGE_LENGTH = 500
 
 function normalizeLogInputMode(value?: string | null): 'usd' | 'contracts' {
@@ -295,19 +229,6 @@ function truncateMessage(value?: string | null, max = MAX_ERROR_MESSAGE_LENGTH) 
   const trimmed = value.trim()
   if (trimmed.length <= max) return trimmed
   return trimmed.slice(0, max)
-}
-
-async function updateOrderEventStatus(
-  client: ReturnType<typeof createServiceRoleClient>,
-  orderEventId: string | null,
-  updates: Record<string, unknown>
-) {
-  if (!orderEventId) return
-  try {
-    await client.from(ORDER_EVENTS_TABLE).update(updates).eq('id', orderEventId)
-  } catch (error) {
-    console.error('[POLY-ORDER-PLACE] Failed to update order event row', error)
-  }
 }
 
 async function ensureTraderId(
@@ -791,16 +712,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  let orderEventId: string | null = null
-  let normalizedWalletAddress: string | null = null
+  const clobBaseUrl = getValidatedPolymarketClobBaseUrl()
+  const requestUrl = new URL(POST_ORDER, clobBaseUrl).toString()
+  const upstreamHost = new URL(clobBaseUrl).hostname
+  const normalizedOrderType = orderType === 'IOC' ? 'FAK' : orderType
 
   try {
-    // Configure Evomi proxy BEFORE creating ClobClient to ensure axios defaults are set
-    let evomiProxyUrl: string | null = null
     try {
-      evomiProxyUrl = await requireEvomiProxyAgent('order placement')
-      const proxyEndpoint = evomiProxyUrl.split('@')[1] ?? evomiProxyUrl
-      console.log('[POLY-ORDER-PLACE] ✅ Evomi proxy enabled via', proxyEndpoint)
+      await requireEvomiProxyAgent('order placement')
       const targetCountryCode = (process.env.EVOMI_PROXY_COUNTRY?.trim() || 'IE').toUpperCase()
       const targetCountryLabel = targetCountryCode === 'IE' ? 'Ireland' : targetCountryCode
       console.log(
@@ -809,25 +728,11 @@ export async function POST(request: NextRequest) {
     } catch (error: any) {
       console.error('[POLY-ORDER-PLACE] ❌ Evomi proxy required but unavailable:', error?.message || error)
       return respondWithMetadata(
-        {
-          ok: false,
-          source: 'proxy',
-          error: 'Evomi proxy unavailable',
-          errorType: 'evomi_unavailable',
-        },
+        { ok: false, source: 'proxy', error: 'Evomi proxy unavailable', errorType: 'evomi_unavailable' },
         503
       )
     }
 
-    const { client, proxyAddress, signerAddress, signatureType } = await getAuthedClobClientForUser(
-      userId
-    )
-
-    const clobBaseUrl = getValidatedPolymarketClobBaseUrl()
-    const normalizedOrderType = orderType === 'IOC' ? 'FAK' : orderType
-    normalizedWalletAddress = normalizeWallet(signerAddress)
-    const requestUrl = new URL(POST_ORDER, clobBaseUrl).toString()
-    const upstreamHost = new URL(clobBaseUrl).hostname
     const normalizedPrice = normalizeNumber(price)
     const normalizedAmount = normalizeNumber(amount)
     const tickSize = await fetchMarketTickSize(clobBaseUrl, validatedTokenId)
@@ -836,247 +741,108 @@ export async function POST(request: NextRequest) {
       normalizedPrice ? roundDownToStep(normalizedPrice, effectiveTickSize) : normalizedPrice
     const roundedAmount =
       normalizedAmount && normalizedAmount > 0 ? roundDownToStep(normalizedAmount, 0.01) : null
-    
-    // Smart rounding logic:
-    // 1. When SELLING → Skip adjustment to avoid "not enough balance" errors
-    // 2. When user inputs USD amount for BUY → Round UP to ensure they get their full investment
-    // 3. Otherwise → Round DOWN for safety
     const shouldRoundUp = resolvedInputMode === 'usd' && validatedSide === 'BUY'
-    const shouldSkipAdjustment = validatedSide === 'SELL'  // Never adjust SELL orders
-    
+    const shouldSkipAdjustment = validatedSide === 'SELL'
     const adjustmentFunction = shouldRoundUp
-      ? adjustSizeForImpliedAmountAtLeast  // Round UP
-      : adjustSizeForImpliedAmount         // Round DOWN
-    
+      ? adjustSizeForImpliedAmountAtLeast
+      : adjustSizeForImpliedAmount
     const adjustedAmount =
       shouldSkipAdjustment || !roundedPrice || !roundedAmount
-        ? roundedAmount  // For SELL: use exact amount without adjustment
+        ? roundedAmount
         : adjustmentFunction(roundedPrice, roundedAmount, effectiveTickSize, 2, 2)
     console.log('[POLY-ORDER-PLACE] CLOB order', {
       requestId,
       upstreamHost,
       side,
       orderType: normalizedOrderType,
-      keys: Object.keys(body ?? {}),
       tickSize,
       effectiveTickSize,
       roundedPrice,
       roundedAmount,
       adjustedAmount,
       inputMode: resolvedInputMode,
-      isClosingFullPosition,
-      shouldRoundUp,
-      shouldSkipAdjustment,
-      roundingMethod: shouldSkipAdjustment
-        ? 'NO_ADJUSTMENT (SELL order)'
-        : shouldRoundUp 
-          ? 'ROUND_UP (USD input)' 
-          : 'ROUND_DOWN (normal)',
     })
 
     if (!roundedPrice || !roundedAmount || !adjustedAmount) {
       return respondWithMetadata(
-        { 
+        {
           error: 'Invalid price or amount after rounding. This may occur if the market price is too close to $1.00 and there is insufficient liquidity in the order book to execute your sell. You may need to wait until the market resolves or try again with different slippage settings.',
-          source: 'local_guard' 
+          source: 'local_guard',
         },
         400
       )
     }
 
-    const orderEventPayload = {
-      user_id: userId,
-      wallet_address: normalizedWalletAddress,
-      order_intent_id: resolvedOrderIntentId,
-      request_id: requestId,
-      condition_id: normalizedConditionId,
-      token_id: normalizedTokenId,
-      side: sideLower,
-      outcome: normalizedOutcomeValue,
-      order_type: normalizedOrderType,
-      slippage_bps: slippageBps,
-      limit_price: roundedPrice,
+    const result = await placeOrderCore({
+      supabase: serviceRole,
+      userId,
+      tokenId: validatedTokenId,
+      price: roundedPrice,
       size: adjustedAmount,
-      min_order_size: resolvedMinOrderSize,
-      tick_size: effectiveTickSize,
-      best_bid: normalizedBestBid,
-      best_ask: normalizedBestAsk,
-      input_mode: resolvedInputMode,
-      usd_input: resolvedUsdInput,
-      contracts_input: resolvedContractsInput,
-      auto_correct_applied: Boolean(autoCorrectApplied),
-      status: 'attempted',
-      polymarket_order_id: null,
-      http_status: null,
-      error_code: null,
-      error_message: null,
-      raw_error: null,
-    }
-
-    try {
-      const { data: insertedEvent, error: eventError } = await serviceRole
-        .from(ORDER_EVENTS_TABLE)
-        .insert(orderEventPayload)
-        .select('id')
-        .single()
-      if (eventError) {
-        throw eventError
-      }
-      orderEventId = insertedEvent?.id ?? null
-    } catch (eventError) {
-      console.error('[POLY-ORDER-PLACE] Failed to persist order event', eventError)
-    }
-
-    logInfo('order_attempted', {
-      request_id: requestId,
-      order_intent_id: resolvedOrderIntentId,
-      user_id: userId,
-      wallet_address: normalizedWalletAddress,
-      condition_id: normalizedConditionId,
-      token_id: normalizedTokenId,
-      outcome: normalizedOutcomeValue,
-      side: sideLower,
-      order_type: normalizedOrderType,
-      limit_price: roundedPrice,
-      size: adjustedAmount,
-      status: 'attempted',
-      event_id: orderEventId,
-    })
-
-    const order = await client.createOrder(
-      { tokenID: validatedTokenId, price: roundedPrice, size: adjustedAmount, side: side as any },
-      { signatureType } as any
-    )
-
-    const {
-      evaluation,
-      safeRawResult,
-      attempts: evomiAttempts,
-      proxyUrl: finalProxyUrl,
-    } = await postOrderWithCloudflareMitigation({
-      client,
-      order,
+      side: validatedSide,
       orderType: normalizedOrderType,
-      sanitize: sanitizeForResponse,
-      proxyUrl: evomiProxyUrl,
+      requestId,
+      orderIntentId: resolvedOrderIntentId,
+      useAnyWallet: false,
+      conditionId: normalizedConditionId,
+      outcome: normalizedOutcomeValue,
+      slippageBps,
+      minOrderSize: resolvedMinOrderSize,
+      tickSize: effectiveTickSize,
+      bestBid: normalizedBestBid,
+      bestAsk: normalizedBestAsk,
+      inputMode: resolvedInputMode,
+      usdInput: resolvedUsdInput,
+      contractsInput: resolvedContractsInput,
+      autoCorrectApplied: Boolean(autoCorrectApplied),
     })
 
-    evomiProxyUrl = finalProxyUrl
-    const failedEvaluation = !evaluation.success
-    const upstreamStatus = failedEvaluation ? evaluation.status ?? 502 : 200
-    const upstreamContentType = evaluation.contentType
-    const logPayload: Record<string, unknown> = {
-      requestId,
-      upstreamHost,
-      upstreamStatus,
-      contentType: upstreamContentType,
-      orderId: evaluation.success ? evaluation.orderId : null,
-      evomiProxyUrl,
-      evomiAttempts,
-    }
-    let sanitizedEvaluationRaw: unknown
-    if (failedEvaluation) {
-      logPayload.rayId = evaluation.rayId
-      sanitizedEvaluationRaw = sanitizeForResponse(evaluation.raw)
-      logPayload.raw = sanitizedEvaluationRaw
-    }
-    console.log('[POLY-ORDER-PLACE] Upstream response', logPayload)
-
-    if (failedEvaluation) {
-      const snippet = getBodySnippet(evaluation.raw ?? '')
-      console.error('[POLY-ORDER-PLACE] Upstream error', {
-        requestId,
-        upstreamHost,
-        upstreamStatus,
-        errorType: evaluation.errorType,
-        message: evaluation.message,
-        raw: sanitizedEvaluationRaw,
-      })
-      console.log('[POLY-ORDER-PLACE] Polymarket raw response', {
-        status: upstreamStatus,
-        body: sanitizedEvaluationRaw ?? evaluation.raw,
-      })
-      const truncatedErrorMessage = truncateMessage(evaluation.message ?? 'Order rejected')
-      const sanitizedErrorBody =
-        sanitizedEvaluationRaw ?? sanitizeForLogging(evaluation.raw ?? null)
-      await updateOrderEventStatus(serviceRole, orderEventId, {
-        status: 'rejected',
-        http_status: upstreamStatus,
-        error_code: evaluation.errorType ?? null,
-        error_message: truncatedErrorMessage,
-        raw_error: sanitizedErrorBody ?? null,
-      })
-      
-      // Update idempotency record with failure
+    if (!result.success) {
+      const evaluation = result.evaluation
+      const errMsg = 'message' in evaluation ? evaluation.message : 'Order rejected'
+      const truncatedErrorMessage = truncateMessage(errMsg)
       try {
         await serviceRole.rpc('update_order_idempotency_result', {
           p_order_intent_id: resolvedOrderIntentId,
           p_status: 'failed',
-          p_error_code: evaluation.errorType ?? null,
+          p_error_code: 'errorType' in evaluation ? evaluation.errorType ?? null : null,
           p_error_message: truncatedErrorMessage,
           p_result_data: {
             ok: false,
-            error: evaluation.message,
-            errorType: evaluation.errorType,
+            error: errMsg,
+            errorType: 'errorType' in evaluation ? evaluation.errorType : undefined,
             source: 'upstream',
           },
         })
       } catch (error) {
         console.warn('[POLY-ORDER-PLACE] Failed to update idempotency record (rejection)', error)
       }
-      logError('order_rejected', {
-        request_id: requestId,
-        order_intent_id: resolvedOrderIntentId,
-        user_id: userId,
-        wallet_address: normalizedWalletAddress,
-        condition_id: normalizedConditionId,
-        token_id: normalizedTokenId,
-        outcome: normalizedOutcomeValue,
-        side: sideLower,
-        order_type: normalizedOrderType,
-        limit_price: roundedPrice,
-        size: adjustedAmount,
-        http_status: upstreamStatus,
-        error_code: evaluation.errorType ?? null,
-        error_message: truncatedErrorMessage,
-        raw_error: sanitizedErrorBody ?? null,
-        event_id: orderEventId,
-      })
+      const sanitizedEvaluationRaw = sanitizeForResponse(evaluation.raw)
+      const snippet = getBodySnippet(evaluation.raw ?? '')
       return respondWithMetadata(
         {
           ok: false,
-          error: evaluation.message,
-          errorType: evaluation.errorType,
-          rayId: evaluation.rayId,
-          blockedByCloudflare: evaluation.errorType === 'blocked_by_cloudflare',
+          error: errMsg,
+          errorType: 'errorType' in evaluation ? evaluation.errorType : undefined,
+          rayId: 'rayId' in evaluation ? evaluation.rayId : undefined,
+          blockedByCloudflare: 'errorType' in evaluation && evaluation.errorType === 'blocked_by_cloudflare',
           requestUrl,
           source: 'upstream',
           upstreamHost,
-          upstreamStatus,
+          upstreamStatus: 'status' in evaluation ? evaluation.status ?? 502 : 502,
           isHtml: evaluation.contentType === 'text/html',
           contentType: evaluation.contentType,
           polymarketError: sanitizedEvaluationRaw ?? evaluation.raw,
-          raw: sanitizedEvaluationRaw
-            ? typeof sanitizedEvaluationRaw === 'string'
-              ? sanitizedEvaluationRaw
-              : JSON.stringify(sanitizedEvaluationRaw)
-            : undefined,
+          raw: sanitizedEvaluationRaw != null ? (typeof sanitizedEvaluationRaw === 'string' ? sanitizedEvaluationRaw : JSON.stringify(sanitizedEvaluationRaw)) : undefined,
           snippet,
         },
-        upstreamStatus
+        'status' in evaluation ? evaluation.status ?? 502 : 502
       )
     }
 
-    const { orderId } = evaluation
-
-    await updateOrderEventStatus(serviceRole, orderEventId, {
-      status: 'submitted',
-      http_status: upstreamStatus,
-      polymarket_order_id: orderId ?? null,
-      error_code: null,
-      error_message: null,
-      raw_error: null,
-    })
+    const orderId = result.orderId ?? null
+    const normalizedWalletAddress = result.walletAddress
+    const { evaluation } = result
 
     let shouldPersistOrderRow = Boolean(orderId)
     let metadataOverrides:
@@ -1092,6 +858,7 @@ export async function POST(request: NextRequest) {
 
     if (orderId && normalizedOrderType === 'FAK') {
       try {
+        const { client } = await getAuthedClobClientForUser(userId)
         const clobOrder = await client.getOrder(orderId)
         const fetchedSize = normalizeNumber(clobOrder?.original_size)
         const fetchedFilled = normalizeNumber(clobOrder?.size_matched)
@@ -1130,6 +897,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const upstreamStatus = 200
     // Update idempotency record with success
     try {
       await serviceRole.rpc('update_order_idempotency_result', {
@@ -1163,7 +931,7 @@ export async function POST(request: NextRequest) {
       http_status: upstreamStatus,
       polymarket_order_id: orderId ?? null,
       status: 'submitted',
-      event_id: orderEventId,
+      event_id: result.orderEventId,
     })
 
     try {
@@ -1198,9 +966,9 @@ export async function POST(request: NextRequest) {
     return respondWithMetadata(
       {
         ok: true,
-        proxy: proxyAddress,
-        signer: signerAddress,
-        signatureType,
+        proxy: result.proxyAddress,
+        signer: result.signerAddress,
+        signatureType: result.signatureType,
         orderId,
         submittedAt: new Date().toISOString(),
         source: 'upstream',
@@ -1215,16 +983,8 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     const safeError = sanitizeError(error)
     const truncatedErrorMessage = truncateMessage(safeError.message)
-    const sanitizedErrorBody = sanitizeForLogging(safeError)
     const errorStatus =
       safeError.status && Number.isInteger(safeError.status) ? safeError.status : 500
-    await updateOrderEventStatus(serviceRole, orderEventId, {
-      status: 'rejected',
-      http_status: errorStatus,
-      error_code: safeError.code ?? safeError.name,
-      error_message: truncatedErrorMessage,
-      raw_error: sanitizedErrorBody ?? null,
-    })
     
     // Update idempotency record with error
     try {
@@ -1246,7 +1006,7 @@ export async function POST(request: NextRequest) {
       request_id: requestId,
       order_intent_id: resolvedOrderIntentId,
       user_id: userId,
-      wallet_address: normalizedWalletAddress,
+      wallet_address: null,
       condition_id: normalizedConditionId,
       token_id: normalizedTokenId,
       outcome: normalizedOutcomeValue,
@@ -1257,8 +1017,8 @@ export async function POST(request: NextRequest) {
       http_status: errorStatus,
       error_code: safeError.code ?? safeError.name,
       error_message: truncatedErrorMessage,
-      raw_error: sanitizedErrorBody ?? null,
-      event_id: orderEventId,
+      raw_error: sanitizeForLogging(safeError) ?? null,
+      event_id: null,
     })
     console.error('[POLY-ORDER-PLACE] Error (sanitized):', safeError)
     return respondWithMetadata(
