@@ -106,10 +106,16 @@ export function useTraderCardData(walletAddress: string, timePeriod: TimePeriod)
         // Get time period label
         const timePeriodLabel = getTimePeriodLabel(timePeriod)
 
+        // Proxy S3 images through our API to avoid CORS issues
+        let proxiedProfileImage = traderInfo.profileImage
+        if (proxiedProfileImage && proxiedProfileImage.includes('polymarket-upload.s3.us-east-2.amazonaws.com')) {
+          proxiedProfileImage = `/api/proxy-image?url=${encodeURIComponent(proxiedProfileImage)}`
+        }
+
         setData({
           displayName: traderInfo.displayName,
           walletAddress,
-          profileImage: traderInfo.profileImage,
+          profileImage: proxiedProfileImage,
           isTopHundred,
           memberSince,
           totalPnL: stats.totalPnL,
