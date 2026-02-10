@@ -6,19 +6,17 @@ import { roundDownToStep } from '@/lib/polymarket/sizing';
 
 /**
  * POST /api/lt/force-test-trade
- * Admin-only: Force a minimal test trade to verify the full LT pipeline.
- * 
- * Places a tiny limit order ($0.50) on a real market to verify:
- *  - CLOB authentication works
- *  - Token ID resolution works  
- *  - Order placement works
- *  - lt_orders recording works
- *  - orders table stamping works
- *  - "Auto" badge will appear
+ * Admin-only: Replay the last FT trade for each active LT strategy as a real order.
+ *
+ * For each active LT strategy:
+ *  1. Finds the most recent ft_order for the underlying FT wallet
+ *  2. Resolves the correct token ID from the CLOB API
+ *  3. Places a real BUY order at a limit price slightly below current market
+ *  4. Records in lt_orders + stamps orders table
  *
  * Body (optional):
- *   { "strategy_id": "LT_FT_ML_EDGE" }  — which strategy to test (defaults to first active)
- *   { "cancel_after": true }              — cancel order right after placing (default: true)
+ *   { "strategy_id": "LT_FT_ML_EDGE" }  — only test one specific strategy
+ *   { "cancel_after": false }             — keep the order live (default: false)
  */
 export async function POST(request: Request) {
     const authError = await requireAdmin();
@@ -31,298 +29,317 @@ export async function POST(request: Request) {
 
     const supabase = createAdminServiceClient();
     const body = await request.json().catch(() => ({}));
-    const cancelAfter = body.cancel_after !== false; // default true
+    const cancelAfter = body.cancel_after === true; // default: false (keep order live)
+    const specificStrategy = body.strategy_id || null;
 
-    // 1. Find the strategy
-    let strategy: any;
-    if (body.strategy_id) {
-        const { data } = await supabase
-            .from('lt_strategies')
-            .select('*')
-            .eq('strategy_id', body.strategy_id)
-            .single();
-        strategy = data;
-    } else {
-        const { data } = await supabase
-            .from('lt_strategies')
-            .select('*')
-            .eq('is_active', true)
-            .limit(1)
-            .single();
-        strategy = data;
+    // 1. Get active LT strategies
+    let strategyQuery = supabase.from('lt_strategies').select('*').eq('is_active', true);
+    if (specificStrategy) {
+        strategyQuery = supabase.from('lt_strategies').select('*').eq('strategy_id', specificStrategy);
+    }
+    const { data: strategies } = await strategyQuery;
+
+    if (!strategies || strategies.length === 0) {
+        return NextResponse.json({ ok: false, error: 'No LT strategies found' }, { status: 404 });
     }
 
-    if (!strategy) {
-        return NextResponse.json({ ok: false, error: 'No LT strategy found. Create one first.' }, { status: 404 });
+    // 2. Get CLOB client (shared across all strategies since same user)
+    let client: any;
+    let signatureType: any;
+    try {
+        const authed = await getAuthedClobClientForUserAnyWallet(user.id);
+        client = authed.client;
+        signatureType = authed.signatureType;
+    } catch (err: any) {
+        return NextResponse.json({ ok: false, error: `CLOB auth failed: ${err.message}` }, { status: 500 });
     }
 
-    // 2. Find a liquid market to test on
-    // Look for an active, non-resolved market with good liquidity
-    const { data: markets } = await supabase
-        .from('markets')
-        .select('condition_id, title, slug, outcomes, outcome_prices, tokens')
-        .eq('closed', false)
-        .is('resolved_outcome', null)
-        .order('volume_num', { ascending: false })
-        .limit(20);
+    // 3. Process each strategy
+    const results: any[] = [];
 
-    if (!markets || markets.length === 0) {
-        return NextResponse.json({ ok: false, error: 'No active markets found' }, { status: 404 });
-    }
+    for (const strategy of strategies) {
+        const steps: string[] = [];
+        const ftWalletId = strategy.ft_wallet_id;
 
-    // Pick a market that has token data
-    let selectedMarket: any = null;
-    let tokenId: string | null = null;
-    let tokenLabel = 'Yes';
+        try {
+            // Find the last FT order for this wallet
+            const { data: lastFtOrder } = await supabase
+                .from('ft_orders')
+                .select('order_id, wallet_id, condition_id, market_title, market_slug, token_label, entry_price, size, side, trader_address, source_trade_id, order_time')
+                .eq('wallet_id', ftWalletId)
+                .order('order_time', { ascending: false })
+                .limit(1)
+                .single();
 
-    for (const market of markets) {
-        // Try to get token ID from the tokens field
-        let tokens = market.tokens;
-        if (typeof tokens === 'string') {
-            try { tokens = JSON.parse(tokens); } catch { tokens = null; }
-        }
-
-        if (Array.isArray(tokens) && tokens.length > 0) {
-            // Use the first token (usually "Yes")
-            const firstToken = tokens[0];
-            if (firstToken?.token_id) {
-                selectedMarket = market;
-                tokenId = firstToken.token_id;
-                tokenLabel = firstToken.outcome || 'Yes';
-                break;
+            if (!lastFtOrder) {
+                steps.push(`No FT orders found for wallet ${ftWalletId}`);
+                results.push({ strategy_id: strategy.strategy_id, ft_wallet_id: ftWalletId, ok: false, error: 'No FT orders', steps });
+                continue;
             }
-        }
 
-        // Fallback: try to get token from CLOB API
-        if (!tokenId) {
+            steps.push(`Found last FT order: "${lastFtOrder.market_title}" (${lastFtOrder.token_label}) @ ${lastFtOrder.entry_price} — ${lastFtOrder.order_time}`);
+
+            // Resolve token ID from CLOB API
+            const conditionId = lastFtOrder.condition_id;
+            const tokenLabel = (lastFtOrder.token_label || 'Yes').toLowerCase();
+            let tokenId: string | null = null;
+
+            // Try CLOB API first
             try {
                 const resp = await fetch(
-                    `https://clob.polymarket.com/markets/${market.condition_id}`,
+                    `https://clob.polymarket.com/markets/${conditionId}`,
                     { cache: 'no-store' }
                 );
                 if (resp.ok) {
                     const clobMarket = await resp.json();
-                    if (Array.isArray(clobMarket?.tokens) && clobMarket.tokens.length > 0) {
-                        selectedMarket = market;
-                        tokenId = clobMarket.tokens[0].token_id;
-                        tokenLabel = clobMarket.tokens[0].outcome || 'Yes';
-                        break;
+                    if (Array.isArray(clobMarket?.tokens)) {
+                        // Match by outcome label
+                        const matched = clobMarket.tokens.find(
+                            (t: any) => (t.outcome || '').toLowerCase() === tokenLabel
+                        );
+                        tokenId = matched?.token_id || clobMarket.tokens[0]?.token_id || null;
+                        steps.push(`Token ID resolved from CLOB: ${tokenId}`);
                     }
                 }
             } catch {
-                // continue to next market
+                steps.push('CLOB market lookup failed, trying DB...');
             }
-        }
-    }
 
-    if (!selectedMarket || !tokenId) {
-        return NextResponse.json({ 
-            ok: false, 
-            error: 'Could not find a market with valid token IDs',
-            markets_checked: markets.length,
-        }, { status: 404 });
-    }
+            // Fallback: check markets table for tokens field
+            if (!tokenId) {
+                const { data: marketRow } = await supabase
+                    .from('markets')
+                    .select('tokens')
+                    .eq('condition_id', conditionId)
+                    .single();
 
-    // 3. Parse current price
-    let outcomePrices = selectedMarket.outcome_prices;
-    if (typeof outcomePrices === 'string') {
-        try { outcomePrices = JSON.parse(outcomePrices); } catch { outcomePrices = [0.5]; }
-    }
-    const currentPrice = Number(outcomePrices?.[0]) || 0.5;
+                let tokens = marketRow?.tokens;
+                if (typeof tokens === 'string') {
+                    try { tokens = JSON.parse(tokens); } catch { tokens = null; }
+                }
+                if (Array.isArray(tokens)) {
+                    const matched = tokens.find((t: any) => (t.outcome || '').toLowerCase() === tokenLabel);
+                    tokenId = matched?.token_id || tokens[0]?.token_id || null;
+                    steps.push(`Token ID resolved from DB: ${tokenId}`);
+                }
+            }
 
-    // Use a very low limit price to avoid getting filled (unless market is very cheap)
-    // Place a BUY at a price well below current to create a resting order
-    const testPrice = roundDownToStep(Math.max(0.01, currentPrice * 0.5), 0.01);
-    const testSizeUsd = 0.50; // Minimal $0.50 test
-    const testSizeContracts = roundDownToStep(testSizeUsd / testPrice, 0.01);
+            if (!tokenId) {
+                steps.push('FAILED: Could not resolve token ID');
+                results.push({ strategy_id: strategy.strategy_id, ft_wallet_id: ftWalletId, ok: false, error: 'No token ID', steps });
+                continue;
+            }
 
-    if (testSizeContracts <= 0) {
-        return NextResponse.json({ ok: false, error: 'Calculated size too small' }, { status: 400 });
-    }
+            // Get current market price
+            let currentPrice = Number(lastFtOrder.entry_price) || 0.5;
+            try {
+                const { data: marketRow } = await supabase
+                    .from('markets')
+                    .select('outcome_prices, outcomes')
+                    .eq('condition_id', conditionId)
+                    .single();
 
-    // 4. Place the order via CLOB
-    const steps: string[] = [];
-    let orderId: string | null = null;
-    let ltOrderId: string | null = null;
+                let outcomePrices = marketRow?.outcome_prices;
+                let outcomes = marketRow?.outcomes;
+                if (typeof outcomePrices === 'string') {
+                    try { outcomePrices = JSON.parse(outcomePrices); } catch { outcomePrices = null; }
+                }
+                if (typeof outcomes === 'string') {
+                    try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
+                }
+                if (Array.isArray(outcomePrices) && Array.isArray(outcomes)) {
+                    const idx = outcomes.findIndex((o: string) => (o || '').toLowerCase() === tokenLabel);
+                    if (idx >= 0 && outcomePrices[idx] !== undefined) {
+                        currentPrice = Number(outcomePrices[idx]) || currentPrice;
+                    }
+                }
+            } catch {}
 
-    try {
-        steps.push(`Authenticating CLOB client for user ${user.id}...`);
-        const { client, signatureType } = await getAuthedClobClientForUserAnyWallet(user.id);
-        steps.push('CLOB client authenticated ✓');
+            // Calculate order parameters — use the FT size but cap at $5 for safety
+            const ftSizeUsd = Math.min(Number(lastFtOrder.size) || 1, 5);
+            // Use a limit price at current market price (we want this to potentially fill)
+            const limitPrice = roundDownToStep(currentPrice, 0.01);
+            const sizeContracts = roundDownToStep(ftSizeUsd / limitPrice, 0.01);
 
-        steps.push(`Creating order: BUY ${testSizeContracts} contracts of "${selectedMarket.title}" (${tokenLabel}) @ $${testPrice}`);
-        steps.push(`Token ID: ${tokenId}`);
-        steps.push(`Market: ${selectedMarket.title}`);
+            if (sizeContracts <= 0 || limitPrice <= 0) {
+                steps.push(`Invalid sizing: price=${limitPrice}, contracts=${sizeContracts}`);
+                results.push({ strategy_id: strategy.strategy_id, ok: false, error: 'Invalid sizing', steps });
+                continue;
+            }
 
-        const order = await client.createOrder(
-            {
-                tokenID: tokenId,
-                price: testPrice,
-                size: testSizeContracts,
-                side: 'BUY' as any,
-            },
-            { signatureType } as any
-        );
-        steps.push('Order created (signed) ✓');
+            steps.push(`Placing order: BUY ${sizeContracts} contracts @ $${limitPrice} (~$${(sizeContracts * limitPrice).toFixed(2)})`);
 
-        const rawResult = await client.postOrder(order, 'GTC' as any, false);
-        steps.push(`Order posted to CLOB ✓`);
-        steps.push(`CLOB response: ${JSON.stringify(rawResult)}`);
+            // Place the order
+            const order = await client.createOrder(
+                {
+                    tokenID: tokenId,
+                    price: limitPrice,
+                    size: sizeContracts,
+                    side: 'BUY' as any,
+                },
+                { signatureType } as any
+            );
+            steps.push('Order signed ✓');
 
-        orderId = rawResult?.orderID || rawResult?.order_id || null;
-        if (!orderId) {
-            steps.push('WARNING: No orderID in response');
-            return NextResponse.json({
-                ok: false,
-                error: 'Order posted but no orderID returned',
-                steps,
-                clob_response: rawResult,
-            });
-        }
-        steps.push(`Order ID: ${orderId}`);
+            const rawResult = await client.postOrder(order, 'GTC' as any, false);
+            steps.push(`Order posted ✓`);
 
-        // 5. Record in lt_orders
-        const { data: ltOrder, error: ltError } = await supabase
-            .from('lt_orders')
-            .insert({
-                strategy_id: strategy.strategy_id,
-                order_id: orderId,
-                polymarket_order_id: orderId,
-                source_trade_id: `TEST_${Date.now()}`,
-                trader_address: 'FORCE_TEST',
-                condition_id: selectedMarket.condition_id,
-                market_slug: selectedMarket.slug,
-                market_title: selectedMarket.title,
-                token_label: tokenLabel.toUpperCase(),
-                signal_price: currentPrice,
-                signal_size_usd: testSizeUsd,
-                executed_price: testPrice,
-                executed_size: testSizeContracts,
-                order_placed_at: new Date().toISOString(),
-                slippage_pct: (testPrice - currentPrice) / currentPrice,
-                fill_rate: 0, // Resting order, not filled yet
-                execution_latency_ms: 0,
-                risk_check_passed: true,
-                status: 'PENDING',
-                outcome: 'OPEN',
-            })
-            .select('lt_order_id')
-            .single();
+            const orderId = rawResult?.orderID || rawResult?.order_id || null;
+            if (!orderId) {
+                steps.push(`CLOB response: ${JSON.stringify(rawResult)}`);
+                results.push({ strategy_id: strategy.strategy_id, ok: false, error: 'No orderID returned', steps, clob_response: rawResult });
+                continue;
+            }
+            steps.push(`Order ID: ${orderId}`);
 
-        if (ltError) {
-            steps.push(`WARNING: Failed to create lt_order: ${ltError.message}`);
-        } else {
-            ltOrderId = ltOrder?.lt_order_id || null;
-            steps.push(`LT order recorded: ${ltOrderId} ✓`);
-        }
-
-        // 6. Stamp the orders table
-        // First check if the order exists in our orders table
-        const { data: existingOrder } = await supabase
-            .from('orders')
-            .select('order_id')
-            .or(`order_id.eq.${orderId},polymarket_order_id.eq.${orderId}`)
-            .limit(1)
-            .maybeSingle();
-
-        if (existingOrder) {
-            await supabase
-                .from('orders')
-                .update({
-                    lt_strategy_id: strategy.strategy_id,
-                    lt_order_id: ltOrderId,
-                    signal_price: currentPrice,
-                    signal_size_usd: testSizeUsd,
-                })
-                .eq('order_id', existingOrder.order_id);
-            steps.push(`Orders table stamped with lt_strategy_id ✓`);
-        } else {
-            steps.push('NOTE: Order not yet in orders table (may appear on next sync)');
-            // Insert a minimal record so the Auto badge shows
-            const { error: insertErr } = await supabase
-                .from('orders')
+            // Record in lt_orders
+            const { data: ltOrder, error: ltError } = await supabase
+                .from('lt_orders')
                 .insert({
+                    strategy_id: strategy.strategy_id,
+                    ft_order_id: lastFtOrder.order_id,
                     order_id: orderId,
-                    trader_id: strategy.wallet_address,
-                    market_id: selectedMarket.condition_id,
-                    outcome: tokenLabel,
-                    side: 'BUY',
-                    order_type: 'GTC',
-                    price: testPrice,
-                    size: testSizeContracts,
-                    filled_size: 0,
-                    remaining_size: testSizeContracts,
-                    status: 'open',
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                    lt_strategy_id: strategy.strategy_id,
-                    lt_order_id: ltOrderId,
+                    polymarket_order_id: orderId,
+                    source_trade_id: lastFtOrder.source_trade_id || `REPLAY_${Date.now()}`,
+                    trader_address: lastFtOrder.trader_address || 'REPLAY',
+                    condition_id: conditionId,
+                    market_slug: lastFtOrder.market_slug,
+                    market_title: lastFtOrder.market_title,
+                    token_label: (lastFtOrder.token_label || 'YES').toUpperCase(),
                     signal_price: currentPrice,
-                    signal_size_usd: testSizeUsd,
+                    signal_size_usd: ftSizeUsd,
+                    executed_price: limitPrice,
+                    executed_size: sizeContracts,
+                    order_placed_at: new Date().toISOString(),
+                    slippage_pct: currentPrice > 0 ? (limitPrice - currentPrice) / currentPrice : 0,
+                    fill_rate: 0,
+                    execution_latency_ms: 0,
+                    risk_check_passed: true,
+                    status: 'PENDING',
+                    outcome: 'OPEN',
+                    ft_entry_price: Number(lastFtOrder.entry_price) || limitPrice,
+                    ft_size: ftSizeUsd,
                 })
-                .select('order_id')
+                .select('lt_order_id')
                 .single();
 
-            if (insertErr) {
-                steps.push(`WARNING: Could not insert into orders table: ${insertErr.message}`);
+            const ltOrderId = ltOrder?.lt_order_id || null;
+            if (ltError) {
+                steps.push(`WARNING: lt_orders insert failed: ${ltError.message}`);
             } else {
-                steps.push('Inserted order record with lt_strategy_id ✓');
+                steps.push(`lt_orders recorded: ${ltOrderId} ✓`);
             }
-        }
 
-        // 7. Optionally cancel the order
-        if (cancelAfter && orderId) {
-            try {
-                await client.cancelOrder(orderId);
-                steps.push('Order cancelled after test ✓');
+            // Stamp the orders table
+            const { data: existingOrder } = await supabase
+                .from('orders')
+                .select('order_id')
+                .or(`order_id.eq.${orderId},polymarket_order_id.eq.${orderId}`)
+                .limit(1)
+                .maybeSingle();
 
-                // Update lt_order status
-                if (ltOrderId) {
-                    await supabase
-                        .from('lt_orders')
-                        .update({ status: 'CANCELLED', outcome: 'CANCELLED' })
-                        .eq('lt_order_id', ltOrderId);
+            if (existingOrder) {
+                await supabase
+                    .from('orders')
+                    .update({
+                        lt_strategy_id: strategy.strategy_id,
+                        lt_order_id: ltOrderId,
+                        signal_price: currentPrice,
+                        signal_size_usd: ftSizeUsd,
+                    })
+                    .eq('order_id', existingOrder.order_id);
+                steps.push('Orders table stamped ✓');
+            } else {
+                // Insert a record so it shows on the Orders page with the Auto badge
+                const { error: insertErr } = await supabase
+                    .from('orders')
+                    .insert({
+                        order_id: orderId,
+                        trader_id: strategy.wallet_address,
+                        market_id: conditionId,
+                        outcome: lastFtOrder.token_label || 'Yes',
+                        side: 'BUY',
+                        order_type: 'GTC',
+                        price: limitPrice,
+                        size: sizeContracts,
+                        filled_size: 0,
+                        remaining_size: sizeContracts,
+                        status: 'open',
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        lt_strategy_id: strategy.strategy_id,
+                        lt_order_id: ltOrderId,
+                        signal_price: currentPrice,
+                        signal_size_usd: ftSizeUsd,
+                    })
+                    .select('order_id')
+                    .single();
+
+                if (insertErr) {
+                    steps.push(`WARNING: orders insert: ${insertErr.message}`);
+                } else {
+                    steps.push('Orders table inserted with Auto badge ✓');
                 }
-            } catch (cancelErr: any) {
-                steps.push(`WARNING: Cancel failed (order may have filled): ${cancelErr.message}`);
             }
-        }
 
-        return NextResponse.json({
-            ok: true,
-            message: 'Test trade pipeline completed successfully',
-            strategy_id: strategy.strategy_id,
-            market: selectedMarket.title,
-            token_id: tokenId,
-            token_label: tokenLabel,
-            price: testPrice,
-            size_contracts: testSizeContracts,
-            size_usd: testSizeUsd,
-            order_id: orderId,
-            lt_order_id: ltOrderId,
-            cancelled: cancelAfter,
-            steps,
-        });
-    } catch (error: any) {
-        steps.push(`FAILED: ${error.message}`);
-        return NextResponse.json({
-            ok: false,
-            error: error.message,
-            steps,
-            strategy_id: strategy.strategy_id,
-            market: selectedMarket?.title,
-            token_id: tokenId,
-        }, { status: 500 });
+            // Cancel if requested
+            if (cancelAfter && orderId) {
+                try {
+                    await client.cancelOrder(orderId);
+                    steps.push('Order cancelled ✓');
+                    if (ltOrderId) {
+                        await supabase.from('lt_orders').update({ status: 'CANCELLED', outcome: 'CANCELLED' }).eq('lt_order_id', ltOrderId);
+                    }
+                } catch (cancelErr: any) {
+                    steps.push(`Cancel failed: ${cancelErr.message}`);
+                }
+            }
+
+            results.push({
+                strategy_id: strategy.strategy_id,
+                ft_wallet_id: ftWalletId,
+                ok: true,
+                market: lastFtOrder.market_title,
+                token_label: lastFtOrder.token_label,
+                ft_order_time: lastFtOrder.order_time,
+                price: limitPrice,
+                size_contracts: sizeContracts,
+                size_usd: +(sizeContracts * limitPrice).toFixed(2),
+                order_id: orderId,
+                lt_order_id: ltOrderId,
+                cancelled: cancelAfter,
+                steps,
+            });
+        } catch (error: any) {
+            steps.push(`FAILED: ${error.message}`);
+            results.push({
+                strategy_id: strategy.strategy_id,
+                ft_wallet_id: ftWalletId,
+                ok: false,
+                error: error.message,
+                steps,
+            });
+        }
     }
+
+    const succeeded = results.filter(r => r.ok).length;
+    const failed = results.filter(r => !r.ok).length;
+
+    return NextResponse.json({
+        ok: succeeded > 0,
+        summary: `${succeeded} trades placed, ${failed} failed`,
+        total_strategies: strategies.length,
+        results,
+    });
 }
 
 export async function GET() {
     return NextResponse.json({
-        message: 'POST to this endpoint to force a test trade',
-        description: 'Places a minimal $0.50 resting order, records it in lt_orders, stamps the orders table, then optionally cancels it.',
+        message: 'POST to replay the last FT trade for each active LT strategy as a real order',
+        description: 'Finds the most recent ft_order per strategy, resolves token ID, places a real BUY at market price (capped at $5), records in lt_orders + orders table.',
         body_options: {
-            strategy_id: 'Optional: which LT strategy to use (defaults to first active)',
-            cancel_after: 'Optional: cancel the order after placing (default: true)',
+            strategy_id: 'Optional: test one specific strategy only',
+            cancel_after: 'Optional: cancel orders after placing (default: false — orders stay live)',
         },
     });
 }
