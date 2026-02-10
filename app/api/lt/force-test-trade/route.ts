@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin';
-import { requireAdmin } from '@/lib/ft-auth';
+import { requireAdminOrCron } from '@/lib/ft-auth';
 import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client';
 import { roundDownToStep } from '@/lib/polymarket/sizing';
 
 /**
  * POST /api/lt/force-test-trade
- * Admin-only: Replay the last FT trade for each active LT strategy as a real order.
+ * Admin or cron: Replay the last FT trade for each active LT strategy as a real order.
  *
  * For each active LT strategy:
  *  1. Finds the most recent ft_order for the underlying FT wallet
@@ -19,13 +19,12 @@ import { roundDownToStep } from '@/lib/polymarket/sizing';
  *   { "cancel_after": false }             — keep the order live (default: false)
  */
 export async function POST(request: Request) {
-    const authError = await requireAdmin();
+    const authError = await requireAdminOrCron(request);
     if (authError) return authError;
 
+    // Try to get user from session, otherwise resolve from strategies
     const user = await getAdminSessionUser();
-    if (!user) {
-        return NextResponse.json({ ok: false, error: 'No user session' }, { status: 401 });
-    }
+    const userId = user?.id || null;
 
     const supabase = createAdminServiceClient();
     const body = await request.json().catch(() => ({}));
@@ -43,11 +42,15 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: 'No LT strategies found' }, { status: 404 });
     }
 
-    // 2. Get CLOB client (shared across all strategies since same user)
+    // 2. Get CLOB client — use user session if available, else use strategy's user_id
+    const clobUserId = userId || strategies[0]?.user_id;
+    if (!clobUserId) {
+        return NextResponse.json({ ok: false, error: 'Cannot determine user ID for CLOB auth' }, { status: 400 });
+    }
     let client: any;
     let signatureType: any;
     try {
-        const authed = await getAuthedClobClientForUserAnyWallet(user.id);
+        const authed = await getAuthedClobClientForUserAnyWallet(clobUserId);
         client = authed.client;
         signatureType = authed.signatureType;
     } catch (err: any) {
