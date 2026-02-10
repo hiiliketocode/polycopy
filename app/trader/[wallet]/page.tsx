@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Check, ChevronDown, ChevronUp, Loader2, Info, ExternalLink, Copy } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Loader2, Info, ExternalLink, Copy, Share2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getOrRefreshSession } from '@/lib/auth/session';
 import { triggerLoggedOut } from '@/lib/auth/logout-events';
@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { TradeCard } from '@/components/polycopy/trade-card';
 import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/components/polycopy/trade-execution-notifications';
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
+import { ShareTraderModal } from '@/components/polycopy/share-trader-modal';
 import { extractMarketAvatarUrl } from '@/lib/marketAvatar';
 import { getTraderAvatarInitials } from '@/lib/trader-name';
 import { getESPNScoresForTrades, getScoreDisplaySides, getFallbackEspnUrl } from '@/lib/espn/scores';
@@ -365,6 +366,9 @@ export default function TraderProfilePage({
   
   // Copy wallet address state
   const [walletCopied, setWalletCopied] = useState(false);
+  
+  // Share trader modal state
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   
   // Live market data for trade cards
   const [liveMarketData, setLiveMarketData] = useState<Map<string, { 
@@ -2216,6 +2220,14 @@ export default function TraderProfilePage({
                 >
                   <ExternalLink className="h-4 w-4" />
                 </a>
+                <button
+                  onClick={() => setIsShareModalOpen(true)}
+                  className="inline-flex h-7 items-center gap-1.5 px-2.5 justify-center rounded-md bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-slate-900 font-semibold shadow-sm transition-colors"
+                  aria-label="Share Player Card"
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                  <span className="text-xs font-medium">Share</span>
+                </button>
               </div>
             </div>
 
@@ -3377,6 +3389,11 @@ export default function TraderProfilePage({
         open={showConnectWalletModal}
         onOpenChange={setShowConnectWalletModal}
         onConnect={handleWalletConnect}
+      />
+      <ShareTraderModal
+        open={isShareModalOpen}
+        onOpenChange={setIsShareModalOpen}
+        walletAddress={wallet}
       />
     </div>
   );

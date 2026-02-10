@@ -1,6 +1,6 @@
 "use client"
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { TraderAvatar, MarketAvatar } from "@/components/ui/polycopy-avatar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -3039,12 +3039,13 @@ export function TradeCard({
             href={`/trader/${trader.id || "1"}`}
             className="flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
           >
-            <Avatar className="h-10 w-10 ring-2 ring-slate-100 transition-all">
-              {trader.avatar ? <AvatarImage src={trader.avatar} alt={trader.name} /> : null}
-              <AvatarFallback className="bg-white text-slate-700 text-sm font-semibold">
-                {getTraderAvatarInitials({ displayName: trader.name, wallet: trader.address })}
-              </AvatarFallback>
-            </Avatar>
+            <TraderAvatar
+              displayName={trader.name}
+              wallet={trader.address}
+              src={trader.avatar}
+              size={40}
+              className="ring-2 ring-slate-100 transition-all"
+            />
             <div className="min-w-0">
               <p className="font-medium text-slate-900 text-sm leading-tight">{trader.name}</p>
             </div>
@@ -3080,12 +3081,12 @@ export function TradeCard({
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex items-start gap-2.5 md:items-center">
-                <Avatar className="h-11 w-11 ring-2 ring-slate-100 bg-slate-50 text-slate-700 text-xs font-semibold uppercase">
-                  <AvatarImage src={marketAvatar || "/placeholder.svg"} alt={market} />
-                  <AvatarFallback className="bg-slate-100 text-slate-700 text-xs font-semibold uppercase">
-                    {market.slice(0, 2)}
-                  </AvatarFallback>
-                </Avatar>
+                <MarketAvatar
+                  marketName={market}
+                  src={marketAvatar}
+                  size={44}
+                  className="ring-2 ring-slate-100"
+                />
                 <div className="min-w-0">
                   <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug break-words">
                     {market}

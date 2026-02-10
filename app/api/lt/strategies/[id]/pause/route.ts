@@ -21,13 +21,12 @@ export async function POST(request: Request, { params }: RouteParams) {
         const { id: strategyId } = await params;
         const supabase = createAdminServiceClient();
 
-        // Verify ownership
         const { data: existing } = await supabase
             .from('lt_strategies')
             .select('strategy_id')
             .eq('strategy_id', strategyId)
             .eq('user_id', userId)
-            .single();
+            .maybeSingle();
 
         if (!existing) {
             return NextResponse.json(

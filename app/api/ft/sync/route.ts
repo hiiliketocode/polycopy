@@ -5,7 +5,8 @@ import { fetchPolymarketLeaderboard } from '@/lib/polymarket-leaderboard';
 import { isTraderExcluded } from '@/lib/ft-excluded-traders';
 import { getPolyScore } from '@/lib/polyscore/get-polyscore';
 
-const TOP_TRADERS_LIMIT = 100; // Polymarket API max is 100
+const TOP_TRADERS_LIMIT = 100; // Polymarket API max per request
+const LEADERBOARD_PAGES = 2;   // Fetch 2 pages (top 100 + next 100) per leaderboard view → up to 800 slots, deduped
 const TRADES_PAGE_SIZE = 50;   // Per page from Polymarket API
 const MAX_PAGES_PER_TRADER = 4; // Max 200 trades per trader per sync
 const FT_SLIPPAGE_PCT = 0.003; // 0.3% - from empirical analysis of real copy trades
@@ -309,16 +310,31 @@ export async function POST(request: Request) {
     console.log(`[ft/sync] Found ${activeWallets.length} active wallets`);
     
     // 2. Get traders from different pools based on strategy needs
-    // Fetch multiple pools to support different strategies
-    const [tradersByPnlMonth, tradersByVolMonth, tradersByPnlWeek] = await Promise.all([
-      fetchPolymarketLeaderboard({ timePeriod: 'month', orderBy: 'PNL', limit: TOP_TRADERS_LIMIT }),
-      fetchPolymarketLeaderboard({ timePeriod: 'month', orderBy: 'VOL', limit: TOP_TRADERS_LIMIT }),
-      fetchPolymarketLeaderboard({ timePeriod: 'week', orderBy: 'PNL', limit: TOP_TRADERS_LIMIT })
-    ]);
-    
-    // Merge into unique trader set
+    // Fetch multiple pools: month/week for quality, DAY for currently active (critical for live events like Super Bowl)
+    // Each pool fetches LEADERBOARD_PAGES pages (offset 0, 100, ...) so we get more than just "top 100"
+    const leaderboardPromises: Promise<Awaited<ReturnType<typeof fetchPolymarketLeaderboard>>[]>[] = [];
+    const views: { timePeriod: string; orderBy: string }[] = [
+      { timePeriod: 'month', orderBy: 'PNL' },
+      { timePeriod: 'month', orderBy: 'VOL' },
+      { timePeriod: 'week', orderBy: 'PNL' },
+      { timePeriod: 'day', orderBy: 'VOL' }
+    ];
+    for (const { timePeriod, orderBy } of views) {
+      const pagePromises = Array.from({ length: LEADERBOARD_PAGES }, (_, i) =>
+        fetchPolymarketLeaderboard({ timePeriod, orderBy, limit: TOP_TRADERS_LIMIT, offset: i * TOP_TRADERS_LIMIT })
+      );
+      leaderboardPromises.push(Promise.all(pagePromises));
+    }
+    const [monthPnlPages, monthVolPages, weekPnlPages, dayVolPages] = await Promise.all(leaderboardPromises);
+
+    const tradersByPnlMonth = monthPnlPages.flat();
+    const tradersByVolMonth = monthVolPages.flat();
+    const tradersByPnlWeek = weekPnlPages.flat();
+    const tradersByVolDay = dayVolPages.flat();
+
+    // Merge into unique trader set (day pool captures who's trading RIGHT NOW)
     const traderMap = new Map<string, typeof tradersByPnlMonth[0]>();
-    [...tradersByPnlMonth, ...tradersByVolMonth, ...tradersByPnlWeek].forEach(t => {
+    [...tradersByPnlMonth, ...tradersByVolMonth, ...tradersByPnlWeek, ...tradersByVolDay].forEach(t => {
       const key = t.wallet.toLowerCase();
       if (!traderMap.has(key)) {
         traderMap.set(key, t);
@@ -349,6 +365,9 @@ export async function POST(request: Request) {
     if (topTraders.length < Array.from(traderMap.values()).length) {
       console.log(`[ft/sync] Excluded ${Array.from(traderMap.values()).length - topTraders.length} traders (FT_EXCLUDED_TRADERS)`);
     }
+    
+    // Day-active traders: currently trading today; relax min trade count so we don't miss live event action
+    const dayActiveTraderAddresses = new Set(tradersByVolDay.map(t => t.wallet.toLowerCase()));
     
     // Set of trader addresses that are explicitly targeted by any wallet (relax min trade count for these)
     const targetTraderAddresses = new Set<string>();
@@ -443,10 +462,14 @@ export async function POST(request: Request) {
       const wallet = trader.wallet.toLowerCase();
       const stats = statsMap.get(wallet) || { winRate: 0.5, tradeCount: 0, avgTradeSize: 0 };
 
-      // Skip traders with insufficient track record (except niche-targeted traders from trader_profile_stats).
-      // When stats are missing (trader not in trader_global_stats), treat as 50 - leaderboard presence implies activity.
+      // Skip traders with insufficient track record (except target_traders and day-active traders).
+      // Day-active: use lower threshold (10) so we capture live event trades from currently active traders.
+      // When stats missing, treat as 50 - leaderboard presence implies activity.
       const effectiveTradeCount = stats.tradeCount > 0 ? stats.tradeCount : 50;
-      if (!targetTraderAddresses.has(wallet) && effectiveTradeCount < MIN_TRADE_COUNT) continue;
+      const minCount = targetTraderAddresses.has(wallet) ? 0
+        : dayActiveTraderAddresses.has(wallet) ? 10
+        : MIN_TRADE_COUNT;
+      if (effectiveTradeCount < minCount) continue;
 
       try {
         let offset = 0;

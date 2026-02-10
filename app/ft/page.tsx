@@ -15,6 +15,8 @@ import {
   Target,
   ArrowRight,
   Play,
+  Pause,
+  Plus,
   CheckCircle2,
   Calendar,
   Timer,
@@ -123,10 +125,24 @@ export default function ForwardTestWalletsPage() {
   const [lastAutoSync, setLastAutoSync] = useState<Date | null>(null);
   const [sortField, setSortField] = useState<SortField>('pnl_pct');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [activeTab, setActiveTab] = useState<'performance' | 'compare'>('performance');
+  const [activeTab, setActiveTab] = useState<'performance' | 'compare' | 'live'>('performance');
   const [compareSortField, setCompareSortField] = useState<CompareSortField>('pnl');
   const [compareSortDir, setCompareSortDir] = useState<SortDir>('desc');
   const [ltStrategyFtIds, setLtStrategyFtIds] = useState<Set<string>>(new Set());
+  const [ltStrategies, setLtStrategies] = useState<Array<{
+    strategy_id: string; ft_wallet_id: string; display_name: string; is_active: boolean; is_paused: boolean; starting_capital: number;
+    lt_risk_state?: unknown; created_at?: string;
+    lt_stats?: { total_trades: number; open_positions: number; won: number; lost: number; win_rate: number | null;
+      realized_pnl: number; unrealized_pnl: number; total_pnl: number; current_balance: number; cash_available: number;
+      avg_trade_size: number; first_trade: string | null; last_trade: string | null;
+      attempts: number; filled: number; failed: number; pending: number; fill_rate_pct: number | null; avg_slippage_pct: number | null; };
+  }>>([]);
+  const [myPolymarketWallet, setMyPolymarketWallet] = useState<string | null>(null);
+  const [ltFilter, setLtFilter] = useState<'all' | 'active' | 'paused'>('all');
+  const [createLtWalletId, setCreateLtWalletId] = useState('');
+  const [createLtCapital, setCreateLtCapital] = useState('1000');
+  const [creatingLt, setCreatingLt] = useState(false);
+  const [ltError, setLtError] = useState<string | null>(null);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -137,8 +153,54 @@ export default function ForwardTestWalletsPage() {
     }
   };
 
+  // Convert LT strategies to FTWallet-compatible objects so they render in the same table
+  const ltWallets: FTWallet[] = useMemo(() => ltStrategies.map((s) => {
+    const st = s.lt_stats;
+    return {
+      wallet_id: s.strategy_id,
+      config_id: s.strategy_id,
+      display_name: s.display_name,
+      description: `Live trading → mirrors ${s.ft_wallet_id}`,
+      starting_balance: s.starting_capital,
+      current_balance: st?.current_balance ?? s.starting_capital,
+      cash_available: st?.cash_available ?? s.starting_capital,
+      realized_pnl: st?.realized_pnl ?? 0,
+      unrealized_pnl: st?.unrealized_pnl ?? 0,
+      total_pnl: st?.total_pnl ?? 0,
+      total_trades: st?.total_trades ?? 0,
+      trades_seen: st?.attempts ?? 0,
+      trades_skipped: (st?.failed ?? 0) + (st?.pending ?? 0),
+      open_positions: st?.open_positions ?? 0,
+      won: st?.won ?? 0,
+      lost: st?.lost ?? 0,
+      win_rate: st?.win_rate ?? null,
+      open_exposure: 0,
+      avg_trade_size: st?.avg_trade_size ?? 0,
+      avg_entry_price: null,
+      first_trade: st?.first_trade ? { value: st.first_trade } : null,
+      last_trade: st?.last_trade ? { value: st.last_trade } : null,
+      model_threshold: 0,
+      price_min: 0,
+      price_max: 1,
+      min_edge: 0,
+      use_model: false,
+      is_active: s.is_active,
+      bet_size: 0,
+      bet_allocation_weight: 0,
+      start_date: { value: s.created_at || new Date().toISOString() },
+      end_date: { value: '' },
+      last_sync_time: null,
+      hours_remaining: 0,
+      test_status: s.is_active ? 'ACTIVE' as const : 'ENDED' as const,
+      // Tag as live so we can style it differently
+      _isLive: true,
+    } as FTWallet & { _isLive?: boolean };
+  }), [ltStrategies]);
+
+  const allWallets = useMemo(() => [...wallets, ...ltWallets], [wallets, ltWallets]);
+
   const sortedWallets = useMemo(() => {
-    return [...wallets].sort((a, b) => {
+    return [...allWallets].sort((a, b) => {
       let aVal: number | string = 0;
       let bVal: number | string = 0;
 
@@ -244,15 +306,53 @@ export default function ForwardTestWalletsPage() {
     try {
       const res = await fetch('/api/lt/strategies', { cache: 'no-store' });
       const data = await res.json();
-      if (res.ok && data.strategies?.length) {
-        setLtStrategyFtIds(new Set((data.strategies as { ft_wallet_id: string }[]).map((s) => s.ft_wallet_id)));
+      if (res.ok && data.strategies) {
+        const list = data.strategies as Array<{ ft_wallet_id: string; strategy_id: string; display_name: string; is_active: boolean; is_paused: boolean; starting_capital: number; lt_risk_state?: unknown }>;
+        setLtStrategyFtIds(new Set(list.map((s) => s.ft_wallet_id)));
+        setLtStrategies(list);
+        if (data.my_polymarket_wallet != null) setMyPolymarketWallet(data.my_polymarket_wallet);
       } else {
         setLtStrategyFtIds(new Set());
+        setLtStrategies([]);
       }
     } catch {
       setLtStrategyFtIds(new Set());
+      setLtStrategies([]);
     }
   }, []);
+
+  const handleCreateLt = useCallback(async () => {
+    if (!createLtWalletId) {
+      setLtError('Select an FT wallet to mirror');
+      return;
+    }
+    if (!myPolymarketWallet) {
+      setLtError('Connect a Polymarket wallet in Portfolio or Profile first.');
+      return;
+    }
+    setCreatingLt(true);
+    setLtError(null);
+    try {
+      const res = await fetch('/api/lt/strategies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ft_wallet_id: createLtWalletId,
+          starting_capital: parseFloat(createLtCapital) || 1000,
+          display_name: `Live: ${wallets.find((w) => w.wallet_id === createLtWalletId)?.display_name || createLtWalletId}`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create');
+      setCreateLtWalletId('');
+      setCreateLtCapital('1000');
+      await fetchLtStrategies();
+    } catch (e: unknown) {
+      setLtError(e instanceof Error ? e.message : 'Failed to create strategy');
+    } finally {
+      setCreatingLt(false);
+    }
+  }, [createLtWalletId, createLtCapital, myPolymarketWallet, wallets, fetchLtStrategies]);
 
   const syncNewTrades = async () => {
     try {
@@ -576,8 +676,14 @@ export default function ForwardTestWalletsPage() {
         </div>
       )}
 
-      {/* Tabs: Performance | Compare Strategies */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'performance' | 'compare')}>
+      {totals && wallets.length > 0 && (
+        <p className="text-xs text-muted-foreground mb-4">
+          Summary above is across all {wallets.length} strategies. The table below shows every strategy; scroll to see all rows. The table footer row matches the summary totals.
+        </p>
+      )}
+
+      {/* Tabs: Performance | Compare Strategies | Live */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'performance' | 'compare' | 'live')}>
         <TabsList className="mb-4">
           <TabsTrigger value="performance" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
@@ -586,6 +692,10 @@ export default function ForwardTestWalletsPage() {
           <TabsTrigger value="compare" className="flex items-center gap-2">
             <Settings2 className="h-4 w-4" />
             Compare Strategies
+          </TabsTrigger>
+          <TabsTrigger value="live" className="flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Live
           </TabsTrigger>
         </TabsList>
 
@@ -627,11 +737,13 @@ export default function ForwardTestWalletsPage() {
                   const winRate = (wallet.won + wallet.lost) > 0 
                     ? (wallet.won / (wallet.won + wallet.lost)) * 100 
                     : 0;
+                  const isLive = (wallet as FTWallet & { _isLive?: boolean })._isLive === true;
+                  const detailHref = isLive ? `/lt/${wallet.wallet_id}` : `/ft/${wallet.wallet_id}`;
                   
                   return (
                     <tr 
                       key={wallet.wallet_id} 
-                      className="border-b hover:bg-muted/30 transition-colors"
+                      className={`border-b hover:bg-muted/30 transition-colors ${isLive ? 'bg-emerald-50/50' : ''}`}
                     >
                       {/* Strategy Name */}
                       <td className="px-3 py-3">
@@ -642,7 +754,10 @@ export default function ForwardTestWalletsPage() {
                             <TrendingDown className="h-4 w-4 text-red-600 flex-shrink-0" />
                           )}
                           <div>
-                            <div className="font-medium">{wallet.display_name}</div>
+                            <div className="font-medium flex items-center gap-1.5">
+                              <Link href={detailHref} className="hover:underline">{wallet.display_name}</Link>
+                              {isLive && <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] py-0 px-1.5">LIVE</Badge>}
+                            </div>
                             <div className="text-xs text-muted-foreground truncate max-w-[200px]" title={wallet.description}>
                               {wallet.description}
                             </div>
@@ -744,9 +859,24 @@ export default function ForwardTestWalletsPage() {
                         {formatCurrency(wallet.cash_available)}
                       </td>
 
+                      {/* Live */}
+                      <td className="px-3 py-3">
+                        {ltStrategyFtIds.has(wallet.wallet_id) ? (
+                          <Link href={`/lt/LT_${wallet.wallet_id}`}>
+                            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200 cursor-pointer">
+                              Live
+                            </Badge>
+                          </Link>
+                        ) : (
+                          <Link href={`/lt?createFrom=${wallet.wallet_id}`}>
+                            <span className="text-xs text-[#FDB022] hover:underline cursor-pointer">Create Live</span>
+                          </Link>
+                        )}
+                      </td>
+
                       {/* Actions */}
                       <td className="px-3 py-3 text-right">
-                        <Link href={`/ft/${wallet.wallet_id}`}>
+                        <Link href={detailHref}>
                           <Button variant="ghost" size="sm" className="h-7 px-2">
                             <ArrowRight className="h-4 w-4" />
                           </Button>
@@ -756,6 +886,34 @@ export default function ForwardTestWalletsPage() {
                   );
                 })}
               </tbody>
+              <tfoot className="bg-muted/30 border-t-2 font-medium">
+                <tr>
+                  <td className="px-3 py-3 text-muted-foreground" colSpan={4}>
+                    Table total ({sortedWallets.length} strategies)
+                  </td>
+                  <td className="px-3 py-3 text-right">{formatCurrency(sortedWallets.reduce((s, w) => s + w.current_balance, 0))}</td>
+                  <td className="px-3 py-3 text-right">{formatPnl(sortedWallets.reduce((s, w) => s + w.total_pnl, 0))}</td>
+                  <td className="px-3 py-3 text-right">—</td>
+                  <td className="px-3 py-3 text-right">{formatPnl(sortedWallets.reduce((s, w) => s + (w.realized_pnl || 0), 0))}</td>
+                  <td className="px-3 py-3 text-right">{formatPnl(sortedWallets.reduce((s, w) => s + (w.unrealized_pnl || 0), 0))}</td>
+                  <td className="px-3 py-3 text-right">{sortedWallets.reduce((s, w) => s + w.total_trades, 0).toLocaleString()}</td>
+                  <td className="px-3 py-3 text-right">—</td>
+                  <td className="px-3 py-3 text-right">—</td>
+                  <td className="px-3 py-3 text-right">{sortedWallets.reduce((s, w) => s + w.open_positions, 0).toLocaleString()}</td>
+                  <td className="px-3 py-3 text-right text-green-600">{sortedWallets.reduce((s, w) => s + w.won, 0).toLocaleString()}</td>
+                  <td className="px-3 py-3 text-right text-red-600">{sortedWallets.reduce((s, w) => s + w.lost, 0).toLocaleString()}</td>
+                  <td className="px-3 py-3 text-right">
+                    {(() => {
+                      const tw = sortedWallets.reduce((s, w) => s + w.won, 0);
+                      const tl = sortedWallets.reduce((s, w) => s + w.lost, 0);
+                      return (tw + tl) > 0 ? `${((tw / (tw + tl)) * 100).toFixed(0)}%` : '—';
+                    })()}
+                  </td>
+                  <td className="px-3 py-3 text-right">—</td>
+                  <td className="px-3 py-3 text-right">—</td>
+                  <td className="px-3 py-3 text-right" colSpan={2}></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </CardContent>
@@ -888,6 +1046,162 @@ export default function ForwardTestWalletsPage() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="live" className="mt-0">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                Live trading
+              </CardTitle>
+              <CardDescription>
+                Create and manage live strategies that mirror your Forward Test wallets. Trades run on your connected Polymarket account and appear in your Orders.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {ltError && (
+                <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center justify-between">
+                  <span>{ltError}</span>
+                  <Button variant="ghost" size="sm" onClick={() => setLtError(null)}>Dismiss</Button>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-4 items-end">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">FT wallet to mirror</label>
+                  <select
+                    value={createLtWalletId}
+                    onChange={(e) => setCreateLtWalletId(e.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm min-w-[200px]"
+                  >
+                    <option value="">Select…</option>
+                    {wallets.map((w) => (
+                      <option key={w.wallet_id} value={w.wallet_id}>{w.display_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Starting capital ($)</label>
+                  <input
+                    type="number"
+                    value={createLtCapital}
+                    onChange={(e) => setCreateLtCapital(e.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm w-28"
+                    min={1}
+                    step={100}
+                  />
+                </div>
+                <Button
+                  onClick={handleCreateLt}
+                  disabled={creatingLt || !createLtWalletId || !myPolymarketWallet}
+                  className="bg-[#FDB022] text-slate-900 hover:bg-[#FDB022]/90"
+                >
+                  {creatingLt ? 'Creating…' : 'Create live strategy'}
+                </Button>
+              </div>
+              {!myPolymarketWallet && (
+                <p className="text-sm text-muted-foreground">
+                  Connect a Polymarket wallet in <Link href="/portfolio" className="text-primary underline">Portfolio</Link> or <Link href="/profile" className="text-primary underline">Profile</Link> to create a live strategy.
+                </p>
+              )}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">Your live strategies</span>
+                  <div className="flex gap-1">
+                    {(['all', 'active', 'paused'] as const).map((f) => (
+                      <Button
+                        key={f}
+                        variant={ltFilter === f ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className="capitalize"
+                        onClick={() => setLtFilter(f)}
+                      >
+                        {f}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                {ltStrategies.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4">
+                    No live strategies yet. Create one above or go to <Link href="/lt" className="text-primary underline">Live Trading</Link> for more options.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {ltStrategies
+                      .filter((s) => {
+                        if (ltFilter === 'all') return true;
+                        const isPaused = s.is_paused || (Array.isArray(s.lt_risk_state) && (s.lt_risk_state[0] as { is_paused?: boolean })?.is_paused);
+                        if (ltFilter === 'paused') return isPaused;
+                        return !isPaused && s.is_active;
+                      })
+                      .map((s) => {
+                        const risk = Array.isArray(s.lt_risk_state) && s.lt_risk_state[0] ? (s.lt_risk_state[0] as { current_equity?: number }) : null;
+                        const isPaused = s.is_paused || (risk as { is_paused?: boolean } | null)?.is_paused;
+                        return (
+                          <li
+                            key={s.strategy_id}
+                            className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg border bg-card text-card-foreground"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Link href={`/lt/${s.strategy_id}`} className="font-medium hover:underline">
+                                {s.display_name}
+                              </Link>
+                              {s.is_active && !isPaused && (
+                                <Badge variant="secondary" className="bg-emerald-100 text-emerald-700">Active</Badge>
+                              )}
+                              {isPaused && (
+                                <Badge variant="secondary" className="bg-amber-100 text-amber-700">Paused</Badge>
+                              )}
+                              <span className="text-xs text-muted-foreground">
+                                Capital: ${risk?.current_equity ?? s.starting_capital}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isPaused ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={async () => {
+                                    try {
+                                      await fetch(`/api/lt/strategies/${encodeURIComponent(s.strategy_id)}/resume`, { method: 'POST' });
+                                      await fetchLtStrategies();
+                                    } catch {
+                                      setLtError('Failed to resume');
+                                    }
+                                  }}
+                                >
+                                  <Play className="h-4 w-4 mr-1" />
+                                  Resume
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={async () => {
+                                    try {
+                                      await fetch(`/api/lt/strategies/${encodeURIComponent(s.strategy_id)}/pause`, { method: 'POST' });
+                                      await fetchLtStrategies();
+                                    } catch {
+                                      setLtError('Failed to pause');
+                                    }
+                                  }}
+                                >
+                                  <Pause className="h-4 w-4 mr-1" />
+                                  Pause
+                                </Button>
+                              )}
+                              <Link href={`/lt/${s.strategy_id}`}>
+                                <Button size="sm" variant="ghost">View trades & settings</Button>
+                              </Link>
+                            </div>
+                          </li>
+                        );
+                      })}
+                  </ul>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 

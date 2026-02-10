@@ -23,8 +23,16 @@ import {
   Info,
   AlertCircle,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Stethoscope
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   ResponsiveContainer,
   LineChart,
@@ -346,6 +354,17 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
   const [tradesSortField, setTradesSortField] = useState<string>('order_time');
   const [tradesSortDir, setTradesSortDir] = useState<'asc' | 'desc'>('desc');
   const [autoSyncActive, setAutoSyncActive] = useState(true);
+  const [hasLiveStrategy, setHasLiveStrategy] = useState<boolean | null>(null);
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+  const [diagnoseLoading, setDiagnoseLoading] = useState(false);
+  const [diagnoseResult, setDiagnoseResult] = useState<{
+    skip_reasons_last_24h?: Record<string, number>;
+    skipped_total_last_24h?: number;
+    conclusion?: string;
+    steps?: Record<string, unknown>;
+    run_at?: string;
+  } | null>(null);
+  const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
 
   const fetchWalletData = useCallback(async (silent = false) => {
     try {
@@ -577,8 +596,97 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              setDiagnoseOpen(true);
+              setDiagnoseLoading(true);
+              setDiagnoseError(null);
+              setDiagnoseResult(null);
+              try {
+                const res = await fetch('/api/ft/sync-diagnose', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ wallet_id: id }),
+                  cache: 'no-store',
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                  setDiagnoseError(data?.error || res.statusText);
+                  return;
+                }
+                setDiagnoseResult({
+                  skip_reasons_last_24h: data.diagnostic?.skip_reasons_last_24h,
+                  skipped_total_last_24h: data.diagnostic?.skipped_total_last_24h,
+                  conclusion: data.diagnostic?.conclusion,
+                  steps: data.diagnostic?.steps,
+                  run_at: data.diagnostic?.run_at,
+                });
+              } catch (e) {
+                setDiagnoseError(e instanceof Error ? e.message : 'Diagnose failed');
+              } finally {
+                setDiagnoseLoading(false);
+              }
+            }}
+            disabled={diagnoseLoading}
+          >
+            <Stethoscope className={`mr-2 h-4 w-4 ${diagnoseLoading ? 'animate-pulse' : ''}`} />
+            Diagnose
+          </Button>
         </div>
       </div>
+
+      {/* Diagnose dialog */}
+      <Dialog open={diagnoseOpen} onOpenChange={setDiagnoseOpen}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Why isn’t this strategy taking trades?</DialogTitle>
+            <DialogDescription>
+              Skip reasons for this wallet in the last 24 hours. Trades are only taken when every filter passes.
+            </DialogDescription>
+          </DialogHeader>
+          {diagnoseLoading && (
+            <div className="flex items-center gap-2 py-4 text-muted-foreground">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Running diagnose…
+            </div>
+          )}
+          {diagnoseError && (
+            <p className="text-destructive py-2">{diagnoseError}</p>
+          )}
+          {!diagnoseLoading && diagnoseResult && (
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Total skipped (24h): {diagnoseResult.skipped_total_last_24h ?? 0}
+                </p>
+              </div>
+              {diagnoseResult.skip_reasons_last_24h && Object.keys(diagnoseResult.skip_reasons_last_24h).length > 0 ? (
+                <div>
+                  <p className="text-sm font-medium mb-2">Skip reasons (main blockers first):</p>
+                  <ul className="list-disc list-inside space-y-1 text-sm">
+                    {Object.entries(diagnoseResult.skip_reasons_last_24h)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([reason, count]) => (
+                        <li key={reason}>
+                          <span className="font-mono text-amber-600">{reason}</span>: {count}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No skipped trades in the last 24h (or no evaluations yet).</p>
+              )}
+              {diagnoseResult.conclusion && (
+                <p className="text-sm border-t pt-3 mt-3">{diagnoseResult.conclusion}</p>
+              )}
+              {diagnoseResult.run_at && (
+                <p className="text-xs text-muted-foreground">Run at: {new Date(diagnoseResult.run_at).toLocaleString()}</p>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Portfolio Summary */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-4 mb-6">
@@ -790,11 +898,11 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
         <TabsList className="mb-4">
           <TabsTrigger value="positions" className="flex items-center gap-2">
             <Briefcase className="h-4 w-4" />
-            Open Positions ({stats.open_positions})
+            Open Trades ({stats.open_positions})
           </TabsTrigger>
           <TabsTrigger value="trades" className="flex items-center gap-2">
             <ListOrdered className="h-4 w-4" />
-            Recent Trades
+            Resolved Trades ({stats.won + stats.lost})
           </TabsTrigger>
           <TabsTrigger value="performance" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
@@ -802,21 +910,21 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
           </TabsTrigger>
         </TabsList>
 
-        {/* Open Positions Tab */}
+        {/* Open Trades Tab */}
         <TabsContent value="positions">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Briefcase className="h-5 w-5" />
-                Open Positions
+                Open Trades
               </CardTitle>
               <CardDescription>
-                Active positions waiting for market resolution
+                Active trades waiting for market resolution
               </CardDescription>
             </CardHeader>
             <CardContent>
               {openPositions.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No open positions</p>
+                <p className="text-muted-foreground text-center py-8">No open trades</p>
               ) : (
                 <Table>
                   <TableHeader>
@@ -958,16 +1066,20 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
           </Card>
         </TabsContent>
 
-        {/* Recent Trades Tab */}
+        {/* Resolved Trades Tab */}
         <TabsContent value="trades">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <ListOrdered className="h-5 w-5" />
-                Recent Trades
+                Resolved Trades
               </CardTitle>
               <CardDescription>
-                Last 50 resolved trades
+                {stats ? (
+                  <>All {stats.won + stats.lost} resolved trades. Sum below matches Realized P&L above.</>
+                ) : (
+                  'All resolved trades'
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1020,7 +1132,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                           {formatPriceCents(trade.entry_price, 1)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {formatCurrency(trade.size)}
+                          {trade.size != null && Number.isFinite(trade.size) ? formatCurrency(trade.size) : '–'}
                         </TableCell>
                         <TableCell className="text-center">
                           <Badge variant={trade.outcome === 'WON' ? 'default' : 'destructive'}>
@@ -1040,6 +1152,11 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                     ))}
                   </TableBody>
                 </Table>
+              )}
+              {recentTrades.length > 0 && stats && (
+                <p className="text-xs text-muted-foreground mt-3">
+                  Sum of all {recentTrades.length} resolved trades: {formatPnl(recentTrades.reduce((s, t) => s + (Number(t.pnl) || 0), 0))}
+                </p>
               )}
             </CardContent>
           </Card>

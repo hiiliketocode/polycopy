@@ -1,13 +1,14 @@
 /**
  * Live Trading Executor
- * Executes real trades following FT strategy signals with risk management
+ * Executes real trades following FT strategy signals with risk management.
+ * Uses the same place-order core as quick trades (Evomi, order_events_log, Cloudflare mitigation).
  */
 
-import { createAdminServiceClient } from '@/lib/admin';
+import { randomUUID } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client';
+import { placeOrderCore } from '@/lib/polymarket/place-order-core';
 import { roundDownToStep } from '@/lib/polymarket/sizing';
-import { checkRiskRules, updateRiskStateAfterTrade, type TradeSignal } from './risk-manager';
+import { checkRiskRules, updateRiskStateAfterTrade } from './risk-manager';
 import { type EnrichedTrade, calculateBetSize as sharedCalculateBetSize, getSourceTradeId } from '@/lib/ft-sync/shared-logic';
 
 export interface LTStrategy {
@@ -138,12 +139,13 @@ export async function executeTrade(
         };
     }
 
-    // Get token ID
-    const tokenId = trade.conditionId || '';
+    // Get token ID - must use the asset (token) ID, NOT the conditionId
+    // The Polymarket CLOB API requires the token ID for trading
+    const tokenId = trade.asset || '';
     if (!tokenId) {
         return {
             success: false,
-            error: 'Missing condition_id',
+            error: 'Missing token ID (asset)',
             riskCheckPassed: true,
         };
     }
@@ -153,105 +155,111 @@ export async function executeTrade(
     const roundedPrice = roundDownToStep(price, 0.01);
     const roundedSize = roundDownToStep(sizeContracts, 0.01);
 
-    // Place order
-    try {
-        const { client, signatureType } = await getAuthedClobClientForUserAnyWallet(strategy.user_id);
-        const order = await client.createOrder(
-            {
-                tokenID: tokenId,
-                price: roundedPrice,
-                size: roundedSize,
-                side: 'BUY' as any,
-            },
-            { signatureType } as any
-        );
+    const orderType = (strategy.order_type || 'GTC') as 'GTC' | 'FOK' | 'FAK' | 'IOC';
+    const requestId = `lt_${strategy.strategy_id}_${Date.now()}_${randomUUID().slice(0, 8)}`;
+    const orderIntentId = randomUUID();
 
-        const rawResult = await client.postOrder(order, (strategy.order_type || 'GTC') as any, false);
+    const result = await placeOrderCore({
+        supabase,
+        userId: strategy.user_id,
+        tokenId,
+        price: roundedPrice,
+        size: roundedSize,
+        side: 'BUY',
+        orderType,
+        requestId,
+        orderIntentId,
+        useAnyWallet: true,
+        conditionId: trade.conditionId || null,
+        outcome: trade.outcome || null,
+    });
 
-        // Get order ID from result
-        const orderId = rawResult?.orderID || rawResult?.order_id || null;
-        if (!orderId) {
-            throw new Error('No order ID returned from CLOB');
-        }
-
-        // Find order in orders table
-        const { data: orderRecord } = await supabase
-            .from('orders')
-            .select('order_id')
-            .eq('polymarket_order_id', orderId)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
-
-        const finalOrderId = orderRecord?.order_id || orderId;
-
-        // Calculate execution metrics
-        const executionLatency = Date.now() - signalTime;
-        const executedPrice = roundedPrice; // Will be updated when fill occurs
-        const executedSize = roundedSize; // Will be updated when fill occurs
-        const slippage = price > 0 ? (executedPrice - price) / price : 0;
-
-        // Create LT order record
-        const { data: ltOrder, error: ltError } = await supabase
-            .from('lt_orders')
-            .insert({
-                strategy_id: strategy.strategy_id,
-                ft_order_id: ftOrderId || null,
-                order_id: finalOrderId,
-                polymarket_order_id: orderId,
-                source_trade_id: sourceTradeId,
-                trader_address: trade.traderWallet,
-                condition_id: trade.conditionId,
-                market_slug: trade.slug || null,
-                market_title: trade.title || null,
-                token_label: (trade.outcome || 'YES').toUpperCase(),
-                signal_price: price,
-                signal_size_usd: betSize,
-                executed_price: executedPrice,
-                executed_size: executedSize,
-                order_placed_at: new Date().toISOString(),
-                slippage_pct: slippage,
-                fill_rate: 1.0, // Will be updated on fill
-                execution_latency_ms: executionLatency,
-                risk_check_passed: true,
-                status: 'PENDING',
-                outcome: 'OPEN',
-                ft_entry_price: priceWithSlippage,
-                ft_size: betSize,
-            })
-            .select('lt_order_id')
-            .single();
-
-        if (ltError || !ltOrder) {
-            throw new Error(`Failed to create LT order: ${ltError?.message}`);
-        }
-
-        // Update orders table with LT metadata
-        await supabase
-            .from('orders')
-            .update({
-                lt_strategy_id: strategy.strategy_id,
-                lt_order_id: ltOrder.lt_order_id,
-                signal_price: price,
-                signal_size_usd: betSize,
-            })
-            .eq('order_id', finalOrderId);
-
-        // Update risk state
-        await updateRiskStateAfterTrade(supabase, strategy.strategy_id, betSize, null);
-
-        return {
-            success: true,
-            lt_order_id: ltOrder.lt_order_id,
-            order_id: finalOrderId,
-            riskCheckPassed: true,
-        };
-    } catch (error: any) {
-        console.error('[LT Executor] Order placement failed:', error);
+    if (!result.success) {
+        const errMsg = 'message' in result.evaluation ? result.evaluation.message : 'Order placement failed';
+        console.error('[LT Executor] Order placement failed:', errMsg);
         return {
             success: false,
-            error: error?.message || 'Order placement failed',
+            error: errMsg,
             riskCheckPassed: true,
         };
     }
+
+    const orderId = result.orderId ?? '';
+    const executionLatency = Date.now() - signalTime;
+    const executedPrice = roundedPrice;
+    const executedSize = roundedSize;
+    const slippage = price > 0 ? (executedPrice - price) / price : 0;
+
+    const { data: ltOrder, error: ltError } = await supabase
+        .from('lt_orders')
+        .insert({
+            strategy_id: strategy.strategy_id,
+            ft_order_id: ftOrderId || null,
+            order_id: orderId,
+            polymarket_order_id: orderId,
+            source_trade_id: sourceTradeId,
+            trader_address: trade.traderWallet,
+            condition_id: trade.conditionId,
+            market_slug: trade.slug || null,
+            market_title: trade.title || null,
+            token_label: (trade.outcome || 'YES').toUpperCase(),
+            signal_price: price,
+            signal_size_usd: betSize,
+            executed_price: executedPrice,
+            executed_size: executedSize,
+            order_placed_at: new Date().toISOString(),
+            slippage_pct: slippage,
+            fill_rate: 1.0,
+            execution_latency_ms: executionLatency,
+            risk_check_passed: true,
+            status: 'PENDING',
+            outcome: 'OPEN',
+            ft_entry_price: priceWithSlippage,
+            ft_size: betSize,
+        })
+        .select('lt_order_id')
+        .single();
+
+    if (ltError || !ltOrder) {
+        console.error('[LT Executor] Failed to create LT order record:', ltError?.message);
+        return {
+            success: false,
+            error: `Failed to create LT order: ${ltError?.message}`,
+            riskCheckPassed: true,
+        };
+    }
+
+    // Upsert orders row so Orders UI shows Auto badge (core does not write orders for LT)
+    const now = new Date().toISOString();
+    await supabase.from('orders').upsert(
+        {
+            order_id: orderId,
+            trader_id: strategy.wallet_address,
+            market_id: trade.conditionId ?? null,
+            outcome: (trade.outcome || 'YES').toUpperCase(),
+            side: 'buy',
+            order_type: orderType,
+            price: executedPrice,
+            size: executedSize,
+            filled_size: 0,
+            remaining_size: executedSize,
+            status: 'open',
+            created_at: now,
+            updated_at: now,
+            lt_strategy_id: strategy.strategy_id,
+            lt_order_id: ltOrder.lt_order_id,
+            signal_price: price,
+            signal_size_usd: betSize,
+        },
+        { onConflict: 'order_id' }
+    );
+
+    await updateRiskStateAfterTrade(supabase, strategy.strategy_id, betSize, null);
+
+    return {
+        success: true,
+        lt_order_id: ltOrder.lt_order_id,
+        order_id: orderId,
+        riskCheckPassed: true,
+    };
 }

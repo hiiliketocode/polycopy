@@ -2858,6 +2858,16 @@ function ProfilePageContent() {
                   >
                     <ArrowUpRight className="h-4 w-4" />
                   </a>
+                  {copiedTrades.length > 0 && (
+                    <button
+                      onClick={() => setIsShareStatsModalOpen(true)}
+                      className="inline-flex h-7 items-center gap-1.5 px-2.5 justify-center rounded-md bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-slate-900 font-semibold shadow-sm transition-colors"
+                      aria-label="Share My Stats"
+                    >
+                      <Share2 className="h-3.5 w-3.5" />
+                      <span className="text-xs font-medium">Share</span>
+                    </button>
+                  )}
                 </div>
               )}
               <Link 
@@ -2874,15 +2884,6 @@ function ProfilePageContent() {
             </div>
 
             <div className="flex items-center gap-3">
-              {copiedTrades.length > 0 && (
-                <Button
-                  onClick={() => setIsShareStatsModalOpen(true)}
-                  className="bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-slate-900 font-semibold shadow-sm"
-                >
-                  <Share2 className="h-4 w-4 mr-2" />
-                  Share My Stats
-                </Button>
-              )}
               {!profile?.trading_wallet_address && hasPremiumAccess && (
                 <Button
                   onClick={() => setIsConnectModalOpen(true)}
