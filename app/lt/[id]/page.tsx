@@ -78,6 +78,7 @@ export default function LTStrategyDetailPage() {
   const id = params?.id as string;
   const [strategy, setStrategy] = useState<LTStrategyDetail | null>(null);
   const [openOrders, setOpenOrders] = useState<LTOrder[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<LTOrder[]>([]);
   const [closedOrders, setClosedOrders] = useState<LTOrder[]>([]);
   const [failedOrders, setFailedOrders] = useState<LTOrder[]>([]);
   const [orderStats, setOrderStats] = useState<OrderStats | null>(null);
@@ -88,7 +89,7 @@ export default function LTStrategyDetailPage() {
   const [displayName, setDisplayName] = useState('');
   const [startingCapital, setStartingCapital] = useState('');
   const [isActive, setIsActive] = useState(false);
-  const [activeTab, setActiveTab] = useState<'open' | 'closed' | 'failed' | 'settings'>('open');
+  const [activeTab, setActiveTab] = useState<'pending' | 'open' | 'closed' | 'failed' | 'settings'>('pending');
   const [sortField, setSortField] = useState<OrderSortField>('time');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -119,6 +120,7 @@ export default function LTStrategyDetailPage() {
       const data = await res.json();
       if (res.ok) {
         setOpenOrders(data.open_orders || []);
+        setPendingOrders(data.pending_orders || []);
         setClosedOrders(data.closed_orders || []);
         setFailedOrders(data.failed_orders || []);
         setOrderStats(data.stats || null);
@@ -183,6 +185,7 @@ export default function LTStrategyDetailPage() {
   }, [sortField, sortDir]);
 
   const sortedOpen = useMemo(() => sortOrders(openOrders), [openOrders, sortOrders]);
+  const sortedPending = useMemo(() => sortOrders(pendingOrders), [pendingOrders, sortOrders]);
   const sortedClosed = useMemo(() => sortOrders(closedOrders), [closedOrders, sortOrders]);
   const sortedFailed = useMemo(() => sortOrders(failedOrders), [failedOrders, sortOrders]);
 
@@ -311,14 +314,43 @@ export default function LTStrategyDetailPage() {
         </CardContent></Card>
       </div>
 
-      {/* Tabs: Open | Closed | Failed | Settings */}
+      {/* Tabs: Pending | Open | Closed | Failed | Settings */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
         <TabsList className="mb-4">
+          <TabsTrigger value="pending">Pending ({pendingOrders.length})</TabsTrigger>
           <TabsTrigger value="open">Open ({openOrders.length})</TabsTrigger>
           <TabsTrigger value="closed">Closed ({closedOrders.length})</TabsTrigger>
           <TabsTrigger value="failed">Failed ({failedOrders.length})</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
+
+        {/* Pending Orders — placed but not yet filled (force-test & cron) */}
+        <TabsContent value="pending">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Pending orders</CardTitle>
+              <CardDescription>Orders placed and awaiting fill (force-test and live execution)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {ordersLoading ? <p className="text-muted-foreground text-sm py-4">Loading…</p> :
+               pendingOrders.length === 0 ? <p className="text-muted-foreground text-sm py-4">No pending orders.</p> : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader><TableRow>
+                      <SortTH field="market" label="Market" />
+                      <TableHead>Outcome</TableHead>
+                      <SortTH field="size" label="Size" align="right" />
+                      <SortTH field="price" label="Price" align="right" />
+                      <SortTH field="slippage" label="Slippage" align="right" />
+                      <SortTH field="time" label="Placed" />
+                    </TableRow></TableHeader>
+                    <TableBody>{sortedPending.map((o) => <OrderRow key={o.lt_order_id} o={o} showOutcome={false} />)}</TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Open Orders */}
         <TabsContent value="open">

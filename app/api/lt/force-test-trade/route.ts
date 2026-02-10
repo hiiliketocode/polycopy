@@ -5,6 +5,7 @@ import { requireAdminOrCron } from '@/lib/ft-auth';
 import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client';
 import { placeOrderCore } from '@/lib/polymarket/place-order-core';
 import { roundDownToStep } from '@/lib/polymarket/sizing';
+import { ensureTraderId } from '@/lib/traders/ensure-id';
 
 /**
  * POST /api/lt/force-test-trade
@@ -192,7 +193,38 @@ export async function POST(request: Request) {
             }
             steps.push(`Order posted ✓ — Order ID: ${orderId}`);
 
-            // Record in lt_orders
+            // 1) Upsert orders row FIRST — lt_orders FK requires order_id to exist in orders
+            const traderId = await ensureTraderId(supabase, strategy.wallet_address);
+            const now = new Date().toISOString();
+            const { error: ordersErr } = await supabase.from('orders').upsert(
+                {
+                    order_id: orderId,
+                    trader_id: traderId,
+                    market_id: conditionId,
+                    outcome: lastFtOrder.token_label || 'Yes',
+                    side: 'buy',
+                    order_type: 'GTC',
+                    price: limitPrice,
+                    size: sizeContracts,
+                    filled_size: 0,
+                    remaining_size: sizeContracts,
+                    status: 'open',
+                    created_at: now,
+                    updated_at: now,
+                    lt_strategy_id: strategy.strategy_id,
+                    lt_order_id: null,
+                    signal_price: currentPrice,
+                    signal_size_usd: ftSizeUsd,
+                },
+                { onConflict: 'order_id' }
+            );
+            if (ordersErr) {
+                steps.push(`WARNING: orders upsert: ${ordersErr.message}`);
+            } else {
+                steps.push('Orders table stamped ✓');
+            }
+
+            // 2) Record in lt_orders (FK to orders now satisfied)
             const { data: ltOrder, error: ltError } = await supabase
                 .from('lt_orders')
                 .insert({
@@ -228,36 +260,9 @@ export async function POST(request: Request) {
                 steps.push(`WARNING: lt_orders insert failed: ${ltError.message}`);
             } else {
                 steps.push(`lt_orders recorded: ${ltOrderId} ✓`);
-            }
-
-            // Upsert orders row so Orders UI shows Auto badge
-            const now = new Date().toISOString();
-            const { error: ordersErr } = await supabase.from('orders').upsert(
-                {
-                    order_id: orderId,
-                    trader_id: strategy.wallet_address,
-                    market_id: conditionId,
-                    outcome: lastFtOrder.token_label || 'Yes',
-                    side: 'buy',
-                    order_type: 'GTC',
-                    price: limitPrice,
-                    size: sizeContracts,
-                    filled_size: 0,
-                    remaining_size: sizeContracts,
-                    status: 'open',
-                    created_at: now,
-                    updated_at: now,
-                    lt_strategy_id: strategy.strategy_id,
-                    lt_order_id: ltOrderId,
-                    signal_price: currentPrice,
-                    signal_size_usd: ftSizeUsd,
-                },
-                { onConflict: 'order_id' }
-            );
-            if (ordersErr) {
-                steps.push(`WARNING: orders upsert: ${ordersErr.message}`);
-            } else {
-                steps.push('Orders table stamped ✓');
+                if (ltOrderId) {
+                    await supabase.from('orders').update({ lt_order_id: ltOrderId }).eq('order_id', orderId);
+                }
             }
 
             // Cancel if requested

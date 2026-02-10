@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { placeOrderCore } from '@/lib/polymarket/place-order-core';
 import { roundDownToStep } from '@/lib/polymarket/sizing';
+import { ensureTraderId } from '@/lib/traders/ensure-id';
 import { checkRiskRules, updateRiskStateAfterTrade } from './risk-manager';
 import { type EnrichedTrade, calculateBetSize as sharedCalculateBetSize, getSourceTradeId } from '@/lib/ft-sync/shared-logic';
 
@@ -190,6 +191,33 @@ export async function executeTrade(
     const executedSize = roundedSize;
     const slippage = price > 0 ? (executedPrice - price) / price : 0;
 
+    // 1) Upsert orders row FIRST — lt_orders FK requires order_id to exist in orders
+    const traderId = await ensureTraderId(supabase, strategy.wallet_address);
+    const now = new Date().toISOString();
+    await supabase.from('orders').upsert(
+        {
+            order_id: orderId,
+            trader_id: traderId,
+            market_id: trade.conditionId ?? null,
+            outcome: (trade.outcome || 'YES').toUpperCase(),
+            side: 'buy',
+            order_type: orderType,
+            price: executedPrice,
+            size: executedSize,
+            filled_size: 0,
+            remaining_size: executedSize,
+            status: 'open',
+            created_at: now,
+            updated_at: now,
+            lt_strategy_id: strategy.strategy_id,
+            lt_order_id: null,
+            signal_price: price,
+            signal_size_usd: betSize,
+        },
+        { onConflict: 'order_id' }
+    );
+
+    // 2) Insert lt_orders (FK to orders now satisfied)
     const { data: ltOrder, error: ltError } = await supabase
         .from('lt_orders')
         .insert({
@@ -229,30 +257,9 @@ export async function executeTrade(
         };
     }
 
-    // Upsert orders row so Orders UI shows Auto badge (core does not write orders for LT)
-    const now = new Date().toISOString();
-    await supabase.from('orders').upsert(
-        {
-            order_id: orderId,
-            trader_id: strategy.wallet_address,
-            market_id: trade.conditionId ?? null,
-            outcome: (trade.outcome || 'YES').toUpperCase(),
-            side: 'buy',
-            order_type: orderType,
-            price: executedPrice,
-            size: executedSize,
-            filled_size: 0,
-            remaining_size: executedSize,
-            status: 'open',
-            created_at: now,
-            updated_at: now,
-            lt_strategy_id: strategy.strategy_id,
-            lt_order_id: ltOrder.lt_order_id,
-            signal_price: price,
-            signal_size_usd: betSize,
-        },
-        { onConflict: 'order_id' }
-    );
+    if (ltOrder.lt_order_id) {
+        await supabase.from('orders').update({ lt_order_id: ltOrder.lt_order_id }).eq('order_id', orderId);
+    }
 
     await updateRiskStateAfterTrade(supabase, strategy.strategy_id, betSize, null);
 
