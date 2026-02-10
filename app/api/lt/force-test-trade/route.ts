@@ -145,11 +145,13 @@ export async function POST(request: Request) {
                 }
             } catch {}
 
-            // Calculate order parameters — use the FT size but cap at $5 for safety
-            const ftSizeUsd = Math.min(Number(lastFtOrder.size) || 1, 5);
-            // Use a limit price at current market price (we want this to potentially fill)
+            // Calculate order parameters — use the FT size, enforce Polymarket minimums, cap at $5 for safety
+            // Polymarket: min $1 USD per order; some markets require min 5 contracts
             const limitPrice = roundDownToStep(currentPrice, 0.01);
-            const sizeContracts = roundDownToStep(ftSizeUsd / limitPrice, 0.01);
+            const rawFtSizeUsd = Number(lastFtOrder.size) || 1;
+            const ftSizeUsd = Math.max(1, Math.min(rawFtSizeUsd, 5));
+            let sizeContracts = roundDownToStep(ftSizeUsd / limitPrice, 0.01);
+            sizeContracts = Math.max(5, sizeContracts); // satisfy markets with min 5 contracts
 
             if (sizeContracts <= 0 || limitPrice <= 0) {
                 steps.push(`Invalid sizing: price=${limitPrice}, contracts=${sizeContracts}`);
