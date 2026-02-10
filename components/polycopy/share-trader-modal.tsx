@@ -559,7 +559,7 @@ ${traderUrl}`
               position: 'absolute', 
               opacity: 0, 
               pointerEvents: 'none',
-              width: '420px',
+              width: '900px',
               zIndex: -1,
               display: 'flex',
               flexDirection: 'column',
