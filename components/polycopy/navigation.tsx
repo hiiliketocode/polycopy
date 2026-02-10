@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { UserAvatar } from "@/components/ui/polycopy-avatar"
 import Image from "next/image"
 import { UpgradeModal } from "@/components/polycopy/upgrade-modal"
 import { useState, useEffect, useRef } from "react"
@@ -458,32 +458,22 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-2 hover:opacity-80 transition-opacity" aria-label="Open account menu">
-                    <Avatar className="w-9 h-9 ring-2 ring-slate-200">
-                      {profileImageUrl ? (
-                        <AvatarImage src={profileImageUrl} alt="Account" />
-                      ) : null}
-                      <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 font-semibold relative">
-                        {hasPremiumAccess && (
-                          <Crown className="absolute -top-1 -right-1 w-3 h-3 text-yellow-600" />
-                        )}
-                        {activeUser?.email?.charAt(0).toUpperCase() || "U"}
-                      </AvatarFallback>
-                    </Avatar>
+                    <UserAvatar
+                      identifier={activeUser?.email}
+                      src={profileImageUrl}
+                      size={36}
+                      className="ring-2 ring-slate-200"
+                    />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-64">
                   <div className="flex items-center gap-3 px-3 py-3">
-                    <Avatar className="h-9 w-9 ring-2 ring-slate-100">
-                      {profileImageUrl ? (
-                        <AvatarImage src={profileImageUrl} alt="Account" />
-                      ) : null}
-                      <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900 font-semibold relative">
-                        {hasPremiumAccess && (
-                          <Crown className="absolute -top-1 -right-1 w-3 h-3 text-yellow-600" />
-                        )}
-                        {activeUser?.email?.charAt(0).toUpperCase() || "U"}
-                      </AvatarFallback>
-                    </Avatar>
+                    <UserAvatar
+                      identifier={activeUser?.email}
+                      src={profileImageUrl}
+                      size={36}
+                      className="ring-2 ring-slate-100"
+                    />
                     <div>
                       <p className="text-sm font-medium text-slate-600">Account</p>
                       <p className="text-sm font-medium text-slate-900">{activeUser?.email || "User"}</p>

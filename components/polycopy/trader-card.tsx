@@ -3,6 +3,7 @@
 import React from "react"
 import { TrendingUp, TrendingDown, Target, BarChart3, Trophy } from "lucide-react"
 import { ResponsiveContainer, AreaChart, Area } from "recharts"
+import { TraderAvatar } from "@/components/ui/polycopy-avatar"
 
 export type CardTheme = "cream" | "dark" | "profit" | "fire"
 
@@ -202,17 +203,13 @@ export function TraderCard({
             {/* Username and Wallet */}
             <div className="mb-6">
               <div className="flex items-center gap-3">
-                {profileImage ? (
-                  <img
-                    src={profileImage}
-                    alt={displayName}
-                    className={`w-12 h-12 rounded-full border-2 ${styles.border}`}
-                  />
-                ) : (
-                  <div className={`w-12 h-12 rounded-full ${styles.accentBg} flex items-center justify-center ${styles.text} text-xl font-bold`}>
-                    {displayName.charAt(0).toUpperCase()}
-                  </div>
-                )}
+                <TraderAvatar
+                  displayName={displayName}
+                  wallet={walletAddress}
+                  src={profileImage}
+                  size={48}
+                  className={`border-2 ${styles.border}`}
+                />
                 <div>
                   <h2 className={`${styles.text} text-2xl font-bold tracking-tight`}>
                     {displayName}
