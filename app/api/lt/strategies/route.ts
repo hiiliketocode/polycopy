@@ -75,7 +75,7 @@ export async function POST(request: Request) {
             .select('strategy_id')
             .eq('strategy_id', strategyId)
             .eq('user_id', userId)
-            .single();
+            .maybeSingle();
 
         if (existing) {
             return NextResponse.json(

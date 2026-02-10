@@ -1,75 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin';
 import { requireAdmin } from '@/lib/ft-auth';
+import { pauseStrategy, resumeStrategy } from '@/lib/live-trading/risk-manager';
 
 type RouteParams = {
     params: Promise<{ id: string }>;
 };
 
-const NO_CACHE = { 'Cache-Control': 'no-store, max-age=0' };
-
-/**
- * Resolve a strategy by URL id. 3-tier lookup:
- *   1. strategy_id match
- *   2. ft_wallet_id match (LT_FT_ML_EDGE -> FT_ML_EDGE)
- *   3. single-strategy fallback (user has only one strategy)
- * Fetches risk_state and risk_rules as SEPARATE queries (no PostgREST embedded joins).
- */
-async function resolveStrategy(supabase: ReturnType<typeof createAdminServiceClient>, idFromUrl: string, userId: string) {
-    // 1. Try by strategy_id
-    let { data: strategy, error } = await supabase
-        .from('lt_strategies')
-        .select('*')
-        .eq('strategy_id', idFromUrl)
-        .eq('user_id', userId)
-        .maybeSingle();
-
-    if (error) {
-        console.error('[LT resolve] strategy_id lookup error:', error.message, error.code);
-    }
-
-    // 2. Fallback: ft_wallet_id (e.g. LT_FT_ML_EDGE -> FT_ML_EDGE)
-    if (!strategy && idFromUrl.startsWith('LT_')) {
-        const { data: fallback, error: fbErr } = await supabase
-            .from('lt_strategies')
-            .select('*')
-            .eq('ft_wallet_id', idFromUrl.slice(3))
-            .eq('user_id', userId)
-            .maybeSingle();
-        if (fbErr) console.error('[LT resolve] ft_wallet_id fallback error:', fbErr.message);
-        if (fallback) strategy = fallback;
-    }
-
-    // 3. Last resort: if user has exactly one strategy, use it
-    if (!strategy) {
-        const { data: all } = await supabase
-            .from('lt_strategies')
-            .select('*')
-            .eq('user_id', userId)
-            .limit(2);
-        if (all && all.length === 1) {
-            strategy = all[0];
-            console.log(`[LT resolve] Single-strategy fallback: ${strategy.strategy_id} (requested ${idFromUrl})`);
-        }
-    }
-
-    if (!strategy) return null;
-
-    // Fetch risk state and risk rules as SEPARATE queries (avoids PostgREST join issues)
-    const [riskStateRes, riskRulesRes] = await Promise.all([
-        supabase.from('lt_risk_state').select('*').eq('strategy_id', strategy.strategy_id).maybeSingle(),
-        supabase.from('lt_risk_rules').select('*').eq('strategy_id', strategy.strategy_id).maybeSingle(),
-    ]);
-
-    return {
-        ...strategy,
-        lt_risk_state: riskStateRes.data ? [riskStateRes.data] : [],
-        lt_risk_rules: riskRulesRes.data ? [riskRulesRes.data] : [],
-    };
-}
-
 /**
  * GET /api/lt/strategies/[id]
+ * Get a specific strategy with risk rules and risk state (admin only)
  */
 export async function GET(request: Request, { params }: RouteParams) {
     const authError = await requireAdmin();
@@ -81,28 +21,67 @@ export async function GET(request: Request, { params }: RouteParams) {
         const { id: strategyId } = await params;
         const supabase = createAdminServiceClient();
 
-        const strategy = await resolveStrategy(supabase, strategyId, userId);
+        // Fetch strategy (simple query - no ambiguous joins)
+        const { data: strategy, error } = await supabase
+            .from('lt_strategies')
+            .select('*')
+            .eq('strategy_id', strategyId)
+            .eq('user_id', userId)
+            .maybeSingle();
 
-        if (!strategy) {
-            console.error(`[LT GET 404] id=${strategyId}, user=${userId}`);
+        if (error) {
+            console.error('[LT Strategy GET] Query error:', error.message, error.code, { strategyId, userId });
             return NextResponse.json(
-                { error: 'Strategy not found', requested_id: strategyId },
-                { status: 404, headers: NO_CACHE }
+                { error: 'Failed to load strategy', detail: error.message },
+                { status: 500, headers: { 'Cache-Control': 'no-store' } }
             );
         }
 
+        if (!strategy) {
+            console.warn('[LT Strategy GET] Not found:', { strategyId, userId });
+            return NextResponse.json(
+                { error: 'Strategy not found' },
+                { status: 404, headers: { 'Cache-Control': 'no-store' } }
+            );
+        }
+
+        // Fetch risk rules separately (avoids ambiguous FK between lt_strategies <-> lt_risk_rules)
+        const { data: riskRules } = await supabase
+            .from('lt_risk_rules')
+            .select('*')
+            .eq('strategy_id', strategyId)
+            .maybeSingle();
+
+        // Fetch risk state separately
+        const { data: riskState } = await supabase
+            .from('lt_risk_state')
+            .select('*')
+            .eq('strategy_id', strategyId)
+            .maybeSingle();
+
         return NextResponse.json(
-            { success: true, strategy },
-            { headers: NO_CACHE }
+            {
+                success: true,
+                strategy: {
+                    ...strategy,
+                    lt_risk_rules: riskRules ? [riskRules] : [],
+                    lt_risk_state: riskState ? [riskState] : [],
+                },
+            },
+            { headers: { 'Cache-Control': 'no-store' } }
         );
     } catch (error: any) {
-        console.error('[LT GET error]', error);
-        return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
+        console.error('[LT Strategy GET] Error:', error);
+        return NextResponse.json(
+            { error: error.message || 'Internal server error' },
+            { status: 500, headers: { 'Cache-Control': 'no-store' } }
+        );
     }
 }
 
 /**
  * PATCH /api/lt/strategies/[id]
+ * Update a strategy (admin only)
  */
 export async function PATCH(request: Request, { params }: RouteParams) {
     const authError = await requireAdmin();
@@ -115,25 +94,48 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         const supabase = createAdminServiceClient();
         const body = await request.json();
 
-        const resolved = await resolveStrategy(supabase, strategyId, userId);
-        if (!resolved) {
-            return NextResponse.json({ error: 'Strategy not found' }, { status: 404 });
+        // Verify ownership
+        const { data: existing } = await supabase
+            .from('lt_strategies')
+            .select('strategy_id')
+            .eq('strategy_id', strategyId)
+            .eq('user_id', userId)
+            .maybeSingle();
+
+        if (!existing) {
+            return NextResponse.json(
+                { error: 'Strategy not found' },
+                { status: 404 }
+            );
         }
 
+        // Update strategy
         const { data: strategy, error } = await supabase
             .from('lt_strategies')
-            .update({ ...body, updated_at: new Date().toISOString() })
-            .eq('strategy_id', resolved.strategy_id)
+            .update({
+                ...body,
+                updated_at: new Date().toISOString(),
+            })
+            .eq('strategy_id', strategyId)
             .select('*')
             .single();
 
         if (error) {
-            return NextResponse.json({ error: error.message }, { status: 500 });
+            return NextResponse.json(
+                { error: error.message },
+                { status: 500 }
+            );
         }
 
-        return NextResponse.json({ success: true, strategy });
+        return NextResponse.json({
+            success: true,
+            strategy,
+        });
     } catch (error: any) {
-        console.error('[LT PATCH error]', error);
-        return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
+        console.error('[LT Strategy PATCH] Error:', error);
+        return NextResponse.json(
+            { error: error.message || 'Internal server error' },
+            { status: 500 }
+        );
     }
 }
