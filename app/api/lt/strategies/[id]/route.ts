@@ -67,7 +67,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         const supabase = createAdminServiceClient();
         const body = await request.json();
 
-        // Verify ownership
         const { data: existing } = await supabase
             .from('lt_strategies')
             .select('strategy_id')
@@ -82,7 +81,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
             );
         }
 
-        // Update strategy
         const { data: strategy, error } = await supabase
             .from('lt_strategies')
             .update({
