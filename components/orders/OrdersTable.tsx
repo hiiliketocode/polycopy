@@ -128,6 +128,7 @@ export default function OrdersTable({
                 const canSell = hasOpenPosition && isMarketOpen
                 const activityStyle = ACTIVITY_ICON_STYLES[order.activity]
                 const isAutoSold = !showActions && order.activity === 'sold' && order.isAutoClose
+                const isLtAuto = Boolean(order.ltStrategyId)
                 const activityLabel = isAutoSold ? 'Auto-sold' : order.activityLabel
                 const activityTooltip = getActivityTooltip(order, activityLabel)
                 const value = deriveOrderValue(order, contractsValue)
@@ -144,7 +145,14 @@ export default function OrdersTable({
                             {order.activityIcon}
                           </span>
                           <div className="flex flex-col">
-                            <span className="text-sm font-semibold text-slate-900">{activityLabel}</span>
+                            <span className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
+                              {activityLabel}
+                              {isLtAuto && (
+                                <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200" title={`Auto trade via ${order.ltStrategyId}`}>
+                                  Auto
+                                </span>
+                              )}
+                            </span>
                             <span className="text-xs text-slate-500">{STATUS_LABELS[order.status]}</span>
                           </div>
                         </div>

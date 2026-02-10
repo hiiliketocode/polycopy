@@ -138,12 +138,13 @@ export async function executeTrade(
         };
     }
 
-    // Get token ID
-    const tokenId = trade.conditionId || '';
+    // Get token ID - must use the asset (token) ID, NOT the conditionId
+    // The Polymarket CLOB API requires the token ID for trading
+    const tokenId = trade.asset || '';
     if (!tokenId) {
         return {
             success: false,
-            error: 'Missing condition_id',
+            error: 'Missing token ID (asset)',
             riskCheckPassed: true,
         };
     }
