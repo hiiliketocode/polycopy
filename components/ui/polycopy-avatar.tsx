@@ -88,7 +88,6 @@ function PolycopyAvatar({
           size={size}
           colors={[avatarColor]} // Single color for consistency
           variant="solid"
-          intensity3d="subtle"
           showInitial={false}
           enableBlink={true}
         />
