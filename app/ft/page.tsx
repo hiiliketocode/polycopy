@@ -128,7 +128,14 @@ export default function ForwardTestWalletsPage() {
   const [compareSortField, setCompareSortField] = useState<CompareSortField>('pnl');
   const [compareSortDir, setCompareSortDir] = useState<SortDir>('desc');
   const [ltStrategyFtIds, setLtStrategyFtIds] = useState<Set<string>>(new Set());
-  const [ltStrategies, setLtStrategies] = useState<Array<{ strategy_id: string; ft_wallet_id: string; display_name: string; is_active: boolean; is_paused: boolean; starting_capital: number; lt_risk_state?: unknown }>>([]);
+  const [ltStrategies, setLtStrategies] = useState<Array<{
+    strategy_id: string; ft_wallet_id: string; display_name: string; is_active: boolean; is_paused: boolean; starting_capital: number;
+    lt_risk_state?: unknown; created_at?: string;
+    lt_stats?: { total_trades: number; open_positions: number; won: number; lost: number; win_rate: number | null;
+      realized_pnl: number; unrealized_pnl: number; total_pnl: number; current_balance: number; cash_available: number;
+      avg_trade_size: number; first_trade: string | null; last_trade: string | null;
+      attempts: number; filled: number; failed: number; pending: number; fill_rate_pct: number | null; avg_slippage_pct: number | null; };
+  }>>([]);
   const [myPolymarketWallet, setMyPolymarketWallet] = useState<string | null>(null);
   const [ltFilter, setLtFilter] = useState<'all' | 'active' | 'paused'>('all');
   const [createLtWalletId, setCreateLtWalletId] = useState('');
@@ -145,8 +152,54 @@ export default function ForwardTestWalletsPage() {
     }
   };
 
+  // Convert LT strategies to FTWallet-compatible objects so they render in the same table
+  const ltWallets: FTWallet[] = useMemo(() => ltStrategies.map((s) => {
+    const st = s.lt_stats;
+    return {
+      wallet_id: s.strategy_id,
+      config_id: s.strategy_id,
+      display_name: s.display_name,
+      description: `Live trading → mirrors ${s.ft_wallet_id}`,
+      starting_balance: s.starting_capital,
+      current_balance: st?.current_balance ?? s.starting_capital,
+      cash_available: st?.cash_available ?? s.starting_capital,
+      realized_pnl: st?.realized_pnl ?? 0,
+      unrealized_pnl: st?.unrealized_pnl ?? 0,
+      total_pnl: st?.total_pnl ?? 0,
+      total_trades: st?.total_trades ?? 0,
+      trades_seen: st?.attempts ?? 0,
+      trades_skipped: (st?.failed ?? 0) + (st?.pending ?? 0),
+      open_positions: st?.open_positions ?? 0,
+      won: st?.won ?? 0,
+      lost: st?.lost ?? 0,
+      win_rate: st?.win_rate ?? null,
+      open_exposure: 0,
+      avg_trade_size: st?.avg_trade_size ?? 0,
+      avg_entry_price: null,
+      first_trade: st?.first_trade ? { value: st.first_trade } : null,
+      last_trade: st?.last_trade ? { value: st.last_trade } : null,
+      model_threshold: 0,
+      price_min: 0,
+      price_max: 1,
+      min_edge: 0,
+      use_model: false,
+      is_active: s.is_active,
+      bet_size: 0,
+      bet_allocation_weight: 0,
+      start_date: { value: s.created_at || new Date().toISOString() },
+      end_date: { value: '' },
+      last_sync_time: null,
+      hours_remaining: 0,
+      test_status: s.is_active ? 'ACTIVE' as const : 'ENDED' as const,
+      // Tag as live so we can style it differently
+      _isLive: true,
+    } as FTWallet & { _isLive?: boolean };
+  }), [ltStrategies]);
+
+  const allWallets = useMemo(() => [...wallets, ...ltWallets], [wallets, ltWallets]);
+
   const sortedWallets = useMemo(() => {
-    return [...wallets].sort((a, b) => {
+    return [...allWallets].sort((a, b) => {
       let aVal: number | string = 0;
       let bVal: number | string = 0;
 
@@ -683,11 +736,13 @@ export default function ForwardTestWalletsPage() {
                   const winRate = (wallet.won + wallet.lost) > 0 
                     ? (wallet.won / (wallet.won + wallet.lost)) * 100 
                     : 0;
+                  const isLive = (wallet as FTWallet & { _isLive?: boolean })._isLive === true;
+                  const detailHref = isLive ? `/lt/${wallet.wallet_id}` : `/ft/${wallet.wallet_id}`;
                   
                   return (
                     <tr 
                       key={wallet.wallet_id} 
-                      className="border-b hover:bg-muted/30 transition-colors"
+                      className={`border-b hover:bg-muted/30 transition-colors ${isLive ? 'bg-emerald-50/50' : ''}`}
                     >
                       {/* Strategy Name */}
                       <td className="px-3 py-3">
@@ -698,7 +753,10 @@ export default function ForwardTestWalletsPage() {
                             <TrendingDown className="h-4 w-4 text-red-600 flex-shrink-0" />
                           )}
                           <div>
-                            <div className="font-medium">{wallet.display_name}</div>
+                            <div className="font-medium flex items-center gap-1.5">
+                              <Link href={detailHref} className="hover:underline">{wallet.display_name}</Link>
+                              {isLive && <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] py-0 px-1.5">LIVE</Badge>}
+                            </div>
                             <div className="text-xs text-muted-foreground truncate max-w-[200px]" title={wallet.description}>
                               {wallet.description}
                             </div>
@@ -817,7 +875,7 @@ export default function ForwardTestWalletsPage() {
 
                       {/* Actions */}
                       <td className="px-3 py-3 text-right">
-                        <Link href={`/ft/${wallet.wallet_id}`}>
+                        <Link href={detailHref}>
                           <Button variant="ghost" size="sm" className="h-7 px-2">
                             <ArrowRight className="h-4 w-4" />
                           </Button>
