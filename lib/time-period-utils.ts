@@ -63,6 +63,76 @@ export function filterByTimePeriod(
 }
 
 /**
+ * Filter daily PnL data by time period using the same logic as trader profile page
+ * This matches the sophisticated filtering logic in trader/[wallet]/page.tsx
+ */
+export function filterByTimePeriodTraderProfile(
+  data: DailyPnlRow[],
+  period: TimePeriod
+): DailyPnlRow[] {
+  if (!data.length) {
+    return data
+  }
+
+  if (period === 'ALL') {
+    return data
+  }
+
+  // Get the number of days for the period
+  const daysMap: Record<Exclude<TimePeriod, 'ALL'>, number> = {
+    '1D': 1,
+    '7D': 7,
+    '30D': 30,
+    '3M': 90,
+    '6M': 180,
+  }
+  
+  const days = daysMap[period]
+  
+  // Helper to convert date string to Date object in UTC
+  const toDateObj = (dateStr: string) => new Date(`${dateStr}T00:00:00Z`)
+  
+  const lastIndex = data.length - 1
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const latestRowDate = data[lastIndex].date
+  
+  // For date windows, use the latest row date as anchor (not the previous day)
+  // This ensures "Yesterday" includes today's data if it's the most recent available
+  let anchorDate = toDateObj(latestRowDate)
+  
+  // Only use previous day as anchor if:
+  // 1. Latest row is today AND
+  // 2. There's a previous row AND  
+  // 3. We're NOT looking at "Yesterday" (1D) - for 1D, we want to include today's data
+  if (latestRowDate === todayStr && lastIndex > 0 && period !== '1D') {
+    anchorDate = toDateObj(data[lastIndex - 1].date)
+  }
+
+  // Calculate start date by going back (days - 1) from anchor
+  // This means 30 days includes the anchor date plus 29 days back
+  const start = new Date(Date.UTC(
+    anchorDate.getUTCFullYear(),
+    anchorDate.getUTCMonth(),
+    anchorDate.getUTCDate()
+  ))
+  start.setUTCDate(start.getUTCDate() - (days - 1))
+  const startDate = start
+  const endDate = anchorDate
+
+  // Filter and sort
+  const filtered = data
+    .filter((row) => {
+      const day = toDateObj(row.date)
+      if (day < startDate) return false
+      if (day > endDate) return false
+      return true
+    })
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+  
+  return filtered
+}
+
+/**
  * Calculate stats for a time period from filtered daily PnL data
  */
 export function calculatePeriodStats(

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { TimePeriod } from '@/lib/time-period-utils'
 import {
-  filterByTimePeriod,
+  filterByTimePeriodTraderProfile,
   calculatePeriodStats,
   getTimePeriodLabel,
   formatChartData,
@@ -70,8 +70,8 @@ export function useTraderCardData(walletAddress: string, timePeriod: TimePeriod)
         const traderInfo: TraderResponse = await traderResponse.json()
         const realizedPnl: RealizedPnlResponse = await realizedPnlResponse.json()
 
-        // Filter data by time period
-        const filteredData = filterByTimePeriod(realizedPnl.daily, timePeriod)
+        // Filter data by time period using the same logic as trader profile page
+        const filteredData = filterByTimePeriodTraderProfile(realizedPnl.daily, timePeriod)
 
         // Calculate stats for time period
         const stats = calculatePeriodStats(filteredData, realizedPnl.volume)
