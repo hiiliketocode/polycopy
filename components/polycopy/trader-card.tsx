@@ -164,35 +164,30 @@ export function TraderCard({
 
   return (
     <div className="relative w-[900px]">
-      {/* Outer shell - the "physical card" effect */}
-      <div className={`relative bg-gradient-to-b ${styles.shell} rounded-[60px] p-[6px] shadow-2xl`}>
-        {/* Card slot / lanyard hole */}
-        <div className={`absolute top-6 left-1/2 -translate-x-1/2 w-24 h-8 ${theme === "dark" ? "bg-slate-700" : "bg-zinc-300"} rounded-full shadow-inner`} />
-
-        {/* Inner card */}
+      {/* Inner card */}
+      <div
+        className={`relative w-full ${theme === "cream" || theme === "fire" ? styles.card : `bg-gradient-to-br ${styles.card}`} rounded-[60px] overflow-hidden shadow-2xl`}
+      >
+        {/* Gradient overlay */}
         <div
-          className={`relative w-full ${theme === "cream" || theme === "fire" ? styles.card : `bg-gradient-to-br ${styles.card}`} rounded-[54px] overflow-hidden shadow-inner`}
-        >
-          {/* Gradient overlay */}
-          <div
-            className={`absolute inset-0 bg-gradient-to-r ${styles.gradient}`}
-          />
+          className={`absolute inset-0 bg-gradient-to-r ${styles.gradient}`}
+        />
 
-          {/* Noise texture */}
-          <div
-            className="absolute inset-0 opacity-[0.03]"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-            }}
-          />
+        {/* Noise texture */}
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+          }}
+        />
 
-          {/* Glowing orb effect */}
-          <div
-            className={`absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] rounded-full blur-3xl ${styles.orb}`}
-          />
+        {/* Glowing orb effect */}
+        <div
+          className={`absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] rounded-full blur-3xl ${styles.orb}`}
+        />
 
-          {/* Content container */}
-          <div className="relative z-10 flex flex-col p-12 pt-20 pb-10">
+        {/* Content container */}
+        <div className="relative z-10 flex flex-col p-12 pt-20 pb-10">
             {/* Header - Logo and badge */}
             <div className="flex items-center justify-between mb-10">
               {/* Polycopy Full Logo */}
@@ -344,7 +339,6 @@ export function TraderCard({
           </div>
         </div>
       </div>
-    </div>
   )
 }
 

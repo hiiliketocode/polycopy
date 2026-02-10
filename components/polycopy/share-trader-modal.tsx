@@ -576,37 +576,6 @@ ${traderUrl}`
             </div>
           )}
 
-          {/* Preview */}
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-900">Preview</label>
-            <div className="relative w-full max-w-[340px] mx-auto bg-slate-100 rounded-lg overflow-hidden border border-slate-200" style={{ aspectRatio: '3/4' }}>
-              {isLoading || !imageBlobs[selectedTheme] ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
-                  <Loader2 className="h-8 w-8 animate-spin text-yellow-500" />
-                  <div className="text-center">
-                    <p className="text-xs text-slate-600 font-medium">
-                      {isLoadingData ? 'Loading trader data...' : 'Generating cards...'}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      This may take a moment.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <img
-                  src={URL.createObjectURL(imageBlobs[selectedTheme])}
-                  alt="Trader Player Card"
-                  className="w-full h-full object-cover"
-                />
-              )}
-            </div>
-            {imageBlobs[selectedTheme] && !isLoading && (
-              <p className="text-xs text-slate-500 text-center">
-                High-resolution card ready to share
-              </p>
-            )}
-          </div>
-
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-2">
             <Button
@@ -647,6 +616,37 @@ ${traderUrl}`
               <Share2 className="h-4 w-4 mr-2" />
               Share to X
             </Button>
+          </div>
+
+          {/* Preview */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-900">Preview</label>
+            <div className="relative w-full max-w-[340px] mx-auto bg-slate-100 rounded-lg overflow-hidden border border-slate-200" style={{ aspectRatio: '3/4' }}>
+              {isLoading || !imageBlobs[selectedTheme] ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
+                  <Loader2 className="h-8 w-8 animate-spin text-yellow-500" />
+                  <div className="text-center">
+                    <p className="text-xs text-slate-600 font-medium">
+                      {isLoadingData ? 'Loading trader data...' : 'Generating cards...'}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      This may take a moment.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <img
+                  src={URL.createObjectURL(imageBlobs[selectedTheme])}
+                  alt="Trader Player Card"
+                  className="w-full h-full object-cover"
+                />
+              )}
+            </div>
+            {imageBlobs[selectedTheme] && !isLoading && (
+              <p className="text-xs text-slate-500 text-center">
+                High-resolution card ready to share
+              </p>
+            )}
           </div>
 
           <p className="text-xs text-slate-500 text-center">
