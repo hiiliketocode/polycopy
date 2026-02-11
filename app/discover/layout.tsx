@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Discover Top Polymarket Traders | Copy Trading Leaderboard",
-  description: "Discover top Polymarket traders. Real-time leaderboards, performance metrics, and copy trading strategies. Browse by category: Sports, Politics, Crypto.",
+  description: "Browse 500K+ Polymarket traders with real-time performance metrics. Filter by category (Sports, Politics, Crypto), analyze strategies, and follow the best.",
   keywords: [
     'Polymarket traders',
     'Polymarket leaderboard',
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     title: "Discover Top Polymarket Traders | Polycopy",
-    description: "Find and follow the best performing Polymarket traders. Real-time rankings, performance analytics, and copy trading for prediction markets.",
+    description: "Browse and analyze 500K+ Polymarket traders with real-time performance data and metrics.",
     url: 'https://polycopy.app/discover',
     siteName: 'Polycopy',
     type: 'website',
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Discover Top Polymarket Traders | Polycopy',
-    description: 'Find and follow the best performing Polymarket traders with real-time rankings and analytics.',
+    description: 'Browse 500K+ traders with real-time performance rankings',
     images: ['/og-image.png']
   },
   alternates: {
