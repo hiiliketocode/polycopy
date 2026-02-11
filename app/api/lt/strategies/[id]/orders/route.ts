@@ -78,19 +78,65 @@ export async function GET(request: Request, { params }: RouteParams) {
 
         const all = orders || [];
 
-        // Split into open and closed
+        // Add current_price for open positions (same as FT does)
         const openOrders = all.filter((o: any) => o.outcome === 'OPEN' && (o.status === 'FILLED' || o.status === 'PARTIAL'));
-        const closedOrders = all.filter((o: any) => o.outcome === 'WON' || o.outcome === 'LOST' || o.outcome === 'CLOSED');
-        const failedOrders = all.filter((o: any) => o.status === 'REJECTED' || o.status === 'CANCELLED');
-        const pendingOrders = all.filter((o: any) => o.status === 'PENDING');
+        const openConditionIds = [...new Set(openOrders.map((o: any) => o.condition_id).filter(Boolean))];
+        
+        // Fetch current prices from markets table
+        const priceMap = new Map<string, Record<string, number>>();
+        if (openConditionIds.length > 0) {
+            const { data: marketsData } = await supabase
+                .from('markets')
+                .select('condition_id, outcome_prices, outcomes')
+                .in('condition_id', openConditionIds);
+            
+            if (marketsData) {
+                marketsData.forEach((m: any) => {
+                    let prices = m.outcome_prices;
+                    let outcomes = m.outcomes;
+                    
+                    if (typeof prices === 'string') {
+                        try { prices = JSON.parse(prices); } catch { prices = null; }
+                    }
+                    if (typeof outcomes === 'string') {
+                        try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
+                    }
+                    
+                    if (Array.isArray(prices) && Array.isArray(outcomes)) {
+                        const priceObj: Record<string, number> = {};
+                        outcomes.forEach((outcome: string, idx: number) => {
+                            priceObj[outcome.toUpperCase()] = prices[idx] || 0;
+                        });
+                        priceMap.set(m.condition_id, priceObj);
+                    }
+                });
+            }
+        }
+        
+        // Add current_price to each order
+        const enrichedOrders = all.map((o: any) => {
+            if (o.outcome === 'OPEN' && o.condition_id) {
+                const tokenLabel = (o.token_label || 'YES').toUpperCase();
+                const prices = priceMap.get(o.condition_id);
+                const currentPrice = prices?.[tokenLabel] ?? null;
+                return { ...o, current_price: currentPrice };
+            }
+            return o;
+        });
 
-        // Execution stats
-        const filled = all.filter((o: any) => o.status === 'FILLED');
-        const totalSignalUsd = all.reduce((s: number, o: any) => s + (Number(o.signal_size_usd) || 0), 0);
-        const totalExecutedUsd = all.reduce((s: number, o: any) => s + (Number(o.executed_size) || 0), 0);
+        // Split into open and closed (using enriched orders with current_price)
+        const openOrders = enrichedOrders.filter((o: any) => o.outcome === 'OPEN' && (o.status === 'FILLED' || o.status === 'PARTIAL'));
+        const closedOrders = enrichedOrders.filter((o: any) => o.outcome === 'WON' || o.outcome === 'LOST' || o.outcome === 'CLOSED');
+        const failedOrders = enrichedOrders.filter((o: any) => o.status === 'REJECTED' || o.status === 'CANCELLED');
+        const pendingOrders = enrichedOrders.filter((o: any) => o.status === 'PENDING');
 
-        // Slippage stats
-        const withSlippage = all.filter((o: any) => o.slippage_pct != null && o.status === 'FILLED');
+        // Execution stats (use enriched orders)
+        const filled = enrichedOrders.filter((o: any) => o.status === 'FILLED');
+        const totalSignalUsd = enrichedOrders.reduce((s: number, o: any) => s + (Number(o.signal_size_usd) || 0), 0);
+        const totalExecutedUsd = enrichedOrders.reduce((s: number, o: any) => s + (Number(o.executed_size) * Number(o.executed_price) || 0), 0);
+
+        // Slippage stats (use enriched orders)
+        const withSlippage = enrichedOrders.filter((o: any) => o.slippage_pct != null && o.status === 'FILLED');
         const avgSlippagePct = withSlippage.length > 0
             ? withSlippage.reduce((s: number, o: any) => s + Math.abs(Number(o.slippage_pct)), 0) / withSlippage.length
             : null;
@@ -98,14 +144,14 @@ export async function GET(request: Request, { params }: RouteParams) {
             ? Math.max(...withSlippage.map((o: any) => Math.abs(Number(o.slippage_pct))))
             : null;
 
-        // Fill rate stats
-        const withFillRate = all.filter((o: any) => o.fill_rate != null);
+        // Fill rate stats (use enriched orders)  
+        const withFillRate = enrichedOrders.filter((o: any) => o.fill_rate != null);
         const avgFillRate = withFillRate.length > 0
             ? withFillRate.reduce((s: number, o: any) => s + Number(o.fill_rate), 0) / withFillRate.length
             : null;
 
-        // Latency stats
-        const withLatency = all.filter((o: any) => o.execution_latency_ms != null);
+        // Latency stats (use enriched orders)
+        const withLatency = enrichedOrders.filter((o: any) => o.execution_latency_ms != null);
         const avgLatencyMs = withLatency.length > 0
             ? Math.round(withLatency.reduce((s: number, o: any) => s + Number(o.execution_latency_ms), 0) / withLatency.length)
             : null;
@@ -135,7 +181,7 @@ export async function GET(request: Request, { params }: RouteParams) {
                 total_signal_usd: Math.round(totalSignalUsd * 100) / 100,
                 total_executed_usd: Math.round(totalExecutedUsd * 100) / 100,
                 // Fill rate = % of orders that filled (should be 0-100%)
-                fill_rate_pct: all.length > 0 ? Math.round((filled.length / all.length) * 10000) / 100 : null,
+                fill_rate_pct: enrichedOrders.length > 0 ? Math.round((filled.length / enrichedOrders.length) * 10000) / 100 : null,
                 // Dollar fill rate = USD executed vs USD signaled
                 dollar_fill_rate_pct: totalSignalUsd > 0 ? Math.round((totalExecutedUsd / totalSignalUsd) * 10000) / 100 : null,
                 avg_fill_rate: avgFillRate != null ? Math.round(avgFillRate * 10000) / 10000 : null,
