@@ -210,7 +210,7 @@ export default function LiveTradingPage() {
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Link href="/trading">
               <Button variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-100">
                 <BarChart3 className="h-4 w-4 mr-2" />
@@ -220,7 +220,7 @@ export default function LiveTradingPage() {
             <Link href="/lt/logs">
               <Button variant="outline" className="border-[#FDB022] text-[#FDB022] hover:bg-orange-50">
                 <FileText className="h-4 w-4 mr-2" />
-                Live Logs
+                Logs
               </Button>
             </Link>
             <Link href="/ft">

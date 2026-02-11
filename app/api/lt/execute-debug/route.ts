@@ -65,7 +65,7 @@ export async function GET() {
     // 5. Check if there are ANY ft_orders at all for these wallets
     const { count: totalFtOrderCount } = await supabase
         .from('ft_orders')
-        .select('id', { count: 'exact', head: true })
+        .select('order_id', { count: 'exact', head: true })
         .in('wallet_id', ftWalletIds);
 
     // 6. Check if the main orders table has any lt trades

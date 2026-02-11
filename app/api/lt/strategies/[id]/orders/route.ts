@@ -79,9 +79,9 @@ export async function GET(request: Request, { params }: RouteParams) {
         const all = orders || [];
 
         // Add current_price for open positions (same as FT does)
-        const openOrders = all.filter((o: any) => o.outcome === 'OPEN' && (o.status === 'FILLED' || o.status === 'PARTIAL'));
-        const openConditionIds = [...new Set(openOrders.map((o: any) => o.condition_id).filter(Boolean))];
-        
+        const openForPriceFetch = all.filter((o: any) => o.outcome === 'OPEN' && (o.status === 'FILLED' || o.status === 'PARTIAL'));
+        const openConditionIds = [...new Set(openForPriceFetch.map((o: any) => o.condition_id).filter(Boolean))];
+
         // Fetch current prices from markets table
         const priceMap = new Map<string, Record<string, number>>();
         if (openConditionIds.length > 0) {
@@ -89,19 +89,19 @@ export async function GET(request: Request, { params }: RouteParams) {
                 .from('markets')
                 .select('condition_id, outcome_prices, outcomes')
                 .in('condition_id', openConditionIds);
-            
+
             if (marketsData) {
                 marketsData.forEach((m: any) => {
                     let prices = m.outcome_prices;
                     let outcomes = m.outcomes;
-                    
+
                     if (typeof prices === 'string') {
                         try { prices = JSON.parse(prices); } catch { prices = null; }
                     }
                     if (typeof outcomes === 'string') {
                         try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
                     }
-                    
+
                     if (Array.isArray(prices) && Array.isArray(outcomes)) {
                         const priceObj: Record<string, number> = {};
                         outcomes.forEach((outcome: string, idx: number) => {
@@ -112,7 +112,7 @@ export async function GET(request: Request, { params }: RouteParams) {
                 });
             }
         }
-        
+
         // Add current_price to each order
         const enrichedOrders = all.map((o: any) => {
             if (o.outcome === 'OPEN' && o.condition_id) {
@@ -129,7 +129,6 @@ export async function GET(request: Request, { params }: RouteParams) {
         const closedOrders = enrichedOrders.filter((o: any) => o.outcome === 'WON' || o.outcome === 'LOST' || o.outcome === 'CLOSED');
         const failedOrders = enrichedOrders.filter((o: any) => o.status === 'REJECTED' || o.status === 'CANCELLED');
         const pendingOrders = enrichedOrders.filter((o: any) => o.status === 'PENDING');
-
         // Execution stats (use enriched orders)
         const filled = enrichedOrders.filter((o: any) => o.status === 'FILLED');
         const totalSignalUsd = enrichedOrders.reduce((s: number, o: any) => s + (Number(o.signal_size_usd) || 0), 0);
@@ -144,7 +143,7 @@ export async function GET(request: Request, { params }: RouteParams) {
             ? Math.max(...withSlippage.map((o: any) => Math.abs(Number(o.slippage_pct))))
             : null;
 
-        // Fill rate stats (use enriched orders)  
+        // Fill rate stats (use enriched orders)
         const withFillRate = enrichedOrders.filter((o: any) => o.fill_rate != null);
         const avgFillRate = withFillRate.length > 0
             ? withFillRate.reduce((s: number, o: any) => s + Number(o.fill_rate), 0) / withFillRate.length
@@ -180,9 +179,7 @@ export async function GET(request: Request, { params }: RouteParams) {
                 realized_pnl: Math.round(realizedPnl * 100) / 100,
                 total_signal_usd: Math.round(totalSignalUsd * 100) / 100,
                 total_executed_usd: Math.round(totalExecutedUsd * 100) / 100,
-                // Fill rate = % of orders that filled (should be 0-100%)
                 fill_rate_pct: enrichedOrders.length > 0 ? Math.round((filled.length / enrichedOrders.length) * 10000) / 100 : null,
-                // Dollar fill rate = USD executed vs USD signaled
                 dollar_fill_rate_pct: totalSignalUsd > 0 ? Math.round((totalExecutedUsd / totalSignalUsd) * 10000) / 100 : null,
                 avg_fill_rate: avgFillRate != null ? Math.round(avgFillRate * 10000) / 10000 : null,
                 avg_slippage_pct: avgSlippagePct != null ? Math.round(avgSlippagePct * 10000) / 10000 : null,

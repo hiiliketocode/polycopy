@@ -2,8 +2,15 @@
 
 import * as React from 'react'
 import * as AvatarPrimitive from '@radix-ui/react-avatar'
-import { Facehash } from 'facehash'
 import { cn } from '@/lib/utils'
+
+// Avatar fallback: initials (FaceHash optional - removed to avoid build issues)
+function getInitials(name: string | null | undefined): string {
+  if (!name) return '?'
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  return name.slice(0, 2).toUpperCase()
+}
 
 /**
  * PolycopyAvatar Component
@@ -47,16 +54,6 @@ function PolycopyAvatar({
   className,
   ...props
 }: PolycopyAvatarProps) {
-  // Generate deterministic name for FaceHash from name or wallet
-  const facehashName = React.useMemo(() => {
-    if (!name) return 'polycopy-user'
-    // Normalize the name for consistent avatars
-    return name.trim().toLowerCase()
-  }, [name])
-
-  // Use a single lighter yellow color for all avatars (consistent branding)
-  const avatarColor = '#FBBF24' // Yellow-400 - lighter, consistent yellow
-
   return (
     <AvatarPrimitive.Root
       data-slot="avatar"
@@ -78,19 +75,12 @@ function PolycopyAvatar({
         />
       )}
       
-      {/* FaceHash fallback with consistent lighter yellow */}
+      {/* Initials fallback */}
       <AvatarPrimitive.Fallback
         data-slot="avatar-fallback"
-        className="flex size-full items-center justify-center rounded-full overflow-hidden"
+        className="flex size-full items-center justify-center rounded-full overflow-hidden bg-amber-100 text-amber-800 font-medium"
       >
-        <Facehash
-          name={facehashName}
-          size={size}
-          colors={[avatarColor]} // Single color for consistency
-          variant="solid"
-          showInitial={false}
-          enableBlink={true}
-        />
+        <span style={{ fontSize: size * 0.4 }}>{getInitials(name)}</span>
       </AvatarPrimitive.Fallback>
     </AvatarPrimitive.Root>
   )

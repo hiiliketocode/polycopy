@@ -122,7 +122,7 @@ export async function POST(request: Request) {
             .insert({
                 strategy_id: strategyId,
                 daily_budget_pct: 0.10, // 10% per day
-                max_position_size_pct: 0.02, // 2% per trade
+                max_position_size_pct: 0.10, // 10% per trade
                 max_total_exposure_pct: 0.50, // 50% total exposure
                 max_drawdown_pct: 0.07, // 7% drawdown limit
                 max_consecutive_losses: 5,

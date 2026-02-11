@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
 import { getActiveStrategies, executeTrade } from '@/lib/live-trading/executor';
+import { initializeRiskState } from '@/lib/live-trading/risk-manager';
+import { ltLog } from '@/lib/live-trading/lt-execute-logger';
 import { type FTWallet, type EnrichedTrade } from '@/lib/ft-sync/shared-logic';
 
 /**
@@ -114,10 +116,12 @@ export async function POST(request: Request) {
         const now = new Date();
 
         console.log('[lt/execute] Starting execution at', now.toISOString());
+        await ltLog(supabase, 'info', `Starting execution at ${now.toISOString()}`);
 
         // Get active strategies
         const strategies = await getActiveStrategies(supabase);
         if (strategies.length === 0) {
+            await ltLog(supabase, 'info', 'No active strategies to execute');
             return NextResponse.json({
                 success: true,
                 message: 'No active strategies to execute',
@@ -126,6 +130,7 @@ export async function POST(request: Request) {
         }
 
         console.log(`[lt/execute] Found ${strategies.length} active strategies`);
+        await ltLog(supabase, 'info', `Found ${strategies.length} active strategies`);
 
         // Get FT wallet configs
         const ftWalletIds = [...new Set(strategies.map(s => s.ft_wallet_id))];
@@ -151,30 +156,93 @@ export async function POST(request: Request) {
             results[strategy.strategy_id] = { executed: 0, skipped: 0, errors: 0, reasons: {} };
             const reasons = results[strategy.strategy_id].reasons;
 
+            // Ensure risk state and rules exist (legacy strategies may lack them)
+            const { data: existingState } = await supabase
+                .from('lt_risk_state')
+                .select('state_id')
+                .eq('strategy_id', strategy.strategy_id)
+                .limit(1)
+                .maybeSingle();
+            if (!existingState) {
+                await initializeRiskState(supabase, strategy.strategy_id, strategy.starting_capital || 1000);
+                console.log(`[lt/execute] Initialized missing risk state for ${strategy.strategy_id}`);
+            }
+            const { data: existingRules } = await supabase
+                .from('lt_risk_rules')
+                .select('rule_id')
+                .eq('strategy_id', strategy.strategy_id)
+                .limit(1)
+                .maybeSingle();
+            if (!existingRules) {
+                const { data: newRules } = await supabase
+                    .from('lt_risk_rules')
+                    .insert({
+                        strategy_id: strategy.strategy_id,
+                        daily_budget_pct: 0.10,
+                        max_position_size_pct: 0.10,
+                        max_total_exposure_pct: 0.50,
+                        max_drawdown_pct: 0.07,
+                        max_consecutive_losses: 5,
+                        max_slippage_pct: 0.01,
+                        max_concurrent_positions: 20,
+                    })
+                    .select('rule_id')
+                    .single();
+                if (newRules) {
+                    await supabase.from('lt_strategies').update({ risk_rules_id: newRules.rule_id }).eq('strategy_id', strategy.strategy_id);
+                }
+                console.log(`[lt/execute] Created missing risk rules for ${strategy.strategy_id}`);
+            }
+
             const ftWallet = ftWalletMap.get(strategy.ft_wallet_id);
             if (!ftWallet) {
                 console.warn(`[lt/execute] FT wallet not found: ${strategy.ft_wallet_id}`);
                 continue;
             }
 
-            const lastSyncTime = strategy.last_sync_time
-                ? new Date(strategy.last_sync_time)
-                : (strategy.launched_at ? new Date(strategy.launched_at) : new Date(0));
+            // Fetch OPEN ft_orders for this wallet. Use fixed 24h lookback from now so we reliably catch
+            // all recent FT decisions regardless of last_sync_time edge cases.
+            const lookbackMs = 24 * 60 * 60 * 1000;
+            const minOrderTime = new Date(now.getTime() - lookbackMs).toISOString();
 
-            // FT orders for this wallet since last LT sync (trades FT already decided to take)
             const { data: ftOrders, error: ftOrdersError } = await supabase
                 .from('ft_orders')
                 .select('order_id, condition_id, market_title, market_slug, token_label, source_trade_id, trader_address, entry_price, size, order_time, trader_win_rate, trader_resolved_count, conviction')
                 .eq('wallet_id', strategy.ft_wallet_id)
                 .eq('outcome', 'OPEN')
-                .gt('order_time', lastSyncTime.toISOString())
+                .gte('order_time', minOrderTime)
                 .order('order_time', { ascending: true });
 
-            if (ftOrdersError || !ftOrders?.length) {
-                // Don't update last_sync_time if no orders found - keeps window open for next eligible order
-                console.log(`[lt/execute] No FT orders found for ${strategy.strategy_id} since ${lastSyncTime.toISOString()}`);
+            if (ftOrdersError) {
+                reasons['ft_orders_error'] = (reasons['ft_orders_error'] || 0) + 1;
+                const errMsg = ftOrdersError?.message || String(ftOrdersError);
+                console.error(`[lt/execute] FT orders query failed for ${strategy.strategy_id} (ft_wallet=${strategy.ft_wallet_id}):`, errMsg);
+                await ltLog(supabase, 'error', `FT orders query failed: ${errMsg}`, { strategy_id: strategy.strategy_id, ft_wallet_id: strategy.ft_wallet_id });
+                await supabase.from('lt_strategies').update({ last_sync_time: now.toISOString() }).eq('strategy_id', strategy.strategy_id);
                 continue;
             }
+
+            if (!ftOrders?.length) {
+                // Diagnostic: check if OTHER wallets have ft_orders (proves sync is working, this wallet just has none)
+                const { data: otherWalletCounts } = await supabase
+                    .from('ft_orders')
+                    .select('wallet_id')
+                    .eq('outcome', 'OPEN')
+                    .gte('order_time', minOrderTime);
+                const byWallet: Record<string, number> = {};
+                for (const o of otherWalletCounts || []) {
+                    byWallet[o.wallet_id] = (byWallet[o.wallet_id] || 0) + 1;
+                }
+                const totalOther = Object.values(byWallet).reduce((a, b) => a + b, 0);
+                const diagMsg = `No FT orders found for ${strategy.strategy_id} (ft_wallet=${strategy.ft_wallet_id}) since ${minOrderTime}. Diagnostic: ${totalOther} OPEN ft_orders exist for other wallets: ${JSON.stringify(byWallet)}`;
+                console.log(`[lt/execute] ${diagMsg}`);
+                await ltLog(supabase, 'info', diagMsg, { strategy_id: strategy.strategy_id, ft_wallet_id: strategy.ft_wallet_id, extra: { byWallet, minOrderTime } });
+                await supabase.from('lt_strategies').update({ last_sync_time: now.toISOString() }).eq('strategy_id', strategy.strategy_id);
+                continue;
+            }
+
+            console.log(`[lt/execute] ${strategy.strategy_id}: Found ${ftOrders.length} OPEN ft_orders to consider`);
+            await ltLog(supabase, 'info', `Found ${ftOrders.length} OPEN ft_orders to consider`, { strategy_id: strategy.strategy_id });
 
             const { data: executedTrades } = await supabase
                 .from('lt_orders')
@@ -206,6 +274,9 @@ export async function POST(request: Request) {
                     console.error(`[lt/execute] ❌ Skipping - Token ID resolution failed for ${fo.condition_id}`);
                     reasons['no_token_id'] = (reasons['no_token_id'] || 0) + 1;
                     results[strategy.strategy_id].skipped++;
+                    const msg = `Token resolution failed: condition_id=${fo.condition_id} token_label=${fo.token_label || 'YES'} market="${(fo.market_title || '').slice(0, 50)}"`;
+                    console.warn(`[lt/execute] ${msg}`);
+                    await ltLog(supabase, 'warn', msg, { strategy_id: strategy.strategy_id, source_trade_id: sourceTradeId });
                     continue;
                 }
                 
@@ -244,26 +315,22 @@ export async function POST(request: Request) {
                     if (execResult.success) {
                         results[strategy.strategy_id].executed++;
                         executedSourceIds.add(sourceTradeId);
-                        console.log(`[lt/execute] ✅ Successfully executed ${strategy.strategy_id} source_trade_id=${sourceTradeId}`, {
-                            lt_order_id: execResult.lt_order_id,
-                            order_id: execResult.order_id
-                        });
+                        console.log(`[lt/execute] Executed ${strategy.strategy_id} source_trade_id=${sourceTradeId}`);
+                        await ltLog(supabase, 'info', `Executed source_trade_id=${sourceTradeId}`, { strategy_id: strategy.strategy_id, source_trade_id: sourceTradeId });
                     } else {
                         results[strategy.strategy_id].errors++;
-                        const errorReason = execResult.error || 'execution_failed';
-                        reasons[errorReason] = (reasons[errorReason] || 0) + 1;
-                        console.error(`[lt/execute] ❌ Execution failed:`, {
-                            source_trade_id: sourceTradeId,
-                            error: errorReason,
-                            risk_check_passed: execResult.riskCheckPassed,
-                            risk_reason: execResult.riskCheckReason
-                        });
+                        const errKey = execResult.error || 'execution_failed';
+                        reasons[errKey] = (reasons[errKey] || 0) + 1;
+                        const fullReason = execResult.riskCheckReason || execResult.error || errKey;
+                        const failureMsg = `Execution failure: { source_trade_id: '${sourceTradeId}', error: '${fullReason}', risk_check: ${!execResult.riskCheckPassed} }`;
+                        console.warn(`[lt/execute] ${failureMsg}`);
+                        await ltLog(supabase, 'warn', failureMsg, { strategy_id: strategy.strategy_id, source_trade_id: sourceTradeId, extra: { error: fullReason, risk_check: !execResult.riskCheckPassed } });
                     }
                 } catch (error: any) {
-                    console.error(`[lt/execute] ⚠️  Exception during execution for ${sourceTradeId}:`, {
-                        error_message: error.message,
-                        error_stack: error.stack?.substring(0, 200)
-                    });
+                    const errMsg = error?.message || String(error);
+                    const failureMsg = `Execution failure: { source_trade_id: '${sourceTradeId}', error: '${errMsg}' }`;
+                    console.error(`[lt/execute] ${failureMsg}`);
+                    await ltLog(supabase, 'error', failureMsg, { strategy_id: strategy.strategy_id, source_trade_id: sourceTradeId, extra: { error: errMsg } });
                     results[strategy.strategy_id].errors++;
                     reasons['execution_error'] = (reasons['execution_error'] || 0) + 1;
                 }
@@ -293,7 +360,14 @@ export async function POST(request: Request) {
             results,
         });
     } catch (error: any) {
+        const errMsg = error?.message || String(error);
         console.error('[lt/execute] Error:', error);
+        try {
+            const supabase = createAdminServiceClient();
+            await ltLog(supabase, 'error', `Execute route error: ${errMsg}`);
+        } catch {
+            // ignore
+        }
         return NextResponse.json(
             { success: false, error: 'Execution failed', details: String(error) },
             { status: 500 }

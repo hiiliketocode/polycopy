@@ -116,6 +116,7 @@ export async function executeTrade(
     });
 
     if (!riskCheck.allowed) {
+        console.warn(`[LT Executor] Risk check failed for ${strategy.strategy_id}: ${riskCheck.reason} (betSize=$${betSize.toFixed(2)})`);
         return {
             success: false,
             error: riskCheck.reason,

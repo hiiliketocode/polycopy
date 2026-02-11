@@ -1,33 +1,25 @@
-import { toFacehashHandler } from 'facehash/next'
+import { NextRequest } from 'next/server'
 
 /**
- * FaceHash Avatar Image API Route
- * 
- * Generates unique avatar images on-the-fly for use in:
- * - Email templates
- * - Open Graph images
- * - External embeds
- * - Any context requiring a URL-based image
- * 
- * Usage:
- * - /api/avatar?name=alice
- * - /api/avatar?name=0x1234567890abcdef&size=80
- * 
- * Query Parameters:
- * - name: String to generate avatar from (required)
- * - size: Avatar size in pixels (default: 40)
- * - shape: 'square' | 'squircle' | 'round' (default: 'round')
- * - showInitial: 'true' | 'false' (default: 'false')
- * 
- * Uses consistent lighter yellow color (#FBBF24) for all avatars.
- * Images are cached indefinitely for performance.
+ * Avatar Image API Route (simplified - no FaceHash dependency)
+ * Returns a simple SVG with initials for /api/avatar?name=alice
  */
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+  const name = searchParams.get('name') || '?'
+  const size = parseInt(searchParams.get('size') || '40', 10)
+  const initials = name.slice(0, 2).toUpperCase()
 
-export const { GET } = toFacehashHandler({
-  // Consistent lighter yellow color (Yellow-400)
-  colors: ['#FBBF24'],
-  // Default to not showing initials (let the face be the focus)
-  showInitial: false,
-  // Use solid variant for consistency
-  variant: 'solid',
-})
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  <rect width="100%" height="100%" fill="#FEF3C7"/>
+  <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-family="system-ui,sans-serif" font-size="${size * 0.4}" font-weight="600" fill="#92400E">${initials}</text>
+</svg>`
+
+  return new Response(svg, {
+    headers: {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'public, max-age=86400',
+    },
+  })
+}
