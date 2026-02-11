@@ -273,7 +273,7 @@ export async function POST(request: Request) {
                     performance_diff_pct: performanceDiffPct,
                     resolved_at: now.toISOString(),
                     executed_price: actualFillPrice,
-                    executed_size: actualFillSize,
+                    executed_size: sharesFilled,
                 })
                 .eq('lt_order_id', order.lt_order_id);
 
