@@ -157,22 +157,24 @@ export async function executeTrade(
     const priceWithSlippageForLimit = Math.min(0.9999, price * (1 + slippagePct / 100));
     
     // CRITICAL: Polymarket precision requirements:
-    // - Price (maker amount): MAX 2 decimals
-    // - Size (taker amount): MAX 2 decimals (using most conservative to avoid errors)
-    // Note: Error messages vary between 4-5 decimals, using 2 to be safe
-    const roundedPrice = Math.round(price * 100) / 100; // 2 decimals
-    const roundedPriceWithSlippage = Math.round(priceWithSlippageForLimit * 100) / 100; // 2 decimals
-    const roundedSize = Math.round(sizeContracts * 100) / 100; // 2 decimals (conservative)
+    // Force to strings with exact decimals to prevent floating point issues
+    // - Price: 2 decimals (maker amount)
+    // - Size: 2 decimals (taker amount - using min to avoid errors)
+    const priceStr = (Math.round(priceWithSlippageForLimit * 100) / 100).toFixed(2);
+    const sizeStr = (Math.round(sizeContracts * 100) / 100).toFixed(2);
+    const finalPrice = parseFloat(priceStr); // Parse back to ensure exactly 2 decimals
+    const finalSize = parseFloat(sizeStr);
 
     // For copy trading, default to IOC (Immediate-Or-Cancel) for high fill rates
     const orderType = (strategy.order_type || 'IOC') as 'GTC' | 'FOK' | 'FAK' | 'IOC';
     
-    console.log(`[LT Executor] Order params:`, {
+    console.log(`[LT Executor] Order params (string-enforced precision):`, {
         order_type: orderType,
-        size_contracts: roundedSize,
-        limit_price: roundedPriceWithSlippage,
-        slippage_pct: slippagePct,
-        signal_price: roundedPrice
+        size: sizeStr,
+        size_parsed: finalSize,
+        price: priceStr,
+        price_parsed: finalPrice,
+        slippage_pct: slippagePct
     });
     const requestId = `lt_${strategy.strategy_id}_${Date.now()}_${randomUUID().slice(0, 8)}`;
     const orderIntentId = randomUUID();
@@ -181,8 +183,8 @@ export async function executeTrade(
         supabase,
         userId: strategy.user_id,
         tokenId,
-        price: roundedPriceWithSlippage,
-        size: roundedSize,
+        price: finalPrice,
+        size: finalSize,
         side: 'BUY',
         orderType,
         requestId,
