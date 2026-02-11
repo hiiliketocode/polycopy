@@ -69,6 +69,7 @@ export async function POST(request: Request) {
 
             steps.push(`Placing: BUY ${sizeContracts} @ $${limitPrice} (~$${(sizeContracts * limitPrice).toFixed(2)})`);
 
+            const forceExpiration = Math.floor(Date.now() / 1000) + 30 * 60; // 30 min
             const result = await placeOrderCore({
                 supabase,
                 userId: strategy.user_id,
@@ -76,12 +77,13 @@ export async function POST(request: Request) {
                 price: limitPrice,
                 size: sizeContracts,
                 side: 'BUY',
-                orderType: 'GTC',
+                orderType: 'GTD',
                 requestId: `lt_force_${strategy.strategy_id}_${Date.now()}`,
                 orderIntentId: randomUUID(),
                 useAnyWallet: true,
                 conditionId: lastFtOrder.condition_id,
                 outcome: lastFtOrder.token_label || null,
+                expiration: forceExpiration,
             });
 
             if (!result.success) {

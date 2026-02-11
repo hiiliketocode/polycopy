@@ -116,13 +116,15 @@ export interface PlaceOrderCoreParams {
   price: number
   size: number
   side: 'BUY' | 'SELL'
-  orderType: 'GTC' | 'FOK' | 'FAK' | 'IOC'
+  orderType: 'GTC' | 'GTD' | 'FOK' | 'FAK' | 'IOC'
   requestId: string
   orderIntentId: string
   /** When true, use getAuthedClobClientForUserAnyWallet (LT). When false, use getAuthedClobClientForUser (quick). */
   useAnyWallet?: boolean
   conditionId?: string | null
   outcome?: string | null
+  /** Unix timestamp (seconds) after which the order expires. When set, orderType is forced to GTD. */
+  expiration?: number | null
   /** Optional log-only fields for order_events_log */
   slippageBps?: number | null
   minOrderSize?: number | null
@@ -165,6 +167,7 @@ export async function placeOrderCore(params: PlaceOrderCoreParams): Promise<Plac
     useAnyWallet = false,
     conditionId = null,
     outcome = null,
+    expiration = null,
     slippageBps = null,
     minOrderSize = null,
     tickSize = null,
@@ -176,7 +179,8 @@ export async function placeOrderCore(params: PlaceOrderCoreParams): Promise<Plac
     autoCorrectApplied = false,
   } = params
 
-  const normalizedOrderType = orderType === 'IOC' ? 'FAK' : orderType
+  // If expiration is set, force GTD (Good-Til-Date); IOC maps to FAK
+  const normalizedOrderType = expiration ? 'GTD' : orderType === 'IOC' ? 'FAK' : orderType
   const sideLower = side.toLowerCase()
   let orderEventId: string | null = null
   let walletAddress: string | null = null
@@ -257,8 +261,12 @@ export async function placeOrderCore(params: PlaceOrderCoreParams): Promise<Plac
   let evomiAttempts = 0
 
   try {
+    const userOrder: Record<string, any> = { tokenID: tokenId, price, size, side: side as any }
+    if (expiration) {
+      userOrder.expiration = expiration
+    }
     const order = await client.createOrder(
-      { tokenID: tokenId, price, size, side: side as any },
+      userOrder as any,
       { signatureType } as any
     )
 

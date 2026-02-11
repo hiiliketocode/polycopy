@@ -323,6 +323,9 @@ export async function executeSell(
     const orderIntentId = randomUUID();
 
     try {
+        // GTD sell with 30-min expiration
+        const sellExpiration = Math.floor(Date.now() / 1000) + 30 * 60;
+
         const result = await placeOrderCore({
             supabase,
             userId: candidate.user_id,
@@ -330,12 +333,13 @@ export async function executeSell(
             price: prepared.price,
             size: prepared.size,
             side: 'SELL',
-            orderType: 'FOK',
+            orderType: 'GTD',
             requestId,
             orderIntentId,
             useAnyWallet: true,
             conditionId: candidate.condition_id,
             outcome: candidate.token_label,
+            expiration: sellExpiration,
             tickSize: prepared.tickSize,
         });
 

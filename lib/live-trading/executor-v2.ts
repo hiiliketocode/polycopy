@@ -285,14 +285,20 @@ export async function executeTrade(
     }
 
     const { price: finalPrice, size: finalSize, tickSize } = prepared;
-    const orderType = (strategy.order_type || 'GTC') as 'GTC' | 'FOK' | 'FAK' | 'IOC';
 
-    await traceLogger.info('ORDER_PLACE', `Placing ${orderType} ${side}: ${finalSize} contracts @ ${finalPrice}`, {
+    // Default to GTC with 30-min expiration (GTD under the hood)
+    const ORDER_EXPIRATION_MINUTES = 30;
+    const expiration = Math.floor(Date.now() / 1000) + ORDER_EXPIRATION_MINUTES * 60;
+    const orderType = 'GTD' as const;
+
+    await traceLogger.info('ORDER_PLACE', `Placing GTD ${side}: ${finalSize} contracts @ ${finalPrice} (expires in ${ORDER_EXPIRATION_MINUTES}m)`, {
         order_type: orderType,
         final_price: finalPrice,
         final_size: finalSize,
         tick_size: tickSize,
         slippage_pct: slippagePct,
+        expiration_unix: expiration,
+        expiration_minutes: ORDER_EXPIRATION_MINUTES,
     });
 
     // ── Step 8: Place order on CLOB ──
@@ -314,6 +320,7 @@ export async function executeTrade(
             useAnyWallet: true,
             conditionId: trade.conditionId || null,
             outcome: trade.outcome || null,
+            expiration,
             tickSize,
         });
     } catch (err: any) {
