@@ -208,7 +208,7 @@ export async function executeTrade(
     const executionLatency = Date.now() - signalTime;
     const executedPrice = finalPrice; // limit price we sent to CLOB
     const executedSize = finalSize;
-    const slippage = price > 0 ? (executedPrice - price) / price : 0;
+    const slippage = price > 0 ? (finalPrice - price) / price : 0;
 
     // 1) Upsert orders row FIRST — lt_orders FK requires order_id to exist in orders
     const traderId = await ensureTraderId(supabase, strategy.wallet_address);
