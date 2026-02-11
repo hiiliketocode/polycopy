@@ -82,11 +82,15 @@ export async function POST(request: Request) {
                     const remainingSize = Math.max(0, originalSize - sizeMatched);
                     const fillRate = originalSize > 0 ? sizeMatched / originalSize : 0;
 
+                    const isTerminal = ['cancelled', 'canceled', 'expired'].includes(clobStatus);
                     let newStatus: string;
-                    if (['cancelled', 'canceled'].includes(clobStatus) && sizeMatched === 0) {
-                        newStatus = 'CANCELLED';
-                    } else if (sizeMatched >= originalSize) {
+                    if (sizeMatched >= originalSize && sizeMatched > 0) {
                         newStatus = 'FILLED';
+                    } else if (isTerminal && sizeMatched > 0) {
+                        // Expired/cancelled with partial fill — treat as PARTIAL (terminal)
+                        newStatus = 'PARTIAL';
+                    } else if (isTerminal && sizeMatched === 0) {
+                        newStatus = 'CANCELLED';
                     } else if (sizeMatched > 0) {
                         newStatus = 'PARTIAL';
                     } else {
@@ -122,10 +126,15 @@ export async function POST(request: Request) {
                         })
                         .eq('order_id', order.order_id);
 
-                    // If cancelled/unfilled, unlock capital
-                    if (newStatus === 'CANCELLED') {
-                        const investedAmount = Number(order.signal_size_usd) || 0;
-                        await unlockCapital(supabase, order.strategy_id, investedAmount);
+                    // Unlock capital for unfilled portion on terminal states (cancelled, expired, partial+terminal)
+                    if (isTerminal) {
+                        const totalLocked = Number(order.signal_size_usd) || 0;
+                        const filledValue = executedSizeUsd || 0;
+                        const unfilledToUnlock = Math.max(0, totalLocked - filledValue);
+                        if (unfilledToUnlock > 0.01) {
+                            await unlockCapital(supabase, order.strategy_id, unfilledToUnlock);
+                            console.log(`[lt/sync-order-status] Unlocked $${unfilledToUnlock.toFixed(2)} for ${newStatus} order ${order.order_id}`);
+                        }
                     }
 
                     updated++;

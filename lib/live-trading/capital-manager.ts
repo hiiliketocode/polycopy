@@ -156,6 +156,7 @@ export async function lockCapitalForTrade(
 
 /**
  * Unlock capital back to available (e.g. order failed to fill).
+ * Caps the unlock so total equity never exceeds initial_capital (prevents double-unlock inflation).
  */
 export async function unlockCapital(
     supabase: SupabaseClient,
@@ -167,13 +168,23 @@ export async function unlockCapital(
     const state = await getCapitalState(supabase, strategyId);
     if (!state) return;
 
-    const newLocked = Math.max(0, +(state.locked_capital - amount).toFixed(2));
-    const newAvailable = +(state.available_cash + amount).toFixed(2);
+    // Guard: only unlock up to what's actually locked
+    const safeAmount = Math.min(amount, state.locked_capital);
+    if (safeAmount <= 0) return;
+
+    const newLocked = Math.max(0, +(state.locked_capital - safeAmount).toFixed(2));
+    const newAvailable = +(state.available_cash + safeAmount).toFixed(2);
+
+    // Safety cap: prevent total equity from exceeding initial capital
+    const newEquity = newAvailable + newLocked + state.cooldown_capital;
+    const cappedAvailable = newEquity > state.initial_capital
+        ? +(newAvailable - (newEquity - state.initial_capital)).toFixed(2)
+        : newAvailable;
 
     await supabase
         .from('lt_strategies')
         .update({
-            available_cash: newAvailable,
+            available_cash: Math.max(0, cappedAvailable),
             locked_capital: newLocked,
             updated_at: new Date().toISOString(),
         })

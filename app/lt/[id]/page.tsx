@@ -29,7 +29,8 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
-  ExternalLink
+  ExternalLink,
+  Clock
 } from 'lucide-react';
 import { RiskSettingsPanel } from '@/components/lt/risk-settings-panel';
 
@@ -105,6 +106,7 @@ interface Position {
   executed_size_usd: number;
   shares_bought: number;
   signal_price: number;
+  signal_size_usd?: number;
   order_placed_at: string;
   outcome: string;
   current_price?: number | null;
@@ -139,7 +141,7 @@ export default function LTDetailPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'positions' | 'trades' | 'performance' | 'settings'>('positions');
+  const [activeTab, setActiveTab] = useState<'positions' | 'pending' | 'trades' | 'performance' | 'settings'>('positions');
   const [sortField, setSortField] = useState<SortField>('order_time');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [livePrices, setLivePrices] = useState<Record<string, { current_price: number; unrealized_pnl: number }>>({});
@@ -365,6 +367,10 @@ export default function LTDetailPage() {
   const returnPct = Number(strategy.initial_capital) > 0
     ? (equity - Number(strategy.initial_capital)) / Number(strategy.initial_capital) * 100
     : 0;
+
+  // Break down locked capital: filled positions vs pending orders
+  const lockedInPositions = openPositions.reduce((sum, pos) => sum + (Number(pos.executed_size_usd) || (Number(pos.executed_price) * Number(pos.shares_bought || 0))), 0);
+  const lockedInPending = Math.max(0, Number(strategy.locked_capital) - lockedInPositions);
   const winRate = stats && (stats.won + stats.lost) > 0 
     ? (stats.won / (stats.won + stats.lost)) * 100 
     : null;
@@ -420,11 +426,11 @@ export default function LTDetailPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{formatUsd(equity)}</div>
+            <div className="text-2xl font-bold">{formatUsd(Number(strategy.initial_capital))}</div>
             <div className="text-xs text-muted-foreground">
               Cash: {formatUsd(Number(strategy.available_cash))}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Balance</p>
+            <p className="text-xs text-muted-foreground mt-1">Capital</p>
           </CardContent>
         </Card>
 
@@ -456,11 +462,11 @@ export default function LTDetailPage() {
 
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{stats?.total_trades || 0}</div>
+            <div className="text-2xl font-bold">{stats?.open_positions || 0}</div>
             <div className="text-xs text-muted-foreground">
-              {stats?.open_positions || 0} open
+              {pendingOrders.length > 0 ? `+${pendingOrders.length} pending` : 'filled'}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Trades</p>
+            <p className="text-xs text-muted-foreground mt-1">Open</p>
           </CardContent>
         </Card>
 
@@ -530,18 +536,18 @@ export default function LTDetailPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 text-sm">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-sm">
             <div>
               <span className="text-muted-foreground">Available Cash:</span>
               <span className="ml-2 font-semibold text-green-600">{formatUsd(Number(strategy.available_cash))}</span>
             </div>
             <div>
-              <span className="text-muted-foreground">Locked:</span>
-              <span className="ml-2 font-semibold">{formatUsd(Number(strategy.locked_capital))}</span>
+              <span className="text-muted-foreground">In Positions:</span>
+              <span className="ml-2 font-semibold">{formatUsd(lockedInPositions)}</span>
             </div>
             <div>
-              <span className="text-muted-foreground">Cooldown:</span>
-              <span className="ml-2 font-semibold">{formatUsd(Number(strategy.cooldown_capital))}</span>
+              <span className="text-muted-foreground">In Pending:</span>
+              <span className="ml-2 font-semibold text-amber-600">{formatUsd(lockedInPending)}</span>
             </div>
             <div>
               <span className="text-muted-foreground">Drawdown:</span>
@@ -568,13 +574,14 @@ export default function LTDetailPage() {
         <TabsList className="mb-4">
           <TabsTrigger value="positions" className="flex items-center gap-2">
             <Briefcase className="h-4 w-4" />
-            Open Trades ({stats?.open_positions || 0})
-            {pendingOrders.length > 0 && (
-              <Badge variant="secondary" className="ml-1 text-xs">
-                +{pendingOrders.length} pending
-              </Badge>
-            )}
+            Filled ({stats?.open_positions || 0})
           </TabsTrigger>
+          {pendingOrders.length > 0 && (
+            <TabsTrigger value="pending" className="flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              Pending ({pendingOrders.length})
+            </TabsTrigger>
+          )}
           <TabsTrigger value="trades" className="flex items-center gap-2">
             <ListOrdered className="h-4 w-4" />
             Resolved ({(stats?.won || 0) + (stats?.lost || 0)})
@@ -589,53 +596,89 @@ export default function LTDetailPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Open Positions Tab */}
+        {/* Pending Orders Tab */}
+        <TabsContent value="pending">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Pending Orders
+              </CardTitle>
+              <CardDescription>
+                Limit orders placed on Polymarket, waiting to be filled. Fill status syncs every minute. GTD orders expire after 30 minutes if unfilled.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {pendingOrders.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground">No pending orders</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Market</TableHead>
+                        <TableHead className="text-right">Price</TableHead>
+                        <TableHead className="text-right">Size (USD)</TableHead>
+                        <TableHead className="text-right">Placed</TableHead>
+                        <TableHead className="text-right">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pendingOrders.map((p) => (
+                        <TableRow key={p.lt_order_id}>
+                          <TableCell className="max-w-[350px]">
+                            <div className="font-medium">
+                              {p.market_slug ? (
+                                <a
+                                  href={`https://polymarket.com/market/${p.market_slug}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                                >
+                                  {p.market_title}
+                                  <ExternalLink className="h-3 w-3 shrink-0" />
+                                </a>
+                              ) : (
+                                p.market_title
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground">{p.token_label}</div>
+                          </TableCell>
+                          <TableCell className="text-right">{formatPrice(p.signal_price)}</TableCell>
+                          <TableCell className="text-right">{formatUsd(Number(p.signal_size_usd) || Number(p.signal_price) * Number(p.shares_bought || 0))}</TableCell>
+                          <TableCell className="text-right text-sm text-muted-foreground">
+                            {p.order_placed_at ? new Date(p.order_placed_at).toLocaleString('en-US', {
+                              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                            }) : '-'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant="secondary" className="bg-amber-100 text-amber-800 text-xs">Pending</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Filled Positions Tab */}
         <TabsContent value="positions">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Briefcase className="h-5 w-5" />
-                Open Trades
+                Filled Positions
               </CardTitle>
               <CardDescription>
                 Active positions waiting for market resolution
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {pendingOrders.length > 0 && (
-                <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
-                  <p className="text-sm font-medium text-amber-800">Placed, waiting for fill ({pendingOrders.length})</p>
-                  <p className="text-xs text-amber-700 mt-1">
-                    Orders submitted to Polymarket. Fill status syncs every minute. Once filled, they appear below.
-                  </p>
-                  <ul className="mt-2 space-y-1 text-sm">
-                    {pendingOrders.slice(0, 5).map((p) => (
-                      <li key={p.lt_order_id} className="text-amber-800">
-                        {p.market_slug ? (
-                          <a
-                            href={`https://polymarket.com/market/${p.market_slug}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            {p.market_title?.substring(0, 50)}...
-                          </a>
-                        ) : (
-                          <>{p.market_title?.substring(0, 50)}...</>
-                        )}
-                        {' · '}{formatUsd(Number(p.executed_size_usd) || Number(p.signal_price) * Number(p.shares_bought || 0))} @ {formatPrice(p.signal_price)}
-                      </li>
-                    ))}
-                    {pendingOrders.length > 5 && (
-                      <li className="text-amber-600">+{pendingOrders.length - 5} more</li>
-                    )}
-                  </ul>
-                </div>
-              )}
-              {openPositions.length === 0 && pendingOrders.length === 0 ? (
-                <p className="text-center py-8 text-muted-foreground">No open positions</p>
-              ) : openPositions.length === 0 ? (
-                <p className="text-center py-4 text-muted-foreground">No filled positions yet. Pending orders above will appear here once filled.</p>
+              {openPositions.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground">No filled positions{pendingOrders.length > 0 ? ' — check the Pending tab for orders waiting to fill' : ''}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
