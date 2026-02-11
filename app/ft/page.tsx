@@ -393,6 +393,7 @@ export default function ForwardTestWalletsPage() {
   // Auto-sync every 30 seconds
   useEffect(() => {
     fetchWallets();
+    fetchLtStrategies(); // Load LT data on mount
     
     const autoSync = async () => {
       if (syncing || resolving || !autoSyncActive) return; // Don't overlap
