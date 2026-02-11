@@ -2,15 +2,61 @@
  * Live Trading Executor
  * Executes real trades following FT strategy signals with risk management.
  * Uses the same place-order core as quick trades (Evomi, order_events_log, Cloudflare mitigation).
+ * After placement, polls CLOB every 250ms (same as quick trade cards) until terminal state.
+ * Only persists to orders table if order filled (same as place route for FAK/IOC).
  */
 
 import { randomUUID } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { placeOrderCore } from '@/lib/polymarket/place-order-core';
-import { roundDownToStep } from '@/lib/polymarket/sizing';
+import { prepareOrderParamsForClob } from '@/lib/polymarket/order-prep';
+import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client';
 import { ensureTraderId } from '@/lib/traders/ensure-id';
 import { checkRiskRules, updateRiskStateAfterTrade } from './risk-manager';
+import { ltLog } from './lt-execute-logger';
 import { type EnrichedTrade, calculateBetSize as sharedCalculateBetSize, getSourceTradeId } from '@/lib/ft-sync/shared-logic';
+
+const ORDER_EVENTS_TABLE = 'order_events_log';
+const POLL_INTERVAL_MS = 25;
+const MAX_POLL_MS = 30000;
+
+type PollResult = {
+    status: string;
+    sizeMatched: number;
+    originalSize: number;
+    remainingSize: number;
+    terminal: boolean;
+};
+
+async function pollOrderUntilTerminal(
+    userId: string,
+    orderId: string
+): Promise<PollResult> {
+    const { client } = await getAuthedClobClientForUserAnyWallet(userId);
+    const start = Date.now();
+    let last: PollResult | null = null;
+
+    while (Date.now() - start < MAX_POLL_MS) {
+        const clobOrder = await client.getOrder(orderId) as any;
+        const originalSize = parseFloat(clobOrder?.original_size || clobOrder?.size || '0') || 0;
+        const sizeMatched = parseFloat(clobOrder?.size_matched || '0') || 0;
+        const remainingSize = Math.max(0, originalSize - sizeMatched);
+        const status = String(clobOrder?.status || 'unknown').toLowerCase();
+
+        last = {
+            status,
+            sizeMatched,
+            originalSize,
+            remainingSize,
+            terminal: sizeMatched > 0 || ['cancelled', 'canceled', 'rejected', 'expired', 'failed'].includes(status),
+        };
+
+        if (last.terminal) break;
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    }
+
+    return last || { status: 'unknown', sizeMatched: 0, originalSize: 0, remainingSize: 0, terminal: false };
+}
 
 export interface LTStrategy {
     strategy_id: string;
@@ -156,30 +202,27 @@ export async function executeTrade(
     const sizeContracts = betSize / price;
     const slippagePct = Number(strategy.slippage_tolerance_pct ?? 5) || 5; // Default 5% for copy trading
     const priceWithSlippageForLimit = Math.min(0.9999, price * (1 + slippagePct / 100));
-    
-    // CRITICAL: Polymarket 400 "invalid amounts" - maker amount max 2 decimals, taker amount max 4 decimals.
-    // The CLOB client computes maker = size * price. To get maker ≤2 decimals we need size as whole number
-    // (so size * price has at most 2 decimals when price has 2 decimals). Round size DOWN to avoid over-size.
-    const priceStr = (Math.round(priceWithSlippageForLimit * 100) / 100).toFixed(2);
-    const finalPrice = parseFloat(priceStr);
-    const finalSize = Math.floor(sizeContracts); // Whole contracts → maker = size*price has ≤2 decimals
 
-    if (finalSize < 1) {
-        console.warn(`[LT Executor] Order size too small (${sizeContracts.toFixed(2)} contracts → floor=0), skipping`);
+    // Use same execution logic as manual quick trades: fetch tick size, roundDownToStep, adjustSizeForImpliedAmountAtLeast
+    const prepared = await prepareOrderParamsForClob(tokenId, priceWithSlippageForLimit, sizeContracts, 'BUY');
+    if (!prepared) {
+        console.warn(`[LT Executor] Order prep failed (price=${priceWithSlippageForLimit}, size=${sizeContracts}), skipping`);
         return {
             success: false,
-            error: 'Order size too small after precision rounding',
+            error: 'Order size too small or invalid after rounding',
             riskCheckPassed: true,
         };
     }
+    const { price: finalPrice, size: finalSize, tickSize } = prepared;
 
     // For copy trading, default to IOC (Immediate-Or-Cancel) for high fill rates
     const orderType = (strategy.order_type || 'IOC') as 'GTC' | 'FOK' | 'FAK' | 'IOC';
     
-    console.log(`[LT Executor] Order params (Polymarket precision-safe):`, {
+    console.log(`[LT Executor] Order params (same as manual quick trades):`, {
         order_type: orderType,
         size: finalSize,
-        price: priceStr,
+        price: finalPrice,
+        tickSize,
         slippage_pct: slippagePct
     });
     const requestId = `lt_${strategy.strategy_id}_${Date.now()}_${randomUUID().slice(0, 8)}`;
@@ -198,6 +241,7 @@ export async function executeTrade(
         useAnyWallet: true,
         conditionId: trade.conditionId || null,
         outcome: trade.outcome || null,
+        tickSize,
     });
 
     if (!result.success) {
@@ -211,12 +255,50 @@ export async function executeTrade(
     }
 
     const orderId = result.orderId ?? '';
+    const orderEventId = result.orderEventId ?? null;
+
+    // Poll CLOB until terminal (same as quick trade cards: 250ms interval)
+    console.log(`[LT Executor] Polling CLOB for order ${orderId} (every ${POLL_INTERVAL_MS}ms)`);
+    await ltLog(supabase, 'info', `Order submitted, polling CLOB for fill status`, {
+        strategy_id: strategy.strategy_id,
+        source_trade_id: sourceTradeId,
+        extra: { order_id: orderId },
+    });
+
+    const pollResult = await pollOrderUntilTerminal(strategy.user_id, orderId);
     const executionLatency = Date.now() - signalTime;
-    const executedPrice = finalPrice; // limit price we sent to CLOB
-    const executedSize = finalSize;
+
+    const filled = pollResult.sizeMatched > 0;
+    const fillRate = pollResult.originalSize > 0 ? pollResult.sizeMatched / pollResult.originalSize : 0;
+
+    await ltLog(supabase, filled ? 'info' : 'warn', `CLOB poll result: ${pollResult.status} filled=${pollResult.sizeMatched}/${pollResult.originalSize}`, {
+        strategy_id: strategy.strategy_id,
+        source_trade_id: sourceTradeId,
+        extra: { order_id: orderId, ...pollResult },
+    });
+
+    if (!filled) {
+        // Same as place route for FAK: do NOT persist to orders table
+        if (orderEventId) {
+            await supabase.from(ORDER_EVENTS_TABLE).update({
+                status: 'rejected',
+                error_message: `Order did not fill (${pollResult.status})`,
+                raw_error: JSON.stringify(pollResult),
+            }).eq('id', orderEventId);
+        }
+        console.warn(`[LT Executor] Order did not fill: ${pollResult.status} (${pollResult.sizeMatched}/${pollResult.originalSize})`);
+        return {
+            success: false,
+            error: `Order did not fill (${pollResult.status})`,
+            riskCheckPassed: true,
+        };
+    }
+
+    const executedPrice = finalPrice;
+    const executedSize = pollResult.sizeMatched;
     const slippage = price > 0 ? (finalPrice - price) / price : 0;
 
-    // 1) Upsert orders row FIRST — lt_orders FK requires order_id to exist in orders
+    // 1) Upsert orders row — only for filled orders (same as quick trade)
     const traderId = await ensureTraderId(supabase, strategy.wallet_address);
     const now = new Date().toISOString();
     await supabase.from('orders').upsert(
@@ -228,10 +310,10 @@ export async function executeTrade(
             side: 'buy',
             order_type: orderType,
             price: finalPrice,
-            size: finalSize,
-            filled_size: 0,
-            remaining_size: executedSize,
-            status: 'open',
+            size: pollResult.originalSize,
+            filled_size: executedSize,
+            remaining_size: pollResult.remainingSize,
+            status: fillRate >= 1 ? 'filled' : 'partial',
             created_at: now,
             updated_at: now,
             lt_strategy_id: strategy.strategy_id,
@@ -242,7 +324,7 @@ export async function executeTrade(
         { onConflict: 'order_id' }
     );
 
-    // 2) Insert lt_orders (FK to orders now satisfied)
+    // 2) Insert lt_orders
     const { data: ltOrder, error: ltError } = await supabase
         .from('lt_orders')
         .insert({
@@ -259,13 +341,14 @@ export async function executeTrade(
             signal_price: price,
             signal_size_usd: betSize,
             executed_price: finalPrice,
-            executed_size: finalSize,
-            order_placed_at: new Date().toISOString(),
+            executed_size: executedSize,
+            order_placed_at: now,
+            fully_filled_at: fillRate >= 1 ? now : null,
             slippage_pct: slippage,
-            fill_rate: 1.0,
+            fill_rate: fillRate,
             execution_latency_ms: executionLatency,
             risk_check_passed: true,
-            status: 'PENDING',
+            status: fillRate >= 1 ? 'FILLED' : 'PARTIAL',
             outcome: 'OPEN',
             ft_entry_price: price,
             ft_size: betSize,
@@ -288,6 +371,12 @@ export async function executeTrade(
     }
 
     await updateRiskStateAfterTrade(supabase, strategy.strategy_id, betSize, null);
+
+    await ltLog(supabase, 'info', `Order filled: ${executedSize} contracts`, {
+        strategy_id: strategy.strategy_id,
+        source_trade_id: sourceTradeId,
+        extra: { order_id: orderId, lt_order_id: ltOrder.lt_order_id },
+    });
 
     return {
         success: true,

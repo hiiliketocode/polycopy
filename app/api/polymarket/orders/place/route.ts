@@ -11,6 +11,7 @@ import { getBodySnippet } from '@/lib/polymarket/order-route-helpers'
 import { sanitizeError } from '@/lib/http/sanitize-error'
 import { logError, logInfo, makeRequestId, sanitizeForLogging } from '@/lib/logging/logger'
 import { resolveOrdersTableName } from '@/lib/orders/table'
+import { fetchMarketTickSize } from '@/lib/polymarket/order-prep'
 import { adjustSizeForImpliedAmount, adjustSizeForImpliedAmountAtLeast, roundDownToStep } from '@/lib/polymarket/sizing'
 import { getAuthenticatedUserId } from '@/lib/auth/secure-auth'
 import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit/index'
@@ -144,38 +145,6 @@ async function fetchCopiedTraderPositionSize(
       console.warn('[POLY-ORDER-PLACE] Failed to fetch copied trader position size', error)
       break
     }
-  }
-
-  return null
-}
-
-async function fetchMarketTickSize(clobBaseUrl: string, tokenId: string) {
-  const normalizedTokenId = normalizeOptionalString(tokenId)
-  if (!normalizedTokenId) return null
-  const tickUrl = new URL('/tick-size', clobBaseUrl)
-  tickUrl.searchParams.set('token_id', normalizedTokenId)
-  try {
-    const response = await fetch(tickUrl.toString(), { cache: 'no-store' })
-    const data = await response.json()
-    const tick = normalizeNumber(data?.minimum_tick_size ?? data?.tick_size)
-    if (response.ok && tick && tick > 0) {
-      return tick
-    }
-  } catch {
-    // Fall through to book lookup.
-  }
-
-  const bookUrl = new URL('/book', clobBaseUrl)
-  bookUrl.searchParams.set('token_id', normalizedTokenId)
-  try {
-    const response = await fetch(bookUrl.toString(), { cache: 'no-store' })
-    const data = await response.json()
-    const tick = normalizeNumber(data?.tick_size)
-    if (response.ok && tick && tick > 0) {
-      return tick
-    }
-  } catch {
-    // Ignore failures; caller will fall back to default tick size.
   }
 
   return null

@@ -123,6 +123,7 @@ export default function ComprehensiveLTDetailPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [riskState, setRiskState] = useState<RiskState | null>(null);
   const [openPositions, setOpenPositions] = useState<Position[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<Position[]>([]);
   const [closedTrades, setClosedTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -176,8 +177,9 @@ export default function ComprehensiveLTDetailPage() {
       // Set stats
       setStats(ordersData.stats || null);
       
-      // Set positions and trades
+      // Set positions and trades (pending = placed, waiting for fill; open = filled, active)
       setOpenPositions(ordersData.open_orders || []);
+      setPendingOrders(ordersData.pending_orders || []);
       setClosedTrades(ordersData.closed_orders || []);
 
     } catch (err: any) {
@@ -544,6 +546,11 @@ export default function ComprehensiveLTDetailPage() {
           <TabsTrigger value="positions" className="flex items-center gap-2">
             <Briefcase className="h-4 w-4" />
             Open Trades ({stats?.open_positions || 0})
+            {pendingOrders.length > 0 && (
+              <Badge variant="secondary" className="ml-1 text-xs">
+                +{pendingOrders.length} pending
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="trades" className="flex items-center gap-2">
             <ListOrdered className="h-4 w-4" />
@@ -572,8 +579,28 @@ export default function ComprehensiveLTDetailPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {openPositions.length === 0 ? (
+              {pendingOrders.length > 0 && (
+                <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                  <p className="text-sm font-medium text-amber-800">Placed, waiting for fill ({pendingOrders.length})</p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    Orders submitted to Polymarket. Fill status updates every minute via cron. Once filled, they appear below.
+                  </p>
+                  <ul className="mt-2 space-y-1 text-sm">
+                    {pendingOrders.slice(0, 5).map((p) => (
+                      <li key={p.lt_order_id} className="text-amber-800">
+                        {p.market_title?.substring(0, 50)}... · {p.executed_size?.toFixed(1)} contracts @ {formatPrice(p.executed_price)}
+                      </li>
+                    ))}
+                    {pendingOrders.length > 5 && (
+                      <li className="text-amber-600">+{pendingOrders.length - 5} more</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+              {openPositions.length === 0 && pendingOrders.length === 0 ? (
                 <p className="text-center py-8 text-muted-foreground">No open positions</p>
+              ) : openPositions.length === 0 ? (
+                <p className="text-center py-4 text-muted-foreground">No filled positions yet. Pending orders above will appear here once filled.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <Table>

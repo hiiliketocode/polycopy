@@ -99,7 +99,12 @@ export async function GET(request: Request) {
             price: lo.executed_price,
             size: lo.executed_size,
             status: lo.status,
-            rejection_reason: lo.rejection_reason
+            rejection_reason: lo.rejection_reason,
+            next_step: !lo.rejection_reason && lo.status === 'PENDING'
+              ? 'Waiting for fill. Status sync runs every minute.'
+              : lo.status === 'FILLED'
+              ? 'Filled'
+              : undefined
           }
         });
 
