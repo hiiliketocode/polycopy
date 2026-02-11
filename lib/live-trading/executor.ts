@@ -157,24 +157,29 @@ export async function executeTrade(
     const slippagePct = Number(strategy.slippage_tolerance_pct ?? 5) || 5; // Default 5% for copy trading
     const priceWithSlippageForLimit = Math.min(0.9999, price * (1 + slippagePct / 100));
     
-    // CRITICAL: Polymarket precision requirements:
-    // Force to strings with exact decimals to prevent floating point issues
-    // - Price: 2 decimals (maker amount)
-    // - Size: 2 decimals (taker amount - using min to avoid errors)
+    // CRITICAL: Polymarket 400 "invalid amounts" - maker amount max 2 decimals, taker amount max 4 decimals.
+    // The CLOB client computes maker = size * price. To get maker ≤2 decimals we need size as whole number
+    // (so size * price has at most 2 decimals when price has 2 decimals). Round size DOWN to avoid over-size.
     const priceStr = (Math.round(priceWithSlippageForLimit * 100) / 100).toFixed(2);
-    const sizeStr = (Math.round(sizeContracts * 100) / 100).toFixed(2);
-    const finalPrice = parseFloat(priceStr); // Parse back to ensure exactly 2 decimals
-    const finalSize = parseFloat(sizeStr);
+    const finalPrice = parseFloat(priceStr);
+    const finalSize = Math.floor(sizeContracts); // Whole contracts → maker = size*price has ≤2 decimals
+
+    if (finalSize < 1) {
+        console.warn(`[LT Executor] Order size too small (${sizeContracts.toFixed(2)} contracts → floor=0), skipping`);
+        return {
+            success: false,
+            error: 'Order size too small after precision rounding',
+            riskCheckPassed: true,
+        };
+    }
 
     // For copy trading, default to IOC (Immediate-Or-Cancel) for high fill rates
     const orderType = (strategy.order_type || 'IOC') as 'GTC' | 'FOK' | 'FAK' | 'IOC';
     
-    console.log(`[LT Executor] Order params (string-enforced precision):`, {
+    console.log(`[LT Executor] Order params (Polymarket precision-safe):`, {
         order_type: orderType,
-        size: sizeStr,
-        size_parsed: finalSize,
+        size: finalSize,
         price: priceStr,
-        price_parsed: finalPrice,
         slippage_pct: slippagePct
     });
     const requestId = `lt_${strategy.strategy_id}_${Date.now()}_${randomUUID().slice(0, 8)}`;
