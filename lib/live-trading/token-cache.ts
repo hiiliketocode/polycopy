@@ -63,13 +63,18 @@ export async function resolveTokenId(
         return cached;
     }
 
-    // 2. Database fallback (markets table)
+    // 2. Database fallback (markets table) — also check if market is closed
     try {
         const { data: marketRow } = await supabase
             .from('markets')
-            .select('tokens')
+            .select('tokens, closed')
             .eq('condition_id', conditionId)
             .maybeSingle();
+
+        if (marketRow?.closed) {
+            logger?.warn('TOKEN_RESOLVE', `Market is closed/resolved — skipping: ${conditionId}`, { conditionId });
+            return null;
+        }
 
         if (marketRow?.tokens) {
             let tokens = marketRow.tokens;
@@ -105,6 +110,13 @@ export async function resolveTokenId(
 
             if (resp.ok) {
                 const clobMarket = await resp.json();
+
+                // Check if market is still accepting orders
+                if (clobMarket?.accepting_orders === false || clobMarket?.closed === true) {
+                    logger?.warn('TOKEN_RESOLVE', `CLOB market not accepting orders — skipping: ${conditionId}`, { conditionId });
+                    return null;
+                }
+
                 if (Array.isArray(clobMarket?.tokens)) {
                     // Cache ALL outcomes for this market (saves future lookups)
                     for (const t of clobMarket.tokens) {
