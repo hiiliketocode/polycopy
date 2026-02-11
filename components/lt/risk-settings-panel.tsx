@@ -12,6 +12,7 @@ interface RiskRules {
   rule_id: string;
   strategy_id: string;
   daily_budget_usd: number | null;
+  daily_budget_pct: number | null;
   max_position_size_usd: number | null;
   max_total_exposure_usd: number | null;
   max_concurrent_positions: number;
@@ -303,14 +304,45 @@ export function RiskSettingsPanel({ strategyId }: RiskSettingsPanelProps) {
                   type="number"
                   step="10"
                   min="0"
-                  value={getValue('daily_budget_usd') || ''}
-                  onChange={(e) => updateField('daily_budget_usd', parseFloat(e.target.value))}
+                  value={getValue('daily_budget_usd') ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updateField('daily_budget_usd', v === '' ? null : parseFloat(v));
+                  }}
                   placeholder="No limit"
                   className="w-32"
                 />
               </div>
               <p className="text-xs text-muted-foreground">
                 Spent today: ${state.daily_spent_usd.toFixed(2)}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="daily_budget_pct">Daily Budget % (when no USD limit)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="daily_budget_pct"
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="100"
+                  value={getValue('daily_budget_pct') != null ? (getValue('daily_budget_pct') as number) * 100 : ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updateField('daily_budget_pct', v === '' ? null : parseFloat(v) / 100);
+                  }}
+                  placeholder="No limit"
+                  className="w-24"
+                />
+                <span className="text-sm text-muted-foreground">% of equity</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {getValue('daily_budget_usd') == null && getValue('daily_budget_pct') != null && state
+                  ? `≈ $${(state.current_equity * (getValue('daily_budget_pct') as number)).toFixed(0)}/day at current equity`
+                  : getValue('daily_budget_usd') == null && getValue('daily_budget_pct') == null
+                    ? 'Both empty = no daily limit'
+                    : null}
               </p>
             </div>
 
@@ -430,6 +462,7 @@ export function RiskSettingsPanel({ strategyId }: RiskSettingsPanelProps) {
                   max_drawdown_pct: 0.35,
                   max_consecutive_losses: 15,
                   daily_budget_usd: null,
+                  daily_budget_pct: null,
                   max_position_size_usd: null
                 });
               }}

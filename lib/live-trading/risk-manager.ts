@@ -282,12 +282,15 @@ export async function checkRiskRules(
         };
     }
 
-    // 5. Daily Budget Check
-    const dailyBudget = rules.daily_budget_usd !== null
-        ? rules.daily_budget_usd
-        : (currentState.current_equity * (rules.daily_budget_pct || 0.10));
+    // 5. Daily Budget Check (only when a limit is configured)
+    const dailyBudget =
+        rules.daily_budget_usd !== null
+            ? rules.daily_budget_usd
+            : rules.daily_budget_pct != null
+                ? currentState.current_equity * rules.daily_budget_pct
+                : null;
 
-    if (currentState.daily_spent_usd + trade.size > dailyBudget) {
+    if (dailyBudget !== null && currentState.daily_spent_usd + trade.size > dailyBudget) {
         return {
             allowed: false,
             reason: `Daily budget exceeded: $${currentState.daily_spent_usd.toFixed(2)} + $${trade.size.toFixed(2)} > $${dailyBudget.toFixed(2)}`,

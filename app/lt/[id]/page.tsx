@@ -32,7 +32,8 @@ import {
   AlertCircle,
   ChevronUp,
   ChevronDown,
-  ChevronsUpDown
+  ChevronsUpDown,
+  ExternalLink
 } from 'lucide-react';
 import { RiskSettingsPanel } from '@/components/lt/risk-settings-panel';
 
@@ -104,6 +105,7 @@ interface Position {
 interface Trade {
   lt_order_id: string;
   market_title: string;
+  market_slug: string | null;
   token_label: string;
   executed_price: number;
   executed_size: number;
@@ -588,7 +590,19 @@ export default function ComprehensiveLTDetailPage() {
                   <ul className="mt-2 space-y-1 text-sm">
                     {pendingOrders.slice(0, 5).map((p) => (
                       <li key={p.lt_order_id} className="text-amber-800">
-                        {p.market_title?.substring(0, 50)}... · {p.executed_size?.toFixed(1)} contracts @ {formatPrice(p.executed_price)}
+                        {p.market_slug ? (
+                          <a
+                            href={`https://polymarket.com/market/${p.market_slug}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {p.market_title?.substring(0, 50)}...
+                          </a>
+                        ) : (
+                          <>{p.market_title?.substring(0, 50)}...</>
+                        )}
+                        {' · '}{p.executed_size?.toFixed(1)} contracts @ {formatPrice(p.executed_price)}
                       </li>
                     ))}
                     {pendingOrders.length > 5 && (
@@ -631,7 +645,21 @@ export default function ComprehensiveLTDetailPage() {
                         return (
                           <TableRow key={pos.lt_order_id}>
                             <TableCell className="max-w-[300px]">
-                              <div className="font-medium">{pos.market_title}</div>
+                              <div className="font-medium">
+                                {pos.market_slug ? (
+                                  <a
+                                    href={`https://polymarket.com/market/${pos.market_slug}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                                  >
+                                    {pos.market_title}
+                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                                  </a>
+                                ) : (
+                                  pos.market_title
+                                )}
+                              </div>
                               <div className="text-xs text-muted-foreground">
                                 {pos.token_label} · {pos.executed_size.toFixed(2)} contracts
                               </div>
@@ -712,7 +740,21 @@ export default function ComprehensiveLTDetailPage() {
                         return (
                           <TableRow key={trade.lt_order_id}>
                             <TableCell className="max-w-[300px]">
-                              <div className="font-medium">{trade.market_title}</div>
+                              <div className="font-medium">
+                                {trade.market_slug ? (
+                                  <a
+                                    href={`https://polymarket.com/market/${trade.market_slug}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                                  >
+                                    {trade.market_title}
+                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                                  </a>
+                                ) : (
+                                  trade.market_title
+                                )}
+                              </div>
                               <div className="text-xs text-muted-foreground">{trade.token_label}</div>
                             </TableCell>
                             <TableCell className="text-right">{formatPrice(trade.executed_price)}</TableCell>

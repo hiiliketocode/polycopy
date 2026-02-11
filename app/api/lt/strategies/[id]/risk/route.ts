@@ -81,6 +81,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         // Build update object from allowed fields
         const allowedFields = [
             'daily_budget_usd',
+            'daily_budget_pct',
             'max_position_size_usd',
             'max_total_exposure_usd',
             'max_concurrent_positions',
