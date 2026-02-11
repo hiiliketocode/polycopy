@@ -7,38 +7,95 @@ import { type FTWallet, type EnrichedTrade } from '@/lib/ft-sync/shared-logic';
 /**
  * Resolve CLOB token_id from condition_id and outcome label (YES/NO).
  * Used when executing from ft_orders which don't store token_id.
+ * Includes retry logic with exponential backoff for reliability.
  */
 async function resolveTokenId(
     conditionId: string,
     tokenLabel: string,
-    supabase: ReturnType<typeof createAdminServiceClient>
+    supabase: ReturnType<typeof createAdminServiceClient>,
+    maxRetries: number = 3
 ): Promise<string | null> {
     const label = (tokenLabel || 'yes').toLowerCase();
-    try {
-        const resp = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, { cache: 'no-store' });
-        if (resp.ok) {
-            const clobMarket = await resp.json();
-            if (Array.isArray(clobMarket?.tokens)) {
-                const matched = clobMarket.tokens.find((t: any) => (t.outcome || '').toLowerCase() === label);
-                return matched?.token_id || clobMarket.tokens[0]?.token_id || null;
+    
+    // Try CLOB API with retries
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`[Token Resolution] Attempt ${attempt}/${maxRetries} for ${conditionId} (${label})`);
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+            
+            const resp = await fetch(
+                `https://clob.polymarket.com/markets/${conditionId}`, 
+                { 
+                    cache: 'no-store',
+                    signal: controller.signal
+                }
+            );
+            clearTimeout(timeoutId);
+            
+            if (resp.ok) {
+                const clobMarket = await resp.json();
+                if (Array.isArray(clobMarket?.tokens)) {
+                    const matched = clobMarket.tokens.find((t: any) => (t.outcome || '').toLowerCase() === label);
+                    const tokenId = matched?.token_id || clobMarket.tokens[0]?.token_id || null;
+                    
+                    if (tokenId) {
+                        console.log(`[Token Resolution] ✅ Resolved via CLOB: ${tokenId}`);
+                        return tokenId;
+                    }
+                }
+            }
+        } catch (error: any) {
+            console.warn(`[Token Resolution] CLOB attempt ${attempt} failed:`, error.message);
+            
+            // Don't retry on last attempt
+            if (attempt < maxRetries) {
+                // Exponential backoff: 1s, 2s, 4s
+                const waitMs = 1000 * Math.pow(2, attempt - 1);
+                console.log(`[Token Resolution] Waiting ${waitMs}ms before retry...`);
+                await new Promise(resolve => setTimeout(resolve, waitMs));
             }
         }
-    } catch {
-        // ignore
     }
-    const { data: marketRow } = await supabase.from('markets').select('tokens').eq('condition_id', conditionId).single();
-    let tokens = marketRow?.tokens;
-    if (typeof tokens === 'string') {
-        try {
-            tokens = JSON.parse(tokens);
-        } catch {
-            tokens = null;
+    
+    // Fallback to database
+    console.log(`[Token Resolution] CLOB API failed, trying database fallback...`);
+    try {
+        const { data: marketRow, error: dbError } = await supabase
+            .from('markets')
+            .select('tokens')
+            .eq('condition_id', conditionId)
+            .single();
+        
+        if (dbError) {
+            console.warn(`[Token Resolution] Database query failed:`, dbError.message);
+            return null;
         }
+        
+        let tokens = marketRow?.tokens;
+        if (typeof tokens === 'string') {
+            try {
+                tokens = JSON.parse(tokens);
+            } catch {
+                tokens = null;
+            }
+        }
+        
+        if (Array.isArray(tokens)) {
+            const matched = tokens.find((t: any) => (t.outcome || '').toLowerCase() === label);
+            const tokenId = matched?.token_id || tokens[0]?.token_id || null;
+            
+            if (tokenId) {
+                console.log(`[Token Resolution] ✅ Resolved via database: ${tokenId}`);
+                return tokenId;
+            }
+        }
+    } catch (error: any) {
+        console.error(`[Token Resolution] Database fallback failed:`, error.message);
     }
-    if (Array.isArray(tokens)) {
-        const matched = tokens.find((t: any) => (t.outcome || '').toLowerCase() === label);
-        return matched?.token_id || tokens[0]?.token_id || null;
-    }
+    
+    console.error(`[Token Resolution] ❌ Failed to resolve token ID for ${conditionId} (${label})`);
     return null;
 }
 
@@ -126,14 +183,32 @@ export async function POST(request: Request) {
 
             for (const fo of ftOrders) {
                 const sourceTradeId = fo.source_trade_id || `${fo.trader_address}-${fo.condition_id}-${fo.order_time}`;
-                if (executedSourceIds.has(sourceTradeId)) continue;
+                
+                console.log(`[lt/execute] Processing FT order for ${strategy.strategy_id}:`, {
+                    order_id: fo.order_id,
+                    market: fo.market_title?.substring(0, 50) + '...',
+                    trader: fo.trader_address?.substring(0, 10) + '...',
+                    price: fo.entry_price,
+                    size: fo.size,
+                    token_label: fo.token_label,
+                    order_time: fo.order_time,
+                    source_trade_id: sourceTradeId
+                });
+                
+                if (executedSourceIds.has(sourceTradeId)) {
+                    console.log(`[lt/execute] ⏭️  Skipping already executed trade: ${sourceTradeId}`);
+                    continue;
+                }
 
                 const tokenId = await resolveTokenId(fo.condition_id, fo.token_label || 'YES', supabase);
                 if (!tokenId) {
+                    console.error(`[lt/execute] ❌ Skipping - Token ID resolution failed for ${fo.condition_id}`);
                     reasons['no_token_id'] = (reasons['no_token_id'] || 0) + 1;
                     results[strategy.strategy_id].skipped++;
                     continue;
                 }
+                
+                console.log(`[lt/execute] ✅ Token ID resolved: ${tokenId}`);
 
                 const entryPrice = Number(fo.entry_price) || 0;
                 const sizeUsd = Number(fo.size) || 0;
@@ -161,18 +236,33 @@ export async function POST(request: Request) {
                     conviction,
                 };
 
+                console.log(`[lt/execute] 🔄 Calling executeTrade for ${fo.market_title?.substring(0, 40)}...`);
+                
                 try {
                     const execResult = await executeTrade(supabase, strategy, trade, ftWallet, fo.order_id);
                     if (execResult.success) {
                         results[strategy.strategy_id].executed++;
                         executedSourceIds.add(sourceTradeId);
-                        console.log(`[lt/execute] Executed ${strategy.strategy_id} source_trade_id=${sourceTradeId}`);
+                        console.log(`[lt/execute] ✅ Successfully executed ${strategy.strategy_id} source_trade_id=${sourceTradeId}`, {
+                            lt_order_id: execResult.lt_order_id,
+                            order_id: execResult.order_id
+                        });
                     } else {
                         results[strategy.strategy_id].errors++;
-                        reasons[execResult.error || 'execution_failed'] = (reasons[execResult.error || 'execution_failed'] || 0) + 1;
+                        const errorReason = execResult.error || 'execution_failed';
+                        reasons[errorReason] = (reasons[errorReason] || 0) + 1;
+                        console.error(`[lt/execute] ❌ Execution failed:`, {
+                            source_trade_id: sourceTradeId,
+                            error: errorReason,
+                            risk_check_passed: execResult.riskCheckPassed,
+                            risk_reason: execResult.riskCheckReason
+                        });
                     }
                 } catch (error: any) {
-                    console.error(`[lt/execute] Execution error for ${sourceTradeId}:`, error);
+                    console.error(`[lt/execute] ⚠️  Exception during execution for ${sourceTradeId}:`, {
+                        error_message: error.message,
+                        error_stack: error.stack?.substring(0, 200)
+                    });
                     results[strategy.strategy_id].errors++;
                     reasons['execution_error'] = (reasons['execution_error'] || 0) + 1;
                 }
