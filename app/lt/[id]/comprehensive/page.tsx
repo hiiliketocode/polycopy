@@ -130,6 +130,21 @@ export default function ComprehensiveLTDetailPage() {
   const [activeTab, setActiveTab] = useState<'positions' | 'trades' | 'performance' | 'settings'>('positions');
   const [sortField, setSortField] = useState<SortField>('order_time');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [livePrices, setLivePrices] = useState<Record<string, { current_price: number; unrealized_pnl: number }>>({});
+
+  // Fetch live prices for open positions
+  const fetchLivePrices = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/lt/live-prices?strategy=${id}`, { cache: 'no-store' });
+      const data = await res.json();
+      
+      if (data.success && data.prices) {
+        setLivePrices(data.prices);
+      }
+    } catch (error) {
+      console.error('Failed to fetch live prices:', error);
+    }
+  }, [id]);
 
   // Load strategy data
   const loadData = useCallback(async () => {
@@ -174,9 +189,10 @@ export default function ComprehensiveLTDetailPage() {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    fetchLivePrices(); // Load prices immediately
+  }, [loadData, fetchLivePrices]);
 
-  // Auto-refresh every 30 seconds
+  // Auto-refresh data every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       if (!refreshing) {
@@ -188,9 +204,19 @@ export default function ComprehensiveLTDetailPage() {
     return () => clearInterval(interval);
   }, [loadData, refreshing]);
 
+  // Auto-refresh live prices every 15 seconds (faster for real-time P&L)
+  useEffect(() => {
+    const priceInterval = setInterval(() => {
+      fetchLivePrices();
+    }, 15000);
+
+    return () => clearInterval(priceInterval);
+  }, [fetchLivePrices]);
+
   const handleRefresh = () => {
     setRefreshing(true);
-    loadData().finally(() => setRefreshing(false));
+    Promise.all([loadData(), fetchLivePrices()])
+      .finally(() => setRefreshing(false));
   };
 
   const handleSort = (field: SortField) => {
@@ -565,9 +591,14 @@ export default function ComprehensiveLTDetailPage() {
                     </TableHeader>
                     <TableBody>
                       {sortedPositions.map((pos) => {
+                        // Use live price if available, otherwise use entry price
+                        const liveData = livePrices[pos.lt_order_id];
+                        const currentPrice = liveData?.current_price ?? pos.current_price ?? pos.executed_price;
+                        const hasLivePrice = !!liveData;
+                        
                         const cost = pos.executed_price * pos.executed_size;
-                        const currentValue = pos.current_price ? pos.current_price * pos.executed_size : cost;
-                        const unrealizedPnl = pos.current_price ? (pos.current_price - pos.executed_price) * pos.executed_size : 0;
+                        const currentValue = currentPrice * pos.executed_size;
+                        const unrealizedPnl = (currentPrice - pos.executed_price) * pos.executed_size;
                         const pnlPct = cost > 0 ? (unrealizedPnl / cost) * 100 : 0;
 
                         return (
@@ -583,7 +614,12 @@ export default function ComprehensiveLTDetailPage() {
                             </TableCell>
                             <TableCell className="text-right">{formatPrice(pos.executed_price)}</TableCell>
                             <TableCell className="text-right font-medium">
-                              {pos.current_price ? formatPrice(pos.current_price) : formatPrice(pos.executed_price)}
+                              <div className="flex items-center justify-end gap-1">
+                                {formatPrice(currentPrice)}
+                                {hasLivePrice && (
+                                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live price" />
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell className="text-right">{formatUsd(cost)}</TableCell>
                             <TableCell className="text-right font-medium">{formatUsd(currentValue)}</TableCell>
