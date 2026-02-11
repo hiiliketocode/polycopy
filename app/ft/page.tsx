@@ -143,6 +143,7 @@ export default function ForwardTestWalletsPage() {
   const [createLtCapital, setCreateLtCapital] = useState('1000');
   const [creatingLt, setCreatingLt] = useState(false);
   const [ltError, setLtError] = useState<string | null>(null);
+  const [showLtInTable, setShowLtInTable] = useState(true);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -552,10 +553,12 @@ export default function ForwardTestWalletsPage() {
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
             <Wallet className="h-8 w-8" />
-            Forward Test Wallets
+            {showLtInTable ? 'All Trading Strategies' : 'Forward Test Wallets'}
           </h1>
           <p className="text-muted-foreground mt-1">
-            Live paper trading portfolios tracking strategy performance
+            {showLtInTable 
+              ? 'Forward Testing (paper) and Live Trading (real) strategies' 
+              : 'Live paper trading portfolios tracking strategy performance'}
           </p>
           <div className="flex items-center gap-4 mt-2">
             {lastSync && (
@@ -577,6 +580,22 @@ export default function ForwardTestWalletsPage() {
                 {autoSyncActive ? 'Pause' : 'Resume'}
               </Button>
             </div>
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <Button
+              variant={showLtInTable ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setShowLtInTable(!showLtInTable)}
+              className="h-7 text-xs"
+            >
+              {showLtInTable ? '✓ Show Live Trading' : 'Show Live Trading'}
+            </Button>
+            <Link href="/lt/logs">
+              <Button variant="outline" size="sm" className="h-7 text-xs border-[#FDB022] text-[#FDB022]">
+                <Activity className="h-3 w-3 mr-1" />
+                Live Logs
+              </Button>
+            </Link>
           </div>
         </div>
         <div className="flex gap-2">
