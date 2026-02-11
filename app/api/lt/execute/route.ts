@@ -171,7 +171,8 @@ export async function POST(request: Request) {
                 .order('order_time', { ascending: true });
 
             if (ftOrdersError || !ftOrders?.length) {
-                await supabase.from('lt_strategies').update({ last_sync_time: now.toISOString() }).eq('strategy_id', strategy.strategy_id);
+                // Don't update last_sync_time if no orders found - keeps window open for next eligible order
+                console.log(`[lt/execute] No FT orders found for ${strategy.strategy_id} since ${lastSyncTime.toISOString()}`);
                 continue;
             }
 
@@ -268,7 +269,12 @@ export async function POST(request: Request) {
                 }
             }
 
-            await supabase.from('lt_strategies').update({ last_sync_time: now.toISOString() }).eq('strategy_id', strategy.strategy_id);
+            // Only update last_sync_time if we actually processed orders
+            // This prevents advancing the sync time when nothing was eligible, which would skip future orders
+            if (ftOrders && ftOrders.length > 0) {
+                await supabase.from('lt_strategies').update({ last_sync_time: now.toISOString() }).eq('strategy_id', strategy.strategy_id);
+                console.log(`[lt/execute] Updated last_sync_time for ${strategy.strategy_id} after processing ${ftOrders.length} FT orders`);
+            }
         }
 
         const totalExecuted = Object.values(results).reduce((sum, r) => sum + r.executed, 0);
