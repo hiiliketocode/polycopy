@@ -116,8 +116,8 @@ export async function POST(request: Request) {
                 // Risk state
                 peak_equity: capital,
 
-                // Status
-                is_active: false,
+                // Status — active immediately, use pause to stop
+                is_active: true,
                 is_paused: false,
                 shadow_mode: shadow_mode || false,
             })

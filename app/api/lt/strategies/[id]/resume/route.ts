@@ -38,6 +38,7 @@ export async function POST(request: Request, { params }: RouteParams) {
         const { error: updateError } = await supabase
             .from('lt_strategies')
             .update({
+                is_active: true,
                 is_paused: false,
                 circuit_breaker_active: false,
                 updated_at: new Date().toISOString()

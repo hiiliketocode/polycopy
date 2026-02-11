@@ -350,7 +350,7 @@ export default function LiveTradingPage() {
               <ul className="space-y-3">
                 {strategies.map((s) => {
                   const equity = getEquity(s);
-                  const isPaused = s.is_paused;
+                  const isPaused = s.is_paused || !s.is_active;
                   return (
                     <li
                       key={s.strategy_id}
@@ -361,13 +361,10 @@ export default function LiveTradingPage() {
                           <Link href={`/lt/${s.strategy_id}`} className="hover:underline">
                             {s.display_name}
                           </Link>
-                          {s.is_active ? (
-                            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Active</Badge>
-                          ) : (
-                            <Badge variant="secondary" className="bg-slate-200 text-slate-600">Inactive</Badge>
-                          )}
-                          {isPaused && (
+                          {isPaused ? (
                             <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200">Paused</Badge>
+                          ) : (
+                            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Active</Badge>
                           )}
                           {s.shadow_mode && (
                             <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-blue-200">Shadow</Badge>
