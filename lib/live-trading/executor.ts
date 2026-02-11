@@ -156,12 +156,13 @@ export async function executeTrade(
     const slippagePct = Number(strategy.slippage_tolerance_pct ?? 5) || 5; // Default 5% for copy trading
     const priceWithSlippageForLimit = Math.min(0.9999, price * (1 + slippagePct / 100));
     
-    // CRITICAL: Polymarket precision requirements (from error messages):
-    // - Price (maker amount): MAX 2 decimals (0.01 step)
-    // - Size (taker amount): MAX 5 decimals (0.00001 step) - NOT 4!
-    const roundedPrice = Math.floor(price * 100) / 100; // Force 2 decimals
-    const roundedPriceWithSlippage = Math.floor(priceWithSlippageForLimit * 100) / 100; // Force 2 decimals
-    const roundedSize = Math.floor(sizeContracts * 100000) / 100000; // Force 5 decimals max
+    // CRITICAL: Polymarket precision requirements:
+    // - Price (maker amount): MAX 2 decimals
+    // - Size (taker amount): MAX 2 decimals (using most conservative to avoid errors)
+    // Note: Error messages vary between 4-5 decimals, using 2 to be safe
+    const roundedPrice = Math.round(price * 100) / 100; // 2 decimals
+    const roundedPriceWithSlippage = Math.round(priceWithSlippageForLimit * 100) / 100; // 2 decimals
+    const roundedSize = Math.round(sizeContracts * 100) / 100; // 2 decimals (conservative)
 
     // For copy trading, default to IOC (Immediate-Or-Cancel) for high fill rates
     const orderType = (strategy.order_type || 'IOC') as 'GTC' | 'FOK' | 'FAK' | 'IOC';

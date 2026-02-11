@@ -144,6 +144,11 @@ export default function ForwardTestWalletsPage() {
   const [creatingLt, setCreatingLt] = useState(false);
   const [ltError, setLtError] = useState<string | null>(null);
   const [showLtInTable, setShowLtInTable] = useState(true);
+  
+  // Ensure LT data is included in sort
+  const displayWallets = useMemo(() => {
+    return showLtInTable ? [...wallets, ...ltWallets] : wallets;
+  }, [wallets, ltWallets, showLtInTable]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -198,10 +203,9 @@ export default function ForwardTestWalletsPage() {
     } as FTWallet & { _isLive?: boolean };
   }), [ltStrategies]);
 
-  const allWallets = useMemo(() => [...wallets, ...ltWallets], [wallets, ltWallets]);
-
   const sortedWallets = useMemo(() => {
-    return [...allWallets].sort((a, b) => {
+    const walletsToSort = showLtInTable ? [...wallets, ...ltWallets] : wallets;
+    return [...walletsToSort].sort((a, b) => {
       let aVal: number | string = 0;
       let bVal: number | string = 0;
 

@@ -148,11 +148,11 @@ export async function POST(request: Request) {
 
             // Calculate order parameters — use the FT size, enforce Polymarket minimums, cap at $5 for safety
             // Polymarket: min $1 USD per order; some markets require min 5 contracts
-            // CRITICAL: Price max 2 decimals, Size max 5 decimals (NOT 4!)
-            const limitPrice = Math.floor(currentPrice * 100) / 100; // Force 2 decimals
+            // CRITICAL: Price max 2 decimals, Size max 2 decimals (conservative to avoid 400 errors)
+            const limitPrice = Math.round(currentPrice * 100) / 100; // 2 decimals
             const rawFtSizeUsd = Number(lastFtOrder.size) || 1;
             const ftSizeUsd = Math.max(1, Math.min(rawFtSizeUsd, 5));
-            let sizeContracts = Math.floor((ftSizeUsd / limitPrice) * 100000) / 100000; // Force 5 decimals
+            let sizeContracts = Math.round((ftSizeUsd / limitPrice) * 100) / 100; // 2 decimals
             sizeContracts = Math.max(5, sizeContracts); // satisfy markets with min 5 contracts
 
             if (sizeContracts <= 0 || limitPrice <= 0) {
