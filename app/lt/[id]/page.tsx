@@ -576,12 +576,10 @@ export default function LTDetailPage() {
             <Briefcase className="h-4 w-4" />
             Filled ({stats?.open_positions || 0})
           </TabsTrigger>
-          {pendingOrders.length > 0 && (
-            <TabsTrigger value="pending" className="flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              Pending ({pendingOrders.length})
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="pending" className="flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            Pending ({pendingOrders.length})
+          </TabsTrigger>
           <TabsTrigger value="trades" className="flex items-center gap-2">
             <ListOrdered className="h-4 w-4" />
             Resolved ({(stats?.won || 0) + (stats?.lost || 0)})
@@ -610,7 +608,15 @@ export default function LTDetailPage() {
             </CardHeader>
             <CardContent>
               {pendingOrders.length === 0 ? (
-                <p className="text-center py-8 text-muted-foreground">No pending orders</p>
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">No pending orders</p>
+                  {lockedInPending > 0.01 && (
+                    <p className="text-sm text-amber-600 mt-2">
+                      {formatUsd(lockedInPending)} in capital is still locked from expired/cancelled orders. 
+                      The sync cron will release this automatically.
+                    </p>
+                  )}
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <Table>

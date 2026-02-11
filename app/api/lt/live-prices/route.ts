@@ -6,10 +6,10 @@
 
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient } from '@/lib/admin';
-import { requireAdminOrCron } from '@/lib/ft-auth';
+import { requireAdmin } from '@/lib/ft-auth';
 
 export async function GET(request: Request) {
-  const authError = await requireAdminOrCron(request);
+  const authError = await requireAdmin();
   if (authError) return authError;
 
   const url = new URL(request.url);
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     // Get open positions for this strategy
     const { data: openOrders, error } = await supabase
       .from('lt_orders')
-      .select('lt_order_id, condition_id, token_label, executed_price, executed_size')
+      .select('lt_order_id, condition_id, token_label, executed_price, shares_bought')
       .eq('strategy_id', strategyId)
       .eq('outcome', 'OPEN')
       .in('status', ['FILLED', 'PARTIAL']);
@@ -118,7 +118,8 @@ export async function GET(request: Request) {
       const currentPrice = priceMap[order.condition_id]?.[tokenLabel] || null;
       
       if (currentPrice !== null) {
-        const unrealizedPnl = (currentPrice - order.executed_price) * order.executed_size;
+        const shares = Number(order.shares_bought) || 0;
+        const unrealizedPnl = (currentPrice - order.executed_price) * shares;
         
         result[order.lt_order_id] = {
           current_price: currentPrice,
