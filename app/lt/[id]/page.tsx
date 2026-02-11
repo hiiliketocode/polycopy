@@ -559,6 +559,11 @@ export default function LTStrategyDetailPage() {
               </Button>
             </CardContent>
           </Card>
+
+          {/* Risk Management Settings Panel */}
+          <div className="mt-6">
+            <RiskSettingsPanel strategyId={id} />
+          </div>
         </TabsContent>
       </Tabs>
 
