@@ -739,13 +739,13 @@ export default function ComprehensiveLTDetailPage() {
                   <div>
                     <p className="text-sm text-muted-foreground">Fill Rate</p>
                     <p className="text-xl font-semibold">
-                      {stats?.fill_rate_pct !== null ? `${stats.fill_rate_pct.toFixed(0)}%` : '-'}
+                      {(stats && stats.fill_rate_pct !== null) ? `${stats.fill_rate_pct.toFixed(0)}%` : '-'}
                     </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Avg Slippage</p>
                     <p className="text-xl font-semibold">
-                      {stats?.avg_slippage_pct !== null ? `${(Math.abs(stats.avg_slippage_pct) * 100).toFixed(2)}%` : '-'}
+                      {(stats && stats.avg_slippage_pct !== null) ? `${(Math.abs(stats.avg_slippage_pct) * 100).toFixed(2)}%` : '-'}
                     </p>
                   </div>
                 </div>
