@@ -143,6 +143,7 @@ export async function POST(request: Request) {
         let resolved = 0;
         let won = 0;
         let lost = 0;
+        let markedFailed = 0;
         const errors: string[] = [];
 
         for (const order of openOrders) {
@@ -175,16 +176,44 @@ export async function POST(request: Request) {
             else if (ourPrice <= LOSE_THRESHOLD) outcome = 'LOST';
             else continue; // Price in between, keep pending
 
-            // Get actual fill price from orders table
+            // Get actual fill from orders table (and CLOB-derived status if we ever backfill it)
             const { data: orderRecord } = await supabase
                 .from('orders')
                 .select('price, filled_size, size, status')
                 .eq('order_id', order.order_id)
                 .single();
 
+            const filledSizeFromDb = orderRecord?.filled_size != null ? Number(orderRecord.filled_size) : null;
+            const orderStatusFromDb = (orderRecord?.status || '').toLowerCase();
+
+            // If order never filled (0 or no filled_size) or CLOB says cancelled → count as failed, not WON/LOST
+            const neverFilled = filledSizeFromDb === 0 || filledSizeFromDb === null;
+            const cancelledOnClob = orderStatusFromDb === 'cancelled' || orderStatusFromDb === 'canceled' || orderStatusFromDb.includes('cancel');
+
+            if (neverFilled || cancelledOnClob) {
+                const { error: failError } = await supabase
+                    .from('lt_orders')
+                    .update({
+                        status: 'CANCELLED',
+                        outcome: 'CANCELLED',
+                        rejection_reason: neverFilled ? 'Market resolved before order filled' : 'Order cancelled on CLOB',
+                        resolved_at: now.toISOString(),
+                    })
+                    .eq('lt_order_id', order.lt_order_id);
+                if (!failError) {
+                    markedFailed++;
+                    if (orderRecord) {
+                        await supabase.from('orders').update({ status: 'cancelled' }).eq('order_id', order.order_id);
+                    }
+                } else {
+                    errors.push(`Failed to mark order ${order.lt_order_id} as cancelled: ${failError.message}`);
+                }
+                continue;
+            }
+
             // Use actual fill price if available, otherwise use signal price
             const actualFillPrice = orderRecord?.price ? Number(orderRecord.price) : order.executed_price || order.signal_price;
-            const actualFillSize = orderRecord?.filled_size ? Number(orderRecord.filled_size) : order.executed_size || order.signal_size_usd;
+            const actualFillSize = filledSizeFromDb ?? Number(order.executed_size) ?? Number(order.signal_size_usd) ?? 0;
 
             // Calculate PnL using actual fill price
             const side = (order.side || 'BUY').toUpperCase();
@@ -269,7 +298,7 @@ export async function POST(request: Request) {
             }
         }
 
-        console.log(`[lt/resolve] Resolved ${resolved} orders (${won} won, ${lost} lost)`);
+        console.log(`[lt/resolve] Resolved ${resolved} orders (${won} won, ${lost} lost), ${markedFailed} marked failed (never filled / cancelled)`);
 
         // 5. Process redemptions (attempt to redeem winners)
         const redemptionResult = await processRedemptions(supabase);
@@ -282,6 +311,7 @@ export async function POST(request: Request) {
             orders_resolved: resolved,
             won,
             lost,
+            orders_marked_failed: markedFailed,
             redemptions: redemptionResult,
             errors: errors.length > 0 ? errors : undefined,
         });

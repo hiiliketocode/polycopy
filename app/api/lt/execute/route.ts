@@ -2,26 +2,51 @@ import { NextResponse } from 'next/server';
 import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
 import { getActiveStrategies, executeTrade } from '@/lib/live-trading/executor';
-import { fetchPolymarketLeaderboard } from '@/lib/polymarket-leaderboard';
-import {
-    evaluateTrade,
-    getSourceTradeId,
-    parseTimestamp,
-    type PolymarketTrade,
-    type FTWallet,
-    type MarketInfo,
-    type EnrichedTrade,
-    parseExtendedFilters,
-} from '@/lib/ft-sync/shared-logic';
+import { type FTWallet, type EnrichedTrade } from '@/lib/ft-sync/shared-logic';
 
-const TOP_TRADERS_LIMIT = 100;
-const TRADES_PAGE_SIZE = 50;
-const MAX_PAGES_PER_TRADER = 4;
+/**
+ * Resolve CLOB token_id from condition_id and outcome label (YES/NO).
+ * Used when executing from ft_orders which don't store token_id.
+ */
+async function resolveTokenId(
+    conditionId: string,
+    tokenLabel: string,
+    supabase: ReturnType<typeof createAdminServiceClient>
+): Promise<string | null> {
+    const label = (tokenLabel || 'yes').toLowerCase();
+    try {
+        const resp = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, { cache: 'no-store' });
+        if (resp.ok) {
+            const clobMarket = await resp.json();
+            if (Array.isArray(clobMarket?.tokens)) {
+                const matched = clobMarket.tokens.find((t: any) => (t.outcome || '').toLowerCase() === label);
+                return matched?.token_id || clobMarket.tokens[0]?.token_id || null;
+            }
+        }
+    } catch {
+        // ignore
+    }
+    const { data: marketRow } = await supabase.from('markets').select('tokens').eq('condition_id', conditionId).single();
+    let tokens = marketRow?.tokens;
+    if (typeof tokens === 'string') {
+        try {
+            tokens = JSON.parse(tokens);
+        } catch {
+            tokens = null;
+        }
+    }
+    if (Array.isArray(tokens)) {
+        const matched = tokens.find((t: any) => (t.outcome || '').toLowerCase() === label);
+        return matched?.token_id || tokens[0]?.token_id || null;
+    }
+    return null;
+}
 
 /**
  * POST /api/lt/execute
- * Execute live trades for active strategies
- * Called by cron every 2 minutes (mirrors ft/sync)
+ * Execute live trades for active strategies by following FT's decisions.
+ * Sources trades from ft_orders (the FT wallet's taken trades), not from Polymarket API.
+ * Called by cron every 2 minutes.
  */
 export async function POST(request: Request) {
     const authError = await requireAdminOrCron(request);
@@ -62,165 +87,8 @@ export async function POST(request: Request) {
         const ftWalletMap = new Map<string, FTWallet>();
         ftWallets.forEach(w => ftWalletMap.set(w.wallet_id, w as FTWallet));
 
-        // Get oldest lastSyncTime across strategies
-        const minLastSyncTime = strategies.reduce((min, s) => {
-            const t = s.last_sync_time ? new Date(s.last_sync_time) : (s.launched_at ? new Date(s.launched_at) : new Date(0));
-            return !min || t < min ? t : min;
-        }, null as Date | null) || new Date(0);
-
-        // Get traders from leaderboard (same as ft/sync)
-        const [tradersByPnlMonth, tradersByVolMonth, tradersByPnlWeek] = await Promise.all([
-            fetchPolymarketLeaderboard({ timePeriod: 'month', orderBy: 'PNL', limit: TOP_TRADERS_LIMIT }),
-            fetchPolymarketLeaderboard({ timePeriod: 'month', orderBy: 'VOL', limit: TOP_TRADERS_LIMIT }),
-            fetchPolymarketLeaderboard({ timePeriod: 'week', orderBy: 'PNL', limit: TOP_TRADERS_LIMIT })
-        ]);
-
-        const traderMap = new Map<string, typeof tradersByPnlMonth[0]>();
-        [...tradersByPnlMonth, ...tradersByVolMonth, ...tradersByPnlWeek].forEach(t => {
-            const key = t.wallet.toLowerCase();
-            if (!traderMap.has(key)) {
-                traderMap.set(key, t);
-            }
-        });
-
-        // Add target traders from strategies
-        for (const strategy of strategies) {
-            const ftWallet = ftWalletMap.get(strategy.ft_wallet_id);
-            if (!ftWallet) continue;
-            const ext = parseExtendedFilters(ftWallet);
-            if (ext.target_trader) {
-                const addr = ext.target_trader.toLowerCase();
-                if (!traderMap.has(addr)) {
-                    traderMap.set(addr, { wallet: addr } as typeof tradersByPnlMonth[0]);
-                }
-            }
-            if (ext.target_traders?.length) {
-                for (const addr of ext.target_traders) {
-                    const key = (addr || '').toLowerCase();
-                    if (key && !traderMap.has(key)) {
-                        traderMap.set(key, { wallet: key } as typeof tradersByPnlMonth[0]);
-                    }
-                }
-            }
-        }
-
-        const topTraders = Array.from(traderMap.values());
-        const traderWallets = topTraders.map(t => t.wallet.toLowerCase());
-
-        // Get trader stats
-        const { data: traderStats } = await supabase
-            .from('trader_global_stats')
-            .select('wallet_address, l_win_rate, d30_win_rate, l_count, d30_count, l_avg_trade_size_usd, d30_avg_trade_size_usd')
-            .in('wallet_address', traderWallets);
-
-        interface TraderStats { winRate: number; tradeCount: number; avgTradeSize: number }
-        const statsMap = new Map<string, TraderStats>();
-        if (traderStats) {
-            for (const stat of traderStats) {
-                const winRate = stat.d30_win_rate ?? stat.l_win_rate ?? 0.5;
-                const tradeCount = stat.d30_count ?? stat.l_count ?? 0;
-                const avgTradeSize = stat.d30_avg_trade_size_usd ?? stat.l_avg_trade_size_usd ?? 0;
-                statsMap.set(stat.wallet_address.toLowerCase(), {
-                    winRate: typeof winRate === 'number' ? winRate : parseFloat(String(winRate)) || 0.5,
-                    tradeCount: typeof tradeCount === 'number' ? tradeCount : parseInt(String(tradeCount)) || 0,
-                    avgTradeSize: typeof avgTradeSize === 'number' ? avgTradeSize : parseFloat(String(avgTradeSize)) || 0
-                });
-            }
-        }
-
-        // Fetch trades from Polymarket
-        const allTrades: EnrichedTrade[] = [];
-        const MIN_TRADE_COUNT = 30;
-
-        for (const trader of topTraders) {
-            const wallet = trader.wallet.toLowerCase();
-            const stats = statsMap.get(wallet) || { winRate: 0.5, tradeCount: 0, avgTradeSize: 0 };
-            if (stats.tradeCount < MIN_TRADE_COUNT) continue;
-
-            try {
-                let offset = 0;
-                let pagesFetched = 0;
-                let oldestInTrader: Date | null = null;
-
-                while (pagesFetched < MAX_PAGES_PER_TRADER) {
-                    const response = await fetch(
-                        `https://data-api.polymarket.com/trades?user=${wallet}&limit=${TRADES_PAGE_SIZE}&offset=${offset}`,
-                        { cache: 'no-store' }
-                    );
-
-                    if (!response.ok) break;
-                    const trades: PolymarketTrade[] = await response.json();
-                    if (!Array.isArray(trades) || trades.length === 0) break;
-
-                    const buyTrades = trades.filter(t => t.side === 'BUY' && t.conditionId);
-                    for (const trade of buyTrades) {
-                        const tradeTime = parseTimestamp(trade.timestamp);
-                        if (tradeTime && (!oldestInTrader || tradeTime < oldestInTrader)) {
-                            oldestInTrader = tradeTime;
-                        }
-
-                        const size = Number(trade.size ?? 0);
-                        const price = Number(trade.price ?? 0);
-                        const tradeValue = size * price;
-                        const conviction = stats.avgTradeSize > 0 ? tradeValue / stats.avgTradeSize : 1;
-
-                        allTrades.push({
-                            ...trade,
-                            traderWallet: wallet,
-                            traderWinRate: stats.winRate,
-                            traderTradeCount: stats.tradeCount,
-                            traderAvgTradeSize: stats.avgTradeSize,
-                            tradeValue,
-                            conviction
-                        });
-                    }
-
-                    pagesFetched++;
-                    offset += trades.length;
-                    if (trades.length < TRADES_PAGE_SIZE) break;
-                    if (oldestInTrader && oldestInTrader <= minLastSyncTime) break;
-                }
-            } catch (err: any) {
-                console.warn(`[lt/execute] Error fetching trades for ${wallet}:`, err.message);
-            }
-        }
-
-        console.log(`[lt/execute] Collected ${allTrades.length} BUY trades`);
-
-        // Get market info
-        const conditionIds = [...new Set(allTrades.map(t => t.conditionId).filter((id): id is string => Boolean(id)))];
-        const { data: markets } = await supabase
-            .from('markets')
-            .select('condition_id, end_time, closed, resolved_outcome, winning_side, title, slug, outcome_prices, outcomes, tags, start_time, game_start_time')
-            .in('condition_id', conditionIds);
-
-        const marketMap = new Map<string, MarketInfo>();
-        if (markets) {
-            for (const market of markets) {
-                const isResolved = market.closed ||
-                    market.resolved_outcome !== null ||
-                    market.winning_side !== null;
-
-                marketMap.set(market.condition_id, {
-                    endTime: market.end_time ? new Date(market.end_time) : null,
-                    closed: market.closed || false,
-                    resolved: isResolved,
-                    title: market.title,
-                    slug: market.slug,
-                    outcome_prices: market.outcome_prices,
-                    outcomes: market.outcomes,
-                    tags: market.tags,
-                    end_time: market.end_time,
-                    start_time: market.start_time,
-                    game_start_time: market.game_start_time ?? null
-                });
-            }
-        }
-
-        // Process trades for each strategy
+        // Process each strategy: source trades from ft_orders (FT's decisions), not from Polymarket API
         const results: Record<string, { executed: number; skipped: number; errors: number; reasons: Record<string, number> }> = {};
-        const mlScoreCache = new Map<string, number | null>();
-        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
         for (const strategy of strategies) {
             results[strategy.strategy_id] = { executed: 0, skipped: 0, errors: 0, reasons: {} };
@@ -236,72 +104,69 @@ export async function POST(request: Request) {
                 ? new Date(strategy.last_sync_time)
                 : (strategy.launched_at ? new Date(strategy.launched_at) : new Date(0));
 
-            // Get current exposure for bankroll calculation
-            const { data: ltOrders } = await supabase
-                .from('lt_orders')
-                .select('outcome, executed_size, pnl')
-                .eq('strategy_id', strategy.strategy_id);
+            // FT orders for this wallet since last LT sync (trades FT already decided to take)
+            const { data: ftOrders, error: ftOrdersError } = await supabase
+                .from('ft_orders')
+                .select('order_id, condition_id, market_title, market_slug, token_label, source_trade_id, trader_address, entry_price, size, order_time, trader_win_rate, trader_resolved_count, conviction')
+                .eq('wallet_id', strategy.ft_wallet_id)
+                .eq('outcome', 'OPEN')
+                .gt('order_time', lastSyncTime.toISOString())
+                .order('order_time', { ascending: true });
 
-            const openExposure = (ltOrders || [])
-                .filter(o => o.outcome === 'OPEN')
-                .reduce((sum, o) => sum + (Number(o.executed_size) || 0), 0);
-            const realizedPnl = (ltOrders || [])
-                .filter(o => o.outcome === 'WON' || o.outcome === 'LOST')
-                .reduce((sum, o) => sum + (Number(o.pnl) || 0), 0);
-            const effectiveBankroll = Math.max(0, strategy.starting_capital + realizedPnl - openExposure);
+            if (ftOrdersError || !ftOrders?.length) {
+                await supabase.from('lt_strategies').update({ last_sync_time: now.toISOString() }).eq('strategy_id', strategy.strategy_id);
+                continue;
+            }
 
-            // Check already executed trades
             const { data: executedTrades } = await supabase
                 .from('lt_orders')
                 .select('source_trade_id')
                 .eq('strategy_id', strategy.strategy_id);
-
             const executedSourceIds = new Set((executedTrades || []).map((o: any) => o.source_trade_id));
 
-            // Evaluate and execute trades
-            for (const trade of allTrades) {
-                const tradeTime = parseTimestamp(trade.timestamp);
-                if (!tradeTime || tradeTime <= lastSyncTime) continue;
-
-                const sourceTradeId = getSourceTradeId({
-                    id: trade.id,
-                    transactionHash: trade.transactionHash,
-                    traderWallet: trade.traderWallet,
-                    conditionId: trade.conditionId,
-                    timestamp: trade.timestamp,
-                });
+            for (const fo of ftOrders) {
+                const sourceTradeId = fo.source_trade_id || `${fo.trader_address}-${fo.condition_id}-${fo.order_time}`;
                 if (executedSourceIds.has(sourceTradeId)) continue;
 
-                const market = marketMap.get(trade.conditionId || '');
-                const evaluation = await evaluateTrade(
-                    trade,
-                    ftWallet,
-                    market || null,
-                    now,
-                    lastSyncTime,
-                    effectiveBankroll,
-                    mlScoreCache,
-                    serviceRoleKey
-                );
-
-                if (!evaluation.qualifies) {
-                    reasons[evaluation.reason || 'unknown'] = (reasons[evaluation.reason || 'unknown'] || 0) + 1;
+                const tokenId = await resolveTokenId(fo.condition_id, fo.token_label || 'YES', supabase);
+                if (!tokenId) {
+                    reasons['no_token_id'] = (reasons['no_token_id'] || 0) + 1;
                     results[strategy.strategy_id].skipped++;
                     continue;
                 }
 
-                // Execute trade
-                try {
-                    const execResult = await executeTrade(
-                        supabase,
-                        strategy,
-                        trade,
-                        ftWallet
-                    );
+                const entryPrice = Number(fo.entry_price) || 0;
+                const sizeUsd = Number(fo.size) || 0;
+                const conviction = Number(fo.conviction) ?? 1;
+                const traderWinRate = Number(fo.trader_win_rate) ?? 0.5;
+                const traderTradeCount = Number(fo.trader_resolved_count) ?? 50;
 
+                const trade: EnrichedTrade = {
+                    id: sourceTradeId,
+                    transactionHash: sourceTradeId,
+                    asset: tokenId,
+                    conditionId: fo.condition_id,
+                    title: fo.market_title,
+                    slug: fo.market_slug,
+                    outcome: (fo.token_label || 'YES').toUpperCase(),
+                    side: 'BUY',
+                    size: entryPrice > 0 ? sizeUsd / entryPrice : 0,
+                    price: entryPrice,
+                    timestamp: fo.order_time,
+                    traderWallet: (fo.trader_address || '').toLowerCase(),
+                    traderWinRate,
+                    traderTradeCount,
+                    traderAvgTradeSize: conviction > 0 ? sizeUsd / conviction : sizeUsd,
+                    tradeValue: sizeUsd,
+                    conviction,
+                };
+
+                try {
+                    const execResult = await executeTrade(supabase, strategy, trade, ftWallet, fo.order_id);
                     if (execResult.success) {
                         results[strategy.strategy_id].executed++;
                         executedSourceIds.add(sourceTradeId);
+                        console.log(`[lt/execute] Executed ${strategy.strategy_id} source_trade_id=${sourceTradeId}`);
                     } else {
                         results[strategy.strategy_id].errors++;
                         reasons[execResult.error || 'execution_failed'] = (reasons[execResult.error || 'execution_failed'] || 0) + 1;
@@ -313,22 +178,19 @@ export async function POST(request: Request) {
                 }
             }
 
-            // Update last sync time
-            await supabase
-                .from('lt_strategies')
-                .update({ last_sync_time: now.toISOString() })
-                .eq('strategy_id', strategy.strategy_id);
+            await supabase.from('lt_strategies').update({ last_sync_time: now.toISOString() }).eq('strategy_id', strategy.strategy_id);
         }
 
         const totalExecuted = Object.values(results).reduce((sum, r) => sum + r.executed, 0);
         const totalSkipped = Object.values(results).reduce((sum, r) => sum + r.skipped, 0);
         const totalErrors = Object.values(results).reduce((sum, r) => sum + r.errors, 0);
+        const totalFtOrdersConsidered = Object.values(results).reduce((sum, r) => sum + r.executed + r.skipped + r.errors, 0);
 
         return NextResponse.json({
             success: true,
             executed_at: now.toISOString(),
             strategies_processed: strategies.length,
-            trades_evaluated: allTrades.length,
+            ft_orders_considered: totalFtOrdersConsidered,
             total_executed: totalExecuted,
             total_skipped: totalSkipped,
             total_errors: totalErrors,
@@ -346,6 +208,6 @@ export async function POST(request: Request) {
 export async function GET() {
     return NextResponse.json({
         message: 'POST to this endpoint to execute live trades',
-        description: 'Executes real trades for active LT strategies following FT signals',
+        description: 'Executes real orders for active LT strategies from ft_orders (FT strategy decisions). No rule changes.',
     });
 }
