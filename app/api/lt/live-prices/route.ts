@@ -46,15 +46,15 @@ export async function GET(request: Request) {
     // Get unique condition IDs
     const conditionIds = [...new Set(openOrders.map(o => o.condition_id).filter(Boolean))];
     
-    // Fetch current prices from markets table
+    // Build price map: condition_id -> { YES: price, NO: price }
+    const priceMap: Record<string, Record<string, number>> = {};
+    
+    // Try fetching from markets table first
     const { data: markets } = await supabase
       .from('markets')
       .select('condition_id, outcome_prices, outcomes')
       .in('condition_id', conditionIds);
 
-    // Build price map: condition_id -> { YES: price, NO: price }
-    const priceMap: Record<string, Record<string, number>> = {};
-    
     if (markets) {
       markets.forEach((market: any) => {
         let prices = market.outcome_prices;
@@ -75,6 +75,37 @@ export async function GET(request: Request) {
           });
         }
       });
+    }
+
+    // FALLBACK: Fetch from Polymarket CLOB API for missing markets
+    const missingConditionIds = conditionIds.filter(cid => !priceMap[cid]);
+    
+    if (missingConditionIds.length > 0) {
+      console.log(`[live-prices] Fetching ${missingConditionIds.length} markets from CLOB API`);
+      
+      await Promise.all(missingConditionIds.map(async (conditionId) => {
+        try {
+          const resp = await fetch(
+            `https://clob.polymarket.com/markets/${conditionId}`,
+            { cache: 'no-store', signal: AbortSignal.timeout(3000) }
+          );
+          
+          if (resp.ok) {
+            const clobMarket = await resp.json();
+            if (Array.isArray(clobMarket?.tokens)) {
+              priceMap[conditionId] = {};
+              clobMarket.tokens.forEach((token: any) => {
+                const outcome = (token.outcome || 'YES').toUpperCase();
+                const price = parseFloat(token.price || '0.5');
+                priceMap[conditionId][outcome] = price;
+              });
+              console.log(`[live-prices] ✅ Fetched prices for ${conditionId} from CLOB`);
+            }
+          }
+        } catch (error: any) {
+          console.error(`[live-prices] Failed to fetch ${conditionId} from CLOB:`, error.message);
+        }
+      }));
     }
 
     // Build response: lt_order_id -> current_price
