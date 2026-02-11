@@ -150,12 +150,19 @@ export function Hero() {
     // Defer scroll listeners slightly to avoid blocking initial render, but keep it responsive
     const timeoutId = setTimeout(() => {
       const handleWheel = (e: WheelEvent) => {
-        if (!heroRef.current) return
+        if (!heroRef.current || !feedContainerRef.current) return
         
-        const heroRect = heroRef.current.getBoundingClientRect()
-        const isInHero = heroRect.top <= 100 && heroRect.bottom > window.innerHeight * 0.5
+        // Only intercept wheel events if they're directly over the feed container
+        const feedRect = feedContainerRef.current.getBoundingClientRect()
+        const mouseX = (e as any).clientX || window.innerWidth / 2
+        const mouseY = (e as any).clientY || window.innerHeight / 2
         
-        if (isInHero && isScrollLocked) {
+        const isOverFeed = mouseX >= feedRect.left && 
+                          mouseX <= feedRect.right && 
+                          mouseY >= feedRect.top && 
+                          mouseY <= feedRect.bottom
+        
+        if (isOverFeed && isScrollLocked) {
           const newScrollY = feedScrollY + e.deltaY
           
           if (newScrollY <= 0) {
@@ -196,7 +203,7 @@ export function Hero() {
   }, [feedScrollY, isScrollLocked])
 
   return (
-    <section ref={heroRef} className="relative min-h-screen flex items-center overflow-hidden pt-8 lg:pt-0 pb-8 lg:pb-0">
+    <section ref={heroRef} className="relative min-h-screen flex items-center pt-8 lg:pt-0 pb-8 lg:pb-0">
       {/* Subtle gradient background */}
       <div className="absolute inset-0 bg-gradient-to-b from-polycopy-yellow/5 via-transparent to-transparent" />
       <div className="absolute top-0 right-0 w-1/2 h-1/2 bg-gradient-to-bl from-polycopy-yellow/10 via-transparent to-transparent" />
