@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin';
 import { requireAdmin } from '@/lib/ft-auth';
-import { initializeRiskState } from '@/lib/live-trading/risk-manager';
 
 /**
  * POST /api/lt/strategies
- * Create a new live trading strategy (admin only)
+ * Create a new live trading strategy (admin only).
+ * V2: All risk rules and cash management are inline on lt_strategies — no separate tables.
  */
 export async function POST(request: Request) {
     const authError = await requireAdmin();
@@ -20,21 +20,25 @@ export async function POST(request: Request) {
         const {
             ft_wallet_id,
             wallet_address,
-            starting_capital,
+            initial_capital,
             display_name,
             description,
             slippage_tolerance_pct,
             order_type,
             max_position_size_usd,
             max_total_exposure_usd,
+            daily_budget_usd,
+            max_daily_loss_usd,
+            circuit_breaker_loss_pct,
+            cooldown_hours,
+            shadow_mode,
         } = body;
 
         if (!ft_wallet_id) {
-            return NextResponse.json(
-                { error: 'ft_wallet_id is required' },
-                { status: 400 }
-            );
+            return NextResponse.json({ error: 'ft_wallet_id is required' }, { status: 400 });
         }
+
+        // Resolve wallet address
         let resolvedWallet = (wallet_address || '').trim();
         if (!resolvedWallet || !resolvedWallet.startsWith('0x')) {
             const { data: tw } = await supabase
@@ -50,11 +54,11 @@ export async function POST(request: Request) {
         if (!resolvedWallet || !resolvedWallet.startsWith('0x') || resolvedWallet.length < 40) {
             return NextResponse.json(
                 { error: 'Polymarket wallet required. Connect a wallet in Portfolio, or pass wallet_address.' },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
-        // Check if FT wallet exists
+        // Check FT wallet exists
         const { data: ftWallet } = await supabase
             .from('ft_wallets')
             .select('wallet_id, display_name')
@@ -62,13 +66,9 @@ export async function POST(request: Request) {
             .single();
 
         if (!ftWallet) {
-            return NextResponse.json(
-                { error: 'FT wallet not found' },
-                { status: 404 }
-            );
+            return NextResponse.json({ error: 'FT wallet not found' }, { status: 404 });
         }
 
-        // Check if strategy already exists
         const strategyId = `LT_${ft_wallet_id}`;
         const { data: existing } = await supabase
             .from('lt_strategies')
@@ -78,85 +78,66 @@ export async function POST(request: Request) {
             .maybeSingle();
 
         if (existing) {
-            return NextResponse.json(
-                { error: 'Strategy already exists for this FT wallet' },
-                { status: 409 }
-            );
+            return NextResponse.json({ error: 'Strategy already exists for this FT wallet' }, { status: 409 });
         }
 
-        // Create strategy (use resolved wallet: from body or connected Turnkey account)
-        const { data: strategy, error: strategyError } = await supabase
+        const capital = initial_capital || 1000;
+
+        const { data: strategy, error: insertError } = await supabase
             .from('lt_strategies')
             .insert({
                 strategy_id: strategyId,
                 ft_wallet_id,
                 user_id: userId,
                 wallet_address: resolvedWallet.toLowerCase(),
-                starting_capital: starting_capital || 1000.00,
                 display_name: display_name || `${ftWallet.display_name} (Live)`,
                 description: description || null,
+
+                // Cash management
+                initial_capital: capital,
+                available_cash: capital,
+                locked_capital: 0,
+                cooldown_capital: 0,
+                cooldown_hours: cooldown_hours ?? 3,
+
+                // Execution
                 slippage_tolerance_pct: slippage_tolerance_pct ?? 3,
-                order_type: order_type || 'GTC',
+                order_type: order_type || 'FOK',
+                min_order_size_usd: 1,
+                max_order_size_usd: 100,
+
+                // Risk rules
                 max_position_size_usd: max_position_size_usd || null,
                 max_total_exposure_usd: max_total_exposure_usd || null,
-                is_active: false, // Start inactive, user must activate
+                daily_budget_usd: daily_budget_usd || null,
+                max_daily_loss_usd: max_daily_loss_usd || null,
+                circuit_breaker_loss_pct: circuit_breaker_loss_pct || null,
+
+                // Risk state
+                peak_equity: capital,
+
+                // Status
+                is_active: false,
                 is_paused: false,
+                shadow_mode: shadow_mode || false,
             })
             .select('*')
             .single();
 
-        if (strategyError || !strategy) {
-            console.error('[LT Strategies] Failed to create strategy:', strategyError);
-            return NextResponse.json(
-                { error: strategyError?.message || 'Failed to create strategy' },
-                { status: 500 }
-            );
+        if (insertError || !strategy) {
+            return NextResponse.json({ error: insertError?.message || 'Failed to create strategy' }, { status: 500 });
         }
 
-        // Initialize risk state
-        await initializeRiskState(supabase, strategyId, strategy.starting_capital);
-
-        // Create default risk rules
-        const { data: riskRules } = await supabase
-            .from('lt_risk_rules')
-            .insert({
-                strategy_id: strategyId,
-                daily_budget_pct: 0.10, // 10% per day
-                max_position_size_pct: 0.10, // 10% per trade
-                max_total_exposure_pct: 0.50, // 50% total exposure
-                max_drawdown_pct: 0.07, // 7% drawdown limit
-                max_consecutive_losses: 5,
-                max_slippage_pct: 0.01, // 1% slippage
-                max_concurrent_positions: 20,
-            })
-            .select('rule_id')
-            .single();
-
-        if (riskRules) {
-            // Link risk rules to strategy
-            await supabase
-                .from('lt_strategies')
-                .update({ risk_rules_id: riskRules.rule_id })
-                .eq('strategy_id', strategyId);
-        }
-
-        return NextResponse.json({
-            success: true,
-            strategy,
-        });
+        return NextResponse.json({ success: true, strategy });
     } catch (error: any) {
-        console.error('[LT Strategies] Error:', error);
-        return NextResponse.json(
-            { error: error.message || 'Internal server error' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
 
 /**
  * GET /api/lt/strategies
- * List admin's live trading strategies with computed stats from lt_orders (admin only).
- * Returns FT-compatible shape so strategies can render in the FT Performance table.
+ * List admin's live trading strategies with computed stats.
+ * V2: Risk state is inline — no separate lt_risk_state table.
  */
 export async function GET(request: Request) {
     const authError = await requireAdmin();
@@ -167,7 +148,6 @@ export async function GET(request: Request) {
     try {
         const supabase = createAdminServiceClient();
 
-        // Fetch strategies (no joins to lt_risk_rules — ambiguous FK)
         const { data: strategies, error } = await supabase
             .from('lt_strategies')
             .select('*')
@@ -179,27 +159,16 @@ export async function GET(request: Request) {
         }
 
         const list = strategies || [];
-        const strategyIds = list.map((s: { strategy_id: string }) => s.strategy_id);
+        const strategyIds = list.map((s: any) => s.strategy_id);
 
-        // Fetch risk state separately
-        let riskStateMap: Record<string, any> = {};
-        if (strategyIds.length > 0) {
-            const { data: riskRows } = await supabase
-                .from('lt_risk_state')
-                .select('strategy_id, current_equity, peak_equity, current_drawdown_pct, consecutive_losses, is_paused, circuit_breaker_active')
-                .in('strategy_id', strategyIds);
-            if (riskRows) {
-                riskRows.forEach((r: any) => { riskStateMap[r.strategy_id] = r; });
-            }
-        }
-
-        // Fetch all lt_orders for these strategies to compute stats
+        // Fetch all lt_orders for stats
         let ordersMap: Record<string, any[]> = {};
         if (strategyIds.length > 0) {
             const { data: allOrders } = await supabase
                 .from('lt_orders')
-                .select('strategy_id, status, outcome, pnl, signal_size_usd, executed_size, executed_price, signal_price, slippage_pct, fill_rate, order_placed_at, resolved_at')
+                .select('strategy_id, status, outcome, pnl, signal_size_usd, executed_size_usd, executed_price, signal_price, slippage_bps, fill_rate, order_placed_at, resolved_at, shares_bought, is_shadow')
                 .in('strategy_id', strategyIds);
+
             if (allOrders) {
                 allOrders.forEach((o: any) => {
                     if (!ordersMap[o.strategy_id]) ordersMap[o.strategy_id] = [];
@@ -208,60 +177,53 @@ export async function GET(request: Request) {
             }
         }
 
-        // Compute FT-compatible stats per strategy
         const strategiesWithStats = list.map((s: any) => {
-            const rs = riskStateMap[s.strategy_id] || null;
             const orders = ordersMap[s.strategy_id] || [];
-            const filledOrPartial = orders.filter((o: any) => o.status === 'FILLED' || o.status === 'PARTIAL');
-            const won = filledOrPartial.filter((o: any) => o.outcome === 'WON').length;
-            const lost = filledOrPartial.filter((o: any) => o.outcome === 'LOST').length;
-            const openOrders = filledOrPartial.filter((o: any) => o.outcome === 'OPEN').length;
-            const resolvedPnl = filledOrPartial.filter((o: any) => o.outcome === 'WON' || o.outcome === 'LOST')
+            const filled = orders.filter((o: any) => o.status === 'FILLED' || o.status === 'PARTIAL');
+            const realOrders = filled.filter((o: any) => !o.is_shadow);
+            const won = filled.filter((o: any) => o.outcome === 'WON').length;
+            const lost = filled.filter((o: any) => o.outcome === 'LOST').length;
+            const openCount = filled.filter((o: any) => o.outcome === 'OPEN').length;
+            const resolvedPnl = filled
+                .filter((o: any) => o.outcome === 'WON' || o.outcome === 'LOST')
                 .reduce((sum: number, o: any) => sum + (Number(o.pnl) || 0), 0);
-            const totalExecuted = filledOrPartial.reduce((sum: number, o: any) => sum + (Number(o.executed_size) || 0), 0);
-            const avgTradeSize = filledOrPartial.length > 0 ? totalExecuted / filledOrPartial.length : 0;
-            const currentEquity = rs?.current_equity ?? s.starting_capital;
-            const totalPnl = currentEquity - s.starting_capital;
-            const firstOrder = filledOrPartial.length > 0 ? filledOrPartial.reduce((a: any, b: any) => a.order_placed_at < b.order_placed_at ? a : b) : null;
-            const lastOrder = filledOrPartial.length > 0 ? filledOrPartial.reduce((a: any, b: any) => a.order_placed_at > b.order_placed_at ? a : b) : null;
+
+            const equity = Number(s.available_cash) + Number(s.locked_capital) + Number(s.cooldown_capital);
+            const totalPnl = equity - Number(s.initial_capital);
 
             return {
                 ...s,
-                lt_risk_state: rs ? [rs] : [],
-                // FT-compatible computed stats
                 lt_stats: {
-                    total_trades: filledOrPartial.length,
-                    open_positions: openOrders,
+                    total_trades: filled.length,
+                    open_positions: openCount,
                     won,
                     lost,
-                    win_rate: (won + lost) > 0 ? won / (won + lost) : null,
-                    realized_pnl: resolvedPnl,
-                    unrealized_pnl: totalPnl - resolvedPnl,
-                    total_pnl: totalPnl,
-                    current_balance: currentEquity,
-                    cash_available: currentEquity - totalExecuted, // approximate
-                    avg_trade_size: avgTradeSize,
-                    first_trade: firstOrder ? firstOrder.order_placed_at : null,
-                    last_trade: lastOrder ? lastOrder.order_placed_at : null,
+                    win_rate: (won + lost) > 0 ? +(won / (won + lost)).toFixed(4) : null,
+                    realized_pnl: +resolvedPnl.toFixed(2),
+                    total_pnl: +totalPnl.toFixed(2),
+                    current_equity: +equity.toFixed(2),
+                    available_cash: Number(s.available_cash),
+                    locked_capital: Number(s.locked_capital),
+                    cooldown_capital: Number(s.cooldown_capital),
+
                     // Execution quality
                     attempts: orders.length,
-                    filled: orders.filter((o: any) => o.status === 'FILLED').length,
-                    failed: orders.filter((o: any) => o.status === 'REJECTED' || o.status === 'CANCELLED').length,
-                    pending: orders.filter((o: any) => o.status === 'PENDING').length,
-                    fill_rate_pct: (() => {
-                        // Fill rate = % of orders that filled (not USD comparison)
-                        const totalOrders = orders.length;
-                        const filledOrders = orders.filter((o: any) => o.status === 'FILLED').length;
-                        return totalOrders > 0 ? Math.round((filledOrders / totalOrders) * 10000) / 100 : null;
-                    })(),
-                    avg_slippage_pct: (() => {
-                        const withSlip = orders.filter((o: any) => o.slippage_pct != null);
-                        return withSlip.length > 0 ? withSlip.reduce((s2: number, o: any) => s2 + Number(o.slippage_pct), 0) / withSlip.length : null;
+                    filled_count: orders.filter((o: any) => o.status === 'FILLED').length,
+                    rejected_count: orders.filter((o: any) => o.status === 'REJECTED').length,
+                    fill_rate_pct: orders.length > 0
+                        ? +(orders.filter((o: any) => o.status === 'FILLED').length / orders.length * 100).toFixed(1)
+                        : null,
+                    avg_slippage_bps: (() => {
+                        const withSlip = realOrders.filter((o: any) => o.slippage_bps != null);
+                        return withSlip.length > 0
+                            ? +(withSlip.reduce((s2: number, o: any) => s2 + Number(o.slippage_bps), 0) / withSlip.length).toFixed(0)
+                            : null;
                     })(),
                 },
             };
         });
 
+        // Get user wallet
         const { data: tw } = await supabase
             .from('turnkey_wallets')
             .select('polymarket_account_address, eoa_address')
@@ -277,10 +239,6 @@ export async function GET(request: Request) {
             my_polymarket_wallet: myWallet ? String(myWallet) : null,
         });
     } catch (error: any) {
-        console.error('[LT Strategies] Error:', error);
-        return NextResponse.json(
-            { error: error.message || 'Internal server error' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

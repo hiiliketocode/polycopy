@@ -6,8 +6,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
-import { getActiveStrategies } from '@/lib/live-trading/executor';
-import { getRiskState } from '@/lib/live-trading/risk-manager';
+import { getActiveStrategies } from '@/lib/live-trading/executor-v2';
 
 interface DiagnosticResult {
   category: string;
@@ -180,40 +179,33 @@ export async function GET(request: Request) {
           }
         }
 
-        // 4. Check Risk State
+        // 4. Check Risk State (inline on lt_strategies in V2)
         for (const strategy of activeStrategies) {
-          const riskState = await getRiskState(supabase, strategy.strategy_id);
-          
-          if (!riskState) {
-            results.push({
-              category: 'Risk State',
-              status: 'WARN',
-              message: `No risk state found for ${strategy.strategy_id}`
-            });
-            continue;
-          }
+          const s = strategy as any;
+          const currentEquity = (s.available_cash ?? 0) + (s.locked_capital ?? 0) + (s.cooldown_capital ?? 0);
 
           const issues: string[] = [];
-          if (riskState.is_paused) issues.push('PAUSED');
-          if (riskState.circuit_breaker_active) issues.push('CIRCUIT BREAKER ACTIVE');
-          if (riskState.current_drawdown_pct > 0.05) issues.push(`High drawdown: ${(riskState.current_drawdown_pct * 100).toFixed(2)}%`);
+          if (s.is_paused) issues.push('PAUSED');
+          if (s.circuit_breaker_active) issues.push('CIRCUIT BREAKER ACTIVE');
+          const drawdown = s.current_drawdown_pct ?? 0;
+          if (drawdown > 0.05) issues.push(`High drawdown: ${(drawdown * 100).toFixed(2)}%`);
 
           if (issues.length > 0) {
             results.push({
               category: 'Risk State',
               status: 'WARN',
-              message: `Strategy ${strategy.strategy_id} has risk issues: ${issues.join(', ')}`,
+              message: `Strategy ${s.strategy_id} has risk issues: ${issues.join(', ')}`,
               details: {
-                current_equity: riskState.current_equity,
-                drawdown_pct: riskState.current_drawdown_pct,
-                consecutive_losses: riskState.consecutive_losses
+                current_equity: currentEquity,
+                drawdown_pct: drawdown,
+                consecutive_losses: s.consecutive_losses ?? 0
               }
             });
           } else {
             results.push({
               category: 'Risk State',
               status: 'PASS',
-              message: `Strategy ${strategy.strategy_id} risk state is healthy`
+              message: `Strategy ${s.strategy_id} risk state is healthy`
             });
           }
         }

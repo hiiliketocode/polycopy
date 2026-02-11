@@ -604,7 +604,7 @@ export async function GET(request: NextRequest) {
         updatedAt: order.updated_at ?? order.created_at ?? new Date().toISOString(),
         raw: order.raw ?? null,
         isAutoClose,
-        ltStrategyId: order.lt_strategy_id ?? null,
+        ltStrategyId: null,
       }
     })
 
@@ -1754,7 +1754,7 @@ async function fetchOrdersForTrader(
   traderId: string
 ) {
   const selectWithCopied =
-    'order_id, trader_id, copied_trader_id, copied_trader_wallet, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, auto_close_order_id, copied_market_title, market_resolved, lt_strategy_id, raw'
+    'order_id, trader_id, copied_trader_id, copied_trader_wallet, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, auto_close_order_id, copied_market_title, market_resolved, raw'
   const selectLegacy =
     'order_id, trader_id, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, raw'
 

@@ -1,18 +1,41 @@
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin';
 import { requireAdmin } from '@/lib/ft-auth';
-import { getRiskRules, getRiskState } from '@/lib/live-trading/risk-manager';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
+/** Risk-related fields on lt_strategies (inline in V2 schema) */
+const RISK_RULE_FIELDS = [
+    'max_position_size_usd',
+    'max_total_exposure_usd',
+    'daily_budget_usd',
+    'max_daily_loss_usd',
+    'circuit_breaker_loss_pct',
+    'stop_loss_pct',
+    'take_profit_pct',
+    'max_hold_hours'
+] as const;
+
+/** Risk state fields on lt_strategies */
+const RISK_STATE_FIELDS = [
+    'is_paused',
+    'circuit_breaker_active',
+    'daily_spent_usd',
+    'daily_loss_usd',
+    'consecutive_losses',
+    'peak_equity',
+    'current_drawdown_pct',
+    'last_reset_date'
+] as const;
+
 /**
  * GET /api/lt/strategies/[id]/risk
- * Get risk rules and current risk state for a strategy
+ * Get risk rules and current risk state for a strategy (from lt_strategies inline)
  */
 export async function GET(request: Request, { params }: RouteParams) {
     const authError = await requireAdmin();
     if (authError) return authError;
-    
+
     const adminUser = await getAdminSessionUser();
     const userId = adminUser!.id;
 
@@ -20,20 +43,23 @@ export async function GET(request: Request, { params }: RouteParams) {
         const { id: strategyId } = await params;
         const supabase = createAdminServiceClient();
 
-        // Verify user owns this strategy
-        const { data: strategy } = await supabase
+        const { data: strategy, error } = await supabase
             .from('lt_strategies')
-            .select('strategy_id, user_id')
+            .select('*')
             .eq('strategy_id', strategyId)
             .eq('user_id', userId)
             .maybeSingle();
 
-        if (!strategy) {
+        if (error || !strategy) {
             return NextResponse.json({ error: 'Strategy not found' }, { status: 404 });
         }
 
-        const rules = await getRiskRules(supabase, strategyId);
-        const state = await getRiskState(supabase, strategyId);
+        const rules = Object.fromEntries(
+            RISK_RULE_FIELDS.map(f => [f, strategy[f] ?? null])
+        );
+        const state = Object.fromEntries(
+            RISK_STATE_FIELDS.map(f => [f, strategy[f] ?? null])
+        );
 
         return NextResponse.json({
             success: true,
@@ -51,12 +77,12 @@ export async function GET(request: Request, { params }: RouteParams) {
 
 /**
  * PATCH /api/lt/strategies/[id]/risk
- * Update risk rules for a strategy
+ * Update risk rules for a strategy (on lt_strategies directly)
  */
 export async function PATCH(request: Request, { params }: RouteParams) {
     const authError = await requireAdmin();
     if (authError) return authError;
-    
+
     const adminUser = await getAdminSessionUser();
     const userId = adminUser!.id;
 
@@ -64,7 +90,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         const { id: strategyId } = await params;
         const supabase = createAdminServiceClient();
 
-        // Verify user owns this strategy
         const { data: strategy } = await supabase
             .from('lt_strategies')
             .select('strategy_id, user_id')
@@ -77,21 +102,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         }
 
         const body = await request.json();
-        
-        // Build update object from allowed fields
-        const allowedFields = [
-            'daily_budget_usd',
-            'daily_budget_pct',
-            'max_position_size_usd',
-            'max_total_exposure_usd',
-            'max_concurrent_positions',
-            'max_drawdown_pct',
-            'max_consecutive_losses',
-            'max_slippage_pct'
-        ];
+        const updates: Record<string, unknown> = {};
 
-        const updates: Record<string, any> = {};
-        for (const field of allowedFields) {
+        for (const field of RISK_RULE_FIELDS) {
             if (field in body) {
                 updates[field] = body[field];
             }
@@ -103,19 +116,23 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
         updates.updated_at = new Date().toISOString();
 
-        // Update risk rules
-        const { error: updateError } = await supabase
-            .from('lt_risk_rules')
+        const { data: updated, error: updateError } = await supabase
+            .from('lt_strategies')
             .update(updates)
-            .eq('strategy_id', strategyId);
+            .eq('strategy_id', strategyId)
+            .select('*')
+            .single();
 
         if (updateError) {
             return NextResponse.json({ error: updateError.message }, { status: 500 });
         }
 
-        // Return updated rules
-        const rules = await getRiskRules(supabase, strategyId);
-        const state = await getRiskState(supabase, strategyId);
+        const rules = Object.fromEntries(
+            RISK_RULE_FIELDS.map(f => [f, updated[f] ?? null])
+        );
+        const state = Object.fromEntries(
+            RISK_STATE_FIELDS.map(f => [f, updated[f] ?? null])
+        );
 
         return NextResponse.json({
             success: true,

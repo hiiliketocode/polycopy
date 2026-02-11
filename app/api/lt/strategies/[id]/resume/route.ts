@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin';
 import { requireAdmin } from '@/lib/ft-auth';
-import { resumeStrategy } from '@/lib/live-trading/risk-manager';
 
 type RouteParams = {
     params: Promise<{ id: string }>;
@@ -10,6 +9,7 @@ type RouteParams = {
 /**
  * POST /api/lt/strategies/[id]/resume
  * Resume a strategy (admin only)
+ * Updates is_paused and circuit_breaker_active on lt_strategies directly.
  */
 export async function POST(request: Request, { params }: RouteParams) {
     const authError = await requireAdmin();
@@ -35,16 +35,27 @@ export async function POST(request: Request, { params }: RouteParams) {
             );
         }
 
-        await resumeStrategy(supabase, strategyId);
+        const { error: updateError } = await supabase
+            .from('lt_strategies')
+            .update({
+                is_paused: false,
+                circuit_breaker_active: false,
+                updated_at: new Date().toISOString()
+            })
+            .eq('strategy_id', strategyId);
+
+        if (updateError) {
+            return NextResponse.json({ error: updateError.message }, { status: 500 });
+        }
 
         return NextResponse.json({
             success: true,
             message: 'Strategy resumed',
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[LT Strategy] Error:', error);
         return NextResponse.json(
-            { error: error.message || 'Internal server error' },
+            { error: error instanceof Error ? error.message : 'Internal server error' },
             { status: 500 }
         );
     }

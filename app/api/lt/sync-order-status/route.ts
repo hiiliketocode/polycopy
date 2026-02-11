@@ -1,175 +1,158 @@
 /**
  * POST /api/lt/sync-order-status
- * Manually sync order fill status from CLOB for all PENDING/OPEN orders
- * This should be run as a cron job every 30-60 seconds
+ *
+ * Sync order fill status from CLOB for all PENDING/PARTIAL lt_orders.
+ * Queries lt_orders (not the orders table) for pending fills,
+ * then polls CLOB for each order and updates both lt_orders and orders tables.
+ *
+ * Called by cron every minute.
  */
 
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
 import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client';
+import { unlockCapital } from '@/lib/live-trading/capital-manager';
 
 export async function POST(request: Request) {
-  const authError = await requireAdminOrCron(request);
-  if (authError) return authError;
+    const authError = await requireAdminOrCron(request);
+    if (authError) return authError;
 
-  const supabase = createAdminServiceClient();
-  const now = new Date();
+    const supabase = createAdminServiceClient();
+    const now = new Date();
 
-  try {
-    console.log('[lt/sync-order-status] Starting order status sync at', now.toISOString());
+    try {
+        // Get PENDING or PARTIAL lt_orders that have an order_id
+        const { data: pendingOrders, error: fetchError } = await supabase
+            .from('lt_orders')
+            .select('lt_order_id, strategy_id, user_id, order_id, signal_size_usd, executed_size_usd, shares_bought, status')
+            .in('status', ['PENDING', 'PARTIAL'])
+            .not('order_id', 'is', null)
+            .order('created_at', { ascending: true })
+            .limit(100);
 
-    // Get all orders that need status update (PENDING or open with 0 fills)
-    const { data: ordersToCheck, error: ordersError } = await supabase
-      .from('orders')
-      .select('order_id, trader_id, lt_strategy_id, lt_order_id, filled_size, size, status')
-      .or('status.eq.open,status.eq.pending')
-      .not('lt_strategy_id', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(100);
-
-    if (ordersError) {
-      console.error('[lt/sync-order-status] Error fetching orders:', ordersError);
-      return NextResponse.json({ error: ordersError.message }, { status: 500 });
-    }
-
-    if (!ordersToCheck || ordersToCheck.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: 'No orders to sync',
-        checked: 0,
-        updated: 0
-      });
-    }
-
-    console.log(`[lt/sync-order-status] Checking ${ordersToCheck.length} orders`);
-
-    let updated = 0;
-    let errors = 0;
-    const updates: any[] = [];
-
-    // Group orders by user (to reuse CLOB client)
-    const ordersByUser = new Map<string, any[]>();
-    for (const order of ordersToCheck) {
-      // Get user_id from strategy
-      const { data: strategy } = await supabase
-        .from('lt_strategies')
-        .select('user_id')
-        .eq('strategy_id', order.lt_strategy_id)
-        .single();
-
-      if (strategy) {
-        const userId = strategy.user_id;
-        if (!ordersByUser.has(userId)) {
-          ordersByUser.set(userId, []);
+        if (fetchError || !pendingOrders || pendingOrders.length === 0) {
+            return NextResponse.json({
+                success: true,
+                message: pendingOrders?.length === 0 ? 'No orders to sync' : (fetchError?.message || 'No orders'),
+                checked: 0,
+                updated: 0,
+            });
         }
-        ordersByUser.get(userId)!.push(order);
-      }
-    }
 
-    // Check each user's orders
-    for (const [userId, orders] of ordersByUser) {
-      try {
-        const { client } = await getAuthedClobClientForUserAnyWallet(userId);
+        console.log(`[lt/sync-order-status] Checking ${pendingOrders.length} orders`);
 
-        for (const order of orders) {
-          try {
-            // Get order status from CLOB
-            const clobOrder = await client.getOrder(order.order_id);
+        // Group by user_id for CLOB client reuse
+        const byUser = new Map<string, typeof pendingOrders>();
+        for (const order of pendingOrders) {
+            const uid = order.user_id;
+            if (!byUser.has(uid)) byUser.set(uid, []);
+            byUser.get(uid)!.push(order);
+        }
 
-            if (clobOrder) {
-              const sizeMatched = parseFloat(clobOrder.size_matched || '0');
-              const originalSize = parseFloat(clobOrder.original_size || order.size || '0');
-              const currentFilledSize = parseFloat(order.filled_size || '0');
+        let updated = 0;
+        let errors = 0;
 
-              // Only update if fill status changed
-              if (sizeMatched !== currentFilledSize) {
-                console.log(`[lt/sync-order-status] Order ${order.order_id}: ${currentFilledSize} → ${sizeMatched} filled`);
-
-                const remainingSize = Math.max(0, originalSize - sizeMatched);
-                let newStatus = order.status;
-
-                if (sizeMatched >= originalSize) {
-                  newStatus = 'filled';
-                } else if (sizeMatched > 0) {
-                  newStatus = 'partial';
-                } else if (clobOrder.status === 'CANCELLED') {
-                  newStatus = 'cancelled';
-                }
-
-                // Update orders table
-                await supabase
-                  .from('orders')
-                  .update({
-                    filled_size: sizeMatched,
-                    remaining_size: remainingSize,
-                    status: newStatus,
-                    updated_at: now.toISOString()
-                  })
-                  .eq('order_id', order.order_id);
-
-                // Update lt_orders table if exists
-                if (order.lt_order_id) {
-                  const ltStatus = newStatus === 'filled' ? 'FILLED' : newStatus === 'partial' ? 'PARTIAL' : 'PENDING';
-                  
-                  await supabase
-                    .from('lt_orders')
-                    .update({
-                      executed_size: sizeMatched,
-                      status: ltStatus,
-                      fill_rate: originalSize > 0 ? sizeMatched / originalSize : 0,
-                      fully_filled_at: newStatus === 'filled' ? now.toISOString() : null,
-                      updated_at: now.toISOString()
-                    })
-                    .eq('lt_order_id', order.lt_order_id);
-                }
-
-                updated++;
-                updates.push({
-                  order_id: order.order_id,
-                  old_filled: currentFilledSize,
-                  new_filled: sizeMatched,
-                  status: newStatus
-                });
-              }
+        for (const [userId, orders] of byUser) {
+            let client: any;
+            try {
+                const result = await getAuthedClobClientForUserAnyWallet(userId);
+                client = result.client;
+            } catch (err: any) {
+                console.error(`[lt/sync-order-status] CLOB client error for ${userId}: ${err.message}`);
+                errors++;
+                continue;
             }
-          } catch (orderError: any) {
-            console.error(`[lt/sync-order-status] Error checking order ${order.order_id}:`, orderError.message);
-            errors++;
-          }
+
+            for (const order of orders) {
+                try {
+                    const clobOrder = await client.getOrder(order.order_id) as any;
+                    if (!clobOrder) continue;
+
+                    const sizeMatched = parseFloat(clobOrder.size_matched || '0') || 0;
+                    const originalSize = parseFloat(clobOrder.original_size || clobOrder.size || '0') || 0;
+                    const currentShares = Number(order.shares_bought) || 0;
+                    const clobStatus = String(clobOrder.status || '').toLowerCase();
+
+                    // Only update if something changed
+                    if (sizeMatched === currentShares && !['cancelled', 'canceled'].includes(clobStatus)) {
+                        continue;
+                    }
+
+                    const remainingSize = Math.max(0, originalSize - sizeMatched);
+                    const fillRate = originalSize > 0 ? sizeMatched / originalSize : 0;
+
+                    let newStatus: string;
+                    if (['cancelled', 'canceled'].includes(clobStatus) && sizeMatched === 0) {
+                        newStatus = 'CANCELLED';
+                    } else if (sizeMatched >= originalSize) {
+                        newStatus = 'FILLED';
+                    } else if (sizeMatched > 0) {
+                        newStatus = 'PARTIAL';
+                    } else {
+                        newStatus = 'PENDING';
+                    }
+
+                    // Update lt_orders
+                    const executedPrice = Number(clobOrder.price || 0) || undefined;
+                    const executedSizeUsd = executedPrice ? +(sizeMatched * executedPrice).toFixed(2) : undefined;
+
+                    await supabase
+                        .from('lt_orders')
+                        .update({
+                            shares_bought: sizeMatched,
+                            shares_remaining: sizeMatched,
+                            executed_size_usd: executedSizeUsd,
+                            fill_rate: +fillRate.toFixed(4),
+                            status: newStatus,
+                            fully_filled_at: newStatus === 'FILLED' ? now.toISOString() : null,
+                            outcome: newStatus === 'CANCELLED' ? 'CANCELLED' : undefined,
+                            updated_at: now.toISOString(),
+                        })
+                        .eq('lt_order_id', order.lt_order_id);
+
+                    // Update orders table
+                    await supabase
+                        .from('orders')
+                        .update({
+                            filled_size: sizeMatched,
+                            remaining_size: remainingSize,
+                            status: newStatus.toLowerCase(),
+                            updated_at: now.toISOString(),
+                        })
+                        .eq('order_id', order.order_id);
+
+                    // If cancelled/unfilled, unlock capital
+                    if (newStatus === 'CANCELLED') {
+                        const investedAmount = Number(order.signal_size_usd) || 0;
+                        await unlockCapital(supabase, order.strategy_id, investedAmount);
+                    }
+
+                    updated++;
+                    console.log(`[lt/sync-order-status] ${order.order_id}: ${order.status} → ${newStatus} (${sizeMatched}/${originalSize} filled)`);
+                } catch (err: any) {
+                    console.error(`[lt/sync-order-status] Error syncing ${order.order_id}: ${err.message}`);
+                    errors++;
+                }
+            }
         }
-      } catch (clientError: any) {
-        console.error(`[lt/sync-order-status] Error getting CLOB client for user ${userId}:`, clientError.message);
-        errors++;
-      }
+
+        return NextResponse.json({
+            success: true,
+            checked: pendingOrders.length,
+            updated,
+            errors,
+            timestamp: now.toISOString(),
+        });
+    } catch (error: any) {
+        console.error('[lt/sync-order-status] Error:', error);
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
-
-    console.log(`[lt/sync-order-status] Complete: ${updated} orders updated, ${errors} errors`);
-
-    return NextResponse.json({
-      success: true,
-      checked: ordersToCheck.length,
-      updated,
-      errors,
-      updates: updates.slice(0, 10), // Return first 10 for visibility
-      timestamp: now.toISOString()
-    });
-  } catch (error: any) {
-    console.error('[lt/sync-order-status] Error:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Sync failed',
-        details: error.message
-      },
-      { status: 500 }
-    );
-  }
 }
 
 export async function GET() {
-  return NextResponse.json({
-    message: 'POST to sync order fill status from CLOB',
-    description: 'Checks all PENDING/OPEN orders and updates fill status from Polymarket CLOB API'
-  });
+    return NextResponse.json({
+        message: 'POST to sync LT order fill status from CLOB',
+        description: 'V2: Checks PENDING/PARTIAL lt_orders and updates fill status. Unlocks capital for cancelled orders.',
+    });
 }

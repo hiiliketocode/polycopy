@@ -125,31 +125,24 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // 2) orders table by order_id (CLOB id stored as order_id for some flows)
-    const { data: orderRow } = await supabaseServiceRole
-      .from('orders')
-      .select('order_id, lt_strategy_id')
+    // 2) Check lt_orders table for this order_id (V2: lt_strategy_id no longer on orders table)
+    const { data: ltOrderRow } = await supabaseServiceRole
+      .from('lt_orders')
+      .select('strategy_id, user_id')
       .eq('order_id', orderId)
       .maybeSingle()
 
-    if (orderRow?.lt_strategy_id) {
-      const { data: strategy } = await supabaseServiceRole
-        .from('lt_strategies')
-        .select('user_id')
-        .eq('strategy_id', orderRow.lt_strategy_id)
-        .maybeSingle()
-      if (strategy?.user_id && strategy.user_id === sessionUserId) {
-        const { client } = await getAuthedClobClientForUserAnyWallet(strategy.user_id)
-        const order = await client.getOrder(orderId)
-        const normalized = normalizeOrder(order)
-        return NextResponse.json({
-          ok: true,
-          source: 'lt',
-          orderId,
-          ...normalized,
-          raw: order,
-        })
-      }
+    if (ltOrderRow?.user_id && ltOrderRow.user_id === sessionUserId) {
+      const { client } = await getAuthedClobClientForUserAnyWallet(ltOrderRow.user_id)
+      const order = await client.getOrder(orderId)
+      const normalized = normalizeOrder(order)
+      return NextResponse.json({
+        ok: true,
+        source: 'lt',
+        orderId,
+        ...normalized,
+        raw: order,
+      })
     }
 
     // 3) Non-LT: use session user's imported_magic wallet (same as existing status route)

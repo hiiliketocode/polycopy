@@ -7,7 +7,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
-import { getActiveStrategies } from '@/lib/live-trading/executor';
+import { getActiveStrategies } from '@/lib/live-trading/executor-v2';
 
 export async function GET(request: Request) {
   const authError = await requireAdminOrCron(request);

@@ -31,7 +31,7 @@ async function main() {
   // Resolve user_id from orders -> lt_strategies (for LT orders) or from orders row
   const { data: orderRow, error: orderError } = await supabase
     .from('orders')
-    .select('order_id, lt_strategy_id')
+    .select('order_id')
     .eq('order_id', orderId)
     .maybeSingle()
 
@@ -41,13 +41,15 @@ async function main() {
   }
 
   let userId: string | null = null
-  if (orderRow?.lt_strategy_id) {
-    const { data: strategy } = await supabase
-      .from('lt_strategies')
-      .select('user_id')
-      .eq('strategy_id', orderRow.lt_strategy_id)
-      .maybeSingle()
-    userId = strategy?.user_id ?? null
+
+  // Check lt_orders for this order_id
+  const { data: ltOrder } = await supabase
+    .from('lt_orders')
+    .select('user_id')
+    .eq('order_id', orderId)
+    .maybeSingle()
+  if (ltOrder?.user_id) {
+    userId = ltOrder.user_id
   }
 
   if (!userId) {
@@ -61,7 +63,7 @@ async function main() {
   }
 
   if (!userId) {
-    console.error('Could not resolve user_id for this order. Ensure order exists in orders and has lt_strategy_id, or that clob_credentials has a user.')
+    console.error('Could not resolve user_id for this order. Check lt_orders or clob_credentials.')
     process.exit(1)
   }
 
