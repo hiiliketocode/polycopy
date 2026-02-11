@@ -68,8 +68,8 @@ export interface ExecutionResult {
 // Constants
 // ──────────────────────────────────────────────────────────────────────
 
-const POLL_INTERVAL_MS = 250;    // Same as quick trade cards
-const MAX_POLL_MS = 30_000;      // 30 seconds max
+const POLL_INTERVAL_MS = 500;
+const MAX_POLL_MS = 5_000;       // 5 seconds — just check for immediate fills/rejections
 
 // ──────────────────────────────────────────────────────────────────────
 // CLOB Order Polling
@@ -352,8 +352,11 @@ export async function executeTrade(
         execution_latency_ms: executionLatency,
     });
 
-    // ── Step 10: Handle unfilled ──
-    if (!filled) {
+    // ── Step 10: Handle result ──
+    const isLiveOnBook = ['live', 'open', 'active', 'new'].includes(pollResult.status);
+
+    if (!filled && !isLiveOnBook) {
+        // Truly rejected/cancelled/expired — unlock capital
         await unlockCapital(supabase, strategy.strategy_id, betSize);
 
         if (orderEventId) {
@@ -364,11 +367,76 @@ export async function executeTrade(
             }).eq('id', orderEventId);
         }
 
-        await traceLogger.warn('ORDER_RESULT', `Order unfilled: ${pollResult.status} — capital unlocked`, {
+        await traceLogger.warn('ORDER_RESULT', `Order rejected/cancelled: ${pollResult.status} — capital unlocked`, {
             order_id: orderId,
         });
 
         return { success: false, error: `Order not filled (${pollResult.status})`, stage: 'ORDER_POLL', bet_size: betSize };
+    }
+
+    if (!filled && isLiveOnBook) {
+        // Order is live on the book — record as PENDING, keep capital locked.
+        // The sync-order-status cron will pick up fills and handle cancellations.
+        const ltOrderId = randomUUID();
+        const now = new Date().toISOString();
+        const traderId = await ensureTraderId(supabase, strategy.wallet_address);
+
+        await supabase.from('orders').upsert({
+            order_id: orderId,
+            trader_id: traderId,
+            market_id: trade.conditionId ?? null,
+            outcome: (trade.outcome || 'YES').toUpperCase(),
+            side: side.toLowerCase(),
+            order_type: orderType,
+            price: finalPrice,
+            size: pollResult.originalSize,
+            filled_size: 0,
+            remaining_size: pollResult.originalSize,
+            status: 'open',
+            created_at: now,
+            updated_at: now,
+        }, { onConflict: 'order_id' });
+
+        await supabase.from('lt_orders').insert({
+            lt_order_id: ltOrderId,
+            strategy_id: strategy.strategy_id,
+            user_id: strategy.user_id,
+            ft_order_id: ftOrderId ?? null,
+            ft_wallet_id: strategy.ft_wallet_id,
+            ft_trader_wallet: trade.traderWallet ?? null,
+            source_trade_id: sourceTradeId,
+            condition_id: trade.conditionId || '',
+            token_id: tokenId,
+            token_label: (trade.outcome || 'YES').toUpperCase(),
+            market_title: trade.title ?? trade.conditionId ?? '',
+            market_slug: trade.slug ?? null,
+            side,
+            signal_price: price,
+            signal_size_usd: betSize,
+            executed_price: finalPrice,
+            executed_size_usd: 0,
+            shares_bought: 0,
+            shares_remaining: 0,
+            order_id: orderId,
+            status: 'PENDING',
+            outcome: 'OPEN',
+            order_placed_at: now,
+            execution_latency_ms: executionLatency,
+            is_force_test: false,
+            is_shadow: false,
+            created_at: now,
+            updated_at: now,
+        });
+
+        await recordDailySpend(supabase, strategy.strategy_id, betSize);
+
+        await traceLogger.info('ORDER_RESULT', `Order live on book as PENDING — will be tracked by sync cron`, {
+            order_id: orderId,
+            lt_order_id: ltOrderId,
+            bet_size: betSize,
+        });
+
+        return { success: true, lt_order_id: ltOrderId, stage: 'ORDER_LIVE', bet_size: betSize, order_id: orderId };
     }
 
     // ── Step 11: Record filled order ──
