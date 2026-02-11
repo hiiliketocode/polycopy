@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Activity, Plus, Pause, Play, ArrowRight, Wallet, AlertCircle, Zap } from 'lucide-react';
+import { Activity, Plus, Pause, Play, ArrowRight, Wallet, AlertCircle, Zap, FileText, BarChart3 } from 'lucide-react';
 
 interface RiskState {
   current_equity: number;
@@ -210,12 +210,26 @@ export default function LiveTradingPage() {
               </p>
             </div>
           </div>
-          <Link href="/ft">
-            <Button variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-100">
-              <ArrowRight className="h-4 w-4 mr-2" />
-              FT
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/trading">
+              <Button variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-100">
+                <BarChart3 className="h-4 w-4 mr-2" />
+                All Strategies
+              </Button>
+            </Link>
+            <Link href="/lt/logs">
+              <Button variant="outline" className="border-[#FDB022] text-[#FDB022] hover:bg-orange-50">
+                <FileText className="h-4 w-4 mr-2" />
+                Live Logs
+              </Button>
+            </Link>
+            <Link href="/ft">
+              <Button variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-100">
+                <ArrowRight className="h-4 w-4 mr-2" />
+                FT
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {error && (

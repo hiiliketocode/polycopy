@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Save, Wallet, ListOrdered, BarChart3, RefreshCw, AlertTriangle, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Save, Wallet, ListOrdered, BarChart3, RefreshCw, AlertTriangle, ChevronUp, ChevronDown, ExternalLink, FileText, Filter } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
