@@ -153,13 +153,22 @@ export async function executeTrade(
 
     // Calculate order size and limit price with slippage (BUY: allow paying up to price * (1 + slippage))
     const sizeContracts = betSize / price;
-    const slippagePct = Number(strategy.slippage_tolerance_pct ?? 3) || 3;
+    const slippagePct = Number(strategy.slippage_tolerance_pct ?? 5) || 5; // Default 5% for copy trading
     const priceWithSlippageForLimit = Math.min(0.9999, price * (1 + slippagePct / 100));
     const roundedPrice = roundDownToStep(price, 0.01);
     const roundedPriceWithSlippage = roundDownToStep(priceWithSlippageForLimit, 0.01);
     const roundedSize = roundDownToStep(sizeContracts, 0.01);
 
-    const orderType = (strategy.order_type || 'GTC') as 'GTC' | 'FOK' | 'FAK' | 'IOC';
+    // For copy trading, default to IOC (Immediate-Or-Cancel) for high fill rates
+    const orderType = (strategy.order_type || 'IOC') as 'GTC' | 'FOK' | 'FAK' | 'IOC';
+    
+    console.log(`[LT Executor] Order params:`, {
+        order_type: orderType,
+        size_contracts: roundedSize,
+        limit_price: roundedPriceWithSlippage,
+        slippage_pct: slippagePct,
+        signal_price: roundedPrice
+    });
     const requestId = `lt_${strategy.strategy_id}_${Date.now()}_${randomUUID().slice(0, 8)}`;
     const orderIntentId = randomUUID();
 
