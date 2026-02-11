@@ -206,8 +206,8 @@ export async function executeTrade(
 
     const orderId = result.orderId ?? '';
     const executionLatency = Date.now() - signalTime;
-    const executedPrice = roundedPriceWithSlippage; // limit price we sent to CLOB
-    const executedSize = roundedSize;
+    const executedPrice = finalPrice; // limit price we sent to CLOB
+    const executedSize = finalSize;
     const slippage = price > 0 ? (executedPrice - price) / price : 0;
 
     // 1) Upsert orders row FIRST — lt_orders FK requires order_id to exist in orders
