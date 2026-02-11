@@ -134,7 +134,10 @@ export async function GET(request: Request, { params }: RouteParams) {
                 realized_pnl: Math.round(realizedPnl * 100) / 100,
                 total_signal_usd: Math.round(totalSignalUsd * 100) / 100,
                 total_executed_usd: Math.round(totalExecutedUsd * 100) / 100,
-                fill_rate_pct: totalSignalUsd > 0 ? Math.round((totalExecutedUsd / totalSignalUsd) * 10000) / 100 : null,
+                // Fill rate = % of orders that filled (should be 0-100%)
+                fill_rate_pct: all.length > 0 ? Math.round((filled.length / all.length) * 10000) / 100 : null,
+                // Dollar fill rate = USD executed vs USD signaled
+                dollar_fill_rate_pct: totalSignalUsd > 0 ? Math.round((totalExecutedUsd / totalSignalUsd) * 10000) / 100 : null,
                 avg_fill_rate: avgFillRate != null ? Math.round(avgFillRate * 10000) / 10000 : null,
                 avg_slippage_pct: avgSlippagePct != null ? Math.round(avgSlippagePct * 10000) / 10000 : null,
                 max_slippage_pct: maxSlippagePct != null ? Math.round(maxSlippagePct * 10000) / 10000 : null,

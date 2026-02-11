@@ -249,9 +249,10 @@ export async function GET(request: Request) {
                     failed: orders.filter((o: any) => o.status === 'REJECTED' || o.status === 'CANCELLED').length,
                     pending: orders.filter((o: any) => o.status === 'PENDING').length,
                     fill_rate_pct: (() => {
-                        const sig = orders.reduce((s2: number, o: any) => s2 + (Number(o.signal_size_usd) || 0), 0);
-                        const exe = orders.reduce((s2: number, o: any) => s2 + (Number(o.executed_size) || 0), 0);
-                        return sig > 0 ? Math.round((exe / sig) * 10000) / 100 : null;
+                        // Fill rate = % of orders that filled (not USD comparison)
+                        const totalOrders = orders.length;
+                        const filledOrders = orders.filter((o: any) => o.status === 'FILLED').length;
+                        return totalOrders > 0 ? Math.round((filledOrders / totalOrders) * 10000) / 100 : null;
                     })(),
                     avg_slippage_pct: (() => {
                         const withSlip = orders.filter((o: any) => o.slippage_pct != null);
