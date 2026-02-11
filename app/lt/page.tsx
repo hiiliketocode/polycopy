@@ -8,15 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Activity, Plus, Pause, Play, ArrowRight, Wallet, AlertCircle, Zap, FileText, BarChart3 } from 'lucide-react';
 
-interface RiskState {
-  current_equity: number;
-  peak_equity: number;
-  current_drawdown_pct: number;
-  consecutive_losses: number;
-  is_paused: boolean;
-  circuit_breaker_active: boolean;
-}
-
 interface LTStrategy {
   strategy_id: string;
   ft_wallet_id: string;
@@ -24,13 +15,31 @@ interface LTStrategy {
   description: string | null;
   is_active: boolean;
   is_paused: boolean;
+  shadow_mode: boolean;
   launched_at: string | null;
-  starting_capital: number;
+  initial_capital: number;
+  available_cash: number;
+  locked_capital: number;
+  cooldown_capital: number;
   wallet_address: string;
   last_sync_time: string | null;
-  health_status: string;
+  circuit_breaker_active: boolean;
+  consecutive_losses: number;
+  current_drawdown_pct: number;
   created_at: string;
-  lt_risk_state?: RiskState[] | RiskState | null;
+  lt_stats?: {
+    total_trades: number;
+    open_positions: number;
+    won: number;
+    lost: number;
+    win_rate: number | null;
+    realized_pnl: number;
+    total_pnl: number;
+    current_equity: number;
+    available_cash: number;
+    locked_capital: number;
+    cooldown_capital: number;
+  };
 }
 
 interface FTWalletOption {
@@ -40,6 +49,7 @@ interface FTWalletOption {
 }
 
 function formatUsd(n: number): string {
+  if (n == null || isNaN(n)) return '$0.00';
   if (n >= 0) return `$${n.toFixed(2)}`;
   return `-$${Math.abs(n).toFixed(2)}`;
 }
@@ -154,7 +164,7 @@ export default function LiveTradingPage() {
         body: JSON.stringify({
           ft_wallet_id: createWalletId,
           wallet_address: useConnectedAccount ? undefined : walletAddress,
-          starting_capital: parseFloat(createCapital) || 1000,
+          initial_capital: parseFloat(createCapital) || 1000,
           display_name: `Live: ${ftWallets.find(w => w.wallet_id === createWalletId)?.display_name || createWalletId}`,
         }),
       });
@@ -190,11 +200,9 @@ export default function LiveTradingPage() {
     }
   };
 
-  const getRiskState = (s: LTStrategy): RiskState | null => {
-    const rs = s.lt_risk_state;
-    if (Array.isArray(rs) && rs.length) return rs[0];
-    if (rs && typeof rs === 'object' && 'current_equity' in rs) return rs as RiskState;
-    return null;
+  const getEquity = (s: LTStrategy): number => {
+    if (s.lt_stats?.current_equity) return s.lt_stats.current_equity;
+    return (Number(s.available_cash) || 0) + (Number(s.locked_capital) || 0) + (Number(s.cooldown_capital) || 0);
   };
 
   return (
@@ -341,8 +349,8 @@ export default function LiveTradingPage() {
             ) : (
               <ul className="space-y-3">
                 {strategies.map((s) => {
-                  const risk = getRiskState(s);
-                  const isPaused = s.is_paused || risk?.is_paused;
+                  const equity = getEquity(s);
+                  const isPaused = s.is_paused;
                   return (
                     <li
                       key={s.strategy_id}
@@ -361,14 +369,18 @@ export default function LiveTradingPage() {
                           {isPaused && (
                             <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200">Paused</Badge>
                           )}
-                          {risk?.circuit_breaker_active && (
+                          {s.shadow_mode && (
+                            <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-blue-200">Shadow</Badge>
+                          )}
+                          {s.circuit_breaker_active && (
                             <Badge variant="destructive" className="bg-red-100 text-red-700">Circuit breaker</Badge>
                           )}
                         </div>
                         <div className="text-xs text-slate-500 mt-1">
-                          Mirrors: {s.ft_wallet_id} · Capital: {formatUsd(risk?.current_equity ?? s.starting_capital)}
-                          {risk && (risk.consecutive_losses > 0 || (risk.current_drawdown_pct && risk.current_drawdown_pct > 0)) && (
-                            <> · Losses: {risk.consecutive_losses} · Drawdown: {(risk.current_drawdown_pct * 100).toFixed(1)}%</>
+                          Mirrors: {s.ft_wallet_id} · Capital: {formatUsd(equity)}
+                          {' '}(Available: {formatUsd(Number(s.available_cash) || 0)} · Locked: {formatUsd(Number(s.locked_capital) || 0)})
+                          {s.consecutive_losses > 0 && (
+                            <> · Losses: {s.consecutive_losses}</>
                           )}
                         </div>
                       </div>
@@ -398,7 +410,7 @@ export default function LiveTradingPage() {
           </CardContent>
         </Card>
 
-        {/* Force test trade — one-click replay of last FT trade per strategy */}
+        {/* Force test trade */}
         <Card className="mt-6 border border-amber-200 bg-amber-50/50">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2 text-slate-800">
@@ -440,10 +452,10 @@ export default function LiveTradingPage() {
             <CardTitle className="text-base text-slate-700">Where to manage</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-slate-600 space-y-2">
-            <p><strong className="text-slate-800">This page:</strong> Create live strategies, pause/resume, and see risk state.</p>
-            <p><strong className="text-slate-800">Strategy detail:</strong> Open a strategy to view trades like FT, edit capital, risk rules, and activation.</p>
+            <p><strong className="text-slate-800">This page:</strong> Create live strategies, pause/resume, and see cash state.</p>
+            <p><strong className="text-slate-800">Strategy detail:</strong> Open a strategy to view trades, edit capital, risk rules, and activation.</p>
             <p><strong className="text-slate-800">FT page:</strong> <Link href="/ft" className="text-[#FDB022] hover:underline">/ft</Link> — Forward Test wallets; use the Live tab to create and filter live strategies.</p>
-            <p><strong className="text-slate-800">Cron:</strong> Execution runs every 2 minutes; resolution and redemptions every 10 minutes.</p>
+            <p><strong className="text-slate-800">Cron:</strong> Execution every minute; resolution every 5 minutes; order sync every minute.</p>
           </CardContent>
         </Card>
       </div>

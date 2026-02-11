@@ -8,28 +8,36 @@ import { Label } from '@/components/ui/label';
 import { AlertCircle, Save, RotateCcw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
+/**
+ * V2: Risk rules are inline on lt_strategies.
+ * The /api/lt/strategies/[id]/risk endpoint returns { rules, state }
+ * where rules = { max_position_size_usd, max_total_exposure_usd, daily_budget_usd,
+ *                 max_daily_loss_usd, circuit_breaker_loss_pct, stop_loss_pct,
+ *                 take_profit_pct, max_hold_hours }
+ * and state = { is_paused, circuit_breaker_active, daily_spent_usd, daily_loss_usd,
+ *               consecutive_losses, peak_equity, current_drawdown_pct, last_reset_date }
+ */
+
 interface RiskRules {
-  rule_id: string;
-  strategy_id: string;
-  daily_budget_usd: number | null;
-  daily_budget_pct: number | null;
   max_position_size_usd: number | null;
   max_total_exposure_usd: number | null;
-  max_concurrent_positions: number;
-  max_drawdown_pct: number;
-  max_consecutive_losses: number;
-  max_slippage_pct: number;
+  daily_budget_usd: number | null;
+  max_daily_loss_usd: number | null;
+  circuit_breaker_loss_pct: number | null;
+  stop_loss_pct: number | null;
+  take_profit_pct: number | null;
+  max_hold_hours: number | null;
 }
 
 interface RiskState {
-  current_equity: number;
-  peak_equity: number;
-  current_drawdown_pct: number;
-  consecutive_losses: number;
-  daily_spent_usd: number;
   is_paused: boolean;
   circuit_breaker_active: boolean;
-  pause_reason: string | null;
+  daily_spent_usd: number;
+  daily_loss_usd: number;
+  consecutive_losses: number;
+  peak_equity: number;
+  current_drawdown_pct: number;
+  last_reset_date: string | null;
 }
 
 interface RiskSettingsPanelProps {
@@ -133,15 +141,15 @@ export function RiskSettingsPanel({ strategyId }: RiskSettingsPanelProps) {
           <CardTitle>Risk Settings</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-red-600">Failed to load risk settings</p>
+          <p className="text-sm text-red-600">{error || 'Failed to load risk settings'}</p>
         </CardContent>
       </Card>
     );
   }
 
-  const drawdownPct = (state.current_drawdown_pct * 100).toFixed(2);
-  const maxDrawdownPct = (rules.max_drawdown_pct * 100).toFixed(0);
-  const isNearDrawdownLimit = state.current_drawdown_pct > rules.max_drawdown_pct * 0.8;
+  const drawdownPct = (Number(state.current_drawdown_pct) * 100).toFixed(2);
+  const cbLossPct = rules.circuit_breaker_loss_pct != null ? (Number(rules.circuit_breaker_loss_pct) * 100).toFixed(0) : null;
+  const isNearDrawdownLimit = rules.circuit_breaker_loss_pct != null && Number(state.current_drawdown_pct) > Number(rules.circuit_breaker_loss_pct) * 0.8;
 
   return (
     <Card>
@@ -186,21 +194,17 @@ export function RiskSettingsPanel({ strategyId }: RiskSettingsPanelProps) {
 
         {success && (
           <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">
-            ✅ Risk settings saved successfully
+            Risk settings saved successfully
           </div>
         )}
 
         {/* Current Risk State */}
         <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
           <h3 className="font-semibold mb-3 text-sm">Current Risk State</h3>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-muted-foreground">Current Equity:</span>
-              <span className="ml-2 font-medium">${state.current_equity.toFixed(2)}</span>
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
             <div>
               <span className="text-muted-foreground">Peak Equity:</span>
-              <span className="ml-2 font-medium">${state.peak_equity.toFixed(2)}</span>
+              <span className="ml-2 font-medium">${Number(state.peak_equity).toFixed(2)}</span>
             </div>
             <div>
               <span className="text-muted-foreground">Drawdown:</span>
@@ -217,7 +221,11 @@ export function RiskSettingsPanel({ strategyId }: RiskSettingsPanelProps) {
             </div>
             <div>
               <span className="text-muted-foreground">Daily Spent:</span>
-              <span className="ml-2 font-medium">${state.daily_spent_usd.toFixed(2)}</span>
+              <span className="ml-2 font-medium">${Number(state.daily_spent_usd).toFixed(2)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Daily Loss:</span>
+              <span className="ml-2 font-medium">${Number(state.daily_loss_usd).toFixed(2)}</span>
             </div>
             <div>
               <span className="text-muted-foreground">Status:</span>
@@ -230,62 +238,69 @@ export function RiskSettingsPanel({ strategyId }: RiskSettingsPanelProps) {
               )}
             </div>
           </div>
-          {state.pause_reason && (
-            <div className="mt-3 p-2 rounded bg-yellow-50 border border-yellow-200 text-sm text-yellow-800">
-              <strong>Pause Reason:</strong> {state.pause_reason}
+          {state.last_reset_date && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              Last daily reset: {state.last_reset_date}
             </div>
           )}
         </div>
 
-        {/* Drawdown Controls */}
+        {/* Circuit Breaker / Drawdown Controls */}
         <div className="space-y-3">
-          <h3 className="font-semibold text-sm">Drawdown Controls (Auto-Pause Triggers)</h3>
+          <h3 className="font-semibold text-sm">Drawdown & Circuit Breaker</h3>
           
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="max_drawdown">Max Drawdown % (Auto-Pause)</Label>
+              <Label htmlFor="circuit_breaker_loss_pct">Circuit Breaker Drawdown %</Label>
               <div className="flex items-center gap-2">
                 <Input
-                  id="max_drawdown"
+                  id="circuit_breaker_loss_pct"
                   type="number"
                   step="1"
                   min="5"
                   max="50"
-                  value={getValue('max_drawdown_pct') ? (getValue('max_drawdown_pct') as number) * 100 : ''}
-                  onChange={(e) => updateField('max_drawdown_pct', parseFloat(e.target.value) / 100)}
+                  value={getValue('circuit_breaker_loss_pct') != null ? Number(getValue('circuit_breaker_loss_pct')) * 100 : ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updateField('circuit_breaker_loss_pct', v === '' ? null : parseFloat(v) / 100);
+                  }}
+                  placeholder="No limit"
                   className="w-24"
                 />
                 <span className="text-sm text-muted-foreground">%</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Current: {drawdownPct}% / {maxDrawdownPct}%
-                {isNearDrawdownLimit && <span className="text-orange-600 font-medium ml-1">⚠️ Near limit!</span>}
+                Current: {drawdownPct}%{cbLossPct ? ` / ${cbLossPct}%` : ''}
+                {isNearDrawdownLimit && <span className="text-orange-600 font-medium ml-1">Near limit!</span>}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="max_consecutive_losses">Max Consecutive Losses</Label>
+              <Label htmlFor="max_daily_loss">Max Daily Loss (USD)</Label>
               <div className="flex items-center gap-2">
+                <span className="text-sm">$</span>
                 <Input
-                  id="max_consecutive_losses"
+                  id="max_daily_loss"
                   type="number"
-                  step="1"
-                  min="3"
-                  max="20"
-                  value={getValue('max_consecutive_losses') || ''}
-                  onChange={(e) => updateField('max_consecutive_losses', parseInt(e.target.value))}
-                  className="w-24"
+                  step="10"
+                  min="0"
+                  value={getValue('max_daily_loss_usd') ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updateField('max_daily_loss_usd', v === '' ? null : parseFloat(v));
+                  }}
+                  placeholder="No limit"
+                  className="w-32"
                 />
-                <span className="text-sm text-muted-foreground">losses</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Current: {state.consecutive_losses} losses
+                Today's loss: ${Number(state.daily_loss_usd).toFixed(2)}
               </p>
             </div>
           </div>
 
           <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-800">
-            <strong>💡 Recommendation:</strong> For copy trading, use 20-25% max drawdown. 
+            <strong>Recommendation:</strong> For copy trading, use 20-25% max drawdown. 
             Lower values (5-10%) cause frequent auto-pauses from normal variance.
           </div>
         </div>
@@ -314,35 +329,7 @@ export function RiskSettingsPanel({ strategyId }: RiskSettingsPanelProps) {
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Spent today: ${state.daily_spent_usd.toFixed(2)}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="daily_budget_pct">Daily Budget % (when no USD limit)</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="daily_budget_pct"
-                  type="number"
-                  step="1"
-                  min="0"
-                  max="100"
-                  value={getValue('daily_budget_pct') != null ? (getValue('daily_budget_pct') as number) * 100 : ''}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    updateField('daily_budget_pct', v === '' ? null : parseFloat(v) / 100);
-                  }}
-                  placeholder="No limit"
-                  className="w-24"
-                />
-                <span className="text-sm text-muted-foreground">% of equity</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {getValue('daily_budget_usd') == null && getValue('daily_budget_pct') != null && state
-                  ? `≈ $${(state.current_equity * (getValue('daily_budget_pct') as number)).toFixed(0)}/day at current equity`
-                  : getValue('daily_budget_usd') == null && getValue('daily_budget_pct') == null
-                    ? 'Both empty = no daily limit'
-                    : null}
+                Spent today: ${Number(state.daily_spent_usd).toFixed(2)}
               </p>
             </div>
 
@@ -355,8 +342,11 @@ export function RiskSettingsPanel({ strategyId }: RiskSettingsPanelProps) {
                   type="number"
                   step="5"
                   min="1"
-                  value={getValue('max_position_size_usd') || ''}
-                  onChange={(e) => updateField('max_position_size_usd', parseFloat(e.target.value))}
+                  value={getValue('max_position_size_usd') ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updateField('max_position_size_usd', v === '' ? null : parseFloat(v));
+                  }}
                   placeholder="No limit"
                   className="w-32"
                 />
@@ -372,52 +362,87 @@ export function RiskSettingsPanel({ strategyId }: RiskSettingsPanelProps) {
                   type="number"
                   step="50"
                   min="0"
-                  value={getValue('max_total_exposure_usd') || ''}
-                  onChange={(e) => updateField('max_total_exposure_usd', parseFloat(e.target.value))}
+                  value={getValue('max_total_exposure_usd') ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updateField('max_total_exposure_usd', v === '' ? null : parseFloat(v));
+                  }}
                   placeholder="No limit"
                   className="w-32"
                 />
               </div>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="max_concurrent">Max Concurrent Positions</Label>
-              <Input
-                id="max_concurrent"
-                type="number"
-                step="5"
-                min="1"
-                value={getValue('max_concurrent_positions') || ''}
-                onChange={(e) => updateField('max_concurrent_positions', parseInt(e.target.value))}
-                className="w-32"
-              />
-            </div>
           </div>
         </div>
 
-        {/* Circuit Breaker Controls */}
+        {/* Auto-Exit Controls */}
         <div className="space-y-3">
-          <h3 className="font-semibold text-sm">Circuit Breakers</h3>
+          <h3 className="font-semibold text-sm">Auto-Exit Rules</h3>
           
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="max_slippage">Max Slippage % (Reject Order)</Label>
+              <Label htmlFor="stop_loss">Stop Loss %</Label>
               <div className="flex items-center gap-2">
                 <Input
-                  id="max_slippage"
+                  id="stop_loss"
                   type="number"
-                  step="0.1"
-                  min="0.1"
-                  max="10"
-                  value={getValue('max_slippage_pct') ? (getValue('max_slippage_pct') as number) * 100 : ''}
-                  onChange={(e) => updateField('max_slippage_pct', parseFloat(e.target.value) / 100)}
+                  step="1"
+                  min="1"
+                  max="90"
+                  value={getValue('stop_loss_pct') != null ? Number(getValue('stop_loss_pct')) : ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updateField('stop_loss_pct', v === '' ? null : parseFloat(v));
+                  }}
+                  placeholder="Off"
                   className="w-24"
                 />
                 <span className="text-sm text-muted-foreground">%</span>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Orders with higher slippage are rejected
-              </p>
+              <p className="text-xs text-muted-foreground">Auto-sell if position down X%</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="take_profit">Take Profit %</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="take_profit"
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="500"
+                  value={getValue('take_profit_pct') != null ? Number(getValue('take_profit_pct')) : ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updateField('take_profit_pct', v === '' ? null : parseFloat(v));
+                  }}
+                  placeholder="Off"
+                  className="w-24"
+                />
+                <span className="text-sm text-muted-foreground">%</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Auto-sell if position up X%</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="max_hold_hours">Max Hold Hours</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="max_hold_hours"
+                  type="number"
+                  step="1"
+                  min="1"
+                  value={getValue('max_hold_hours') ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updateField('max_hold_hours', v === '' ? null : parseInt(v));
+                  }}
+                  placeholder="Off"
+                  className="w-24"
+                />
+                <span className="text-sm text-muted-foreground">hours</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Auto-exit after X hours</p>
             </div>
           </div>
         </div>
@@ -431,58 +456,58 @@ export function RiskSettingsPanel({ strategyId }: RiskSettingsPanelProps) {
               variant="outline"
               onClick={() => {
                 setEditedRules({
-                  max_drawdown_pct: 0.10,
-                  max_consecutive_losses: 5,
+                  circuit_breaker_loss_pct: 0.10,
                   daily_budget_usd: 50,
-                  max_position_size_usd: 10
+                  max_daily_loss_usd: 25,
+                  max_position_size_usd: 10,
                 });
               }}
             >
-              Conservative (10% DD, $50/day)
+              Conservative (10% CB, $50/day)
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => {
                 setEditedRules({
-                  max_drawdown_pct: 0.20,
-                  max_consecutive_losses: 8,
+                  circuit_breaker_loss_pct: 0.20,
                   daily_budget_usd: 200,
-                  max_position_size_usd: 50
+                  max_daily_loss_usd: 100,
+                  max_position_size_usd: 50,
                 });
               }}
             >
-              Moderate (20% DD, $200/day)
+              Moderate (20% CB, $200/day)
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => {
                 setEditedRules({
-                  max_drawdown_pct: 0.35,
-                  max_consecutive_losses: 15,
+                  circuit_breaker_loss_pct: 0.35,
                   daily_budget_usd: null,
-                  daily_budget_pct: null,
-                  max_position_size_usd: null
+                  max_daily_loss_usd: null,
+                  max_position_size_usd: null,
                 });
               }}
             >
-              Aggressive (35% DD, No Limits)
+              Aggressive (35% CB, No Limits)
             </Button>
           </div>
         </div>
 
-        {/* Warning if auto-pause likely */}
+        {/* Warning if near drawdown limit */}
         {isNearDrawdownLimit && (
           <div className="p-3 rounded-lg bg-orange-50 border border-orange-200 text-sm text-orange-800">
-            <strong>⚠️ Warning:</strong> Current drawdown ({drawdownPct}%) is close to your limit ({maxDrawdownPct}%). 
-            Strategy will auto-pause if it reaches {maxDrawdownPct}%. Consider increasing the limit or monitoring closely.
+            <strong>Warning:</strong> Current drawdown ({drawdownPct}%) is close to your circuit breaker limit ({cbLossPct}%). 
+            Strategy will auto-pause if it reaches {cbLossPct}%. Consider increasing the limit or monitoring closely.
           </div>
         )}
 
         {state.is_paused && (
           <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800">
-            <strong>🛑 Strategy Paused:</strong> {state.pause_reason || 'Unknown reason'}
+            <strong>Strategy Paused</strong>
+            {state.circuit_breaker_active && <span> — Circuit breaker triggered</span>}
             <div className="mt-2">
               <Button
                 size="sm"

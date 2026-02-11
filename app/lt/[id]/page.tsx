@@ -1,8 +1,7 @@
 /**
- * Comprehensive LT Strategy Detail Page
- * Matches FT detail page format with live pricing and all KPIs
- * 
- * This will replace the existing /lt/[id]/page.tsx once complete
+ * LT Strategy Detail Page (V2)
+ * Matches FT detail page format with live pricing and all KPIs.
+ * Uses new V2 schema: risk state inline on lt_strategies, 3-bucket cash model.
  */
 
 'use client';
@@ -18,14 +17,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   ArrowLeft,
   RefreshCw,
-  TrendingUp,
-  TrendingDown,
   Briefcase,
   ListOrdered,
   BarChart3,
   Settings,
   Target,
-  Clock,
   Activity,
   Filter,
   FileText,
@@ -44,17 +40,42 @@ interface LTStrategy {
   description: string | null;
   is_active: boolean;
   is_paused: boolean;
+  shadow_mode: boolean;
   launched_at: string | null;
-  starting_capital: number;
+  initial_capital: number;
+  available_cash: number;
+  locked_capital: number;
+  cooldown_capital: number;
   wallet_address: string;
   slippage_tolerance_pct: number;
   order_type: string;
+  min_order_size_usd: number;
+  max_order_size_usd: number;
+  cooldown_hours: number;
+  // Risk rules (inline)
+  max_position_size_usd: number | null;
+  max_total_exposure_usd: number | null;
+  daily_budget_usd: number | null;
+  max_daily_loss_usd: number | null;
+  circuit_breaker_loss_pct: number | null;
+  stop_loss_pct: number | null;
+  take_profit_pct: number | null;
+  max_hold_hours: number | null;
+  // Risk state (inline)
+  daily_spent_usd: number;
+  daily_loss_usd: number;
+  consecutive_losses: number;
+  peak_equity: number;
+  current_drawdown_pct: number;
+  circuit_breaker_active: boolean;
   last_sync_time: string | null;
   created_at: string;
 }
 
 interface Stats {
   total_trades: number;
+  total_attempts: number;
+  attempts: number;
   open_positions: number;
   won: number;
   lost: number;
@@ -62,28 +83,13 @@ interface Stats {
   realized_pnl: number;
   unrealized_pnl: number;
   total_pnl: number;
-  current_balance: number;
-  cash_available: number;
   avg_trade_size: number;
-  first_trade: string | null;
-  last_trade: string | null;
-  attempts: number;
   filled: number;
   failed: number;
   pending: number;
   fill_rate_pct: number | null;
   avg_slippage_pct: number | null;
-}
-
-interface RiskState {
-  current_equity: number;
-  peak_equity: number;
-  current_drawdown_pct: number;
-  consecutive_losses: number;
-  daily_spent_usd: number;
-  is_paused: boolean;
-  circuit_breaker_active: boolean;
-  pause_reason: string | null;
+  avg_latency_ms: number | null;
 }
 
 interface Position {
@@ -93,12 +99,14 @@ interface Position {
   market_slug: string | null;
   token_label: string;
   trader_address: string;
+  ft_trader_wallet: string;
   executed_price: number;
   executed_size: number;
+  executed_size_usd: number;
+  shares_bought: number;
   signal_price: number;
   order_placed_at: string;
   outcome: string;
-  // Will add current_price via live pricing
   current_price?: number | null;
 }
 
@@ -109,21 +117,22 @@ interface Trade {
   token_label: string;
   executed_price: number;
   executed_size: number;
+  executed_size_usd: number;
+  shares_bought: number;
   outcome: string;
   pnl: number;
   resolved_at: string;
   order_placed_at: string;
 }
 
-type SortField = 'market' | 'trader' | 'entry' | 'current' | 'size' | 'value' | 'pnl' | 'order_time' | 'resolves';
+type SortField = 'market' | 'trader' | 'entry' | 'current' | 'size' | 'value' | 'pnl' | 'order_time';
 
-export default function ComprehensiveLTDetailPage() {
+export default function LTDetailPage() {
   const params = useParams();
   const id = params?.id as string;
   
   const [strategy, setStrategy] = useState<LTStrategy | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [riskState, setRiskState] = useState<RiskState | null>(null);
   const [openPositions, setOpenPositions] = useState<Position[]>([]);
   const [pendingOrders, setPendingOrders] = useState<Position[]>([]);
   const [closedTrades, setClosedTrades] = useState<Trade[]>([]);
@@ -140,7 +149,6 @@ export default function ComprehensiveLTDetailPage() {
     try {
       const res = await fetch(`/api/lt/live-prices?strategy=${id}`, { cache: 'no-store' });
       const data = await res.json();
-      
       if (data.success && data.prices) {
         setLivePrices(data.prices);
       }
@@ -167,19 +175,7 @@ export default function ComprehensiveLTDetailPage() {
       if (!ordersRes.ok) throw new Error(ordersData.error || 'Failed to load orders');
 
       setStrategy(stratData.strategy);
-      
-      // Extract risk state if available
-      const rs = stratData.strategy?.lt_risk_state;
-      if (Array.isArray(rs) && rs.length > 0) {
-        setRiskState(rs[0]);
-      } else if (rs && typeof rs === 'object') {
-        setRiskState(rs as RiskState);
-      }
-
-      // Set stats
       setStats(ordersData.stats || null);
-      
-      // Set positions and trades (pending = placed, waiting for fill; open = filled, active)
       setOpenPositions(ordersData.open_orders || []);
       setPendingOrders(ordersData.pending_orders || []);
       setClosedTrades(ordersData.closed_orders || []);
@@ -193,7 +189,7 @@ export default function ComprehensiveLTDetailPage() {
 
   useEffect(() => {
     loadData();
-    fetchLivePrices(); // Load prices immediately
+    fetchLivePrices();
   }, [loadData, fetchLivePrices]);
 
   // Auto-refresh data every 30 seconds
@@ -204,16 +200,14 @@ export default function ComprehensiveLTDetailPage() {
         loadData().finally(() => setRefreshing(false));
       }
     }, 30000);
-
     return () => clearInterval(interval);
   }, [loadData, refreshing]);
 
-  // Auto-refresh live prices every 15 seconds (faster for real-time P&L)
+  // Auto-refresh live prices every 15 seconds
   useEffect(() => {
     const priceInterval = setInterval(() => {
       fetchLivePrices();
     }, 15000);
-
     return () => clearInterval(priceInterval);
   }, [fetchLivePrices]);
 
@@ -260,8 +254,8 @@ export default function ComprehensiveLTDetailPage() {
           bVal = b.market_title || '';
           break;
         case 'trader':
-          aVal = a.trader_address || '';
-          bVal = b.trader_address || '';
+          aVal = a.trader_address || a.ft_trader_wallet || '';
+          bVal = b.trader_address || b.ft_trader_wallet || '';
           break;
         case 'entry':
           aVal = a.executed_price || 0;
@@ -272,22 +266,19 @@ export default function ComprehensiveLTDetailPage() {
           bVal = b.current_price || 0;
           break;
         case 'size':
-          aVal = (a.executed_price * a.executed_size) || 0;
-          bVal = (b.executed_price * b.executed_size) || 0;
+          aVal = Number(a.executed_size_usd) || (a.executed_price * (a.shares_bought || a.executed_size || 0));
+          bVal = Number(b.executed_size_usd) || (b.executed_price * (b.shares_bought || b.executed_size || 0));
           break;
-        case 'value':
-          aVal = a.current_price ? (a.current_price * a.executed_size) : 0;
-          bVal = b.current_price ? (b.current_price * b.executed_size) : 0;
-          break;
-        case 'pnl':
-          const aPnl = a.current_price ? ((a.current_price - a.executed_price) * a.executed_size) : 0;
-          const bPnl = b.current_price ? ((b.current_price - b.executed_price) * b.executed_size) : 0;
+        case 'pnl': {
+          const aPnl = a.current_price ? ((a.current_price - a.executed_price) * (a.shares_bought || a.executed_size || 0)) : 0;
+          const bPnl = b.current_price ? ((b.current_price - b.executed_price) * (b.shares_bought || b.executed_size || 0)) : 0;
           aVal = aPnl;
           bVal = bPnl;
           break;
+        }
         case 'order_time':
-          aVal = new Date(a.order_placed_at).getTime();
-          bVal = new Date(b.order_placed_at).getTime();
+          aVal = new Date(a.order_placed_at || a.lt_order_id).getTime();
+          bVal = new Date(b.order_placed_at || b.lt_order_id).getTime();
           break;
       }
 
@@ -300,26 +291,25 @@ export default function ComprehensiveLTDetailPage() {
 
   // Helper functions
   const formatUsd = (n: number | null | undefined): string => {
-    if (n === null || n === undefined) return '-';
+    if (n === null || n === undefined || isNaN(n)) return '-';
     return n >= 0 ? `$${n.toFixed(2)}` : `-$${Math.abs(n).toFixed(2)}`;
   };
 
   const formatPnl = (n: number | null | undefined): string => {
-    if (n === null || n === undefined) return '-';
-    const sign = n >= 0 ? '+' : '';
+    if (n === null || n === undefined || isNaN(n)) return '-';
     return n >= 0 ? `+$${n.toFixed(2)}` : `-$${Math.abs(n).toFixed(2)}`;
   };
 
   const formatPct = (n: number | null | undefined): string => {
-    if (n === null || n === undefined) return '-';
+    if (n === null || n === undefined || isNaN(n)) return '-';
     const sign = n >= 0 ? '+' : '';
     return `${sign}${n.toFixed(2)}%`;
   };
 
   const formatPrice = (n: number | null | undefined): string => {
     if (n === null || n === undefined) return '-';
-    if (n < 0.01) return '<1¢';
-    return `${(n * 100).toFixed(0)}¢`;
+    if (n < 0.01) return '<1c';
+    return `${(n * 100).toFixed(0)}c`;
   };
 
   if (loading) {
@@ -347,13 +337,14 @@ export default function ComprehensiveLTDetailPage() {
     );
   }
 
+  // Compute equity from 3-bucket model
+  const equity = (Number(strategy.available_cash) || 0) + (Number(strategy.locked_capital) || 0) + (Number(strategy.cooldown_capital) || 0);
+  const returnPct = Number(strategy.initial_capital) > 0
+    ? (equity - Number(strategy.initial_capital)) / Number(strategy.initial_capital) * 100
+    : 0;
   const winRate = stats && (stats.won + stats.lost) > 0 
     ? (stats.won / (stats.won + stats.lost)) * 100 
     : null;
-  
-  const returnPct = strategy.starting_capital > 0
-    ? ((riskState?.current_equity || strategy.starting_capital) - strategy.starting_capital) / strategy.starting_capital * 100
-    : 0;
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-7xl">
@@ -366,6 +357,9 @@ export default function ComprehensiveLTDetailPage() {
           <h1 className="text-3xl font-bold flex items-center gap-2">
             {strategy.display_name}
             <Badge className="bg-purple-100 text-purple-700 border-purple-200">LIVE</Badge>
+            {strategy.shadow_mode && (
+              <Badge className="bg-blue-100 text-blue-700 border-blue-200">SHADOW</Badge>
+            )}
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
             Mirrors <Link href={`/ft/${strategy.ft_wallet_id}`} className="text-[#FDB022] hover:underline">{strategy.ft_wallet_id}</Link>
@@ -399,13 +393,13 @@ export default function ComprehensiveLTDetailPage() {
         </div>
       )}
 
-      {/* Summary Cards (Matching FT Format) */}
+      {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{formatUsd(riskState?.current_equity || strategy.starting_capital)}</div>
+            <div className="text-2xl font-bold">{formatUsd(equity)}</div>
             <div className="text-xs text-muted-foreground">
-              Cash: {formatUsd(stats?.cash_available || strategy.starting_capital)}
+              Cash: {formatUsd(Number(strategy.available_cash))}
             </div>
             <p className="text-xs text-muted-foreground mt-1">Balance</p>
           </CardContent>
@@ -465,7 +459,7 @@ export default function ComprehensiveLTDetailPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold">
-              {stats?.fill_rate_pct !== null ? `${stats?.fill_rate_pct.toFixed(0)}%` : '-'}
+              {stats?.fill_rate_pct !== null && stats?.fill_rate_pct !== undefined ? `${stats.fill_rate_pct.toFixed(0)}%` : '-'}
             </div>
             <div className="text-xs text-muted-foreground">
               {stats?.filled || 0} / {stats?.attempts || 0} fills
@@ -477,7 +471,7 @@ export default function ComprehensiveLTDetailPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold">
-              {(stats && stats.avg_slippage_pct !== null) ? `${(Math.abs(stats.avg_slippage_pct) * 100).toFixed(2)}%` : '-'}
+              {(stats && stats.avg_slippage_pct !== null && stats.avg_slippage_pct !== undefined) ? `${(Math.abs(stats.avg_slippage_pct) * 100).toFixed(2)}%` : '-'}
             </div>
             <div className="text-xs text-muted-foreground">
               Avg slippage
@@ -487,60 +481,64 @@ export default function ComprehensiveLTDetailPage() {
         </Card>
       </div>
 
-      {/* Status Banner (if paused or issues) */}
-      {strategy.is_paused && riskState?.pause_reason && (
+      {/* Status Banner */}
+      {strategy.is_paused && (
         <Card className="mb-6 border-orange-200 bg-orange-50">
           <CardContent className="pt-4">
             <div className="flex items-center gap-2">
               <AlertCircle className="h-5 w-5 text-orange-600" />
               <div>
                 <p className="font-semibold text-orange-900">Strategy Paused</p>
-                <p className="text-sm text-orange-700">{riskState.pause_reason}</p>
+                {strategy.circuit_breaker_active && (
+                  <p className="text-sm text-orange-700">Circuit breaker triggered</p>
+                )}
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Risk State Summary */}
-      {riskState && (
-        <Card className="mb-6">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Target className="h-4 w-4" />
-              Risk Management Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Current Drawdown:</span>
-                <span className={`ml-2 font-semibold ${riskState.current_drawdown_pct > 0.15 ? 'text-orange-600' : ''}`}>
-                  {(riskState.current_drawdown_pct * 100).toFixed(2)}%
-                </span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Peak Equity:</span>
-                <span className="ml-2 font-semibold">{formatUsd(riskState.peak_equity)}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Consecutive Losses:</span>
-                <span className="ml-2 font-semibold">{riskState.consecutive_losses}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Daily Spent:</span>
-                <span className="ml-2 font-semibold">{formatUsd(riskState.daily_spent_usd)}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Circuit Breaker:</span>
-                <span className={`ml-2 font-semibold ${riskState.circuit_breaker_active ? 'text-red-600' : 'text-green-600'}`}>
-                  {riskState.circuit_breaker_active ? 'Active' : 'OK'}
-                </span>
-              </div>
+      {/* Risk State Summary (inline from strategy) */}
+      <Card className="mb-6">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Target className="h-4 w-4" />
+            Cash & Risk Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 text-sm">
+            <div>
+              <span className="text-muted-foreground">Available Cash:</span>
+              <span className="ml-2 font-semibold text-green-600">{formatUsd(Number(strategy.available_cash))}</span>
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <div>
+              <span className="text-muted-foreground">Locked:</span>
+              <span className="ml-2 font-semibold">{formatUsd(Number(strategy.locked_capital))}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Cooldown:</span>
+              <span className="ml-2 font-semibold">{formatUsd(Number(strategy.cooldown_capital))}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Drawdown:</span>
+              <span className={`ml-2 font-semibold ${Number(strategy.current_drawdown_pct) > 0.15 ? 'text-orange-600' : ''}`}>
+                {(Number(strategy.current_drawdown_pct) * 100).toFixed(2)}%
+              </span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Daily Spent:</span>
+              <span className="ml-2 font-semibold">{formatUsd(Number(strategy.daily_spent_usd))}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Circuit Breaker:</span>
+              <span className={`ml-2 font-semibold ${strategy.circuit_breaker_active ? 'text-red-600' : 'text-green-600'}`}>
+                {strategy.circuit_breaker_active ? 'Active' : 'OK'}
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)}>
@@ -556,7 +554,7 @@ export default function ComprehensiveLTDetailPage() {
           </TabsTrigger>
           <TabsTrigger value="trades" className="flex items-center gap-2">
             <ListOrdered className="h-4 w-4" />
-            Resolved Trades ({(stats?.won || 0) + (stats?.lost || 0)})
+            Resolved ({(stats?.won || 0) + (stats?.lost || 0)})
           </TabsTrigger>
           <TabsTrigger value="performance" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
@@ -585,7 +583,7 @@ export default function ComprehensiveLTDetailPage() {
                 <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
                   <p className="text-sm font-medium text-amber-800">Placed, waiting for fill ({pendingOrders.length})</p>
                   <p className="text-xs text-amber-700 mt-1">
-                    Orders submitted to Polymarket. Fill status updates every minute via cron. Once filled, they appear below.
+                    Orders submitted to Polymarket. Fill status syncs every minute. Once filled, they appear below.
                   </p>
                   <ul className="mt-2 space-y-1 text-sm">
                     {pendingOrders.slice(0, 5).map((p) => (
@@ -602,7 +600,7 @@ export default function ComprehensiveLTDetailPage() {
                         ) : (
                           <>{p.market_title?.substring(0, 50)}...</>
                         )}
-                        {' · '}{p.executed_size?.toFixed(1)} contracts @ {formatPrice(p.executed_price)}
+                        {' · '}{formatUsd(Number(p.executed_size_usd) || Number(p.signal_price) * Number(p.shares_bought || 0))} @ {formatPrice(p.signal_price)}
                       </li>
                     ))}
                     {pendingOrders.length > 5 && (
@@ -621,7 +619,6 @@ export default function ComprehensiveLTDetailPage() {
                     <TableHeader>
                       <TableRow>
                         <SortHeader field="market" label="Market" />
-                        <SortHeader field="trader" label="Trader" />
                         <SortHeader field="entry" label="Entry" align="right" />
                         <SortHeader field="current" label="Current" align="right" />
                         <SortHeader field="size" label="Cost" align="right" />
@@ -632,14 +629,14 @@ export default function ComprehensiveLTDetailPage() {
                     </TableHeader>
                     <TableBody>
                       {sortedPositions.map((pos) => {
-                        // Use live price if available, otherwise use entry price
                         const liveData = livePrices[pos.lt_order_id];
                         const currentPrice = liveData?.current_price ?? pos.current_price ?? pos.executed_price;
                         const hasLivePrice = !!liveData;
                         
-                        const cost = pos.executed_price * pos.executed_size;
-                        const currentValue = currentPrice * pos.executed_size;
-                        const unrealizedPnl = (currentPrice - pos.executed_price) * pos.executed_size;
+                        const shares = Number(pos.shares_bought) || Number(pos.executed_size) || 0;
+                        const cost = Number(pos.executed_size_usd) || (pos.executed_price * shares);
+                        const currentValue = currentPrice * shares;
+                        const unrealizedPnl = (currentPrice - pos.executed_price) * shares;
                         const pnlPct = cost > 0 ? (unrealizedPnl / cost) * 100 : 0;
 
                         return (
@@ -661,11 +658,8 @@ export default function ComprehensiveLTDetailPage() {
                                 )}
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                {pos.token_label} · {pos.executed_size.toFixed(2)} contracts
+                                {pos.token_label} · {shares.toFixed(2)} shares
                               </div>
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {pos.trader_address ? `${pos.trader_address.substring(0, 6)}...${pos.trader_address.substring(38)}` : '-'}
                             </TableCell>
                             <TableCell className="text-right">{formatPrice(pos.executed_price)}</TableCell>
                             <TableCell className="text-right font-medium">
@@ -685,12 +679,12 @@ export default function ComprehensiveLTDetailPage() {
                               </div>
                             </TableCell>
                             <TableCell className="text-right text-sm text-muted-foreground">
-                              {new Date(pos.order_placed_at).toLocaleString('en-US', { 
+                              {pos.order_placed_at ? new Date(pos.order_placed_at).toLocaleString('en-US', { 
                                 month: 'short',
                                 day: 'numeric',
                                 hour: '2-digit',
                                 minute: '2-digit'
-                              })}
+                              }) : '-'}
                             </TableCell>
                           </TableRow>
                         );
@@ -725,7 +719,6 @@ export default function ComprehensiveLTDetailPage() {
                       <TableRow>
                         <TableHead>Market</TableHead>
                         <TableHead className="text-right">Entry</TableHead>
-                        <TableHead className="text-right">Size</TableHead>
                         <TableHead className="text-right">Cost</TableHead>
                         <TableHead className="text-right">Outcome</TableHead>
                         <TableHead className="text-right">P&L</TableHead>
@@ -735,7 +728,8 @@ export default function ComprehensiveLTDetailPage() {
                     </TableHeader>
                     <TableBody>
                       {closedTrades.map((trade) => {
-                        const cost = trade.executed_price * trade.executed_size;
+                        const shares = Number(trade.shares_bought) || Number(trade.executed_size) || 0;
+                        const cost = Number(trade.executed_size_usd) || (trade.executed_price * shares);
 
                         return (
                           <TableRow key={trade.lt_order_id}>
@@ -758,21 +752,20 @@ export default function ComprehensiveLTDetailPage() {
                               <div className="text-xs text-muted-foreground">{trade.token_label}</div>
                             </TableCell>
                             <TableCell className="text-right">{formatPrice(trade.executed_price)}</TableCell>
-                            <TableCell className="text-right text-sm">{trade.executed_size.toFixed(2)}</TableCell>
                             <TableCell className="text-right">{formatUsd(cost)}</TableCell>
                             <TableCell className="text-right">
                               <Badge variant={trade.outcome === 'WON' ? 'default' : trade.outcome === 'LOST' ? 'destructive' : 'secondary'} className="text-xs">
                                 {trade.outcome}
                               </Badge>
                             </TableCell>
-                            <TableCell className={`text-right font-semibold ${trade.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            <TableCell className={`text-right font-semibold ${(trade.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                               {formatPnl(trade.pnl)}
                             </TableCell>
                             <TableCell className="text-right text-xs text-muted-foreground">
-                              {new Date(trade.order_placed_at).toLocaleDateString()}
+                              {trade.order_placed_at ? new Date(trade.order_placed_at).toLocaleDateString() : '-'}
                             </TableCell>
                             <TableCell className="text-right text-xs text-muted-foreground">
-                              {new Date(trade.resolved_at).toLocaleDateString()}
+                              {trade.resolved_at ? new Date(trade.resolved_at).toLocaleDateString() : '-'}
                             </TableCell>
                           </TableRow>
                         );
@@ -788,7 +781,6 @@ export default function ComprehensiveLTDetailPage() {
         {/* Performance Tab */}
         <TabsContent value="performance">
           <div className="space-y-6">
-            {/* Performance Metrics */}
             <Card>
               <CardHeader>
                 <CardTitle>Performance Metrics</CardTitle>
@@ -800,34 +792,33 @@ export default function ComprehensiveLTDetailPage() {
                     <p className="text-xl font-semibold">{formatUsd(stats?.avg_trade_size || 0)}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Max Drawdown</p>
+                    <p className="text-sm text-muted-foreground">Current Drawdown</p>
                     <p className="text-xl font-semibold text-red-600">
-                      {riskState ? `${(riskState.current_drawdown_pct * 100).toFixed(2)}%` : '-'}
+                      {(Number(strategy.current_drawdown_pct) * 100).toFixed(2)}%
                     </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Fill Rate</p>
                     <p className="text-xl font-semibold">
-                      {(stats && stats.fill_rate_pct !== null) ? `${stats.fill_rate_pct.toFixed(0)}%` : '-'}
+                      {(stats && stats.fill_rate_pct != null) ? `${stats.fill_rate_pct.toFixed(0)}%` : '-'}
                     </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Avg Slippage</p>
                     <p className="text-xl font-semibold">
-                      {(stats && stats.avg_slippage_pct !== null) ? `${(Math.abs(stats.avg_slippage_pct) * 100).toFixed(2)}%` : '-'}
+                      {(stats && stats.avg_slippage_pct != null) ? `${(Math.abs(stats.avg_slippage_pct) * 100).toFixed(2)}%` : '-'}
                     </p>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Execution Quality */}
             <Card>
               <CardHeader>
                 <CardTitle>Execution Quality</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                   <div>
                     <span className="text-muted-foreground">Total Attempts:</span>
                     <span className="ml-2 font-semibold">{stats?.attempts || 0}</span>
@@ -844,6 +835,10 @@ export default function ComprehensiveLTDetailPage() {
                     <span className="text-muted-foreground">Failed:</span>
                     <span className="ml-2 font-semibold text-red-600">{stats?.failed || 0}</span>
                   </div>
+                  <div>
+                    <span className="text-muted-foreground">Avg Latency:</span>
+                    <span className="ml-2 font-semibold">{stats?.avg_latency_ms != null ? `${stats.avg_latency_ms}ms` : '-'}</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -853,16 +848,15 @@ export default function ComprehensiveLTDetailPage() {
         {/* Settings Tab */}
         <TabsContent value="settings">
           <div className="space-y-6">
-            {/* Strategy Configuration */}
             <Card>
               <CardHeader>
                 <CardTitle>Strategy Configuration</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                   <div>
-                    <span className="text-muted-foreground">Starting Capital:</span>
-                    <span className="ml-2 font-semibold">{formatUsd(strategy.starting_capital)}</span>
+                    <span className="text-muted-foreground">Initial Capital:</span>
+                    <span className="ml-2 font-semibold">{formatUsd(Number(strategy.initial_capital))}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Slippage Tolerance:</span>
@@ -873,14 +867,21 @@ export default function ComprehensiveLTDetailPage() {
                     <span className="ml-2 font-semibold">{strategy.order_type}</span>
                   </div>
                   <div>
+                    <span className="text-muted-foreground">Cooldown Hours:</span>
+                    <span className="ml-2 font-semibold">{strategy.cooldown_hours}h</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Order Size Range:</span>
+                    <span className="ml-2 font-semibold">{formatUsd(strategy.min_order_size_usd)} - {formatUsd(strategy.max_order_size_usd)}</span>
+                  </div>
+                  <div>
                     <span className="text-muted-foreground">Wallet:</span>
-                    <span className="ml-2 font-mono text-xs">{strategy.wallet_address.substring(0, 10)}...</span>
+                    <span className="ml-2 font-mono text-xs">{strategy.wallet_address?.substring(0, 10)}...</span>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Risk Management Panel */}
             <RiskSettingsPanel strategyId={id} />
           </div>
         </TabsContent>
