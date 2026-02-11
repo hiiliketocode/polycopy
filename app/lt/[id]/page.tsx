@@ -473,7 +473,7 @@ export default function ComprehensiveLTDetailPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold">
-              {stats?.avg_slippage_pct !== null ? `${(Math.abs(stats.avg_slippage_pct) * 100).toFixed(2)}%` : '-'}
+              {(stats && stats.avg_slippage_pct !== null) ? `${(Math.abs(stats.avg_slippage_pct) * 100).toFixed(2)}%` : '-'}
             </div>
             <div className="text-xs text-muted-foreground">
               Avg slippage
