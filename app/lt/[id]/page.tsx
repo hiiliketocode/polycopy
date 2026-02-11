@@ -1,3 +1,10 @@
+/**
+ * Comprehensive LT Strategy Detail Page
+ * Matches FT detail page format with live pricing and all KPIs
+ * 
+ * This will replace the existing /lt/[id]/page.tsx once complete
+ */
+
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -6,13 +13,30 @@ import { useParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Save, Wallet, ListOrdered, BarChart3, RefreshCw, AlertTriangle, ChevronUp, ChevronDown, ExternalLink, FileText, Filter } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { 
+  ArrowLeft,
+  RefreshCw,
+  TrendingUp,
+  TrendingDown,
+  Briefcase,
+  ListOrdered,
+  BarChart3,
+  Settings,
+  Target,
+  Clock,
+  Activity,
+  Filter,
+  FileText,
+  AlertCircle,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown
+} from 'lucide-react';
 import { RiskSettingsPanel } from '@/components/lt/risk-settings-panel';
 
-interface LTStrategyDetail {
+interface LTStrategy {
   strategy_id: string;
   ft_wallet_id: string;
   display_name: string;
@@ -21,492 +45,601 @@ interface LTStrategyDetail {
   is_paused: boolean;
   launched_at: string | null;
   starting_capital: number;
-  slippage_tolerance_pct: number | null;
   wallet_address: string;
+  slippage_tolerance_pct: number;
+  order_type: string;
   last_sync_time: string | null;
-  health_status: string;
   created_at: string;
-  lt_risk_state?: Array<{ current_equity?: number; peak_equity?: number; current_drawdown_pct?: number; consecutive_losses?: number; is_paused?: boolean; circuit_breaker_active?: boolean }>;
 }
 
-interface LTOrder {
-  lt_order_id: string;
-  order_id?: string | null;
-  polymarket_order_id?: string | null;
-  market_title: string | null;
-  market_slug: string | null;
-  token_label: string | null;
-  trader_address: string | null;
-  signal_price: number | null;
-  signal_size_usd: number | null;
-  executed_price: number | null;
-  executed_size: number | null;
-  slippage_pct: number | null;
-  fill_rate: number | null;
-  execution_latency_ms: number | null;
-  status: string;
-  rejection_reason: string | null;
-  outcome: string | null;
-  pnl: number | null;
-  winning_label: string | null;
-  ft_entry_price: number | null;
-  ft_pnl: number | null;
-  performance_diff_pct: number | null;
-  order_placed_at: string;
-  resolved_at: string | null;
-  is_force_test?: boolean;
-}
-
-interface OrderStats {
-  total_attempts: number;
-  filled: number;
-  failed: number;
-  pending: number;
+interface Stats {
+  total_trades: number;
   open_positions: number;
-  closed_positions: number;
   won: number;
   lost: number;
   win_rate: number | null;
   realized_pnl: number;
-  total_signal_usd: number;
-  total_executed_usd: number;
+  unrealized_pnl: number;
+  total_pnl: number;
+  current_balance: number;
+  cash_available: number;
+  avg_trade_size: number;
+  first_trade: string | null;
+  last_trade: string | null;
+  attempts: number;
+  filled: number;
+  failed: number;
+  pending: number;
   fill_rate_pct: number | null;
-  avg_fill_rate: number | null;
   avg_slippage_pct: number | null;
-  max_slippage_pct: number | null;
-  avg_latency_ms: number | null;
 }
 
-type OrderSortField = 'market' | 'size' | 'price' | 'pnl' | 'time' | 'slippage' | 'fill_rate';
+interface RiskState {
+  current_equity: number;
+  peak_equity: number;
+  current_drawdown_pct: number;
+  consecutive_losses: number;
+  daily_spent_usd: number;
+  is_paused: boolean;
+  circuit_breaker_active: boolean;
+  pause_reason: string | null;
+}
 
-export default function LTStrategyDetailPage() {
+interface Position {
+  lt_order_id: string;
+  order_id: string;
+  market_title: string;
+  market_slug: string | null;
+  token_label: string;
+  trader_address: string;
+  executed_price: number;
+  executed_size: number;
+  signal_price: number;
+  order_placed_at: string;
+  outcome: string;
+  // Will add current_price via live pricing
+  current_price?: number | null;
+}
+
+interface Trade {
+  lt_order_id: string;
+  market_title: string;
+  token_label: string;
+  executed_price: number;
+  executed_size: number;
+  outcome: string;
+  pnl: number;
+  resolved_at: string;
+  order_placed_at: string;
+}
+
+type SortField = 'market' | 'trader' | 'entry' | 'current' | 'size' | 'value' | 'pnl' | 'order_time' | 'resolves';
+
+export default function ComprehensiveLTDetailPage() {
   const params = useParams();
   const id = params?.id as string;
-  const [strategy, setStrategy] = useState<LTStrategyDetail | null>(null);
-  const [openOrders, setOpenOrders] = useState<LTOrder[]>([]);
-  const [pendingOrders, setPendingOrders] = useState<LTOrder[]>([]);
-  const [closedOrders, setClosedOrders] = useState<LTOrder[]>([]);
-  const [failedOrders, setFailedOrders] = useState<LTOrder[]>([]);
-  const [orderStats, setOrderStats] = useState<OrderStats | null>(null);
+  
+  const [strategy, setStrategy] = useState<LTStrategy | null>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [riskState, setRiskState] = useState<RiskState | null>(null);
+  const [openPositions, setOpenPositions] = useState<Position[]>([]);
+  const [closedTrades, setClosedTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
-  const [ordersLoading, setOrdersLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState('');
-  const [startingCapital, setStartingCapital] = useState('');
-  const [slippagePct, setSlippagePct] = useState('3');
-  const [isActive, setIsActive] = useState(false);
-  const [activeTab, setActiveTab] = useState<'pending' | 'open' | 'closed' | 'failed' | 'settings'>('pending');
-  const [sortField, setSortField] = useState<OrderSortField>('time');
+  const [activeTab, setActiveTab] = useState<'positions' | 'trades' | 'performance' | 'settings'>('positions');
+  const [sortField, setSortField] = useState<SortField>('order_time');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [clobStatus, setClobStatus] = useState<{ orderId: string; marketTitle: string; loading: boolean; data?: any; error?: string } | null>(null);
+  const [livePrices, setLivePrices] = useState<Record<string, { current_price: number; unrealized_pnl: number }>>({});
 
-  const fetchStrategy = useCallback(async () => {
-    if (!id) return;
-    setLoading(true);
-    setError(null);
+  // Fetch live prices for open positions
+  const fetchLivePrices = useCallback(async () => {
     try {
-      const res = await fetch(`/api/lt/strategies/${encodeURIComponent(id)}`, { cache: 'no-store' });
+      const res = await fetch(`/api/lt/live-prices?strategy=${id}`, { cache: 'no-store' });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to load');
-      setStrategy(data.strategy);
-      setDisplayName(data.strategy.display_name || '');
-      setStartingCapital(String(data.strategy.starting_capital ?? ''));
-      setSlippagePct(String(data.strategy.slippage_tolerance_pct ?? 3));
-      setIsActive(!!data.strategy.is_active);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load');
+      
+      if (data.success && data.prices) {
+        setLivePrices(data.prices);
+      }
+    } catch (error) {
+      console.error('Failed to fetch live prices:', error);
+    }
+  }, [id]);
+
+  // Load strategy data
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [stratRes, ordersRes] = await Promise.all([
+        fetch(`/api/lt/strategies/${id}`, { cache: 'no-store' }),
+        fetch(`/api/lt/strategies/${id}/orders`, { cache: 'no-store' })
+      ]);
+
+      const stratData = await stratRes.json();
+      const ordersData = await ordersRes.json();
+
+      if (!stratRes.ok) throw new Error(stratData.error || 'Failed to load strategy');
+      if (!ordersRes.ok) throw new Error(ordersData.error || 'Failed to load orders');
+
+      setStrategy(stratData.strategy);
+      
+      // Extract risk state if available
+      const rs = stratData.strategy?.lt_risk_state;
+      if (Array.isArray(rs) && rs.length > 0) {
+        setRiskState(rs[0]);
+      } else if (rs && typeof rs === 'object') {
+        setRiskState(rs as RiskState);
+      }
+
+      // Set stats
+      setStats(ordersData.stats || null);
+      
+      // Set positions and trades
+      setOpenPositions(ordersData.open_orders || []);
+      setClosedTrades(ordersData.closed_orders || []);
+
+    } catch (err: any) {
+      setError(err.message || 'Failed to load data');
     } finally {
       setLoading(false);
     }
   }, [id]);
 
-  const fetchOrders = useCallback(async () => {
-    if (!id) return;
-    setOrdersLoading(true);
-    try {
-      const res = await fetch(`/api/lt/strategies/${encodeURIComponent(id)}/orders`, { cache: 'no-store' });
-      const data = await res.json();
-      if (res.ok) {
-        setOpenOrders(data.open_orders || []);
-        setPendingOrders(data.pending_orders || []);
-        setClosedOrders(data.closed_orders || []);
-        setFailedOrders(data.failed_orders || []);
-        setOrderStats(data.stats || null);
+  useEffect(() => {
+    loadData();
+    fetchLivePrices(); // Load prices immediately
+  }, [loadData, fetchLivePrices]);
+
+  // Auto-refresh data every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!refreshing) {
+        setRefreshing(true);
+        loadData().finally(() => setRefreshing(false));
       }
-    } catch {
-      // non-blocking
-    } finally {
-      setOrdersLoading(false);
-    }
-  }, [id]);
+    }, 30000);
 
-  useEffect(() => { fetchStrategy(); }, [fetchStrategy]);
-  useEffect(() => { if (id && !loading) fetchOrders(); }, [id, loading, fetchOrders]);
+    return () => clearInterval(interval);
+  }, [loadData, refreshing]);
 
-  const handleSave = async () => {
-    if (!id) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/lt/strategies/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          display_name: displayName || undefined,
-          starting_capital: startingCapital ? parseFloat(startingCapital) : undefined,
-          slippage_tolerance_pct: slippagePct ? parseFloat(slippagePct) : undefined,
-          is_active: isActive,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to update');
-      setStrategy(data.strategy);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to update');
-    } finally {
-      setSaving(false);
+  // Auto-refresh live prices every 15 seconds (faster for real-time P&L)
+  useEffect(() => {
+    const priceInterval = setInterval(() => {
+      fetchLivePrices();
+    }, 15000);
+
+    return () => clearInterval(priceInterval);
+  }, [fetchLivePrices]);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    Promise.all([loadData(), fetchLivePrices()])
+      .finally(() => setRefreshing(false));
+  };
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('desc');
     }
   };
 
-  const formatUsd = (n: number) => (n >= 0 ? `$${n.toFixed(2)}` : `-$${Math.abs(n).toFixed(2)}`);
-  const formatPct = (n: number | null) => n != null ? `${(n * 100).toFixed(2)}%` : '-';
-  const formatTime = (s: string | null) => s ? new Date(s).toLocaleString() : '-';
-  const formatPrice = (n: number | null) => n != null ? `${(Number(n) * 100).toFixed(1)}¢` : '-';
-
-  const handleSort = (field: OrderSortField) => {
-    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortDir('desc'); }
-  };
-
-  const handleCheckClobStatus = useCallback(async (o: LTOrder) => {
-    const orderId = o.polymarket_order_id || o.order_id;
-    if (!orderId) return;
-    setClobStatus({ orderId, marketTitle: o.market_title || 'Order', loading: true });
-    try {
-      const res = await fetch(`/api/polymarket/orders/${encodeURIComponent(orderId)}/clob-status`, { cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) {
-        setClobStatus(prev => prev ? { ...prev, loading: false, error: data.error || data.details || res.statusText } : null);
-        return;
-      }
-      setClobStatus(prev => prev ? { ...prev, loading: false, data } : null);
-    } catch (e) {
-      setClobStatus(prev => prev ? { ...prev, loading: false, error: e instanceof Error ? e.message : 'Failed to fetch' } : null);
-    }
-  }, []);
-
-  const sortOrders = useCallback((orders: LTOrder[]) => {
-    return [...orders].sort((a, b) => {
-      const m = sortDir === 'asc' ? 1 : -1;
-      switch (sortField) {
-        case 'market': return m * (a.market_title || '').localeCompare(b.market_title || '');
-        case 'size': return m * ((Number(a.executed_size) || 0) - (Number(b.executed_size) || 0));
-        case 'price': return m * ((Number(a.executed_price) || 0) - (Number(b.executed_price) || 0));
-        case 'pnl': return m * ((Number(a.pnl) || 0) - (Number(b.pnl) || 0));
-        case 'slippage': return m * ((Number(a.slippage_pct) || 0) - (Number(b.slippage_pct) || 0));
-        case 'fill_rate': return m * ((Number(a.fill_rate) || 0) - (Number(b.fill_rate) || 0));
-        case 'time': default: return m * (new Date(a.order_placed_at).getTime() - new Date(b.order_placed_at).getTime());
-      }
-    });
-  }, [sortField, sortDir]);
-
-  const sortedOpen = useMemo(() => sortOrders(openOrders), [openOrders, sortOrders]);
-  const sortedPending = useMemo(() => sortOrders(pendingOrders), [pendingOrders, sortOrders]);
-  const sortedClosed = useMemo(() => sortOrders(closedOrders), [closedOrders, sortOrders]);
-  const sortedFailed = useMemo(() => sortOrders(failedOrders), [failedOrders, sortOrders]);
-
-  const SortTH = ({ field, label, align }: { field: OrderSortField; label: string; align?: 'right' }) => (
+  const SortHeader = ({ field, label, align = 'left' }: { field: SortField; label: string; align?: 'left' | 'right' }) => (
     <TableHead
-      className={`cursor-pointer select-none hover:bg-muted/50 ${align === 'right' ? 'text-right' : ''}`}
+      className={`cursor-pointer ${align === 'right' ? 'text-right' : ''}`}
       onClick={() => handleSort(field)}
     >
-      <span className={`inline-flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
+      <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
         {label}
-        {sortField === field && (sortDir === 'desc' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />)}
-      </span>
+        {sortField === field ? (
+          sortDir === 'desc' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />
+        ) : (
+          <ChevronsUpDown className="h-3 w-3 opacity-30" />
+        )}
+      </div>
     </TableHead>
   );
 
-  const risk = strategy?.lt_risk_state?.[0] || null;
+  // Sort positions
+  const sortedPositions = useMemo(() => {
+    return [...openPositions].sort((a, b) => {
+      let aVal: any = 0;
+      let bVal: any = 0;
+
+      switch (sortField) {
+        case 'market':
+          aVal = a.market_title || '';
+          bVal = b.market_title || '';
+          break;
+        case 'trader':
+          aVal = a.trader_address || '';
+          bVal = b.trader_address || '';
+          break;
+        case 'entry':
+          aVal = a.executed_price || 0;
+          bVal = b.executed_price || 0;
+          break;
+        case 'current':
+          aVal = a.current_price || 0;
+          bVal = b.current_price || 0;
+          break;
+        case 'size':
+          aVal = (a.executed_price * a.executed_size) || 0;
+          bVal = (b.executed_price * b.executed_size) || 0;
+          break;
+        case 'value':
+          aVal = a.current_price ? (a.current_price * a.executed_size) : 0;
+          bVal = b.current_price ? (b.current_price * b.executed_size) : 0;
+          break;
+        case 'pnl':
+          const aPnl = a.current_price ? ((a.current_price - a.executed_price) * a.executed_size) : 0;
+          const bPnl = b.current_price ? ((b.current_price - b.executed_price) * b.executed_size) : 0;
+          aVal = aPnl;
+          bVal = bPnl;
+          break;
+        case 'order_time':
+          aVal = new Date(a.order_placed_at).getTime();
+          bVal = new Date(b.order_placed_at).getTime();
+          break;
+      }
+
+      if (typeof aVal === 'string') {
+        return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+      return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+  }, [openPositions, sortField, sortDir]);
+
+  // Helper functions
+  const formatUsd = (n: number | null | undefined): string => {
+    if (n === null || n === undefined) return '-';
+    return n >= 0 ? `$${n.toFixed(2)}` : `-$${Math.abs(n).toFixed(2)}`;
+  };
+
+  const formatPnl = (n: number | null | undefined): string => {
+    if (n === null || n === undefined) return '-';
+    const sign = n >= 0 ? '+' : '';
+    return n >= 0 ? `+$${n.toFixed(2)}` : `-$${Math.abs(n).toFixed(2)}`;
+  };
+
+  const formatPct = (n: number | null | undefined): string => {
+    if (n === null || n === undefined) return '-';
+    const sign = n >= 0 ? '+' : '';
+    return `${sign}${n.toFixed(2)}%`;
+  };
+
+  const formatPrice = (n: number | null | undefined): string => {
+    if (n === null || n === undefined) return '-';
+    if (n < 0.01) return '<1¢';
+    return `${(n * 100).toFixed(0)}¢`;
+  };
 
   if (loading) {
     return (
-      <div className="container mx-auto py-8 px-4 flex items-center justify-center h-64">
-        <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (error && !strategy) {
-    const ftWalletId = id.startsWith('LT_') ? id.slice(3) : null;
-    return (
       <div className="container mx-auto py-8 px-4">
-        <div className="max-w-2xl mx-auto space-y-4">
-          <p className="text-red-600 font-medium">{error}</p>
-          <p className="text-muted-foreground text-sm">This live strategy may not exist yet or may belong to a different account.</p>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/ft"><Button variant="outline"><ArrowLeft className="h-4 w-4 mr-2" />Back to FT</Button></Link>
-            {ftWalletId && (
-              <Link href={`/lt?createFrom=${encodeURIComponent(ftWalletId)}`}>
-                <Button className="bg-[#FDB022] text-slate-900 hover:bg-[#FDB022]/90">Create this live strategy</Button>
-              </Link>
-            )}
-          </div>
+        <div className="text-center py-12">
+          <Activity className="h-12 w-12 mx-auto mb-4 animate-pulse text-muted-foreground" />
+          <p className="text-muted-foreground">Loading strategy...</p>
         </div>
       </div>
     );
   }
 
-  const returnPct = strategy && strategy.starting_capital > 0
-    ? (((risk?.current_equity ?? strategy.starting_capital) - strategy.starting_capital) / strategy.starting_capital) * 100
+  if (error || !strategy) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <div className="text-center py-12">
+          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+          <p className="text-red-600 mb-4">{error || 'Strategy not found'}</p>
+          <Link href="/lt">
+            <Button>Back to LT</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const winRate = stats && (stats.won + stats.lost) > 0 
+    ? (stats.won / (stats.won + stats.lost)) * 100 
+    : null;
+  
+  const returnPct = strategy.starting_capital > 0
+    ? ((riskState?.current_equity || strategy.starting_capital) - strategy.starting_capital) / strategy.starting_capital * 100
     : 0;
 
-  const OrderRow = ({ o, showOutcome, showSource, showCheckStatus, onCheckStatus }: { o: LTOrder; showOutcome: boolean; showSource?: boolean; showCheckStatus?: boolean; onCheckStatus?: (o: LTOrder) => void }) => (
-    <TableRow>
-      <TableCell className="font-medium max-w-[220px] truncate" title={o.market_title || ''}>{o.market_title || o.market_slug || '-'}</TableCell>
-      <TableCell>{o.token_label || '-'}</TableCell>
-      {showSource && (
-        <TableCell>
-          <Badge variant={o.is_force_test ? 'secondary' : 'default'} className={o.is_force_test ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}>
-            {o.is_force_test ? 'Forced' : 'Automatic'}
-          </Badge>
-        </TableCell>
-      )}
-      <TableCell className="text-right">{o.executed_size != null ? formatUsd(Number(o.executed_size)) : o.signal_size_usd != null ? formatUsd(Number(o.signal_size_usd)) : '-'}</TableCell>
-      <TableCell className="text-right">{formatPrice(o.executed_price ?? o.signal_price)}</TableCell>
-      <TableCell className="text-right text-muted-foreground">{o.slippage_pct != null ? `${(Number(o.slippage_pct) * 100).toFixed(2)}%` : '-'}</TableCell>
-      <TableCell className="text-right text-muted-foreground">{o.fill_rate != null ? `${(Number(o.fill_rate) * 100).toFixed(0)}%` : '-'}</TableCell>
-      {showOutcome && (
-        <TableCell className={`text-right font-medium ${o.pnl != null && Number(o.pnl) >= 0 ? 'text-green-600' : o.pnl != null ? 'text-red-600' : ''}`}>
-          {o.outcome === 'WON' ? 'Won' : o.outcome === 'LOST' ? 'Lost' : o.outcome || '-'}
-          {o.pnl != null && ` (${formatUsd(Number(o.pnl))})`}
-        </TableCell>
-      )}
-      {showCheckStatus && (o.polymarket_order_id || o.order_id) && (
-        <TableCell>
-          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => onCheckStatus?.(o)}>
-            <ExternalLink className="h-3 w-3 mr-1" /> Check status
-          </Button>
-        </TableCell>
-      )}
-      <TableCell className="text-muted-foreground text-xs">{formatTime(o.order_placed_at)}</TableCell>
-    </TableRow>
-  );
-
   return (
-    <div className="container mx-auto py-8 px-4">
+    <div className="container mx-auto py-8 px-4 max-w-7xl">
       {/* Header */}
       <div className="flex justify-between items-start mb-6">
         <div>
-          <Link href="/ft" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 mb-2">
-            <ArrowLeft className="h-4 w-4" /> Back to FT
+          <Link href="/lt" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 mb-2">
+            <ArrowLeft className="h-4 w-4" /> Back to LT
           </Link>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            {strategy?.display_name}
-            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">LIVE</Badge>
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            {strategy.display_name}
+            <Badge className="bg-purple-100 text-purple-700 border-purple-200">LIVE</Badge>
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Mirrors <Link href={`/ft/${strategy?.ft_wallet_id}`} className="text-[#FDB022] hover:underline">{strategy?.ft_wallet_id}</Link>
-            {' · '}{strategy?.is_active ? 'Active' : 'Inactive'}{strategy?.is_paused ? ' · Paused' : ''}
+            Mirrors <Link href={`/ft/${strategy.ft_wallet_id}`} className="text-[#FDB022] hover:underline">{strategy.ft_wallet_id}</Link>
+            {' · '}{strategy.is_active ? (strategy.is_paused ? 'Paused' : 'Active') : 'Inactive'}
           </p>
         </div>
-        <Button variant="outline" onClick={() => { fetchStrategy(); fetchOrders(); }} disabled={ordersLoading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${ordersLoading ? 'animate-spin' : ''}`} /> Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Link href={`/lt/logs?strategy=${id}`}>
+            <Button variant="outline" size="sm" className="border-[#FDB022] text-[#FDB022]">
+              <Filter className="h-4 w-4 mr-2" />
+              Strategy Logs
+            </Button>
+          </Link>
+          <Link href="/lt/logs">
+            <Button variant="outline" size="sm">
+              <FileText className="h-4 w-4 mr-2" />
+              All Logs
+            </Button>
+          </Link>
+          <Button variant="outline" onClick={handleRefresh} disabled={refreshing}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>
+        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-2">
+          <AlertCircle className="h-4 w-4" />
+          {error}
+        </div>
       )}
 
-      {/* Summary cards */}
+      {/* Summary Cards (Matching FT Format) */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
-        <Card><CardContent className="pt-4 pb-3">
-          <p className="text-xs text-muted-foreground">Capital</p>
-          <p className="text-xl font-bold">{formatUsd(risk?.current_equity ?? strategy?.starting_capital ?? 0)}</p>
-        </CardContent></Card>
-        <Card><CardContent className="pt-4 pb-3">
-          <p className="text-xs text-muted-foreground">Return</p>
-          <p className={`text-xl font-bold ${returnPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>{returnPct >= 0 ? '+' : ''}{returnPct.toFixed(2)}%</p>
-        </CardContent></Card>
-        <Card><CardContent className="pt-4 pb-3">
-          <p className="text-xs text-muted-foreground">P&L</p>
-          <p className={`text-xl font-bold ${(orderStats?.realized_pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatUsd(orderStats?.realized_pnl ?? 0)}</p>
-        </CardContent></Card>
-        <Card><CardContent className="pt-4 pb-3">
-          <p className="text-xs text-muted-foreground">Win Rate</p>
-          <p className="text-xl font-bold">{orderStats?.win_rate != null ? `${orderStats.win_rate}%` : '-'}</p>
-          <p className="text-xs text-muted-foreground">{orderStats?.won ?? 0}W / {orderStats?.lost ?? 0}L</p>
-        </CardContent></Card>
-        <Card><CardContent className="pt-4 pb-3">
-          <p className="text-xs text-muted-foreground">Fill Rate</p>
-          <p className="text-xl font-bold">{orderStats?.fill_rate_pct != null ? `${orderStats.fill_rate_pct}%` : '-'}</p>
-        </CardContent></Card>
-        <Card><CardContent className="pt-4 pb-3">
-          <p className="text-xs text-muted-foreground">Avg Slippage</p>
-          <p className="text-xl font-bold">{orderStats?.avg_slippage_pct != null ? `${(orderStats.avg_slippage_pct * 100).toFixed(2)}%` : '-'}</p>
-          {orderStats?.max_slippage_pct != null && <p className="text-xs text-muted-foreground">Max: {(orderStats.max_slippage_pct * 100).toFixed(2)}%</p>}
-        </CardContent></Card>
-        <Card><CardContent className="pt-4 pb-3">
-          <p className="text-xs text-muted-foreground">Attempts</p>
-          <p className="text-xl font-bold">{orderStats?.total_attempts ?? 0}</p>
-          <p className="text-xs text-muted-foreground">{orderStats?.filled ?? 0} filled · {orderStats?.failed ?? 0} failed</p>
-        </CardContent></Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">{formatUsd(riskState?.current_equity || strategy.starting_capital)}</div>
+            <div className="text-xs text-muted-foreground">
+              Cash: {formatUsd(stats?.cash_available || strategy.starting_capital)}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Balance</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className={`text-2xl font-bold ${(stats?.total_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatPnl(stats?.total_pnl || 0)}
+            </div>
+            <div className={`text-sm font-medium ${returnPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatPct(returnPct)}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Total P&L</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-xs text-muted-foreground mb-1">
+              {formatPnl(stats?.realized_pnl || 0)}
+            </div>
+            <div className={`text-lg font-semibold ${(stats?.unrealized_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatPnl(stats?.unrealized_pnl || 0)}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              <span className="text-muted-foreground">Realized</span> / Unrealized
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">{stats?.total_trades || 0}</div>
+            <div className="text-xs text-muted-foreground">
+              {stats?.open_positions || 0} open
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Trades</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">
+              {winRate !== null ? `${winRate.toFixed(0)}%` : '-'}
+            </div>
+            <div className="text-xs text-green-600">
+              {stats?.won || 0}W
+            </div>
+            <div className="text-xs text-red-600">
+              {stats?.lost || 0}L
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Win Rate</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">
+              {stats?.fill_rate_pct !== null ? `${stats?.fill_rate_pct.toFixed(0)}%` : '-'}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {stats?.filled || 0} / {stats?.attempts || 0} fills
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Fill Rate</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">
+              {stats?.avg_slippage_pct !== null ? `${(Math.abs(stats.avg_slippage_pct) * 100).toFixed(2)}%` : '-'}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Avg slippage
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Execution</p>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Tabs: Pending | Open | Closed | Failed | Settings */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+      {/* Status Banner (if paused or issues) */}
+      {strategy.is_paused && riskState?.pause_reason && (
+        <Card className="mb-6 border-orange-200 bg-orange-50">
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-orange-600" />
+              <div>
+                <p className="font-semibold text-orange-900">Strategy Paused</p>
+                <p className="text-sm text-orange-700">{riskState.pause_reason}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Risk State Summary */}
+      {riskState && (
+        <Card className="mb-6">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Target className="h-4 w-4" />
+              Risk Management Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">Current Drawdown:</span>
+                <span className={`ml-2 font-semibold ${riskState.current_drawdown_pct > 0.15 ? 'text-orange-600' : ''}`}>
+                  {(riskState.current_drawdown_pct * 100).toFixed(2)}%
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Peak Equity:</span>
+                <span className="ml-2 font-semibold">{formatUsd(riskState.peak_equity)}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Consecutive Losses:</span>
+                <span className="ml-2 font-semibold">{riskState.consecutive_losses}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Daily Spent:</span>
+                <span className="ml-2 font-semibold">{formatUsd(riskState.daily_spent_usd)}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Circuit Breaker:</span>
+                <span className={`ml-2 font-semibold ${riskState.circuit_breaker_active ? 'text-red-600' : 'text-green-600'}`}>
+                  {riskState.circuit_breaker_active ? 'Active' : 'OK'}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)}>
         <TabsList className="mb-4">
-          <TabsTrigger value="pending">Pending ({pendingOrders.length})</TabsTrigger>
-          <TabsTrigger value="open">Open ({openOrders.length})</TabsTrigger>
-          <TabsTrigger value="closed">Closed ({closedOrders.length})</TabsTrigger>
-          <TabsTrigger value="failed">Failed ({failedOrders.length})</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="positions" className="flex items-center gap-2">
+            <Briefcase className="h-4 w-4" />
+            Open Trades ({stats?.open_positions || 0})
+          </TabsTrigger>
+          <TabsTrigger value="trades" className="flex items-center gap-2">
+            <ListOrdered className="h-4 w-4" />
+            Resolved Trades ({(stats?.won || 0) + (stats?.lost || 0)})
+          </TabsTrigger>
+          <TabsTrigger value="performance" className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4" />
+            Performance
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            Settings
+          </TabsTrigger>
         </TabsList>
 
-        {/* Pending Orders — placed but not yet filled (force-test & cron) */}
-        <TabsContent value="pending">
+        {/* Open Positions Tab */}
+        <TabsContent value="positions">
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Pending orders</CardTitle>
-              <CardDescription>Orders placed and awaiting fill (force-test and live execution)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {ordersLoading ? <p className="text-muted-foreground text-sm py-4">Loading…</p> :
-               pendingOrders.length === 0 ? <p className="text-muted-foreground text-sm py-4">No pending orders.</p> : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader><TableRow>
-                      <SortTH field="market" label="Market" />
-                      <TableHead>Outcome</TableHead>
-                      <TableHead>Source</TableHead>
-                      <SortTH field="size" label="Size" align="right" />
-                      <SortTH field="price" label="Price" align="right" />
-                      <SortTH field="slippage" label="Slippage" align="right" />
-                      <TableHead>CLOB</TableHead>
-                      <SortTH field="time" label="Placed" />
-                    </TableRow></TableHeader>
-                    <TableBody>{sortedPending.map((o) => <OrderRow key={o.lt_order_id} o={o} showOutcome={false} showSource showCheckStatus onCheckStatus={handleCheckClobStatus} />)}</TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Open Orders */}
-        <TabsContent value="open">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Open positions</CardTitle>
-              <CardDescription>Active orders awaiting resolution</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {ordersLoading ? <p className="text-muted-foreground text-sm py-4">Loading…</p> :
-               openOrders.length === 0 ? <p className="text-muted-foreground text-sm py-4">No open positions.</p> : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader><TableRow>
-                      <SortTH field="market" label="Market" />
-                      <TableHead>Outcome</TableHead>
-                      <TableHead>Source</TableHead>
-                      <SortTH field="size" label="Size" align="right" />
-                      <SortTH field="price" label="Price" align="right" />
-                      <SortTH field="slippage" label="Slippage" align="right" />
-                      <SortTH field="fill_rate" label="Fill" align="right" />
-                      <TableHead>CLOB</TableHead>
-                      <SortTH field="time" label="Placed" />
-                    </TableRow></TableHeader>
-                    <TableBody>{sortedOpen.map((o) => <OrderRow key={o.lt_order_id} o={o} showOutcome={false} showSource showCheckStatus onCheckStatus={handleCheckClobStatus} />)}</TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Closed Orders */}
-        <TabsContent value="closed">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Closed positions</CardTitle>
-              <CardDescription>Resolved orders with P&L</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {ordersLoading ? <p className="text-muted-foreground text-sm py-4">Loading…</p> :
-               closedOrders.length === 0 ? <p className="text-muted-foreground text-sm py-4">No closed positions yet.</p> : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader><TableRow>
-                      <SortTH field="market" label="Market" />
-                      <TableHead>Outcome</TableHead>
-                      <TableHead>Source</TableHead>
-                      <SortTH field="size" label="Size" align="right" />
-                      <SortTH field="price" label="Price" align="right" />
-                      <SortTH field="slippage" label="Slippage" align="right" />
-                      <SortTH field="fill_rate" label="Fill" align="right" />
-                      <SortTH field="pnl" label="Result" align="right" />
-                      <TableHead>CLOB</TableHead>
-                      <SortTH field="time" label="Placed" />
-                    </TableRow></TableHeader>
-                    <TableBody>{sortedClosed.map((o) => <OrderRow key={o.lt_order_id} o={o} showOutcome={true} showSource showCheckStatus onCheckStatus={handleCheckClobStatus} />)}</TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Failed Orders */}
-        <TabsContent value="failed">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-red-500" /> Failed & rejected
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Briefcase className="h-5 w-5" />
+                Open Trades
               </CardTitle>
-              <CardDescription>Orders that were rejected, cancelled, or failed risk checks</CardDescription>
+              <CardDescription>
+                Active positions waiting for market resolution
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              {ordersLoading ? <p className="text-muted-foreground text-sm py-4">Loading…</p> :
-               failedOrders.length === 0 ? <p className="text-muted-foreground text-sm py-4">No failed orders.</p> : (
+              {openPositions.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground">No open positions</p>
+              ) : (
                 <div className="overflow-x-auto">
                   <Table>
-                    <TableHeader><TableRow>
-                      <TableHead>Market</TableHead>
-                      <TableHead>Outcome</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead className="text-right">Signal Size</TableHead>
-                      <TableHead className="text-right">Signal Price</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Reason</TableHead>
-                      <TableHead>CLOB</TableHead>
-                      <TableHead>Placed</TableHead>
-                    </TableRow></TableHeader>
+                    <TableHeader>
+                      <TableRow>
+                        <SortHeader field="market" label="Market" />
+                        <SortHeader field="trader" label="Trader" />
+                        <SortHeader field="entry" label="Entry" align="right" />
+                        <SortHeader field="current" label="Current" align="right" />
+                        <SortHeader field="size" label="Cost" align="right" />
+                        <TableHead className="text-right">Value</TableHead>
+                        <SortHeader field="pnl" label="P&L" align="right" />
+                        <SortHeader field="order_time" label="Placed" align="right" />
+                      </TableRow>
+                    </TableHeader>
                     <TableBody>
-                      {sortedFailed.map((o) => (
-                        <TableRow key={o.lt_order_id}>
-                          <TableCell className="font-medium max-w-[220px] truncate" title={o.market_title || ''}>{o.market_title || '-'}</TableCell>
-                          <TableCell>{o.token_label || '-'}</TableCell>
-                          <TableCell>
-                            <Badge variant={o.is_force_test ? 'secondary' : 'default'} className={o.is_force_test ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}>
-                              {o.is_force_test ? 'Forced' : 'Automatic'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">{o.signal_size_usd != null ? formatUsd(Number(o.signal_size_usd)) : '-'}</TableCell>
-                          <TableCell className="text-right">{formatPrice(o.signal_price)}</TableCell>
-                          <TableCell className="text-red-600">{o.status}</TableCell>
-                          <TableCell className="text-muted-foreground text-xs max-w-[200px] truncate" title={o.rejection_reason || ''}>{o.rejection_reason || '-'}</TableCell>
-                          <TableCell>
-                            {(o.polymarket_order_id || o.order_id) && (
-                              <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => handleCheckClobStatus(o)}>
-                                <ExternalLink className="h-3 w-3 mr-1" /> Check status
-                              </Button>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground text-xs">{formatTime(o.order_placed_at)}</TableCell>
-                        </TableRow>
-                      ))}
+                      {sortedPositions.map((pos) => {
+                        // Use live price if available, otherwise use entry price
+                        const liveData = livePrices[pos.lt_order_id];
+                        const currentPrice = liveData?.current_price ?? pos.current_price ?? pos.executed_price;
+                        const hasLivePrice = !!liveData;
+                        
+                        const cost = pos.executed_price * pos.executed_size;
+                        const currentValue = currentPrice * pos.executed_size;
+                        const unrealizedPnl = (currentPrice - pos.executed_price) * pos.executed_size;
+                        const pnlPct = cost > 0 ? (unrealizedPnl / cost) * 100 : 0;
+
+                        return (
+                          <TableRow key={pos.lt_order_id}>
+                            <TableCell className="max-w-[300px]">
+                              <div className="font-medium">{pos.market_title}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {pos.token_label} · {pos.executed_size.toFixed(2)} contracts
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {pos.trader_address ? `${pos.trader_address.substring(0, 6)}...${pos.trader_address.substring(38)}` : '-'}
+                            </TableCell>
+                            <TableCell className="text-right">{formatPrice(pos.executed_price)}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              <div className="flex items-center justify-end gap-1">
+                                {formatPrice(currentPrice)}
+                                {hasLivePrice && (
+                                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live price" />
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">{formatUsd(cost)}</TableCell>
+                            <TableCell className="text-right font-medium">{formatUsd(currentValue)}</TableCell>
+                            <TableCell className={`text-right font-semibold ${unrealizedPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {formatPnl(unrealizedPnl)}
+                              <div className="text-xs">
+                                {formatPct(pnlPct)}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right text-sm text-muted-foreground">
+                              {new Date(pos.order_placed_at).toLocaleString('en-US', { 
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -515,95 +648,174 @@ export default function LTStrategyDetailPage() {
           </Card>
         </TabsContent>
 
-        {/* Settings */}
-        <TabsContent value="settings">
+        {/* Resolved Trades Tab */}
+        <TabsContent value="trades">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2"><Wallet className="h-5 w-5" /> Strategy settings</CardTitle>
-              <CardDescription>Display name, capital, and activation.</CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                <ListOrdered className="h-5 w-5" />
+                Resolved Trades
+              </CardTitle>
+              <CardDescription>
+                Historical trades with final P&L
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Display name</label>
-                <input value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full border border-input bg-background rounded-md px-3 py-2 text-sm" placeholder="e.g. Live: My FT Wallet" />
-              </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Starting capital ($)</label>
-                <input type="number" value={startingCapital} onChange={(e) => setStartingCapital(e.target.value)}
-                  className="w-full border border-input bg-background rounded-md px-3 py-2 text-sm w-32" min={0} step={100} />
-              </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Slippage tolerance (%)</label>
-                <input type="number" value={slippagePct} onChange={(e) => setSlippagePct(e.target.value)}
-                  className="w-full border border-input bg-background rounded-md px-3 py-2 text-sm w-24" min={0} max={100} step={0.5} />
-                <p className="text-xs text-muted-foreground mt-0.5">Default 3%. Higher values can improve fill rate.</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <input type="checkbox" id="is_active" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="rounded border-input" />
-                <label htmlFor="is_active" className="text-sm">Strategy active (execution will run when not paused)</label>
-              </div>
-              <div className="text-xs text-muted-foreground space-y-1">
-                <p>Wallet: <code className="font-mono">{strategy?.wallet_address}</code></p>
-                <p>Created: {formatTime(strategy?.created_at || null)}</p>
-                <p>Health: {strategy?.health_status}</p>
-                {risk && (
-                  <p>Risk: Equity {formatUsd(risk.current_equity ?? 0)} / Peak {formatUsd(risk.peak_equity ?? 0)}
-                    {(risk.current_drawdown_pct ?? 0) > 0 && ` · DD ${((risk.current_drawdown_pct ?? 0) * 100).toFixed(1)}%`}
-                    {(risk.consecutive_losses ?? 0) > 0 && ` · ${risk.consecutive_losses} consecutive losses`}
-                  </p>
-                )}
-              </div>
-              <Button onClick={handleSave} disabled={saving} className="bg-[#FDB022] text-slate-900 hover:bg-[#FDB022]/90">
-                <Save className="h-4 w-4 mr-2" />{saving ? 'Saving…' : 'Save'}
-              </Button>
+            <CardContent>
+              {closedTrades.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground">No resolved trades yet</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Market</TableHead>
+                        <TableHead className="text-right">Entry</TableHead>
+                        <TableHead className="text-right">Size</TableHead>
+                        <TableHead className="text-right">Cost</TableHead>
+                        <TableHead className="text-right">Outcome</TableHead>
+                        <TableHead className="text-right">P&L</TableHead>
+                        <TableHead className="text-right">Placed</TableHead>
+                        <TableHead className="text-right">Resolved</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {closedTrades.map((trade) => {
+                        const cost = trade.executed_price * trade.executed_size;
+
+                        return (
+                          <TableRow key={trade.lt_order_id}>
+                            <TableCell className="max-w-[300px]">
+                              <div className="font-medium">{trade.market_title}</div>
+                              <div className="text-xs text-muted-foreground">{trade.token_label}</div>
+                            </TableCell>
+                            <TableCell className="text-right">{formatPrice(trade.executed_price)}</TableCell>
+                            <TableCell className="text-right text-sm">{trade.executed_size.toFixed(2)}</TableCell>
+                            <TableCell className="text-right">{formatUsd(cost)}</TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant={trade.outcome === 'WON' ? 'default' : trade.outcome === 'LOST' ? 'destructive' : 'secondary'} className="text-xs">
+                                {trade.outcome}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className={`text-right font-semibold ${trade.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {formatPnl(trade.pnl)}
+                            </TableCell>
+                            <TableCell className="text-right text-xs text-muted-foreground">
+                              {new Date(trade.order_placed_at).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell className="text-right text-xs text-muted-foreground">
+                              {new Date(trade.resolved_at).toLocaleDateString()}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
+        </TabsContent>
 
-          {/* Risk Management Settings Panel */}
-          <div className="mt-6">
+        {/* Performance Tab */}
+        <TabsContent value="performance">
+          <div className="space-y-6">
+            {/* Performance Metrics */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Performance Metrics</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Avg Trade Size</p>
+                    <p className="text-xl font-semibold">{formatUsd(stats?.avg_trade_size || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Max Drawdown</p>
+                    <p className="text-xl font-semibold text-red-600">
+                      {riskState ? `${(riskState.current_drawdown_pct * 100).toFixed(2)}%` : '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Fill Rate</p>
+                    <p className="text-xl font-semibold">
+                      {stats?.fill_rate_pct !== null ? `${stats.fill_rate_pct.toFixed(0)}%` : '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Avg Slippage</p>
+                    <p className="text-xl font-semibold">
+                      {stats?.avg_slippage_pct !== null ? `${(Math.abs(stats.avg_slippage_pct) * 100).toFixed(2)}%` : '-'}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Execution Quality */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Execution Quality</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Total Attempts:</span>
+                    <span className="ml-2 font-semibold">{stats?.attempts || 0}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Filled:</span>
+                    <span className="ml-2 font-semibold text-green-600">{stats?.filled || 0}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Pending:</span>
+                    <span className="ml-2 font-semibold text-orange-600">{stats?.pending || 0}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Failed:</span>
+                    <span className="ml-2 font-semibold text-red-600">{stats?.failed || 0}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Settings Tab */}
+        <TabsContent value="settings">
+          <div className="space-y-6">
+            {/* Strategy Configuration */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Strategy Configuration</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Starting Capital:</span>
+                    <span className="ml-2 font-semibold">{formatUsd(strategy.starting_capital)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Slippage Tolerance:</span>
+                    <span className="ml-2 font-semibold">{strategy.slippage_tolerance_pct}%</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Order Type:</span>
+                    <span className="ml-2 font-semibold">{strategy.order_type}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Wallet:</span>
+                    <span className="ml-2 font-mono text-xs">{strategy.wallet_address.substring(0, 10)}...</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Risk Management Panel */}
             <RiskSettingsPanel strategyId={id} />
           </div>
         </TabsContent>
       </Tabs>
-
-      {/* CLOB status dialog */}
-      <Dialog open={!!clobStatus} onOpenChange={(open) => !open && setClobStatus(null)}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Polymarket CLOB status</DialogTitle>
-            {clobStatus && <p className="text-sm text-muted-foreground truncate" title={clobStatus.marketTitle}>{clobStatus.marketTitle}</p>}
-          </DialogHeader>
-          {clobStatus && (
-            <div className="space-y-3 text-sm">
-              {clobStatus.loading && <p className="text-muted-foreground">Loading…</p>}
-              {clobStatus.error && <p className="text-red-600">{clobStatus.error}</p>}
-              {!clobStatus.loading && clobStatus.data && (
-                <>
-                  <div className="grid grid-cols-2 gap-2">
-                    <span className="text-muted-foreground">Status</span>
-                    <span className="font-medium">{String(clobStatus.data.status ?? clobStatus.data.raw?.status ?? '—').toUpperCase()}</span>
-                    <span className="text-muted-foreground">Size matched</span>
-                    <span>{clobStatus.data.size_matched ?? clobStatus.data.filledSize ?? clobStatus.data.raw?.size_matched ?? '—'}</span>
-                    <span className="text-muted-foreground">Filled size</span>
-                    <span>{clobStatus.data.filledSize ?? clobStatus.data.raw?.size_matched ?? '—'}</span>
-                    <span className="text-muted-foreground">Remaining</span>
-                    <span>{clobStatus.data.remainingSize ?? clobStatus.data.raw?.remaining_size ?? '—'}</span>
-                  </div>
-                  {clobStatus.data.raw && (
-                    <details className="mt-2">
-                      <summary className="cursor-pointer text-muted-foreground">Raw JSON from CLOB</summary>
-                      <pre className="mt-2 p-2 bg-muted rounded text-xs overflow-x-auto max-h-48 overflow-y-auto">
-                        {JSON.stringify(clobStatus.data.raw, null, 2)}
-                      </pre>
-                    </details>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
