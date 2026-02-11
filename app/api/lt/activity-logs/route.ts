@@ -25,6 +25,10 @@ export async function GET(request: Request) {
   const now = new Date();
   const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
+  // Get strategy filter from query params
+  const url = new URL(request.url);
+  const strategyFilter = url.searchParams.get('strategy');
+
   try {
     const logs: LogEntry[] = [];
 
@@ -54,10 +58,16 @@ export async function GET(request: Request) {
     }
 
     // 2. Get recent LT orders (shows LT execution activity)
-    const { data: recentLtOrders } = await supabase
+    let ltOrdersQuery = supabase
       .from('lt_orders')
       .select('lt_order_id, strategy_id, market_title, executed_price, executed_size, status, order_placed_at, fully_filled_at, rejection_reason')
-      .gte('order_placed_at', oneHourAgo.toISOString())
+      .gte('order_placed_at', oneHourAgo.toISOString());
+    
+    if (strategyFilter) {
+      ltOrdersQuery = ltOrdersQuery.eq('strategy_id', strategyFilter);
+    }
+    
+    const { data: recentLtOrders } = await ltOrdersQuery
       .order('order_placed_at', { ascending: false })
       .limit(50);
 

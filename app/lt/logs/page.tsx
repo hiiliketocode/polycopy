@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +36,9 @@ interface ActivityStats {
 }
 
 export default function LiveTradingLogsPage() {
+  const searchParams = useSearchParams();
+  const strategyFilter = searchParams.get('strategy') || null;
+  
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [stats, setStats] = useState<ActivityStats | null>(null);
   const [isAutoRefresh, setIsAutoRefresh] = useState(true);
@@ -44,7 +48,10 @@ export default function LiveTradingLogsPage() {
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/lt/activity-logs', { cache: 'no-store' });
+      const url = strategyFilter 
+        ? `/api/lt/activity-logs?strategy=${encodeURIComponent(strategyFilter)}`
+        : '/api/lt/activity-logs';
+      const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
       
       if (res.ok) {
@@ -148,9 +155,17 @@ export default function LiveTradingLogsPage() {
           <div className="flex items-center gap-3">
             <Activity className="h-8 w-8 text-[#FDB022]" />
             <div>
-              <h1 className="text-2xl font-bold">Live Trading Activity Logs</h1>
+              <h1 className="text-2xl font-bold">
+                Live Trading Activity Logs
+                {strategyFilter && (
+                  <Badge variant="outline" className="ml-3 text-sm font-normal border-[#FDB022] text-[#FDB022]">
+                    Filtered: {strategyFilter}
+                  </Badge>
+                )}
+              </h1>
               <p className="text-slate-600 text-sm">
                 Real-time execution monitoring - See trades being checked and executed
+                {strategyFilter && ' (filtered to this strategy)'}
               </p>
             </div>
           </div>
