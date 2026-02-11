@@ -102,7 +102,7 @@ export async function POST(request: Request) {
 
                 // Execution
                 slippage_tolerance_pct: slippage_tolerance_pct ?? 3,
-                order_type: order_type || 'FOK',
+                order_type: order_type || 'GTC',
                 min_order_size_usd: 1,
                 max_order_size_usd: 100,
 

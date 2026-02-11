@@ -285,7 +285,7 @@ export async function executeTrade(
     }
 
     const { price: finalPrice, size: finalSize, tickSize } = prepared;
-    const orderType = (strategy.order_type || 'FOK') as 'GTC' | 'FOK' | 'FAK' | 'IOC';
+    const orderType = (strategy.order_type || 'GTC') as 'GTC' | 'FOK' | 'FAK' | 'IOC';
 
     await traceLogger.info('ORDER_PLACE', `Placing ${orderType} ${side}: ${finalSize} contracts @ ${finalPrice}`, {
         order_type: orderType,
