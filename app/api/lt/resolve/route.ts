@@ -213,26 +213,33 @@ export async function POST(request: Request) {
 
             // Use actual fill price if available, otherwise use signal price
             const actualFillPrice = orderRecord?.price ? Number(orderRecord.price) : order.executed_price || order.signal_price;
-            const actualFillSize = filledSizeFromDb ?? Number(order.executed_size) ?? Number(order.signal_size_usd) ?? 0;
+            const sharesFilled = filledSizeFromDb ?? Number(order.executed_size) ?? 0;
+            const signalSizeUsd = Number(order.signal_size_usd) || 0;
 
-            // Calculate PnL using actual fill price
+            // LT: executed_size/filled_size = SHARES; signal_size_usd = USD. FT uses size in USD.
+            // Cost (USD) = shares * price when we have shares; else use signal_size_usd as cost.
+            const costUsd = sharesFilled > 0
+                ? sharesFilled * actualFillPrice
+                : signalSizeUsd;
+
+            // Calculate PnL — same logic as FT resolve (size in USD / cost)
             const side = (order.side || 'BUY').toUpperCase();
             let pnl: number;
 
             if (side === 'BUY') {
                 if (outcome === 'WON') {
-                    // Won: profit = (1 - entry_price) / entry_price * size
-                    pnl = actualFillPrice > 0 ? actualFillSize * (1 - actualFillPrice) / actualFillPrice : 0;
+                    // Won: profit = cost * (1 - entry_price) / entry_price (same as FT)
+                    pnl = actualFillPrice > 0 ? costUsd * (1 - actualFillPrice) / actualFillPrice : 0;
                 } else {
-                    // Lost: loss = -size
-                    pnl = -actualFillSize;
+                    // Lost: loss = -cost (same as FT: -size in USD)
+                    pnl = -costUsd;
                 }
             } else {
-                // SELL orders (less common)
+                // SELL orders (less common) — sz = proceeds = actualFillSize * actualFillPrice = costUsd
                 if (outcome === 'WON') {
-                    pnl = actualFillSize * actualFillPrice;
+                    pnl = costUsd * actualFillPrice;
                 } else {
-                    pnl = -actualFillSize * (1 - actualFillPrice);
+                    pnl = -costUsd * (1 - actualFillPrice);
                 }
             }
 
@@ -277,11 +284,11 @@ export async function POST(request: Request) {
                 if (outcome === 'WON') won++;
                 if (outcome === 'LOST') lost++;
 
-                // Update risk state
+                // Update risk state (use cost in USD, not shares)
                 await updateRiskStateAfterTrade(
                     supabase,
                     order.strategy_id,
-                    actualFillSize,
+                    costUsd,
                     outcome === 'WON'
                 );
 
