@@ -242,6 +242,8 @@ export async function GET(request: Request) {
                     unrealized_pnl: +unrealizedPnl.toFixed(2),
                     total_pnl: +totalPnl.toFixed(2),
                     current_equity: +(Number(s.initial_capital) + totalPnl).toFixed(2),
+                    current_balance: +(Number(s.initial_capital) + totalPnl).toFixed(2),
+                    cash_available: Number(s.available_cash),
                     available_cash: Number(s.available_cash),
                     locked_capital: Number(s.locked_capital),
                     cooldown_capital: Number(s.cooldown_capital),

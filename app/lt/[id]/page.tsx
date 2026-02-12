@@ -442,11 +442,11 @@ export default function LTDetailPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{formatUsd(Number(strategy.initial_capital))}</div>
+            <div className="text-2xl font-bold">{formatUsd(Number(strategy.initial_capital) + totalPnl)}</div>
             <div className="text-xs text-muted-foreground">
-              Cash: {formatUsd(Number(strategy.available_cash))}
+              Started: {formatUsd(Number(strategy.initial_capital))}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Capital</p>
+            <p className="text-xs text-muted-foreground mt-1">Equity</p>
           </CardContent>
         </Card>
 

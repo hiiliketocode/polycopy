@@ -1154,8 +1154,7 @@ export default function ForwardTestWalletsPage() {
                         return !isPaused && s.is_active;
                       })
                       .map((s) => {
-                        const risk = Array.isArray(s.lt_risk_state) && s.lt_risk_state[0] ? (s.lt_risk_state[0] as { current_equity?: number }) : null;
-                        const isPaused = s.is_paused || (risk as { is_paused?: boolean } | null)?.is_paused;
+                        const isPaused = s.is_paused || !s.is_active;
                         return (
                           <li
                             key={s.strategy_id}
@@ -1172,7 +1171,7 @@ export default function ForwardTestWalletsPage() {
                                 <Badge variant="secondary" className="bg-amber-100 text-amber-700">Paused</Badge>
                               )}
                               <span className="text-xs text-muted-foreground">
-                                Capital: ${risk?.current_equity ?? s.initial_capital ?? s.starting_capital ?? 0}
+                                Equity: ${s.lt_stats?.current_equity ?? s.initial_capital ?? 0}
                               </span>
                             </div>
                             <div className="flex items-center gap-2">
