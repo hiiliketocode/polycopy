@@ -69,7 +69,7 @@ export async function POST(request: Request) {
 
             steps.push(`Placing: BUY ${sizeContracts} @ $${limitPrice} (~$${(sizeContracts * limitPrice).toFixed(2)})`);
 
-            const forceExpiration = Math.floor(Date.now() / 1000) + 30 * 60; // 30 min
+            const forceExpiration = Math.floor(Date.now() / 1000) + 10 * 60; // 10 min
             const result = await placeOrderCore({
                 supabase,
                 userId: strategy.user_id,

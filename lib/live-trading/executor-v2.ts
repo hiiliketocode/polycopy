@@ -287,7 +287,7 @@ export async function executeTrade(
     const { price: finalPrice, size: finalSize, tickSize } = prepared;
 
     // Default to GTC with 30-min expiration (GTD under the hood)
-    const ORDER_EXPIRATION_MINUTES = 30;
+    const ORDER_EXPIRATION_MINUTES = 10;
     const expiration = Math.floor(Date.now() / 1000) + ORDER_EXPIRATION_MINUTES * 60;
     const orderType = 'GTD' as const;
 

@@ -146,11 +146,65 @@ export async function POST(request: Request) {
             }
         }
 
+        // ── Capital reconciliation: fix stranded locked capital ──
+        // If locked_capital > sum of (open filled + pending) orders, release the excess
+        const strategyIds = [...new Set(pendingOrders.map(o => o.strategy_id))];
+        let capitalReconciled = 0;
+
+        // Also check all active strategies, not just ones with pending orders
+        const { data: activeStrategies } = await supabase
+            .from('lt_strategies')
+            .select('strategy_id, locked_capital, available_cash, initial_capital, cooldown_capital')
+            .eq('is_active', true)
+            .gt('locked_capital', 0);
+
+        for (const strat of (activeStrategies || [])) {
+            // Sum capital that SHOULD be locked: open filled + pending orders
+            const { data: lockedOrders } = await supabase
+                .from('lt_orders')
+                .select('signal_size_usd, executed_size_usd, status')
+                .eq('strategy_id', strat.strategy_id)
+                .eq('outcome', 'OPEN')
+                .in('status', ['FILLED', 'PARTIAL', 'PENDING']);
+
+            const shouldBeLocked = (lockedOrders || []).reduce((sum: number, o: any) => {
+                if (o.status === 'PENDING') return sum + (Number(o.signal_size_usd) || 0);
+                return sum + (Number(o.executed_size_usd) || 0);
+            }, 0);
+
+            const actualLocked = Number(strat.locked_capital) || 0;
+            const excess = +(actualLocked - shouldBeLocked).toFixed(2);
+
+            if (excess > 0.01) {
+                const newLocked = Math.max(0, +(actualLocked - excess).toFixed(2));
+                const newAvailable = +((Number(strat.available_cash) || 0) + excess).toFixed(2);
+
+                // Cap so equity doesn't exceed initial_capital
+                const newEquity = newAvailable + newLocked + (Number(strat.cooldown_capital) || 0);
+                const cappedAvailable = newEquity > Number(strat.initial_capital)
+                    ? +(newAvailable - (newEquity - Number(strat.initial_capital))).toFixed(2)
+                    : newAvailable;
+
+                await supabase
+                    .from('lt_strategies')
+                    .update({
+                        locked_capital: newLocked,
+                        available_cash: Math.max(0, cappedAvailable),
+                        updated_at: now.toISOString(),
+                    })
+                    .eq('strategy_id', strat.strategy_id);
+
+                capitalReconciled += excess;
+                console.log(`[lt/sync-order-status] Reconciled $${excess.toFixed(2)} stranded capital for ${strat.strategy_id} (locked: $${actualLocked} → $${newLocked})`);
+            }
+        }
+
         return NextResponse.json({
             success: true,
             checked: pendingOrders.length,
             updated,
             errors,
+            capital_reconciled: capitalReconciled,
             timestamp: now.toISOString(),
         });
     } catch (error: any) {

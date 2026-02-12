@@ -324,7 +324,7 @@ export async function executeSell(
 
     try {
         // GTD sell with 30-min expiration
-        const sellExpiration = Math.floor(Date.now() / 1000) + 30 * 60;
+        const sellExpiration = Math.floor(Date.now() / 1000) + 10 * 60;
 
         const result = await placeOrderCore({
             supabase,
