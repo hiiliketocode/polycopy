@@ -619,7 +619,7 @@ export default function LTDetailPage() {
                 Pending Orders
               </CardTitle>
               <CardDescription>
-                Limit orders placed on Polymarket, waiting to be filled. Fill status syncs every minute. GTD orders expire after 30 minutes if unfilled.
+                Limit orders placed on Polymarket, waiting to be filled. Fill status syncs every minute. GTD orders expire after 10 minutes if unfilled.
               </CardDescription>
             </CardHeader>
             <CardContent>

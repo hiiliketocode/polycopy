@@ -13,6 +13,7 @@ import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
 import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client';
 import { unlockCapital } from '@/lib/live-trading/capital-manager';
+import { recordDailySpend } from '@/lib/live-trading/risk-manager-v2';
 
 export async function POST(request: Request) {
     const authError = await requireAdminOrCron(request);
@@ -126,6 +127,15 @@ export async function POST(request: Request) {
                         })
                         .eq('order_id', order.order_id);
 
+                    // Record daily spend when a pending order fills (not recorded at placement time)
+                    if ((newStatus === 'FILLED' || (newStatus === 'PARTIAL' && sizeMatched > 0)) && order.status === 'PENDING') {
+                        const spendAmount = executedSizeUsd || 0;
+                        if (spendAmount > 0) {
+                            await recordDailySpend(supabase, order.strategy_id, spendAmount);
+                            console.log(`[lt/sync-order-status] Recorded daily spend $${spendAmount.toFixed(2)} for filled order ${order.order_id}`);
+                        }
+                    }
+
                     // Unlock capital for unfilled portion on terminal states (cancelled, expired, partial+terminal)
                     if (isTerminal) {
                         const totalLocked = Number(order.signal_size_usd) || 0;
@@ -173,29 +183,42 @@ export async function POST(request: Request) {
             }, 0);
 
             const actualLocked = Number(strat.locked_capital) || 0;
-            const excess = +(actualLocked - shouldBeLocked).toFixed(2);
+            const initialCapital = Number(strat.initial_capital) || 0;
+            const cooldown = Number(strat.cooldown_capital) || 0;
+            const currentAvailable = Number(strat.available_cash) || 0;
 
-            if (excess > 0.01) {
-                const newLocked = Math.max(0, +(actualLocked - excess).toFixed(2));
-                const newAvailable = +((Number(strat.available_cash) || 0) + excess).toFixed(2);
+            // What available cash SHOULD be: initial - locked_for_orders - cooldown - realized_losses
+            // For simplicity: if no orders are open, all capital should be available (minus realized P&L)
+            const { data: resolvedOrders } = await supabase
+                .from('lt_orders')
+                .select('pnl')
+                .eq('strategy_id', strat.strategy_id)
+                .in('outcome', ['WON', 'LOST']);
 
-                // Cap so equity doesn't exceed initial_capital
-                const newEquity = newAvailable + newLocked + (Number(strat.cooldown_capital) || 0);
-                const cappedAvailable = newEquity > Number(strat.initial_capital)
-                    ? +(newAvailable - (newEquity - Number(strat.initial_capital))).toFixed(2)
-                    : newAvailable;
+            const realizedPnl = (resolvedOrders || []).reduce((sum: number, o: any) => sum + (Number(o.pnl) || 0), 0);
 
+            // Correct equity = initial_capital + realized_pnl
+            const correctEquity = +(initialCapital + realizedPnl).toFixed(2);
+            const correctLocked = +shouldBeLocked.toFixed(2);
+            const correctAvailable = +(correctEquity - correctLocked - cooldown).toFixed(2);
+
+            const equityDrift = Math.abs((currentAvailable + actualLocked + cooldown) - correctEquity);
+
+            if (equityDrift > 0.01 || Math.abs(actualLocked - correctLocked) > 0.01) {
                 await supabase
                     .from('lt_strategies')
                     .update({
-                        locked_capital: newLocked,
-                        available_cash: Math.max(0, cappedAvailable),
+                        locked_capital: Math.max(0, correctLocked),
+                        available_cash: Math.max(0, correctAvailable),
+                        current_drawdown_pct: correctEquity < initialCapital
+                            ? +((initialCapital - correctEquity) / initialCapital).toFixed(4)
+                            : 0,
                         updated_at: now.toISOString(),
                     })
                     .eq('strategy_id', strat.strategy_id);
 
-                capitalReconciled += excess;
-                console.log(`[lt/sync-order-status] Reconciled $${excess.toFixed(2)} stranded capital for ${strat.strategy_id} (locked: $${actualLocked} → $${newLocked})`);
+                capitalReconciled += Math.abs(correctAvailable - currentAvailable);
+                console.log(`[lt/sync-order-status] Reconciled ${strat.strategy_id}: equity $${(currentAvailable + actualLocked).toFixed(2)} → $${correctEquity.toFixed(2)} (available: $${currentAvailable.toFixed(2)} → $${correctAvailable.toFixed(2)}, locked: $${actualLocked.toFixed(2)} → $${correctLocked.toFixed(2)}, realized P&L: $${realizedPnl.toFixed(2)})`);
             }
         }
 

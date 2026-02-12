@@ -428,7 +428,8 @@ export async function executeTrade(
             updated_at: now,
         });
 
-        await recordDailySpend(supabase, strategy.strategy_id, betSize);
+        // Do NOT record daily spend for pending orders — only count when filled
+        // (the sync cron will record spend when the order fills)
 
         await traceLogger.info('ORDER_RESULT', `Order live on book as PENDING — will be tracked by sync cron`, {
             order_id: orderId,
