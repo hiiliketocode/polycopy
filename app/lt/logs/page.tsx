@@ -76,7 +76,7 @@ export default function LTLogsPage() {
             <div className="max-w-4xl mx-auto">
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-3">
-                        <Link href="/lt">
+                        <Link href="/trading">
                             <Button variant="ghost" size="sm">
                                 <ArrowLeft className="h-4 w-4 mr-1" />
                                 Back

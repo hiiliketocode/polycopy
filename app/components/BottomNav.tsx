@@ -27,6 +27,9 @@ export default function BottomNav() {
     if (href === '/discover') {
       return pathname === '/discover';
     }
+    if (href === '/trading') {
+      return pathname === '/trading' || pathname?.startsWith('/trading/') || pathname?.startsWith('/ft') || pathname?.startsWith('/lt');
+    }
     return pathname.startsWith(href);
   };
 
@@ -223,39 +226,16 @@ export default function BottomNav() {
             </button>
           )}
 
-          {/* FT (Forward Testing) - Only show for admin users */}
+          {/* Trading (LT/FT) - Only show for admin users */}
           {isAdmin && (
             <Link 
-              href="/ft" 
+              href="/trading" 
               className="flex-1 flex flex-col items-center justify-center gap-1"
               style={navItemStyle}
             >
               <div style={iconContainerStyle} className="flex items-center justify-center">
                 <svg 
-                  className={`h-6 w-6 ${isActive('/ft') ? 'text-[#0F0F0F]' : 'text-slate-400'}`}
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-              </div>
-              <span className={`text-xs ${isActive('/ft') ? 'text-[#0F0F0F] font-semibold' : 'text-slate-500'}`}>
-                FT
-              </span>
-            </Link>
-          )}
-
-          {/* Live Trading - Only show for admin users */}
-          {isAdmin && (
-            <Link 
-              href="/lt" 
-              className="flex-1 flex flex-col items-center justify-center gap-1"
-              style={navItemStyle}
-            >
-              <div style={iconContainerStyle} className="flex items-center justify-center">
-                <svg 
-                  className={`h-6 w-6 ${isActive('/lt') ? 'text-[#0F0F0F]' : 'text-slate-400'}`}
+                  className={`h-6 w-6 ${isActive('/trading') ? 'text-[#0F0F0F]' : 'text-slate-400'}`}
                   fill="none" 
                   stroke="currentColor" 
                   viewBox="0 0 24 24"
@@ -263,8 +243,8 @@ export default function BottomNav() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
-              <span className={`text-xs ${isActive('/lt') ? 'text-[#0F0F0F] font-semibold' : 'text-slate-500'}`}>
-                Live
+              <span className={`text-xs ${isActive('/trading') ? 'text-[#0F0F0F] font-semibold' : 'text-slate-500'}`}>
+                Trading
               </span>
             </Link>
           )}

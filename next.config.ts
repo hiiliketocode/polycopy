@@ -50,16 +50,27 @@ const nextConfig: NextConfig = {
         destination: '/polymarket-trading-strategies',
         permanent: true,
       },
-      // Old Auto Copy Simulator → Live Trading
+      // Old Auto Copy Simulator → Trading (Live tab)
       {
         source: '/admin/auto-copy',
-        destination: '/lt',
+        destination: '/trading?tab=live',
         permanent: true,
       },
       {
         source: '/admin/auto-copy/:path*',
-        destination: '/lt',
+        destination: '/trading?tab=live',
         permanent: true,
+      },
+      // FT and LT root → unified Trading page
+      {
+        source: '/ft',
+        destination: '/trading',
+        permanent: false,
+      },
+      {
+        source: '/lt',
+        destination: '/trading?tab=live',
+        permanent: false,
       },
     ];
   },

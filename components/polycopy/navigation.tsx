@@ -359,24 +359,14 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                   Admin
                 </Link>
                 <Link
-                  href="/ft"
+                  href="/trading"
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    isActive("/ft")
+                    isActive("/trading") || isActive("/ft") || isActive("/lt")
                       ? "text-slate-900 bg-slate-100"
                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                   }`}
                 >
-                  FT
-                </Link>
-                <Link
-                  href="/lt"
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    isActive("/lt")
-                      ? "text-slate-900 bg-slate-100"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                  }`}
-                >
-                  Live
+                  Trading
                 </Link>
               </>
             )}
@@ -548,26 +538,15 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
               <span className={`text-[10px] ${isActive("/portfolio") ? "font-semibold" : "font-medium"}`}>Portfolio</span>
             </Link>
             {isAdmin && (
-              <>
-                <Link
-                  href="/ft"
-                  className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors min-w-[64px] ${
-                    isActive("/ft") ? "bg-slate-100 text-[#FDB022]" : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <Activity className={`w-5 h-5 ${isActive("/ft") ? "stroke-[2.5]" : "stroke-2"}`} />
-                  <span className={`text-[10px] ${isActive("/ft") ? "font-semibold" : "font-medium"}`}>FT</span>
-                </Link>
-                <Link
-                  href="/lt"
-                  className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors min-w-[64px] ${
-                    isActive("/lt") ? "bg-slate-100 text-[#FDB022]" : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <Activity className={`w-5 h-5 ${isActive("/lt") ? "stroke-[2.5]" : "stroke-2"}`} />
-                  <span className={`text-[10px] ${isActive("/lt") ? "font-semibold" : "font-medium"}`}>Live</span>
-                </Link>
-              </>
+              <Link
+                href="/trading"
+                className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors min-w-[64px] ${
+                  isActive("/trading") || isActive("/ft") || isActive("/lt") ? "bg-slate-100 text-[#FDB022]" : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <Activity className={`w-5 h-5 ${(isActive("/trading") || isActive("/ft") || isActive("/lt")) ? "stroke-[2.5]" : "stroke-2"}`} />
+                <span className={`text-[10px] ${(isActive("/trading") || isActive("/ft") || isActive("/lt")) ? "font-semibold" : "font-medium"}`}>Trading</span>
+              </Link>
             )}
           </div>
         </div>

@@ -162,10 +162,10 @@ export default function WalletSettingsPage({ params }: { params: Promise<{ id: s
       <div className="container mx-auto py-8 px-4">
         <div className="text-center">
           <p className="text-destructive mb-4">{error || 'Wallet not found'}</p>
-          <Link href="/ft">
+          <Link href="/trading">
             <Button variant="outline">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Wallets
+              Back to Strategies
             </Button>
           </Link>
         </div>

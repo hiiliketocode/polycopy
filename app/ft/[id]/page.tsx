@@ -537,10 +537,10 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
       <div className="container mx-auto py-8 px-4">
         <div className="text-center">
           <p className="text-destructive mb-4">{error || 'Wallet not found'}</p>
-          <Link href="/ft">
+          <Link href="/trading">
             <Button variant="outline">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Wallets
+              Back to Strategies
             </Button>
           </Link>
         </div>
@@ -557,9 +557,9 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
       {/* Header */}
       <div className="flex justify-between items-start mb-6">
         <div>
-          <Link href="/ft" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 mb-2">
+          <Link href="/trading" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 mb-2">
             <ArrowLeft className="h-4 w-4" />
-            Back to Wallets
+            Back to Strategies
           </Link>
           <h1 className="text-3xl font-bold flex items-center gap-3">
             {wallet.display_name}
