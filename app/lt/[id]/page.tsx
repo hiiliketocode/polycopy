@@ -337,6 +337,16 @@ export default function LTDetailPage() {
     return `${(n * 100).toFixed(0)}c`;
   };
 
+  // Client-side unrealized P&L using live prices (must be before early returns to maintain hook order)
+  const liveUnrealizedPnl = useMemo(() => {
+    return openPositions.reduce((sum, pos) => {
+      const liveData = livePrices[pos.lt_order_id];
+      const currentPrice = liveData?.current_price ?? pos.current_price ?? pos.executed_price;
+      const shares = Number(pos.shares_bought) || Number(pos.executed_size) || 0;
+      return sum + ((currentPrice - pos.executed_price) * shares);
+    }, 0);
+  }, [openPositions, livePrices]);
+
   if (loading) {
     return (
       <div className="container mx-auto py-8 px-4">
@@ -375,15 +385,6 @@ export default function LTDetailPage() {
     ? (stats.won / (stats.won + stats.lost)) * 100 
     : null;
 
-  // Client-side unrealized P&L using live prices (more accurate than server-side)
-  const liveUnrealizedPnl = useMemo(() => {
-    return openPositions.reduce((sum, pos) => {
-      const liveData = livePrices[pos.lt_order_id];
-      const currentPrice = liveData?.current_price ?? pos.current_price ?? pos.executed_price;
-      const shares = Number(pos.shares_bought) || Number(pos.executed_size) || 0;
-      return sum + ((currentPrice - pos.executed_price) * shares);
-    }, 0);
-  }, [openPositions, livePrices]);
   const realizedPnl = stats?.realized_pnl || 0;
   const totalPnl = realizedPnl + liveUnrealizedPnl;
   const liveTotalReturnPct = Number(strategy.initial_capital) > 0
