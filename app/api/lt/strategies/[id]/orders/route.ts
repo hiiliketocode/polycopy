@@ -107,8 +107,13 @@ export async function GET(request: Request, { params }: RouteParams) {
                     if (Array.isArray(prices) && Array.isArray(outcomes)) {
                         const priceObj: Record<string, number> = {};
                         outcomes.forEach((outcome: string, idx: number) => {
-                            priceObj[outcome.toUpperCase()] = prices[idx] || 0;
+                            priceObj[outcome.toUpperCase()] = Number(prices[idx]) || 0;
                         });
+                        // Normalize 0-100 → 0-1 (some markets store prices as percentages)
+                        const maxVal = Math.max(...Object.values(priceObj));
+                        if (maxVal > 1) {
+                            for (const key of Object.keys(priceObj)) { priceObj[key] = priceObj[key] / 100; }
+                        }
                         priceMap.set(m.condition_id, priceObj);
                     }
                 });

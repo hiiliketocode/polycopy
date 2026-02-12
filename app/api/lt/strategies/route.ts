@@ -161,20 +161,22 @@ export async function GET(request: Request) {
         const list = strategies || [];
         const strategyIds = list.map((s: any) => s.strategy_id);
 
-        // Fetch all lt_orders for stats
+        // Fetch all lt_orders for stats — query per strategy to avoid Supabase's default 1000 row limit
         let ordersMap: Record<string, any[]> = {};
         if (strategyIds.length > 0) {
-            const { data: allOrders } = await supabase
-                .from('lt_orders')
-                .select('strategy_id, status, outcome, pnl, signal_size_usd, executed_size_usd, executed_price, signal_price, slippage_bps, fill_rate, order_placed_at, resolved_at, shares_bought, is_shadow, condition_id, token_label')
-                .in('strategy_id', strategyIds);
+            const orderColumns = 'strategy_id, status, outcome, pnl, signal_size_usd, executed_size_usd, executed_price, signal_price, slippage_bps, fill_rate, order_placed_at, resolved_at, shares_bought, is_shadow, condition_id, token_label';
 
-            if (allOrders) {
-                allOrders.forEach((o: any) => {
-                    if (!ordersMap[o.strategy_id]) ordersMap[o.strategy_id] = [];
-                    ordersMap[o.strategy_id].push(o);
-                });
-            }
+            await Promise.all(strategyIds.map(async (sid: string) => {
+                const { data: stratOrders } = await supabase
+                    .from('lt_orders')
+                    .select(orderColumns)
+                    .eq('strategy_id', sid)
+                    .limit(2000);
+
+                if (stratOrders && stratOrders.length > 0) {
+                    ordersMap[sid] = stratOrders;
+                }
+            }));
         }
 
         // Fetch current prices for unrealized P&L calculation
