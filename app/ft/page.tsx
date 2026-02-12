@@ -133,7 +133,7 @@ export default function ForwardTestWalletsPage() {
     strategy_id: string; ft_wallet_id: string; display_name: string; is_active: boolean; is_paused: boolean; initial_capital: number; starting_capital?: number;
     lt_risk_state?: unknown; created_at?: string; available_cash?: number; locked_capital?: number; cooldown_capital?: number;
     lt_stats?: { total_trades: number; open_positions: number; won: number; lost: number; win_rate: number | null;
-      realized_pnl: number; unrealized_pnl: number; total_pnl: number; current_balance: number; cash_available: number;
+      realized_pnl: number; unrealized_pnl: number; total_pnl: number; current_equity: number; current_balance: number; cash_available: number;
       avg_trade_size: number; first_trade: string | null; last_trade: string | null;
       attempts: number; filled: number; failed: number; pending: number; fill_rate_pct: number | null; avg_slippage_pct: number | null; };
   }>>([]);
