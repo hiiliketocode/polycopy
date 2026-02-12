@@ -375,6 +375,21 @@ export default function LTDetailPage() {
     ? (stats.won / (stats.won + stats.lost)) * 100 
     : null;
 
+  // Client-side unrealized P&L using live prices (more accurate than server-side)
+  const liveUnrealizedPnl = useMemo(() => {
+    return openPositions.reduce((sum, pos) => {
+      const liveData = livePrices[pos.lt_order_id];
+      const currentPrice = liveData?.current_price ?? pos.current_price ?? pos.executed_price;
+      const shares = Number(pos.shares_bought) || Number(pos.executed_size) || 0;
+      return sum + ((currentPrice - pos.executed_price) * shares);
+    }, 0);
+  }, [openPositions, livePrices]);
+  const realizedPnl = stats?.realized_pnl || 0;
+  const totalPnl = realizedPnl + liveUnrealizedPnl;
+  const liveTotalReturnPct = Number(strategy.initial_capital) > 0
+    ? (totalPnl / Number(strategy.initial_capital)) * 100
+    : 0;
+
   return (
     <div className="container mx-auto py-8 px-4 max-w-7xl">
       {/* Header */}
@@ -436,11 +451,11 @@ export default function LTDetailPage() {
 
         <Card>
           <CardContent className="pt-6">
-            <div className={`text-2xl font-bold ${(stats?.total_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatPnl(stats?.total_pnl || 0)}
+            <div className={`text-2xl font-bold ${totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatPnl(totalPnl)}
             </div>
-            <div className={`text-sm font-medium ${returnPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatPct(returnPct)}
+            <div className={`text-sm font-medium ${liveTotalReturnPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatPct(liveTotalReturnPct)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">Total P&L</p>
           </CardContent>
@@ -449,10 +464,10 @@ export default function LTDetailPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-xs text-muted-foreground mb-1">
-              {formatPnl(stats?.realized_pnl || 0)}
+              {formatPnl(realizedPnl)}
             </div>
-            <div className={`text-lg font-semibold ${(stats?.unrealized_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatPnl(stats?.unrealized_pnl || 0)}
+            <div className={`text-lg font-semibold ${liveUnrealizedPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatPnl(liveUnrealizedPnl)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               <span className="text-muted-foreground">Realized</span> / Unrealized
@@ -464,9 +479,9 @@ export default function LTDetailPage() {
           <CardContent className="pt-6">
             <div className="text-2xl font-bold">{stats?.open_positions || 0}</div>
             <div className="text-xs text-muted-foreground">
-              {pendingOrders.length > 0 ? `+${pendingOrders.length} pending` : 'filled'}
+              {pendingOrders.length > 0 ? `+${pendingOrders.length} pending` : 'open'}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Open</p>
+            <p className="text-xs text-muted-foreground mt-1">Trades</p>
           </CardContent>
         </Card>
 
@@ -574,7 +589,7 @@ export default function LTDetailPage() {
         <TabsList className="mb-4">
           <TabsTrigger value="positions" className="flex items-center gap-2">
             <Briefcase className="h-4 w-4" />
-            Filled ({stats?.open_positions || 0})
+            Open Trades ({stats?.open_positions || 0})
           </TabsTrigger>
           <TabsTrigger value="pending" className="flex items-center gap-2">
             <Clock className="h-4 w-4" />
@@ -676,7 +691,7 @@ export default function LTDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Briefcase className="h-5 w-5" />
-                Filled Positions
+                Open Trades
               </CardTitle>
               <CardDescription>
                 Active positions waiting for market resolution
@@ -684,86 +699,111 @@ export default function LTDetailPage() {
             </CardHeader>
             <CardContent>
               {openPositions.length === 0 ? (
-                <p className="text-center py-8 text-muted-foreground">No filled positions{pendingOrders.length > 0 ? ' — check the Pending tab for orders waiting to fill' : ''}</p>
+                <p className="text-center py-8 text-muted-foreground">No open trades{pendingOrders.length > 0 ? ' — check the Pending tab for orders waiting to fill' : ''}</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <SortHeader field="market" label="Market" />
-                        <SortHeader field="entry" label="Entry" align="right" />
-                        <SortHeader field="current" label="Current" align="right" />
-                        <SortHeader field="size" label="Cost" align="right" />
-                        <TableHead className="text-right">Value</TableHead>
-                        <SortHeader field="pnl" label="P&L" align="right" />
-                        <SortHeader field="order_time" label="Placed" align="right" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sortedPositions.map((pos) => {
-                        const liveData = livePrices[pos.lt_order_id];
-                        const currentPrice = liveData?.current_price ?? pos.current_price ?? pos.executed_price;
-                        const hasLivePrice = !!liveData;
-                        
-                        const shares = Number(pos.shares_bought) || Number(pos.executed_size) || 0;
-                        const cost = Number(pos.executed_size_usd) || (pos.executed_price * shares);
-                        const currentValue = currentPrice * shares;
-                        const unrealizedPnl = (currentPrice - pos.executed_price) * shares;
-                        const pnlPct = cost > 0 ? (unrealizedPnl / cost) * 100 : 0;
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <SortHeader field="market" label="Market" />
+                      <SortHeader field="trader" label="Trader" />
+                      <SortHeader field="entry" label="Entry" align="right" />
+                      <SortHeader field="current" label="Current" align="right" />
+                      <SortHeader field="size" label="Cost" align="right" />
+                      <TableHead className="text-right">Value</TableHead>
+                      <SortHeader field="pnl" label="P&L" align="right" />
+                      <SortHeader field="order_time" label="Ordered" align="right" />
+                      <TableHead className="text-right">Resolves</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedPositions.map((pos) => {
+                      const liveData = livePrices[pos.lt_order_id];
+                      const currentPrice = liveData?.current_price ?? pos.current_price ?? pos.executed_price;
+                      const hasLivePrice = !!liveData;
+                      
+                      const shares = Number(pos.shares_bought) || Number(pos.executed_size) || 0;
+                      const cost = Number(pos.executed_size_usd) || (pos.executed_price * shares);
+                      const currentValue = currentPrice * shares;
+                      const unrealizedPnl = (currentPrice - pos.executed_price) * shares;
 
-                        return (
-                          <TableRow key={pos.lt_order_id}>
-                            <TableCell className="max-w-[300px]">
-                              <div className="font-medium">
+                      return (
+                        <TableRow key={pos.lt_order_id}>
+                          <TableCell>
+                            <div className="max-w-xs">
+                              <div className="font-medium truncate">
                                 {pos.market_slug ? (
                                   <a
                                     href={`https://polymarket.com/market/${pos.market_slug}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                                    className="text-blue-600 hover:underline"
                                   >
                                     {pos.market_title}
-                                    <ExternalLink className="h-3 w-3 shrink-0" />
                                   </a>
                                 ) : (
                                   pos.market_title
                                 )}
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                {pos.token_label} · {shares.toFixed(2)} shares
+                                Betting: {pos.token_label}
                               </div>
-                            </TableCell>
-                            <TableCell className="text-right">{formatPrice(pos.executed_price)}</TableCell>
-                            <TableCell className="text-right font-medium">
-                              <div className="flex items-center justify-end gap-1">
-                                {formatPrice(currentPrice)}
-                                {hasLivePrice && (
-                                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Live price" />
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right">{formatUsd(cost)}</TableCell>
-                            <TableCell className="text-right font-medium">{formatUsd(currentValue)}</TableCell>
-                            <TableCell className={`text-right font-semibold ${unrealizedPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {formatPnl(unrealizedPnl)}
-                              <div className="text-xs">
-                                {formatPct(pnlPct)}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right text-sm text-muted-foreground">
-                              {pos.order_placed_at ? new Date(pos.order_placed_at).toLocaleString('en-US', { 
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              }) : '-'}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {pos.trader_address || pos.ft_trader_wallet ? (
+                              <a
+                                href={`https://polymarket.com/profile/${pos.trader_address || pos.ft_trader_wallet}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline font-mono text-xs"
+                              >
+                                {`${(pos.trader_address || pos.ft_trader_wallet || '').slice(0, 6)}...${(pos.trader_address || pos.ft_trader_wallet || '').slice(-4)}`}
+                              </a>
+                            ) : <span className="text-muted-foreground text-xs">-</span>}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs">
+                            {formatPrice(pos.executed_price)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs">
+                            <span
+                              className={
+                                currentPrice > (pos.executed_price || 0) ? 'text-green-600' :
+                                currentPrice < (pos.executed_price || 0) ? 'text-red-600' : ''
+                              }
+                            >
+                              {formatPrice(currentPrice)}
+                            </span>
+                            {hasLivePrice && (
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 ml-1 animate-pulse" title="Live" />
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs">
+                            {formatUsd(cost)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs">
+                            <span className={currentValue > cost ? 'text-green-600' : currentValue < cost ? 'text-red-600' : ''}>
+                              {formatUsd(currentValue)}
+                            </span>
+                          </TableCell>
+                          <TableCell className={`text-right font-mono text-xs font-semibold ${unrealizedPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatPnl(unrealizedPnl)}
+                          </TableCell>
+                          <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
+                            {pos.order_placed_at ? new Date(pos.order_placed_at).toLocaleString('en-US', { 
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            }) : '-'}
+                          </TableCell>
+                          <TableCell className="text-right text-xs text-muted-foreground">
+                            Live
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
