@@ -130,8 +130,8 @@ export default function ForwardTestWalletsPage() {
   const [compareSortDir, setCompareSortDir] = useState<SortDir>('desc');
   const [ltStrategyFtIds, setLtStrategyFtIds] = useState<Set<string>>(new Set());
   const [ltStrategies, setLtStrategies] = useState<Array<{
-    strategy_id: string; ft_wallet_id: string; display_name: string; is_active: boolean; is_paused: boolean; starting_capital: number;
-    lt_risk_state?: unknown; created_at?: string;
+    strategy_id: string; ft_wallet_id: string; display_name: string; is_active: boolean; is_paused: boolean; initial_capital: number; starting_capital?: number;
+    lt_risk_state?: unknown; created_at?: string; available_cash?: number; locked_capital?: number; cooldown_capital?: number;
     lt_stats?: { total_trades: number; open_positions: number; won: number; lost: number; win_rate: number | null;
       realized_pnl: number; unrealized_pnl: number; total_pnl: number; current_balance: number; cash_available: number;
       avg_trade_size: number; first_trade: string | null; last_trade: string | null;
@@ -162,9 +162,9 @@ export default function ForwardTestWalletsPage() {
       config_id: s.strategy_id,
       display_name: s.display_name,
       description: `Live trading → mirrors ${s.ft_wallet_id}`,
-      starting_balance: s.starting_capital,
-      current_balance: st?.current_balance ?? s.starting_capital,
-      cash_available: st?.cash_available ?? s.starting_capital,
+      starting_balance: s.initial_capital || s.starting_capital || 0,
+      current_balance: st?.current_balance ?? (Number(s.available_cash || 0) + Number(s.locked_capital || 0) + Number(s.cooldown_capital || 0)) || s.initial_capital || 0,
+      cash_available: st?.cash_available ?? Number(s.available_cash || 0) || s.initial_capital || 0,
       realized_pnl: st?.realized_pnl ?? 0,
       unrealized_pnl: st?.unrealized_pnl ?? 0,
       total_pnl: st?.total_pnl ?? 0,
@@ -307,7 +307,7 @@ export default function ForwardTestWalletsPage() {
       const res = await fetch('/api/lt/strategies', { cache: 'no-store' });
       const data = await res.json();
       if (res.ok && data.strategies) {
-        const list = data.strategies as Array<{ ft_wallet_id: string; strategy_id: string; display_name: string; is_active: boolean; is_paused: boolean; starting_capital: number; lt_risk_state?: unknown }>;
+        const list = data.strategies as Array<{ ft_wallet_id: string; strategy_id: string; display_name: string; is_active: boolean; is_paused: boolean; initial_capital: number; starting_capital?: number; lt_risk_state?: unknown; available_cash?: number; locked_capital?: number; cooldown_capital?: number; created_at?: string; lt_stats?: any }>;
         setLtStrategyFtIds(new Set(list.map((s) => s.ft_wallet_id)));
         setLtStrategies(list);
         if (data.my_polymarket_wallet != null) setMyPolymarketWallet(data.my_polymarket_wallet);
@@ -338,7 +338,7 @@ export default function ForwardTestWalletsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ft_wallet_id: createLtWalletId,
-          starting_capital: parseFloat(createLtCapital) || 1000,
+          initial_capital: parseFloat(createLtCapital) || 1000,
           display_name: `Live: ${wallets.find((w) => w.wallet_id === createLtWalletId)?.display_name || createLtWalletId}`,
         }),
       });
@@ -1172,7 +1172,7 @@ export default function ForwardTestWalletsPage() {
                                 <Badge variant="secondary" className="bg-amber-100 text-amber-700">Paused</Badge>
                               )}
                               <span className="text-xs text-muted-foreground">
-                                Capital: ${risk?.current_equity ?? s.starting_capital}
+                                Capital: ${risk?.current_equity ?? s.initial_capital ?? s.starting_capital ?? 0}
                               </span>
                             </div>
                             <div className="flex items-center gap-2">
