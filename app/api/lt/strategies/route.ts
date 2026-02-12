@@ -166,13 +166,40 @@ export async function GET(request: Request) {
         if (strategyIds.length > 0) {
             const { data: allOrders } = await supabase
                 .from('lt_orders')
-                .select('strategy_id, status, outcome, pnl, signal_size_usd, executed_size_usd, executed_price, signal_price, slippage_bps, fill_rate, order_placed_at, resolved_at, shares_bought, is_shadow')
+                .select('strategy_id, status, outcome, pnl, signal_size_usd, executed_size_usd, executed_price, signal_price, slippage_bps, fill_rate, order_placed_at, resolved_at, shares_bought, is_shadow, condition_id, token_label')
                 .in('strategy_id', strategyIds);
 
             if (allOrders) {
                 allOrders.forEach((o: any) => {
                     if (!ordersMap[o.strategy_id]) ordersMap[o.strategy_id] = [];
                     ordersMap[o.strategy_id].push(o);
+                });
+            }
+        }
+
+        // Fetch current prices for unrealized P&L calculation
+        const allOrders = Object.values(ordersMap).flat();
+        const openOrders = allOrders.filter((o: any) => o.outcome === 'OPEN' && (o.status === 'FILLED' || o.status === 'PARTIAL'));
+        const conditionIds = [...new Set(openOrders.map((o: any) => o.condition_id).filter(Boolean))];
+        const priceMap = new Map<string, Record<string, number>>();
+
+        if (conditionIds.length > 0) {
+            const { data: marketsData } = await supabase
+                .from('markets')
+                .select('condition_id, outcome_prices, outcomes')
+                .in('condition_id', conditionIds);
+
+            if (marketsData) {
+                marketsData.forEach((m: any) => {
+                    let prices = m.outcome_prices;
+                    let outcomes = m.outcomes;
+                    if (typeof prices === 'string') { try { prices = JSON.parse(prices); } catch { prices = null; } }
+                    if (typeof outcomes === 'string') { try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; } }
+                    if (Array.isArray(prices) && Array.isArray(outcomes)) {
+                        const obj: Record<string, number> = {};
+                        outcomes.forEach((out: string, idx: number) => { obj[out.toUpperCase()] = prices[idx] || 0; });
+                        priceMap.set(m.condition_id, obj);
+                    }
                 });
             }
         }
@@ -188,8 +215,20 @@ export async function GET(request: Request) {
                 .filter((o: any) => o.outcome === 'WON' || o.outcome === 'LOST')
                 .reduce((sum: number, o: any) => sum + (Number(o.pnl) || 0), 0);
 
-            const equity = Number(s.available_cash) + Number(s.locked_capital) + Number(s.cooldown_capital);
-            const totalPnl = equity - Number(s.initial_capital);
+            // Compute unrealized P&L from live market prices
+            const unrealizedPnl = filled
+                .filter((o: any) => o.outcome === 'OPEN')
+                .reduce((sum: number, o: any) => {
+                    const label = (o.token_label || 'YES').toUpperCase();
+                    const currentPrice = priceMap.get(o.condition_id)?.[label];
+                    if (currentPrice != null && o.executed_price != null) {
+                        const shares = Number(o.shares_bought) || 0;
+                        return sum + ((currentPrice - Number(o.executed_price)) * shares);
+                    }
+                    return sum;
+                }, 0);
+
+            const totalPnl = resolvedPnl + unrealizedPnl;
 
             return {
                 ...s,
@@ -200,8 +239,9 @@ export async function GET(request: Request) {
                     lost,
                     win_rate: (won + lost) > 0 ? +(won / (won + lost)).toFixed(4) : null,
                     realized_pnl: +resolvedPnl.toFixed(2),
+                    unrealized_pnl: +unrealizedPnl.toFixed(2),
                     total_pnl: +totalPnl.toFixed(2),
-                    current_equity: +equity.toFixed(2),
+                    current_equity: +(Number(s.initial_capital) + totalPnl).toFixed(2),
                     available_cash: Number(s.available_cash),
                     locked_capital: Number(s.locked_capital),
                     cooldown_capital: Number(s.cooldown_capital),
