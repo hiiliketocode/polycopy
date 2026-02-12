@@ -71,8 +71,15 @@ export async function GET(request: Request) {
         if (Array.isArray(prices) && Array.isArray(outcomes)) {
           priceMap[market.condition_id] = {};
           outcomes.forEach((outcome: string, idx: number) => {
-            priceMap[market.condition_id][outcome.toUpperCase()] = prices[idx] || 0.5;
+            priceMap[market.condition_id][outcome.toUpperCase()] = Number(prices[idx]) || 0.5;
           });
+          // Normalize 0-100 → 0-1 (some markets store prices as percentages)
+          const maxVal = Math.max(...Object.values(priceMap[market.condition_id]));
+          if (maxVal > 1) {
+            for (const key of Object.keys(priceMap[market.condition_id])) {
+              priceMap[market.condition_id][key] = priceMap[market.condition_id][key] / 100;
+            }
+          }
         }
       });
     }

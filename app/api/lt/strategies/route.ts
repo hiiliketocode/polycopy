@@ -178,12 +178,13 @@ export async function GET(request: Request) {
         }
 
         // Fetch current prices for unrealized P&L calculation
-        const allOrders = Object.values(ordersMap).flat();
-        const openOrders = allOrders.filter((o: any) => o.outcome === 'OPEN' && (o.status === 'FILLED' || o.status === 'PARTIAL'));
+        const allOrdersFlat = Object.values(ordersMap).flat();
+        const openOrders = allOrdersFlat.filter((o: any) => o.outcome === 'OPEN' && (o.status === 'FILLED' || o.status === 'PARTIAL'));
         const conditionIds = [...new Set(openOrders.map((o: any) => o.condition_id).filter(Boolean))];
         const priceMap = new Map<string, Record<string, number>>();
 
         if (conditionIds.length > 0) {
+            // 1. Markets table
             const { data: marketsData } = await supabase
                 .from('markets')
                 .select('condition_id, outcome_prices, outcomes')
@@ -197,10 +198,41 @@ export async function GET(request: Request) {
                     if (typeof outcomes === 'string') { try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; } }
                     if (Array.isArray(prices) && Array.isArray(outcomes)) {
                         const obj: Record<string, number> = {};
-                        outcomes.forEach((out: string, idx: number) => { obj[out.toUpperCase()] = prices[idx] || 0; });
+                        outcomes.forEach((out: string, idx: number) => {
+                            obj[out.toUpperCase()] = Number(prices[idx]) || 0;
+                        });
+                        // Normalize 0-100 → 0-1 (same as resolve route)
+                        const maxVal = Math.max(...Object.values(obj));
+                        if (maxVal > 1) {
+                            for (const key of Object.keys(obj)) { obj[key] = obj[key] / 100; }
+                        }
                         priceMap.set(m.condition_id, obj);
                     }
                 });
+            }
+
+            // 2. CLOB API fallback for missing markets
+            const missingIds = conditionIds.filter(cid => !priceMap.has(cid));
+            if (missingIds.length > 0) {
+                await Promise.all(missingIds.map(async (conditionId) => {
+                    try {
+                        const resp = await fetch(
+                            `https://clob.polymarket.com/markets/${conditionId}`,
+                            { cache: 'no-store', signal: AbortSignal.timeout(3000) }
+                        );
+                        if (resp.ok) {
+                            const clobMarket = await resp.json();
+                            if (Array.isArray(clobMarket?.tokens)) {
+                                const obj: Record<string, number> = {};
+                                clobMarket.tokens.forEach((token: any) => {
+                                    const outcome = (token.outcome || 'YES').toUpperCase();
+                                    obj[outcome] = parseFloat(token.price || '0.5');
+                                });
+                                priceMap.set(conditionId, obj);
+                            }
+                        }
+                    } catch { /* ignore timeout/network errors */ }
+                }));
             }
         }
 
@@ -220,15 +252,28 @@ export async function GET(request: Request) {
                 .filter((o: any) => o.outcome === 'OPEN')
                 .reduce((sum: number, o: any) => {
                     const label = (o.token_label || 'YES').toUpperCase();
-                    const currentPrice = priceMap.get(o.condition_id)?.[label];
-                    if (currentPrice != null && o.executed_price != null) {
-                        const shares = Number(o.shares_bought) || 0;
-                        return sum + ((currentPrice - Number(o.executed_price)) * shares);
+                    const rawPrice = priceMap.get(o.condition_id)?.[label];
+                    const currentPrice = rawPrice != null ? Number(rawPrice) : null;
+                    if (currentPrice != null && !isNaN(currentPrice) && o.executed_price != null) {
+                        const entryPrice = Number(o.executed_price);
+                        // Sanity check: prices should be between 0 and 1
+                        if (currentPrice >= 0 && currentPrice <= 1 && entryPrice >= 0 && entryPrice <= 1) {
+                            const shares = Number(o.shares_bought) || 0;
+                            return sum + ((currentPrice - entryPrice) * shares);
+                        }
                     }
                     return sum;
                 }, 0);
 
             const totalPnl = resolvedPnl + unrealizedPnl;
+
+            // Use reconciled equity from database as source of truth for balance
+            // (available + locked + cooldown), which the sync cron keeps correct
+            const reconciledEquity = (Number(s.available_cash) || 0) + (Number(s.locked_capital) || 0) + (Number(s.cooldown_capital) || 0);
+            // If reconciliation hasn't run yet, fall back to P&L-based equity
+            const currentEquity = Math.abs(reconciledEquity - (Number(s.initial_capital) + resolvedPnl)) < 1
+                ? +(Number(s.initial_capital) + totalPnl).toFixed(2)
+                : +(reconciledEquity + unrealizedPnl).toFixed(2);
 
             return {
                 ...s,
@@ -241,8 +286,8 @@ export async function GET(request: Request) {
                     realized_pnl: +resolvedPnl.toFixed(2),
                     unrealized_pnl: +unrealizedPnl.toFixed(2),
                     total_pnl: +totalPnl.toFixed(2),
-                    current_equity: +(Number(s.initial_capital) + totalPnl).toFixed(2),
-                    current_balance: +(Number(s.initial_capital) + totalPnl).toFixed(2),
+                    current_equity: currentEquity,
+                    current_balance: currentEquity,
                     cash_available: Number(s.available_cash),
                     available_cash: Number(s.available_cash),
                     locked_capital: Number(s.locked_capital),
