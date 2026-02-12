@@ -114,7 +114,7 @@ export async function POST(request: Request) {
             }
 
             if (!ftOrders?.length) {
-                await strategyLogger.debug('FT_QUERY', `No OPEN ft_orders since ${minOrderTime}`);
+                await strategyLogger.info('FT_QUERY', `No OPEN ft_orders in last ${FT_LOOKBACK_HOURS}h — FT wallet may not have new trades`);
                 continue;
             }
 
@@ -141,10 +141,15 @@ export async function POST(request: Request) {
             }
 
             // ── Step 5d: Execute each trade ──
+            const totalFtOrders = ftOrders.length;
+            let dedupSkipped = 0;
+
             for (const fo of ftOrders) {
                 const sourceTradeId = fo.source_trade_id || `${fo.trader_address}-${fo.condition_id}-${fo.order_time}`;
 
                 if (executedSourceIds.has(sourceTradeId)) {
+                    dedupSkipped++;
+                    summary.skipped++;
                     continue;
                 }
 
@@ -194,12 +199,16 @@ export async function POST(request: Request) {
                 }
             }
 
+            if (dedupSkipped > 0) {
+                await strategyLogger.info('DEDUP', `Skipped ${dedupSkipped}/${totalFtOrders} FT orders (already processed). ${totalFtOrders - dedupSkipped} new.`);
+            }
+
             // Update sync time
             await supabase.from('lt_strategies')
                 .update({ last_sync_time: now.toISOString(), updated_at: now.toISOString() })
                 .eq('strategy_id', strategy.strategy_id);
 
-            await strategyLogger.info('STRATEGY_END', `Strategy done: ${summary.executed} executed, ${summary.errors} errors`, summary);
+            await strategyLogger.info('STRATEGY_END', `Strategy done: ${summary.executed} executed, ${summary.skipped} skipped (dedup), ${summary.errors} errors`, summary);
         }
 
         const totalExecuted = Object.values(results).reduce((s, r) => s + r.executed, 0);
