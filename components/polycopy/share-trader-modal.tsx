@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useCallback, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Dialog,
   DialogContent,
@@ -111,8 +112,10 @@ export function ShareTraderModal({
       
       const dataUrl = await toPng(cardRef, {
         quality: 1,
-        pixelRatio: 2, // 2x for high quality
+        pixelRatio: 1, // Use 1 for consistent dimensions; width/height handle output size
         cacheBust: true,
+        width: 900,
+        height: 1200,
       })
       
       // Convert data URL to blob
@@ -553,18 +556,23 @@ ${traderUrl}`
             </div>
           </div>
 
-          {/* Hidden card components for rendering all themes */}
-          {traderData && (
-            <div style={{ 
-              position: 'absolute', 
-              opacity: 0, 
-              pointerEvents: 'none',
-              width: '900px',
-              zIndex: -1,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px'
-            }}>
+          {/* Hidden card components - rendered in portal so they're not constrained by dialog width (fixes mobile) */}
+          {traderData && typeof document !== 'undefined' && createPortal(
+            <div
+              aria-hidden
+              style={{
+                position: 'fixed',
+                left: '-9999px',
+                top: 0,
+                width: '900px',
+                zIndex: -1,
+                opacity: 0,
+                pointerEvents: 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '20px',
+              }}
+            >
               {(['cream', 'dark', 'profit', 'fire'] as Theme[]).map((theme) => (
                 <div key={theme} ref={(el) => { cardRefs.current[theme] = el }}>
                   <TraderCard
@@ -573,11 +581,12 @@ ${traderUrl}`
                   />
                 </div>
               ))}
-            </div>
+            </div>,
+            document.body
           )}
 
           {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <Button
               onClick={handleCopyImage}
               disabled={!imageBlobs[selectedTheme] || isLoading}

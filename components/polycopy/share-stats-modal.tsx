@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useCallback, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Dialog,
   DialogContent,
@@ -94,8 +95,10 @@ export function ShareStatsModal({
       
       const dataUrl = await toPng(cardRef, {
         quality: 1,
-        pixelRatio: 2, // 2x for high quality
-        cacheBust: true, // Prevent caching issues
+        pixelRatio: 1,
+        cacheBust: true,
+        width: 900,
+        height: 1200,
       })
       
       console.log('toPng completed, converting to blob...')
@@ -321,67 +324,44 @@ export function ShareStatsModal({
             </div>
           </div>
 
-          {/* Hidden card components for rendering all themes */}
-          <div style={{ 
-            position: 'absolute', 
-            opacity: 0, 
-            pointerEvents: 'none',
-            width: '420px',
-            zIndex: -1,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '20px'
-          }}>
-            {(['cream', 'dark', 'profit', 'fire'] as Theme[]).map((theme) => (
-              <div key={theme} ref={(el) => { cardRefs.current[theme] = el }}>
-                <PortfolioCard
-                  username={username}
-                  memberSince={stats.memberSince}
-                  totalPnL={stats.pnl}
-                  roi={stats.roi}
-                  winRate={stats.winRate}
-                  totalVolume={stats.volume}
-                  numberOfTrades={stats.trades}
-                  followingCount={stats.followers}
-                  theme={theme}
-                />
-              </div>
-            ))}
-          </div>
-
-          {/* Preview */}
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-900">Preview</label>
-            <div className="relative w-full max-w-[340px] mx-auto bg-slate-100 rounded-lg overflow-hidden border border-slate-200" style={{ aspectRatio: '420/560' }}>
-              {isLoading || !imageBlobs[selectedTheme] ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
-                  <Loader2 className="h-8 w-8 animate-spin text-yellow-500" />
-                  <div className="text-center">
-                    <p className="text-xs text-slate-600 font-medium">
-                      Generating your cards...
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      This may take up to 1 minute.
-                    </p>
-                  </div>
+          {/* Hidden card components - rendered in portal so they're not constrained by dialog width (fixes mobile) */}
+          {open && typeof document !== 'undefined' && createPortal(
+            <div
+              aria-hidden
+              style={{
+                position: 'fixed',
+                left: '-9999px',
+                top: 0,
+                width: '900px',
+                zIndex: -1,
+                opacity: 0,
+                pointerEvents: 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '20px',
+              }}
+            >
+              {(['cream', 'dark', 'profit', 'fire'] as Theme[]).map((theme) => (
+                <div key={theme} ref={(el) => { cardRefs.current[theme] = el }}>
+                  <PortfolioCard
+                    username={username}
+                    memberSince={stats.memberSince}
+                    totalPnL={stats.pnl}
+                    roi={stats.roi}
+                    winRate={stats.winRate}
+                    totalVolume={stats.volume}
+                    numberOfTrades={stats.trades}
+                    followingCount={stats.followers}
+                    theme={theme}
+                  />
                 </div>
-              ) : (
-                <img
-                  src={URL.createObjectURL(imageBlobs[selectedTheme])}
-                  alt="Portfolio Stats Card"
-                  className="w-full h-full object-contain"
-                />
-              )}
-            </div>
-            {imageBlobs[selectedTheme] && !isLoading && (
-              <p className="text-xs text-slate-500 text-center">
-                High-resolution card ready to share
-              </p>
-            )}
-          </div>
+              ))}
+            </div>,
+            document.body
+          )}
 
           {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <Button
               onClick={handleCopyImage}
               disabled={!imageBlobs[selectedTheme] || isLoading}
@@ -420,6 +400,37 @@ export function ShareStatsModal({
               <Share2 className="h-4 w-4 mr-2" />
               Share to X
             </Button>
+          </div>
+
+          {/* Preview */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-900">Preview</label>
+            <div className="relative w-full max-w-[340px] mx-auto bg-slate-100 rounded-lg overflow-hidden border border-slate-200" style={{ aspectRatio: '3/4' }}>
+              {isLoading || !imageBlobs[selectedTheme] ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
+                  <Loader2 className="h-8 w-8 animate-spin text-yellow-500" />
+                  <div className="text-center">
+                    <p className="text-xs text-slate-600 font-medium">
+                      Generating your cards...
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      This may take up to 1 minute.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <img
+                  src={URL.createObjectURL(imageBlobs[selectedTheme])}
+                  alt="Portfolio Stats Card"
+                  className="w-full h-full object-cover"
+                />
+              )}
+            </div>
+            {imageBlobs[selectedTheme] && !isLoading && (
+              <p className="text-xs text-slate-500 text-center">
+                High-resolution card ready to share
+              </p>
+            )}
           </div>
 
           <p className="text-xs text-slate-500 text-center">

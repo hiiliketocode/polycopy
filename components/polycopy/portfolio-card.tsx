@@ -128,78 +128,73 @@ const formatVolume = (value: number) => {
   const pnlColor = isProfit ? "text-emerald-500" : "text-rose-500"
 
   return (
-    <div className="relative w-[420px]">
-      {/* Outer shell - the "physical card" effect */}
-      <div className={`relative bg-gradient-to-b ${styles.shell} rounded-[28px] p-[3px] shadow-2xl`}>
-        {/* Card slot / lanyard hole */}
-        <div className={`absolute top-3 left-1/2 -translate-x-1/2 w-12 h-4 ${theme === "dark" ? "bg-slate-700" : "bg-zinc-300"} rounded-full shadow-inner`} />
-
-        {/* Inner card */}
+    <div className="relative w-[900px]">
+      {/* Inner card */}
+      <div
+        className={`relative w-full ${theme === "cream" || theme === "fire" ? styles.card : `bg-gradient-to-br ${styles.card}`} rounded-[60px] overflow-hidden shadow-2xl`}
+      >
+        {/* Gradient overlay */}
         <div
-          className={`relative w-full ${theme === "cream" || theme === "fire" ? styles.card : `bg-gradient-to-br ${styles.card}`} rounded-[25px] overflow-hidden shadow-inner`}
-        >
-          {/* Gradient overlay */}
-          <div
-            className={`absolute inset-0 bg-gradient-to-r ${styles.gradient}`}
-          />
+          className={`absolute inset-0 bg-gradient-to-r ${styles.gradient}`}
+        />
 
-          {/* Noise texture */}
-          <div
-            className="absolute inset-0 opacity-[0.03]"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-            }}
-          />
+        {/* Noise texture */}
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+          }}
+        />
 
-          {/* Glowing orb effect */}
-          <div
-            className={`absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full blur-3xl ${styles.orb}`}
-          />
+        {/* Glowing orb effect */}
+        <div
+          className={`absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] rounded-full blur-3xl ${styles.orb}`}
+        />
 
-{/* Content container */}
-          <div className="relative z-10 flex flex-col p-6 pt-10 pb-6">
+        {/* Content container */}
+        <div className="relative z-10 flex flex-col p-12 pt-20 pb-10">
             {/* Header - Logo and badge */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-10">
               {/* Polycopy Full Logo */}
               <img
                 src={theme === "cream" ? "/logos/polycopy-logo-primary.png" : "/logos/polycopy-logo-white.png"}
                 alt="Polycopy"
-                className="h-6"
+                className="h-12"
               />
 
               {/* Verification badge */}
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${styles.statBg} backdrop-blur-sm`}>
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className={`${theme === "cream" || theme === "fire" ? "text-stone-600" : styles.text} opacity-80 text-xs font-medium`}>
+              <div className={`flex items-center gap-3 px-5 py-2 rounded-full ${styles.statBg} backdrop-blur-sm`}>
+                <div className="w-4 h-4 rounded-full bg-emerald-400 animate-pulse" />
+                <span className={`${theme === "cream" || theme === "fire" ? "text-stone-600" : styles.text} opacity-80 text-base font-medium`}>
                   VERIFIED TRADER
                 </span>
               </div>
             </div>
 
             {/* Username */}
-            <div className="mb-6">
-              <div className="flex items-center gap-3">
+            <div className="mb-10">
+              <div className="flex items-center gap-6">
                 {avatarUrl ? (
                   <img
                     src={avatarUrl || "/placeholder.svg"}
                     alt={username}
-                    className={`w-12 h-12 rounded-full border-2 ${styles.border}`}
+                    className={`w-[100px] h-[100px] rounded-full border-4 ${styles.border}`}
                   />
                 ) : (
-                  <div className={`w-12 h-12 rounded-full ${styles.accentBg} flex items-center justify-center ${styles.text} text-xl font-bold`}>
+                  <div className={`w-[100px] h-[100px] rounded-full ${styles.accentBg} flex items-center justify-center ${styles.text} text-4xl font-bold`}>
                     {username.charAt(0).toUpperCase()}
                   </div>
                 )}
                 <div>
-                  <h2 className={`${styles.text} text-2xl font-bold tracking-tight`}>
+                  <h2 className={`${styles.text} text-5xl font-bold tracking-tight`}>
                     {username}
                   </h2>
-                  <p className={`${styles.textMuted} text-sm flex items-center gap-1.5`}>
-                    <Calendar className="w-3 h-3" />
+                  <p className={`${styles.textMuted} text-xl flex items-center gap-3 mt-1`}>
+                    <Calendar className="w-6 h-6" />
                     Member since {memberSince}
                   </p>
-                  <p className={`${styles.textMuted} text-sm flex items-center gap-1.5`}>
-                    <Users className="w-3 h-3" />
+                  <p className={`${styles.textMuted} text-xl flex items-center gap-3 mt-1`}>
+                    <Users className="w-6 h-6" />
                     Following {followingCount} traders
                   </p>
                 </div>
@@ -208,35 +203,35 @@ const formatVolume = (value: number) => {
 
             {/* Main P&L Display */}
             <div
-              className={`mb-6 p-4 rounded-2xl ${styles.statBg} backdrop-blur-sm border ${styles.border}`}
+              className={`mb-8 p-8 rounded-3xl ${styles.statBg} backdrop-blur-sm border-2 ${styles.border}`}
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className={`${theme === "cream" || theme === "fire" ? "text-stone-500" : styles.textMuted} text-xs font-medium uppercase tracking-wider mb-1`}>
+                  <p className={`${theme === "cream" || theme === "fire" ? "text-stone-500" : styles.textMuted} text-lg font-medium uppercase tracking-wider mb-2`}>
                     Total P&L
                   </p>
-                  <div className="flex items-baseline gap-2">
-                    <span className={`text-4xl font-bold ${pnlColor}`}>
+                  <div className="flex items-baseline gap-3">
+                    <span className={`text-7xl font-bold ${pnlColor}`}>
                       {isProfit ? "+" : "-"}${formatCurrency(Math.abs(totalPnL))}
                     </span>
                   </div>
                 </div>
                 <div
-                  className={`w-14 h-14 rounded-full ${theme === "cream" || theme === "fire" ? "bg-stone-100" : styles.accentBg} flex items-center justify-center`}
+                  className={`w-28 h-28 rounded-full ${theme === "cream" || theme === "fire" ? "bg-stone-100" : styles.accentBg} flex items-center justify-center`}
                 >
                   {isProfit ? (
-                    <TrendingUp className={`w-7 h-7 ${pnlColor}`} />
+                    <TrendingUp className={`w-14 h-14 ${pnlColor}`} />
                   ) : (
-                    <TrendingDown className={`w-7 h-7 ${pnlColor}`} />
+                    <TrendingDown className={`w-14 h-14 ${pnlColor}`} />
                   )}
                 </div>
               </div>
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
+            <div className="grid grid-cols-2 gap-6 mb-10">
               <StatBox
-                icon={<TrendingUp className="w-4 h-4" />}
+                icon={<TrendingUp className="w-8 h-8" />}
                 label="ROI"
                 value={`${isProfit ? "+" : ""}${roi.toFixed(1)}%`}
                 highlight={roi >= 0}
@@ -244,7 +239,7 @@ const formatVolume = (value: number) => {
                 theme={theme}
               />
               <StatBox
-                icon={<Target className="w-4 h-4" />}
+                icon={<Target className="w-8 h-8" />}
                 label="Win Rate"
                 value={`${winRate.toFixed(1)}%`}
                 highlight={winRate >= 50}
@@ -252,14 +247,14 @@ const formatVolume = (value: number) => {
                 theme={theme}
               />
               <StatBox
-                icon={<Zap className="w-4 h-4" />}
+                icon={<Zap className="w-8 h-8" />}
                 label="Copy Trades"
                 value={numberOfTrades.toString()}
                 styles={styles}
                 theme={theme}
               />
               <StatBox
-                icon={<BarChart3 className="w-4 h-4" />}
+                icon={<BarChart3 className="w-8 h-8" />}
                 label="Volume"
                 value={formatVolume(totalVolume)}
                 styles={styles}
@@ -268,9 +263,9 @@ const formatVolume = (value: number) => {
             </div>
 
             {/* Footer */}
-            <div className={`flex items-center justify-between pt-4 border-t ${styles.border}`}>
-              <span className={`${styles.textSubtle} text-xs`}>polycopy.app</span>
-              <span className={`${styles.textSubtle} text-xs font-mono`}>
+            <div className={`flex items-center justify-between pt-6 border-t-2 ${styles.border}`}>
+              <span className={`${styles.textSubtle} text-lg`}>polycopy.app</span>
+              <span className={`${styles.textSubtle} text-lg font-mono`}>
                 {new Date().toLocaleDateString("en-US", {
                   month: "short",
                   year: "numeric",
@@ -280,7 +275,6 @@ const formatVolume = (value: number) => {
           </div>
         </div>
       </div>
-    </div>
   )
 }
 
@@ -306,15 +300,15 @@ function StatBox({
   const subtleColor = isLightStatBox ? "text-stone-400" : styles.textSubtle
 
   return (
-    <div className={`p-3 rounded-xl ${styles.statBg} backdrop-blur-sm border ${styles.border}`}>
-      <div className="flex items-center gap-2 mb-1">
+    <div className={`p-6 rounded-2xl ${styles.statBg} backdrop-blur-sm border-2 ${styles.border}`}>
+      <div className="flex items-center gap-3 mb-2">
         <span className={subtleColor}>{icon}</span>
-        <span className={`${mutedColor} text-xs font-medium uppercase tracking-wider`}>
+        <span className={`${mutedColor} text-base font-medium uppercase tracking-wider`}>
           {label}
         </span>
       </div>
       <span
-        className={`text-lg font-bold ${highlight ? "text-emerald-500" : textColor}`}
+        className={`text-3xl font-bold ${highlight ? "text-emerald-500" : textColor}`}
       >
         {value}
       </span>
