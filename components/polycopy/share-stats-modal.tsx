@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Copy, Share2, Download, Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toPng } from 'html-to-image'
-import { PortfolioCard, type CardTheme } from '@/components/polycopy/portfolio-card'
+import { PortfolioCard, type CardTheme, type DailyPnlDataPoint } from '@/components/polycopy/portfolio-card'
 
 interface ShareStatsModalProps {
   open: boolean
@@ -28,6 +28,8 @@ interface ShareStatsModalProps {
     followers: number
     memberSince: string
   }
+  /** Optional P&L over time for the accumulated chart on the card */
+  dailyPnlData?: DailyPnlDataPoint[]
 }
 
 type Theme = CardTheme
@@ -37,6 +39,7 @@ export function ShareStatsModal({
   onOpenChange,
   username,
   stats,
+  dailyPnlData = [],
 }: ShareStatsModalProps) {
   const [selectedTheme, setSelectedTheme] = useState<Theme>('cream')
   const [isLoading, setIsLoading] = useState(false)
@@ -353,6 +356,7 @@ export function ShareStatsModal({
                     numberOfTrades={stats.trades}
                     followingCount={stats.followers}
                     theme={theme}
+                    dailyPnlData={dailyPnlData}
                   />
                 </div>
               ))}

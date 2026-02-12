@@ -491,14 +491,21 @@ ${traderUrl}`
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Share Player Card</DialogTitle>
-          <DialogDescription>
-            Choose a time period and theme to share this trader's performance.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+        <div className="flex-shrink-0 px-6 pt-6 pb-2">
+          <DialogHeader>
+            <DialogTitle>Share Player Card</DialogTitle>
+            <DialogDescription>
+              Choose a time period and theme to share this trader's performance.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
+        {/* Touch-friendly scroll area: iOS Safari needs explicit -webkit-overflow-scrolling and touch-action */}
+        <div
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-6 pb-6 touch-pan-y"
+          style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+        >
         <div className="space-y-4 pb-4">
           {/* Time Period Selector */}
           <div className="space-y-3">
@@ -661,6 +668,7 @@ ${traderUrl}`
           <p className="text-xs text-slate-500 text-center">
             Copy and paste directly into Twitter, Instagram, or LinkedIn
           </p>
+        </div>
         </div>
       </DialogContent>
     </Dialog>

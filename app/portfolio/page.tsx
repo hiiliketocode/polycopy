@@ -1370,6 +1370,17 @@ function ProfilePageContent() {
     [realizedPnlRows]
   );
 
+  // Transform for portfolio share card P&L chart
+  const shareCardDailyPnl = useMemo(() => {
+    if (sortedPnlRows.length === 0) return [];
+    let running = 0;
+    return sortedPnlRows.map((row) => {
+      const cumulative = row.pnl_to_date != null ? row.pnl_to_date : (running += row.realized_pnl);
+      if (row.pnl_to_date == null) running = cumulative;
+      return { date: row.date, pnl: row.realized_pnl, cumulative };
+    });
+  }, [sortedPnlRows]);
+
   // True when the selected window encompasses all of the user's data (e.g. 1Y selected but only a few weeks of data)
   const windowCoversAllData = useMemo(() => {
     if (sortedPnlRows.length === 0) return false;
@@ -4289,6 +4300,7 @@ function ProfilePageContent() {
           followers: followingCount,
           memberSince: profile?.created_at ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'Jan 2026',
         }}
+        dailyPnlData={shareCardDailyPnl}
       />
       <EditCopiedTrade
         isOpen={showEditModal}

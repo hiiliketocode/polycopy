@@ -1,10 +1,17 @@
 "use client"
 
 import React from "react"
+import { ResponsiveContainer, AreaChart, Area } from "recharts"
 
 import { TrendingUp, TrendingDown, Users, Calendar, BarChart3, Target, Zap } from "lucide-react"
 
 export type CardTheme = "cream" | "dark" | "profit" | "fire"
+
+export interface DailyPnlDataPoint {
+  date: string
+  pnl: number
+  cumulative: number
+}
 
 interface PortfolioCardProps {
   username: string
@@ -17,6 +24,8 @@ interface PortfolioCardProps {
   followingCount: number
   avatarUrl?: string
   theme?: CardTheme
+  /** Optional P&L over time for the accumulated chart. When provided, fills the card and matches trader card layout. */
+  dailyPnlData?: DailyPnlDataPoint[]
 }
 
 const themeStyles = {
@@ -35,6 +44,8 @@ const themeStyles = {
     statBg: "bg-white/80",
     logo: "text-stone-600",
     logoMuted: "text-stone-400",
+    chartColor: "#f59e0b",
+    chartGradient: ["#fef3c7", "#fef3c700"],
   },
   dark: {
     shell: "from-slate-600 via-slate-500 to-slate-600",
@@ -51,6 +62,8 @@ const themeStyles = {
     statBg: "bg-slate-800/60",
     logo: "text-white",
     logoMuted: "text-slate-500",
+    chartColor: "#94a3b8",
+    chartGradient: ["#475569", "#47556900"],
   },
   profit: {
     shell: "from-zinc-200 via-zinc-100 to-zinc-200",
@@ -67,6 +80,8 @@ const themeStyles = {
     statBg: "bg-emerald-800/30",
     logo: "text-white",
     logoMuted: "text-emerald-300/50",
+    chartColor: "#10b981",
+    chartGradient: ["#34d399", "#34d39900"],
   },
   fire: {
     shell: "from-rose-300 via-rose-200 to-rose-300",
@@ -85,6 +100,8 @@ const themeStyles = {
     statTextMuted: "text-stone-500",
     logo: "text-white",
     logoMuted: "text-rose-200/50",
+    chartColor: "#fb7185",
+    chartGradient: ["#fda4af", "#fda4af00"],
   },
 }
 
@@ -99,6 +116,7 @@ export function PortfolioCard({
   followingCount,
   avatarUrl,
   theme = "cream",
+  dailyPnlData = [],
 }: PortfolioCardProps) {
   const isProfit = totalPnL >= 0
   const styles = themeStyles[theme]
@@ -229,7 +247,7 @@ const formatVolume = (value: number) => {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-2 gap-6 mb-10">
+            <div className="grid grid-cols-2 gap-6 mb-7">
               <StatBox
                 icon={<TrendingUp className="w-8 h-8" />}
                 label="ROI"
@@ -261,6 +279,33 @@ const formatVolume = (value: number) => {
                 theme={theme}
               />
             </div>
+
+            {/* Accumulated P&L Chart - matches trader card layout and fills empty space */}
+            {dailyPnlData.length > 0 && (
+              <div className={`mb-10 p-6 rounded-2xl ${styles.statBg} backdrop-blur-sm border-2 ${styles.border}`}>
+                <p className={`${theme === "cream" || theme === "fire" ? "text-stone-500" : styles.textMuted} text-base font-medium uppercase tracking-wider mb-3`}>
+                  Accumulated P&L
+                </p>
+                <ResponsiveContainer width="100%" height={120}>
+                  <AreaChart data={dailyPnlData}>
+                    <defs>
+                      <linearGradient id={`portfolio-gradient-${theme}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={styles.chartColor} stopOpacity={0.3} />
+                        <stop offset="100%" stopColor={styles.chartColor} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <Area
+                      type="monotone"
+                      dataKey="cumulative"
+                      stroke={styles.chartColor}
+                      fill={`url(#portfolio-gradient-${theme})`}
+                      strokeWidth={3}
+                      isAnimationActive={false}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
 
             {/* Footer */}
             <div className={`flex items-center justify-between pt-6 border-t-2 ${styles.border}`}>
