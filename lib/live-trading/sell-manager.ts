@@ -314,9 +314,21 @@ export async function executeSell(
     });
 
     // Prepare and place sell order
-    const prepared = await prepareOrderParamsForClob(candidate.token_id, sellPrice, sharesToSell, 'SELL');
+    const CLOB_MIN_SIZE = 5;
+    const sellSize = Math.max(sharesToSell, CLOB_MIN_SIZE);
+    // If we have fewer shares than the CLOB minimum, we can't sell
+    if (candidate.shares_remaining < CLOB_MIN_SIZE) {
+        return { success: false, lt_order_id: candidate.lt_order_id, error: `Cannot sell ${candidate.shares_remaining} shares — CLOB minimum is ${CLOB_MIN_SIZE}` };
+    }
+
+    const prepared = await prepareOrderParamsForClob(candidate.token_id, sellPrice, sellSize, 'SELL');
     if (!prepared) {
         return { success: false, lt_order_id: candidate.lt_order_id, error: 'Order prep failed for sell' };
+    }
+
+    // Enforce CLOB minimum on the prepared size
+    if (prepared.size < CLOB_MIN_SIZE) {
+        prepared.size = CLOB_MIN_SIZE;
     }
 
     const requestId = `lt_sell_${candidate.lt_order_id}_${Date.now()}`;

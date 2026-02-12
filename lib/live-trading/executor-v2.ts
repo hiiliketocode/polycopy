@@ -284,9 +284,44 @@ export async function executeTrade(
         return { success: false, error: 'Order prep failed (size/price invalid)', stage: 'ORDER_PREP', bet_size: betSize };
     }
 
-    const { price: finalPrice, size: finalSize, tickSize } = prepared;
+    const { price: finalPrice, size: rawFinalSize, tickSize } = prepared;
 
-    // Default to GTC with 30-min expiration (GTD under the hood)
+    // ── Step 7b: Enforce CLOB minimum order size (5 contracts) ──
+    const CLOB_MIN_SIZE = 5;
+    let finalSize = rawFinalSize;
+    if (finalSize < CLOB_MIN_SIZE) {
+        const oldBetSize = betSize;
+        finalSize = CLOB_MIN_SIZE;
+        const newBetSize = +(finalSize * finalPrice).toFixed(2);
+        const extraCapitalNeeded = Math.max(0, newBetSize - oldBetSize);
+
+        if (extraCapitalNeeded > 0.01) {
+            // Try to lock the additional capital needed
+            const extraLock = await lockCapitalForTrade(supabase, strategy.strategy_id, extraCapitalNeeded);
+            if (!extraLock.success) {
+                // Can't afford the minimum — unlock original lock and skip
+                await unlockCapital(supabase, strategy.strategy_id, betSize);
+                await traceLogger.warn('ORDER_PREP', `Size ${rawFinalSize} below CLOB min ${CLOB_MIN_SIZE} — bumped to ${CLOB_MIN_SIZE} but insufficient capital for extra $${extraCapitalNeeded.toFixed(2)}`, {
+                    original_size: rawFinalSize,
+                    min_size: CLOB_MIN_SIZE,
+                    original_bet: oldBetSize,
+                    needed_bet: newBetSize,
+                    extra_needed: extraCapitalNeeded,
+                });
+                return { success: false, error: `Order size ${rawFinalSize} < min ${CLOB_MIN_SIZE}, insufficient capital to bump`, stage: 'ORDER_PREP', bet_size: oldBetSize };
+            }
+            betSize = newBetSize;
+        }
+
+        await traceLogger.info('ORDER_PREP', `Size ${rawFinalSize} below CLOB min — bumped to ${CLOB_MIN_SIZE} contracts ($${oldBetSize.toFixed(2)} → $${betSize.toFixed(2)})`, {
+            original_size: rawFinalSize,
+            final_size: finalSize,
+            original_bet: oldBetSize,
+            new_bet: betSize,
+        });
+    }
+
+    // Default to GTC with 10-min expiration (GTD under the hood)
     const ORDER_EXPIRATION_MINUTES = 10;
     const expiration = Math.floor(Date.now() / 1000) + ORDER_EXPIRATION_MINUTES * 60;
     const orderType = 'GTD' as const;
