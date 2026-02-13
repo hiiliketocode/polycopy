@@ -650,6 +650,7 @@ export async function POST(request: Request) {
 
     const syncStartMs = Date.now();
     const MAX_SYNC_MS = 240_000; // Stop after 4 min to leave headroom for response (maxDuration=300s)
+    const MAX_PER_WALLET_MS = 30_000; // Hard cap: 30s per wallet to prevent one wallet from hogging the run
     let walletsProcessed = 0;
     let walletsStopped = false;
 
@@ -665,6 +666,7 @@ export async function POST(request: Request) {
 
       // Wrap each wallet in try/catch so one failure doesn't block all remaining wallets
       try {
+      const walletStartMs = Date.now();
       const reasons = results[wallet.wallet_id].reasons;
       
       const lastSyncTime = wallet.last_sync_time ? new Date(wallet.last_sync_time) : new Date(wallet.start_date);
@@ -728,6 +730,15 @@ export async function POST(request: Request) {
       };
       
       for (const trade of allTrades) {
+        // Per-wallet time guard: if this wallet is taking too long, bail out
+        // and let other wallets have a turn. The wallet still gets its
+        // last_sync_time updated (partially processed is better than stuck).
+        if (Date.now() - walletStartMs > MAX_PER_WALLET_MS) {
+          console.log(`[ft/sync] Wallet ${wallet.wallet_id} hit 30s per-wallet limit, moving on`);
+          reasons['per_wallet_timeout'] = 1;
+          break;
+        }
+        
         const tradeTime = parseTimestamp(trade.timestamp);
         if (!tradeTime) continue;
         if (tradeTime <= lastSyncTime) continue;
@@ -737,12 +748,17 @@ export async function POST(request: Request) {
         if (seenThisSync.has(sourceTradeId)) continue;
         seenThisSync.add(sourceTradeId);
         
-        // Target trader filter - record skipped if not from allowed traders
+        // Target trader filter – skip trades not from the watched trader(s).
+        // IMPORTANT: Do NOT call recordSeen for non-target skips. With 1000s of
+        // trades in the pool, each recordSeen is a DB upsert. For single-trader
+        // wallets, 99%+ of trades are non-target, and the resulting thousands of
+        // DB writes can exceed Vercel's 5-min timeout before last_sync_time updates.
+        // Non-target trades will always be non-target, so recording them has no value.
         const targetTrader = extFilters.target_trader;
         const targetTraders = extFilters.target_traders;
         // TRADER_* wallets: fail closed — must have target_trader; otherwise skip all trades
         if (wallet.wallet_id.startsWith('TRADER_') && !targetTrader && (!targetTraders || targetTraders.length === 0)) {
-          await recordSeen(sourceTradeId, 'skipped', 'not_target_trader');
+          // Don't recordSeen – just skip silently to avoid DB write storm
           reasons['not_target_trader'] = (reasons['not_target_trader'] || 0) + 1;
           results[wallet.wallet_id].skipped++;
           continue;
@@ -753,7 +769,7 @@ export async function POST(request: Request) {
             ? traderWallet === targetTrader.toLowerCase()
             : targetTraders!.some(t => traderWallet === (t || '').toLowerCase());
           if (!allowed) {
-            await recordSeen(sourceTradeId, 'skipped', 'not_target_trader');
+            // Don't recordSeen – skip silently (see comment above)
             reasons['not_target_trader'] = (reasons['not_target_trader'] || 0) + 1;
             results[wallet.wallet_id].skipped++;
             continue;

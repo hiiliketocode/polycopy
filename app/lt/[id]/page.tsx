@@ -30,7 +30,8 @@ import {
   ChevronDown,
   ChevronsUpDown,
   ExternalLink,
-  Clock
+  Clock,
+  Info,
 } from 'lucide-react';
 import { RiskSettingsPanel } from '@/components/lt/risk-settings-panel';
 
@@ -130,6 +131,190 @@ interface Trade {
   order_placed_at: string;
 }
 
+interface FTWalletData {
+  wallet_id: string;
+  display_name: string;
+  description: string;
+  detailed_description: string | null;
+  hypothesis?: string | null;
+  thesis_tier?: string | null;
+  use_model: boolean;
+  model_threshold: number | null;
+  price_min: number;
+  price_max: number;
+  min_edge: number;
+  min_conviction?: number | null;
+  min_trader_resolved_count?: number | null;
+  wr_source?: string | null;
+  is_active: boolean;
+  bet_size?: number | null;
+  bet_allocation_weight?: number | null;
+  allocation_method?: string | null;
+  kelly_fraction?: number | null;
+  min_bet?: number | null;
+  max_bet?: number | null;
+}
+
+type ExtendedFilters = {
+  market_categories?: string[];
+  target_traders?: string[];
+  target_trader?: string;
+  target_trader_name?: string;
+  min_trader_win_rate?: number;
+  max_trader_win_rate?: number;
+  min_edge?: number;
+  max_edge?: number;
+  min_conviction?: number;
+  max_conviction?: number;
+  hypothesis?: string;
+  thesis_tier?: string;
+  trader_pool?: string;
+  min_original_trade_usd?: number;
+  max_original_trade_usd?: number;
+};
+
+function StrategyDetailsCard({ detailedDescription, description }: { detailedDescription: string; description: string }) {
+  let filters: ExtendedFilters | null = null;
+  try {
+    const parsed = JSON.parse(detailedDescription);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      filters = parsed;
+    }
+  } catch {
+    // Not JSON, treat as plain text
+  }
+
+  const items: { label: string; text: string }[] = [];
+
+  if (filters) {
+    if (filters.market_categories?.length) {
+      const cats = filters.market_categories.join(', ');
+      items.push({
+        label: 'Market categories',
+        text: `This strategy only copies trades whose market titles match at least one of these keywords: ${cats}. All other markets (e.g. crypto, sports, finance) are excluded.`,
+      });
+    }
+    if (filters.target_traders?.length) {
+      const count = filters.target_traders.length;
+      const shortened = filters.target_traders.slice(0, 3).map(a => `${a.slice(0, 6)}…${a.slice(-4)}`).join(', ');
+      const more = count > 3 ? ` and ${count - 3} more` : '';
+      items.push({
+        label: 'Target traders',
+        text: `This strategy follows ${count} specific trader${count === 1 ? '' : 's'} selected by niche performance (e.g. from trader_profile_stats). ${count === 1 ? 'Address' : 'Addresses'}: ${shortened}${more}.`,
+      });
+    }
+    if (filters.target_trader) {
+      const addr = filters.target_trader;
+      const display = `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+      const name = filters.target_trader_name ? ` (${filters.target_trader_name})` : '';
+      items.push({
+        label: 'Target trader',
+        text: `This strategy copies a single trader${name}: ${display}.`,
+      });
+    }
+    if (filters.trader_pool) {
+      items.push({
+        label: 'Trader pool',
+        text: `Traders are drawn from: ${filters.trader_pool}.`,
+      });
+    }
+    if (filters.min_trader_win_rate !== undefined) {
+      const pct = (filters.min_trader_win_rate * 100).toFixed(0);
+      items.push({
+        label: 'Minimum trader win rate',
+        text: `Only copies trades from traders with at least ${pct}% historical win rate.`,
+      });
+    }
+    if (filters.max_trader_win_rate !== undefined) {
+      const pct = (filters.max_trader_win_rate * 100).toFixed(0);
+      items.push({
+        label: 'Maximum trader win rate',
+        text: `Excludes traders above ${pct}% win rate (used for anti-strategy tests).`,
+      });
+    }
+    if (filters.min_conviction !== undefined && filters.min_conviction > 0) {
+      items.push({
+        label: 'Minimum conviction',
+        text: `Only copies trades where the trader's bet size is at least ${filters.min_conviction}x their average (skin in the game filter).`,
+      });
+    }
+    if (filters.max_conviction !== undefined) {
+      items.push({
+        label: 'Maximum conviction',
+        text: `Excludes trades where conviction exceeds ${filters.max_conviction}x (avoids oversized bets).`,
+      });
+    }
+    if (filters.hypothesis) {
+      items.push({
+        label: 'Hypothesis',
+        text: filters.hypothesis,
+      });
+    }
+    if (filters.thesis_tier) {
+      items.push({
+        label: 'Thesis tier',
+        text: `Part of thesis architecture: ${filters.thesis_tier.replace(/_/g, ' ')}.`,
+      });
+    }
+    if (filters.min_original_trade_usd !== undefined || filters.max_original_trade_usd !== undefined) {
+      const parts: string[] = [];
+      if (filters.min_original_trade_usd !== undefined) parts.push(`at least $${filters.min_original_trade_usd}`);
+      if (filters.max_original_trade_usd !== undefined) parts.push(`at most $${filters.max_original_trade_usd}`);
+      items.push({
+        label: 'Original trade size filter',
+        text: `Only copies trades where the original trader's size is ${parts.join(' and ')}.`,
+      });
+    }
+  }
+
+  // Fallback: plain text / markdown-style
+  const isPlainText = !filters || items.length === 0;
+  const paragraphs = isPlainText ? detailedDescription.split('\n\n') : null;
+
+  return (
+    <Card className="mb-6 border-blue-200 bg-blue-50/50">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Info className="h-5 w-5 text-blue-600" />
+          Strategy Details
+        </CardTitle>
+        {description && (
+          <CardDescription className="text-slate-600 mt-1">
+            {description}
+          </CardDescription>
+        )}
+      </CardHeader>
+      <CardContent>
+        <div className="prose prose-sm max-w-none text-slate-700 space-y-4">
+          {items.length > 0 ? (
+            items.map((item, i) => (
+              <div key={i}>
+                <strong className="text-slate-900 block mb-1">{item.label}</strong>
+                <p className="mb-0 text-slate-700">{item.text}</p>
+              </div>
+            ))
+          ) : paragraphs ? (
+            paragraphs.map((p, i) => {
+              if (p.startsWith('**')) {
+                const parts = p.split('**');
+                return (
+                  <div key={i} className="mb-3">
+                    <strong className="text-slate-900">{parts[1]}</strong>
+                    <span>{parts[2]}</span>
+                  </div>
+                );
+              }
+              return <p key={i} className="mb-2">{p}</p>;
+            })
+          ) : (
+            <p className="text-slate-600">{detailedDescription}</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 type SortField = 'market' | 'trader' | 'entry' | 'current' | 'size' | 'value' | 'pnl' | 'order_time';
 
 export default function LTDetailPage() {
@@ -148,6 +333,7 @@ export default function LTDetailPage() {
   const [sortField, setSortField] = useState<SortField>('order_time');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [livePrices, setLivePrices] = useState<Record<string, { current_price: number; unrealized_pnl: number }>>({});
+  const [ftWallet, setFtWallet] = useState<FTWalletData | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
 
@@ -182,6 +368,7 @@ export default function LTDetailPage() {
       if (!ordersRes.ok) throw new Error(ordersData.error || 'Failed to load orders');
 
       setStrategy(stratData.strategy);
+      setFtWallet(stratData.ft_wallet || null);
       setStats(ordersData.stats || null);
       setOpenPositions(ordersData.open_orders || []);
       setPendingOrders(ordersData.pending_orders || []);
@@ -592,6 +779,80 @@ export default function LTDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Strategy Description & Filters (from mirrored FT wallet) */}
+      {ftWallet && (
+        <>
+          {/* What We're Testing - Hypothesis or strategy summary */}
+          <Card className="mb-6 border-amber-200 bg-amber-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Target className="h-4 w-4 text-amber-600" />
+                What This Strategy Tests
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-slate-700">
+                {ftWallet.hypothesis
+                  ? ftWallet.hypothesis
+                  : ftWallet.thesis_tier
+                    ? `Part of thesis tier: ${ftWallet.thesis_tier.replace(/_/g, ' ')}. ${ftWallet.description}`
+                    : ftWallet.description}
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Entry Filters - Actual filters from FT wallet */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Entry Filters (from FT config)</h3>
+            <div className="flex flex-wrap gap-2">
+              {ftWallet.use_model ? (
+                <Badge variant="outline">
+                  <Target className="h-3 w-3 mr-1" />
+                  {ftWallet.model_threshold != null && ftWallet.model_threshold > 0
+                    ? `ML model ≥${(ftWallet.model_threshold * 100).toFixed(0)}%`
+                    : 'ML model required'}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-muted-foreground">
+                  No ML filter
+                </Badge>
+              )}
+              <Badge variant="outline">
+                Price: {((ftWallet.price_min ?? 0) * 100).toFixed(0)}¢ – {((ftWallet.price_max ?? 1) * 100).toFixed(0)}¢
+              </Badge>
+              {((ftWallet.min_edge ?? 0) > 0) && (
+                <Badge variant="outline">
+                  Edge ≥{((ftWallet.min_edge!) * 100).toFixed(0)}%
+                </Badge>
+              )}
+              {((ftWallet.min_conviction ?? 0) > 0) && (
+                <Badge variant="outline">
+                  Conviction ≥{ftWallet.min_conviction}x
+                </Badge>
+              )}
+              {((ftWallet.min_trader_resolved_count ?? 0) > 0) && (
+                <Badge variant="outline">
+                  Min {ftWallet.min_trader_resolved_count}+ trades
+                </Badge>
+              )}
+              {ftWallet.wr_source === 'PROFILE' && (
+                <Badge variant="outline" className="border-amber-500/50 text-amber-600">
+                  Profile WR (niche/structure/bracket)
+                </Badge>
+              )}
+              <Badge variant={ftWallet.is_active ? 'default' : 'secondary'}>
+                FT: {ftWallet.is_active ? 'Active' : 'Paused'}
+              </Badge>
+            </div>
+          </div>
+
+          {/* Strategy Description Panel */}
+          {ftWallet.detailed_description && (
+            <StrategyDetailsCard detailedDescription={ftWallet.detailed_description} description={ftWallet.description} />
+          )}
+        </>
+      )}
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)}>

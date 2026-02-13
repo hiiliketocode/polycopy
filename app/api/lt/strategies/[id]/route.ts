@@ -53,10 +53,21 @@ export async function GET(request: Request, { params }: RouteParams) {
                     .eq('id', crossStrategy.user_id)
                     .maybeSingle();
                 if (ownerProfile?.is_admin) {
+                    // Fetch mirrored FT wallet for strategy description / filters
+                    let crossFtWallet = null;
+                    if (crossStrategy.ft_wallet_id) {
+                        const { data: fw } = await supabase
+                            .from('ft_wallets')
+                            .select('wallet_id, display_name, description, detailed_description, hypothesis, thesis_tier, use_model, model_threshold, price_min, price_max, min_edge, min_conviction, min_trader_resolved_count, wr_source, is_active, bet_size, bet_allocation_weight, allocation_method, kelly_fraction, min_bet, max_bet')
+                            .eq('wallet_id', crossStrategy.ft_wallet_id)
+                            .maybeSingle();
+                        crossFtWallet = fw;
+                    }
                     return NextResponse.json(
                         {
                             success: true,
                             strategy: { ...crossStrategy, owner_label: ownerProfile.wallet_label || null, is_own: false },
+                            ft_wallet: crossFtWallet,
                         },
                         { headers: { 'Cache-Control': 'no-store' } },
                     );
@@ -72,8 +83,19 @@ export async function GET(request: Request, { params }: RouteParams) {
             .eq('id', userId)
             .maybeSingle();
 
+        // Fetch mirrored FT wallet for strategy description / filters
+        let ftWallet = null;
+        if (strategy.ft_wallet_id) {
+            const { data: fw } = await supabase
+                .from('ft_wallets')
+                .select('wallet_id, display_name, description, detailed_description, hypothesis, thesis_tier, use_model, model_threshold, price_min, price_max, min_edge, min_conviction, min_trader_resolved_count, wr_source, is_active, bet_size, bet_allocation_weight, allocation_method, kelly_fraction, min_bet, max_bet')
+                .eq('wallet_id', strategy.ft_wallet_id)
+                .maybeSingle();
+            ftWallet = fw;
+        }
+
         return NextResponse.json(
-            { success: true, strategy: { ...strategy, owner_label: ownProfile?.wallet_label || null, is_own: true } },
+            { success: true, strategy: { ...strategy, owner_label: ownProfile?.wallet_label || null, is_own: true }, ft_wallet: ftWallet },
             { headers: { 'Cache-Control': 'no-store' } },
         );
     } catch (error: any) {

@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, ArrowLeft, Activity, AlertCircle, Info } from 'lucide-react';
+import { RefreshCw, ArrowLeft, Activity, AlertCircle, Info, X } from 'lucide-react';
 
 interface LtLogEntry {
     id: string;
@@ -29,6 +30,18 @@ function formatTime(iso: string): string {
 }
 
 export default function LTLogsPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-50 p-4 md:p-8 flex items-center justify-center text-slate-500">Loading logs…</div>}>
+            <LTLogsContent />
+        </Suspense>
+    );
+}
+
+function LTLogsContent() {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    const strategyFilter = searchParams.get('strategy') || undefined;
+
     const [logs, setLogs] = useState<LtLogEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -38,7 +51,11 @@ export default function LTLogsPage() {
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch('/api/lt/logs?limit=200', { cache: 'no-store' });
+            const params = new URLSearchParams({ limit: '200' });
+            if (strategyFilter) {
+                params.set('strategy_id', strategyFilter);
+            }
+            const res = await fetch(`/api/lt/logs?${params.toString()}`, { cache: 'no-store' });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to load logs');
             setLogs(data.logs || []);
@@ -47,7 +64,7 @@ export default function LTLogsPage() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [strategyFilter]);
 
     useEffect(() => {
         fetchLogs();
@@ -76,7 +93,7 @@ export default function LTLogsPage() {
             <div className="max-w-4xl mx-auto">
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-3">
-                        <Link href="/trading">
+                        <Link href={strategyFilter ? `/lt/${strategyFilter}` : '/trading'}>
                             <Button variant="ghost" size="sm">
                                 <ArrowLeft className="h-4 w-4 mr-1" />
                                 Back
@@ -104,6 +121,24 @@ export default function LTLogsPage() {
                         </Button>
                     </div>
                 </div>
+
+                {strategyFilter && (
+                    <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Activity className="h-4 w-4 flex-shrink-0" />
+                            <span>Showing logs for <strong>{strategyFilter}</strong></span>
+                        </div>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-amber-700 hover:text-amber-900 hover:bg-amber-100 h-7 px-2"
+                            onClick={() => router.push('/lt/logs')}
+                        >
+                            <X className="h-3 w-3 mr-1" />
+                            Clear filter
+                        </Button>
+                    </div>
+                )}
 
                 {error && (
                     <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-2">
