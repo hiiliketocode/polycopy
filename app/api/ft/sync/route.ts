@@ -1066,6 +1066,15 @@ export async function POST(request: Request) {
         console.error(`[ft/sync] Error processing wallet ${wallet.wallet_id}:`, msg);
         errors.push(`Wallet ${wallet.wallet_id}: ${msg}`);
         walletsProcessed++;
+
+        // CRITICAL: update last_sync_time even on error so this wallet doesn't
+        // permanently block the stalest-first queue
+        try {
+          await supabase
+            .from('ft_wallets')
+            .update({ last_sync_time: now.toISOString(), updated_at: now.toISOString() })
+            .eq('wallet_id', wallet.wallet_id);
+        } catch { /* ignore update error */ }
       }
     }
     
