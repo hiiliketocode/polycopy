@@ -136,7 +136,8 @@ export default function TradingStrategiesPage() {
   const [compareSortDir, setCompareSortDir] = useState<SortDir>('desc');
   const [ltStrategyFtIds, setLtStrategyFtIds] = useState<Set<string>>(new Set());
   const [ltStrategies, setLtStrategies] = useState<Array<{
-    strategy_id: string; ft_wallet_id: string; display_name: string; is_active: boolean; is_paused: boolean; starting_capital: number;
+    strategy_id: string; ft_wallet_id: string; display_name: string; is_active: boolean; is_paused: boolean;
+    starting_capital?: number; initial_capital?: number;
     lt_risk_state?: unknown; created_at?: string;
     lt_stats?: { total_trades: number; open_positions: number; won: number; lost: number; win_rate: number | null;
       realized_pnl: number; unrealized_pnl: number; total_pnl: number; current_balance: number; cash_available: number;
@@ -169,9 +170,9 @@ export default function TradingStrategiesPage() {
       config_id: s.strategy_id,
       display_name: s.display_name,
       description: `Live trading → mirrors ${s.ft_wallet_id}`,
-      starting_balance: s.starting_capital,
-      current_balance: st?.current_balance ?? s.starting_capital,
-      cash_available: st?.cash_available ?? s.starting_capital,
+      starting_balance: s.initial_capital ?? s.starting_capital ?? 0,
+      current_balance: st?.current_balance ?? s.initial_capital ?? s.starting_capital ?? 0,
+      cash_available: st?.cash_available ?? s.initial_capital ?? s.starting_capital ?? 0,
       realized_pnl: st?.realized_pnl ?? 0,
       unrealized_pnl: st?.unrealized_pnl ?? 0,
       total_pnl: st?.total_pnl ?? 0,
@@ -314,7 +315,7 @@ export default function TradingStrategiesPage() {
       const res = await fetch('/api/lt/strategies', { cache: 'no-store' });
       const data = await res.json();
       if (res.ok && data.strategies) {
-        const list = data.strategies as Array<{ ft_wallet_id: string; strategy_id: string; display_name: string; is_active: boolean; is_paused: boolean; starting_capital: number; lt_risk_state?: unknown }>;
+        const list = data.strategies as Array<{ ft_wallet_id: string; strategy_id: string; display_name: string; is_active: boolean; is_paused: boolean; starting_capital?: number; initial_capital?: number; lt_risk_state?: unknown }>;
         setLtStrategyFtIds(new Set(list.map((s) => s.ft_wallet_id)));
         setLtStrategies(list);
         if (data.my_polymarket_wallet != null) setMyPolymarketWallet(data.my_polymarket_wallet);

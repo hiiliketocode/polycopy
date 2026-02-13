@@ -215,23 +215,51 @@ export async function POST(request: Request) {
                 (todayFilledOrders || []).reduce((sum: number, o: any) => sum + (Number(o.executed_size_usd) || 0), 0)
             ).toFixed(2);
 
-            // ── 2d: Compute correct values ──
+            // ── 2d: Reconcile cooldown_capital ──
+            // Check if cooldown_capital is backed by actual unreleased entries in lt_cooldown_queue.
+            // After outages, cooldown_capital can be orphaned (no queue entries to release it).
+            let correctCooldown = cooldown;
+            if (cooldown > 0) {
+                const { data: unreleasedCooldowns } = await supabase
+                    .from('lt_cooldown_queue')
+                    .select('amount')
+                    .eq('strategy_id', strategyId)
+                    .is('released_at', null);
+
+                const queuedCooldown = (unreleasedCooldowns || []).reduce(
+                    (sum: number, item: any) => sum + (Number(item.amount) || 0), 0
+                );
+
+                // If queue total doesn't match cooldown_capital, fix it
+                if (Math.abs(cooldown - queuedCooldown) > 0.01) {
+                    correctCooldown = +queuedCooldown.toFixed(2);
+                    console.log(
+                        `[lt/sync-order-status] COOLDOWN FIX ${strategyId}: ` +
+                        `cooldown $${cooldown.toFixed(2)} → $${correctCooldown.toFixed(2)} ` +
+                        `(queue has ${(unreleasedCooldowns || []).length} unreleased entries totaling $${queuedCooldown.toFixed(2)})`
+                    );
+                }
+            }
+
+            // ── 2e: Compute correct values ──
             const correctEquity = +(initialCapital + realizedPnl).toFixed(2);
             const correctLocked = +shouldBeLocked.toFixed(2);
-            const correctAvailable = +(correctEquity - correctLocked - cooldown).toFixed(2);
+            const correctAvailable = +(correctEquity - correctLocked - correctCooldown).toFixed(2);
             const correctDrawdown = correctEquity < initialCapital
                 ? +((initialCapital - correctEquity) / initialCapital).toFixed(4)
                 : 0;
 
-            // ── 2e: Check for drift ──
+            // ── 2f: Check for drift ──
             const currentEquity = +(currentAvailable + actualLocked + cooldown).toFixed(2);
             const equityDrift = Math.abs(currentEquity - correctEquity);
             const lockedDrift = Math.abs(actualLocked - correctLocked);
+            const cooldownDrift = Math.abs(cooldown - correctCooldown);
             const dailySpentDrift = Math.abs(currentDailySpent - correctDailySpent);
 
-            if (equityDrift > 0.01 || lockedDrift > 0.01 || dailySpentDrift > 0.50) {
+            if (equityDrift > 0.01 || lockedDrift > 0.01 || cooldownDrift > 0.01 || dailySpentDrift > 0.50) {
                 const updatePayload: Record<string, any> = {
                     locked_capital: Math.max(0, correctLocked),
+                    cooldown_capital: Math.max(0, correctCooldown),
                     available_cash: Math.max(0, correctAvailable),
                     current_drawdown_pct: correctDrawdown,
                     peak_equity: Math.max(correctEquity, Number(initialCapital)),
@@ -256,6 +284,7 @@ export async function POST(request: Request) {
                     `equity $${currentEquity.toFixed(2)} → $${correctEquity.toFixed(2)} | ` +
                     `available $${currentAvailable.toFixed(2)} → $${correctAvailable.toFixed(2)} | ` +
                     `locked $${actualLocked.toFixed(2)} → $${correctLocked.toFixed(2)} | ` +
+                    `cooldown $${cooldown.toFixed(2)} → $${correctCooldown.toFixed(2)} | ` +
                     `drawdown ${(Number(strat.locked_capital) > 0 ? '?' : '0')}% → ${(correctDrawdown * 100).toFixed(2)}% | ` +
                     `daily_spent $${currentDailySpent.toFixed(2)} → $${correctDailySpent.toFixed(2)} | ` +
                     `realized_pnl $${realizedPnl.toFixed(2)}`
