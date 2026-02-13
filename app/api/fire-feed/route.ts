@@ -4,7 +4,7 @@ import { fetchPolymarketLeaderboard } from '@/lib/polymarket-leaderboard';
 import { isTraderExcluded } from '@/lib/ft-excluded-traders';
 import { calculatePolySignalScore } from '@/lib/polysignal/calculate';
 import { verifyAdminAuth } from '@/lib/auth/verify-admin';
-import { getPolyScore } from '@/lib/polyscore/get-polyscore';
+// getPolyScore import removed — per-trade AI win prob fetches caused 504 timeouts
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -114,51 +114,9 @@ function roiForTradeType(stats: any, category?: string): number | null {
   return null;
 }
 
-async function fetchAiWinProbForTrade(
-  trade: any,
-  wallet: string,
-  serviceKey: string
-): Promise<number | null> {
-  const conditionId = trade.conditionId || trade.condition_id;
-  if (!conditionId || !conditionId.startsWith('0x')) return null;
-  const price = Number(trade.price ?? 0);
-  const size = Number(trade.size ?? trade.shares_normalized ?? 0);
-  const outcome = trade.outcome || 'YES';
-  const title = trade.title || trade.question || trade.market || '';
-
-  try {
-    const marketRes = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, { cache: 'no-store' });
-    if (!marketRes.ok) return null;
-    const market = await marketRes.json();
-    const tokens = Array.isArray(market?.tokens) ? market.tokens : [];
-    const tokenIdx = tokens.findIndex((t: any) => (t?.outcome || '').toLowerCase() === (outcome || 'yes').toLowerCase());
-    const currentPrice = tokenIdx >= 0 && tokens[tokenIdx]?.price != null ? Number(tokens[tokenIdx].price) : price;
-
-    const polyRes = await getPolyScore({
-      original_trade: {
-        wallet_address: wallet,
-        condition_id: conditionId,
-        side: 'BUY',
-        price,
-        shares_normalized: size,
-        timestamp: new Date().toISOString(),
-      },
-      market_context: {
-        current_price: currentPrice,
-        current_timestamp: new Date().toISOString(),
-        market_title: title || null,
-      },
-      user_slippage: 0.05,
-    }, serviceKey);
-
-    if (!polyRes?.success) return null;
-    let prob = polyRes.valuation?.ai_fair_value ?? polyRes.prediction?.probability ?? polyRes.analysis?.prediction_stats?.ai_fair_value ?? null;
-    if (prob != null && prob > 1) prob = prob / 100;
-    return prob != null && Number.isFinite(prob) ? prob : null;
-  } catch {
-    return null;
-  }
-}
+// fetchAiWinProbForTrade removed — calling it per-trade (2 HTTP requests each) caused
+// 504 FUNCTION_INVOCATION_TIMEOUT on Vercel. The PolySignal score works fine without it;
+// the edge contribution is simply 0 (neutral) when AI win prob is not provided.
 
 function convictionMultiplierForTrade(trade: any, stats: any): number | null {
   const size = Number(trade.size ?? trade.shares_normalized ?? trade.amount ?? 0);
@@ -254,7 +212,7 @@ export async function GET(request: Request) {
         .select('wallet_address, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct, l_avg_trade_size_usd, d30_avg_trade_size_usd, d7_avg_trade_size_usd, l_avg_pos_size_usd, l_count, d30_count')
         .in('wallet_address', wallets),
       supabase.from('trader_profile_stats')
-        .select('wallet_address, final_niche, structure, bracket, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct')
+        .select('wallet_address, final_niche, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct, d30_count, l_count, trade_count, d30_avg_trade_size_usd, l_avg_trade_size_usd')
         .in('wallet_address', wallets),
     ]);
 
@@ -470,14 +428,12 @@ export async function GET(request: Request) {
         isHedging: false, // Would need more data
       };
 
-      let aiWinProb: number | null = null;
-      try {
-        aiWinProb = await fetchAiWinProbForTrade(trade, wallet, serviceKey || '');
-      } catch {
-        // Fall back to price if ML fetch fails
-      }
-
-      const polySignal = calculatePolySignalScore(trade, polySignalStats, aiWinProb ?? undefined);
+      // NOTE: We skip the per-trade AI win prob fetch (fetchAiWinProbForTrade) to avoid
+      // 504 timeouts. Each call makes 2 sequential HTTP requests (CLOB + PolyScore), and
+      // with hundreds of trades this takes minutes. The PolySignal score works fine without
+      // it — edge contribution is 0 (neutral) and the other factors (conviction, price band,
+      // trader WR, market type) still produce accurate BUY/STRONG_BUY recommendations.
+      const polySignal = calculatePolySignalScore(trade, polySignalStats);
       
       // Track recommendation distribution
       if (polySignal.recommendation === 'STRONG_BUY') (debugStats as any).polySignalStrongBuy++;
@@ -486,13 +442,10 @@ export async function GET(request: Request) {
       else if (polySignal.recommendation === 'AVOID') (debugStats as any).polySignalAvoid++;
       else if (polySignal.recommendation === 'TOXIC') (debugStats as any).polySignalToxic++;
       
-      // Pass trades that are BUY or STRONG_BUY
-      // Also pass NEUTRAL trades from top PnL traders (they're already vetted by leaderboard)
-      const isTopPnlTrader = traderPnl >= 10000; // $10k+ monthly PnL
+      // Only pass trades that are BUY or STRONG_BUY — no exceptions
       const passesPolySignal = 
         polySignal.recommendation === 'BUY' || 
-        polySignal.recommendation === 'STRONG_BUY' ||
-        (polySignal.recommendation === 'NEUTRAL' && isTopPnlTrader); // Allow neutral from top traders
+        polySignal.recommendation === 'STRONG_BUY';
       
       // Log first few rejected trades for debugging
       if (!passesPolySignal && rejectedSamples.length < 3) {
