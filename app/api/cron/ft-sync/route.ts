@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { POST as syncPost } from '@/app/api/ft/sync/route';
 
+export const maxDuration = 300;
+
 /**
  * Cron: GET /api/cron/ft-sync
  * Runs every 5 minutes to capture new Polymarket trades into FT wallets.

@@ -5,6 +5,9 @@ import { fetchPolymarketLeaderboard } from '@/lib/polymarket-leaderboard';
 import { isTraderExcluded } from '@/lib/ft-excluded-traders';
 import { getPolyScore } from '@/lib/polyscore/get-polyscore';
 
+// Allow up to 5 minutes for sync (93+ wallets with DB + API calls each)
+export const maxDuration = 300;
+
 const TOP_TRADERS_LIMIT = 100; // Polymarket API max per request
 const LEADERBOARD_PAGES = 2;   // Fetch 2 pages (top 100 + next 100) per leaderboard view → up to 800 slots, deduped
 const TRADES_PAGE_SIZE = 50;   // Per page from Polymarket API
@@ -641,6 +644,9 @@ export async function POST(request: Request) {
 
     for (const wallet of activeWallets) {
       results[wallet.wallet_id] = { inserted: 0, skipped: 0, evaluated: 0, reasons: {} };
+
+      // Wrap each wallet in try/catch so one failure doesn't block all remaining wallets
+      try {
       const reasons = results[wallet.wallet_id].reasons;
       
       const lastSyncTime = wallet.last_sync_time ? new Date(wallet.last_sync_time) : new Date(wallet.start_date);
@@ -1034,6 +1040,13 @@ export async function POST(request: Request) {
           updated_at: now.toISOString()
         })
         .eq('wallet_id', wallet.wallet_id);
+
+      } catch (walletErr: unknown) {
+        // Log but don't let one wallet's error stop all remaining wallets
+        const msg = walletErr instanceof Error ? walletErr.message : String(walletErr);
+        console.error(`[ft/sync] Error processing wallet ${wallet.wallet_id}:`, msg);
+        errors.push(`Wallet ${wallet.wallet_id}: ${msg}`);
+      }
     }
     
     // Calculate totals
