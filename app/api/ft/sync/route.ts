@@ -454,7 +454,7 @@ export async function POST(request: Request) {
       return !min || t < min ? t : min;
     }, null as Date | null) || new Date(0);
 
-    // 4. Fetch recent trades for each trader from Polymarket API (with pagination)
+    // 4. Fetch recent trades from Polymarket API — PARALLEL in batches of 25
     interface EnrichedTrade extends PolymarketTrade {
       traderWallet: string;
       traderWinRate: number;
@@ -467,71 +467,87 @@ export async function POST(request: Request) {
     const errors: string[] = [];
 
     const MIN_TRADE_COUNT = 30;
+    const FETCH_CONCURRENCY = 25;
+
+    // Pre-filter traders by trade count (same criteria, just separated for batching)
+    type EligibleTrader = { trader: typeof topTraders[0]; stats: TraderStats; effectiveTradeCount: number };
+    const eligibleTraders: EligibleTrader[] = [];
     for (const trader of topTraders) {
-      const wallet = trader.wallet.toLowerCase();
-      const stats = statsMap.get(wallet) || { winRate: 0.5, tradeCount: 0, avgTradeSize: 0 };
-
-      // Skip traders with insufficient track record (except target_traders and day-active traders).
-      // Day-active: use lower threshold (10) so we capture live event trades from currently active traders.
-      // When stats missing, treat as 50 - leaderboard presence implies activity.
+      const w = trader.wallet.toLowerCase();
+      const stats = statsMap.get(w) || { winRate: 0.5, tradeCount: 0, avgTradeSize: 0 };
       const effectiveTradeCount = stats.tradeCount > 0 ? stats.tradeCount : 50;
-      const minCount = targetTraderAddresses.has(wallet) ? 0
-        : dayActiveTraderAddresses.has(wallet) ? 10
+      const minCount = targetTraderAddresses.has(w) ? 0
+        : dayActiveTraderAddresses.has(w) ? 10
         : MIN_TRADE_COUNT;
-      if (effectiveTradeCount < minCount) continue;
-
-      try {
-        let offset = 0;
-        let pagesFetched = 0;
-        let oldestInTrader: Date | null = null;
-
-        while (pagesFetched < MAX_PAGES_PER_TRADER) {
-          const response = await fetch(
-            `https://data-api.polymarket.com/trades?user=${wallet}&limit=${TRADES_PAGE_SIZE}&offset=${offset}`,
-            { cache: 'no-store' }
-          );
-
-          if (!response.ok) {
-            errors.push(`Failed to fetch trades for ${wallet.slice(0, 8)}: ${response.status}`);
-            break;
-          }
-
-          const trades: PolymarketTrade[] = await response.json();
-          if (!Array.isArray(trades) || trades.length === 0) break;
-
-          const buyTrades = trades.filter(t => t.side === 'BUY' && t.conditionId);
-          for (const trade of buyTrades) {
-            const tradeTime = parseTimestamp(trade.timestamp);
-            if (tradeTime && (!oldestInTrader || tradeTime < oldestInTrader)) {
-              oldestInTrader = tradeTime;
-            }
-
-            const size = Number(trade.size ?? 0);
-            const price = Number(trade.price ?? 0);
-            const tradeValue = size * price;
-            const conviction = stats.avgTradeSize > 0 ? tradeValue / stats.avgTradeSize : 1;
-
-            allTrades.push({
-              ...trade,
-              traderWallet: wallet,
-              traderWinRate: stats.winRate,
-              traderTradeCount: effectiveTradeCount,
-              traderAvgTradeSize: stats.avgTradeSize,
-              tradeValue,
-              conviction
-            });
-          }
-
-          pagesFetched++;
-          offset += trades.length;
-          if (trades.length < TRADES_PAGE_SIZE) break;
-          // Stop if we've gone past our lookback window
-          if (oldestInTrader && oldestInTrader <= minLastSyncTime) break;
-        }
-      } catch (err: any) {
-        errors.push(`Error fetching trades for ${wallet.slice(0, 8)}: ${err.message}`);
+      if (effectiveTradeCount >= minCount) {
+        eligibleTraders.push({ trader, stats, effectiveTradeCount });
       }
     }
+
+    // Fetch trades for a single trader (paginated, up to MAX_PAGES_PER_TRADER pages)
+    const fetchTradesForTrader = async (
+      { trader, stats, effectiveTradeCount }: EligibleTrader
+    ): Promise<{ trades: EnrichedTrade[]; fetchErrors: string[] }> => {
+      const w = trader.wallet.toLowerCase();
+      const trades: EnrichedTrade[] = [];
+      const fetchErrors: string[] = [];
+      let offset = 0;
+      let pagesFetched = 0;
+      let oldestInTrader: Date | null = null;
+
+      while (pagesFetched < MAX_PAGES_PER_TRADER) {
+        const response = await fetch(
+          `https://data-api.polymarket.com/trades?user=${w}&limit=${TRADES_PAGE_SIZE}&offset=${offset}`,
+          { cache: 'no-store' }
+        );
+        if (!response.ok) {
+          fetchErrors.push(`Failed to fetch trades for ${w.slice(0, 8)}: ${response.status}`);
+          break;
+        }
+        const rawTrades: PolymarketTrade[] = await response.json();
+        if (!Array.isArray(rawTrades) || rawTrades.length === 0) break;
+
+        for (const trade of rawTrades.filter(t => t.side === 'BUY' && t.conditionId)) {
+          const tradeTime = parseTimestamp(trade.timestamp);
+          if (tradeTime && (!oldestInTrader || tradeTime < oldestInTrader)) oldestInTrader = tradeTime;
+          const size = Number(trade.size ?? 0);
+          const price = Number(trade.price ?? 0);
+          const tradeValue = size * price;
+          const conviction = stats.avgTradeSize > 0 ? tradeValue / stats.avgTradeSize : 1;
+          trades.push({
+            ...trade,
+            traderWallet: w,
+            traderWinRate: stats.winRate,
+            traderTradeCount: effectiveTradeCount,
+            traderAvgTradeSize: stats.avgTradeSize,
+            tradeValue,
+            conviction
+          });
+        }
+
+        pagesFetched++;
+        offset += rawTrades.length;
+        if (rawTrades.length < TRADES_PAGE_SIZE) break;
+        if (oldestInTrader && oldestInTrader <= minLastSyncTime) break;
+      }
+      return { trades, fetchErrors };
+    };
+
+    // Fire requests in parallel batches of FETCH_CONCURRENCY
+    const fetchStartMs = Date.now();
+    for (let i = 0; i < eligibleTraders.length; i += FETCH_CONCURRENCY) {
+      const batch = eligibleTraders.slice(i, i + FETCH_CONCURRENCY);
+      const batchResults = await Promise.allSettled(batch.map(et => fetchTradesForTrader(et)));
+      for (const r of batchResults) {
+        if (r.status === 'fulfilled') {
+          allTrades.push(...r.value.trades);
+          errors.push(...r.value.fetchErrors);
+        } else {
+          errors.push(`Trader fetch error: ${r.reason}`);
+        }
+      }
+    }
+    console.log(`[ft/sync] Trade fetch: ${eligibleTraders.length} traders in ${((Date.now() - fetchStartMs) / 1000).toFixed(1)}s (concurrency=${FETCH_CONCURRENCY})`);
     
     console.log(`[ft/sync] Collected ${allTrades.length} BUY trades from ${topTraders.length} traders`);
     
@@ -643,454 +659,291 @@ export async function POST(request: Request) {
     
     console.log(`[ft/sync] Got market info for ${marketMap.size} markets (${missingConditionIds.length} from Polymarket API fallback)`);
     
-    // 6. Process trades and insert into FT wallets
+    // ═══════════════════════════════════════════════════════════════════════
+    // 6. FILTER ENGINE — route trades to wallets (zero DB writes for skips)
+    // ═══════════════════════════════════════════════════════════════════════
+    //
+    // Design: All filtering is pure in-memory. DB writes only happen for:
+    //   a) ft_orders INSERT (trade qualifies)
+    //   b) ft_wallets UPDATE (last_sync_time)
+    //
+    // Dedup:
+    //   - Across syncs: pre-loaded existingSourceIds from ft_orders (one query per wallet)
+    //   - Within sync:  seenThisSync Set (in-memory)
+    //
+    // This eliminates thousands of ft_seen_trades upserts that were the #1 bottleneck.
+    // ═══════════════════════════════════════════════════════════════════════
+
     const results: Record<string, { inserted: number; skipped: number; evaluated: number; reasons: Record<string, number> }> = {};
     // Cache ML score by source_trade_id to avoid N getPolyScore calls when same trade qualifies for multiple use_model wallets
     const mlScoreCache = new Map<string, number | null>();
 
-    const syncStartMs = Date.now();
-    const MAX_SYNC_MS = 240_000; // Stop after 4 min to leave headroom for response (maxDuration=300s)
-    const MAX_PER_WALLET_MS = 30_000; // Hard cap: 30s per wallet to prevent one wallet from hogging the run
+    const walletLoopStartMs = Date.now();
+    const MAX_SYNC_MS = 240_000; // Stop after 4 min to leave headroom for response
+    const MAX_PER_WALLET_MS = 30_000; // Hard cap per wallet
     let walletsProcessed = 0;
     let walletsStopped = false;
 
     for (const wallet of activeWallets) {
-      // Time guard: stop before Vercel timeout; remaining wallets will be first next run (stalest-first)
-      if (Date.now() - syncStartMs > MAX_SYNC_MS) {
+      // Time guard: stop before Vercel timeout; remaining wallets go first next run
+      if (Date.now() - walletLoopStartMs > MAX_SYNC_MS) {
         walletsStopped = true;
-        console.log(`[ft/sync] Time guard: ${walletsProcessed}/${activeWallets.length} wallets processed in ${((Date.now() - syncStartMs) / 1000).toFixed(0)}s, stopping`);
+        console.log(`[ft/sync] Time guard: ${walletsProcessed}/${activeWallets.length} wallets in ${((Date.now() - walletLoopStartMs) / 1000).toFixed(0)}s, stopping`);
         break;
       }
 
       results[wallet.wallet_id] = { inserted: 0, skipped: 0, evaluated: 0, reasons: {} };
 
-      // Wrap each wallet in try/catch so one failure doesn't block all remaining wallets
       try {
-      const walletStartMs = Date.now();
-      const reasons = results[wallet.wallet_id].reasons;
-      
-      const lastSyncTime = wallet.last_sync_time ? new Date(wallet.last_sync_time) : new Date(wallet.start_date);
-      
-      // Fetch current wallet state for cash check (stop trading when out of cash)
-      const { data: walletOrders } = await supabase
-        .from('ft_orders')
-        .select('outcome, size, pnl')
-        .eq('wallet_id', wallet.wallet_id)
-        .limit(10000);
-      const openExposure = (walletOrders || [])
-        .filter(o => o.outcome === 'OPEN')
-        .reduce((sum, o) => sum + (Number(o.size) || 0), 0);
-      const realizedPnl = (walletOrders || [])
-        .filter(o => o.outcome === 'WON' || o.outcome === 'LOST')
-        .reduce((sum, o) => sum + (Number(o.pnl) || 0), 0);
-      const startingBalance = wallet.starting_balance || 1000;
-      let runningOpenExposure = openExposure;
-      
-      // Parse extended filters from detailed_description
-      const extFilters = parseExtendedFilters(wallet);
-      
-      // Determine min win rate: use_model strategies gate on ML score, NOT trader WR.
-      // So minWinRate comes only from extFilters; model_threshold gates ML score (see below).
-      const minWinRate = extFilters.min_trader_win_rate ?? 
-                        (wallet.use_model ? 0 : (wallet.model_threshold ?? 0));
-      
-      // Build list of source_trade_ids we might process (trades since last sync)
-      const candidateSourceIds = new Set<string>();
-      for (const t of allTrades) {
-        const tt = parseTimestamp(t.timestamp);
-        if (tt && tt > lastSyncTime) candidateSourceIds.add(getSourceTradeId(t));
-      }
-      
-      // Load already-seen trades from ft_seen_trades (prevents double counting across syncs)
-      const alreadySeenIds = new Set<string>();
-      if (candidateSourceIds.size > 0) {
-        const ids = Array.from(candidateSourceIds);
-        for (let i = 0; i < ids.length; i += 100) {
-          const batch = ids.slice(i, i + 100);
-          const { data: seen } = await supabase
-            .from('ft_seen_trades')
-            .select('source_trade_id')
-            .eq('wallet_id', wallet.wallet_id)
-            .in('source_trade_id', batch);
-          if (seen) seen.forEach((r: { source_trade_id: string }) => alreadySeenIds.add(r.source_trade_id));
+        const walletStartMs = Date.now();
+        const reasons = results[wallet.wallet_id].reasons;
+        const lastSyncTime = wallet.last_sync_time ? new Date(wallet.last_sync_time) : new Date(wallet.start_date);
+
+        // ── One DB read: existing orders for cash check + source_trade_id dedup ──
+        const { data: walletOrders } = await supabase
+          .from('ft_orders')
+          .select('outcome, size, pnl, source_trade_id')
+          .eq('wallet_id', wallet.wallet_id)
+          .limit(10000);
+
+        const existingSourceIds = new Set<string>();
+        let openExposure = 0;
+        let realizedPnl = 0;
+        for (const o of walletOrders || []) {
+          if (o.source_trade_id) existingSourceIds.add(o.source_trade_id);
+          if (o.outcome === 'OPEN') openExposure += Number(o.size) || 0;
+          if (o.outcome === 'WON' || o.outcome === 'LOST') realizedPnl += Number(o.pnl) || 0;
         }
-      }
-      
-      // Within-sync dedupe (same trade may appear twice in allTrades from API)
-      const seenThisSync = new Set<string>();
-      
-      const recordSeen = async (sourceTradeId: string, outcome: 'taken' | 'skipped', skipReason?: string) => {
-        await supabase.from('ft_seen_trades').upsert({
-          wallet_id: wallet.wallet_id,
-          source_trade_id: sourceTradeId,
-          outcome,
-          skip_reason: skipReason ?? null,
-          seen_at: now.toISOString()
-        }, { onConflict: 'wallet_id,source_trade_id' });
-      };
-      
-      for (const trade of allTrades) {
-        // Per-wallet time guard: if this wallet is taking too long, bail out
-        // and let other wallets have a turn. The wallet still gets its
-        // last_sync_time updated (partially processed is better than stuck).
-        if (Date.now() - walletStartMs > MAX_PER_WALLET_MS) {
-          console.log(`[ft/sync] Wallet ${wallet.wallet_id} hit 30s per-wallet limit, moving on`);
-          reasons['per_wallet_timeout'] = 1;
-          break;
-        }
-        
-        const tradeTime = parseTimestamp(trade.timestamp);
-        if (!tradeTime) continue;
-        if (tradeTime <= lastSyncTime) continue;
-        
-        const sourceTradeId = getSourceTradeId(trade);
-        if (alreadySeenIds.has(sourceTradeId)) continue;
-        if (seenThisSync.has(sourceTradeId)) continue;
-        seenThisSync.add(sourceTradeId);
-        
-        // Target trader filter – skip trades not from the watched trader(s).
-        // IMPORTANT: Do NOT call recordSeen for non-target skips. With 1000s of
-        // trades in the pool, each recordSeen is a DB upsert. For single-trader
-        // wallets, 99%+ of trades are non-target, and the resulting thousands of
-        // DB writes can exceed Vercel's 5-min timeout before last_sync_time updates.
-        // Non-target trades will always be non-target, so recording them has no value.
-        const targetTrader = extFilters.target_trader;
-        const targetTraders = extFilters.target_traders;
-        // TRADER_* wallets: fail closed — must have target_trader; otherwise skip all trades
-        if (wallet.wallet_id.startsWith('TRADER_') && !targetTrader && (!targetTraders || targetTraders.length === 0)) {
-          // Don't recordSeen – just skip silently to avoid DB write storm
-          reasons['not_target_trader'] = (reasons['not_target_trader'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        if (targetTrader || (targetTraders && targetTraders.length > 0)) {
-          const traderWallet = (trade.traderWallet || '').toLowerCase();
-          const allowed = targetTrader
-            ? traderWallet === targetTrader.toLowerCase()
-            : targetTraders!.some(t => traderWallet === (t || '').toLowerCase());
-          if (!allowed) {
-            // Don't recordSeen – skip silently (see comment above)
+
+        const startingBalance = wallet.starting_balance || 1000;
+        let runningOpenExposure = openExposure;
+        const extFilters = parseExtendedFilters(wallet);
+        const minWinRate = extFilters.min_trader_win_rate ??
+                          (wallet.use_model ? 0 : (wallet.model_threshold ?? 0));
+
+        // Within-sync dedupe
+        const seenThisSync = new Set<string>();
+
+        for (const trade of allTrades) {
+          // Per-wallet time guard
+          if (Date.now() - walletStartMs > MAX_PER_WALLET_MS) {
+            console.log(`[ft/sync] Wallet ${wallet.wallet_id} hit 30s per-wallet limit`);
+            reasons['per_wallet_timeout'] = 1;
+            break;
+          }
+
+          const tradeTime = parseTimestamp(trade.timestamp);
+          if (!tradeTime) continue;
+          if (tradeTime <= lastSyncTime) continue;
+
+          const sourceTradeId = getSourceTradeId(trade);
+          if (existingSourceIds.has(sourceTradeId)) continue; // Already taken in previous sync
+          if (seenThisSync.has(sourceTradeId)) continue;
+          seenThisSync.add(sourceTradeId);
+
+          // ── Target trader filter (no DB writes) ──
+          const targetTrader = extFilters.target_trader;
+          const targetTraders = extFilters.target_traders;
+          if (wallet.wallet_id.startsWith('TRADER_') && !targetTrader && (!targetTraders || targetTraders.length === 0)) {
             reasons['not_target_trader'] = (reasons['not_target_trader'] || 0) + 1;
             results[wallet.wallet_id].skipped++;
             continue;
           }
-        }
-        
-        results[wallet.wallet_id].evaluated++;
-        
-        const market = marketMap.get(trade.conditionId || '');
-        if (!market) {
-          await recordSeen(sourceTradeId, 'skipped', 'market_not_found');
-          reasons['market_not_found'] = (reasons['market_not_found'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        if (market.resolved || market.closed) {
-          await recordSeen(sourceTradeId, 'skipped', 'market_resolved');
-          reasons['market_resolved'] = (reasons['market_resolved'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        if (market.endTime && tradeTime >= market.endTime) {
-          await recordSeen(sourceTradeId, 'skipped', 'after_market_end');
-          reasons['after_market_end'] = (reasons['after_market_end'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-
-        // trade_live_only: only take trades when current time >= actual game/event start.
-        // Use ONLY game_start_time (sports events). Do NOT fall back to start_time — that's market
-        // listing time; politics/crypto markets would incorrectly pass.
-        if (extFilters.trade_live_only) {
-          const gameStartIso = market.game_start_time ?? null;
-          if (!gameStartIso) {
-            await recordSeen(sourceTradeId, 'skipped', 'no_game_start_time');
-            reasons['no_game_start_time'] = (reasons['no_game_start_time'] || 0) + 1;
-            results[wallet.wallet_id].skipped++;
-            continue;
-          }
-          const gameStart = new Date(gameStartIso);
-          if (now < gameStart) {
-            await recordSeen(sourceTradeId, 'skipped', 'pre_game');
-            reasons['pre_game'] = (reasons['pre_game'] || 0) + 1;
-            results[wallet.wallet_id].skipped++;
-            continue;
-          }
-        }
-
-        const price = Number(trade.price || 0);
-        const priceWithSlippage = Math.min(0.9999, price * (1 + FT_SLIPPAGE_PCT));
-        const globalStats = statsMap.get((trade.traderWallet || '').toLowerCase()) ?? { winRate: 0.5, tradeCount: 0, avgTradeSize: 0 };
-        let traderWinRate = trade.traderWinRate;
-        let traderTradeCount = trade.traderTradeCount;
-        if (wallet.wr_source === 'PROFILE' && profilesByWallet.size > 0) {
-          const niche = (market.market_subtype || '').trim() || 'OTHER';
-          const structure = (market.bet_structure || 'STANDARD').toUpperCase();
-          const bracket = priceToBracket(price);
-          const profiles = profilesByWallet.get((trade.traderWallet || '').toLowerCase()) ?? [];
-          const profileRes = getProfileWinRate(profiles, niche, structure, bracket, { winRate: globalStats.winRate, tradeCount: globalStats.tradeCount });
-          traderWinRate = profileRes.winRate;
-          traderTradeCount = profileRes.tradeCount;
-        }
-        const edge = traderWinRate - priceWithSlippage; // Edge at our execution price (after slippage)
-        
-        if (price < wallet.price_min || price > wallet.price_max) {
-          await recordSeen(sourceTradeId, 'skipped', 'price_out_of_range');
-          reasons['price_out_of_range'] = (reasons['price_out_of_range'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        if (traderWinRate < minWinRate) {
-          await recordSeen(sourceTradeId, 'skipped', 'low_win_rate');
-          reasons['low_win_rate'] = (reasons['low_win_rate'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        if (edge < wallet.min_edge) {
-          await recordSeen(sourceTradeId, 'skipped', 'insufficient_edge');
-          reasons['insufficient_edge'] = (reasons['insufficient_edge'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        if (traderTradeCount < (wallet.min_trader_resolved_count || 30)) {
-          await recordSeen(sourceTradeId, 'skipped', 'low_trade_count');
-          reasons['low_trade_count'] = (reasons['low_trade_count'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        const minConviction = wallet.min_conviction || 0;
-        if (minConviction > 0 && trade.conviction < minConviction) {
-          await recordSeen(sourceTradeId, 'skipped', 'low_conviction');
-          reasons['low_conviction'] = (reasons['low_conviction'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        
-        if (extFilters.max_trader_win_rate !== undefined && traderWinRate > extFilters.max_trader_win_rate) {
-          await recordSeen(sourceTradeId, 'skipped', 'high_win_rate');
-          reasons['high_win_rate'] = (reasons['high_win_rate'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        if (extFilters.max_edge !== undefined && edge > extFilters.max_edge) {
-          await recordSeen(sourceTradeId, 'skipped', 'high_edge');
-          reasons['high_edge'] = (reasons['high_edge'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        if (extFilters.max_conviction !== undefined && trade.conviction > extFilters.max_conviction) {
-          await recordSeen(sourceTradeId, 'skipped', 'high_conviction');
-          reasons['high_conviction'] = (reasons['high_conviction'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        
-        const marketCats = extFilters.market_categories?.length
-          ? extFilters.market_categories
-          : (wallet.market_categories?.length ? wallet.market_categories : null);
-        if (marketCats && marketCats.length > 0) {
-          const titleLower = ((trade.title || market.title || '').toString()).toLowerCase();
-          const tagsArr = Array.isArray(market.tags) ? market.tags : (typeof market.tags === 'object' && market.tags !== null ? Object.values(market.tags) : []);
-          const tagsStr = tagsArr.map((t: unknown) => String(t || '')).join(' ').toLowerCase();
-          const searchable = `${titleLower} ${tagsStr}`;
-          const matchesCategory = marketCats.some(cat =>
-            searchable.includes((cat || '').toLowerCase())
-          );
-          if (!matchesCategory) {
-            await recordSeen(sourceTradeId, 'skipped', 'wrong_category');
-            reasons['wrong_category'] = (reasons['wrong_category'] || 0) + 1;
-            results[wallet.wallet_id].skipped++;
-            continue;
-          }
-        }
-        
-        const originalTradeSize = Number(trade.size || 0);
-        if (extFilters.min_original_trade_usd !== undefined && originalTradeSize < extFilters.min_original_trade_usd) {
-          await recordSeen(sourceTradeId, 'skipped', 'trade_too_small');
-          reasons['trade_too_small'] = (reasons['trade_too_small'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        if (extFilters.max_original_trade_usd !== undefined && originalTradeSize > extFilters.max_original_trade_usd) {
-          await recordSeen(sourceTradeId, 'skipped', 'trade_too_large');
-          reasons['trade_too_large'] = (reasons['trade_too_large'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        
-        // P0-1: For use_model=true, compute ML score BEFORE bet sizing (needed for ML_SCALED allocation)
-        let preInsertMlProbability: number | null = null;
-        if (wallet.use_model && wallet.model_threshold != null) {
-          try {
-            if (mlScoreCache.has(sourceTradeId)) {
-              preInsertMlProbability = mlScoreCache.get(sourceTradeId) ?? null;
-            } else {
-              let outcomes = market.outcomes || ['Yes', 'No'];
-              let outcomePrices = market.outcome_prices;
-              if (typeof outcomes === 'string') {
-                try { outcomes = JSON.parse(outcomes); } catch { outcomes = ['Yes', 'No']; }
-              }
-              if (typeof outcomePrices === 'string') {
-                try { outcomePrices = JSON.parse(outcomePrices); } catch { outcomePrices = [0.5, 0.5]; }
-              }
-              const outcomesArr = Array.isArray(outcomes) ? outcomes : ['Yes', 'No'];
-              const pricesArr = Array.isArray(outcomePrices) ? outcomePrices.map((p: unknown) => Number(p) || 0.5) : [0.5, 0.5];
-              const tokenIdx = outcomesArr.findIndex((o: string) => (o || '').toLowerCase() === (trade.outcome || 'YES').toLowerCase());
-              const currentPrice = pricesArr[tokenIdx >= 0 ? tokenIdx : 0] ?? 0.5;
-              const sharesForMl = price > 0 ? (wallet.bet_size || 1.2) / price : 0;
-
-              const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-              const polyScoreResponse = await getPolyScore({
-              original_trade: {
-                wallet_address: trade.traderWallet,
-                condition_id: trade.conditionId || '',
-                side: (trade.side || 'BUY') as 'BUY' | 'SELL',
-                price,
-                shares_normalized: sharesForMl,
-                timestamp: tradeTime.toISOString()
-              },
-              market_context: {
-                current_price: currentPrice,
-                current_timestamp: new Date().toISOString(),
-                market_title: market.title || trade.title || '',
-                market_tags: market.tags ? JSON.stringify(market.tags) : null,
-                market_end_time_unix: market.endTime ? Math.floor(market.endTime.getTime() / 1000) : null,
-                market_start_time_unix: market.start_time ? Math.floor(new Date(market.start_time).getTime() / 1000) : null,
-                token_label: trade.outcome || 'YES'
-              },
-              user_slippage: 0.3
-            }, serviceRoleKey);
-
-            if (polyScoreResponse.success) {
-              if (polyScoreResponse.prediction?.probability) {
-                preInsertMlProbability = polyScoreResponse.prediction.probability;
-              } else if (polyScoreResponse.valuation?.ai_fair_value) {
-                preInsertMlProbability = polyScoreResponse.valuation.ai_fair_value;
-              } else if (polyScoreResponse.analysis?.prediction_stats?.ai_fair_value) {
-                preInsertMlProbability = polyScoreResponse.analysis.prediction_stats.ai_fair_value;
-              }
-              // Normalize: API may return 0-100 (percent) instead of 0-1
-              if (preInsertMlProbability != null && preInsertMlProbability > 1) {
-                preInsertMlProbability = preInsertMlProbability / 100;
-              }
-            }
-            mlScoreCache.set(sourceTradeId, preInsertMlProbability);
-            }
-            if (preInsertMlProbability == null || preInsertMlProbability < wallet.model_threshold) {
-              await recordSeen(sourceTradeId, 'skipped', preInsertMlProbability == null ? 'ml_unavailable' : 'low_ml_score');
-              reasons[preInsertMlProbability == null ? 'ml_unavailable' : 'low_ml_score'] = (reasons[preInsertMlProbability == null ? 'ml_unavailable' : 'low_ml_score'] || 0) + 1;
+          if (targetTrader || (targetTraders && targetTraders.length > 0)) {
+            const traderWallet = (trade.traderWallet || '').toLowerCase();
+            const allowed = targetTrader
+              ? traderWallet === targetTrader.toLowerCase()
+              : targetTraders!.some(t => traderWallet === (t || '').toLowerCase());
+            if (!allowed) {
+              reasons['not_target_trader'] = (reasons['not_target_trader'] || 0) + 1;
               results[wallet.wallet_id].skipped++;
               continue;
             }
-          } catch (mlErr: unknown) {
-            console.warn(`[ft/sync] ML pre-check failed for ${sourceTradeId}:`, mlErr);
-            await recordSeen(sourceTradeId, 'skipped', 'ml_unavailable');
-            reasons['ml_unavailable'] = (reasons['ml_unavailable'] || 0) + 1;
+          }
+
+          results[wallet.wallet_id].evaluated++;
+
+          // ── Market checks (all in-memory, no DB writes) ──
+          const market = marketMap.get(trade.conditionId || '');
+          if (!market) { reasons['market_not_found'] = (reasons['market_not_found'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (market.resolved || market.closed) { reasons['market_resolved'] = (reasons['market_resolved'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (market.endTime && tradeTime >= market.endTime) { reasons['after_market_end'] = (reasons['after_market_end'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+
+          if (extFilters.trade_live_only) {
+            const gameStartIso = market.game_start_time ?? null;
+            if (!gameStartIso) { reasons['no_game_start_time'] = (reasons['no_game_start_time'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+            if (now < new Date(gameStartIso)) { reasons['pre_game'] = (reasons['pre_game'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          }
+
+          // ── Price / edge / WR filters (all in-memory) ──
+          const price = Number(trade.price || 0);
+          const priceWithSlippage = Math.min(0.9999, price * (1 + FT_SLIPPAGE_PCT));
+          const globalStats = statsMap.get((trade.traderWallet || '').toLowerCase()) ?? { winRate: 0.5, tradeCount: 0, avgTradeSize: 0 };
+          let traderWinRate = trade.traderWinRate;
+          let traderTradeCount = trade.traderTradeCount;
+          if (wallet.wr_source === 'PROFILE' && profilesByWallet.size > 0) {
+            const niche = (market.market_subtype || '').trim() || 'OTHER';
+            const structure = (market.bet_structure || 'STANDARD').toUpperCase();
+            const bracket = priceToBracket(price);
+            const profiles = profilesByWallet.get((trade.traderWallet || '').toLowerCase()) ?? [];
+            const profileRes = getProfileWinRate(profiles, niche, structure, bracket, { winRate: globalStats.winRate, tradeCount: globalStats.tradeCount });
+            traderWinRate = profileRes.winRate;
+            traderTradeCount = profileRes.tradeCount;
+          }
+          const edge = traderWinRate - priceWithSlippage;
+
+          if (price < wallet.price_min || price > wallet.price_max) { reasons['price_out_of_range'] = (reasons['price_out_of_range'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (traderWinRate < minWinRate) { reasons['low_win_rate'] = (reasons['low_win_rate'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (edge < wallet.min_edge) { reasons['insufficient_edge'] = (reasons['insufficient_edge'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (traderTradeCount < (wallet.min_trader_resolved_count || 30)) { reasons['low_trade_count'] = (reasons['low_trade_count'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if ((wallet.min_conviction || 0) > 0 && trade.conviction < (wallet.min_conviction || 0)) { reasons['low_conviction'] = (reasons['low_conviction'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (extFilters.max_trader_win_rate !== undefined && traderWinRate > extFilters.max_trader_win_rate) { reasons['high_win_rate'] = (reasons['high_win_rate'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (extFilters.max_edge !== undefined && edge > extFilters.max_edge) { reasons['high_edge'] = (reasons['high_edge'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (extFilters.max_conviction !== undefined && trade.conviction > extFilters.max_conviction) { reasons['high_conviction'] = (reasons['high_conviction'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+
+          // ── Category filter (in-memory) ──
+          const marketCats = extFilters.market_categories?.length
+            ? extFilters.market_categories
+            : (wallet.market_categories?.length ? wallet.market_categories : null);
+          if (marketCats && marketCats.length > 0) {
+            const titleLower = ((trade.title || market.title || '').toString()).toLowerCase();
+            const tagsArr = Array.isArray(market.tags) ? market.tags : (typeof market.tags === 'object' && market.tags !== null ? Object.values(market.tags) : []);
+            const tagsStr = tagsArr.map((t: unknown) => String(t || '')).join(' ').toLowerCase();
+            if (!marketCats.some(cat => `${titleLower} ${tagsStr}`.includes((cat || '').toLowerCase()))) {
+              reasons['wrong_category'] = (reasons['wrong_category'] || 0) + 1; results[wallet.wallet_id].skipped++; continue;
+            }
+          }
+
+          // ── Trade size filter (in-memory) ──
+          const originalTradeSize = Number(trade.size || 0);
+          if (extFilters.min_original_trade_usd !== undefined && originalTradeSize < extFilters.min_original_trade_usd) { reasons['trade_too_small'] = (reasons['trade_too_small'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (extFilters.max_original_trade_usd !== undefined && originalTradeSize > extFilters.max_original_trade_usd) { reasons['trade_too_large'] = (reasons['trade_too_large'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+
+          // ── ML scoring (use_model wallets only — only DB-touching filter) ──
+          let preInsertMlProbability: number | null = null;
+          if (wallet.use_model && wallet.model_threshold != null) {
+            try {
+              if (mlScoreCache.has(sourceTradeId)) {
+                preInsertMlProbability = mlScoreCache.get(sourceTradeId) ?? null;
+              } else {
+                let outcomes = market.outcomes || ['Yes', 'No'];
+                let outcomePrices = market.outcome_prices;
+                if (typeof outcomes === 'string') { try { outcomes = JSON.parse(outcomes); } catch { outcomes = ['Yes', 'No']; } }
+                if (typeof outcomePrices === 'string') { try { outcomePrices = JSON.parse(outcomePrices); } catch { outcomePrices = [0.5, 0.5]; } }
+                const outcomesArr = Array.isArray(outcomes) ? outcomes : ['Yes', 'No'];
+                const pricesArr = Array.isArray(outcomePrices) ? outcomePrices.map((p: unknown) => Number(p) || 0.5) : [0.5, 0.5];
+                const tokenIdx = outcomesArr.findIndex((o: string) => (o || '').toLowerCase() === (trade.outcome || 'YES').toLowerCase());
+                const currentPrice = pricesArr[tokenIdx >= 0 ? tokenIdx : 0] ?? 0.5;
+                const sharesForMl = price > 0 ? (wallet.bet_size || 1.2) / price : 0;
+
+                const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+                const polyScoreResponse = await getPolyScore({
+                  original_trade: {
+                    wallet_address: trade.traderWallet,
+                    condition_id: trade.conditionId || '',
+                    side: (trade.side || 'BUY') as 'BUY' | 'SELL',
+                    price,
+                    shares_normalized: sharesForMl,
+                    timestamp: tradeTime.toISOString()
+                  },
+                  market_context: {
+                    current_price: currentPrice,
+                    current_timestamp: new Date().toISOString(),
+                    market_title: market.title || trade.title || '',
+                    market_tags: market.tags ? JSON.stringify(market.tags) : null,
+                    market_end_time_unix: market.endTime ? Math.floor(market.endTime.getTime() / 1000) : null,
+                    market_start_time_unix: market.start_time ? Math.floor(new Date(market.start_time).getTime() / 1000) : null,
+                    token_label: trade.outcome || 'YES'
+                  },
+                  user_slippage: 0.3
+                }, serviceRoleKey);
+
+                if (polyScoreResponse.success) {
+                  if (polyScoreResponse.prediction?.probability) preInsertMlProbability = polyScoreResponse.prediction.probability;
+                  else if (polyScoreResponse.valuation?.ai_fair_value) preInsertMlProbability = polyScoreResponse.valuation.ai_fair_value;
+                  else if (polyScoreResponse.analysis?.prediction_stats?.ai_fair_value) preInsertMlProbability = polyScoreResponse.analysis.prediction_stats.ai_fair_value;
+                  if (preInsertMlProbability != null && preInsertMlProbability > 1) preInsertMlProbability /= 100;
+                }
+                mlScoreCache.set(sourceTradeId, preInsertMlProbability);
+              }
+              if (preInsertMlProbability == null || preInsertMlProbability < wallet.model_threshold) {
+                const reason = preInsertMlProbability == null ? 'ml_unavailable' : 'low_ml_score';
+                reasons[reason] = (reasons[reason] || 0) + 1;
+                results[wallet.wallet_id].skipped++;
+                continue;
+              }
+            } catch (mlErr: unknown) {
+              console.warn(`[ft/sync] ML pre-check failed for ${sourceTradeId}:`, mlErr);
+              reasons['ml_unavailable'] = (reasons['ml_unavailable'] || 0) + 1;
+              results[wallet.wallet_id].skipped++;
+              continue;
+            }
+          }
+
+          // ── Cash / bankroll check (in-memory) ──
+          const effectiveBankroll = Math.max(0, startingBalance + realizedPnl - runningOpenExposure);
+          const effectiveBetSize = calculateBetSize(
+            wallet, traderWinRate, price, edge, trade.conviction, effectiveBankroll, preInsertMlProbability
+          );
+          if (effectiveBankroll < effectiveBetSize || effectiveBankroll <= 0) {
+            reasons['insufficient_cash'] = (reasons['insufficient_cash'] || 0) + 1;
             results[wallet.wallet_id].skipped++;
             continue;
           }
-        }
-        
-        const effectiveBankroll = Math.max(0, startingBalance + realizedPnl - runningOpenExposure);
-        const effectiveBetSize = calculateBetSize(
-          wallet, traderWinRate, price, edge, trade.conviction, effectiveBankroll, preInsertMlProbability
-        );
-        const cashAvailable = effectiveBankroll;
-        if (cashAvailable < effectiveBetSize || cashAvailable <= 0) {
-          await recordSeen(sourceTradeId, 'skipped', 'insufficient_cash');
-          reasons['insufficient_cash'] = (reasons['insufficient_cash'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        
-        const { data: existing } = await supabase
-          .from('ft_orders')
-          .select('order_id')
-          .eq('wallet_id', wallet.wallet_id)
-          .eq('source_trade_id', sourceTradeId)
-          .limit(1);
-        
-        if (existing && existing.length > 0) {
-          await recordSeen(sourceTradeId, 'skipped', 'duplicate');
-          reasons['duplicate'] = (reasons['duplicate'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-          continue;
-        }
-        
-        const ftOrder = {
-          wallet_id: wallet.wallet_id,
-          order_type: 'FT',
-          side: trade.side,
-          market_slug: trade.slug || null,
-          condition_id: trade.conditionId,
-          market_title: trade.title || null,
-          token_label: trade.outcome || 'YES',
-          source_trade_id: sourceTradeId,
-          trader_address: trade.traderWallet,
-          entry_price: priceWithSlippage,
-          size: effectiveBetSize,
-          market_end_time: market.endTime?.toISOString() || null,
-          trader_win_rate: traderWinRate,
-          trader_roi: null,
-          trader_resolved_count: trade.traderTradeCount,
-          model_probability: preInsertMlProbability, // Already computed for use_model; enrich-ml backfills others
-          edge_pct: edge,
-          conviction: trade.conviction ?? null,
-          outcome: 'OPEN',
-          order_time: tradeTime.toISOString()
-        };
-        
-        const { data: insertedOrder, error: insertError } = await supabase.from('ft_orders').insert(ftOrder).select('order_id').single();
-        
-        if (insertError) {
-          await recordSeen(sourceTradeId, 'skipped', 'insert_error');
-          console.error(`[ft/sync] Insert error for ${wallet.wallet_id}:`, insertError);
-          reasons['insert_error'] = (reasons['insert_error'] || 0) + 1;
-          results[wallet.wallet_id].skipped++;
-        } else {
-          await recordSeen(sourceTradeId, 'taken');
-          results[wallet.wallet_id].inserted++;
-          runningOpenExposure += effectiveBetSize;
 
-          // For use_model wallets we already have model_probability from pre-insert. For others, enrich-ml cron will backfill.
-          // (Optional: could call getPolyScore here for non-use_model orders, but enrich-ml runs every 10 min)
+          // ═══ PASSED ALL FILTERS → INSERT ORDER ═══
+          const ftOrder = {
+            wallet_id: wallet.wallet_id,
+            order_type: 'FT',
+            side: trade.side,
+            market_slug: trade.slug || null,
+            condition_id: trade.conditionId,
+            market_title: trade.title || null,
+            token_label: trade.outcome || 'YES',
+            source_trade_id: sourceTradeId,
+            trader_address: trade.traderWallet,
+            entry_price: priceWithSlippage,
+            size: effectiveBetSize,
+            market_end_time: market.endTime?.toISOString() || null,
+            trader_win_rate: traderWinRate,
+            trader_roi: null,
+            trader_resolved_count: trade.traderTradeCount,
+            model_probability: preInsertMlProbability,
+            edge_pct: edge,
+            conviction: trade.conviction ?? null,
+            outcome: 'OPEN',
+            order_time: tradeTime.toISOString()
+          };
+
+          const { error: insertError } = await supabase.from('ft_orders').insert(ftOrder);
+          if (insertError) {
+            console.error(`[ft/sync] Insert error for ${wallet.wallet_id}:`, insertError);
+            reasons['insert_error'] = (reasons['insert_error'] || 0) + 1;
+            results[wallet.wallet_id].skipped++;
+          } else {
+            results[wallet.wallet_id].inserted++;
+            runningOpenExposure += effectiveBetSize;
+          }
         }
-      }
-      
-      // Derive trades_seen and trades_skipped from ft_seen_trades (accurate, no double count)
-      const [seenRes, skippedRes] = await Promise.all([
-        supabase.from('ft_seen_trades').select('*', { count: 'exact', head: true }).eq('wallet_id', wallet.wallet_id),
-        supabase.from('ft_seen_trades').select('*', { count: 'exact', head: true }).eq('wallet_id', wallet.wallet_id).eq('outcome', 'skipped')
-      ]);
-      const tradesSeen = seenRes.count ?? 0;
-      const tradesSkipped = skippedRes.count ?? 0;
-      
-      await supabase
-        .from('ft_wallets')
-        .update({ 
+
+        // Update wallet sync time (no ft_seen_trades COUNT queries needed)
+        await supabase.from('ft_wallets').update({
           last_sync_time: now.toISOString(),
-          trades_seen: tradesSeen,
-          trades_skipped: tradesSkipped,
           updated_at: now.toISOString()
-        })
-        .eq('wallet_id', wallet.wallet_id);
+        }).eq('wallet_id', wallet.wallet_id);
 
-      walletsProcessed++;
+        walletsProcessed++;
       } catch (walletErr: unknown) {
-        // Log but don't let one wallet's error stop all remaining wallets
         const msg = walletErr instanceof Error ? walletErr.message : String(walletErr);
         console.error(`[ft/sync] Error processing wallet ${wallet.wallet_id}:`, msg);
         errors.push(`Wallet ${wallet.wallet_id}: ${msg}`);
         walletsProcessed++;
-
-        // CRITICAL: update last_sync_time even on error so this wallet doesn't
-        // permanently block the stalest-first queue
+        // CRITICAL: update last_sync_time even on error to prevent queue deadlock
         try {
-          await supabase
-            .from('ft_wallets')
-            .update({ last_sync_time: now.toISOString(), updated_at: now.toISOString() })
-            .eq('wallet_id', wallet.wallet_id);
-        } catch { /* ignore update error */ }
+          await supabase.from('ft_wallets').update({
+            last_sync_time: now.toISOString(), updated_at: now.toISOString()
+          }).eq('wallet_id', wallet.wallet_id);
+        } catch { /* ignore */ }
       }
     }
     
@@ -1107,12 +960,12 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       synced_at: now.toISOString(),
-      traders_checked: topTraders.length,
+      traders_checked: eligibleTraders.length,
       trades_fetched: allTrades.length,
       wallets_processed: walletsProcessed,
       wallets_remaining: activeWallets.length - walletsProcessed,
       time_guard_hit: walletsStopped,
-      elapsed_ms: Date.now() - syncStartMs,
+      elapsed_ms: Date.now() - walletLoopStartMs,
       markets_found: marketMap.size,
       wallets_total: activeWallets.length,
       total_inserted: totalInserted,
