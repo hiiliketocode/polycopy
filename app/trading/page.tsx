@@ -139,6 +139,7 @@ export default function TradingStrategiesPage() {
     strategy_id: string; ft_wallet_id: string; display_name: string; is_active: boolean; is_paused: boolean;
     starting_capital?: number; initial_capital?: number;
     lt_risk_state?: unknown; created_at?: string;
+    owner_label?: string | null; is_own?: boolean;
     lt_stats?: { total_trades: number; open_positions: number; won: number; lost: number; win_rate: number | null;
       realized_pnl: number; unrealized_pnl: number; total_pnl: number; current_balance: number; cash_available: number;
       avg_trade_size: number; first_trade: string | null; last_trade: string | null;
@@ -203,7 +204,9 @@ export default function TradingStrategiesPage() {
       test_status: s.is_active ? 'ACTIVE' as const : 'ENDED' as const,
       // Tag as live so we can style it differently
       _isLive: true,
-    } as FTWallet & { _isLive?: boolean };
+      _ownerLabel: s.owner_label || null,
+      _isOwn: s.is_own !== false,
+    } as FTWallet & { _isLive?: boolean; _ownerLabel?: string | null; _isOwn?: boolean };
   }), [ltStrategies]);
 
   const sortedWallets = useMemo(() => {
@@ -782,6 +785,8 @@ export default function TradingStrategiesPage() {
                     ? (wallet.won / (wallet.won + wallet.lost)) * 100 
                     : 0;
                   const isLive = (wallet as FTWallet & { _isLive?: boolean })._isLive === true;
+                  const ownerLabel = (wallet as FTWallet & { _ownerLabel?: string | null })._ownerLabel;
+                  const isOwn = (wallet as FTWallet & { _isOwn?: boolean })._isOwn !== false;
                   const detailHref = isLive ? `/lt/${wallet.wallet_id}` : `/ft/${wallet.wallet_id}`;
                   
                   return (
@@ -801,6 +806,11 @@ export default function TradingStrategiesPage() {
                             <div className="font-medium flex items-center gap-1.5">
                               <Link href={detailHref} className="hover:underline">{wallet.display_name}</Link>
                               {isLive && <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] py-0 px-1.5">LIVE</Badge>}
+                              {isLive && ownerLabel && (
+                                <Badge variant="outline" className={`text-[10px] py-0 px-1.5 ${isOwn ? 'border-blue-300 text-blue-600' : 'border-orange-300 text-orange-600'}`}>
+                                  {ownerLabel}
+                                </Badge>
+                              )}
                             </div>
                             <div className="text-xs text-muted-foreground truncate max-w-[200px]" title={wallet.description}>
                               {wallet.description}
@@ -1156,7 +1166,7 @@ export default function TradingStrategiesPage() {
               )}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium">Your live strategies</span>
+                  <span className="font-medium">Live strategies</span>
                   <div className="flex gap-1">
                     {(['all', 'active', 'paused'] as const).map((f) => (
                       <Button
@@ -1196,6 +1206,11 @@ export default function TradingStrategiesPage() {
                               <Link href={`/lt/${s.strategy_id}`} className="font-medium hover:underline">
                                 {s.display_name}
                               </Link>
+                              {s.owner_label && (
+                                <Badge variant="outline" className={`text-[10px] py-0 px-1.5 ${s.is_own !== false ? 'border-blue-300 text-blue-600' : 'border-orange-300 text-orange-600'}`}>
+                                  {s.owner_label}
+                                </Badge>
+                              )}
                               {s.is_active && !isPaused && (
                                 <Badge variant="secondary" className="bg-emerald-100 text-emerald-700">Active</Badge>
                               )}

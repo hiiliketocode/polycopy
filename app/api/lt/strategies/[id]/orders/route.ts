@@ -19,12 +19,32 @@ export async function GET(request: Request, { params }: RouteParams) {
         const { id: strategyId } = await params;
         const supabase = createAdminServiceClient();
 
-        const { data: strategy } = await supabase
+        // Check own strategy first, then cross-admin
+        let { data: strategy } = await supabase
             .from('lt_strategies')
-            .select('strategy_id')
+            .select('strategy_id, user_id')
             .eq('strategy_id', strategyId)
             .eq('user_id', userId)
             .maybeSingle();
+
+        if (!strategy) {
+            // Cross-admin read: check if another admin owns it
+            const { data: crossStrategy } = await supabase
+                .from('lt_strategies')
+                .select('strategy_id, user_id')
+                .eq('strategy_id', strategyId)
+                .maybeSingle();
+            if (crossStrategy) {
+                const { data: ownerProfile } = await supabase
+                    .from('profiles')
+                    .select('is_admin')
+                    .eq('id', crossStrategy.user_id)
+                    .maybeSingle();
+                if (ownerProfile?.is_admin) {
+                    strategy = crossStrategy;
+                }
+            }
+        }
 
         if (!strategy) {
             return NextResponse.json({ error: 'Strategy not found' }, { status: 404 });

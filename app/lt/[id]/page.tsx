@@ -71,6 +71,9 @@ interface LTStrategy {
   circuit_breaker_active: boolean;
   last_sync_time: string | null;
   created_at: string;
+  // Cross-admin
+  owner_label?: string | null;
+  is_own?: boolean;
 }
 
 interface Stats {
@@ -402,6 +405,11 @@ export default function LTDetailPage() {
           <h1 className="text-3xl font-bold flex items-center gap-2">
             {strategy.display_name}
             <Badge className="bg-purple-100 text-purple-700 border-purple-200">LIVE</Badge>
+            {strategy.owner_label && (
+              <Badge variant="outline" className={`text-xs ${strategy.is_own !== false ? 'border-blue-300 text-blue-600' : 'border-orange-300 text-orange-600'}`}>
+                {strategy.owner_label}
+              </Badge>
+            )}
             {strategy.shadow_mode && (
               <Badge className="bg-blue-100 text-blue-700 border-blue-200">SHADOW</Badge>
             )}
