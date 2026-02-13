@@ -4,6 +4,14 @@ import { requireAdminOrCron } from '@/lib/ft-auth';
 import { fetchPolymarketLeaderboard } from '@/lib/polymarket-leaderboard';
 import { isTraderExcluded } from '@/lib/ft-excluded-traders';
 import { getPolyScore } from '@/lib/polyscore/get-polyscore';
+import {
+  calculateBetSize,
+  FT_SLIPPAGE_PCT,
+  getSourceTradeId,
+  parseExtendedFilters,
+  parseTimestamp,
+  type ExtendedFilters,
+} from '@/lib/ft-sync/shared-logic';
 
 // Allow up to 5 minutes for sync (93+ wallets with DB + API calls each)
 export const maxDuration = 300;
@@ -12,8 +20,6 @@ const TOP_TRADERS_LIMIT = 100; // Polymarket API max per request
 const LEADERBOARD_PAGES = 2;   // Fetch 2 pages (top 100 + next 100) per leaderboard view → up to 800 slots, deduped
 const TRADES_PAGE_SIZE = 50;   // Per page from Polymarket API
 const MAX_PAGES_PER_TRADER = 4; // Max 200 trades per trader per sync
-const FT_SLIPPAGE_PCT = 0.003; // 0.3% - from empirical analysis of real copy trades
-
 type PolymarketTrade = {
   id?: string;
   transactionHash?: string;
@@ -27,22 +33,6 @@ type PolymarketTrade = {
   price?: number | string;
   timestamp?: number | string;
   proxyWallet?: string;
-};
-
-type ExtendedFilters = {
-  min_trader_win_rate?: number;   // Alternative to model_threshold
-  max_trader_win_rate?: number;   // For anti-strategies
-  max_conviction?: number;        // For testing low conviction
-  max_edge?: number;              // For testing negative edge
-  market_categories?: string[];   // Filter by market type keywords
-  min_original_trade_usd?: number; // Minimum original trade size
-  max_original_trade_usd?: number; // Maximum original trade size
-  hypothesis?: string;            // Strategy thesis
-  trader_pool?: 'top_pnl' | 'top_wr' | 'high_volume' | 'newcomers'; // Which traders to watch
-  target_trader?: string;         // Specific trader address to copy (lowercase)
-  target_traders?: string[];      // List of trader addresses (e.g. top niche traders from trader_profile_stats)
-  target_trader_name?: string;    // Display name for the trader
-  trade_live_only?: boolean;      // Only take trades when current time >= market game_start_time (sports events only; no fallback to start_time)
 };
 
 type FTWallet = {
@@ -71,26 +61,7 @@ type FTWallet = {
   wr_source?: string | null;  // 'GLOBAL' | 'PROFILE' - Profile = use trader_profile_stats (niche/structure/bracket)
 };
 
-/**
- * Generate unique trade ID for deduplication. Prefer Polymarket id, then transactionHash.
- */
-function getSourceTradeId(trade: { id?: string; transactionHash?: string; traderWallet?: string; conditionId?: string; timestamp?: string | number }): string {
-  if (trade.id && String(trade.id).trim()) return String(trade.id).trim();
-  if (trade.transactionHash && String(trade.transactionHash).trim()) return String(trade.transactionHash).trim();
-  return `${trade.traderWallet || ''}-${trade.conditionId || ''}-${trade.timestamp || ''}`;
-}
-
-/**
- * Parse extended filters from detailed_description JSON
- */
-function parseExtendedFilters(wallet: FTWallet): ExtendedFilters {
-  if (!wallet.detailed_description) return {};
-  try {
-    return JSON.parse(wallet.detailed_description);
-  } catch {
-    return {};
-  }
-}
+// getSourceTradeId, parseExtendedFilters imported from @/lib/ft-sync/shared-logic
 
 /** Derive price bracket for profile stats: LOW < 0.30, MID 0.30-0.70, HIGH > 0.70 */
 function priceToBracket(price: number): 'LOW' | 'MID' | 'HIGH' {
@@ -128,135 +99,8 @@ function getProfileWinRate(
   return { winRate: winWeighted / totalTrades, tradeCount: totalTrades };
 }
 
-/**
- * Calculate bet size based on allocation method
- */
-function calculateBetSize(
-  wallet: FTWallet,
-  traderWinRate: number,
-  entryPrice: number,
-  edge: number,
-  conviction: number,  // Trader's conviction = trade_value / avg_trade_size
-  effectiveBankroll?: number,  // startingBalance + realizedPnl - openExposure (avoids stale current_balance)
-  modelProbability?: number | null  // ML score 0-1; used by ML_SCALED allocation
-): number {
-  const method = wallet.allocation_method || 'FIXED';
-  const minBet = wallet.min_bet || 0.50;
-  const maxBet = wallet.max_bet || 10.00;
-  
-  let betSize: number;
-  
-  switch (method) {
-    case 'KELLY': {
-      // Kelly Criterion: f = edge / (1 - entry_price)
-      // Guard: at 99¢+, denominator → 0; use minBet to avoid blow-up
-      if (entryPrice >= 0.99) {
-        betSize = minBet;
-        break;
-      }
-      const kellyFraction = wallet.kelly_fraction || 0.25;
-      const bankroll = effectiveBankroll ?? wallet.current_balance ?? wallet.starting_balance ?? 1000;
-      
-      const fullKelly = edge / (1 - entryPrice);
-      const kellyBet = bankroll * fullKelly * kellyFraction;
-      
-      betSize = kellyBet;
-      break;
-    }
-    
-    case 'EDGE_SCALED': {
-      // Scale bet based on edge: higher edge = bigger bet
-      // bet = base * (1 + edge * scale_factor)
-      // With edge of 10% and scale_factor of 5, bet = base * 1.5
-      const baseBet = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
-      const scaleFactor = 5; // Each 10% edge adds 50% to bet
-      betSize = baseBet * (1 + edge * scaleFactor);
-      break;
-    }
-    
-    case 'TIERED': {
-      // Simple brackets based on edge
-      const baseBet = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
-      if (edge >= 0.15) {
-        betSize = baseBet * 2.0;  // 15%+ edge: 2x
-      } else if (edge >= 0.10) {
-        betSize = baseBet * 1.5;  // 10-15% edge: 1.5x
-      } else if (edge >= 0.05) {
-        betSize = baseBet * 1.0;  // 5-10% edge: 1x
-      } else {
-        betSize = baseBet * 0.5;  // <5% edge: 0.5x
-      }
-      break;
-    }
-    
-    case 'CONVICTION': {
-      // Scale bet based on trader's conviction (how much more/less than usual they're betting)
-      // conviction = 1.0 means normal bet, 2.0 means 2x their usual, etc.
-      // Higher trader conviction → larger bet from us
-      const baseBet = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
-      
-      // Conviction multiplier: 0.5x at conv=0.5, 1x at conv=1, 2x at conv=2, cap at 3x
-      const convictionMultiplier = Math.min(Math.max(conviction, 0.5), 3.0);
-      betSize = baseBet * convictionMultiplier;
-      break;
-    }
-    
-    case 'CONFIDENCE': {
-      // Multi-factor confidence score using edge, win rate, AND conviction
-      const baseBet = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
-      const edgeScore = Math.min(edge / 0.20, 1);
-      const wrScore = Math.min((traderWinRate - 0.50) / 0.30, 1);
-      const convictionScore = Math.min((conviction - 0.5) / 2.5, 1);
-      const confidenceScore = (edgeScore * 0.4) + (convictionScore * 0.3) + (wrScore * 0.3);
-      betSize = baseBet * (0.5 + confidenceScore * 1.5);
-      break;
-    }
-    
-    case 'ML_SCALED': {
-      // Scale bet by ML confidence: 55% → ~1.1x, 65% → ~1.3x, 70% → ~1.4x (cap 0.5x–2x)
-      const baseBet = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
-      const ml = modelProbability ?? 0.55;
-      const mlMult = Math.min(Math.max(0.5 + (ml - 0.5), 0.5), 2.0); // 0.5x to 2x
-      betSize = baseBet * mlMult;
-      break;
-    }
-
-    case 'WHALE': {
-      // Multi-signal: ML + conviction + WR + edge. Whale trades = high conviction + high WR + high ML.
-      const baseBet = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
-      const ml = modelProbability ?? 0.55;
-      const mlScore = Math.min(Math.max((ml - 0.5) / 0.5, 0), 1);
-      const wrScore = Math.min(Math.max((traderWinRate - 0.50) / 0.30, 0), 1);
-      const convScore = Math.min(Math.max((conviction - 0.5) / 2.5, 0), 1);
-      const edgeScore = Math.min(edge / 0.20, 1);
-      const composite = 0.35 * mlScore + 0.30 * convScore + 0.25 * wrScore + 0.10 * edgeScore;
-      betSize = baseBet * (0.5 + composite); // 0.5x to 2x
-      break;
-    }
-    
-    case 'FIXED':
-    default: {
-      // Simple fixed bet size
-      betSize = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
-      break;
-    }
-  }
-  
-  // Apply min/max caps
-  betSize = Math.max(minBet, Math.min(maxBet, betSize));
-  
-  // Round to 2 decimal places
-  return Math.round(betSize * 100) / 100;
-}
-
-function parseTimestamp(value: number | string | undefined): Date | null {
-  if (value === undefined || value === null) return null;
-  let ts = Number(value);
-  if (!Number.isFinite(ts)) return null;
-  if (ts < 10000000000) ts *= 1000; // Convert seconds to ms
-  const date = new Date(ts);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
+// calculateBetSize, parseTimestamp imported from @/lib/ft-sync/shared-logic
+// Single source of truth: both FT sync and LT executor use the same functions.
 
 /**
  * POST /api/ft/sync

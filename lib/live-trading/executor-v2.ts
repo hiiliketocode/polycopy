@@ -23,7 +23,7 @@ import { placeOrderCore } from '@/lib/polymarket/place-order-core';
 import { prepareOrderParamsForClob } from '@/lib/polymarket/order-prep';
 import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client';
 import { ensureTraderId } from '@/lib/traders/ensure-id';
-import { calculateBetSize, getSourceTradeId, type EnrichedTrade, type FTWallet } from '@/lib/ft-sync/shared-logic';
+import { calculateBetSize, getSourceTradeId, FT_SLIPPAGE_PCT, type EnrichedTrade, type FTWallet } from '@/lib/ft-sync/shared-logic';
 import { lockCapitalForTrade, unlockCapital, type CapitalState } from './capital-manager';
 import { checkRisk, recordDailySpend, loadStrategyRiskState } from './risk-manager-v2';
 import { resolveTokenId } from './token-cache';
@@ -196,11 +196,21 @@ export async function executeTrade(
     }
 
     // ── Step 2: Calculate bet size (same as FT) ──
-    const effectiveBankroll = strategy.available_cash + strategy.locked_capital + strategy.cooldown_capital;
+    // BANKROLL: Match FT's formula: startingBalance + realizedPnl - openExposure.
+    // In LT terms: available_cash + cooldown_capital (excludes locked/open positions).
+    // FT has no cooldown, so cooldown capital is immediately available in FT equivalent.
+    const effectiveBankroll = strategy.available_cash + strategy.cooldown_capital;
     const traderWinRate = trade.traderWinRate;
+
+    // EDGE: Use FT_SLIPPAGE_PCT (0.3%) for edge calculation — MUST match FT exactly.
+    // This ensures identical bet sizing between FT and LT for Kelly/edge-scaled methods.
+    const ftPriceWithSlippage = Math.min(0.9999, price * (1 + FT_SLIPPAGE_PCT));
+    const edge = traderWinRate - ftPriceWithSlippage;
+
+    // CLOB LIMIT: Use LT's own slippage tolerance for execution quality.
+    // This is the max price we'll pay on the CLOB (separate from the edge calculation).
     const slippagePct = strategy.slippage_tolerance_pct || 3;
-    const priceWithSlippage = Math.min(0.9999, price * (1 + slippagePct / 100));
-    const edge = traderWinRate - priceWithSlippage;
+    const clobLimitPrice = Math.min(0.9999, price * (1 + slippagePct / 100));
 
     let betSize = calculateBetSize(ftWallet, traderWinRate, price, edge, trade.conviction, effectiveBankroll);
 
@@ -334,12 +344,12 @@ export async function executeTrade(
 
     // ── Step 7: Prepare order params (same as manual quick trades) ──
     const sizeContracts = betSize / price;
-    const prepared = await prepareOrderParamsForClob(tokenId, priceWithSlippage, sizeContracts, side);
+    const prepared = await prepareOrderParamsForClob(tokenId, clobLimitPrice, sizeContracts, side);
 
     if (!prepared) {
         await unlockCapital(supabase, strategy.strategy_id, betSize);
-        await traceLogger.warn('ORDER_PREP', `Order prep failed: price=${priceWithSlippage.toFixed(4)}, size=${sizeContracts.toFixed(4)}`, {
-            priceWithSlippage,
+        await traceLogger.warn('ORDER_PREP', `Order prep failed: price=${clobLimitPrice.toFixed(4)}, size=${sizeContracts.toFixed(4)}`, {
+            clobLimitPrice,
             sizeContracts,
         });
         return { success: false, error: 'Order prep failed (size/price invalid)', stage: 'ORDER_PREP', bet_size: betSize };

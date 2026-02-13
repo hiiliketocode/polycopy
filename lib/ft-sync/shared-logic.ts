@@ -47,7 +47,7 @@ export type FTWallet = {
     use_model: boolean;
     bet_size: number;
     bet_allocation_weight: number;
-    allocation_method: 'FIXED' | 'KELLY' | 'EDGE_SCALED' | 'TIERED' | 'CONFIDENCE' | 'CONVICTION' | 'ML_SCALED';
+    allocation_method: 'FIXED' | 'KELLY' | 'EDGE_SCALED' | 'TIERED' | 'CONFIDENCE' | 'CONVICTION' | 'ML_SCALED' | 'WHALE';
     kelly_fraction: number;
     min_bet: number;
     max_bet: number;
@@ -64,6 +64,7 @@ export type FTWallet = {
     dead_market_guard?: boolean;
     dead_market_floor?: number;
     dead_market_max_drift_pct?: number;
+    wr_source?: string | null;  // 'GLOBAL' | 'PROFILE'
 };
 
 export type EnrichedTrade = PolymarketTrade & {
@@ -195,6 +196,18 @@ export function calculateBetSize(
             const convictionScore = Math.min((conviction - 0.5) / 2.5, 1);
             const confidenceScore = (edgeScore * 0.4) + (convictionScore * 0.3) + (wrScore * 0.3);
             betSize = baseBet * (0.5 + confidenceScore * 1.5);
+            break;
+        }
+        case 'WHALE': {
+            // Multi-signal: ML + conviction + WR + edge. Whale trades = high conviction + high WR + high ML.
+            const baseBet = wallet.bet_size * (wallet.bet_allocation_weight || 1.0);
+            const ml = modelProbability ?? 0.55;
+            const mlScore = Math.min(Math.max((ml - 0.5) / 0.5, 0), 1);
+            const wrScore = Math.min(Math.max((traderWinRate - 0.50) / 0.30, 0), 1);
+            const convScore = Math.min(Math.max((conviction - 0.5) / 2.5, 0), 1);
+            const edgeScore = Math.min(edge / 0.20, 1);
+            const composite = 0.35 * mlScore + 0.30 * convScore + 0.25 * wrScore + 0.10 * edgeScore;
+            betSize = baseBet * (0.5 + composite); // 0.5x to 2x
             break;
         }
         case 'FIXED':

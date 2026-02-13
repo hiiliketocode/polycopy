@@ -18,7 +18,8 @@ const supabase = createClient(supabaseUrl || '', serviceKey || '', {
 });
 
 // Thresholds
-const FIRE_TOP_TRADERS_LIMIT = 100;
+const FIRE_TOP_TRADERS_LIMIT = 100;  // Polymarket API max per request
+const FIRE_LEADERBOARD_PAGES = 2;    // Fetch 2 pages → top 200 traders
 const FIRE_TRADES_PER_TRADER = 15;
 const FIRE_WIN_RATE_THRESHOLD = 0.55;
 const FIRE_ROI_THRESHOLD = 0.15;
@@ -176,16 +177,30 @@ export async function GET(request: Request) {
 
     console.log('[fire-feed] Starting...');
 
-    // 1. Get top traders from leaderboard
-    const topTraders = await fetchPolymarketLeaderboard({
-      timePeriod: 'month',
-      orderBy: 'PNL',
-      limit: FIRE_TOP_TRADERS_LIMIT,
-      category: 'overall',
-    });
+    // 1. Get top traders from leaderboard (paginated: top 200)
+    const leaderboardPages = await Promise.all(
+      Array.from({ length: FIRE_LEADERBOARD_PAGES }, (_, i) =>
+        fetchPolymarketLeaderboard({
+          timePeriod: 'month',
+          orderBy: 'PNL',
+          limit: FIRE_TOP_TRADERS_LIMIT,
+          offset: i * FIRE_TOP_TRADERS_LIMIT,
+          category: 'overall',
+        })
+      )
+    );
+    // Deduplicate by wallet address
+    const traderMap = new Map<string, typeof leaderboardPages[0][0]>();
+    for (const page of leaderboardPages) {
+      for (const t of page) {
+        const key = t.wallet.toLowerCase();
+        if (!traderMap.has(key)) traderMap.set(key, t);
+      }
+    }
+    const topTraders = Array.from(traderMap.values());
 
     debugStats.tradersChecked = topTraders.length;
-    console.log(`[fire-feed] Found ${topTraders.length} top traders`);
+    console.log(`[fire-feed] Found ${topTraders.length} top traders (${FIRE_LEADERBOARD_PAGES} pages)`);
 
     if (topTraders.length === 0) {
       return NextResponse.json({ 

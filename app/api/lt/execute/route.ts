@@ -20,7 +20,7 @@ import { processAllCooldowns } from '@/lib/live-trading/capital-manager';
 import { resetDailyRiskState } from '@/lib/live-trading/risk-manager-v2';
 import { getActiveStrategies, executeTrade, type LTStrategy } from '@/lib/live-trading/executor-v2';
 import { batchResolveTokenIds } from '@/lib/live-trading/token-cache';
-import { type FTWallet, type EnrichedTrade, getSourceTradeId } from '@/lib/ft-sync/shared-logic';
+import { type FTWallet, type EnrichedTrade, getSourceTradeId, FT_SLIPPAGE_PCT } from '@/lib/ft-sync/shared-logic';
 
 const FT_LOOKBACK_HOURS = 6;  // Look back 6 hours for FT orders (down from 24h)
 
@@ -180,6 +180,13 @@ export async function POST(request: Request) {
                 const traderWinRate = Number(fo.trader_win_rate) ?? 0.5;
                 const traderTradeCount = Number(fo.trader_resolved_count) ?? 50;
 
+                // CRITICAL: Derive the original trader's price by reversing FT's
+                // simulated slippage. FT stores entry_price = original_price × (1 + 0.3%).
+                // LT must start from the original price so it can apply its own
+                // independent slippage for CLOB limit orders, and calculate edge
+                // identically to FT (both using FT_SLIPPAGE_PCT from the same base).
+                const originalTradePrice = entryPrice / (1 + FT_SLIPPAGE_PCT);
+
                 const trade: EnrichedTrade = {
                     id: sourceTradeId,
                     transactionHash: sourceTradeId,
@@ -189,7 +196,7 @@ export async function POST(request: Request) {
                     outcome: (fo.token_label || 'YES').toUpperCase(),
                     side: 'BUY',
                     size: entryPrice > 0 ? sizeUsd / entryPrice : 0,
-                    price: entryPrice,
+                    price: originalTradePrice,
                     timestamp: fo.order_time,
                     traderWallet: (fo.trader_address || '').toLowerCase(),
                     traderWinRate,
