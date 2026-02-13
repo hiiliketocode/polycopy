@@ -294,11 +294,17 @@ export async function POST(request: Request) {
       });
     }
     
-    // Filter to only active test period wallets
+    // Filter to only active test period wallets, then sort stalest-first so
+    // neglected wallets get priority. This ensures every wallet gets processed
+    // across multiple sync runs even if a single run can't finish all 90+ wallets.
     const activeWallets = (wallets as FTWallet[]).filter(w => {
       const startDate = new Date(w.start_date);
       const endDate = new Date(w.end_date);
       return startDate <= now && endDate >= now;
+    }).sort((a, b) => {
+      const aTime = a.last_sync_time ? new Date(a.last_sync_time).getTime() : 0;
+      const bTime = b.last_sync_time ? new Date(b.last_sync_time).getTime() : 0;
+      return aTime - bTime; // stalest first
     });
     
     if (activeWallets.length === 0) {
@@ -310,7 +316,7 @@ export async function POST(request: Request) {
       });
     }
     
-    console.log(`[ft/sync] Found ${activeWallets.length} active wallets`);
+    console.log(`[ft/sync] Found ${activeWallets.length} active wallets (stalest-first)`);
     
     // 2. Get traders from different pools based on strategy needs
     // Fetch multiple pools: month/week for quality, DAY for currently active (critical for live events like Super Bowl)
@@ -642,7 +648,19 @@ export async function POST(request: Request) {
     // Cache ML score by source_trade_id to avoid N getPolyScore calls when same trade qualifies for multiple use_model wallets
     const mlScoreCache = new Map<string, number | null>();
 
+    const syncStartMs = Date.now();
+    const MAX_SYNC_MS = 240_000; // Stop after 4 min to leave headroom for response (maxDuration=300s)
+    let walletsProcessed = 0;
+    let walletsStopped = false;
+
     for (const wallet of activeWallets) {
+      // Time guard: stop before Vercel timeout; remaining wallets will be first next run (stalest-first)
+      if (Date.now() - syncStartMs > MAX_SYNC_MS) {
+        walletsStopped = true;
+        console.log(`[ft/sync] Time guard: ${walletsProcessed}/${activeWallets.length} wallets processed in ${((Date.now() - syncStartMs) / 1000).toFixed(0)}s, stopping`);
+        break;
+      }
+
       results[wallet.wallet_id] = { inserted: 0, skipped: 0, evaluated: 0, reasons: {} };
 
       // Wrap each wallet in try/catch so one failure doesn't block all remaining wallets
@@ -1041,11 +1059,13 @@ export async function POST(request: Request) {
         })
         .eq('wallet_id', wallet.wallet_id);
 
+      walletsProcessed++;
       } catch (walletErr: unknown) {
         // Log but don't let one wallet's error stop all remaining wallets
         const msg = walletErr instanceof Error ? walletErr.message : String(walletErr);
         console.error(`[ft/sync] Error processing wallet ${wallet.wallet_id}:`, msg);
         errors.push(`Wallet ${wallet.wallet_id}: ${msg}`);
+        walletsProcessed++;
       }
     }
     
@@ -1064,8 +1084,12 @@ export async function POST(request: Request) {
       synced_at: now.toISOString(),
       traders_checked: topTraders.length,
       trades_fetched: allTrades.length,
+      wallets_processed: walletsProcessed,
+      wallets_remaining: activeWallets.length - walletsProcessed,
+      time_guard_hit: walletsStopped,
+      elapsed_ms: Date.now() - syncStartMs,
       markets_found: marketMap.size,
-      wallets_processed: activeWallets.length,
+      wallets_total: activeWallets.length,
       total_inserted: totalInserted,
       total_skipped: totalSkipped,
       total_evaluated: totalEvaluated,
