@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server';
 import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
 import { getActiveStrategies } from '@/lib/live-trading/executor-v2';
+import { fetchAllRows } from '@/lib/live-trading/paginated-query';
 
 export async function GET(request: Request) {
   const authError = await requireAdminOrCron(request);
@@ -46,14 +47,13 @@ export async function GET(request: Request) {
         .order('order_time', { ascending: false })
         .limit(100);
 
-      // Get already executed LT orders
-      const { data: executedLtOrders } = await supabase
-        .from('lt_orders')
-        .select('source_trade_id')
-        .eq('strategy_id', strategy.strategy_id);
+      // Get already executed LT orders (paginated — can exceed 1000 per strategy)
+      const executedLtOrders = await fetchAllRows(supabase, 'lt_orders',
+        'source_trade_id',
+        [['strategy_id', 'eq', strategy.strategy_id]]);
 
       const executedSourceIds = new Set(
-        (executedLtOrders || []).map((o: any) => o.source_trade_id)
+        executedLtOrders.map((o: any) => o.source_trade_id)
       );
 
       const analysis = {

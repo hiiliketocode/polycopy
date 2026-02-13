@@ -37,15 +37,14 @@ export async function GET() {
 
         let orderCounts: Record<string, number> = {};
         if (strategyIds.length > 0) {
-            const { data: orderRows } = await supabase
-                .from('lt_orders')
-                .select('strategy_id')
-                .in('strategy_id', strategyIds);
-            if (orderRows) {
-                orderRows.forEach((o: any) => {
-                    orderCounts[o.strategy_id] = (orderCounts[o.strategy_id] || 0) + 1;
-                });
-            }
+            // Use per-strategy count queries to avoid 1000-row limit truncation
+            await Promise.all(strategyIds.map(async (sid: string) => {
+                const { count } = await supabase
+                    .from('lt_orders')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('strategy_id', sid);
+                orderCounts[sid] = count ?? 0;
+            }));
         }
 
         const strategiesWithMeta = list.map((s: any) => ({

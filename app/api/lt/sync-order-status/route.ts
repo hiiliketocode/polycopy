@@ -19,6 +19,7 @@ import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
 import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client';
 import { unlockCapital } from '@/lib/live-trading/capital-manager';
+import { fetchAllRows } from '@/lib/live-trading/paginated-query';
 
 export async function POST(request: Request) {
     const authError = await requireAdminOrCron(request);
@@ -180,36 +181,28 @@ export async function POST(request: Request) {
             const currentDailySpent = Number(strat.daily_spent_usd) || 0;
 
             // ── 2a: What SHOULD be locked (open filled + pending orders) ──
-            const { data: openOrders } = await supabase
-                .from('lt_orders')
-                .select('signal_size_usd, executed_size_usd, status')
-                .eq('strategy_id', strategyId)
-                .eq('outcome', 'OPEN')
-                .in('status', ['FILLED', 'PARTIAL', 'PENDING']);
+            // Paginated to handle >1000 rows per strategy
+            const openOrders = await fetchAllRows(supabase, 'lt_orders',
+                'signal_size_usd, executed_size_usd, status',
+                [['strategy_id', 'eq', strategyId], ['outcome', 'eq', 'OPEN'], ['status', 'in', ['FILLED', 'PARTIAL', 'PENDING']]]);
 
-            const shouldBeLocked = (openOrders || []).reduce((sum: number, o: any) => {
+            const shouldBeLocked = openOrders.reduce((sum: number, o: any) => {
                 if (o.status === 'PENDING') return sum + (Number(o.signal_size_usd) || 0);
                 // For filled/partial: use the actual executed value
                 return sum + (Number(o.executed_size_usd) || 0);
             }, 0);
 
             // ── 2b: Realized P&L from resolved trades ──
-            const { data: resolvedOrders } = await supabase
-                .from('lt_orders')
-                .select('pnl')
-                .eq('strategy_id', strategyId)
-                .in('outcome', ['WON', 'LOST']);
+            const resolvedOrders = await fetchAllRows(supabase, 'lt_orders',
+                'pnl',
+                [['strategy_id', 'eq', strategyId], ['outcome', 'in', ['WON', 'LOST']]]);
 
-            const realizedPnl = (resolvedOrders || []).reduce((sum: number, o: any) => sum + (Number(o.pnl) || 0), 0);
+            const realizedPnl = resolvedOrders.reduce((sum: number, o: any) => sum + (Number(o.pnl) || 0), 0);
 
             // ── 2c: Recompute daily_spent_usd from actual filled orders today ──
-            const { data: todayFilledOrders } = await supabase
-                .from('lt_orders')
-                .select('executed_size_usd')
-                .eq('strategy_id', strategyId)
-                .in('status', ['FILLED', 'PARTIAL'])
-                .not('executed_size_usd', 'is', null)
-                .gte('order_placed_at', todayMidnightIso);
+            const todayFilledOrders = await fetchAllRows(supabase, 'lt_orders',
+                'executed_size_usd',
+                [['strategy_id', 'eq', strategyId], ['status', 'in', ['FILLED', 'PARTIAL']], ['executed_size_usd', 'not.is', null], ['order_placed_at', 'gte', todayMidnightIso]]);
 
             const correctDailySpent = +(
                 (todayFilledOrders || []).reduce((sum: number, o: any) => sum + (Number(o.executed_size_usd) || 0), 0)

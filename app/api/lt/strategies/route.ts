@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin';
 import { requireAdmin } from '@/lib/ft-auth';
+import { fetchAllRows } from '@/lib/live-trading/paginated-query';
 
 /**
  * POST /api/lt/strategies
@@ -136,7 +137,9 @@ export async function POST(request: Request) {
 
 /**
  * GET /api/lt/strategies
- * List admin's live trading strategies with computed stats.
+ * List live trading strategies with computed stats.
+ * Returns ALL admin strategies (not just the caller's) so admins can see
+ * each other's LTs. Each strategy includes `owner_label` (e.g. "Rawdy").
  * V2: Risk state is inline — no separate lt_risk_state table.
  */
 export async function GET(request: Request) {
@@ -148,10 +151,22 @@ export async function GET(request: Request) {
     try {
         const supabase = createAdminServiceClient();
 
+        // Fetch ALL admin strategies (cross-admin visibility)
+        const { data: adminProfiles } = await supabase
+            .from('profiles')
+            .select('id, wallet_label')
+            .eq('is_admin', true);
+
+        const adminIds = (adminProfiles || []).map((p: any) => p.id);
+        const labelMap = new Map<string, string>();
+        for (const p of (adminProfiles || []) as any[]) {
+            if (p.wallet_label) labelMap.set(p.id, p.wallet_label);
+        }
+
         const { data: strategies, error } = await supabase
             .from('lt_strategies')
             .select('*')
-            .eq('user_id', userId)
+            .in('user_id', adminIds.length > 0 ? adminIds : [userId])
             .order('created_at', { ascending: false });
 
         if (error) {
@@ -162,20 +177,16 @@ export async function GET(request: Request) {
         const strategyIds = list.map((s: any) => s.strategy_id);
 
         // Fetch non-rejected lt_orders for stats — rejected orders don't affect stats
-        // and can number in the thousands, crowding out real data at row limits.
+        // and can number in the thousands. Paginated to handle >1000 rows per strategy.
         let ordersMap: Record<string, any[]> = {};
         if (strategyIds.length > 0) {
             const orderColumns = 'strategy_id, status, outcome, pnl, signal_size_usd, executed_size_usd, executed_price, signal_price, slippage_bps, fill_rate, order_placed_at, resolved_at, shares_bought, is_shadow, condition_id, token_label';
 
             await Promise.all(strategyIds.map(async (sid: string) => {
-                const { data: stratOrders } = await supabase
-                    .from('lt_orders')
-                    .select(orderColumns)
-                    .eq('strategy_id', sid)
-                    .not('status', 'in', '("REJECTED","CANCELLED")')
-                    .limit(2000);
+                const stratOrders = await fetchAllRows(supabase, 'lt_orders', orderColumns,
+                    [['strategy_id', 'eq', sid], ['status', 'not.in', '("REJECTED","CANCELLED")']]);
 
-                if (stratOrders && stratOrders.length > 0) {
+                if (stratOrders.length > 0) {
                     ordersMap[sid] = stratOrders;
                 }
             }));
@@ -241,6 +252,8 @@ export async function GET(request: Request) {
         }
 
         const strategiesWithStats = list.map((s: any) => {
+            const ownerLabel = labelMap.get(s.user_id) || null;
+            const isOwn = s.user_id === userId;
             const orders = ordersMap[s.strategy_id] || [];
             const filled = orders.filter((o: any) => o.status === 'FILLED' || o.status === 'PARTIAL');
             const realOrders = filled.filter((o: any) => !o.is_shadow);
@@ -281,6 +294,8 @@ export async function GET(request: Request) {
 
             return {
                 ...s,
+                owner_label: ownerLabel,
+                is_own: isOwn,
                 lt_stats: {
                     total_trades: filled.length,
                     open_positions: openCount,
@@ -324,10 +339,14 @@ export async function GET(request: Request) {
             .maybeSingle();
         const myWallet = (tw as any)?.polymarket_account_address || (tw as any)?.eoa_address || null;
 
+        // Get caller's own wallet label
+        const myLabel = labelMap.get(userId) || null;
+
         return NextResponse.json({
             success: true,
             strategies: strategiesWithStats,
             my_polymarket_wallet: myWallet ? String(myWallet) : null,
+            my_wallet_label: myLabel,
         });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
