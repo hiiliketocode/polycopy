@@ -485,6 +485,7 @@ export async function POST(request: Request) {
     }
 
     // Fetch trades for a single trader (paginated, up to MAX_PAGES_PER_TRADER pages)
+    // Uses the /trades endpoint (good for leaderboard traders)
     const fetchTradesForTrader = async (
       { trader, stats, effectiveTradeCount }: EligibleTrader
     ): Promise<{ trades: EnrichedTrade[]; fetchErrors: string[] }> => {
@@ -533,11 +534,137 @@ export async function POST(request: Request) {
       return { trades, fetchErrors };
     };
 
+    // Fetch trades for a TARGET TRADER using the /activity endpoint.
+    // The /trades endpoint misses many fills for whale/algo traders (e.g. KCH123 had
+    // 0 trades on Feb 11 from /trades but 3,160 fills from /activity).
+    // Aggregates individual fills into ONE position per (conditionId, outcome).
+    const MAX_ACTIVITY_PAGES = 100; // Up to 20,000 fill records
+    const fetchActivityForTargetTrader = async (
+      { trader, stats, effectiveTradeCount }: EligibleTrader,
+      sinceMs: number
+    ): Promise<{ trades: EnrichedTrade[]; fetchErrors: string[] }> => {
+      const w = trader.wallet.toLowerCase();
+      const fetchErrors: string[] = [];
+
+      // ── 1. Paginate the activity endpoint (cursor = timestamp) ──
+      type ActivityRecord = {
+        proxyWallet?: string; timestamp: number; conditionId?: string;
+        type?: string; size?: number; usdcSize?: number;
+        transactionHash?: string; price?: number; asset?: string;
+        side?: string; outcomeIndex?: number; title?: string;
+        slug?: string; outcome?: string;
+      };
+      const allActivity: ActivityRecord[] = [];
+      let cursor = '';
+
+      for (let page = 0; page < MAX_ACTIVITY_PAGES; page++) {
+        const url = `https://data-api.polymarket.com/activity?user=${w}&limit=200${cursor ? `&cursor=${cursor}` : ''}`;
+        const response = await fetch(url, { cache: 'no-store' });
+        if (!response.ok) {
+          fetchErrors.push(`Failed to fetch activity for ${w.slice(0, 8)}: ${response.status}`);
+          break;
+        }
+        const data: ActivityRecord[] = await response.json();
+        if (!Array.isArray(data) || data.length === 0) break;
+
+        allActivity.push(...data);
+        cursor = String(data[data.length - 1].timestamp);
+
+        // Stop if we've gone past our window
+        const oldestTs = Number(data[data.length - 1].timestamp);
+        const oldestMs = oldestTs < 1e10 ? oldestTs * 1000 : oldestTs;
+        if (oldestMs <= sinceMs) break;
+        if (data.length < 200) break;
+      }
+
+      // ── 2. Filter: BUY trades only, after sinceMs ──
+      const buyFills = allActivity.filter(a => {
+        if (a.type !== 'TRADE' || a.side !== 'BUY' || !a.conditionId) return false;
+        const ts = Number(a.timestamp);
+        const ms = ts < 1e10 ? ts * 1000 : ts;
+        return ms > sinceMs;
+      });
+
+      // ── 3. Aggregate fills into positions (one per conditionId + outcome) ──
+      type Position = {
+        conditionId: string; outcome: string; title: string; slug: string; asset: string;
+        totalShares: number; totalUsd: number;
+        minTimestamp: number; maxTimestamp: number;
+        firstTxHash: string; side: string; fillCount: number;
+      };
+      const positionMap = new Map<string, Position>();
+
+      for (const fill of buyFills) {
+        const cid = fill.conditionId!;
+        const outcome = fill.outcome || 'YES';
+        const key = `${cid}-${outcome}`;
+        const ts = Number(fill.timestamp);
+        const shares = Number(fill.size ?? 0);
+        const usd = Number(fill.usdcSize ?? 0);
+
+        const existing = positionMap.get(key);
+        if (existing) {
+          existing.totalShares += shares;
+          existing.totalUsd += usd;
+          existing.fillCount++;
+          if (ts < existing.minTimestamp) { existing.minTimestamp = ts; existing.firstTxHash = fill.transactionHash || existing.firstTxHash; }
+          if (ts > existing.maxTimestamp) existing.maxTimestamp = ts;
+        } else {
+          positionMap.set(key, {
+            conditionId: cid, outcome, title: fill.title || '', slug: fill.slug || '',
+            asset: fill.asset || '', totalShares: shares, totalUsd: usd,
+            minTimestamp: ts, maxTimestamp: ts,
+            firstTxHash: fill.transactionHash || '', side: fill.side || 'BUY', fillCount: 1
+          });
+        }
+      }
+
+      // ── 4. Convert to EnrichedTrade[] ──
+      const trades: EnrichedTrade[] = [];
+      for (const pos of Array.from(positionMap.values())) {
+        const avgPrice = pos.totalShares > 0 ? pos.totalUsd / pos.totalShares : 0;
+        const conviction = stats.avgTradeSize > 0 ? pos.totalUsd / stats.avgTradeSize : 1;
+
+        trades.push({
+          // Use agg-<conditionId_short>-<outcome> as stable dedup ID
+          id: `agg-${pos.conditionId.substring(2, 12)}-${pos.outcome}`,
+          transactionHash: pos.firstTxHash,
+          asset: pos.asset,
+          conditionId: pos.conditionId,
+          title: pos.title,
+          slug: pos.slug,
+          outcome: pos.outcome,
+          side: pos.side,
+          size: pos.totalShares,
+          price: avgPrice,
+          // Use maxTimestamp so the position passes the lastSyncTime filter
+          // (any fill after lastSyncTime means the position is "new")
+          timestamp: pos.maxTimestamp,
+          proxyWallet: w,
+          traderWallet: w,
+          traderWinRate: stats.winRate,
+          traderTradeCount: effectiveTradeCount,
+          traderAvgTradeSize: stats.avgTradeSize,
+          tradeValue: pos.totalUsd,
+          conviction
+        });
+      }
+
+      console.log(`[ft/sync] Activity fetch for ${w.slice(0, 8)}: ${allActivity.length} records → ${buyFills.length} BUY fills → ${trades.length} positions`);
+      return { trades, fetchErrors };
+    };
+
     // Fire requests in parallel batches of FETCH_CONCURRENCY
+    // Target traders use the /activity endpoint (more comprehensive for whale traders)
     const fetchStartMs = Date.now();
     for (let i = 0; i < eligibleTraders.length; i += FETCH_CONCURRENCY) {
       const batch = eligibleTraders.slice(i, i + FETCH_CONCURRENCY);
-      const batchResults = await Promise.allSettled(batch.map(et => fetchTradesForTrader(et)));
+      const batchResults = await Promise.allSettled(batch.map(et => {
+        if (targetTraderAddresses.has(et.trader.wallet.toLowerCase())) {
+          return fetchActivityForTargetTrader(et, minLastSyncTime.getTime());
+        }
+        return fetchTradesForTrader(et);
+      }));
       for (const r of batchResults) {
         if (r.status === 'fulfilled') {
           allTrades.push(...r.value.trades);
