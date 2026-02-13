@@ -161,7 +161,8 @@ export async function GET(request: Request) {
         const list = strategies || [];
         const strategyIds = list.map((s: any) => s.strategy_id);
 
-        // Fetch all lt_orders for stats — query per strategy to avoid Supabase's default 1000 row limit
+        // Fetch non-rejected lt_orders for stats — rejected orders don't affect stats
+        // and can number in the thousands, crowding out real data at row limits.
         let ordersMap: Record<string, any[]> = {};
         if (strategyIds.length > 0) {
             const orderColumns = 'strategy_id, status, outcome, pnl, signal_size_usd, executed_size_usd, executed_price, signal_price, slippage_bps, fill_rate, order_placed_at, resolved_at, shares_bought, is_shadow, condition_id, token_label';
@@ -171,6 +172,7 @@ export async function GET(request: Request) {
                     .from('lt_orders')
                     .select(orderColumns)
                     .eq('strategy_id', sid)
+                    .not('status', 'in', '("REJECTED","CANCELLED")')
                     .limit(2000);
 
                 if (stratOrders && stratOrders.length > 0) {

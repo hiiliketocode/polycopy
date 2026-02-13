@@ -31,9 +31,7 @@ export async function GET(request: Request, { params }: RouteParams) {
         }
 
         // V2 schema columns on lt_orders
-        const { data: orders, error } = await supabase
-            .from('lt_orders')
-            .select(`
+        const orderColumns = `
                 lt_order_id,
                 ft_order_id,
                 ft_wallet_id,
@@ -69,17 +67,32 @@ export async function GET(request: Request, { params }: RouteParams) {
                 resolved_at,
                 created_at,
                 is_force_test,
-                is_shadow
-            `)
-            .eq('strategy_id', strategyId)
-            .order('created_at', { ascending: false })
-            .limit(500);
+                is_shadow`;
 
-        if (error) {
-            return NextResponse.json({ error: error.message }, { status: 500 });
+        // Fetch actionable orders (FILLED, PARTIAL, PENDING) separately from failed
+        // to avoid rejected orders crowding out real trades at the 500-row limit.
+        const [activeResult, failedResult] = await Promise.all([
+            supabase
+                .from('lt_orders')
+                .select(orderColumns)
+                .eq('strategy_id', strategyId)
+                .not('status', 'in', '("REJECTED","CANCELLED")')
+                .order('created_at', { ascending: false })
+                .limit(500),
+            supabase
+                .from('lt_orders')
+                .select(orderColumns)
+                .eq('strategy_id', strategyId)
+                .in('status', ['REJECTED', 'CANCELLED'])
+                .order('created_at', { ascending: false })
+                .limit(100),
+        ]);
+
+        if (activeResult.error) {
+            return NextResponse.json({ error: activeResult.error.message }, { status: 500 });
         }
 
-        const all = orders || [];
+        const all = [...(activeResult.data || []), ...(failedResult.data || [])];
 
         // Add current_price for open positions
         const openForPriceFetch = all.filter((o: any) => o.outcome === 'OPEN' && (o.status === 'FILLED' || o.status === 'PARTIAL'));

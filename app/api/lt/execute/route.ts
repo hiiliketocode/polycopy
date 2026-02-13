@@ -74,6 +74,11 @@ export async function POST(request: Request) {
         // ── Step 5: Process each strategy ──
         const results: Record<string, { executed: number; skipped: number; errors: number; reasons: Record<string, number> }> = {};
 
+        // Sort strategies: process those with fewest recent ft_orders first
+        // so that one busy strategy (e.g. 800+ orders) doesn't starve the rest.
+        // We'll also enforce a per-strategy time budget.
+        const STRATEGY_TIME_BUDGET_MS = 15_000; // 15 seconds per strategy max
+
         for (const strategy of strategies) {
             const strategyLogger = logger.withContext({
                 strategy_id: strategy.strategy_id,
@@ -121,12 +126,21 @@ export async function POST(request: Request) {
             await strategyLogger.info('FT_QUERY', `Found ${ftOrders.length} OPEN ft_orders to consider`);
 
             // ── Step 5b: Dedup against existing lt_orders ──
-            const { data: executedTrades } = await supabase
-                .from('lt_orders')
-                .select('source_trade_id')
-                .eq('strategy_id', strategy.strategy_id);
-
-            const executedSourceIds = new Set((executedTrades || []).map((o: any) => o.source_trade_id));
+            // Paginate to handle >1000 rows (Supabase default limit)
+            const executedSourceIds = new Set<string>();
+            let dedupOffset = 0;
+            const DEDUP_PAGE = 1000;
+            while (true) {
+                const { data: page } = await supabase
+                    .from('lt_orders')
+                    .select('source_trade_id')
+                    .eq('strategy_id', strategy.strategy_id)
+                    .range(dedupOffset, dedupOffset + DEDUP_PAGE - 1);
+                if (!page || page.length === 0) break;
+                for (const o of page) { if (o.source_trade_id) executedSourceIds.add(o.source_trade_id); }
+                if (page.length < DEDUP_PAGE) break;
+                dedupOffset += DEDUP_PAGE;
+            }
 
             // ── Step 5c: Pre-resolve token IDs ──
             const tokenPairs = ftOrders
@@ -143,8 +157,15 @@ export async function POST(request: Request) {
             // ── Step 5d: Execute each trade ──
             const totalFtOrders = ftOrders.length;
             let dedupSkipped = 0;
+            const strategyStartTime = Date.now();
 
             for (const fo of ftOrders) {
+                // Time budget: don't let one strategy monopolize the cron
+                if (Date.now() - strategyStartTime > STRATEGY_TIME_BUDGET_MS) {
+                    await strategyLogger.warn('TIME_BUDGET', `Strategy time budget exhausted (${STRATEGY_TIME_BUDGET_MS}ms) — deferring remaining ${totalFtOrders - dedupSkipped - summary.executed - summary.errors} trades to next run`);
+                    break;
+                }
+
                 const sourceTradeId = fo.source_trade_id || `${fo.trader_address}-${fo.condition_id}-${fo.order_time}`;
 
                 if (executedSourceIds.has(sourceTradeId)) {
