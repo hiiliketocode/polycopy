@@ -153,6 +153,9 @@ interface FTWalletData {
   kelly_fraction?: number | null;
   min_bet?: number | null;
   max_bet?: number | null;
+  dead_market_guard?: boolean;
+  dead_market_floor?: number;
+  dead_market_max_drift_pct?: number;
 }
 
 type ExtendedFilters = {
@@ -844,6 +847,15 @@ export default function LTDetailPage() {
               <Badge variant={ftWallet.is_active ? 'default' : 'secondary'}>
                 FT: {ftWallet.is_active ? 'Active' : 'Paused'}
               </Badge>
+              {ftWallet.dead_market_guard !== false ? (
+                <Badge variant="outline" className="border-green-500/50 text-green-600">
+                  Dead Market Guard: floor {((ftWallet.dead_market_floor ?? 0.04) * 100).toFixed(0)}¢ / drift {ftWallet.dead_market_max_drift_pct ?? 80}%
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="border-red-500/50 text-red-600">
+                  Dead Market Guard: OFF
+                </Badge>
+              )}
             </div>
           </div>
 

@@ -20,6 +20,7 @@ import { requireAdminOrCron } from '@/lib/ft-auth';
 import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client';
 import { unlockCapital } from '@/lib/live-trading/capital-manager';
 import { fetchAllRows } from '@/lib/live-trading/paginated-query';
+import { getActualFillPrice } from '@/lib/polymarket/fill-price';
 
 export async function POST(request: Request) {
     const authError = await requireAdminOrCron(request);
@@ -108,8 +109,14 @@ export async function POST(request: Request) {
                             newStatus = 'PENDING';
                         }
 
-                        // Update lt_orders
-                        const executedPrice = Number(clobOrder.price || 0) || undefined;
+                        // Update lt_orders — use ACTUAL fill price from CLOB trades
+                        const limitPrice = Number(clobOrder.price || 0) || 0;
+                        let executedPrice: number | undefined;
+                        if (sizeMatched > 0 && limitPrice > 0) {
+                            executedPrice = await getActualFillPrice(userId, order.order_id, limitPrice);
+                        } else {
+                            executedPrice = limitPrice || undefined;
+                        }
                         const executedSizeUsd = executedPrice ? +(sizeMatched * executedPrice).toFixed(2) : undefined;
 
                         await supabase
@@ -117,6 +124,7 @@ export async function POST(request: Request) {
                             .update({
                                 shares_bought: sizeMatched,
                                 shares_remaining: sizeMatched,
+                                executed_price: executedPrice,
                                 executed_size_usd: executedSizeUsd,
                                 fill_rate: +fillRate.toFixed(4),
                                 status: newStatus,

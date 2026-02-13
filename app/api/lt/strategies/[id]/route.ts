@@ -58,7 +58,7 @@ export async function GET(request: Request, { params }: RouteParams) {
                     if (crossStrategy.ft_wallet_id) {
                         const { data: fw } = await supabase
                             .from('ft_wallets')
-                            .select('wallet_id, display_name, description, detailed_description, hypothesis, thesis_tier, use_model, model_threshold, price_min, price_max, min_edge, min_conviction, min_trader_resolved_count, wr_source, is_active, bet_size, bet_allocation_weight, allocation_method, kelly_fraction, min_bet, max_bet')
+                            .select('wallet_id, display_name, description, detailed_description, hypothesis, thesis_tier, use_model, model_threshold, price_min, price_max, min_edge, min_conviction, min_trader_resolved_count, wr_source, is_active, bet_size, bet_allocation_weight, allocation_method, kelly_fraction, min_bet, max_bet, dead_market_guard, dead_market_floor, dead_market_max_drift_pct')
                             .eq('wallet_id', crossStrategy.ft_wallet_id)
                             .maybeSingle();
                         crossFtWallet = fw;
@@ -88,7 +88,7 @@ export async function GET(request: Request, { params }: RouteParams) {
         if (strategy.ft_wallet_id) {
             const { data: fw } = await supabase
                 .from('ft_wallets')
-                .select('wallet_id, display_name, description, detailed_description, hypothesis, thesis_tier, use_model, model_threshold, price_min, price_max, min_edge, min_conviction, min_trader_resolved_count, wr_source, is_active, bet_size, bet_allocation_weight, allocation_method, kelly_fraction, min_bet, max_bet')
+                .select('wallet_id, display_name, description, detailed_description, hypothesis, thesis_tier, use_model, model_threshold, price_min, price_max, min_edge, min_conviction, min_trader_resolved_count, wr_source, is_active, bet_size, bet_allocation_weight, allocation_method, kelly_fraction, min_bet, max_bet, dead_market_guard, dead_market_floor, dead_market_max_drift_pct')
                 .eq('wallet_id', strategy.ft_wallet_id)
                 .maybeSingle();
             ftWallet = fw;

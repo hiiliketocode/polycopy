@@ -27,6 +27,7 @@ import { calculateBetSize, getSourceTradeId, type EnrichedTrade, type FTWallet }
 import { lockCapitalForTrade, unlockCapital, type CapitalState } from './capital-manager';
 import { checkRisk, recordDailySpend, loadStrategyRiskState } from './risk-manager-v2';
 import { resolveTokenId } from './token-cache';
+import { getActualFillPrice } from '@/lib/polymarket/fill-price';
 import type { LTLogger } from './lt-logger';
 
 // ──────────────────────────────────────────────────────────────────────
@@ -271,6 +272,66 @@ export async function executeTrade(
         return { success: true, lt_order_id: ltOrderId, stage: 'SHADOW', bet_size: betSize };
     }
 
+    // ── Step 6b: Dead Market Guard (configurable per FT wallet) ──
+    // Before placing real money, check the live market price.
+    // If the market has collapsed (e.g., hourly crypto already resolved, sports game
+    // already decided), the current price will be far below the signal price.
+    // Prevents guaranteed losses on dead markets.
+    //
+    // Two checks:
+    //   1. Absolute floor: if signal was above floor+1¢ but market collapsed below floor → dead market
+    //   2. Signal drift: if market moved >max_drift% away from signal → stale signal
+    // Note: intentional low-price trades (signal itself at 2¢) are NOT blocked.
+    const guardEnabled = ftWallet.dead_market_guard !== false; // Default ON
+    const DEAD_MARKET_FLOOR = Number(ftWallet.dead_market_floor) || 0.04;
+    const DEAD_MARKET_SIGNAL_THRESHOLD = DEAD_MARKET_FLOOR + 0.01; // Only apply floor if signal was above floor+1¢
+    const DEAD_MARKET_MAX_DRIFT_PCT = Number(ftWallet.dead_market_max_drift_pct) || 80;
+
+    if (guardEnabled && side === 'BUY') {
+        try {
+            const { client: priceClient } = await getAuthedClobClientForUserAnyWallet(strategy.user_id);
+            const midpointStr = await priceClient.getMidpoint(tokenId);
+            const midpoint = parseFloat(midpointStr) || 0;
+
+            if (midpoint > 0) {
+                const driftPct = price > 0 ? ((price - midpoint) / price) * 100 : 0;
+
+                // Check 1: Absolute floor (only when signal was a real trade, not a long-shot)
+                if (midpoint < DEAD_MARKET_FLOOR && price >= DEAD_MARKET_SIGNAL_THRESHOLD) {
+                    await unlockCapital(supabase, strategy.strategy_id, betSize);
+                    await traceLogger.warn('DEAD_MARKET', `Market collapsed to ${midpoint.toFixed(4)} (signal was ${price.toFixed(4)}) — dead market. Skipping.`, {
+                        midpoint,
+                        signal_price: price,
+                        drift_pct: +driftPct.toFixed(1),
+                        token_id: tokenId,
+                    });
+                    await recordRejectedOrder(supabase, strategy, trade, sourceTradeId, ftOrderId, betSize, price, side,
+                        `Dead market: price ${midpoint.toFixed(4)}, signal was ${price.toFixed(4)}`);
+                    return { success: false, error: `Dead market (price ${midpoint.toFixed(4)})`, stage: 'DEAD_MARKET', bet_size: betSize };
+                }
+
+                // Check 2: Signal drift (catches cases where price dropped significantly)
+                if (driftPct > DEAD_MARKET_MAX_DRIFT_PCT) {
+                    await unlockCapital(supabase, strategy.strategy_id, betSize);
+                    await traceLogger.warn('DEAD_MARKET', `Signal drift ${driftPct.toFixed(0)}%: signal ${price.toFixed(4)} → market ${midpoint.toFixed(4)}. Skipping.`, {
+                        midpoint,
+                        signal_price: price,
+                        drift_pct: +driftPct.toFixed(1),
+                        token_id: tokenId,
+                    });
+                    await recordRejectedOrder(supabase, strategy, trade, sourceTradeId, ftOrderId, betSize, price, side,
+                        `Signal drift ${driftPct.toFixed(0)}%: signal ${price.toFixed(4)} → market ${midpoint.toFixed(4)}`);
+                    return { success: false, error: `Signal drift ${driftPct.toFixed(0)}% (market ${midpoint.toFixed(4)})`, stage: 'DEAD_MARKET', bet_size: betSize };
+                }
+
+                await traceLogger.debug('MARKET_CHECK', `Market midpoint ${midpoint.toFixed(4)} vs signal ${price.toFixed(4)} (drift ${driftPct.toFixed(1)}%) — OK`);
+            }
+        } catch (err: any) {
+            // If we can't get the price, proceed cautiously — don't block all trades
+            await traceLogger.warn('MARKET_CHECK', `Could not fetch market midpoint: ${err.message} — proceeding with order`);
+        }
+    }
+
     // ── Step 7: Prepare order params (same as manual quick trades) ──
     const sizeContracts = betSize / price;
     const prepared = await prepareOrderParamsForClob(tokenId, priceWithSlippage, sizeContracts, side);
@@ -476,7 +537,9 @@ export async function executeTrade(
     }
 
     // ── Step 11: Record filled order ──
-    const executedPrice = finalPrice;
+    // CRITICAL: Get actual fill price from CLOB trades, NOT the limit price.
+    // The CLOB gives price improvement (e.g., limit at 10¢ may fill at 0.1¢).
+    const executedPrice = await getActualFillPrice(strategy.user_id, orderId, finalPrice);
     const sharesBought = pollResult.sizeMatched;
     const executedSizeUsd = +(sharesBought * executedPrice).toFixed(2);
     const slippageBps = price > 0 ? Math.round(((executedPrice - price) / price) * 10000) : 0;

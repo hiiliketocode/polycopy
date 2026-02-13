@@ -61,6 +61,9 @@ export type FTWallet = {
     min_conviction: number;
     detailed_description?: string;
     market_categories?: string[] | null;
+    dead_market_guard?: boolean;
+    dead_market_floor?: number;
+    dead_market_max_drift_pct?: number;
 };
 
 export type EnrichedTrade = PolymarketTrade & {

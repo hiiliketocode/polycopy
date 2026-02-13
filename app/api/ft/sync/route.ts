@@ -582,6 +582,7 @@ export async function POST(request: Request) {
       game_start_time?: string | null;
       market_subtype?: string | null;
       bet_structure?: string | null;
+      winning_side?: string | null;
     };
     
     const marketMap = new Map<string, MarketInfo>();
@@ -605,7 +606,11 @@ export async function POST(request: Request) {
           start_time: market.start_time,
           game_start_time: market.game_start_time ?? null,
           market_subtype: market.market_subtype ?? null,
-          bet_structure: market.bet_structure ?? null
+          bet_structure: market.bet_structure ?? null,
+          // winning_side from DB can be a JSON object {"id":"...","label":"Yes"} or a plain string
+          winning_side: typeof market.winning_side === 'object' && market.winning_side !== null
+            ? (market.winning_side as { label?: string }).label ?? null
+            : market.winning_side ?? null
         });
       }
     }
@@ -636,6 +641,13 @@ export async function POST(request: Request) {
               // game_start_time = actual event/game start (sports only). Do NOT use startDate/start_date
               // — that's market listing time; politics/crypto would wrongly get "live" status.
               const gameStartTime = m.gameStartTime || m.game_start_time || null;
+              // Derive winning_side from outcomePrices for resolved markets
+              let gammaWinningSide: string | null = null;
+              if (closed && m.outcomePrices && Array.isArray(m.outcomePrices)) {
+                const outNames = m.outcomes || ['Yes', 'No'];
+                const winIdx = m.outcomePrices.findIndex((p: string) => parseFloat(p) > 0.9);
+                if (winIdx >= 0 && outNames[winIdx]) gammaWinningSide = outNames[winIdx];
+              }
               marketMap.set(cid, {
                 endTime,
                 closed,
@@ -647,7 +659,8 @@ export async function POST(request: Request) {
                 tags: m.tags || [],
                 end_time: m.endDate || m.end_date,
                 start_time: m.startDate || m.start_date,
-                game_start_time: gameStartTime ?? null
+                game_start_time: gameStartTime ?? null,
+                winning_side: gammaWinningSide
               });
             }
           }
@@ -763,11 +776,19 @@ export async function POST(request: Request) {
 
           results[wallet.wallet_id].evaluated++;
 
+          // TRADER_* wallets with a target_trader bypass certain filters —
+          // the whole point is to mirror everything that trader does.
+          const isTargetTraderWallet = !!(targetTrader && wallet.wallet_id.startsWith('TRADER_'));
+
           // ── Market checks (all in-memory, no DB writes) ──
           const market = marketMap.get(trade.conditionId || '');
           if (!market) { reasons['market_not_found'] = (reasons['market_not_found'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
-          if (market.resolved || market.closed) { reasons['market_resolved'] = (reasons['market_resolved'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
-          if (market.endTime && tradeTime >= market.endTime) { reasons['after_market_end'] = (reasons['after_market_end'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          // TRADER_* wallets tracking a target_trader allow resolved markets —
+          // we want to capture ALL of the trader's activity for performance evaluation,
+          // even trades on markets that resolved between trade time and sync time.
+          const allowResolved = isTargetTraderWallet;
+          if (!allowResolved && (market.resolved || market.closed)) { reasons['market_resolved'] = (reasons['market_resolved'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (!allowResolved && market.endTime && tradeTime >= market.endTime) { reasons['after_market_end'] = (reasons['after_market_end'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
 
           if (extFilters.trade_live_only) {
             const gameStartIso = market.game_start_time ?? null;
@@ -793,10 +814,10 @@ export async function POST(request: Request) {
           const edge = traderWinRate - priceWithSlippage;
 
           if (price < wallet.price_min || price > wallet.price_max) { reasons['price_out_of_range'] = (reasons['price_out_of_range'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
-          if (traderWinRate < minWinRate) { reasons['low_win_rate'] = (reasons['low_win_rate'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
-          if (edge < wallet.min_edge) { reasons['insufficient_edge'] = (reasons['insufficient_edge'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
-          if (traderTradeCount < (wallet.min_trader_resolved_count || 30)) { reasons['low_trade_count'] = (reasons['low_trade_count'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
-          if ((wallet.min_conviction || 0) > 0 && trade.conviction < (wallet.min_conviction || 0)) { reasons['low_conviction'] = (reasons['low_conviction'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (!isTargetTraderWallet && traderWinRate < minWinRate) { reasons['low_win_rate'] = (reasons['low_win_rate'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (!isTargetTraderWallet && edge < wallet.min_edge) { reasons['insufficient_edge'] = (reasons['insufficient_edge'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (!isTargetTraderWallet && traderTradeCount < (wallet.min_trader_resolved_count || 30)) { reasons['low_trade_count'] = (reasons['low_trade_count'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
+          if (!isTargetTraderWallet && (wallet.min_conviction || 0) > 0 && trade.conviction < (wallet.min_conviction || 0)) { reasons['low_conviction'] = (reasons['low_conviction'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
           if (extFilters.max_trader_win_rate !== undefined && traderWinRate > extFilters.max_trader_win_rate) { reasons['high_win_rate'] = (reasons['high_win_rate'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
           if (extFilters.max_edge !== undefined && edge > extFilters.max_edge) { reasons['high_edge'] = (reasons['high_edge'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
           if (extFilters.max_conviction !== undefined && trade.conviction > extFilters.max_conviction) { reasons['high_conviction'] = (reasons['high_conviction'] || 0) + 1; results[wallet.wallet_id].skipped++; continue; }
@@ -892,7 +913,22 @@ export async function POST(request: Request) {
           }
 
           // ═══ PASSED ALL FILTERS → INSERT ORDER ═══
-          const ftOrder = {
+          // For TRADER_* wallets capturing trades on already-resolved markets,
+          // determine outcome immediately (WON/LOST based on winning_side).
+          let orderOutcome = 'OPEN';
+          let orderPnl: number | null = null;
+          if (allowResolved && (market.resolved || market.closed) && market.winning_side) {
+            const tokenLabel = (trade.outcome || 'YES').toUpperCase().trim();
+            const winningSide = market.winning_side.toUpperCase().trim();
+            const won = tokenLabel === winningSide;
+            orderOutcome = won ? 'WON' : 'LOST';
+            // PnL: WON = (shares - cost), LOST = -cost
+            // shares = betSize / entryPrice, cost = betSize
+            const shares = priceWithSlippage > 0 ? effectiveBetSize / priceWithSlippage : 0;
+            orderPnl = won ? +(shares - effectiveBetSize).toFixed(2) : -effectiveBetSize;
+          }
+
+          const ftOrder: Record<string, unknown> = {
             wallet_id: wallet.wallet_id,
             order_type: 'FT',
             side: trade.side,
@@ -911,9 +947,10 @@ export async function POST(request: Request) {
             model_probability: preInsertMlProbability,
             edge_pct: edge,
             conviction: trade.conviction ?? null,
-            outcome: 'OPEN',
+            outcome: orderOutcome,
             order_time: tradeTime.toISOString()
           };
+          if (orderPnl !== null) ftOrder.pnl = orderPnl;
 
           const { error: insertError } = await supabase.from('ft_orders').insert(ftOrder);
           if (insertError) {

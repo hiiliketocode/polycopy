@@ -6,6 +6,7 @@ import { ClobClient } from '@polymarket/clob-client'
 import { ApiCredentials } from '@/lib/polymarket/clob'
 import { CLOB_ENCRYPTION_KEY_V1, POLYMARKET_CLOB_BASE_URL } from '@/lib/turnkey/config'
 import { createHash, createDecipheriv } from 'crypto'
+import { getActualFillPriceWithClient } from '@/lib/polymarket/fill-price'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -194,12 +195,25 @@ export async function GET(request: NextRequest) {
     const order = await client.getOrder(orderId)
     const normalized = normalizeOrder(order)
 
+    // Get actual fill price from CLOB trades (not just the limit price)
+    let fillPrice: number | null = null
+    const filledSize = normalized.filledSize ?? 0
+    if (filledSize > 0 && normalized.price) {
+      try {
+        const result = await getActualFillPriceWithClient(client, orderId, normalized.price)
+        fillPrice = result.fillPrice
+      } catch {
+        // Fall back — fillPrice stays null
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       orderId,
       proxy: proxyAddress,
       signer: signerAddress,
       ...normalized,
+      fillPrice,
       raw: order,
     })
   } catch (error: any) {

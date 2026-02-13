@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
+import { getActualFillPriceWithClient } from '@/lib/polymarket/fill-price'
 import { POST_ORDER } from '@polymarket/clob-client/dist/endpoints.js'
 import { placeOrderCore } from '@/lib/polymarket/place-order-core'
 import { getValidatedPolymarketClobBaseUrl } from '@/lib/env'
@@ -282,6 +283,7 @@ overrides?: {
   remainingSize?: number | null
   createdAt?: string | Date | null
   rawOrder?: any
+  fillPrice?: number | null
 }) {
   const hasCopiedMetadata =
     Boolean(normalizeOptionalString(copiedTraderId)) ||
@@ -357,6 +359,9 @@ overrides?: {
     normalizedOutcome
   )
 
+  // Use actual fill price from CLOB trades when available, otherwise limit price
+  const effectivePrice = overrides?.fillPrice ?? normalizedPrice;
+
   const rawPayload: Record<string, unknown> = {
     source: 'polycopy_place_order',
     token_id: tokenId ?? null,
@@ -387,7 +392,7 @@ overrides?: {
     side: side ? side.toLowerCase() : null,
     order_type: orderType ?? null,
     time_in_force: orderType ?? null,
-    price: normalizedPrice ?? 0,
+    price: effectivePrice ?? normalizedPrice ?? 0,
     size: normalizedSize ?? 0,
     filled_size: normalizedFilledSize ?? 0,
     remaining_size: normalizedRemainingSize ?? normalizedSize ?? 0,
@@ -822,6 +827,7 @@ export async function POST(request: NextRequest) {
           remainingSize?: number | null
           createdAt?: string | Date | null
           rawOrder?: any
+          fillPrice?: number | null
         }
       | undefined
 
@@ -846,6 +852,17 @@ export async function POST(request: NextRequest) {
             : null
         )
 
+        // Get actual fill price from CLOB trades (not limit price)
+        let actualFillPrice: number | null = null
+        if (fetchedFilled && fetchedFilled > 0 && roundedPrice) {
+          try {
+            const result = await getActualFillPriceWithClient(client, orderId, roundedPrice)
+            actualFillPrice = result.fillPrice
+          } catch {
+            // Fall back to limit price
+          }
+        }
+
         metadataOverrides = {
           status: fetchedStatus,
           size: fetchedSize,
@@ -853,6 +870,7 @@ export async function POST(request: NextRequest) {
           remainingSize: fetchedRemaining,
           createdAt: fetchedCreatedAt,
           rawOrder: clobOrder,
+          fillPrice: actualFillPrice,
         }
 
         if (!fetchedFilled || fetchedFilled <= 0) {
