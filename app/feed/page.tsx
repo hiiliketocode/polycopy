@@ -2961,10 +2961,8 @@ export default function FeedPage() {
           : null;
 
       if (mode === 'fire') {
+        // Sort by most recent first (timestamp descending)
         uniqueFormattedTrades.sort((a, b) => {
-          const scoreA = a.fireScore ?? 0;
-          const scoreB = b.fireScore ?? 0;
-          if (scoreA !== scoreB) return scoreB - scoreA;
           return (b.trade.timestamp || 0) - (a.trade.timestamp || 0);
         });
       }

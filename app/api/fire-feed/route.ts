@@ -4,7 +4,6 @@ import { fetchPolymarketLeaderboard } from '@/lib/polymarket-leaderboard';
 import { isTraderExcluded } from '@/lib/ft-excluded-traders';
 import { calculatePolySignalScore } from '@/lib/polysignal/calculate';
 import { verifyAdminAuth } from '@/lib/auth/verify-admin';
-// getPolyScore import removed — per-trade AI win prob fetches caused 504 timeouts
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -18,9 +17,7 @@ const supabase = createClient(supabaseUrl || '', serviceKey || '', {
 });
 
 // Thresholds
-const FIRE_TOP_TRADERS_LIMIT = 100;  // Polymarket API max per request
-const FIRE_LEADERBOARD_PAGES = 2;    // Fetch 2 pages → top 200 traders
-const FIRE_TRADES_PER_TRADER = 15;
+const FIRE_GLOBAL_TRADES_LIMIT = 1000; // Fetch recent trades from global API
 const FIRE_WIN_RATE_THRESHOLD = 0.55;
 const FIRE_ROI_THRESHOLD = 0.15;
 const FIRE_CONVICTION_MULTIPLIER_THRESHOLD = 2.5;
@@ -149,6 +146,7 @@ export async function GET(request: Request) {
   const debugStats: any = {
     tradersChecked: 0,
     tradersWithStats: 0,
+    tradersWithoutStats: 0,
     totalTradesFetched: 0,
     totalTradesAfterTimeFilter: 0,
     tradesChecked: 0,
@@ -156,9 +154,6 @@ export async function GET(request: Request) {
     passedByWinRate: 0,
     passedByRoi: 0,
     passedByConviction: 0,
-    passedByTopPnl: 0,
-    tradersWithoutStats: 0,
-    topTraderPnlRange: { min: 0, max: 0 },
     errors: [] as string[],
   };
 
@@ -177,58 +172,81 @@ export async function GET(request: Request) {
 
     console.log('[fire-feed] Starting...');
 
-    // 1. Get top traders from leaderboard (paginated: top 200)
-    const leaderboardPages = await Promise.all(
-      Array.from({ length: FIRE_LEADERBOARD_PAGES }, (_, i) =>
-        fetchPolymarketLeaderboard({
-          timePeriod: 'month',
-          orderBy: 'PNL',
-          limit: FIRE_TOP_TRADERS_LIMIT,
-          offset: i * FIRE_TOP_TRADERS_LIMIT,
-          category: 'overall',
-        })
-      )
-    );
-    // Deduplicate by wallet address
-    const traderMap = new Map<string, typeof leaderboardPages[0][0]>();
-    for (const page of leaderboardPages) {
-      for (const t of page) {
-        const key = t.wallet.toLowerCase();
-        if (!traderMap.has(key)) traderMap.set(key, t);
+    // 1. Fetch recent trades from the GLOBAL Polymarket trades API (all traders)
+    let allTrades: any[] = [];
+    try {
+      const response = await fetch(
+        `https://data-api.polymarket.com/trades?limit=${FIRE_GLOBAL_TRADES_LIMIT}`,
+        { cache: 'no-store' }
+      );
+      if (!response.ok) {
+        throw new Error(`Global trades API returned ${response.status}`);
       }
+      const rawTrades = await response.json();
+      if (!Array.isArray(rawTrades)) {
+        throw new Error('Global trades API returned non-array');
+      }
+      debugStats.totalTradesFetched = rawTrades.length;
+
+      // Filter to BUY trades only
+      allTrades = rawTrades.filter((trade: any) => {
+        if (trade.side !== 'BUY') return false;
+        const wallet = (trade.user || '').toLowerCase();
+        if (isTraderExcluded(wallet)) return false;
+        return true;
+      });
+      debugStats.totalTradesAfterTimeFilter = allTrades.length;
+      console.log(`[fire-feed] Fetched ${rawTrades.length} global trades, ${allTrades.length} BUY trades after filter`);
+    } catch (error: any) {
+      console.error('[fire-feed] Global trades fetch error:', error);
+      debugStats.errors.push(`Global trades error: ${error.message}`);
+      // Return empty instead of failing
+      return NextResponse.json({
+        trades: [],
+        traders: {},
+        stats: {},
+        debug: debugStats,
+        error: error.message,
+      });
     }
-    const topTraders = Array.from(traderMap.values());
 
-    debugStats.tradersChecked = topTraders.length;
-    console.log(`[fire-feed] Found ${topTraders.length} top traders (${FIRE_LEADERBOARD_PAGES} pages)`);
-
-    if (topTraders.length === 0) {
-      return NextResponse.json({ 
-        trades: [], 
+    if (allTrades.length === 0) {
+      return NextResponse.json({
+        trades: [],
         traders: {},
         stats: {},
         debug: debugStats,
       });
     }
 
-    const wallets = topTraders
-      .filter((t) => !isTraderExcluded(t.wallet))
-      .map((t) => t.wallet.toLowerCase())
-      .filter(Boolean);
-    if (wallets.length < topTraders.length) {
-      console.log(`[fire-feed] Excluded ${topTraders.length - wallets.length} traders (FT_EXCLUDED_TRADERS)`);
-    }
-    console.log(`[fire-feed] Processing ${wallets.length} wallets`);
+    // 2. Collect unique wallets and attach wallet to each trade
+    const uniqueWallets = new Set<string>();
+    allTrades = allTrades.map((trade: any) => {
+      const wallet = (trade.user || '').toLowerCase();
+      uniqueWallets.add(wallet);
+      return { ...trade, _wallet: wallet };
+    });
+    const wallets = Array.from(uniqueWallets).filter(Boolean);
+    debugStats.tradersChecked = wallets.length;
+    console.log(`[fire-feed] ${wallets.length} unique wallets from ${allTrades.length} trades`);
 
-    // 2. Fetch stats (but don't fail if none found)
-    // NOTE: Column names must match actual database schema
-    const [globalsRes, profilesRes] = await Promise.all([
+    // 3. Fetch stats + leaderboard names in parallel
+    // Supabase .in() supports up to 1000 items
+    const walletsForQuery = wallets.slice(0, 1000);
+    const [globalsRes, profilesRes, leaderboard] = await Promise.all([
       supabase.from('trader_global_stats')
         .select('wallet_address, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct, l_avg_trade_size_usd, d30_avg_trade_size_usd, d7_avg_trade_size_usd, l_avg_pos_size_usd, l_count, d30_count')
-        .in('wallet_address', wallets),
+        .in('wallet_address', walletsForQuery),
       supabase.from('trader_profile_stats')
         .select('wallet_address, final_niche, l_win_rate, d30_win_rate, d7_win_rate, l_total_roi_pct, d30_total_roi_pct, d7_total_roi_pct, d30_count, l_count, trade_count, d30_avg_trade_size_usd, l_avg_trade_size_usd')
-        .in('wallet_address', wallets),
+        .in('wallet_address', walletsForQuery),
+      // Fetch leaderboard for display names only
+      fetchPolymarketLeaderboard({
+        timePeriod: 'month',
+        orderBy: 'PNL',
+        limit: 100,
+        category: 'overall',
+      }).catch(() => [] as any[]),
     ]);
 
     // Log query results and any errors
@@ -244,12 +262,6 @@ export async function GET(request: Request) {
     const globals = globalsRes.error ? [] : globalsRes.data || [];
     const profiles = profilesRes.error ? [] : profilesRes.data || [];
     console.log(`[fire-feed] Stats: ${globals.length} global, ${profiles.length} profile records`);
-    console.log(`[fire-feed] Sample wallets queried: ${wallets.slice(0, 3).join(', ')}`);
-    
-    // Log first global stat record to verify data structure
-    if (globals.length > 0) {
-      console.log(`[fire-feed] First global stat record:`, JSON.stringify(globals[0]));
-    }
 
     // Build stats map
     const statsMap = new Map<string, any>();
@@ -268,7 +280,6 @@ export async function GET(request: Request) {
       const wallet = (row.wallet_address || '').toLowerCase();
       if (wallet) {
         statsMap.set(wallet, {
-          // Use d30 (30-day) stats first, then lifetime (l_) as fallback
           globalWinRate: normalizeWinRateValue(row.d30_win_rate) ?? normalizeWinRateValue(row.l_win_rate),
           globalRoiPct: normalizeRoiValue(row.d30_total_roi_pct) ?? normalizeRoiValue(row.l_total_roi_pct),
           globalTrades: pickNumber(row.d30_count, row.l_count) ?? 0,
@@ -282,66 +293,22 @@ export async function GET(request: Request) {
     });
 
     debugStats.tradersWithStats = statsMap.size;
-    console.log(`[fire-feed] Stats available for ${statsMap.size} traders`);
+    console.log(`[fire-feed] Stats available for ${statsMap.size} of ${wallets.length} traders`);
 
-    // 3. Fetch trades from Polymarket API (same as regular feed)
-    const thirtyDaysAgoMs = Date.now() - (30 * 24 * 60 * 60 * 1000);
-    
-    const tradePromises = wallets.map(async (wallet) => {
-      try {
-        const response = await fetch(
-          `https://data-api.polymarket.com/trades?limit=${FIRE_TRADES_PER_TRADER}&user=${wallet}`,
-          { cache: 'no-store' }
-        );
-        
-        if (!response.ok) {
-          debugStats.errors.push(`Failed to fetch trades for ${wallet.slice(0, 10)}: ${response.status}`);
-          return [];
-        }
-        
-        const trades = await response.json();
-        if (!Array.isArray(trades)) {
-          debugStats.errors.push(`Non-array response for ${wallet.slice(0, 10)}`);
-          return [];
-        }
-        
-        debugStats.totalTradesFetched += trades.length;
-        
-        // Filter to BUY trades from last 30 days
-        const filtered = trades.filter((trade: any) => {
-          if (trade.side !== 'BUY') return false;
-          let timestamp = typeof trade.timestamp === 'string' ? parseInt(trade.timestamp) : trade.timestamp;
-          if (timestamp < 10000000000) timestamp = timestamp * 1000;
-          return timestamp >= thirtyDaysAgoMs;
-        });
-        
-        debugStats.totalTradesAfterTimeFilter += filtered.length;
-        return filtered.map((trade: any) => ({ ...trade, _wallet: wallet }));
-      } catch (error: any) {
-        debugStats.errors.push(`Error for ${wallet.slice(0, 10)}: ${error.message}`);
-        return [];
+    // Build trader names from leaderboard (for display only)
+    const traderPnlMap = new Map<string, number>();
+    const traderNames: Record<string, string> = {};
+    (leaderboard || []).forEach((trader: any) => {
+      const w = trader.wallet?.toLowerCase();
+      if (w) {
+        traderNames[w] = trader.displayName;
+        traderPnlMap.set(w, trader.pnl || 0);
       }
     });
 
-    const allTradesResults = await Promise.all(tradePromises);
-    const allTrades = allTradesResults.flat();
-    console.log(`[fire-feed] Fetched ${allTrades.length} trades total`);
-
-    // 4. Process trades - apply PolySignal scoring and only return BUY or STRONG_BUY
+    // 4. Process trades — apply PolySignal scoring, only return BUY or STRONG_BUY
     const fireTrades: any[] = [];
     let rejectedSamples: any[] = [];
-    
-    // Build a map of trader PNL from leaderboard for ranking
-    const traderPnlMap = new Map<string, number>();
-    let minPnl = Infinity, maxPnl = -Infinity;
-    topTraders.forEach((trader) => {
-      const pnl = trader.pnl || 0;
-      traderPnlMap.set(trader.wallet.toLowerCase(), pnl);
-      if (pnl < minPnl) minPnl = pnl;
-      if (pnl > maxPnl) maxPnl = pnl;
-    });
-    debugStats.topTraderPnlRange = { min: Math.round(minPnl), max: Math.round(maxPnl) };
-    console.log(`[fire-feed] Top trader PNL range: $${Math.round(minPnl)} to $${Math.round(maxPnl)}`);
     
     // Add PolySignal stats to debug
     (debugStats as any).polySignalPassed = 0;
@@ -532,13 +499,15 @@ export async function GET(request: Request) {
       }
     }
 
-    // Sort by timestamp
+    // Sort by most recent first
     fireTrades.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
 
-    // Build trader names
-    const traderNames: Record<string, string> = {};
-    topTraders.forEach((trader) => {
-      traderNames[trader.wallet.toLowerCase()] = trader.displayName;
+    // For wallets not on leaderboard, use truncated address as display name
+    fireTrades.forEach((t: any) => {
+      const w = t.wallet;
+      if (w && !traderNames[w]) {
+        traderNames[w] = `${w.slice(0, 6)}...${w.slice(-4)}`;
+      }
     });
 
     console.log(`[fire-feed] Returning ${fireTrades.length} filtered trades (BUY/STRONG_BUY only)`);
