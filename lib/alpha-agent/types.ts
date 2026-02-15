@@ -483,6 +483,10 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
+  attachments?: {
+    mimeType: string;
+    data: string; // base64
+  }[];
   metadata?: {
     tokens_used?: number;
     memories_referenced?: string[];
