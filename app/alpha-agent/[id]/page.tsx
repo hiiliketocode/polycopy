@@ -269,8 +269,9 @@ export default function AlphaAgentDetailPage() {
           });
 
           // Combine positions and trades
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const allTrades: Trade[] = [
-            ...positions.map((p: Record<string, unknown>) => ({
+            ...positions.map((p: any) => ({
               order_id: p.order_id as string,
               wallet_id: botId,
               market_title: p.market_title as string,
@@ -284,11 +285,12 @@ export default function AlphaAgentDetailPage() {
               trader_win_rate: p.trader_win_rate as number || 0,
               outcome: 'OPEN',
               pnl: p.unrealized_pnl as number || null,
-              order_time: p.order_time?.value || p.order_time || '',
+              order_time: (p.order_time as { value?: string } | string)?.valueOf?.() ? String((p.order_time as { value?: string })?.value || p.order_time || '') : '',
               resolved_time: null,
               time_to_resolution_hours: null,
             })),
-            ...resolvedTrades.map((t: Record<string, unknown>) => ({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...resolvedTrades.map((t: any) => ({
               order_id: t.order_id as string,
               wallet_id: botId,
               market_title: t.market_title as string,
@@ -302,8 +304,8 @@ export default function AlphaAgentDetailPage() {
               trader_win_rate: t.trader_win_rate as number || 0,
               outcome: t.outcome as string,
               pnl: t.pnl as number || null,
-              order_time: t.order_time?.value || t.order_time || '',
-              resolved_time: t.resolved_time?.value || t.resolved_time || null,
+              order_time: String((t.order_time as { value?: string })?.value || t.order_time || ''),
+              resolved_time: ((t.resolved_time as { value?: string })?.value || t.resolved_time || null) as string | null,
               time_to_resolution_hours: null,
             })),
           ];
