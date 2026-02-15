@@ -402,7 +402,7 @@ export default function TraderProfilePage({
           trader: {
             name: trader.displayName || "Trader",
             wallet: wallet,
-            avatar: trader.profileImage,
+            avatar: trader.profileImage ?? undefined,
             isPremium: false,
           },
           market: {
