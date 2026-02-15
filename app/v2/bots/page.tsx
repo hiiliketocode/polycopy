@@ -71,6 +71,9 @@ function deriveCategory(wallet: any): string {
     return "SPORTS"
   if (name.includes("politics") || name.includes("contrarian") || (Array.isArray(cats) && cats.includes("POLITICS") && !cats.includes("SPORTS")))
     return "POLITICS"
+  if (name.includes("crypto") || name.includes("btc") || name.includes("eth") || name.includes("sol") ||
+    (Array.isArray(cats) && cats.some((c: string) => ["CRYPTO", "BTC", "ETH", "BITCOIN", "ETHEREUM"].includes(c.toUpperCase()))))
+    return "CRYPTO"
   if (name.includes("arbitrage") || desc.includes("arbitrage"))
     return "ARBITRAGE"
 
@@ -120,6 +123,7 @@ const FILTERS = [
   { id: "AGGRESSIVE", label: "AGGRESSIVE" },
   { id: "ML_POWERED", label: "ML POWERED" },
   { id: "SPORTS", label: "SPORTS" },
+  { id: "CRYPTO", label: "CRYPTO" },
   { id: "POLITICS", label: "POLITICS" },
   { id: "FREE", label: "FREE" },
 ] as const
@@ -168,11 +172,16 @@ export default function BotsPage() {
     fetchBots()
   }, [])
 
-  // Filter bots
-  const filteredBots = useMemo(() => {
-    if (activeFilter === "ALL") return bots
+  // Sort bots by performance (best first) then filter
+  const sortedBots = useMemo(() =>
+    [...bots].sort((a, b) => b.performance.return_pct - a.performance.return_pct),
+    [bots]
+  )
 
-    return bots.filter((bot) => {
+  const filteredBots = useMemo(() => {
+    if (activeFilter === "ALL") return sortedBots
+
+    return sortedBots.filter((bot) => {
       switch (activeFilter) {
         case "CONSERVATIVE":
           return bot.risk_level === "LOW"
@@ -184,13 +193,14 @@ export default function BotsPage() {
           return !bot.is_premium
         case "ML_POWERED":
         case "SPORTS":
+        case "CRYPTO":
         case "POLITICS":
           return walletCategoryMap[bot.id] === activeFilter
         default:
           return true
       }
     })
-  }, [bots, activeFilter, walletCategoryMap])
+  }, [sortedBots, activeFilter, walletCategoryMap])
 
   const onlineCount = bots.length
 
