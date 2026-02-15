@@ -121,13 +121,22 @@ interface Decision {
   created_at: string;
 }
 
+interface MemoryDataTable {
+  table_name: string;
+  columns: { name: string }[];
+  rows: Record<string, unknown>[];
+}
+
 interface Memory {
   memory_id: string;
   memory_tier: string;
   memory_type: string;
   title: string;
   content: string;
-  evidence: Record<string, unknown>;
+  evidence: {
+    data_tables?: MemoryDataTable[];
+    [key: string]: unknown;
+  };
   confidence: number;
   tags: string[];
   created_at: string;
