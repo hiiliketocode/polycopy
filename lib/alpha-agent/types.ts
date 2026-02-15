@@ -199,6 +199,7 @@ export interface AgentRun {
   analysis: string | null;
   patterns_found: PatternFound[];
   decisions: DecisionRecord[];
+  decisions_reasoning: string | null;
   actions_taken: ActionRecord[];
   reflection: string | null;
   market_regime: string | null;

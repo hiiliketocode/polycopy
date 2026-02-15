@@ -139,7 +139,7 @@ export async function applyStrategyChanges(
         continue;
       }
 
-      const currentValue = (snapshot as Record<string, unknown>)[field];
+      const currentValue = (snapshot as unknown as Record<string, unknown>)[field];
       const validation = validateConfigValue(field, newValue);
 
       if (!validation.valid) {

@@ -164,10 +164,11 @@ export async function retrieveRelevantMemories(
   // Increment times_referenced for retrieved memories
   const memoryIds = (data || []).map(m => m.memory_id);
   if (memoryIds.length > 0) {
-    await supabase.rpc('increment_memory_references', { memory_ids: memoryIds }).catch(() => {
-      // Non-critical, just log
+    try {
+      await supabase.rpc('increment_memory_references', { memory_ids: memoryIds });
+    } catch {
       console.warn('Failed to increment memory references');
-    });
+    }
   }
 
   return data || [];
