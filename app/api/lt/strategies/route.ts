@@ -284,13 +284,11 @@ export async function GET(request: Request) {
 
             const totalPnl = resolvedPnl + unrealizedPnl;
 
-            // Use reconciled equity from database as source of truth for balance
-            // (available + locked + cooldown), which the sync cron keeps correct
-            const reconciledEquity = (Number(s.available_cash) || 0) + (Number(s.locked_capital) || 0) + (Number(s.cooldown_capital) || 0);
-            // If reconciliation hasn't run yet, fall back to P&L-based equity
-            const currentEquity = Math.abs(reconciledEquity - (Number(s.initial_capital) + resolvedPnl)) < 1
-                ? +(Number(s.initial_capital) + totalPnl).toFixed(2)
-                : +(reconciledEquity + unrealizedPnl).toFixed(2);
+            // Equity = initial capital + total P&L (realized + unrealized).
+            // We derive this from orders rather than available_cash + locked_capital
+            // because the capital fields can be skewed by complement-price outliers
+            // in the CLOB fill-price resolver inflating locked_capital.
+            const currentEquity = +(Number(s.initial_capital) + totalPnl).toFixed(2);
 
             return {
                 ...s,

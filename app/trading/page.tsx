@@ -226,9 +226,9 @@ export default function TradingStrategiesPage() {
       let bVal: number | string = 0;
 
       const aReturnPct = a.starting_balance > 0 
-        ? ((a.current_balance - a.starting_balance) / a.starting_balance) * 100 : 0;
+        ? ((a.total_pnl || 0) / a.starting_balance) * 100 : 0;
       const bReturnPct = b.starting_balance > 0 
-        ? ((b.current_balance - b.starting_balance) / b.starting_balance) * 100 : 0;
+        ? ((b.total_pnl || 0) / b.starting_balance) * 100 : 0;
       
       const aWinRate = (a.won + a.lost) > 0 ? a.won / (a.won + a.lost) : 0;
       const bWinRate = (b.won + b.lost) > 0 ? b.won / (b.won + b.lost) : 0;
@@ -834,7 +834,7 @@ export default function TradingStrategiesPage() {
               <tbody>
                 {sortedWallets.map((wallet) => {
                   const returnPct = wallet.starting_balance > 0 
-                    ? ((wallet.current_balance - wallet.starting_balance) / wallet.starting_balance) * 100
+                    ? ((wallet.total_pnl || 0) / wallet.starting_balance) * 100
                     : 0;
                   const winRate = (wallet.won + wallet.lost) > 0 
                     ? (wallet.won / (wallet.won + wallet.lost)) * 100 
