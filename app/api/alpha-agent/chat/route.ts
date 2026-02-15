@@ -4,6 +4,14 @@ import { requireAdmin } from '@/lib/ft-auth';
 import { chatWithAgent } from '@/lib/alpha-agent';
 import { getAllBotSnapshots, getBotTrades } from '@/lib/alpha-agent';
 import { retrieveRelevantMemories, getLastRun } from '@/lib/alpha-agent/memory-system';
+import {
+  queryPriceBandPerformance,
+  queryTopTraders,
+  queryMarketCategoryPerformance,
+  queryTimeToResolution,
+  querySkipReasons,
+  queryLTExecutionQuality,
+} from '@/lib/alpha-agent/supabase-tool';
 import type { ChatMessage, BotPerformanceSnapshot } from '@/lib/alpha-agent/types';
 
 export const maxDuration = 60;
@@ -90,6 +98,45 @@ export async function POST(request: Request) {
         `${b.wallet_id}: ${b.resolved_trades} trades, ${b.win_rate.toFixed(1)}% WR, ${b.roi_pct.toFixed(2)}% ROI, $${b.total_pnl.toFixed(2)} PnL`
       ).join('\n');
       lastRunSummary = `ALL AGENT BOTS:\n${allBotSummary}\n\n${lastRunSummary || ''}`;
+    }
+
+    // Enrich context with Supabase queries based on what user is asking
+    const lower = lastUserMessage.toLowerCase();
+    const liveDataParts: string[] = [];
+
+    // Auto-pull relevant data based on conversation topic
+    if (lower.includes('price') || lower.includes('band') || lower.includes('underdog') || lower.includes('favorite')) {
+      const bands = await queryPriceBandPerformance(supabase);
+      if (bands.success) liveDataParts.push(`PRICE BAND PERFORMANCE:\n${JSON.stringify(bands.data, null, 1)}`);
+    }
+    if (lower.includes('trader') || lower.includes('who') || lower.includes('best') || lower.includes('worst') || lower.includes('top')) {
+      const traders = await queryTopTraders(supabase, 10);
+      if (traders.success) liveDataParts.push(`TOP TRADERS:\n${JSON.stringify(traders.data, null, 1)}`);
+    }
+    if (lower.includes('categor') || lower.includes('sport') || lower.includes('nba') || lower.includes('politic') || lower.includes('crypto') || lower.includes('market type')) {
+      const cats = await queryMarketCategoryPerformance(supabase);
+      if (cats.success) liveDataParts.push(`CATEGORY PERFORMANCE:\n${JSON.stringify(cats.data, null, 1)}`);
+    }
+    if (lower.includes('time') || lower.includes('resolution') || lower.includes('how long') || lower.includes('capital effic')) {
+      const ttr = await queryTimeToResolution(supabase);
+      if (ttr.success) liveDataParts.push(`TIME TO RESOLUTION:\n${JSON.stringify(ttr.data, null, 1)}`);
+    }
+    if (lower.includes('skip') || lower.includes('reject') || lower.includes('filter') || lower.includes('why not')) {
+      const skips = await querySkipReasons(supabase, botId || undefined);
+      if (skips.success) liveDataParts.push(`SKIP REASONS:\n${JSON.stringify(skips.data?.slice(0, 15), null, 1)}`);
+    }
+    if (lower.includes('live') || lower.includes('execution') || lower.includes('slippage') || lower.includes('fill')) {
+      const lt = await queryLTExecutionQuality(supabase);
+      if (lt.success) liveDataParts.push(`LT EXECUTION QUALITY:\n${JSON.stringify(lt.data, null, 1)}`);
+    }
+    // Always include fleet overview for context if no specific data was pulled
+    if (liveDataParts.length === 0) {
+      const fleet = allSnapshots.filter(s => s.resolved_trades >= 5).sort((a, b) => b.roi_pct - a.roi_pct).slice(0, 10);
+      liveDataParts.push(`TOP 10 BOTS BY ROI:\n${fleet.map(b => `${b.wallet_id}: ${b.win_rate.toFixed(1)}% WR, ${b.roi_pct.toFixed(2)}% ROI, $${b.total_pnl.toFixed(2)} PnL, ${b.resolved_trades} trades`).join('\n')}`);
+    }
+
+    if (liveDataParts.length > 0) {
+      lastRunSummary = `${lastRunSummary || ''}\n\n## LIVE SUPABASE DATA\n${liveDataParts.join('\n\n')}`;
     }
 
     const { reply, tokensUsed } = await chatWithAgent(

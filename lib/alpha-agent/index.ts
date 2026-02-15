@@ -11,6 +11,8 @@
  * - memory-system.ts - 3-tier persistent memory with reflection loops
  * - llm-engine.ts    - Gemini-powered reasoning and decision-making
  * - strategy-optimizer.ts - Strategy change application with safety bounds
+ * - supabase-tool.ts - Read-only Supabase queries for live trading data
+ * - bigquery-tool.ts - Read-only BigQuery queries for historical data
  * - types.ts         - Type definitions and config boundaries
  */
 
@@ -20,4 +22,17 @@ export { createMemory, createMemories, retrieveRelevantMemories, getStrategyKnow
 export { runLLMAnalysis, chatWithAgent } from './llm-engine';
 export { applyStrategyChanges, evaluatePastDecisions } from './strategy-optimizer';
 export { executeAgentQuery, validateQuery, getTableDescriptions } from './bigquery-tool';
+export {
+  SUPABASE_TABLE_DESCRIPTIONS,
+  queryAllWalletPerformance,
+  queryWalletTrades,
+  queryPriceBandPerformance,
+  queryTopTraders,
+  queryMarketCategoryPerformance,
+  queryTimeToResolution,
+  querySkipReasons,
+  queryLTExecutionQuality,
+  queryTradesByCriteria,
+  queryTraderStats,
+} from './supabase-tool';
 export * from './types';
