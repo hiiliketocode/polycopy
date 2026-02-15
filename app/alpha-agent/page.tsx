@@ -95,11 +95,19 @@ interface ChatAttachment {
   name?: string;
 }
 
+interface ThinkingStep {
+  agent: 'data' | 'memory' | 'supabase' | 'strategist' | 'executor';
+  label: string;
+  detail?: string;
+  timestamp: string;
+}
+
 interface ChatMsg {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
   attachments?: ChatAttachment[];
+  thinking_steps?: ThinkingStep[];
 }
 
 // ============================================================================
@@ -306,6 +314,7 @@ export default function AlphaAgentCommandCenter() {
         role: 'assistant',
         content: data.reply || data.error || 'No response',
         timestamp: new Date().toISOString(),
+        thinking_steps: data.thinking_steps || undefined,
       }]);
     } catch (err) {
       setChatMessages(prev => [...prev, {
@@ -509,7 +518,28 @@ export default function AlphaAgentCommandCenter() {
                 </div>
               )}
               {chatMessages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                  {/* Thinking steps (assistant only) */}
+                  {msg.role === 'assistant' && msg.thinking_steps && msg.thinking_steps.length > 0 && (
+                    <details className="w-full max-w-[90%] mb-1 group">
+                      <summary className="text-[10px] text-muted-foreground/60 cursor-pointer hover:text-muted-foreground flex items-center gap-1">
+                        <svg className="h-3 w-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                        {msg.thinking_steps.length} thinking steps
+                      </summary>
+                      <div className="mt-1 ml-1 border-l-2 border-purple-200 dark:border-purple-800 pl-2 space-y-0.5">
+                        {msg.thinking_steps.map((s, si) => {
+                          const icons: Record<string, string> = { data: '\u{1F4CA}', memory: '\u{1F9E0}', supabase: '\u{1F5C4}', strategist: '\u{1F916}', executor: '\u26A1' };
+                          return (
+                            <div key={si} className="text-[10px] text-muted-foreground/70 flex items-start gap-1">
+                              <span className="shrink-0">{icons[s.agent] || '\u2022'}</span>
+                              <span><span className="font-medium">{s.label}</span>{s.detail ? <span className="text-muted-foreground/50"> — {s.detail}</span> : null}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  )}
+                  {/* Message bubble */}
                   <div className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
                     {msg.attachments && msg.attachments.length > 0 && (
                       <div className="flex gap-1.5 mb-1.5 flex-wrap">

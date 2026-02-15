@@ -13,12 +13,23 @@ import {
 } from '@/lib/alpha-agent/supabase-tool';
 import { executeChatAction } from '@/lib/alpha-agent/chat-actions';
 import { buildNotesContext } from '@/lib/alpha-agent/notes';
-import { DOME_API_DESCRIPTION } from '@/lib/alpha-agent/dome-tool';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { MODEL_CONFIGS } from '@/lib/alpha-agent/types';
 import type { ChatMessage, BotPerformanceSnapshot } from '@/lib/alpha-agent/types';
 
 export const maxDuration = 60;
+
+interface ThinkingStep {
+  agent: 'data' | 'memory' | 'supabase' | 'strategist' | 'executor';
+  label: string;
+  detail?: string;
+  timestamp: string;
+  duration_ms?: number;
+}
+
+function step(agent: ThinkingStep['agent'], label: string, detail?: string): ThinkingStep {
+  return { agent, label, detail, timestamp: new Date().toISOString() };
+}
 
 export async function POST(request: Request) {
   const authResult = await requireAdmin();
@@ -41,22 +52,31 @@ export async function POST(request: Request) {
   }
 
   const supabase = createAdminServiceClient();
+  const steps: ThinkingStep[] = [];
+  const t0 = Date.now();
 
   try {
-    const botId = body.botId;
+    // ================================================================
+    // DATA AGENT: Pull bot performance
+    // ================================================================
+    steps.push(step('data', 'Loading bot performance data from Supabase'));
     const allSnapshots = await getAllBotSnapshots(supabase);
+    steps.push(step('data', `Loaded ${allSnapshots.length} bots`, `${allSnapshots.filter(s => s.is_agent_managed).length} are agent-managed`));
 
-    // Build bot context
+    const botId = body.botId;
     let botPerformance: BotPerformanceSnapshot | null = null;
     let recentTrades: unknown[] = [];
     let currentHypothesis: string | undefined;
 
     if (botId) {
+      steps.push(step('data', `Fetching trades for ${botId}`));
       botPerformance = allSnapshots.find(s => s.wallet_id === botId) || null;
       recentTrades = await getBotTrades(supabase, botId, 15).catch(() => []);
       const { data: botData } = await supabase.from('alpha_agent_bots').select('current_hypothesis').eq('bot_id', botId).single();
       currentHypothesis = botData?.current_hypothesis || undefined;
+      steps.push(step('data', `Got ${(recentTrades as unknown[]).length} recent trades`, botPerformance ? `${botPerformance.win_rate.toFixed(1)}% WR, $${botPerformance.total_pnl.toFixed(2)} PnL` : 'No data'));
     } else {
+      steps.push(step('data', 'Building context for all 3 agent bots'));
       const agentBots = allSnapshots.filter(s => s.is_agent_managed);
       const combinedTrades: unknown[] = [];
       const hypotheses: string[] = [];
@@ -69,17 +89,29 @@ export async function POST(request: Request) {
       botPerformance = agentBots.sort((a, b) => b.total_pnl - a.total_pnl)[0] || null;
       recentTrades = combinedTrades;
       currentHypothesis = hypotheses.join(' | ');
+      steps.push(step('data', `Loaded ${agentBots.length} agent bots with ${combinedTrades.length} recent trades`));
     }
 
-    // Get memories + notes
+    // ================================================================
+    // MEMORY AGENT: Retrieve relevant knowledge
+    // ================================================================
+    steps.push(step('memory', 'Searching memory for relevant knowledge'));
     const lastUserMessage = body.messages[body.messages.length - 1]?.content || '';
     const searchTags = extractSearchTags(lastUserMessage);
     const memories = await retrieveRelevantMemories(supabase, {
       tags: searchTags.length > 0 ? searchTags : undefined,
       limit: 10,
     });
+    steps.push(step('memory', `Found ${memories.length} relevant memories`, searchTags.length > 0 ? `Tags: ${searchTags.join(', ')}` : 'Broad search'));
+
+    steps.push(step('memory', 'Loading persistent notes'));
     const notesContext = await buildNotesContext(supabase);
+    steps.push(step('memory', notesContext ? 'Notes loaded into context' : 'No notes yet'));
+
     const lastRun = await getLastRun(supabase);
+    if (lastRun) {
+      steps.push(step('memory', 'Retrieved last run context', `Regime: ${lastRun.market_regime || 'unknown'}`));
+    }
 
     // Build context summary
     let contextSummary = lastRun?.analysis || lastRun?.reflection || '';
@@ -91,34 +123,44 @@ export async function POST(request: Request) {
       contextSummary = `ALL AGENT BOTS:\n${allBotSummary}\n\n${contextSummary}`;
     }
 
-    // Enrich with Supabase data
+    // ================================================================
+    // SUPABASE AGENT: Pull live data based on question
+    // ================================================================
     const lower = lastUserMessage.toLowerCase();
     const liveDataParts: string[] = [];
+
     if (lower.includes('price') || lower.includes('band') || lower.includes('underdog') || lower.includes('favorite')) {
+      steps.push(step('supabase', 'Querying price band performance'));
       const r = await queryPriceBandPerformance(supabase);
-      if (r.success) liveDataParts.push(`PRICE BAND PERFORMANCE:\n${JSON.stringify(r.data, null, 1)}`);
+      if (r.success) { liveDataParts.push(`PRICE BAND PERFORMANCE:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', `Got ${r.count} price bands`)); }
     }
     if (lower.includes('trader') || lower.includes('who') || lower.includes('best') || lower.includes('worst') || lower.includes('top')) {
+      steps.push(step('supabase', 'Querying top traders by P&L'));
       const r = await queryTopTraders(supabase, 10);
-      if (r.success) liveDataParts.push(`TOP TRADERS:\n${JSON.stringify(r.data, null, 1)}`);
+      if (r.success) { liveDataParts.push(`TOP TRADERS:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', `Got ${r.count} traders`)); }
     }
     if (lower.includes('categor') || lower.includes('sport') || lower.includes('nba') || lower.includes('politic') || lower.includes('crypto') || lower.includes('market type')) {
+      steps.push(step('supabase', 'Querying market category performance'));
       const r = await queryMarketCategoryPerformance(supabase);
-      if (r.success) liveDataParts.push(`CATEGORY PERFORMANCE:\n${JSON.stringify(r.data, null, 1)}`);
+      if (r.success) { liveDataParts.push(`CATEGORY PERFORMANCE:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', `Got ${r.count} categories`)); }
     }
     if (lower.includes('time') || lower.includes('resolution') || lower.includes('how long') || lower.includes('capital effic')) {
+      steps.push(step('supabase', 'Querying time-to-resolution analysis'));
       const r = await queryTimeToResolution(supabase);
-      if (r.success) liveDataParts.push(`TIME TO RESOLUTION:\n${JSON.stringify(r.data, null, 1)}`);
+      if (r.success) { liveDataParts.push(`TIME TO RESOLUTION:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', `Got ${r.count} time buckets`)); }
     }
     if (lower.includes('skip') || lower.includes('reject') || lower.includes('filter') || lower.includes('why not')) {
+      steps.push(step('supabase', 'Querying skip reasons from ft_seen_trades'));
       const r = await querySkipReasons(supabase, botId || undefined);
-      if (r.success) liveDataParts.push(`SKIP REASONS:\n${JSON.stringify(r.data?.slice(0, 15), null, 1)}`);
+      if (r.success) { liveDataParts.push(`SKIP REASONS:\n${JSON.stringify(r.data?.slice(0, 15), null, 1)}`); steps.push(step('supabase', `Got ${r.count} skip reasons`)); }
     }
     if (lower.includes('live') || lower.includes('execution') || lower.includes('slippage') || lower.includes('fill')) {
+      steps.push(step('supabase', 'Querying LT execution quality metrics'));
       const r = await queryLTExecutionQuality(supabase);
-      if (r.success) liveDataParts.push(`LT EXECUTION QUALITY:\n${JSON.stringify(r.data, null, 1)}`);
+      if (r.success) { liveDataParts.push(`LT EXECUTION QUALITY:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', 'Got execution quality metrics')); }
     }
     if (liveDataParts.length === 0) {
+      steps.push(step('supabase', 'Loading fleet overview (top 10 by ROI)'));
       const fleet = allSnapshots.filter(s => s.resolved_trades >= 5).sort((a, b) => b.roi_pct - a.roi_pct).slice(0, 10);
       liveDataParts.push(`TOP 10 BOTS BY ROI:\n${fleet.map(b => `${b.wallet_id}: ${b.win_rate.toFixed(1)}% WR, ${b.roi_pct.toFixed(2)}% ROI, $${b.total_pnl.toFixed(2)} PnL, ${b.resolved_trades} trades`).join('\n')}`);
     }
@@ -130,26 +172,22 @@ export async function POST(request: Request) {
     ].filter(Boolean).join('\n\n');
 
     // ================================================================
-    // TWO-PHASE: First get reply + action intent, then execute action
+    // STRATEGIST AGENT: LLM reasoning
     // ================================================================
+    steps.push(step('strategist', `Thinking with ${MODEL_CONFIGS.conversational.model}`, `Temperature: ${MODEL_CONFIGS.conversational.temperature}, context: ${Math.round(fullContext.length / 1000)}k chars`));
+
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const config = MODEL_CONFIGS.conversational;
     const model = genAI.getGenerativeModel({
       model: config.model,
-      generationConfig: {
-        temperature: config.temperature,
-        maxOutputTokens: config.maxOutputTokens,
-        responseMimeType: 'application/json',
-      },
+      generationConfig: { temperature: config.temperature, maxOutputTokens: config.maxOutputTokens, responseMimeType: 'application/json' },
     });
 
     const actionSystemPrompt = buildActionSystemPrompt(fullContext, botPerformance, recentTrades, memories, currentHypothesis);
 
-    // Build chat history with multimodal support
     const chatHistory = body.messages.map(m => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const parts: any[] = [{ text: m.content }];
-      // Add image/file attachments as inline data
       if (m.attachments && Array.isArray(m.attachments)) {
         for (const att of m.attachments) {
           if (att.mimeType && att.data) {
@@ -157,11 +195,13 @@ export async function POST(request: Request) {
           }
         }
       }
-      return {
-        role: m.role === 'user' ? 'user' as const : 'model' as const,
-        parts,
-      };
+      return { role: m.role === 'user' ? 'user' as const : 'model' as const, parts };
     });
+
+    const hasAttachments = body.messages.some(m => m.attachments && m.attachments.length > 0);
+    if (hasAttachments) {
+      steps.push(step('strategist', 'Processing image/file attachments with vision'));
+    }
 
     const chat = model.startChat({
       history: [
@@ -171,7 +211,6 @@ export async function POST(request: Request) {
       ],
     });
 
-    // Build the last message parts (text + any attachments)
     const lastMessage = body.messages[body.messages.length - 1];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const lastParts: any[] = [{ text: lastMessage.content }];
@@ -182,11 +221,18 @@ export async function POST(request: Request) {
         }
       }
     }
+
+    const llmStart = Date.now();
     const result = await chat.sendMessage(lastParts);
     const responseText = result.response.text();
     const tokensUsed = result.response.usageMetadata?.totalTokenCount || 0;
+    const llmDuration = Date.now() - llmStart;
 
-    // Parse response
+    steps.push(step('strategist', `Response generated in ${(llmDuration / 1000).toFixed(1)}s`, `${tokensUsed} tokens used`));
+
+    // ================================================================
+    // EXECUTOR AGENT: Parse response and execute actions
+    // ================================================================
     let reply: string;
     let actionResult: { success: boolean; message: string } | null = null;
 
@@ -194,44 +240,52 @@ export async function POST(request: Request) {
       const parsed = JSON.parse(responseText);
       reply = parsed.reply || responseText;
 
-      // Execute action if present and not "none"
       if (parsed.action && parsed.action.action_type && parsed.action.action_type !== 'none') {
-        const action = {
-          ...parsed.action,
-          bot_id: parsed.action.bot_id || botId || undefined,
-        };
+        const actionType = parsed.action.action_type;
+        const actionBot = parsed.action.bot_id || botId || 'unknown';
+        steps.push(step('executor', `Executing action: ${actionType}`, `Target: ${actionBot}`));
 
+        const action = { ...parsed.action, bot_id: parsed.action.bot_id || botId || undefined };
         actionResult = await executeChatAction(supabase, action);
 
-        // Append action result to reply
         if (actionResult.success) {
+          steps.push(step('executor', `Action succeeded: ${actionResult.message}`));
           reply += `\n\n**Action taken:** ${actionResult.message}`;
         } else {
+          steps.push(step('executor', `Action failed: ${actionResult.message}`));
           reply += `\n\n**Action failed:** ${actionResult.message}`;
         }
+      } else {
+        steps.push(step('executor', 'No action needed (conversation only)'));
       }
     } catch {
-      // If JSON parsing fails, treat entire response as plain text reply
       reply = responseText;
+      steps.push(step('executor', 'Response parsed as plain text (no structured action)'));
     }
+
+    const totalDuration = Date.now() - t0;
+    steps.push(step('data', `Total: ${(totalDuration / 1000).toFixed(1)}s`, `${steps.length} steps completed`));
 
     return NextResponse.json({
       success: true,
       reply,
       action_result: actionResult,
+      thinking_steps: steps,
       tokens_used: tokensUsed,
+      duration_ms: totalDuration,
     });
   } catch (err) {
     console.error('[Alpha Agent Chat] Error:', err);
+    steps.push(step('executor', `Error: ${err instanceof Error ? err.message : 'Unknown'}`));
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : 'Unknown error' },
+      { success: false, error: err instanceof Error ? err.message : 'Unknown error', thinking_steps: steps },
       { status: 500 }
     );
   }
 }
 
 // ================================================================
-// System prompt with action capabilities
+// System prompt
 // ================================================================
 
 function buildActionSystemPrompt(
@@ -269,7 +323,7 @@ When the admin asks you to change something, do something, or you determine an a
 2. **create_memory** - Save knowledge to memory
    parameters: { tier: "short_term"|"mid_term"|"long_term", type: "observation"|"pattern"|"lesson"|"strategy_rule"|"anti_pattern", title, content, confidence: 0-1, tags: [] }
 
-3. **update_note** - Create or update a persistent note (included in every future context)
+3. **update_note** - Create or update a persistent note
    parameters: { note_id?: "uuid" (omit to create new), title, content, category: "protocol"|"playbook"|"watchlist"|"analysis"|"directive"|"general", priority: 1-10, pinned: boolean }
 
 4. **delete_note** - Remove a note
@@ -286,7 +340,7 @@ When the admin asks you to change something, do something, or you determine an a
 7. **pause_bot** / **resume_bot** - Pause or resume a bot
    bot_id: which bot
 
-8. **set_protocol** - Change your own thinking/behavior protocols (stored as permanent high-priority memory)
+8. **set_protocol** - Change your own thinking/behavior protocols
    parameters: { title, content, tags: [] }
 
 9. **none** - Just conversation, no action needed
@@ -304,15 +358,7 @@ You MUST respond with valid JSON:
   }
 }
 
-If the admin is just asking a question, set action_type to "none". If they ask you to do something, include the appropriate action. Be conversational in your reply — explain what you're doing and why.
-
-## NOTES
-Notes are YOUR persistent workspace. Use them to:
-- Track your current strategy playbook
-- Keep a watchlist of traders/markets to monitor
-- Record admin directives so you remember them
-- Maintain analysis summaries you can reference later
-Keep notes concise and up-to-date. Delete outdated notes.`;
+If the admin is just asking a question, set action_type to "none". If they ask you to do something, include the appropriate action.`;
 }
 
 function extractSearchTags(message: string): string[] {
