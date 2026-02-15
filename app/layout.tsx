@@ -1,15 +1,33 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Space_Grotesk, DM_Sans } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import BottomNav from "./components/BottomNav";
 import Footer from "./components/Footer";
 import { LoggedOutModal } from "@/components/auth/LoggedOutModal";
 
+// Polycopy 2.0 - Industrial Block Typography
+const spaceGrotesk = Space_Grotesk({ 
+  subsets: ['latin'],
+  variable: '--font-space-grotesk',
+  display: 'swap',
+  weight: ['400', '500', '600', '700'],
+  preload: true,
+});
+
+const dmSans = DM_Sans({ 
+  subsets: ['latin'],
+  variable: '--font-dm-sans',
+  display: 'swap',
+  weight: ['400', '500', '600', '700'],
+  preload: true,
+});
+
+// Keep Inter for backward compatibility
 const inter = Inter({ 
   subsets: ['latin'],
   variable: '--font-inter',
-  display: 'swap', // Prevent FOIT (Flash of Invisible Text)
+  display: 'swap',
   preload: true,
 });
 
@@ -22,11 +40,11 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: {
-    default: 'Polycopy - Copy Trading for Polymarket',
+    default: 'Polycopy — The Home for Copy Trading on Polymarket',
     template: '%s | Polycopy'
   },
-  description: 'Discover and copy top Polymarket traders. Track performance, follow winning strategies, and make smarter prediction market trades.',
-  keywords: ['Polymarket', 'copy trading', 'prediction markets', 'crypto trading', 'trading signals', 'Polymarket traders', 'prediction trading', 'market forecasting'],
+  description: 'Institutional-grade copy trading for Polymarket. Follow top traders, automate strategies, and maximize your edge with AI-powered bots.',
+  keywords: ['Polymarket', 'copy trading', 'prediction markets', 'crypto trading', 'trading signals', 'Polymarket traders', 'prediction trading', 'market forecasting', 'trading bots', 'automated trading'],
   authors: [{ name: 'Polycopy' }],
   creator: 'Polycopy',
   metadataBase: new URL('https://polycopy.app'),
@@ -38,21 +56,21 @@ export const metadata: Metadata = {
     locale: 'en_US',
     url: 'https://polycopy.app',
     siteName: 'Polycopy',
-    title: 'Polycopy - Copy Trading for Polymarket',
-    description: 'Discover and copy top Polymarket traders. Track performance, follow winning strategies, and make smarter prediction market trades.',
+    title: 'Polycopy — The Home for Copy Trading on Polymarket',
+    description: 'Institutional-grade copy trading for Polymarket. Follow top traders, automate strategies, and maximize your edge.',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Polycopy - Copy Trading for Polymarket'
+        alt: 'Polycopy — The Home for Copy Trading on Polymarket'
       }
     ]
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Polycopy - Copy Trading for Polymarket',
-    description: 'Discover and copy top Polymarket traders.',
+    title: 'Polycopy — The Home for Copy Trading on Polymarket',
+    description: 'Institutional-grade copy trading for Polymarket.',
     site: '@polycopyapp',
     creator: '@polycopyapp',
     images: ['/og-image.png']
@@ -115,7 +133,7 @@ export default function RootLayout({
   };
 
   return (
-    <html lang="en">
+    <html lang="en" className={`${spaceGrotesk.variable} ${dmSans.variable} ${inter.variable}`}>
       <head>
         {/* Resource Hints for Performance */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -140,7 +158,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         </Script>
       </head>
       <body
-        className={`${inter.variable} font-sans antialiased bg-slate-50 relative flex flex-col`}
+        className={`font-body antialiased bg-poly-cream relative flex flex-col`}
         style={{ minHeight: '100vh', overflowX: 'hidden' }}
       >
         {/* Suppress MetaMask extension errors - we don't use MetaMask */}

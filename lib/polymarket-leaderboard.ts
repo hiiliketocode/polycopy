@@ -62,9 +62,9 @@ export async function fetchPolymarketLeaderboard(options: {
 
   console.log('🏆 Fetching leaderboard:', { timePeriod, orderBy, limit, category, offset });
 
-  // Create timeout promise (10 seconds)
+  // Create timeout promise (30 seconds — Polymarket API can be slow)
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('API request timeout')), 10000)
+    setTimeout(() => reject(new Error('API request timeout')), 30000)
   );
 
   // Fetch leaderboard from Polymarket

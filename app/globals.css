@@ -3,16 +3,73 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Polycopy Brand Colors */
+/* ===== POLYCOPY 2.0 — THE INDUSTRIAL BLOCK ===== */
 :root {
-  /* Brand Colors */
+  /* Brand Foundation */
+  --poly-yellow: #FDB022;
+  --poly-yellow-hover: #E5A01F;
+  --poly-black: #0F0F0F;
+  --poly-cream: #F9F8F1;
+  --poly-paper: #FFFFFF;
+
+  /* Brand Accents */
+  --poly-indigo: #4F46E5;
+  --poly-teal: #0D9488;
+  --poly-coral: #E07A5F;
+
+  /* Neutrals */
+  --neutral-grey: #9CA3AF;
+
+  /* Data Colors (never decorative) */
+  --profit-green: #10B981;
+  --loss-red: #EF4444;
+  --info-blue: #3B82F6;
+
+  /* UI Grays */
+  --gray-50: #F9FAFB;
+  --gray-100: #F3F4F6;
+  --gray-200: #E5E7EB;
+  --gray-300: #D1D5DB;
+  --gray-400: #9CA3AF;
+  --gray-500: #6B7280;
+  --gray-600: #4B5563;
+  --gray-700: #374151;
+  --gray-800: #1F2937;
+  --gray-900: #111827;
+
+  /* Spacing Scale (8px base unit) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Border Radius — Sharp Aesthetic */
+  --radius-none: 0px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  /* Shadows — Subtle Elevation */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.16);
+
+  /* Icon Sizes */
+  --icon-xs: 16px;
+  --icon-sm: 20px;
+  --icon-md: 24px;
+  --icon-lg: 32px;
+  --icon-xl: 48px;
+
+  /* Legacy aliases for backward compatibility */
   --polycopy-yellow: #FDB022;
   --polycopy-yellow-hover: #E5A020;
   --neutral-black: #0F0F0F;
   --neutral-white: #FFFFFF;
-  --profit-green: #10B981;
-  --loss-red: #EF4444;
-  --info-blue: #3B82F6;
 }
 
 @theme inline {
@@ -25,8 +82,9 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
 
-  /* Modern Font Stack - Inter */
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Polycopy 2.0 Font Stack - Space Grotesk for headings/labels, DM Sans for body/data */
+  --font-sans: var(--font-space-grotesk), "Space Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-body: var(--font-dm-sans), "DM Sans", ui-sans-serif, system-ui, sans-serif;
   
   /* Polycopy brand colors (preserved) */
   --color-polycopy-yellow: var(--polycopy-yellow);
@@ -36,6 +94,17 @@
   --color-profit-green: var(--profit-green);
   --color-loss-red: var(--loss-red);
   --color-info-blue: var(--info-blue);
+
+  /* Polycopy brand palette — required for v2 component utility classes */
+  --color-poly-yellow: var(--poly-yellow);
+  --color-poly-yellow-hover: var(--poly-yellow-hover);
+  --color-poly-black: var(--poly-black);
+  --color-poly-cream: var(--poly-cream);
+  --color-poly-paper: var(--poly-paper);
+  --color-poly-indigo: var(--poly-indigo);
+  --color-poly-teal: var(--poly-teal);
+  --color-poly-coral: var(--poly-coral);
+  --color-neutral-grey: var(--neutral-grey);
   
   /* Additional Phase 1 Colors */
   --color-slate-500: #64748B; /* Secondary text */
@@ -82,7 +151,7 @@ html, body {
 }
 
 body {
-  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-dm-sans), "DM Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 :root {
@@ -255,4 +324,328 @@ body {
 
 .animate-float {
   animation: float 4s ease-in-out infinite;
+}
+
+/* ===== POLYCOPY 2.0 INDUSTRIAL BLOCK COMPONENTS ===== */
+
+/* --- Cards --- */
+.card-technical {
+  background: var(--poly-paper);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: var(--radius-none);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.card-technical:hover {
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
+}
+
+/* --- Buttons --- */
+.btn-primary {
+  background: var(--poly-yellow);
+  color: var(--poly-black);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  border-radius: var(--radius-none);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 12px 24px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+.btn-primary:hover {
+  background: var(--poly-yellow-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--poly-black);
+  color: var(--poly-yellow);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  border-radius: var(--radius-none);
+  border: 1px solid var(--poly-yellow);
+  padding: 12px 24px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+.btn-secondary:hover {
+  background: #1a1a1a;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--poly-black);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  border-radius: var(--radius-none);
+  border: 1px solid var(--gray-300);
+  padding: 12px 24px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+.btn-ghost:hover {
+  background: var(--gray-100);
+}
+
+/* --- Typography Utilities --- */
+.text-display-xl {
+  font-family: var(--font-sans);
+  font-size: 64px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.text-display-lg {
+  font-family: var(--font-sans);
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.text-display {
+  font-family: var(--font-sans);
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.text-h1 {
+  font-family: var(--font-sans);
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.text-h2 {
+  font-family: var(--font-sans);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.text-h3 {
+  font-family: var(--font-sans);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.text-h4 {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.text-body-xl {
+  font-family: var(--font-body);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.text-body-lg {
+  font-family: var(--font-body);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.text-body {
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.text-body-sm {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.text-caption {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.text-micro {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Button text utility */
+.text-button {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+}
+
+/* Data display utility — tabular numbers */
+.text-data {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+
+/* --- Badges --- */
+.badge-premium {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--poly-yellow, #FDB022);
+  color: var(--poly-black, #1A1A1A);
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+
+.badge-free {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--poly-black, #1A1A1A);
+  color: var(--poly-black, #1A1A1A);
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+
+.polyscore-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.locked-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--gray-100);
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+  color: var(--gray-600);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+.locked-badge:hover {
+  background: var(--gray-200);
+  border-color: var(--poly-yellow);
+}
+
+/* --- Navigation --- */
+.nav-link {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--poly-black);
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  transition: all 150ms ease;
+}
+.nav-link:hover {
+  background: var(--poly-cream);
+}
+.nav-link.active {
+  background: var(--poly-yellow);
+  color: var(--poly-black);
+}
+
+/* --- Form Controls --- */
+.form-label {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--poly-black);
+  margin-bottom: 8px;
+}
+.form-input {
+  width: 100%;
+  height: 48px;
+  padding: 12px 16px;
+  font-family: var(--font-body);
+  font-size: 16px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+  background: var(--poly-paper);
+  transition: all 150ms ease;
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--poly-yellow);
+  border-width: 2px;
+  box-shadow: 0 0 0 3px rgba(253, 176, 34, 0.1);
+}
+.form-input:disabled {
+  background: var(--gray-100);
+  color: var(--gray-500);
+  cursor: not-allowed;
+}
+.form-input.error {
+  border-color: var(--loss-red);
+}
+
+/* ===== MOBILE TYPOGRAPHY ADJUSTMENTS ===== */
+@media (max-width: 767px) {
+  .text-display-xl { font-size: 40px; }
+  .text-display-lg { font-size: 32px; }
+  .text-display { font-size: 28px; }
+  .text-h1 { font-size: 28px; }
+  .text-h2 { font-size: 24px; }
+  .text-h3 { font-size: 20px; }
+  .text-h4 { font-size: 18px; }
 }

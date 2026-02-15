@@ -641,9 +641,9 @@ export default function SettingsPage() {
                 <div className="grid gap-3 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-slate-500">Membership</span>
-                    <Badge className={hasPremiumAccess ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}>
-                      {hasPremiumAccess ? 'Premium' : 'Free'}
-                    </Badge>
+                    <span className={hasPremiumAccess ? 'badge-premium' : 'badge-free'}>
+                      {hasPremiumAccess ? 'PREMIUM' : 'FREE'}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-slate-500">Wallet</span>

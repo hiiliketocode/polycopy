@@ -2,15 +2,11 @@
 
 import * as React from 'react'
 import * as AvatarPrimitive from '@radix-ui/react-avatar'
+import { Facehash } from 'facehash'
 import { cn } from '@/lib/utils'
 
-// Avatar fallback: initials (FaceHash optional - removed to avoid build issues)
-function getInitials(name: string | null | undefined): string {
-  if (!name) return '?'
-  const parts = name.trim().split(/\s+/)
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-  return name.slice(0, 2).toUpperCase()
-}
+// Polycopy brand colors for FaceHash
+const POLYCOPY_FACEHASH_COLORS = ['#FDB022']
 
 /**
  * PolycopyAvatar Component
@@ -21,7 +17,7 @@ function getInitials(name: string | null | undefined): string {
  * Features:
  * - Displays profile image when available
  * - Falls back to unique FaceHash avatar when no image exists
- * - Uses Polycopy brand colors (yellow/amber palette)
+ * - Uses Polycopy brand colors (yellow/black palette)
  * - Maintains consistency with Polycopy's design system
  */
 
@@ -36,7 +32,7 @@ interface PolycopyAvatarProps extends React.ComponentProps<typeof AvatarPrimitiv
   size?: number
   /** Show border ring (default: true) */
   showRing?: boolean
-  /** Custom ring color (default: slate-200) */
+  /** Custom ring color (default: ring-border) */
   ringColor?: string
 }
 
@@ -50,7 +46,7 @@ function PolycopyAvatar({
   alt,
   size = 40,
   showRing = true,
-  ringColor = 'ring-slate-100',
+  ringColor = 'ring-border',
   className,
   ...props
 }: PolycopyAvatarProps) {
@@ -58,7 +54,7 @@ function PolycopyAvatar({
     <AvatarPrimitive.Root
       data-slot="avatar"
       className={cn(
-        'relative flex shrink-0 overflow-hidden rounded-full',
+        'relative flex shrink-0 overflow-hidden rounded-none',
         showRing && `ring-2 ${ringColor}`,
         className,
       )}
@@ -75,12 +71,20 @@ function PolycopyAvatar({
         />
       )}
       
-      {/* Initials fallback */}
+      {/* FaceHash fallback when no profile image */}
       <AvatarPrimitive.Fallback
         data-slot="avatar-fallback"
-        className="flex size-full items-center justify-center rounded-full overflow-hidden bg-amber-100 text-amber-800 font-medium"
+        className="flex size-full items-center justify-center overflow-hidden bg-accent"
       >
-        <span style={{ fontSize: size * 0.4 }}>{getInitials(name)}</span>
+        <Facehash
+          name={name || 'anonymous'}
+          size={size}
+          variant="solid"
+          intensity3d="subtle"
+          interactive={false}
+          showInitial={false}
+          colors={POLYCOPY_FACEHASH_COLORS}
+        />
       </AvatarPrimitive.Fallback>
     </AvatarPrimitive.Root>
   )
@@ -175,7 +179,7 @@ function MarketAvatar({
     <AvatarPrimitive.Root
       data-slot="avatar"
       className={cn(
-        'relative flex shrink-0 overflow-hidden rounded-full',
+        'relative flex shrink-0 overflow-hidden rounded-none',
         className,
       )}
       style={{ width: size, height: size }}
@@ -194,7 +198,7 @@ function MarketAvatar({
       {/* Fallback: Simple initials (no FaceHash for markets) */}
       <AvatarPrimitive.Fallback
         data-slot="avatar-fallback"
-        className="flex size-full items-center justify-center rounded-full bg-slate-100 text-slate-700 text-xs font-semibold uppercase"
+        className="flex size-full items-center justify-center bg-accent text-foreground text-xs font-semibold uppercase"
       >
         {marketName ? marketName.slice(0, 2) : 'M'}
       </AvatarPrimitive.Fallback>
