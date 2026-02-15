@@ -3,7 +3,7 @@
 import React from 'react';
 import { ChevronDown } from 'lucide-react';
 import Link from 'next/link';
-import { STANDARD_DISCLAIMER, type FAQItem } from '@/app/faq/faq-data';
+import { STANDARD_DISCLAIMER, type FAQItem } from '@/app/(seo)/faq/faq-data';
 
 interface FAQCardProps {
   faq: FAQItem;
@@ -39,15 +39,15 @@ function parseMarkdownToJSX(text: string): React.ReactElement {
 
   const parseInlineFormatting = (line: string): string => {
     // Bold: **text**
-    line = line.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-slate-900">$1</strong>');
+    line = line.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-poly-black">$1</strong>');
     
     // Links: [text](url)
     line = line.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
       const isInternal = url.startsWith('/');
       if (isInternal) {
-        return `<a href="${url}" class="text-[#FDB022] hover:text-[#E69E1A] underline">${text}</a>`;
+        return `<a href="${url}" class="text-poly-yellow hover:text-poly-yellow-hover underline">${text}</a>`;
       }
-      return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-[#FDB022] hover:text-[#E69E1A] underline">${text}</a>`;
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-poly-yellow hover:text-poly-yellow-hover underline">${text}</a>`;
     });
     
     return line;
@@ -102,19 +102,19 @@ export function FAQCard({ faq, isOpen, onToggle }: FAQCardProps) {
   return (
     <div
       id={faq.id}
-      className="bg-white rounded-lg border-2 border-slate-200 overflow-hidden hover:border-slate-300 transition-colors scroll-mt-8"
+      className="border border-border bg-card overflow-hidden transition-colors hover:border-poly-yellow scroll-mt-8"
     >
       <button
         onClick={onToggle}
-        className="w-full px-6 py-4 text-left flex items-center justify-between gap-4 hover:bg-slate-50 transition-colors"
+        className="w-full px-6 py-4 text-left flex items-center justify-between gap-4 hover:bg-poly-cream transition-colors"
         aria-expanded={isOpen}
         aria-controls={`faq-content-${faq.id}`}
       >
-        <h3 className="text-lg font-semibold text-slate-900 flex-1">
+        <h3 className="font-sans font-bold uppercase text-poly-black flex-1">
           {faq.question}
         </h3>
         <ChevronDown
-          className={`w-5 h-5 text-slate-600 flex-shrink-0 transition-transform duration-200 ${
+          className={`w-5 h-5 text-muted-foreground flex-shrink-0 transition-transform duration-200 ${
             isOpen ? 'transform rotate-180' : ''
           }`}
           aria-hidden="true"
@@ -127,14 +127,14 @@ export function FAQCard({ faq, isOpen, onToggle }: FAQCardProps) {
           isOpen ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'
         }`}
       >
-        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 text-slate-700 leading-relaxed">
+        <div className="px-6 py-4 border-t border-border bg-poly-paper font-body text-sm leading-relaxed text-muted-foreground">
           {/* Disclaimer if needed */}
           {faq.hasDisclaimer && (
-            <div className="bg-amber-50 border-2 border-amber-400 rounded-lg p-4 mb-4">
-              <p className="text-sm font-semibold text-amber-900 mb-1">
+            <div className="border border-border bg-poly-paper p-4 mb-4 border-l-4 border-l-poly-yellow">
+              <p className="font-sans font-bold uppercase text-poly-black mb-1">
                 {STANDARD_DISCLAIMER.title}
               </p>
-              <p className="text-sm text-amber-900">
+              <p className="font-body text-sm text-muted-foreground">
                 {faq.disclaimerText || STANDARD_DISCLAIMER.text}
               </p>
             </div>
