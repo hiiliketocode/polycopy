@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,7 +27,8 @@ import {
   Settings2,
   BarChart3,
   Settings,
-  FileText
+  FileText,
+  Brain,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -92,6 +93,194 @@ interface FTWallet {
   test_status: 'ACTIVE' | 'ENDED' | 'SCHEDULED';
 }
 
+// ============================================================================
+// Alpha Agent Tab — embedded command center
+// ============================================================================
+
+function AlphaAgentTab() {
+  const [status, setStatus] = useState<{
+    last_run?: { started_at: string; market_regime: string | null; reflection: string | null; decisions_count: number } | null;
+    bots?: { bot_id: string; role: string; hypothesis: string | null; config_changes: number }[];
+    total_runs?: number;
+    total_memories?: number;
+    total_hypotheses?: number;
+  } | null>(null);
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string; timestamp: string }[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [agentLoading, setAgentLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/alpha-agent/status');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) setStatus(data);
+      }
+    } catch { /* ignore */ }
+    finally { setAgentLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
+
+  const sendMessage = async () => {
+    if (!chatInput.trim() || chatLoading) return;
+    const userMsg = { role: 'user' as const, content: chatInput.trim(), timestamp: new Date().toISOString() };
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatInput('');
+    setChatLoading(true);
+    try {
+      const res = await fetch('/api/alpha-agent/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [...chatMessages, userMsg].map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp })) }),
+      });
+      const data = await res.json();
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.reply || data.error || 'No response', timestamp: new Date().toISOString() }]);
+    } catch (err) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err instanceof Error ? err.message : 'Failed'}`, timestamp: new Date().toISOString() }]);
+    } finally { setChatLoading(false); }
+  };
+
+  const triggerRun = async (dryRun: boolean) => {
+    setRunning(true);
+    try {
+      const res = await fetch('/api/alpha-agent/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runType: 'manual', dryRun }) });
+      const data = await res.json();
+      setChatMessages(prev => [...prev, { role: 'assistant', content: `**Agent Run ${dryRun ? '(Dry Run) ' : ''}Complete**\n\n${data.summary || data.error || 'Done'}`, timestamp: new Date().toISOString() }]);
+      fetchStatus();
+    } catch (err) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err instanceof Error ? err.message : 'Failed'}`, timestamp: new Date().toISOString() }]);
+    } finally { setRunning(false); }
+  };
+
+  const triggerBootstrap = async () => {
+    setBootstrapping(true);
+    setChatMessages(prev => [...prev, { role: 'assistant', content: '**Initializing Alpha Agent...**\n\nAnalyzing all bot performance data and designing initial strategies. This takes about 60 seconds.', timestamp: new Date().toISOString() }]);
+    try {
+      const res = await fetch('/api/alpha-agent/bootstrap', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const data = await res.json();
+      if (data.success) {
+        const strats = (data.strategies || []).map((s: { bot_id: string; hypothesis: string; reasoning: string }) => `**${s.bot_id}**: ${s.hypothesis}\n> ${s.reasoning}`).join('\n\n');
+        setChatMessages(prev => [...prev, { role: 'assistant', content: `${data.opening_message || 'Bootstrap complete!'}\n\n---\n\n**Strategies:**\n\n${strats}`, timestamp: new Date().toISOString() }]);
+      } else {
+        setChatMessages(prev => [...prev, { role: 'assistant', content: `Bootstrap failed: ${data.error}`, timestamp: new Date().toISOString() }]);
+      }
+      fetchStatus();
+    } catch (err) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err instanceof Error ? err.message : 'Failed'}`, timestamp: new Date().toISOString() }]);
+    } finally { setBootstrapping(false); }
+  };
+
+  const isFirstRun = (status?.total_runs || 0) === 0;
+  const botRoleIcons: Record<string, string> = { explorer: '⚡', optimizer: '🎯', conservative: '🛡️' };
+
+  if (agentLoading) {
+    return <div className="flex items-center justify-center h-48"><RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Brain className="h-5 w-5 text-purple-500" />
+          <span className="font-semibold text-lg">Alpha Agent</span>
+          {status?.last_run?.market_regime && <Badge variant="secondary" className="capitalize text-xs">{status.last_run.market_regime}</Badge>}
+        </div>
+        <div className="flex gap-2">
+          {isFirstRun ? (
+            <Button size="sm" onClick={triggerBootstrap} disabled={bootstrapping} className="bg-purple-600 hover:bg-purple-700">
+              {bootstrapping ? <RefreshCw className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Play className="h-3.5 w-3.5 mr-1" />}
+              Launch Agent
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={() => triggerRun(true)} disabled={running}>Dry Run</Button>
+              <Button size="sm" onClick={() => triggerRun(false)} disabled={running}>
+                {running ? <RefreshCw className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Play className="h-3.5 w-3.5 mr-1" />}
+                Run Cycle
+              </Button>
+              <Link href="/alpha-agent">
+                <Button variant="outline" size="sm">Full View</Button>
+              </Link>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Stats + Bot cards */}
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+        <Card><CardContent className="pt-3 pb-2"><div className="text-xs text-muted-foreground">Runs</div><div className="text-lg font-bold">{status?.total_runs || 0}</div></CardContent></Card>
+        <Card><CardContent className="pt-3 pb-2"><div className="text-xs text-muted-foreground">Memories</div><div className="text-lg font-bold">{status?.total_memories || 0}</div></CardContent></Card>
+        <Card><CardContent className="pt-3 pb-2"><div className="text-xs text-muted-foreground">Hypotheses</div><div className="text-lg font-bold">{status?.total_hypotheses || 0}</div></CardContent></Card>
+        {(status?.bots || []).map(bot => (
+          <Link key={bot.bot_id} href={`/alpha-agent/${bot.bot_id}`}>
+            <Card className="hover:border-purple-300 transition-colors cursor-pointer h-full">
+              <CardContent className="pt-3 pb-2">
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  <span>{botRoleIcons[bot.role] || '🤖'}</span>
+                  <span className="capitalize">{bot.role}</span>
+                </div>
+                <div className="text-xs mt-1 line-clamp-1 text-muted-foreground">{bot.hypothesis || 'No hypothesis'}</div>
+              </CardContent>
+            </Card>
+          </Link>
+        ))}
+      </div>
+
+      {/* Chat */}
+      <Card className="flex flex-col" style={{ height: '420px' }}>
+        <CardHeader className="pb-2 pt-4">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Brain className="h-4 w-4 text-purple-500" />
+            Command Center
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex-1 flex flex-col min-h-0">
+          <div className="flex-1 overflow-y-auto space-y-2 mb-2 pr-1">
+            {chatMessages.length === 0 && (
+              <div className="text-center py-6">
+                <p className="text-xs text-muted-foreground mb-3">{isFirstRun ? 'Launch the agent to get started.' : 'Ask Alpha Agent about strategies, performance, or decisions.'}</p>
+                <div className="flex flex-wrap gap-1.5 justify-center">
+                  {(isFirstRun ? ['Analyze the fleet'] : ['How are the bots doing?', 'What patterns have you found?', 'What would you change?']).map(q => (
+                    <Button key={q} variant="outline" size="sm" className="text-xs h-7" onClick={() => setChatInput(q)}>{q}</Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {chatMessages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                </div>
+              </div>
+            ))}
+            {chatLoading && <div className="flex justify-start"><div className="bg-muted rounded-lg px-3 py-2"><RefreshCw className="h-3.5 w-3.5 animate-spin" /></div></div>}
+            <div ref={chatEndRef} />
+          </div>
+          <div className="flex gap-2 pt-2 border-t">
+            <input
+              type="text" value={chatInput} onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+              placeholder="Talk to Alpha Agent..."
+              className="flex-1 rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              disabled={chatLoading}
+            />
+            <Button size="sm" onClick={sendMessage} disabled={chatLoading || !chatInput.trim()} className="bg-purple-600 hover:bg-purple-700 h-8">
+              {chatLoading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : 'Send'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // Helper to parse extended filters from wallet
 function getExtendedFilters(wallet: FTWallet): ExtendedFilters {
   if (!wallet.detailed_description) return {};
@@ -119,7 +308,7 @@ interface Totals {
 export default function TradingStrategiesPage() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const initialTab = (tabParam === 'performance' || tabParam === 'compare' || tabParam === 'live' || tabParam === 'settings') ? tabParam : 'performance';
+  const initialTab = (tabParam === 'performance' || tabParam === 'compare' || tabParam === 'live' || tabParam === 'settings' || tabParam === 'alpha') ? tabParam : 'performance';
   const [wallets, setWallets] = useState<FTWallet[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [loading, setLoading] = useState(true);
@@ -131,7 +320,7 @@ export default function TradingStrategiesPage() {
   const [lastAutoSync, setLastAutoSync] = useState<Date | null>(null);
   const [sortField, setSortField] = useState<SortField>('pnl_pct');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [activeTab, setActiveTab] = useState<'performance' | 'compare' | 'live' | 'settings'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'performance' | 'compare' | 'live' | 'settings' | 'alpha'>(initialTab);
   const [compareSortField, setCompareSortField] = useState<CompareSortField>('pnl');
   const [compareSortDir, setCompareSortDir] = useState<SortDir>('desc');
   const [ltStrategyFtIds, setLtStrategyFtIds] = useState<Set<string>>(new Set());
@@ -440,7 +629,7 @@ export default function TradingStrategiesPage() {
 
   // Sync initial tab from URL
   useEffect(() => {
-    if (tabParam) setActiveTab(tabParam as 'performance' | 'compare' | 'live' | 'settings');
+    if (tabParam) setActiveTab(tabParam as 'performance' | 'compare' | 'live' | 'settings' | 'alpha');
   }, [tabParam]);
 
   // Auto-sync every 30 seconds
@@ -780,8 +969,8 @@ export default function TradingStrategiesPage() {
         </p>
       )}
 
-      {/* Tabs: Performance | Compare Strategies | Live | Settings */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'performance' | 'compare' | 'live' | 'settings')}>
+      {/* Tabs: Performance | Compare Strategies | Live | Alpha AI | Settings */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'performance' | 'compare' | 'live' | 'settings' | 'alpha')}>
         <TabsList className="mb-4">
           <TabsTrigger value="performance" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
@@ -794,6 +983,10 @@ export default function TradingStrategiesPage() {
           <TabsTrigger value="live" className="flex items-center gap-2">
             <Activity className="h-4 w-4" />
             Live
+          </TabsTrigger>
+          <TabsTrigger value="alpha" className="flex items-center gap-2">
+            <Brain className="h-4 w-4" />
+            Alpha AI
           </TabsTrigger>
           <TabsTrigger value="settings" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
@@ -1360,6 +1553,11 @@ export default function TradingStrategiesPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Alpha AI Tab — renders the full command center */}
+        <TabsContent value="alpha" className="mt-0">
+          <AlphaAgentTab />
         </TabsContent>
 
         <TabsContent value="settings" className="mt-0">
