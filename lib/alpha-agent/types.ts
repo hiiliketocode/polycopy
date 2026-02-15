@@ -413,14 +413,14 @@ export interface ModelConfig {
 export const MODEL_CONFIGS: Record<ModelRole, ModelConfig> = {
   analyst: {
     provider: 'google',
-    model: 'gemini-2.5-pro-preview-06-05',
+    model: 'gemini-2.5-pro',
     temperature: 0.3,         // Low temp for precise analysis
     maxOutputTokens: 8192,
     description: 'Deep quantitative analysis with large context window',
   },
   strategist: {
     provider: 'google',
-    model: 'gemini-2.5-pro-preview-06-05',
+    model: 'gemini-2.5-pro',
     temperature: 0.7,         // Moderate creativity for strategy ideas
     maxOutputTokens: 8192,
     description: 'Strategy decisions and hypothesis generation',
@@ -434,7 +434,7 @@ export const MODEL_CONFIGS: Record<ModelRole, ModelConfig> = {
   },
   conversational: {
     provider: 'google',
-    model: 'gemini-2.5-pro-preview-06-05',
+    model: 'gemini-2.5-pro',
     temperature: 0.7,
     maxOutputTokens: 4096,
     description: 'Admin chatbot conversations',
