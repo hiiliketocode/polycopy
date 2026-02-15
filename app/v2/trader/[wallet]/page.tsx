@@ -1,7 +1,7 @@
 "use client"
 
 import { use, useState, useEffect, useMemo, useRef, useCallback } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { BottomNav } from "@/components/polycopy-v2/bottom-nav"
 import { V2Footer } from "@/components/polycopy-v2/footer"
@@ -259,6 +259,7 @@ export default function TraderProfilePage({
   params: Promise<{ wallet: string }>
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { wallet } = use(params)
 
   /* ── Auth ── */
@@ -293,7 +294,8 @@ export default function TraderProfilePage({
   const [myStatsLoading, setMyStatsLoading] = useState(false)
 
   /* ── UI ── */
-  const [activeTab, setActiveTab] = useState<ProfileTab>("performance")
+  const initialTab = searchParams.get("tab") === "trades" ? "trades" : "performance"
+  const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab)
   const [copiedAddress, setCopiedAddress] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
@@ -809,7 +811,7 @@ export default function TraderProfilePage({
                     key={trade.id}
                     trade={trade}
                     onCopy={() => console.log("Copy trade:", trade.id)}
-                    isPremiumUser={false}
+                    isWalletConnected={Boolean(walletAddress)}
                   />
                 ))}
                 {tradesToShow < tradeCards.length && (

@@ -307,8 +307,8 @@ export default function LandingPage() {
               </div>
               <h1 className="font-sans text-7xl font-black uppercase leading-[0.85] tracking-tighter text-poly-black md:text-8xl">
                 The Home for<br />
-                <span className="text-[#FDB022]">Copy Trading</span><br />
-                on Polymarket
+                <span className="text-[#FDB022]">Copy Trading</span>{" "}
+                <span className="whitespace-nowrap">on Polymarket</span>
               </h1>
               <p className="max-w-lg pt-2 text-xl font-medium leading-relaxed text-zinc-500">
                 The ultimate command center for Polymarket copy trading. Automate your alpha, mirror your favorite traders, and copy proprietary algorithms in two clicks.

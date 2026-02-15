@@ -9,6 +9,7 @@ export function useManualTradingMode(isPremium: boolean, hasWallet: boolean) {
 
   useEffect(() => {
     if (hasWallet) {
+      // Wallet connected: no need for manual trading mode
       setManualModeEnabled(false)
       try {
         localStorage.removeItem(STORAGE_KEY)
@@ -18,18 +19,14 @@ export function useManualTradingMode(isPremium: boolean, hasWallet: boolean) {
       return
     }
 
-    if (!isPremium) {
-      setManualModeEnabled(false)
-      return
-    }
-
+    // No wallet: check if user has opted into manual trading
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       setManualModeEnabled(stored === "true")
     } catch {
       setManualModeEnabled(false)
     }
-  }, [hasWallet, isPremium])
+  }, [hasWallet])
 
   const enableManualMode = useCallback(() => {
     setManualModeEnabled(true)

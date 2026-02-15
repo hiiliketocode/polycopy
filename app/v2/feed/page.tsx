@@ -19,7 +19,8 @@ import { EmptyState } from '@/components/polycopy/empty-state';
 import ClosePositionModal from '@/components/orders/ClosePositionModal';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { RefreshCw, Activity, Filter, Check, Search, ChevronDown, ArrowUp } from 'lucide-react';
+import { RefreshCw, Activity, Filter, Check, Search, ChevronDown, ArrowUp, LayoutGrid, List, Flame } from 'lucide-react';
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { getESPNScoresForTrades, getScoreDisplaySides, getFallbackEspnUrl } from '@/lib/espn/scores';
 import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
@@ -749,6 +750,8 @@ export default function FeedPage() {
   const [cashBalance, setCashBalance] = useState<number | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [topBots, setTopBots] = useState<{ id: string; name: string; strategy: string; roi: number }[]>([]);
   const hasPremiumAccess = tierHasPremiumAccess(userTier);
   const canExecuteTrades = hasPremiumAccess && Boolean(walletAddress);
   const showLowBalanceCallout =
@@ -3310,6 +3313,43 @@ export default function FeedPage() {
     [feedMode, fetchFeed, fetchFireFeed]
   );
 
+  // Fetch top performing bots for sidebar
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/ft/wallets/public', { cache: 'no-store' });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!data.success || !data.wallets) return;
+        const bots = [...data.wallets]
+          .filter((w: Record<string, unknown>) => (w.total_trades as number) > 0)
+          .sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+            const aStart = Number(a.starting_balance) || 1;
+            const bStart = Number(b.starting_balance) || 1;
+            const aRoi = aStart > 0 ? ((Number(a.current_balance) - aStart) / aStart) * 100 : 0;
+            const bRoi = bStart > 0 ? ((Number(b.current_balance) - bStart) / bStart) * 100 : 0;
+            return bRoi - aRoi;
+          })
+          .slice(0, 5)
+          .map((w: Record<string, unknown>) => {
+            const startBal = Number(w.starting_balance) || 1;
+            const roi = startBal > 0 ? ((Number(w.current_balance) - startBal) / startBal) * 100 : 0;
+            return {
+              id: (w.wallet_id as string) || '',
+              name: ((w.display_name as string) || (w.wallet_id as string) || 'Bot').toUpperCase(),
+              strategy: (w.description as string) || 'Automated Strategy',
+              roi,
+            };
+          });
+        if (!cancelled) setTopBots(bots);
+      } catch {
+        // silent fail
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // Manual refresh handler
   const handleManualRefresh = async () => {
     if (!user) return;
@@ -3550,6 +3590,16 @@ export default function FeedPage() {
     const remaining = Math.max(displayedTradesCount - pinnedTrades.length, 0);
     return [...pinnedTrades, ...unpinnedTrades.slice(0, remaining)];
   }, [displayedTradesCount, pinnedTrades, unpinnedTrades]);
+
+  // Fire feed data for the horizontal scroller: trades with fire scores, sorted by score
+  const fireFeedTrades = useMemo(() => {
+    const fireTrades = allTrades
+      .filter((t) => (t.fireScore && t.fireScore > 0) || (t.fireReasons && t.fireReasons.length > 0))
+      .sort((a, b) => (b.fireScore ?? 0) - (a.fireScore ?? 0))
+      .slice(0, 12);
+    // Fall back to top displayed trades if no fire trades yet
+    return fireTrades.length > 0 ? fireTrades : displayedTrades.slice(0, 8);
+  }, [allTrades, displayedTrades]);
 
   const getVisibleTrades = useCallback((): FeedTrade[] => {
     if (typeof window === 'undefined') return [];
@@ -4270,9 +4320,78 @@ export default function FeedPage() {
           </div>
         </header>
 
+        {/* Live Fire Feed - horizontal scroller */}
+        {fireFeedTrades.length > 0 && (
+          <section className="border-b border-black/5 bg-white py-4">
+            <div className="mx-auto max-w-[1400px] px-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Flame className="h-4 w-4 text-[#FDB022]" />
+                <span className="font-sans text-[11px] font-black uppercase tracking-[0.3em] text-poly-black">
+                  LIVE_FIRE_FEED
+                </span>
+                <span className="relative ml-1 flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-400 opacity-75"></span>
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-orange-500"></span>
+                </span>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button className="ml-1 inline-flex h-4 w-4 items-center justify-center border border-black/10 text-[9px] font-bold text-zinc-400 hover:text-poly-black transition-colors" aria-label="What is the fire feed?">?</button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-[260px]">
+                      <p className="text-xs">The Fire Feed surfaces the highest-signal trades from across Polymarket's tracked traders, scored by our algorithm based on conviction, timing, and trader performance.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                {fireFeedTrades.map((trade) => {
+                  const pnl = trade.trade.side === 'BUY'
+                    ? ((trade.trade.price - 0.5) * trade.trade.size).toFixed(2)
+                    : ((0.5 - trade.trade.price) * trade.trade.size).toFixed(2);
+                  const isPositive = parseFloat(pnl) >= 0;
+                  return (
+                    <div
+                      key={`signal-${trade.id}-${trade.trade.timestamp}`}
+                      className="group w-[260px] min-w-[260px] max-w-[260px] shrink-0 cursor-pointer border border-black/5 bg-white p-4 shadow-sm transition-all hover:border-black"
+                      onClick={() => {
+                        router.push(`/v2/trader/${trade.trader.wallet}?tab=trades`);
+                      }}
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="truncate max-w-[140px] text-[10px] font-black uppercase tracking-widest text-poly-black group-hover:text-[#FDB022] transition-colors">
+                          {trade.trader.displayName}
+                        </span>
+                        <span className="shrink-0 text-[9px] font-bold text-zinc-300 uppercase">
+                          {getRelativeTime(trade.trade.timestamp)}
+                        </span>
+                      </div>
+                      <p className="mb-4 truncate text-[11px] font-medium text-zinc-500 uppercase tracking-tight">
+                        {trade.market.title}
+                      </p>
+                      <div className="flex items-center justify-between pt-3 border-t border-black/5">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] font-black text-zinc-300 uppercase tracking-widest">PNL</span>
+                          <span className="text-sm font-black font-sans">${Math.abs(trade.trade.size * trade.trade.price).toFixed(0)}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[11px] font-black">${(trade.trade.price * 100).toFixed(0)}¢</p>
+                          <p className={cn("text-[9px] font-bold", isPositive ? "text-[#10B981]" : "text-[#EF4444]")}>
+                            {isPositive ? '+' : ''}{pnl}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Desktop + Mobile filter/controls section */}
         <div className="sticky top-14 md:top-16 z-30 border-b border-border bg-card">
-          <div className="mx-auto max-w-[800px] px-4">
+          <div className="mx-auto max-w-[1400px] px-4">
             {/* Polymarket account strip (mobile only) */}
             {hasPremiumAccess && walletAddress && (
               <a
@@ -4325,69 +4444,74 @@ export default function FeedPage() {
               </a>
             )}
 
-            {/* Controls row: mode toggle, filters, refresh */}
-            <div className="flex items-center justify-between gap-2 py-2.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                {userTier === 'admin' && (
-                  <div className="flex items-center gap-0.5 border border-border bg-accent px-0.5 py-0.5">
-                    {(['all', 'fire'] as FeedMode[])
-                      .filter((mode) => mode === 'fire' ? userTier === 'admin' : true)
-                      .map((mode) => {
-                        const isActive = feedMode === mode;
-                        return (
-                          <button
-                            key={mode}
-                            type="button"
-                            onClick={() => {
-                              if (feedMode !== mode) {
-                                setFeedMode(mode);
-                              }
-                            }}
-                            aria-pressed={isActive}
-                            className={cn(
-                              modeTabBase,
-                              isActive ? modeTabActive : modeTabInactive
-                            )}
-                            title={mode === 'fire' ? 'Admin-only curated feed' : 'Followed traders'}
-                          >
-                            {mode === 'fire' ? '🔥' : 'All'}
-                          </button>
-                        );
-                      })}
+          </div>
+        </div>
+
+        <div className="mx-auto max-w-[1400px] px-4 py-6">
+         <div className="flex flex-col xl:flex-row gap-8 items-start">
+          {/* Left Sidebar - desktop only */}
+          <aside className="hidden xl:flex flex-col gap-6 w-80 shrink-0 sticky top-28">
+            <div className="bg-white border border-black/5 p-6 space-y-6 shadow-sm">
+              <div className="space-y-4">
+                <div className="space-y-1 border-b border-black/5 pb-4">
+                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Portfolio Balance</p>
+                  <p className="text-2xl font-black font-sans tracking-tighter text-poly-black">{loadingBalance ? '...' : portfolioValue !== null ? `$${portfolioValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Cash Balance</p>
+                  <p className="text-2xl font-black font-sans tracking-tighter text-green-600">{loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}</p>
+                </div>
+                <Link href="/v2/portfolio" className="block w-full py-4 bg-poly-black text-[#FDB022] font-black text-[10px] uppercase tracking-[0.3em] text-center hover:bg-[#FDB022] hover:text-poly-black transition-all shadow-lg">Go To Portfolio</Link>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <h3 className="text-[11px] font-black uppercase tracking-[0.3em] px-1">Top_Performing_Bots</h3>
+              <div className="bg-white border border-black/5 p-5 shadow-sm space-y-4">
+                {topBots.length > 0 ? topBots.map((bot) => (
+                  <div key={bot.id} className="flex items-center justify-between border-b border-black/5 last:border-0 pb-3 last:pb-0">
+                    <div><p className="text-[10px] font-black text-poly-black uppercase tracking-tight">{bot.name}</p><p className="text-[8px] font-bold text-zinc-400 uppercase">{bot.strategy}</p></div>
+                    <p className={cn("text-[10px] font-black", bot.roi >= 0 ? "text-green-600" : "text-red-500")}>{bot.roi >= 0 ? '+' : ''}{bot.roi.toFixed(1)}%</p>
                   </div>
-                )}
+                )) : [1,2,3].map((i) => (
+                  <div key={i} className="flex items-center justify-between pb-3 animate-pulse"><div className="space-y-1"><div className="h-3 w-20 bg-gray-200" /><div className="h-2 w-14 bg-gray-100" /></div><div className="h-3 w-10 bg-gray-200" /></div>
+                ))}
+                <Link href="/v2/bots" className="block w-full py-3 bg-[#F9F8F1] border border-black/5 text-poly-black font-black text-[9px] uppercase tracking-widest text-center hover:bg-poly-black hover:text-[#FDB022] transition-all">View All Bots</Link>
+              </div>
+            </div>
+          </aside>
+          {/* Main Feed Area */}
+          <div className="flex-1 w-full min-w-0 space-y-4">
+            <div className="flex justify-between items-center bg-white border border-black/5 p-4 shadow-sm">
+              <h3 className="text-[11px] font-black uppercase tracking-[0.3em] px-2">Live_Activity_Feed</h3>
+              <div className="flex items-center gap-2">
+                {/* Filter button */}
                 <button
                   onClick={filtersOpen ? closeFilters : openFilters}
                   className={cn(
-                    "btn-ghost flex items-center gap-1.5 px-3 py-1.5 !text-xs",
-                    activeFiltersCount > 0 && "!bg-poly-yellow !text-poly-black !border-poly-yellow"
+                    "flex items-center gap-1.5 border border-black/10 px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-all hover:border-poly-black hover:text-poly-black",
+                    activeFiltersCount > 0 && "bg-poly-yellow text-poly-black border-poly-yellow"
                   )}
                   aria-label="Open filters"
                 >
                   <Filter className="h-3.5 w-3.5" />
                   Filter{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ''}
                 </button>
-              </div>
-              <div className="flex items-center gap-2">
+                {/* List / Grid toggle */}
+                <div className="flex items-center gap-1 bg-zinc-100 p-1">
+                  <button onClick={() => setViewMode('list')} className={cn("p-1.5 transition-all", viewMode === 'list' ? "bg-white shadow-sm text-poly-black" : "text-zinc-400")} aria-label="List view"><List size={16} /></button>
+                  <button onClick={() => setViewMode('grid')} className={cn("p-1.5 transition-all", viewMode === 'grid' ? "bg-white shadow-sm text-poly-black" : "text-zinc-400")} aria-label="Grid view"><LayoutGrid size={16} /></button>
+                </div>
+                {/* Refresh button */}
                 <button
                   onClick={handleManualRefresh}
                   disabled={isRefreshing || loadingFeed}
-                  className="btn-ghost flex h-8 w-8 items-center justify-center !px-0 !py-0 disabled:opacity-50"
+                  className="flex h-8 w-8 items-center justify-center border border-black/10 text-muted-foreground transition-all hover:border-poly-black hover:text-poly-black disabled:opacity-50"
                   aria-label="Refresh feed"
                 >
                   <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
                 </button>
-                {lastFeedFetchAt && (
-                  <span className="font-sans text-[11px] font-medium text-muted-foreground">
-                    {getRelativeTime(lastFeedFetchAt)}
-                  </span>
-                )}
               </div>
             </div>
-          </div>
-        </div>
-
-        <main className="mx-auto max-w-[800px] px-4 py-4">
           <div className="space-y-4">
             {/* Filters panel */}
             {filtersOpen && (
@@ -4462,7 +4586,7 @@ export default function FeedPage() {
                 </p>
               </div>
               ) : (
-                <div className="space-y-3" ref={feedListRef}>
+                <div className={cn("gap-4", viewMode === 'grid' ? "grid md:grid-cols-2" : "flex flex-col space-y-3")} ref={feedListRef}>
                   {displayedTrades.map((trade) => {
                     const marketKey = getMarketKeyForTrade(trade);
                     const marketKeyVariants = getMarketKeyVariantsForTrade(trade);
@@ -4514,7 +4638,7 @@ export default function FeedPage() {
 
                     return (
                       <div
-                        className="w-full"
+                        className="w-full min-w-0 overflow-hidden"
                         key={tradeKey}
                         data-trade-id={trade.id}
                       >
@@ -4607,7 +4731,9 @@ export default function FeedPage() {
                 </div>
               )}
           </div>
-        </main>
+          </div>
+         </div>
+        </div>
 
       </div>
 

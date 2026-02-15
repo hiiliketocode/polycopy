@@ -2292,10 +2292,11 @@ export function TradeCard({
   }
 
   const hasConnectedWallet = Boolean(walletAddress)
-  const isPremiumWithoutWallet = Boolean(isPremium) && !hasConnectedWallet
-  const allowManualExperience = !isPremium || (isPremiumWithoutWallet && manualTradingEnabled)
-  const showQuickCopyExperience = Boolean(isPremium) && hasConnectedWallet
-  const showLinkWalletHint = isPremiumWithoutWallet && manualTradingEnabled
+  // v2: Any account with a connected wallet gets the quick-copy experience
+  const showQuickCopyExperience = hasConnectedWallet
+  // v2: Only accounts without a wallet see the manual (step 1 / step 2) experience
+  const allowManualExperience = !hasConnectedWallet
+  const showLinkWalletHint = !hasConnectedWallet
   const isSellTrade = action === "Sell"
   const shouldShowInsightsSection =
     traderHedgingInfo.isHedging || isSellTrade || hasAnyPositionBadge
@@ -2393,7 +2394,7 @@ export function TradeCard({
       onToggleExpand()
       return
     }
-    if (isPremiumWithoutWallet && !manualTradingEnabled) {
+    if (!hasConnectedWallet && !manualTradingEnabled) {
       setShowWalletPrompt(true)
       return
     }
@@ -3136,7 +3137,7 @@ export function TradeCard({
           </div>
         </div>
 
-        <div className="mb-2 rounded-none bg-accent/70 px-4 py-3">
+        <div className="mb-2 rounded-none bg-accent/70 -mx-5 px-5 md:-mx-6 md:px-6 py-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex items-start gap-2.5 md:items-center">
@@ -3865,18 +3866,16 @@ export function TradeCard({
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-[280px] text-center">
                             <p className="mb-2">
-                              Free accounts manually execute copy trades on Polymarket, then input the trade details on Polycopy.
+                              Without a connected wallet, you manually execute copy trades on Polymarket, then input the trade details on Polycopy.
                             </p>
                             <p className="text-muted-foreground">
-                              <strong className="text-white">Premium users</strong> can trade directly from their Polycopy feed.{" "}
+                              <strong className="text-white">Connect your wallet</strong> to trade directly from your Polycopy feed.{" "}
                               <button
                                 type="button"
-                                onClick={() => {
-                                  window.location.href = '/profile?upgrade=true'
-                                }}
+                                onClick={() => onOpenConnectWallet?.()}
                                 className="underline hover:text-white transition-colors"
                               >
-                                Upgrade now
+                                Connect now
                               </button>
                             </p>
                           </TooltipContent>

@@ -17,6 +17,9 @@ import {
   Clock,
   Loader2,
   Zap,
+  ExternalLink,
+  Check,
+  X,
 } from "lucide-react"
 import { ShareCardModal } from "@/components/polycopy-v2/share-card-modal"
 import { supabase } from "@/lib/supabase"
@@ -322,6 +325,10 @@ export default function PortfolioPage() {
   const [activeTab, setActiveTab] = useState<ProfileTab>("trades")
   const [copiedAddress, setCopiedAddress] = useState(false)
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
+  const [tradeFilter, setTradeFilter] = useState<"all" | "open" | "closed" | "resolved">("open")
+  const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null)
+  const [closingTradeId, setClosingTradeId] = useState<string | null>(null)
+  const [closeSuccess, setCloseSuccess] = useState<string | null>(null)
 
   /* ── Refs for dedup ── */
   const hasLoadedProfile = useRef(false)
@@ -654,6 +661,87 @@ export default function PortfolioPage() {
   }, [profile?.trading_wallet_address])
 
   /* ═══════════════════════════════════════════════════════
+     Trade Filters
+     ═══════════════════════════════════════════════════════ */
+  const filteredTrades = useMemo(() => {
+    return copiedTrades.filter((trade) => {
+      if (tradeFilter === "all") return true
+      if (tradeFilter === "open") return !trade.user_closed_at && !trade.market_resolved
+      if (tradeFilter === "closed") return Boolean(trade.user_closed_at)
+      if (tradeFilter === "resolved") return trade.market_resolved
+      return true
+    })
+  }, [copiedTrades, tradeFilter])
+
+  /* ═══════════════════════════════════════════════════════
+     Sell / Mark as Sold Handlers
+     ═══════════════════════════════════════════════════════ */
+  const handleSellOnPolymarket = useCallback(
+    (trade: CopiedTrade) => {
+      const slug = trade.market_slug
+      if (slug) {
+        window.open(`https://polymarket.com/market/${slug}`, "_blank")
+      }
+    },
+    []
+  )
+
+  const handleMarkAsSold = useCallback(
+    async (trade: CopiedTrade) => {
+      if (closingTradeId) return
+      setClosingTradeId(trade.id)
+      try {
+        const exitPrice = trade.current_price ?? trade.price_when_copied
+        const { error } = await supabase
+          .from("copied_trades")
+          .update({
+            user_closed_at: new Date().toISOString(),
+            user_exit_price: exitPrice,
+          })
+          .eq("id", trade.id)
+
+        if (error) throw error
+
+        setCloseSuccess("Position marked as sold")
+        setTimeout(() => setCloseSuccess(null), 3000)
+        await fetchTrades()
+      } catch (err: unknown) {
+        console.error("Failed to mark as sold:", err)
+      } finally {
+        setClosingTradeId(null)
+      }
+    },
+    [closingTradeId, fetchTrades]
+  )
+
+  const handleUnmarkAsSold = useCallback(
+    async (trade: CopiedTrade) => {
+      if (closingTradeId) return
+      setClosingTradeId(trade.id)
+      try {
+        const { error } = await supabase
+          .from("copied_trades")
+          .update({
+            user_closed_at: null,
+            user_exit_price: null,
+          })
+          .eq("id", trade.id)
+
+        if (error) throw error
+
+        setCloseSuccess("Position reopened")
+        setTimeout(() => setCloseSuccess(null), 3000)
+        await fetchTrades()
+      } catch (err: unknown) {
+        console.error("Failed to unmark as sold:", err)
+      } finally {
+        setClosingTradeId(null)
+      }
+    },
+    [closingTradeId, fetchTrades]
+  )
+
+  /* ═══════════════════════════════════════════════════════
      Derived Data
      ═══════════════════════════════════════════════════════ */
 
@@ -976,13 +1064,11 @@ export default function PortfolioPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className={cn(
-              "ml-auto flex h-9 w-9 items-center justify-center text-muted-foreground transition-all hover:text-poly-black",
-              refreshing && "animate-spin"
-            )}
+            className="ml-auto flex h-9 items-center gap-1.5 px-3 text-muted-foreground transition-all hover:text-poly-black"
             aria-label="Refresh"
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+            <span className="font-sans text-xs font-bold uppercase tracking-widest">Refresh</span>
           </button>
         </div>
 
@@ -991,6 +1077,35 @@ export default function PortfolioPage() {
             ═════════════════════════════════════════════ */}
         {activeTab === "trades" && (
           <div className="space-y-3">
+            {/* ── Filter buttons ── */}
+            <div className="flex flex-wrap items-center gap-2">
+              {(["open", "all", "closed", "resolved"] as const).map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setTradeFilter(filter)}
+                  className={cn(
+                    "px-4 py-2 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
+                    tradeFilter === filter
+                      ? "bg-poly-black text-poly-cream"
+                      : "border border-border text-muted-foreground hover:text-poly-black hover:border-poly-black"
+                  )}
+                >
+                  {filter}
+                </button>
+              ))}
+              <span className="ml-auto font-body text-xs tabular-nums text-muted-foreground">
+                {filteredTrades.length} trade{filteredTrades.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+
+            {/* ── Success toast ── */}
+            {closeSuccess && (
+              <div className="flex items-center gap-2 border border-profit-green/30 bg-profit-green/10 px-4 py-2">
+                <Check className="h-4 w-4 text-profit-green" />
+                <span className="font-sans text-xs font-bold text-profit-green">{closeSuccess}</span>
+              </div>
+            )}
+
             {loadingTrades ? (
               <div className="border border-border bg-poly-paper p-16 text-center">
                 <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center">
@@ -1003,31 +1118,38 @@ export default function PortfolioPage() {
                   Aggregating historical ledger data...
                 </p>
               </div>
-            ) : copiedTrades.length === 0 ? (
+            ) : filteredTrades.length === 0 ? (
               <div className="border border-border bg-poly-paper p-16 text-center">
                 <h3 className="mb-2 font-sans text-lg font-bold uppercase tracking-wide text-muted-foreground">
-                  No Trades Yet
+                  {copiedTrades.length === 0 ? "No Trades Yet" : "No Trades Match Filter"}
                 </h3>
                 <p className="font-body text-sm text-muted-foreground">
-                  Start copying traders to see your trade history here
+                  {copiedTrades.length === 0
+                    ? "Start copying traders to see your trade history here"
+                    : `No ${tradeFilter} trades found. Try a different filter.`}
                 </p>
               </div>
             ) : (
               <>
                 {/* Trade Cards */}
-                {copiedTrades.map((trade) => {
+                {filteredTrades.map((trade) => {
                   const status = getTradeStatus(trade)
+                  const isOpen = !trade.user_closed_at && !trade.market_resolved
+                  const isSold = Boolean(trade.user_closed_at)
                   const entryPrice = trade.price_when_copied
                   const currentPrice = trade.current_price ?? entryPrice
                   const roi = trade.roi
                   const invested = trade.amount_invested || (trade.entry_size && entryPrice ? trade.entry_size * entryPrice : null)
+                  const isExpanded = expandedTradeId === trade.id
+                  const isClosing = closingTradeId === trade.id
+                  const hasWallet = Boolean(profile?.trading_wallet_address)
 
                   return (
                     <div
                       key={trade.id}
-                      className="border border-border bg-poly-paper p-4 transition-colors hover:bg-poly-paper/80"
+                      className="border border-border bg-poly-paper transition-colors hover:bg-poly-paper/80"
                     >
-                      <div className="flex items-start gap-3">
+                      <div className="flex items-start gap-3 p-4">
                         {/* Market avatar */}
                         <div className="h-10 w-10 shrink-0 overflow-hidden bg-accent">
                           {trade.market_avatar_url ? (
@@ -1055,6 +1177,7 @@ export default function PortfolioPage() {
                                   className="font-sans text-sm font-bold text-poly-black hover:underline line-clamp-2"
                                 >
                                   {trade.market_title}
+                                  <ExternalLink className="ml-1 inline h-3 w-3 text-muted-foreground" />
                                 </a>
                               ) : (
                                 <p className="font-sans text-sm font-bold text-poly-black line-clamp-2">
@@ -1081,7 +1204,7 @@ export default function PortfolioPage() {
                                     via{" "}
                                     {trade.trader_wallet ? (
                                       <Link
-                                        href={`/trader/${trade.trader_wallet}`}
+                                        href={`/v2/trader/${trade.trader_wallet}`}
                                         className="font-medium hover:text-poly-black"
                                       >
                                         {trade.trader_username}
@@ -1138,6 +1261,182 @@ export default function PortfolioPage() {
                           </div>
                         </div>
                       </div>
+
+                      {/* ── Action buttons row ── */}
+                      <div className="flex items-center gap-2 border-t border-border/50 px-4 py-2.5">
+                        {isOpen && hasWallet && trade.market_slug && (
+                          <button
+                            type="button"
+                            onClick={() => handleSellOnPolymarket(trade)}
+                            className="inline-flex items-center gap-1.5 border border-loss-red/30 px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-loss-red transition-colors hover:bg-loss-red/10"
+                          >
+                            Sell
+                            <ExternalLink className="h-3 w-3" />
+                          </button>
+                        )}
+                        {isOpen && (
+                          <button
+                            type="button"
+                            onClick={() => handleMarkAsSold(trade)}
+                            disabled={isClosing}
+                            className={cn(
+                              "inline-flex items-center gap-1.5 border border-border px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black hover:border-poly-black",
+                              isClosing && "opacity-50 cursor-not-allowed"
+                            )}
+                          >
+                            {isClosing ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Check className="h-3 w-3" />
+                            )}
+                            Mark as Sold
+                          </button>
+                        )}
+                        {isSold && (
+                          <button
+                            type="button"
+                            onClick={() => handleUnmarkAsSold(trade)}
+                            disabled={isClosing}
+                            className={cn(
+                              "inline-flex items-center gap-1.5 border border-border px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black hover:border-poly-black",
+                              isClosing && "opacity-50 cursor-not-allowed"
+                            )}
+                          >
+                            {isClosing ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <X className="h-3 w-3" />
+                            )}
+                            Reopen
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setExpandedTradeId(isExpanded ? null : trade.id)}
+                          className="ml-auto inline-flex items-center gap-1 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black"
+                        >
+                          Details
+                          {isExpanded ? (
+                            <ChevronUp className="h-3 w-3" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3" />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* ── Expanded details drawer ── */}
+                      {isExpanded && (
+                        <div className="border-t border-border/50 bg-accent/30 px-4 py-3">
+                          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                            <div>
+                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                Entry Price
+                              </p>
+                              <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
+                                ${entryPrice.toFixed(4)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                Current Price
+                              </p>
+                              <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
+                                ${(currentPrice ?? 0).toFixed(4)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                Invested
+                              </p>
+                              <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
+                                {invested != null ? `$${invested.toFixed(2)}` : "—"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                Shares
+                              </p>
+                              <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
+                                {invested != null && entryPrice > 0
+                                  ? Math.round(invested / entryPrice)
+                                  : "—"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                            <div>
+                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                Side
+                              </p>
+                              <p className="mt-0.5 font-body text-sm font-semibold text-foreground">
+                                {trade.side || "Buy"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                Method
+                              </p>
+                              <p className="mt-0.5 font-body text-sm font-semibold text-foreground">
+                                {trade.trade_method === "quick" ? "Quick Trade" : "Manual"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                Copied At
+                              </p>
+                              <p className="mt-0.5 font-body text-sm font-semibold text-foreground">
+                                {new Date(trade.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                            {trade.user_closed_at && (
+                              <div>
+                                <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                  Closed At
+                                </p>
+                                <p className="mt-0.5 font-body text-sm font-semibold text-foreground">
+                                  {new Date(trade.user_closed_at).toLocaleDateString()}
+                                </p>
+                              </div>
+                            )}
+                            {trade.user_exit_price != null && (
+                              <div>
+                                <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                  Exit Price
+                                </p>
+                                <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
+                                  ${trade.user_exit_price.toFixed(4)}
+                                </p>
+                              </div>
+                            )}
+                            {trade.resolved_outcome && (
+                              <div>
+                                <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                  Resolution
+                                </p>
+                                <p className="mt-0.5 font-body text-sm font-semibold text-foreground">
+                                  {trade.resolved_outcome}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* View on Polymarket link */}
+                          {trade.market_slug && (
+                            <div className="mt-3 pt-3 border-t border-border/50">
+                              <a
+                                href={`https://polymarket.com/market/${trade.market_slug}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black"
+                              >
+                                View on Polymarket
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
