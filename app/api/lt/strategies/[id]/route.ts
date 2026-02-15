@@ -49,7 +49,7 @@ export async function GET(request: Request, { params }: RouteParams) {
                 // Verify the owner is also an admin
                 const { data: ownerProfile } = await supabase
                     .from('profiles')
-                    .select('is_admin, wallet_label')
+                    .select('is_admin, polymarket_username')
                     .eq('id', crossStrategy.user_id)
                     .maybeSingle();
                 if (ownerProfile?.is_admin) {
@@ -66,7 +66,7 @@ export async function GET(request: Request, { params }: RouteParams) {
                     return NextResponse.json(
                         {
                             success: true,
-                            strategy: { ...crossStrategy, owner_label: ownerProfile.wallet_label || null, is_own: false },
+                            strategy: { ...crossStrategy, owner_label: ownerProfile.polymarket_username || null, is_own: false },
                             ft_wallet: crossFtWallet,
                         },
                         { headers: { 'Cache-Control': 'no-store' } },
@@ -79,7 +79,7 @@ export async function GET(request: Request, { params }: RouteParams) {
         // Get own label
         const { data: ownProfile } = await supabase
             .from('profiles')
-            .select('wallet_label')
+            .select('polymarket_username')
             .eq('id', userId)
             .maybeSingle();
 
@@ -95,7 +95,7 @@ export async function GET(request: Request, { params }: RouteParams) {
         }
 
         return NextResponse.json(
-            { success: true, strategy: { ...strategy, owner_label: ownProfile?.wallet_label || null, is_own: true }, ft_wallet: ftWallet },
+            { success: true, strategy: { ...strategy, owner_label: ownProfile?.polymarket_username || null, is_own: true }, ft_wallet: ftWallet },
             { headers: { 'Cache-Control': 'no-store' } },
         );
     } catch (error: any) {

@@ -154,13 +154,13 @@ export async function GET(request: Request) {
         // Fetch ALL admin strategies (cross-admin visibility)
         const { data: adminProfiles } = await supabase
             .from('profiles')
-            .select('id, wallet_label')
+            .select('id, polymarket_username')
             .eq('is_admin', true);
 
         const adminIds = (adminProfiles || []).map((p: any) => p.id);
         const labelMap = new Map<string, string>();
         for (const p of (adminProfiles || []) as any[]) {
-            if (p.wallet_label) labelMap.set(p.id, p.wallet_label);
+            if (p.polymarket_username) labelMap.set(p.id, p.polymarket_username);
         }
 
         const { data: strategies, error } = await supabase
