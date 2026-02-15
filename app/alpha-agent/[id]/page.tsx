@@ -229,8 +229,8 @@ export default function AlphaAgentDetailPage() {
         if (walletData.success) {
           const w = walletData.wallet;
           const stats = walletData.stats || {};
-          const positions = walletData.positions || [];
-          const resolvedTrades = walletData.trades || [];
+          const positions = walletData.open_positions || [];
+          const resolvedTrades = walletData.recent_trades || [];
 
           setSnapshot({
             wallet_id: w.wallet_id,
