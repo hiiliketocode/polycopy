@@ -13,6 +13,9 @@
  * - strategy-optimizer.ts - Strategy change application with safety bounds
  * - supabase-tool.ts - Read-only Supabase queries for live trading data
  * - bigquery-tool.ts - Read-only BigQuery queries for historical data
+ * - dome-tool.ts     - Dome/Gamma API for live market data
+ * - chat-actions.ts  - Execute actions from chat (config changes, memories, notes, etc.)
+ * - notes.ts         - Persistent context notes the agent manages
  * - types.ts         - Type definitions and config boundaries
  */
 
