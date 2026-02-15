@@ -153,6 +153,7 @@ export default function TradingStrategiesPage() {
   const [creatingLt, setCreatingLt] = useState(false);
   const [ltError, setLtError] = useState<string | null>(null);
   const [showLtInTable, setShowLtInTable] = useState(true);
+  const [tableFilter, setTableFilter] = useState<'all' | 'ft' | 'lt'>('all');
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -204,13 +205,22 @@ export default function TradingStrategiesPage() {
       test_status: s.is_active ? 'ACTIVE' as const : 'ENDED' as const,
       // Tag as live so we can style it differently
       _isLive: true,
+      _isPaused: s.is_paused ?? false,
+      _ltStrategyId: s.strategy_id,
       _ownerLabel: s.owner_label || null,
       _isOwn: s.is_own !== false,
-    } as FTWallet & { _isLive?: boolean; _ownerLabel?: string | null; _isOwn?: boolean };
+    } as FTWallet & { _isLive?: boolean; _isPaused?: boolean; _ltStrategyId?: string; _ownerLabel?: string | null; _isOwn?: boolean };
   }), [ltStrategies]);
 
   const sortedWallets = useMemo(() => {
-    const walletsToSort = showLtInTable ? [...wallets, ...ltWallets] : wallets;
+    let walletsToSort: FTWallet[];
+    if (!showLtInTable || tableFilter === 'ft') {
+      walletsToSort = wallets;
+    } else if (tableFilter === 'lt') {
+      walletsToSort = ltWallets;
+    } else {
+      walletsToSort = [...wallets, ...ltWallets];
+    }
     return [...walletsToSort].sort((a, b) => {
       let aVal: number | string = 0;
       let bVal: number | string = 0;
@@ -254,28 +264,34 @@ export default function TradingStrategiesPage() {
       }
       return sortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
     });
-  }, [wallets, ltWallets, showLtInTable, sortField, sortDir]);
+  }, [wallets, ltWallets, showLtInTable, tableFilter, sortField, sortDir]);
 
-  // Compute display totals that include LT strategies when they're shown in the table
+  // Compute display totals from the currently visible wallets (respects table filter)
   const displayTotals: Totals | null = useMemo(() => {
-    if (!showLtInTable || ltWallets.length === 0) return totals;
-    // Recompute from all visible wallets (FT + LT)
-    const all = [...wallets, ...ltWallets];
-    if (all.length === 0) return totals;
+    // If showing FT only (or LT not enabled), use the API totals
+    if (!showLtInTable || tableFilter === 'ft') return totals;
+    // Otherwise compute from the filtered set
+    let source: FTWallet[];
+    if (tableFilter === 'lt') {
+      source = ltWallets;
+    } else {
+      source = [...wallets, ...ltWallets];
+    }
+    if (source.length === 0) return totals;
     return {
-      total_balance: all.reduce((s, w) => s + (w.current_balance || 0), 0),
-      total_cash_available: all.reduce((s, w) => s + (w.cash_available || 0), 0),
-      total_realized_pnl: all.reduce((s, w) => s + (w.realized_pnl || 0), 0),
-      total_unrealized_pnl: all.reduce((s, w) => s + (w.unrealized_pnl || 0), 0),
-      total_pnl: all.reduce((s, w) => s + (w.total_pnl || 0), 0),
-      total_trades: all.reduce((s, w) => s + (w.total_trades || 0), 0),
-      total_trades_seen: all.reduce((s, w) => s + (w.trades_seen || 0), 0),
-      total_trades_skipped: all.reduce((s, w) => s + (w.trades_skipped || 0), 0),
-      open_positions: all.reduce((s, w) => s + (w.open_positions || 0), 0),
-      total_won: all.reduce((s, w) => s + (w.won || 0), 0),
-      total_lost: all.reduce((s, w) => s + (w.lost || 0), 0),
+      total_balance: source.reduce((s, w) => s + (w.current_balance || 0), 0),
+      total_cash_available: source.reduce((s, w) => s + (w.cash_available || 0), 0),
+      total_realized_pnl: source.reduce((s, w) => s + (w.realized_pnl || 0), 0),
+      total_unrealized_pnl: source.reduce((s, w) => s + (w.unrealized_pnl || 0), 0),
+      total_pnl: source.reduce((s, w) => s + (w.total_pnl || 0), 0),
+      total_trades: source.reduce((s, w) => s + (w.total_trades || 0), 0),
+      total_trades_seen: source.reduce((s, w) => s + (w.trades_seen || 0), 0),
+      total_trades_skipped: source.reduce((s, w) => s + (w.trades_skipped || 0), 0),
+      open_positions: source.reduce((s, w) => s + (w.open_positions || 0), 0),
+      total_won: source.reduce((s, w) => s + (w.won || 0), 0),
+      total_lost: source.reduce((s, w) => s + (w.lost || 0), 0),
     };
-  }, [totals, wallets, ltWallets, showLtInTable]);
+  }, [totals, wallets, ltWallets, showLtInTable, tableFilter]);
 
   const handleCompareSort = (field: CompareSortField) => {
     if (compareSortField === field) {
@@ -627,14 +643,32 @@ export default function TradingStrategiesPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 mt-2">
-            <Button
-              variant={showLtInTable ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setShowLtInTable(!showLtInTable)}
-              className="h-7 text-xs"
-            >
-              {showLtInTable ? '✓ Show Live Trading' : 'Show Live Trading'}
-            </Button>
+            <div className="flex items-center border rounded-md overflow-hidden">
+              <Button
+                variant={showLtInTable && tableFilter === 'all' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => { setShowLtInTable(true); setTableFilter('all'); }}
+                className="h-7 text-xs rounded-none px-3"
+              >
+                All
+              </Button>
+              <Button
+                variant={!showLtInTable || tableFilter === 'ft' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => { setShowLtInTable(true); setTableFilter('ft'); }}
+                className="h-7 text-xs rounded-none border-l px-3"
+              >
+                FT Only
+              </Button>
+              <Button
+                variant={showLtInTable && tableFilter === 'lt' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => { setShowLtInTable(true); setTableFilter('lt'); }}
+                className="h-7 text-xs rounded-none border-l px-3"
+              >
+                LT Only
+              </Button>
+            </div>
             <Link href="/lt/logs">
               <Button variant="outline" size="sm" className="h-7 text-xs border-[#FDB022] text-[#FDB022]">
                 <Activity className="h-3 w-3 mr-1" />
@@ -806,6 +840,8 @@ export default function TradingStrategiesPage() {
                     ? (wallet.won / (wallet.won + wallet.lost)) * 100 
                     : 0;
                   const isLive = (wallet as FTWallet & { _isLive?: boolean })._isLive === true;
+                  const isPaused = (wallet as FTWallet & { _isPaused?: boolean })._isPaused === true;
+                  const ltStrategyId = (wallet as FTWallet & { _ltStrategyId?: string })._ltStrategyId;
                   const ownerLabel = (wallet as FTWallet & { _ownerLabel?: string | null })._ownerLabel;
                   const isOwn = (wallet as FTWallet & { _isOwn?: boolean })._isOwn !== false;
                   const detailHref = isLive ? `/lt/${wallet.wallet_id}` : `/ft/${wallet.wallet_id}`;
@@ -813,7 +849,7 @@ export default function TradingStrategiesPage() {
                   return (
                     <tr 
                       key={wallet.wallet_id} 
-                      className={`border-b hover:bg-muted/30 transition-colors ${isLive ? 'bg-emerald-50/50' : ''}`}
+                      className={`border-b hover:bg-muted/30 transition-colors ${isLive && !isPaused ? 'bg-emerald-50/50' : isLive && isPaused ? 'bg-amber-50/30' : ''}`}
                     >
                       {/* Strategy Name */}
                       <td className="px-3 py-3">
@@ -826,7 +862,8 @@ export default function TradingStrategiesPage() {
                           <div>
                             <div className="font-medium flex items-center gap-1.5">
                               <Link href={detailHref} className="hover:underline">{wallet.display_name}</Link>
-                              {isLive && <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] py-0 px-1.5">LIVE</Badge>}
+                              {isLive && !isPaused && <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] py-0 px-1.5">LIVE</Badge>}
+                              {isLive && isPaused && <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] py-0 px-1.5">PAUSED</Badge>}
                               {isLive && ownerLabel && (
                                 <Badge variant="outline" className={`text-[10px] py-0 px-1.5 ${isOwn ? 'border-blue-300 text-blue-600' : 'border-orange-300 text-orange-600'}`}>
                                   {ownerLabel}
@@ -957,11 +994,46 @@ export default function TradingStrategiesPage() {
 
                       {/* Actions */}
                       <td className="px-3 py-3 text-right">
-                        <Link href={detailHref}>
-                          <Button variant="ghost" size="sm" className="h-7 px-2">
-                            <ArrowRight className="h-4 w-4" />
-                          </Button>
-                        </Link>
+                        <div className="flex items-center justify-end gap-1">
+                          {isLive && ltStrategyId && (
+                            isPaused ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-emerald-600 hover:text-emerald-700"
+                                title="Resume trading"
+                                onClick={async () => {
+                                  try {
+                                    await fetch(`/api/lt/strategies/${encodeURIComponent(ltStrategyId)}/resume`, { method: 'POST' });
+                                    await fetchLtStrategies();
+                                  } catch { setLtError('Failed to resume'); }
+                                }}
+                              >
+                                <Play className="h-4 w-4" />
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-amber-600 hover:text-amber-700"
+                                title="Pause trading"
+                                onClick={async () => {
+                                  try {
+                                    await fetch(`/api/lt/strategies/${encodeURIComponent(ltStrategyId)}/pause`, { method: 'POST' });
+                                    await fetchLtStrategies();
+                                  } catch { setLtError('Failed to pause'); }
+                                }}
+                              >
+                                <Pause className="h-4 w-4" />
+                              </Button>
+                            )
+                          )}
+                          <Link href={detailHref}>
+                            <Button variant="ghost" size="sm" className="h-7 px-2">
+                              <ArrowRight className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   );
