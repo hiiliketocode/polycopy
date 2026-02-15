@@ -181,12 +181,15 @@ export async function GET(request: Request, { params }: RouteParams) {
         const totalExecutedUsd = enrichedOrders.reduce((s: number, o: any) => s + (Number(o.executed_size_usd) || 0), 0);
 
         // Slippage stats (bps → pct for display)
+        // Use MEDIAN instead of mean — a handful of complement-price outliers
+        // from the CLOB fill-price resolver can spike the mean to 30%+.
         const withSlippage = filled.filter((o: any) => o.slippage_bps != null);
-        const avgSlippagePct = withSlippage.length > 0
-            ? withSlippage.reduce((s: number, o: any) => s + Math.abs(Number(o.slippage_bps)), 0) / withSlippage.length / 10000
+        const sortedSlippage = withSlippage.map((o: any) => Math.abs(Number(o.slippage_bps))).sort((a, b) => a - b);
+        const avgSlippagePct = sortedSlippage.length > 0
+            ? sortedSlippage[Math.floor(sortedSlippage.length / 2)] / 10000
             : null;
-        const maxSlippagePct = withSlippage.length > 0
-            ? Math.max(...withSlippage.map((o: any) => Math.abs(Number(o.slippage_bps)))) / 10000
+        const maxSlippagePct = sortedSlippage.length > 0
+            ? sortedSlippage[sortedSlippage.length - 1] / 10000
             : null;
 
         // Fill rate stats

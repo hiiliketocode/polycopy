@@ -321,9 +321,10 @@ export async function GET(request: Request) {
                         : null,
                     avg_slippage_bps: (() => {
                         const withSlip = realOrders.filter((o: any) => o.slippage_bps != null);
-                        return withSlip.length > 0
-                            ? +(withSlip.reduce((s2: number, o: any) => s2 + Number(o.slippage_bps), 0) / withSlip.length).toFixed(0)
-                            : null;
+                        if (withSlip.length === 0) return null;
+                        // Median instead of mean — complement-price outliers spike the mean
+                        const sorted = withSlip.map((o: any) => Number(o.slippage_bps)).sort((a, b) => a - b);
+                        return +sorted[Math.floor(sorted.length / 2)].toFixed(0);
                     })(),
                 },
             };

@@ -254,7 +254,28 @@ export default function TradingStrategiesPage() {
       }
       return sortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
     });
-  }, [wallets, sortField, sortDir]);
+  }, [wallets, ltWallets, showLtInTable, sortField, sortDir]);
+
+  // Compute display totals that include LT strategies when they're shown in the table
+  const displayTotals: Totals | null = useMemo(() => {
+    if (!showLtInTable || ltWallets.length === 0) return totals;
+    // Recompute from all visible wallets (FT + LT)
+    const all = [...wallets, ...ltWallets];
+    if (all.length === 0) return totals;
+    return {
+      total_balance: all.reduce((s, w) => s + (w.current_balance || 0), 0),
+      total_cash_available: all.reduce((s, w) => s + (w.cash_available || 0), 0),
+      total_realized_pnl: all.reduce((s, w) => s + (w.realized_pnl || 0), 0),
+      total_unrealized_pnl: all.reduce((s, w) => s + (w.unrealized_pnl || 0), 0),
+      total_pnl: all.reduce((s, w) => s + (w.total_pnl || 0), 0),
+      total_trades: all.reduce((s, w) => s + (w.total_trades || 0), 0),
+      total_trades_seen: all.reduce((s, w) => s + (w.trades_seen || 0), 0),
+      total_trades_skipped: all.reduce((s, w) => s + (w.trades_skipped || 0), 0),
+      open_positions: all.reduce((s, w) => s + (w.open_positions || 0), 0),
+      total_won: all.reduce((s, w) => s + (w.won || 0), 0),
+      total_lost: all.reduce((s, w) => s + (w.lost || 0), 0),
+    };
+  }, [totals, wallets, ltWallets, showLtInTable]);
 
   const handleCompareSort = (field: CompareSortField) => {
     if (compareSortField === field) {
@@ -648,28 +669,28 @@ export default function TradingStrategiesPage() {
       )}
 
       {/* Portfolio Totals */}
-      {totals && (
+      {displayTotals && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold">{formatCurrency(totals.total_balance)}</div>
+              <div className="text-2xl font-bold">{formatCurrency(displayTotals.total_balance)}</div>
               <div className="text-xs text-muted-foreground">
-                Cash: {formatCurrency(totals.total_cash_available)}
+                Cash: {formatCurrency(displayTotals.total_cash_available)}
               </div>
               <p className="text-xs text-muted-foreground mt-1" title="Resolved trades have a 3-hour cool-off before proceeds are added to available cash">Total Balance</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className={`text-2xl font-bold ${totals.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatPnl(totals.total_pnl)}
+              <div className={`text-2xl font-bold ${displayTotals.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {formatPnl(displayTotals.total_pnl)}
               </div>
               <div className="flex gap-2 text-xs text-muted-foreground">
-                <span className={totals.total_realized_pnl >= 0 ? 'text-green-600' : 'text-red-600'}>
-                  R: {formatPnl(totals.total_realized_pnl)}
+                <span className={displayTotals.total_realized_pnl >= 0 ? 'text-green-600' : 'text-red-600'}>
+                  R: {formatPnl(displayTotals.total_realized_pnl)}
                 </span>
-                <span className={totals.total_unrealized_pnl >= 0 ? 'text-green-600' : 'text-red-600'}>
-                  U: {formatPnl(totals.total_unrealized_pnl)}
+                <span className={displayTotals.total_unrealized_pnl >= 0 ? 'text-green-600' : 'text-red-600'}>
+                  U: {formatPnl(displayTotals.total_unrealized_pnl)}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-1">Total P&L</p>
@@ -677,12 +698,12 @@ export default function TradingStrategiesPage() {
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold">{totals.total_trades.toLocaleString()}</div>
+              <div className="text-2xl font-bold">{displayTotals.total_trades.toLocaleString()}</div>
               <div className="text-xs text-muted-foreground">
-                {totals.total_won + totals.total_lost} resolved
-                {(totals.total_won + totals.total_lost) > 0 && (
+                {displayTotals.total_won + displayTotals.total_lost} resolved
+                {(displayTotals.total_won + displayTotals.total_lost) > 0 && (
                   <span className="ml-1">
-                    ({((totals.total_won / (totals.total_won + totals.total_lost)) * 100).toFixed(0)}% WR)
+                    ({((displayTotals.total_won / (displayTotals.total_won + displayTotals.total_lost)) * 100).toFixed(0)}% WR)
                   </span>
                 )}
               </div>
@@ -692,7 +713,7 @@ export default function TradingStrategiesPage() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-2xl font-bold text-orange-500">
-                {(totals.total_trades_skipped - (wallets.find(w => w.wallet_id === 'T0_CONTROL')?.trades_skipped || 0)).toLocaleString()}*
+                {(displayTotals.total_trades_skipped - (wallets.find(w => w.wallet_id === 'T0_CONTROL')?.trades_skipped || 0)).toLocaleString()}*
               </div>
               <div className="text-xs text-muted-foreground">
                 *not including T0
@@ -702,16 +723,16 @@ export default function TradingStrategiesPage() {
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-blue-600">{totals.open_positions.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-blue-600">{displayTotals.open_positions.toLocaleString()}</div>
               <p className="text-xs text-muted-foreground">Open Positions</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
               <div className="flex gap-2 text-2xl font-bold">
-                <span className="text-green-600">{totals.total_won}</span>
+                <span className="text-green-600">{displayTotals.total_won}</span>
                 <span className="text-muted-foreground">/</span>
-                <span className="text-red-600">{totals.total_lost}</span>
+                <span className="text-red-600">{displayTotals.total_lost}</span>
               </div>
               <p className="text-xs text-muted-foreground">Won / Lost</p>
             </CardContent>
@@ -719,9 +740,9 @@ export default function TradingStrategiesPage() {
         </div>
       )}
 
-      {totals && wallets.length > 0 && (
+      {displayTotals && wallets.length > 0 && (
         <p className="text-xs text-muted-foreground mb-4">
-          Summary above is across all {wallets.length} strategies. The table below shows every strategy; scroll to see all rows. The table footer row matches the summary totals.
+          Summary above is across all {sortedWallets.length} strategies{showLtInTable ? ' (FT + LT)' : ''}. The table below shows every strategy; scroll to see all rows. The table footer row matches the summary totals.
         </p>
       )}
 
