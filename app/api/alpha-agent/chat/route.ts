@@ -145,10 +145,23 @@ export async function POST(request: Request) {
 
     const actionSystemPrompt = buildActionSystemPrompt(fullContext, botPerformance, recentTrades, memories, currentHypothesis);
 
-    const chatHistory = body.messages.map(m => ({
-      role: m.role === 'user' ? 'user' as const : 'model' as const,
-      parts: [{ text: m.content }],
-    }));
+    // Build chat history with multimodal support
+    const chatHistory = body.messages.map(m => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const parts: any[] = [{ text: m.content }];
+      // Add image/file attachments as inline data
+      if (m.attachments && Array.isArray(m.attachments)) {
+        for (const att of m.attachments) {
+          if (att.mimeType && att.data) {
+            parts.push({ inlineData: { mimeType: att.mimeType, data: att.data } });
+          }
+        }
+      }
+      return {
+        role: m.role === 'user' ? 'user' as const : 'model' as const,
+        parts,
+      };
+    });
 
     const chat = model.startChat({
       history: [
@@ -158,8 +171,18 @@ export async function POST(request: Request) {
       ],
     });
 
+    // Build the last message parts (text + any attachments)
     const lastMessage = body.messages[body.messages.length - 1];
-    const result = await chat.sendMessage(lastMessage.content);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lastParts: any[] = [{ text: lastMessage.content }];
+    if (lastMessage.attachments && Array.isArray(lastMessage.attachments)) {
+      for (const att of lastMessage.attachments) {
+        if (att.mimeType && att.data) {
+          lastParts.push({ inlineData: { mimeType: att.mimeType, data: att.data } });
+        }
+      }
+    }
+    const result = await chat.sendMessage(lastParts);
     const responseText = result.response.text();
     const tokensUsed = result.response.usageMetadata?.totalTokenCount || 0;
 

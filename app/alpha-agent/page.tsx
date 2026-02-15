@@ -88,10 +88,35 @@ interface Memory {
   created_at: string;
 }
 
+interface ChatAttachment {
+  mimeType: string;
+  data: string; // base64
+  preview?: string; // data URL for display
+  name?: string;
+}
+
 interface ChatMsg {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  attachments?: ChatAttachment[];
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function fileToBase64(file: File): Promise<{ mimeType: string; data: string; preview: string; name: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(',')[1];
+      resolve({ mimeType: file.type, data: base64, preview: dataUrl, name: file.name });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 // ============================================================================
@@ -112,7 +137,9 @@ export default function AlphaAgentCommandCenter() {
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Live run status
   const [liveRunId, setLiveRunId] = useState<string | null>(null);
@@ -222,19 +249,56 @@ export default function AlphaAgentCommandCenter() {
     }
   };
 
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          const att = await fileToBase64(file);
+          setPendingAttachments(prev => [...prev, att]);
+        }
+      }
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      if (file.size > 10 * 1024 * 1024) continue; // 10MB limit
+      const att = await fileToBase64(file);
+      setPendingAttachments(prev => [...prev, att]);
+    }
+    e.target.value = '';
+  };
+
   const sendMessage = async () => {
-    if (!chatInput.trim() || chatLoading) return;
-    const userMsg: ChatMsg = { role: 'user', content: chatInput.trim(), timestamp: new Date().toISOString() };
+    if ((!chatInput.trim() && pendingAttachments.length === 0) || chatLoading) return;
+    const userMsg: ChatMsg = {
+      role: 'user',
+      content: chatInput.trim() || (pendingAttachments.length > 0 ? `[Sent ${pendingAttachments.length} file(s)]` : ''),
+      timestamp: new Date().toISOString(),
+      attachments: pendingAttachments.length > 0 ? [...pendingAttachments] : undefined,
+    };
     setChatMessages(prev => [...prev, userMsg]);
     setChatInput('');
+    setPendingAttachments([]);
     setChatLoading(true);
     try {
+      const allMsgs = [...chatMessages, userMsg];
       const res = await fetch('/api/alpha-agent/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...chatMessages, userMsg].map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp })),
-          // No specific botId — agent discusses all 3
+          messages: allMsgs.map(m => ({
+            role: m.role,
+            content: m.content,
+            timestamp: m.timestamp,
+            attachments: m.attachments?.map(a => ({ mimeType: a.mimeType, data: a.data })),
+          })),
         }),
       });
       const data = await res.json();
@@ -447,6 +511,17 @@ export default function AlphaAgentCommandCenter() {
               {chatMessages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div className="flex gap-1.5 mb-1.5 flex-wrap">
+                        {msg.attachments.map((att, ai) => (
+                          att.preview && att.mimeType.startsWith('image/') ? (
+                            <img key={ai} src={att.preview} alt={att.name || 'attachment'} className="max-w-[200px] max-h-[150px] rounded border object-cover" />
+                          ) : (
+                            <div key={ai} className="text-xs bg-black/10 rounded px-2 py-1">{att.name || 'file'}</div>
+                          )
+                        ))}
+                      </div>
+                    )}
                     <div className="whitespace-pre-wrap">{msg.content}</div>
                     <div className={`text-xs mt-1 ${msg.role === 'user' ? 'text-primary-foreground/50' : 'text-muted-foreground/50'}`}>
                       {new Date(msg.timestamp).toLocaleTimeString()}
@@ -463,17 +538,38 @@ export default function AlphaAgentCommandCenter() {
               )}
               <div ref={chatEndRef} />
             </div>
+            {/* Attachment preview */}
+            {pendingAttachments.length > 0 && (
+              <div className="flex gap-2 pt-2 flex-wrap">
+                {pendingAttachments.map((att, i) => (
+                  <div key={i} className="relative group">
+                    {att.preview && att.mimeType.startsWith('image/') ? (
+                      <img src={att.preview} alt={att.name} className="h-16 w-16 rounded border object-cover" />
+                    ) : (
+                      <div className="h-16 px-3 rounded border flex items-center text-xs text-muted-foreground">{att.name}</div>
+                    )}
+                    <button onClick={() => setPendingAttachments(prev => prev.filter((_, j) => j !== i))} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">x</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Input row */}
             <div className="flex gap-2 pt-2 border-t">
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*,.pdf,.csv,.txt,.json" multiple onChange={handleFileSelect} />
+              <button onClick={() => fileInputRef.current?.click()} className="shrink-0 rounded-md border px-2 py-2 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title="Attach file">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+              </button>
               <input
                 type="text"
                 value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                placeholder="Talk to Alpha Agent..."
+                onPaste={handlePaste}
+                placeholder="Talk to Alpha Agent... (paste images here)"
                 className="flex-1 rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                 disabled={chatLoading}
               />
-              <Button size="sm" onClick={sendMessage} disabled={chatLoading || !chatInput.trim()} className="bg-purple-600 hover:bg-purple-700">
+              <Button size="sm" onClick={sendMessage} disabled={chatLoading || (!chatInput.trim() && pendingAttachments.length === 0)} className="bg-purple-600 hover:bg-purple-700">
                 {chatLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
             </div>
