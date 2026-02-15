@@ -194,7 +194,7 @@ export interface AgentRun {
   started_at: string;
   completed_at: string | null;
   duration_ms: number | null;
-  phases_completed: Record<RunPhase, boolean>;
+  phases_completed: Partial<Record<RunPhase, boolean>>;
   observation_summary: ObservationSummary;
   analysis: string | null;
   patterns_found: PatternFound[];
