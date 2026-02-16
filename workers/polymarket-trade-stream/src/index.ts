@@ -2,8 +2,10 @@
  * Polymarket Trade Stream Worker
  *
  * Subscribes to real-time trades via Polymarket WebSocket (activity/trades).
- * Only forwards trades from TARGET TRADERS (wallets with target_trader/target_traders).
- * This prevents Supabase overload from processing every trade on Polymarket.
+ * Forwards trades from the target set returned by /api/ft/target-traders:
+ * - Explicit targets: target_trader/target_traders from active FT wallets
+ * - Leaderboard mode: when any FT has no target, includes traders table (leaderboard-synced)
+ * sync-trade then evaluates each trade against each wallet's rules (edge, category, etc.).
  *
  * Circuit breaker: opens after N consecutive 5xx/timeouts, blocks sync-trade calls
  * for 60s, then allows one probe. Prevents runaway load on production.
@@ -83,8 +85,11 @@ async function fetchTargetTraders(): Promise<Set<string>> {
     const list = data.traders || [];
     targetTraders = new Set(list.map((t) => t.toLowerCase().trim()));
     lastTargetFetch = Date.now();
+    const hasLeaderboard = (data as { has_leaderboard_wallets?: boolean }).has_leaderboard_wallets;
     if (targetTraders.size > 0) {
-      console.log(`[worker] Loaded ${targetTraders.size} target traders`);
+      console.log(`[worker] Loaded ${targetTraders.size} target traders${hasLeaderboard ? ' (incl. leaderboard)' : ''}`);
+    } else {
+      console.warn('[worker] Target traders empty — no trades will be forwarded. Check /api/ft/stream-status');
     }
   } catch (err) {
     console.error('[worker] Failed to fetch target traders:', err);
@@ -156,9 +161,15 @@ async function callSyncTrade(trade: Record<string, unknown>): Promise<void> {
       console.error(`[sync-trade] ${res.status} ${res.statusText}:`, data?.error || data?.message);
       return;
     }
+    const proxyWallet = String(trade.proxyWallet || trade.proxy_wallet || '').toLowerCase();
+    const shortWallet = proxyWallet ? `${proxyWallet.slice(0, 10)}...` : '?';
     if (data?.inserted > 0) {
-      console.log(`[sync-trade] Inserted ${data.inserted} ft_order(s) for trade ${trade.transactionHash || trade.id}`);
+      console.log(`[sync-trade] Inserted ${data.inserted} ft_order(s) for trade ${trade.transactionHash || trade.id} (${shortWallet})`);
       void triggerLTExecute();
+    } else {
+      // Log forwarded-but-not-qualified so we can verify pipeline is receiving trades
+      const msg = data?.message || 'did not qualify';
+      console.log(`[worker] Forwarded trade from ${shortWallet} → ${msg}`);
     }
   } catch (err: unknown) {
     clearTimeout(timeout);
@@ -195,7 +206,9 @@ function start(): void {
 
       void (async () => {
         const traders = await ensureTargetTraders();
-        if (traders.size === 0) return;
+        if (traders.size === 0) {
+          return; // Logged once at startup: "Loaded 0 target traders"
+        }
         if (!traders.has(proxyWallet)) return;
         await callSyncTrade(payload);
       })();

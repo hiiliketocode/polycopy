@@ -22,7 +22,7 @@ import { getActiveStrategies, executeTrade, type LTStrategy } from '@/lib/live-t
 import { batchResolveTokenIds } from '@/lib/live-trading/token-cache';
 import { type FTWallet, type EnrichedTrade, getSourceTradeId, FT_SLIPPAGE_PCT } from '@/lib/ft-sync/shared-logic';
 
-const FT_LOOKBACK_HOURS = 6;  // Look back 6 hours for FT orders (down from 24h)
+const FT_LOOKBACK_HOURS = 12;  // Look back 12 hours for FT orders (was 6h; extended so we don't miss orders)
 
 export async function POST(request: Request) {
     const authError = await requireAdminOrCron(request);
@@ -125,16 +125,19 @@ export async function POST(request: Request) {
 
             await strategyLogger.info('FT_QUERY', `Found ${ftOrders.length} OPEN ft_orders to consider`);
 
-            // ── Step 5b: Dedup against existing lt_orders ──
+            // ── Step 5b: Dedup against existing lt_orders (only placed/live — NOT rejected) ──
+            // REJECTED orders are excluded so we retry (e.g. transient token resolution, dead market).
             // Paginate to handle >1000 rows (Supabase default limit)
             const executedSourceIds = new Set<string>();
             let dedupOffset = 0;
             const DEDUP_PAGE = 1000;
+            const PLACED_STATUSES = ['FILLED', 'PENDING', 'PARTIAL', 'LOST'];
             while (true) {
                 const { data: page } = await supabase
                     .from('lt_orders')
                     .select('source_trade_id')
                     .eq('strategy_id', strategy.strategy_id)
+                    .in('status', PLACED_STATUSES)
                     .range(dedupOffset, dedupOffset + DEDUP_PAGE - 1);
                 if (!page || page.length === 0) break;
                 for (const o of page) { if (o.source_trade_id) executedSourceIds.add(o.source_trade_id); }

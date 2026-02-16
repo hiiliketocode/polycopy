@@ -184,12 +184,14 @@ export async function executeTrade(
         trader: trade.traderWallet?.slice(0, 12),
     });
 
-    // ── Step 1: Dedup check ──
+    // ── Step 1: Dedup check (only skip if we placed/live — NOT rejected) ──
+    // REJECTED orders are retried (e.g. transient token resolution).
     const { data: existing } = await supabase
         .from('lt_orders')
         .select('lt_order_id')
         .eq('strategy_id', strategy.strategy_id)
         .eq('source_trade_id', sourceTradeId)
+        .in('status', ['FILLED', 'PENDING', 'PARTIAL', 'LOST'])
         .limit(1);
 
     if (existing && existing.length > 0) {

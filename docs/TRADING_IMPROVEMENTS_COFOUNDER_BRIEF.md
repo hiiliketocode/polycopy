@@ -32,7 +32,7 @@ We shipped a major upgrade to our copy-trading system. The changes cut signal-to
 **Risk:** Polymarket has hundreds of trades per minute. If we processed every one, we’d hammer our API and Supabase.
 
 **Mitigations:**
-- **Target-trader filter:** The worker only forwards trades from wallets we explicitly copy (from `target_trader` / `target_traders`). Trades from other traders are ignored.
+- **Target filter:** The worker forwards trades from (a) explicit targets (`target_trader` / `target_traders`) and (b) when any FT has no target (leaderboard-style), trades from the `traders` table (leaderboard-synced). sync-trade then evaluates each trade against each wallet's rules (edge, category, etc.). Trades from untracked traders are ignored.
 - **Circuit breaker:** If our API returns 5xx or times out 5 times in a row, the worker **stops calling** for 60 seconds, then probes once. Prevents runaway load.
 
 **Impact:** Production stays stable even during Polymarket spikes.
@@ -82,20 +82,21 @@ We shipped a major upgrade to our copy-trading system. The changes cut signal-to
 **Built:**
 - `mcp-server/` with tools:
   - `list_strategies` — List LT strategies with status, capital, PnL
-  - `get_strategy_performance` — Get metrics for a specific strategy
+  - `get_strategy` — Get full detail for a strategy (FT wallet config, risk state)
+  - `get_strategy_orders` — Get orders for a strategy (filter by status, limit results)
 - Runs locally via stdio; Cursor/Claude connects to it when configured.
 
-**How to use:** Add to Cursor’s MCP config (`.cursor/mcp.json` or settings):
+**How to use:** Add to Cursor’s MCP config — copy `mcp-server/mcp.json.example` to `.cursor/mcp.json`. See `mcp-server/README.md`:
 ```json
 {
   "mcpServers": {
     "polycopy": {
       "command": "npx",
-      "args": ["tsx", "mcp-server/src/index.ts"],
-      "cwd": "/path/to/PolyCopy",
+      "args": ["tsx", "src/index.ts"],
+      "cwd": "mcp-server",
       "env": {
         "POLYCOPY_API_URL": "https://polycopy.app",
-        "CRON_SECRET": "your-secret"
+        "CRON_SECRET": "YOUR_CRON_SECRET_HERE"
       }
     }
   }
@@ -182,6 +183,10 @@ Polymarket WebSocket (trades)
 
 - **Worker (Fly.io):** `cd workers/polymarket-trade-stream && flyctl deploy`
 - **Main app (Vercel):** Push to `main` — Vercel auto-deploys. Or run `vercel --prod --yes` from project root.
+
+## Verification
+
+See `docs/VERIFY_PRODUCTION_DEPLOYMENT.md` for how to confirm everything is working (worker logs, health checks, what to look for).
 
 ---
 

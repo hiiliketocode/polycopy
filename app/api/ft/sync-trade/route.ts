@@ -185,10 +185,13 @@ export async function POST(request: Request) {
       return start <= now && end >= now;
     }) as FTWallet[];
 
-    // Filter to wallets that explicitly target this trader (target_trader or target_traders).
-    // Leaderboard wallets (no target) are handled by the full cron sync for now.
+    // Filter to wallets that want this trade:
+    // 1. Target-trader wallets: explicitly target this trader (target_trader or target_traders)
+    // 2. Leaderboard wallets: no target_trader/target_traders — they evaluate ALL trades by rules
     const walletsToCheck = activeWallets.filter((w) => {
       const ext = parseExtendedFilters(w);
+      const hasTarget = !!(ext.target_trader || (ext.target_traders && ext.target_traders.length > 0));
+      if (!hasTarget) return true; // Leaderboard-style: evaluate all trades
       if (ext.target_trader && proxyWallet === ext.target_trader.toLowerCase()) return true;
       if (ext.target_traders?.some((t) => proxyWallet === (t || '').toLowerCase())) return true;
       return false;
