@@ -8,19 +8,25 @@ type SessionResult = {
   refreshed: boolean
 }
 
+const SESSION_TIMEOUT_MS = 10_000
+const REFRESH_TIMEOUT_MS = 10_000
+
 /**
  * Try to get an active Supabase session, falling back to a one-time refresh.
  * This reduces false logouts when the access token is stale but a refresh token
  * is still available in cookies.
+ *
+ * With middleware properly refreshing tokens on every server request, this
+ * function mainly serves as a client-side safety net for long-lived tabs
+ * or when the middleware cookie write is unavailable (e.g. prefetch).
  */
 export async function getOrRefreshSession(
   client: SupabaseClient = supabase
 ): Promise<SessionResult> {
   try {
-    // Add timeout to prevent hanging
     const getSessionPromise = client.auth.getSession()
     const timeoutPromise = new Promise<never>((_, reject) => 
-      setTimeout(() => reject(new Error('Session check timeout')), 5000)
+      setTimeout(() => reject(new Error('Session check timeout')), SESSION_TIMEOUT_MS)
     )
 
     const {
@@ -33,20 +39,20 @@ export async function getOrRefreshSession(
       const expiresAt = session.expires_at
       if (expiresAt && expiresAt * 1000 < Date.now()) {
         console.warn('[auth] Session expired, attempting refresh')
-        // Session expired, try to refresh
+        // Fall through to refresh below
       } else {
         return { session, refreshed: false }
       }
     }
 
     if (error) {
-      console.warn('[auth] getSession failed, attempting refresh', error.message)
+      console.warn('[auth] getSession failed, attempting refresh:', error.message)
     }
 
-    // Add timeout to refresh as well
+    // Attempt refresh with generous timeout
     const refreshPromise = client.auth.refreshSession()
     const refreshTimeoutPromise = new Promise<never>((_, reject) => 
-      setTimeout(() => reject(new Error('Session refresh timeout')), 5000)
+      setTimeout(() => reject(new Error('Session refresh timeout')), REFRESH_TIMEOUT_MS)
     )
 
     const {
@@ -55,18 +61,21 @@ export async function getOrRefreshSession(
     } = await Promise.race([refreshPromise, refreshTimeoutPromise])
 
     if (refreshError) {
-      console.warn('[auth] refreshSession failed', refreshError.message)
+      console.warn('[auth] refreshSession failed:', refreshError.message)
       return { session: null, refreshed: false }
+    }
+
+    if (refreshData.session) {
+      console.log('[auth] Session refreshed successfully')
     }
 
     return { session: refreshData.session ?? null, refreshed: true }
   } catch (err: any) {
-    // Handle timeout errors specifically
     if (err?.message?.includes('timeout')) {
-      console.warn('[auth] session operation timed out', err.message)
-      return { session: null, refreshed: false }
+      console.warn('[auth] Session operation timed out:', err.message)
+    } else {
+      console.error('[auth] Session lookup failed:', err)
     }
-    console.error('[auth] session lookup failed', err)
     return { session: null, refreshed: false }
   }
 }

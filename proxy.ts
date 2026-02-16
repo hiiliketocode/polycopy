@@ -1,4 +1,4 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 /**
@@ -60,10 +60,9 @@ function applySecurityHeaders(response: NextResponse) {
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
+    request,
   })
+
   const adminRefreshCookieName = 'pc_admin_refresh'
 
   const supabase = createServerClient(
@@ -71,77 +70,33 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
+        getAll() {
+          return request.cookies.getAll()
         },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          })
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
+            request,
           })
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-        },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          )
         },
       },
     }
   )
 
-  const hasSupabaseCookies = request.cookies
-    .getAll()
-    .some((cookie) => cookie.name.startsWith('sb-'))
+  // IMPORTANT: Call getUser() immediately after createServerClient.
+  // This is the critical call that refreshes expired auth tokens via setAll().
+  // Without this, access tokens expire (~1 hour) and users get logged out.
+  // Do NOT add logic between createServerClient and this call.
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Admin refresh token fallback: if the user has no valid session but
+  // we have an admin refresh token cookie, try to recover the session.
   const adminRefreshToken = request.cookies.get(adminRefreshCookieName)?.value
-  let authCheckFailed = false
 
-  if (hasSupabaseCookies) {
-    try {
-      // Add timeout to prevent middleware from hanging (2 second max)
-      // This prevents 504 errors when database is slow
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Auth timeout')), 2000)
-      )
-      
-      const authResult = await Promise.race([
-        supabase.auth.getUser(),
-        timeoutPromise
-      ])
-      if ('error' in authResult && (authResult.error || !authResult.data?.user)) {
-        authCheckFailed = true
-      }
-    } catch (error) {
-      // Silently fail - don't block requests if auth check times out
-      // This allows the site to still load even if database is slow
-      // Auth will be checked again in the actual page/API route if needed
-      authCheckFailed = true
-    }
-  }
-
-  if (adminRefreshToken && (!hasSupabaseCookies || authCheckFailed)) {
+  if (adminRefreshToken && !user) {
     try {
       const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession({
         refresh_token: adminRefreshToken,
@@ -157,27 +112,26 @@ export async function proxy(request: NextRequest) {
           path: '/',
           maxAge: 0,
         })
-        return response
-      }
+      } else {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_admin')
+          .eq('id', refreshData.session.user.id)
+          .maybeSingle()
 
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('is_admin')
-        .eq('id', refreshData.session.user.id)
-        .maybeSingle()
-
-      if (profileError || !profile?.is_admin) {
-        response.cookies.set({
-          name: adminRefreshCookieName,
-          value: '',
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-          path: '/',
-          maxAge: 0,
-        })
+        if (!profile?.is_admin) {
+          response.cookies.set({
+            name: adminRefreshCookieName,
+            value: '',
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            path: '/',
+            maxAge: 0,
+          })
+        }
       }
-    } catch (error) {
+    } catch {
       response.cookies.set({
         name: adminRefreshCookieName,
         value: '',
