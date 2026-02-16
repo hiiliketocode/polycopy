@@ -135,7 +135,35 @@ async function executeSupabaseQuery(supabase: SupabaseClient, action: ChatAction
       // Coerce numeric strings
       if (typeof value === 'string' && /^-?\d+\.?\d*$/.test(value)) value = Number(value);
 
-      if (typeof value === 'string' && value.startsWith('>=')) {
+      // Handle nested operator objects: {"in": [...]}, {"ilike": "%x%"}, {"gte": 5}, etc.
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const op = value as Record<string, unknown>;
+        if ('in' in op && Array.isArray(op.in)) {
+          query = query.in(key, op.in as unknown[]);
+        } else if ('ilike' in op) {
+          query = query.ilike(key, String(op.ilike));
+        } else if ('like' in op) {
+          query = query.like(key, String(op.like));
+        } else if ('gte' in op) {
+          query = query.gte(key, op.gte as string | number);
+        } else if ('gt' in op) {
+          query = query.gt(key, op.gt as string | number);
+        } else if ('lte' in op) {
+          query = query.lte(key, op.lte as string | number);
+        } else if ('lt' in op) {
+          query = query.lt(key, op.lt as string | number);
+        } else if ('neq' in op) {
+          query = query.neq(key, op.neq as string | number);
+        } else if ('is' in op) {
+          query = query.is(key, op.is as null);
+        } else if ('not' in op) {
+          query = query.not(key, 'eq', op.not as string | number);
+        } else {
+          // Unknown operator object — try eq with stringified
+          console.warn(`[query_supabase] Unknown operator object for ${key}:`, op);
+          query = query.eq(key, JSON.stringify(value));
+        }
+      } else if (typeof value === 'string' && value.startsWith('>=')) {
         query = query.gte(key, value.slice(2));
       } else if (typeof value === 'string' && value.startsWith('<=')) {
         query = query.lte(key, value.slice(2));
