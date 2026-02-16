@@ -250,7 +250,30 @@ export async function POST(request: Request) {
 
         if (actionResult.success) {
           steps.push(step('executor', `Action succeeded: ${actionResult.message}`));
-          reply += `\n\n**Action taken:** ${actionResult.message}`;
+
+          // For data queries: do a follow-up LLM call to interpret the results
+          const dataActions = ['query_bigquery', 'query_supabase', 'search_markets', 'get_market_price'];
+          if (dataActions.includes(actionType) && actionResult.data) {
+            steps.push(step('strategist', 'Interpreting query results...'));
+            const interpretStart = Date.now();
+            const dataStr = JSON.stringify(actionResult.data, null, 1).substring(0, 8000);
+            const followUp = await chat.sendMessage(
+              `Here are the results of the ${actionType} you requested:\n\n${dataStr}\n\nNow analyze these results and respond to the admin's original question. Include specific numbers and insights from the data. Respond with JSON: {"reply": "your analysis of the data", "action": {"action_type": "none", "parameters": {}, "reasoning": "", "confirmation_required": false}}`
+            );
+            const followUpText = followUp.response.text();
+            const followUpTokens = followUp.response.usageMetadata?.totalTokenCount || 0;
+            steps.push(step('strategist', `Interpreted in ${((Date.now() - interpretStart) / 1000).toFixed(1)}s`, `${followUpTokens} tokens`));
+
+            try {
+              const followUpParsed = JSON.parse(followUpText);
+              reply = followUpParsed.reply || followUpText;
+            } catch {
+              reply = followUpText;
+            }
+            reply += `\n\n*Data source: ${actionResult.message}*`;
+          } else {
+            reply += `\n\n**Action taken:** ${actionResult.message}`;
+          }
         } else {
           steps.push(step('executor', `Action failed: ${actionResult.message}`));
           reply += `\n\n**Action failed:** ${actionResult.message}`;
@@ -343,7 +366,26 @@ When the admin asks you to change something, do something, or you determine an a
 8. **set_protocol** - Change your own thinking/behavior protocols
    parameters: { title, content, tags: [] }
 
-9. **none** - Just conversation, no action needed
+9. **query_bigquery** - Run a read-only SQL query on BigQuery (84M+ trades, ML features, predictions)
+   parameters: { sql: "SELECT ... FROM \`gen-lang-client-0299056258.polycopy_v1.TABLE\` ..." }
+   Available tables: trades (84M), markets, trader_stats_at_trade (46M), enriched_trades_v13 (40M), trade_predictions_pnl_weighted
+   Results will be returned to you for analysis. Max 500 rows, read-only only.
+
+10. **query_supabase** - Query the live Supabase database
+    parameters: { table: "ft_orders"|"ft_wallets"|"lt_orders"|"lt_strategies"|"markets"|"traders"|"trader_global_stats"|"trader_profile_stats"|"ft_seen_trades", select: "col1, col2" (optional, default *), filters: { column: value, column: ">=value" }, order_by: "column" (optional), ascending: false, limit: 50 }
+    Use for live trading data. Results returned to you for analysis.
+
+11. **search_markets** - Search Polymarket for markets by keyword
+    parameters: { query: "NBA Finals", limit: 10 }
+    Returns market titles, prices, volumes. Use when discussing specific markets.
+
+12. **get_market_price** - Get live price and metadata for a specific market
+    parameters: { condition_id: "0x..." }
+    Returns current outcome prices, volume, and market details.
+
+13. **none** - Just conversation, no action needed
+
+IMPORTANT: When you need data to answer a question, USE these query actions proactively. Don't say "I would need to query..." — actually query it. The results will be fed back to you for analysis.
 
 ## RESPONSE FORMAT
 You MUST respond with valid JSON:

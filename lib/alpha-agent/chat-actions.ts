@@ -11,6 +11,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CONFIG_BOUNDARIES, ALLOWED_ALLOCATION_METHODS } from './types';
+import { executeAgentQuery } from './bigquery-tool';
+import { domeGetMarkets, domeSearchMarkets, domeGetPrice } from './dome-tool';
 
 export interface ChatAction {
   action_type:
@@ -23,6 +25,10 @@ export interface ChatAction {
     | 'pause_bot'           // Pause a bot
     | 'resume_bot'          // Resume a bot
     | 'set_protocol'        // Update thinking protocol (stored as high-priority memory)
+    | 'query_bigquery'      // Run a read-only BigQuery SQL query
+    | 'query_supabase'      // Run a read-only Supabase query on a table
+    | 'search_markets'      // Search Polymarket markets by keyword
+    | 'get_market_price'    // Get live price for a market by condition_id
     | 'none';               // No action needed (just conversation)
   bot_id?: string;
   parameters: Record<string, unknown>;
@@ -35,6 +41,7 @@ export interface ActionResult {
   action_type: string;
   message: string;
   changes_applied?: Record<string, unknown>;
+  data?: unknown; // Query results for data actions
   error?: string;
 }
 
@@ -64,11 +71,133 @@ export async function executeChatAction(
       return await executeResumeBot(supabase, action);
     case 'set_protocol':
       return await executeSetProtocol(supabase, action);
+    case 'query_bigquery':
+      return await executeBigQueryQuery(action);
+    case 'query_supabase':
+      return await executeSupabaseQuery(supabase, action);
+    case 'search_markets':
+      return await executeSearchMarkets(action);
+    case 'get_market_price':
+      return await executeGetMarketPrice(action);
     case 'none':
       return { success: true, action_type: 'none', message: 'No action needed.' };
     default:
       return { success: false, action_type: action.action_type, message: `Unknown action: ${action.action_type}` };
   }
+}
+
+// ---- BigQuery Query ----
+async function executeBigQueryQuery(action: ChatAction): Promise<ActionResult> {
+  const sql = action.parameters.sql as string;
+  if (!sql) return { success: false, action_type: 'query_bigquery', message: 'No SQL query provided' };
+
+  const result = await executeAgentQuery(sql);
+  if (!result.success) {
+    return { success: false, action_type: 'query_bigquery', message: `BigQuery error: ${result.error}`, error: result.error };
+  }
+
+  const preview = (result.rows || []).slice(0, 20);
+  return {
+    success: true,
+    action_type: 'query_bigquery',
+    message: `BigQuery returned ${result.row_count} rows (${result.columns?.join(', ')}). ${result.bytes_processed ? `Scanned ${(result.bytes_processed / 1024 / 1024).toFixed(1)}MB.` : ''}`,
+    data: { rows: preview, row_count: result.row_count, columns: result.columns },
+  };
+}
+
+// ---- Supabase Query ----
+async function executeSupabaseQuery(supabase: SupabaseClient, action: ChatAction): Promise<ActionResult> {
+  const table = action.parameters.table as string;
+  if (!table) return { success: false, action_type: 'query_supabase', message: 'No table specified' };
+
+  const ALLOWED_TABLES = ['ft_orders', 'ft_wallets', 'lt_orders', 'lt_strategies', 'markets', 'traders', 'trader_global_stats', 'trader_profile_stats', 'ft_seen_trades', 'alpha_agent_memory', 'alpha_agent_runs', 'alpha_agent_decisions', 'alpha_agent_hypotheses', 'alpha_agent_notes', 'alpha_agent_snapshots'];
+  if (!ALLOWED_TABLES.includes(table)) {
+    return { success: false, action_type: 'query_supabase', message: `Table '${table}' not allowed. Available: ${ALLOWED_TABLES.join(', ')}` };
+  }
+
+  try {
+    const select = (action.parameters.select as string) || '*';
+    const limit = Math.min(Number(action.parameters.limit) || 50, 200);
+    const filters = (action.parameters.filters || {}) as Record<string, unknown>;
+    const orderBy = action.parameters.order_by as string | undefined;
+    const ascending = action.parameters.ascending as boolean | undefined;
+
+    let query = supabase.from(table).select(select).limit(limit);
+
+    for (const [key, value] of Object.entries(filters)) {
+      if (typeof value === 'string' && value.startsWith('>=')) {
+        query = query.gte(key, value.slice(2));
+      } else if (typeof value === 'string' && value.startsWith('<=')) {
+        query = query.lte(key, value.slice(2));
+      } else if (typeof value === 'string' && value.startsWith('!=')) {
+        query = query.neq(key, value.slice(2));
+      } else if (Array.isArray(value)) {
+        query = query.in(key, value);
+      } else {
+        query = query.eq(key, value);
+      }
+    }
+
+    if (orderBy) {
+      query = query.order(orderBy, { ascending: ascending ?? false });
+    }
+
+    const { data, error } = await query;
+    if (error) return { success: false, action_type: 'query_supabase', message: `Supabase error: ${error.message}` };
+
+    return {
+      success: true,
+      action_type: 'query_supabase',
+      message: `Supabase: ${(data || []).length} rows from ${table}`,
+      data: { rows: (data || []).slice(0, 50), row_count: (data || []).length, table },
+    };
+  } catch (err) {
+    return { success: false, action_type: 'query_supabase', message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ---- Search Markets (Dome/Gamma) ----
+async function executeSearchMarkets(action: ChatAction): Promise<ActionResult> {
+  const query = action.parameters.query as string;
+  if (!query) return { success: false, action_type: 'search_markets', message: 'No search query provided' };
+
+  const limit = Math.min(Number(action.parameters.limit) || 10, 20);
+  const result = await domeSearchMarkets(query, limit);
+  if (!result.success) {
+    return { success: false, action_type: 'search_markets', message: `Market search failed: ${result.error}` };
+  }
+
+  return {
+    success: true,
+    action_type: 'search_markets',
+    message: `Found ${(result.markets || []).length} markets matching "${query}"`,
+    data: { markets: result.markets },
+  };
+}
+
+// ---- Get Market Price (Dome/Gamma) ----
+async function executeGetMarketPrice(action: ChatAction): Promise<ActionResult> {
+  const conditionId = action.parameters.condition_id as string;
+  if (!conditionId) return { success: false, action_type: 'get_market_price', message: 'No condition_id provided' };
+
+  // Get price
+  const priceResult = await domeGetPrice(conditionId);
+  // Also get metadata
+  const metaResult = await domeGetMarkets([conditionId]);
+
+  const priceData = priceResult.success ? priceResult.price : null;
+  const market = metaResult.success && metaResult.markets && metaResult.markets.length > 0 ? metaResult.markets[0] : null;
+
+  if (!priceData && !market) {
+    return { success: false, action_type: 'get_market_price', message: `Market ${conditionId} not found` };
+  }
+
+  return {
+    success: true,
+    action_type: 'get_market_price',
+    message: `Market: ${market?.title || conditionId}. Prices: ${priceData?.outcomes.map((o, i) => `${o}=${(priceData.prices[i] * 100).toFixed(1)}c`).join(', ') || 'N/A'}. Volume: $${priceData?.volume?.toLocaleString() || 'N/A'}`,
+    data: { price: priceData, market },
+  };
 }
 
 // ---- Config Update ----
