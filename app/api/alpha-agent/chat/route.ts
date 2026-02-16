@@ -58,22 +58,23 @@ export async function POST(request: Request) {
   const lastUserMessage = body.messages[body.messages.length - 1]?.content || '';
   const lower = lastUserMessage.toLowerCase();
 
-  // Light mode: skip heavy context for simple action-only questions (market search, price lookup)
-  const isSimpleAction =
-    /0x[a-fA-F0-9]{64}/.test(lastUserMessage) || // condition_id lookup
-    /\b(search|find|look up)\b.*\b(market|markets)\b/.test(lower) ||
-    (/\b(price|odds)\b.*\b(0x|market|condition)/.test(lower) && lastUserMessage.length < 120);
+
+  // Classify message intent to avoid loading unnecessary data
+  const needsData = /\b(top|best|worst|performance|pnl|roi|win rate|trades|bot|strateg|wallet|trader|allocation|edge|conviction|price band|categor|time to resolution|skip|reject|slippage|fill|execution|drawdown|capital|balance)\b/i.test(lastUserMessage);
+  const needsMarketLookup = /0x[a-fA-F0-9]{40,}/.test(lastUserMessage) || /\b(search|find|look up)\b.*\b(market|markets)\b/i.test(lower) || /\b(price|odds)\b.*\b(market|polymarket)\b/i.test(lower);
+  const isLightMode = !needsData && !needsMarketLookup && lastUserMessage.length < 500;
+
 
   try {
     // ================================================================
     // DATA AGENT: Pull bot performance (skip in light mode)
     // ================================================================
     let allSnapshots: Awaited<ReturnType<typeof getAllBotSnapshots>> = [];
-    if (!isSimpleAction) {
+    if (!isLightMode) {
       steps.push(step('data', 'Loading bot performance data from Supabase'));
       allSnapshots = await getAllBotSnapshots(supabase);
     }
-    if (!isSimpleAction) {
+    if (!isLightMode) {
       steps.push(step('data', `Loaded ${allSnapshots.length} bots`, `${allSnapshots.filter(s => s.is_agent_managed).length} are agent-managed`));
     }
 
@@ -82,7 +83,7 @@ export async function POST(request: Request) {
     let recentTrades: unknown[] = [];
     let currentHypothesis: string | undefined;
 
-    if (!isSimpleAction) {
+    if (!isLightMode) {
       if (botId) {
         steps.push(step('data', `Fetching trades for ${botId}`));
         botPerformance = allSnapshots.find(s => s.wallet_id === botId) || null;
@@ -107,7 +108,7 @@ export async function POST(request: Request) {
         steps.push(step('data', `Loaded ${agentBots.length} agent bots with ${combinedTrades.length} recent trades`));
       }
     } else {
-      steps.push(step('data', 'Light mode: skipping heavy context for action-only question'));
+      steps.push(step('data', 'Light mode: no data keywords detected, skipping fleet loading'));
     }
 
     // ================================================================
@@ -116,7 +117,7 @@ export async function POST(request: Request) {
     let notesContext: string | null = null;
     let lastRun: Awaited<ReturnType<typeof getLastRun>> = null;
     let memories: Awaited<ReturnType<typeof retrieveRelevantMemories>> = [];
-    if (!isSimpleAction) {
+    if (!isLightMode) {
       steps.push(step('memory', 'Searching memory for relevant knowledge'));
       const searchTags = extractSearchTags(lastUserMessage);
       memories = await retrieveRelevantMemories(supabase, {
@@ -135,15 +136,15 @@ export async function POST(request: Request) {
 
     // Build context summary
     let contextSummary = lastRun?.analysis || lastRun?.reflection || '';
-    if (!isSimpleAction && !botId) {
+    if (!isLightMode && !botId) {
       const agentBots = allSnapshots.filter(s => s.is_agent_managed);
       const allBotSummary = agentBots.map(b =>
         `${b.wallet_id}: ${b.resolved_trades} trades, ${b.win_rate.toFixed(1)}% WR, ${b.roi_pct.toFixed(2)}% ROI, $${b.total_pnl.toFixed(2)} PnL`
       ).join('\n');
       contextSummary = `ALL AGENT BOTS:\n${allBotSummary}\n\n${contextSummary}`;
     }
-    if (isSimpleAction && !contextSummary) {
-      contextSummary = 'Light mode: answer directly using the appropriate action (search_markets, get_market_price, or query_supabase).';
+    if (isLightMode && !contextSummary) {
+      contextSummary = 'Light mode: answering from knowledge. Use actions if data is needed.';
     }
 
     // ================================================================
@@ -152,37 +153,37 @@ export async function POST(request: Request) {
     const lower = lastUserMessage.toLowerCase();
     const liveDataParts: string[] = [];
 
-    if (!isSimpleAction && (lower.includes('price') || lower.includes('band') || lower.includes('underdog') || lower.includes('favorite'))) {
+    if (!isLightMode && (lower.includes('price') || lower.includes('band') || lower.includes('underdog') || lower.includes('favorite'))) {
       steps.push(step('supabase', 'Querying price band performance'));
       const r = await queryPriceBandPerformance(supabase);
       if (r.success) { liveDataParts.push(`PRICE BAND PERFORMANCE:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', `Got ${r.count} price bands`)); }
     }
-    if (!isSimpleAction && (lower.includes('trader') || lower.includes('who') || lower.includes('best') || lower.includes('worst') || lower.includes('top'))) {
+    if (!isLightMode && (lower.includes('trader') || lower.includes('who') || lower.includes('best') || lower.includes('worst') || lower.includes('top'))) {
       steps.push(step('supabase', 'Querying top traders by P&L'));
       const r = await queryTopTraders(supabase, 10);
       if (r.success) { liveDataParts.push(`TOP TRADERS:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', `Got ${r.count} traders`)); }
     }
-    if (!isSimpleAction && (lower.includes('categor') || lower.includes('sport') || lower.includes('nba') || lower.includes('politic') || lower.includes('crypto') || lower.includes('market type'))) {
+    if (!isLightMode && (lower.includes('categor') || lower.includes('sport') || lower.includes('nba') || lower.includes('politic') || lower.includes('crypto') || lower.includes('market type'))) {
       steps.push(step('supabase', 'Querying market category performance'));
       const r = await queryMarketCategoryPerformance(supabase);
       if (r.success) { liveDataParts.push(`CATEGORY PERFORMANCE:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', `Got ${r.count} categories`)); }
     }
-    if (!isSimpleAction && (lower.includes('time') || lower.includes('resolution') || lower.includes('how long') || lower.includes('capital effic'))) {
+    if (!isLightMode && (lower.includes('time') || lower.includes('resolution') || lower.includes('how long') || lower.includes('capital effic'))) {
       steps.push(step('supabase', 'Querying time-to-resolution analysis'));
       const r = await queryTimeToResolution(supabase);
       if (r.success) { liveDataParts.push(`TIME TO RESOLUTION:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', `Got ${r.count} time buckets`)); }
     }
-    if (!isSimpleAction && (lower.includes('skip') || lower.includes('reject') || lower.includes('filter') || lower.includes('why not'))) {
+    if (!isLightMode && (lower.includes('skip') || lower.includes('reject') || lower.includes('filter') || lower.includes('why not'))) {
       steps.push(step('supabase', 'Querying skip reasons from ft_seen_trades'));
       const r = await querySkipReasons(supabase, botId || undefined);
       if (r.success) { liveDataParts.push(`SKIP REASONS:\n${JSON.stringify(r.data?.slice(0, 15), null, 1)}`); steps.push(step('supabase', `Got ${r.count} skip reasons`)); }
     }
-    if (!isSimpleAction && (lower.includes('live') || lower.includes('execution') || lower.includes('slippage') || lower.includes('fill'))) {
+    if (!isLightMode && (lower.includes('live') || lower.includes('execution') || lower.includes('slippage') || lower.includes('fill'))) {
       steps.push(step('supabase', 'Querying LT execution quality metrics'));
       const r = await queryLTExecutionQuality(supabase);
       if (r.success) { liveDataParts.push(`LT EXECUTION QUALITY:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', 'Got execution quality metrics')); }
     }
-    if (liveDataParts.length === 0 && !isSimpleAction) {
+    if (liveDataParts.length === 0 && !isLightMode) {
       steps.push(step('supabase', 'Loading fleet overview (top 10 by ROI)'));
       const fleet = allSnapshots.filter(s => s.resolved_trades >= 5).sort((a, b) => b.roi_pct - a.roi_pct).slice(0, 10);
       liveDataParts.push(`TOP 10 BOTS BY ROI:\n${fleet.map(b => `${b.wallet_id}: ${b.win_rate.toFixed(1)}% WR, ${b.roi_pct.toFixed(2)}% ROI, $${b.total_pnl.toFixed(2)} PnL, ${b.resolved_trades} trades`).join('\n')}`);
