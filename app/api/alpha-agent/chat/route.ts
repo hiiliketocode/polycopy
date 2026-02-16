@@ -11,7 +11,7 @@ import {
   querySkipReasons,
   queryLTExecutionQuality,
 } from '@/lib/alpha-agent/supabase-tool';
-import { executeChatAction } from '@/lib/alpha-agent/chat-actions';
+import { executeChatAction, type ActionResult } from '@/lib/alpha-agent/chat-actions';
 import { buildNotesContext } from '@/lib/alpha-agent/notes';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { MODEL_CONFIGS } from '@/lib/alpha-agent/types';
@@ -234,7 +234,7 @@ export async function POST(request: Request) {
     // EXECUTOR AGENT: Parse response and execute actions
     // ================================================================
     let reply: string;
-    let actionResult: { success: boolean; message: string } | null = null;
+    let actionResult: ActionResult | null = null;
 
     try {
       const parsed = JSON.parse(responseText);

@@ -17,7 +17,7 @@ import {
 export const maxDuration = 300;
 
 const TOP_TRADERS_LIMIT = 100; // Polymarket API max per request
-const LEADERBOARD_PAGES = 2;   // Fetch 2 pages (top 100 + next 100) per leaderboard view → up to 800 slots, deduped
+const LEADERBOARD_PAGES = 11;  // Fetch 11 pages (offset 0–1000) per leaderboard view → up to 1,100 per view, ~4.4k unique traders deduped (Polymarket offset max is 1000)
 const TRADES_PAGE_SIZE = 50;   // Per page from Polymarket API
 const MAX_PAGES_PER_TRADER = 4; // Max 200 trades per trader per sync
 type PolymarketTrade = {
