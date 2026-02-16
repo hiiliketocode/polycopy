@@ -24,7 +24,7 @@ export const SUPABASE_TABLE_DESCRIPTIONS = `## SUPABASE TABLES (Live Platform Da
 
 ### Trading Performance
 - **ft_orders**: All forward-testing virtual trades. Key columns: wallet_id, entry_price, size, edge_pct, model_probability, conviction, trader_win_rate, trader_address, outcome (OPEN/WON/LOST), pnl, market_title, condition_id, order_time, resolved_time, token_label, market_end_time
-- **ft_wallets**: Strategy configurations for all FT bots (66+). Key columns: wallet_id, config_id, display_name, model_threshold, price_min, price_max, min_edge, use_model, allocation_method, kelly_fraction, bet_size, min_bet, max_bet, starting_balance, current_balance, is_active, min_trader_resolved_count, min_conviction, detailed_description
+- **ft_wallets**: Strategy configs (66+ bots). Key columns: wallet_id, config_id, display_name, model_threshold, price_min, price_max, min_edge, use_model, allocation_method, kelly_fraction, bet_size, min_bet, max_bet, total_pnl (NOT pnl), starting_balance, current_balance, is_active, min_trader_resolved_count, min_conviction, detailed_description
 - **lt_orders**: Real-money live trading orders. Key columns: lt_order_id, strategy_id, signal_price, signal_size_usd, executed_price, executed_size_usd, slippage_bps, fill_rate, outcome, pnl, ft_pnl, performance_diff_pct, status (PENDING/FILLED/REJECTED), order_placed_at, resolved_at
 - **lt_strategies**: Live trading strategy configs. Key columns: strategy_id, ft_wallet_id, is_active, is_paused, initial_capital, available_cash, locked_capital, cooldown_capital, daily_spent_usd, daily_loss_usd, peak_equity, current_drawdown_pct, circuit_breaker_active, stop_loss_pct, take_profit_pct
 

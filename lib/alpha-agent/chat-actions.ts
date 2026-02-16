@@ -110,7 +110,7 @@ async function executeSupabaseQuery(supabase: SupabaseClient, action: ChatAction
   const table = action.parameters.table as string;
   if (!table) return { success: false, action_type: 'query_supabase', message: 'No table specified' };
 
-  const ALLOWED_TABLES = ['ft_orders', 'ft_wallets', 'lt_orders', 'lt_strategies', 'markets', 'traders', 'trader_global_stats', 'trader_profile_stats', 'ft_seen_trades', 'alpha_agent_memory', 'alpha_agent_runs', 'alpha_agent_decisions', 'alpha_agent_hypotheses', 'alpha_agent_notes', 'alpha_agent_snapshots'];
+  const ALLOWED_TABLES = ['ft_orders', 'ft_wallets', 'lt_orders', 'lt_strategies', 'markets', 'traders', 'trader_global_stats', 'trader_profile_stats', 'ft_seen_trades', 'alpha_agent_bots', 'alpha_agent_memory', 'alpha_agent_runs', 'alpha_agent_decisions', 'alpha_agent_hypotheses', 'alpha_agent_notes', 'alpha_agent_snapshots'];
   if (!ALLOWED_TABLES.includes(table)) {
     return { success: false, action_type: 'query_supabase', message: `Table '${table}' not allowed. Available: ${ALLOWED_TABLES.join(', ')}` };
   }

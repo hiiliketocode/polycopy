@@ -12,6 +12,7 @@ import {
   queryLTExecutionQuality,
 } from '@/lib/alpha-agent/supabase-tool';
 import { executeChatAction, type ActionResult } from '@/lib/alpha-agent/chat-actions';
+import { SCHEMA_REFERENCE } from '@/lib/alpha-agent/schema-reference';
 import { buildNotesContext } from '@/lib/alpha-agent/notes';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { MODEL_CONFIGS } from '@/lib/alpha-agent/types';
@@ -54,112 +55,134 @@ export async function POST(request: Request) {
   const supabase = createAdminServiceClient();
   const steps: ThinkingStep[] = [];
   const t0 = Date.now();
+  const lastUserMessage = body.messages[body.messages.length - 1]?.content || '';
+  const lower = lastUserMessage.toLowerCase();
+
+  // Light mode: skip heavy context for simple action-only questions (market search, price lookup)
+  const isSimpleAction =
+    /0x[a-fA-F0-9]{64}/.test(lastUserMessage) || // condition_id lookup
+    /\b(search|find|look up)\b.*\b(market|markets)\b/.test(lower) ||
+    (/\b(price|odds)\b.*\b(0x|market|condition)/.test(lower) && lastUserMessage.length < 120);
 
   try {
     // ================================================================
-    // DATA AGENT: Pull bot performance
+    // DATA AGENT: Pull bot performance (skip in light mode)
     // ================================================================
-    steps.push(step('data', 'Loading bot performance data from Supabase'));
-    const allSnapshots = await getAllBotSnapshots(supabase);
-    steps.push(step('data', `Loaded ${allSnapshots.length} bots`, `${allSnapshots.filter(s => s.is_agent_managed).length} are agent-managed`));
+    let allSnapshots: Awaited<ReturnType<typeof getAllBotSnapshots>> = [];
+    if (!isSimpleAction) {
+      steps.push(step('data', 'Loading bot performance data from Supabase'));
+      allSnapshots = await getAllBotSnapshots(supabase);
+    }
+    if (!isSimpleAction) {
+      steps.push(step('data', `Loaded ${allSnapshots.length} bots`, `${allSnapshots.filter(s => s.is_agent_managed).length} are agent-managed`));
+    }
 
     const botId = body.botId;
     let botPerformance: BotPerformanceSnapshot | null = null;
     let recentTrades: unknown[] = [];
     let currentHypothesis: string | undefined;
 
-    if (botId) {
-      steps.push(step('data', `Fetching trades for ${botId}`));
-      botPerformance = allSnapshots.find(s => s.wallet_id === botId) || null;
-      recentTrades = await getBotTrades(supabase, botId, 15).catch(() => []);
-      const { data: botData } = await supabase.from('alpha_agent_bots').select('current_hypothesis').eq('bot_id', botId).single();
-      currentHypothesis = botData?.current_hypothesis || undefined;
-      steps.push(step('data', `Got ${(recentTrades as unknown[]).length} recent trades`, botPerformance ? `${botPerformance.win_rate.toFixed(1)}% WR, $${botPerformance.total_pnl.toFixed(2)} PnL` : 'No data'));
-    } else {
-      steps.push(step('data', 'Building context for all 3 agent bots'));
-      const agentBots = allSnapshots.filter(s => s.is_agent_managed);
-      const combinedTrades: unknown[] = [];
-      const hypotheses: string[] = [];
-      for (const bot of agentBots) {
-        const trades = await getBotTrades(supabase, bot.wallet_id, 5).catch(() => []);
-        combinedTrades.push(...trades);
-        const { data: bd } = await supabase.from('alpha_agent_bots').select('current_hypothesis, bot_role').eq('bot_id', bot.wallet_id).single();
-        if (bd?.current_hypothesis) hypotheses.push(`${bd.bot_role}: ${bd.current_hypothesis}`);
+    if (!isSimpleAction) {
+      if (botId) {
+        steps.push(step('data', `Fetching trades for ${botId}`));
+        botPerformance = allSnapshots.find(s => s.wallet_id === botId) || null;
+        recentTrades = await getBotTrades(supabase, botId, 15).catch(() => []);
+        const { data: botData } = await supabase.from('alpha_agent_bots').select('current_hypothesis').eq('bot_id', botId).single();
+        currentHypothesis = botData?.current_hypothesis || undefined;
+        steps.push(step('data', `Got ${(recentTrades as unknown[]).length} recent trades`, botPerformance ? `${botPerformance.win_rate.toFixed(1)}% WR, $${botPerformance.total_pnl.toFixed(2)} PnL` : 'No data'));
+      } else {
+        steps.push(step('data', 'Building context for all 3 agent bots'));
+        const agentBots = allSnapshots.filter(s => s.is_agent_managed);
+        const combinedTrades: unknown[] = [];
+        const hypotheses: string[] = [];
+        for (const bot of agentBots) {
+          const trades = await getBotTrades(supabase, bot.wallet_id, 5).catch(() => []);
+          combinedTrades.push(...trades);
+          const { data: bd } = await supabase.from('alpha_agent_bots').select('current_hypothesis, bot_role').eq('bot_id', bot.wallet_id).single();
+          if (bd?.current_hypothesis) hypotheses.push(`${bd.bot_role}: ${bd.current_hypothesis}`);
+        }
+        botPerformance = agentBots.sort((a, b) => b.total_pnl - a.total_pnl)[0] || null;
+        recentTrades = combinedTrades;
+        currentHypothesis = hypotheses.join(' | ');
+        steps.push(step('data', `Loaded ${agentBots.length} agent bots with ${combinedTrades.length} recent trades`));
       }
-      botPerformance = agentBots.sort((a, b) => b.total_pnl - a.total_pnl)[0] || null;
-      recentTrades = combinedTrades;
-      currentHypothesis = hypotheses.join(' | ');
-      steps.push(step('data', `Loaded ${agentBots.length} agent bots with ${combinedTrades.length} recent trades`));
+    } else {
+      steps.push(step('data', 'Light mode: skipping heavy context for action-only question'));
     }
 
     // ================================================================
-    // MEMORY AGENT: Retrieve relevant knowledge
+    // MEMORY AGENT: Retrieve relevant knowledge (skip in light mode)
     // ================================================================
-    steps.push(step('memory', 'Searching memory for relevant knowledge'));
-    const lastUserMessage = body.messages[body.messages.length - 1]?.content || '';
-    const searchTags = extractSearchTags(lastUserMessage);
-    const memories = await retrieveRelevantMemories(supabase, {
-      tags: searchTags.length > 0 ? searchTags : undefined,
-      limit: 10,
-    });
-    steps.push(step('memory', `Found ${memories.length} relevant memories`, searchTags.length > 0 ? `Tags: ${searchTags.join(', ')}` : 'Broad search'));
-
-    steps.push(step('memory', 'Loading persistent notes'));
-    const notesContext = await buildNotesContext(supabase);
-    steps.push(step('memory', notesContext ? 'Notes loaded into context' : 'No notes yet'));
-
-    const lastRun = await getLastRun(supabase);
-    if (lastRun) {
-      steps.push(step('memory', 'Retrieved last run context', `Regime: ${lastRun.market_regime || 'unknown'}`));
+    let notesContext: string | null = null;
+    let lastRun: Awaited<ReturnType<typeof getLastRun>> = null;
+    let memories: Awaited<ReturnType<typeof retrieveRelevantMemories>> = [];
+    if (!isSimpleAction) {
+      steps.push(step('memory', 'Searching memory for relevant knowledge'));
+      const searchTags = extractSearchTags(lastUserMessage);
+      memories = await retrieveRelevantMemories(supabase, {
+        tags: searchTags.length > 0 ? searchTags : undefined,
+        limit: 10,
+      });
+      steps.push(step('memory', `Found ${memories.length} relevant memories`, searchTags.length > 0 ? `Tags: ${searchTags.join(', ')}` : 'Broad search'));
+      steps.push(step('memory', 'Loading persistent notes'));
+      notesContext = await buildNotesContext(supabase);
+      steps.push(step('memory', notesContext ? 'Notes loaded into context' : 'No notes yet'));
+      lastRun = await getLastRun(supabase);
+      if (lastRun) {
+        steps.push(step('memory', 'Retrieved last run context', `Regime: ${lastRun.market_regime || 'unknown'}`));
+      }
     }
 
     // Build context summary
     let contextSummary = lastRun?.analysis || lastRun?.reflection || '';
-    if (!botId) {
+    if (!isSimpleAction && !botId) {
       const agentBots = allSnapshots.filter(s => s.is_agent_managed);
       const allBotSummary = agentBots.map(b =>
         `${b.wallet_id}: ${b.resolved_trades} trades, ${b.win_rate.toFixed(1)}% WR, ${b.roi_pct.toFixed(2)}% ROI, $${b.total_pnl.toFixed(2)} PnL`
       ).join('\n');
       contextSummary = `ALL AGENT BOTS:\n${allBotSummary}\n\n${contextSummary}`;
     }
+    if (isSimpleAction && !contextSummary) {
+      contextSummary = 'Light mode: answer directly using the appropriate action (search_markets, get_market_price, or query_supabase).';
+    }
 
     // ================================================================
-    // SUPABASE AGENT: Pull live data based on question
+    // SUPABASE AGENT: Pull live data based on question (skip in light mode)
     // ================================================================
     const lower = lastUserMessage.toLowerCase();
     const liveDataParts: string[] = [];
 
-    if (lower.includes('price') || lower.includes('band') || lower.includes('underdog') || lower.includes('favorite')) {
+    if (!isSimpleAction && (lower.includes('price') || lower.includes('band') || lower.includes('underdog') || lower.includes('favorite'))) {
       steps.push(step('supabase', 'Querying price band performance'));
       const r = await queryPriceBandPerformance(supabase);
       if (r.success) { liveDataParts.push(`PRICE BAND PERFORMANCE:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', `Got ${r.count} price bands`)); }
     }
-    if (lower.includes('trader') || lower.includes('who') || lower.includes('best') || lower.includes('worst') || lower.includes('top')) {
+    if (!isSimpleAction && (lower.includes('trader') || lower.includes('who') || lower.includes('best') || lower.includes('worst') || lower.includes('top'))) {
       steps.push(step('supabase', 'Querying top traders by P&L'));
       const r = await queryTopTraders(supabase, 10);
       if (r.success) { liveDataParts.push(`TOP TRADERS:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', `Got ${r.count} traders`)); }
     }
-    if (lower.includes('categor') || lower.includes('sport') || lower.includes('nba') || lower.includes('politic') || lower.includes('crypto') || lower.includes('market type')) {
+    if (!isSimpleAction && (lower.includes('categor') || lower.includes('sport') || lower.includes('nba') || lower.includes('politic') || lower.includes('crypto') || lower.includes('market type'))) {
       steps.push(step('supabase', 'Querying market category performance'));
       const r = await queryMarketCategoryPerformance(supabase);
       if (r.success) { liveDataParts.push(`CATEGORY PERFORMANCE:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', `Got ${r.count} categories`)); }
     }
-    if (lower.includes('time') || lower.includes('resolution') || lower.includes('how long') || lower.includes('capital effic')) {
+    if (!isSimpleAction && (lower.includes('time') || lower.includes('resolution') || lower.includes('how long') || lower.includes('capital effic'))) {
       steps.push(step('supabase', 'Querying time-to-resolution analysis'));
       const r = await queryTimeToResolution(supabase);
       if (r.success) { liveDataParts.push(`TIME TO RESOLUTION:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', `Got ${r.count} time buckets`)); }
     }
-    if (lower.includes('skip') || lower.includes('reject') || lower.includes('filter') || lower.includes('why not')) {
+    if (!isSimpleAction && (lower.includes('skip') || lower.includes('reject') || lower.includes('filter') || lower.includes('why not'))) {
       steps.push(step('supabase', 'Querying skip reasons from ft_seen_trades'));
       const r = await querySkipReasons(supabase, botId || undefined);
       if (r.success) { liveDataParts.push(`SKIP REASONS:\n${JSON.stringify(r.data?.slice(0, 15), null, 1)}`); steps.push(step('supabase', `Got ${r.count} skip reasons`)); }
     }
-    if (lower.includes('live') || lower.includes('execution') || lower.includes('slippage') || lower.includes('fill')) {
+    if (!isSimpleAction && (lower.includes('live') || lower.includes('execution') || lower.includes('slippage') || lower.includes('fill'))) {
       steps.push(step('supabase', 'Querying LT execution quality metrics'));
       const r = await queryLTExecutionQuality(supabase);
       if (r.success) { liveDataParts.push(`LT EXECUTION QUALITY:\n${JSON.stringify(r.data, null, 1)}`); steps.push(step('supabase', 'Got execution quality metrics')); }
     }
-    if (liveDataParts.length === 0) {
+    if (liveDataParts.length === 0 && !isSimpleAction) {
       steps.push(step('supabase', 'Loading fleet overview (top 10 by ROI)'));
       const fleet = allSnapshots.filter(s => s.resolved_trades >= 5).sort((a, b) => b.roi_pct - a.roi_pct).slice(0, 10);
       liveDataParts.push(`TOP 10 BOTS BY ROI:\n${fleet.map(b => `${b.wallet_id}: ${b.win_rate.toFixed(1)}% WR, ${b.roi_pct.toFixed(2)}% ROI, $${b.total_pnl.toFixed(2)} PnL, ${b.resolved_trades} trades`).join('\n')}`);
@@ -326,7 +349,11 @@ function buildActionSystemPrompt(
     ? `Recent trades: ${JSON.stringify(recentTrades.slice(0, 5))}`
     : '';
 
-  return `You are ALPHA AGENT with the ability to TAKE ACTIONS when the admin asks you to.
+  return `You are ALPHA AGENT — a general AI assistant for trading, bots, and Polymarket. You can have open-ended conversations and take actions when asked.
+
+Be conversational and flexible. Adapt your response to the question — don't always run the same analysis. For simple questions (e.g. "search for X markets", "what's the price of Y"), use the appropriate action directly. For deeper analysis, use query_supabase or query_bigquery.
+
+${SCHEMA_REFERENCE}
 
 ## YOUR CONTEXT
 ${botCtx}
@@ -372,20 +399,23 @@ When the admin asks you to change something, do something, or you determine an a
    Results will be returned to you for analysis. Max 500 rows, read-only only.
 
 10. **query_supabase** - Query the live Supabase database
-    parameters: { table: "ft_orders"|"ft_wallets"|"lt_orders"|"lt_strategies"|"markets"|"traders"|"trader_global_stats"|"trader_profile_stats"|"ft_seen_trades", select: "col1, col2" (optional, default *), filters: { column: value, column: ">=value" }, order_by: "column" (optional), ascending: false, limit: 50 }
-    Use for live trading data. Results returned to you for analysis.
+    parameters: { table, select (optional), filters: {}, order_by, ascending, limit: 50 }
+    Tables: ft_orders, ft_wallets, lt_orders, lt_strategies, markets, traders, trader_global_stats, trader_profile_stats, ft_seen_trades, alpha_agent_bots, alpha_agent_memory, alpha_agent_runs, alpha_agent_snapshots, alpha_agent_hypotheses, alpha_agent_notes
+    CRITICAL SCHEMA: ft_wallets has total_pnl (NOT pnl). For "top by PnL" use order_by: "total_pnl", ascending: false. ft_orders has pnl per trade.
 
-11. **search_markets** - Search Polymarket for markets by keyword
+11. **search_markets** - Search Polymarket markets by keyword (Dome/Gamma API)
     parameters: { query: "NBA Finals", limit: 10 }
-    Returns market titles, prices, volumes. Use when discussing specific markets.
+    Use for: "find markets about X", "search for Y", "what markets exist on Z". Returns titles, prices, volumes.
 
-12. **get_market_price** - Get live price and metadata for a specific market
+12. **get_market_price** - Get live price for a market (Dome API)
     parameters: { condition_id: "0x..." }
-    Returns current outcome prices, volume, and market details.
+    Use for: "what's the price of market X", "current odds for condition_id Y". Returns outcome prices, volume, metadata.
 
 13. **none** - Just conversation, no action needed
 
-IMPORTANT: When you need data to answer a question, USE these query actions proactively. Don't say "I would need to query..." — actually query it. The results will be fed back to you for analysis.
+DOME & GAMMA: These are Polymarket's live market APIs. You access them via search_markets (keyword search) and get_market_price (by condition_id). When the admin asks about a specific market, price, or wants to search markets — use these actions.
+
+IMPORTANT: When you need data, USE these query actions proactively. Don't say "I would need to query..." — actually query it. Results are fed back for analysis.
 
 ## RESPONSE FORMAT
 You MUST respond with valid JSON:
@@ -419,6 +449,8 @@ function extractSearchTags(message: string): string[] {
     'sports': ['market_type', 'sports'], 'politics': ['market_type', 'politics'],
     'crypto': ['market_type', 'crypto'], 'conviction': ['conviction'],
     'diversif': ['diversification', 'variance'],
+    'dome': ['market_type'], 'gamma': ['market_type'], 'market': ['market_type'],
+    'search': ['market_type'], 'price': ['market_type'],
   };
   for (const [keyword, associatedTags] of Object.entries(keywords)) {
     if (lower.includes(keyword)) tags.push(...associatedTags);
